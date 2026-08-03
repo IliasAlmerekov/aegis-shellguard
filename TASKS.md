@@ -178,11 +178,20 @@ the project Definition of Done in `~/.agents/ENGINEERING_GATES.md` is satisfied.
   on supported Unix platforms; active log and rotation opens reject symlink
   targets without weakening append-only or fail-closed audit behavior; platform
   limits are explicit.
-- **Status:** **Partial** — implemented and verified locally on 2026-07-15;
-  required PR CI remains before closure.
+- **Status:** **Closed** — verified locally on 2026-07-15 and by all required PR CI
+  contexts on 2026-08-03.
 - **Traceability:** [plan](docs/plans/2026-07-14-h7b-audit-file-hardening.md);
   [ADR-020](docs/adr/adr-020-owner-only-audit-artifacts-and-no-follow-opens.md);
-  `crates/aegis-audit/src/secure_fs.rs` and logger regressions.
+  `crates/aegis-audit/src/secure_fs.rs` and logger regressions
+  (`append_creates_owner_only_audit_directories_and_artifacts`,
+  `append_rejects_a_symlinked_active_log_without_touching_its_target`,
+  `append_rejects_a_symlinked_lock_without_touching_its_target`,
+  `append_rejects_a_symlinked_immediate_parent`,
+  `rotation_rejects_an_unsafe_managed_slot_before_mutating_archives`,
+  `unsafe_staging_aborts_compressed_rotation_before_archive_mutation`);
+  non-Unix limits stated in ADR-020;
+  [required CI run](https://github.com/IliasAlmerekov/aegis-shellguard/actions/runs/30803123790)
+  on [PR #153](https://github.com/IliasAlmerekov/aegis-shellguard/pull/153).
 
 ### [x] H8 — Destructive Git forms lack token-prefix coverage
 
@@ -195,7 +204,7 @@ the project Definition of Done in `~/.agents/ENGINEERING_GATES.md` is satisfied.
 - **Traceability:** commit `b1b64183`; C4 commit `bdfbaf9`; built-in Git rule
   examples and scanner edge-case tests.
 
-### [ ] H9 — ADR-016 required recovery can degrade silently
+### [x] H9 — ADR-016 required recovery can degrade silently
 
 - **Finding:** ADR-016 marks bounded `Effect-opaque execution` and requests a
   recovery backstop, but execution can still proceed when no required snapshot is
@@ -208,18 +217,31 @@ the project Definition of Done in `~/.agents/ENGINEERING_GATES.md` is satisfied.
   reason; threat-model/config/public docs match ADR-016. No new risk
   level, script-file inspection, filesystem `stat()` on the hot path, or package
   runner expansion is introduced.
-- **Status:** **Partial** — iterations 4–5 are implemented and locally verified;
-  the checkbox remains open until all required PR CI contexts pass.
+- **Status:** **Closed** — iterations 1–5 implemented and locally verified; all
+  required PR CI contexts passed on 2026-08-03.
 - **Traceability:** [plan](docs/plans/2026-07-09-h9-effect-opaque-recovery-backstop.md);
   [ADR-016](docs/adr/adr-016-effect-opaque-execution-uses-recovery-backstops.md);
-  iterations 1–3 commit `8dd5392`; [Shell tests](tests/recovery_degradation.rs);
-  [Watch tests](tests/watch_mode.rs); [docs tests](tests/contracts_docs.rs).
+  iterations 1–3 commit `8dd5392`; [Shell tests](tests/recovery_degradation.rs)
+  (`noninteractive_required_recovery_degradation_denies_before_child_execution`,
+  `interactive_recovery_deny_prevents_child_execution`,
+  `interactive_recovery_run_once_executes_and_records_human_approval`,
+  `force_interactive_env_cannot_enable_recovery_override_without_tty`,
+  `degraded_audit_write_failure_remains_fail_closed`);
+  [Watch tests](tests/watch_mode.rs)
+  (`watch_without_tty_denies_required_recovery_degradation_before_execution`,
+  asserting the audited `recovery_degradation` reason);
+  [docs tests](tests/contracts_docs.rs);
+  [required CI run](https://github.com/IliasAlmerekov/aegis-shellguard/actions/runs/30803123790)
+  on [PR #153](https://github.com/IliasAlmerekov/aegis-shellguard/pull/153).
+  The no-new-risk-level and no-package-runner-expansion constraints hold; the
+  Script source inspection and slow-path file reads that L1 adds are a separate,
+  ADR-022-authorized stage off the safe hot path, not part of this fix.
 
 ---
 
 ## P2 — Medium
 
-### [ ] M1 — Optional Sandbox degradation is not reliably visible
+### [x] M1 — Optional Sandbox degradation is not reliably visible
 
 - **Finding:** when optional execution confinement is configured but unavailable,
   Aegis may continue unconfined with only a tracing warning that the operator
@@ -229,9 +251,14 @@ the project Definition of Done in `~/.agents/ENGINEERING_GATES.md` is satisfied.
   docs state that the optional `Sandbox` is a write/network guardrail add-on, not
   a confidentiality boundary. Making confinement mandatory or narrowing all read
   access is not required by the 1.0 product contract.
-- **Status:** **Partial** — implemented and locally verified; the checkbox
-  remains open until all required PR CI contexts pass.
-- **Traceability:** [plan](docs/plans/2026-07-14-m1-sandbox-degradation-contract.md);
+- **Status:** **Closed** — implemented and locally verified; all required PR CI
+  contexts passed on 2026-08-03. `SandboxStatus::Unavailable` reaches the active
+  channel and audit (`audit:AutoApproved:Unavailable` plus `event:Warning`), and
+  `required = true` still fails closed (`audit:Blocked:Unavailable` plus
+  `event:RequiredBlocked`).
+- **Traceability:** [required CI run](https://github.com/IliasAlmerekov/aegis-shellguard/actions/runs/30803123790)
+  on [PR #153](https://github.com/IliasAlmerekov/aegis-shellguard/pull/153);
+  [plan](docs/plans/2026-07-14-m1-sandbox-degradation-contract.md);
   [ADR-003](docs/adr/adr-003-aegis-is-a-heuristic-guardrail-not-a-sandbox.md);
   [ADR-021](docs/adr/adr-021-sandbox-preparation-reports-the-actual-execution-path.md);
   [Shell lifecycle tests](src/shell_flow/sandbox_lifecycle_tests.rs);
