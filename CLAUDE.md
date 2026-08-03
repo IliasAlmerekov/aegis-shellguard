@@ -52,10 +52,10 @@ job except `gate` itself, since the heavy-job `gate` sets `heavy=true` whenever
 - `Quality (fmt, clippy, test)`
 - `Security (audit, deny)`
 - `Release build (ubuntu-latest)`
-- `Release build (macos-15)`
+- `Release build (macos-26)`
 - `Performance baseline (scanner bench)`
 - `Live installer validation (ubuntu-latest)`
-- `Live installer validation (macos-15)`
+- `Live installer validation (macos-26)`
 - `Live snapshot/rollback (Docker + SQLite)`
 - `Fuzzing (parser + scanner + heredoc)`
 

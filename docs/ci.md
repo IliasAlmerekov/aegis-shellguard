@@ -13,12 +13,12 @@
 Current GitHub Actions workflows run these jobs:
 
 - `Quality (fmt, clippy, test)`: formatting, clippy, and tests
-- `Live installer validation`: downloads the latest GitHub Release asset for the host platform, verifies the SHA-256 sidecar, installs to a temporary `BINDIR`, and asserts `aegis --version` succeeds. Runs on `ubuntu-latest` and `macos-latest`; gated in the test suite by `AEGIS_TEST_LIVE_INSTALL=1` so default `cargo test` stays network-free.
+- `Live installer validation`: downloads the latest GitHub Release asset for the host platform, verifies the SHA-256 sidecar, installs to a temporary `BINDIR`, and asserts `aegis --version` succeeds. Runs on `ubuntu-latest` and `macos-26`; gated in the test suite by `AEGIS_TEST_LIVE_INSTALL=1` so default `cargo test` stays network-free.
 - `Live snapshot/rollback (Docker + SQLite)`: runs on `ubuntu-latest`, pulls the real `alpine` Docker fixture image, installs the real `sqlite3` CLI, then runs the gated Docker and SQLite snapshot/rollback integration tests with `AEGIS_DOCKER_TESTS=1` and `AEGIS_SQLITE_SNAPSHOT_TESTS=1`.
 - `Security (audit, deny)`: `cargo-audit` and `cargo-deny`
 - `Release build`: release builds on Ubuntu and macOS
 - `Performance baseline (scanner bench)`: `scanner_bench` plus benchmark policy evaluation
-- `Fuzzing (parser + scanner)`: `cargo +nightly fuzz run parser` and `cargo +nightly fuzz run scanner` with bounded `-runs`
+- `Fuzzing (parser + scanner + heredoc)`: `fuzz run parser`, `fuzz run scanner`, and `fuzz run heredoc` with bounded `-runs`, on the pinned `FUZZ_NIGHTLY_TOOLCHAIN` nightly rather than a floating one
 - `Release / build`: tagged release binaries for:
   - `x86_64-unknown-linux-musl`
   - `aarch64-unknown-linux-musl`

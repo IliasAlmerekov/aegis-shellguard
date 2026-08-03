@@ -124,6 +124,12 @@ pub async fn run(
 }
 
 /// Run language analysis with the effective configuration budgets.
+///
+/// Resolves relative targets against the Aegis process working directory — a
+/// convenience for callers with no separate command working directory. Production
+/// callers pass their own [`AnalysisCwd`] to [`run_with_budget_in_cwd`], because an
+/// unresolved command working directory must degrade rather than silently mean `.`
+/// (ADR-022 §6).
 pub async fn run_with_budget(
     command: &str,
     baseline: &Assessment,

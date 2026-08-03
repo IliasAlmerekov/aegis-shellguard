@@ -173,6 +173,16 @@ non-goal.
 The parent tracks only a literal top-level `cd -- <path> &&` cwd change. Dynamic
 `cd`, `pushd`, substitutions, or otherwise unresolved cwd cause degradation.
 
+Known gap, accepted for the L1 integration and closed in the Iteration 10
+qualification gate: a relative `Direct exec` target under a dynamic cwd is dropped
+during routing instead of degrading. `Script file` targets under the same dynamic
+cwd, and both target shapes under an unavailable runtime cwd, do record
+`Dynamic source`. Recording the reason for the dropped shape needs a degradation
+carrier that does not presuppose a resolved language, so it is deferred rather than
+half-stated. The gap is fail-safe in the conservative direction — the target is not
+analyzed and no Match is claimed — but it under-reports the reason, so it must not be
+described as complete honest degradation until closed.
+
 Quoted heredocs provide exact source. Expanding heredocs are analyzed as the visible
 template, but expansions, substitutions, or relevant escapes also record
 degradation; Aegis never evaluates them. An in-memory heredoc body may be linked to
