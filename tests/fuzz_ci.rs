@@ -37,7 +37,17 @@ fn assert_ci_runs_target(ci: &str, target: &str) {
 fn fuzz_manifest_declares_all_prd_targets() {
     let manifest = read_repo_file("fuzz/Cargo.toml");
 
-    for target in ["parser", "scanner", "heredoc"] {
+    for target in [
+        "parser",
+        "scanner",
+        "heredoc",
+        "language_protocol",
+        "router",
+        "language_python",
+        "language_javascript",
+        "language_typescript",
+        "language_bash",
+    ] {
         assert_fuzz_target_declared(&manifest, target);
     }
 }
@@ -46,14 +56,34 @@ fn fuzz_manifest_declares_all_prd_targets() {
 fn ci_runs_each_fuzz_target_for_at_least_100000_iterations() {
     let ci = read_repo_file(".github/workflows/ci.yml");
 
-    for target in ["parser", "scanner", "heredoc"] {
+    for target in [
+        "parser",
+        "scanner",
+        "heredoc",
+        "language_protocol",
+        "router",
+        "language_python",
+        "language_javascript",
+        "language_typescript",
+        "language_bash",
+    ] {
         assert_ci_runs_target(&ci, target);
     }
 }
 
 #[test]
 fn fuzz_corpora_are_committed_for_all_prd_targets() {
-    for target in ["parser", "scanner", "heredoc"] {
+    for target in [
+        "parser",
+        "scanner",
+        "heredoc",
+        "language_protocol",
+        "router",
+        "language_python",
+        "language_javascript",
+        "language_typescript",
+        "language_bash",
+    ] {
         let corpus_dir = repo_path(&format!("fuzz/corpus/{target}"));
         let entries: Vec<_> = std::fs::read_dir(&corpus_dir)
             .unwrap_or_else(|error| {

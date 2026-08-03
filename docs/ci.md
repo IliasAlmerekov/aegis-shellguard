@@ -16,9 +16,14 @@ Current GitHub Actions workflows run these jobs:
 - `Live installer validation`: downloads the latest GitHub Release asset for the host platform, verifies the SHA-256 sidecar, installs to a temporary `BINDIR`, and asserts `aegis --version` succeeds. Runs on `ubuntu-latest` and `macos-26`; gated in the test suite by `AEGIS_TEST_LIVE_INSTALL=1` so default `cargo test` stays network-free.
 - `Live snapshot/rollback (Docker + SQLite)`: runs on `ubuntu-latest`, pulls the real `alpine` Docker fixture image, installs the real `sqlite3` CLI, then runs the gated Docker and SQLite snapshot/rollback integration tests with `AEGIS_DOCKER_TESTS=1` and `AEGIS_SQLITE_SNAPSHOT_TESTS=1`.
 - `Security (audit, deny)`: `cargo-audit` and `cargo-deny`
-- `Release build`: release builds on Ubuntu and macOS
+- `Release build`: release builds on Ubuntu and macOS; the four-target cross
+  matrix builds the shipping release binary so qualified grammars are linked
+  into every release artifact
 - `Performance baseline (scanner bench)`: `scanner_bench` plus benchmark policy evaluation
-- `Fuzzing (parser + scanner + heredoc)`: `fuzz run parser`, `fuzz run scanner`, and `fuzz run heredoc` with bounded `-runs`, on the pinned `FUZZ_NIGHTLY_TOOLCHAIN` nightly rather than a floating one
+- `Fuzzing (parser, scanner, routing, protocol, adapters)`: corpus-backed
+  parser, scanner, heredoc, router, language-protocol, Python, JavaScript,
+  TypeScript, and Bash fuzz targets with bounded `-runs`, on the pinned
+  `FUZZ_NIGHTLY_TOOLCHAIN` nightly rather than a floating one
 - `Release / build`: tagged release binaries for:
   - `x86_64-unknown-linux-musl`
   - `aarch64-unknown-linux-musl`
@@ -53,7 +58,8 @@ shell startup files or agent config.
 
 - the workflow definitions do not depend on floating toolchain, tool, or action refs
 - CI runs formatting, linting, tests, dependency audit, deny policy checks, release builds, and benchmark policy checks exactly as defined in the pinned workflows
-- CI additionally verifies parser and scanner fuzzing with bounded corpus-backed runs.
+- CI additionally verifies parser, scanner, heredoc, routing, language-protocol,
+  and qualified-adapter fuzzing with bounded corpus-backed runs.
 - release artifacts are checksumed and uploaded by the pinned release workflow
 - CI exercises snapshot and rollback behavior against live Docker and SQLite backends in the dedicated M5.3 job.
 

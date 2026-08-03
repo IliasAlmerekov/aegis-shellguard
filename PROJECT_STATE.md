@@ -23,6 +23,12 @@
 
 ## Last session (2026-08-03) — L1 integration review and cwd slice documentation
 
+- **L1 Iteration 10, slice 1 in progress:** P7's dynamic-cwd direct-exec route
+  now retains `Dynamic source` degradation; CI contracts pin exact grammar
+  metadata, build the release binary across all four targets, and cover the
+  protocol/routing/four adapter fuzz targets. Focused contract suites, fmt, and
+  clippy pass; qualification measurements, documentation, and final gates remain.
+
 - **Opened PR #153 for the L1 Iteration 9 slice plus the cwd slice** — 51 files,
   +3561/−602 against `main`. Iterations 0–8 are already on `main` through
   #143–#152, which were squash-merged, so the branch's own iteration commits are

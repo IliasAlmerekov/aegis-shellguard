@@ -13,6 +13,11 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Added
 
+- L1 Iteration 10 (partial): preserve dynamic-cwd direct-exec degradation,
+  enforce exact grammar manifest metadata, build the shipping binary across the
+  four-target release matrix, and add protocol/routing/per-adapter fuzz
+  contracts (ADR-022 §6, §8, §11).
+
 - L1: bounded command-working-directory tracking for Language-aware analysis
   (ADR-022 §6). Relative script-file and direct-exec sources now resolve against
   the intercepting command's working directory instead of the Aegis process

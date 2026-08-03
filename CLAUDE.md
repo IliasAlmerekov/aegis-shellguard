@@ -57,7 +57,7 @@ job except `gate` itself, since the heavy-job `gate` sets `heavy=true` whenever
 - `Live installer validation (ubuntu-latest)`
 - `Live installer validation (macos-26)`
 - `Live snapshot/rollback (Docker + SQLite)`
-- `Fuzzing (parser + scanner + heredoc)`
+- `Fuzzing (parser, scanner, routing, protocol, adapters)`
 
 If a job is renamed or the heavy-job gate condition changes, update this list in
 the same change.

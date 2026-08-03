@@ -405,3 +405,20 @@ fn docs_grammar_manifest_records_l1_foundation_provenance() {
         );
     }
 }
+
+#[test]
+fn adr022_records_the_iteration10_direct_exec_degradation_closure() {
+    let path =
+        repo_path("docs/adr/adr-022-language-aware-analysis-is-an-additive-isolated-stage.md");
+    let contents = fs::read_to_string(&path).expect("ADR-022 must exist");
+
+    assert!(
+        contents
+            .contains("relative `Direct exec` target under a dynamic cwd records `Dynamic source`"),
+        "ADR-022 must record the Iteration 10 P7 degradation behavior"
+    );
+    assert!(
+        !contents.contains("is dropped\nduring routing instead of degrading"),
+        "ADR-022 must not retain the closed P7 waiver as a current gap"
+    );
+}

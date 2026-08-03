@@ -481,7 +481,7 @@ async fn resolve_degrades_a_missing_script_file() {
     assert_eq!(
         results,
         vec![Err(UnresolvedTarget {
-            language: SourceLanguage::Python,
+            language: Some(SourceLanguage::Python),
             reason: DegradationReason::UnsafeSource,
         })]
     );
@@ -545,6 +545,20 @@ fn cd_with_command_substitution_degrades_a_relative_script_file() {
         targets,
         vec![RoutedTarget::Dynamic {
             language: SourceLanguage::Python,
+            reason: DegradationReason::DynamicSource,
+        }]
+    );
+}
+
+#[test]
+fn dynamic_cd_preserves_degradation_for_a_relative_direct_exec() {
+    // ADR-022 §6 / Iteration 10 P7: a direct-exec route has no language
+    // until its shebang is read, but an unresolved cwd must still be visible
+    // as degradation rather than silently dropping the target.
+    let targets = route("cd -- $(mktemp -d) && ./script.py", &[]);
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::Unresolved {
             reason: DegradationReason::DynamicSource,
         }]
     );
@@ -664,7 +678,7 @@ async fn resolve_degrades_an_oversized_script_file() {
     assert_eq!(
         results,
         vec![Err(UnresolvedTarget {
-            language: SourceLanguage::Python,
+            language: Some(SourceLanguage::Python),
             reason: DegradationReason::LimitExceeded,
         })]
     );
