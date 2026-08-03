@@ -23,11 +23,11 @@
 
 ## Last session (2026-08-03) — L1 integration review and cwd slice documentation
 
-- **Prepared `feat/language-aware` for its integration PR into `main`.** The
-  branch is 59 commits and 188 files ahead of `main` (merge-base `6a34ed6`,
-  `v0.6.2`), so this PR integrates all of L1 iterations 1–9 at once. PRs #143–#151
-  merged into the feature branch, not into `main`. Merge commit, not squash, so the
-  per-iteration commit traceability that `TASKS.md` and this file cite stays valid.
+- **Opened PR #153 for the L1 Iteration 9 slice plus the cwd slice** — 51 files,
+  +3561/−602 against `main`. Iterations 0–8 are already on `main` through
+  #143–#152, which were squash-merged, so the branch's own iteration commits are
+  unreachable from `main` even though their content is present. Read branch state
+  from `origin/main`, not a local `main` ref, when sizing this work.
 - **Documented the previously undocumented cwd slice.** Commit `4534851`, titled
   `fix(ci):`, carried the L1 "bounded cwd tracking" work: `AnalysisCwd`
   (`Resolved`/`Unavailable`), `resolve_command_path`, the
