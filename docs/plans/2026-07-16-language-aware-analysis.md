@@ -491,6 +491,11 @@ production behavior.
   supported-interface integration suites.
 - Add per-adapter fuzz targets and corpora for protocol, malformed syntax, query
   captures, heredoc routing, and bounded resolution.
+- Close the accepted L1 degradation gap (ADR-022 §6): a relative `Direct exec`
+  target under a dynamic cwd is dropped during routing instead of degrading, while
+  the `Script file` shape degrades. RED first — `route("cd -- $(mktemp -d) &&
+  ./script.py", &[])` returns no target and records no reason today. Closing it
+  needs a degradation carrier that does not presuppose a resolved language.
 
 **GREEN**
 

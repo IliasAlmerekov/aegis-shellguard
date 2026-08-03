@@ -247,6 +247,14 @@ fn watch_resolves_relative_script_file_against_frame_cwd() {
 
     let output = aegis_watch_in(home.path(), process_cwd.path(), input.as_bytes());
 
+    let frames = parse_frames(&output.stdout);
+    let result = frames
+        .iter()
+        .find(|frame| frame["type"] == "result")
+        .expect("relative script command must emit a result frame");
+    assert_eq!(result["decision"], "denied");
+    assert_eq!(result["exit_code"], 2);
+
     let contents = fs::read_to_string(home.path().join(".aegis").join("audit.jsonl")).unwrap();
     let entry: serde_json::Value = serde_json::from_str(contents.trim()).unwrap();
     assert_eq!(entry["analysis"]["status"], "complete");

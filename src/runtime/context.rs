@@ -220,6 +220,14 @@ impl RuntimeContext {
     ///
     /// The synchronous shell path calls this outside Tokio; async callers use
     /// [`Self::assess_with_language_analysis_async`] to avoid nested blocking.
+    ///
+    /// Resolves relative language-analysis sources against the Aegis process
+    /// working directory. That is a convenience for tests and callers that have no
+    /// separate command working directory. A production caller must instead pass
+    /// its own [`crate::analysis::AnalysisCwd`], derived from
+    /// [`crate::planning::CwdState`], to
+    /// [`Self::assess_with_language_analysis_in_cwd`] — an unresolved command
+    /// working directory must degrade, not silently mean `.` (ADR-022 §6).
     pub fn assess_with_language_analysis(&self, cmd: &str) -> Assessment {
         self.assess_with_language_analysis_in_cwd(
             cmd,
@@ -237,7 +245,9 @@ impl RuntimeContext {
             .block_on(self.assess_with_language_analysis_async_in_cwd(cmd, cwd))
     }
 
-    /// Async variant of [`Self::assess_with_language_analysis`].
+    /// Async variant of [`Self::assess_with_language_analysis`], carrying the same
+    /// process-working-directory caveat: production callers use
+    /// [`Self::assess_with_language_analysis_async_in_cwd`].
     pub async fn assess_with_language_analysis_async(&self, cmd: &str) -> Assessment {
         self.assess_with_language_analysis_async_in_cwd(
             cmd,

@@ -17,11 +17,63 @@
 
 ## Last updated
 
-2026-07-24
+2026-08-03
 
 ---
 
-## Last session (2026-07-24) — L1 Iteration 9 policy, config, and UX
+## Last session (2026-08-03) — L1 integration review and cwd slice documentation
+
+- **Opened PR #153 for the L1 Iteration 9 slice plus the cwd slice** — 51 files,
+  +3561/−602 against `main`. Iterations 0–8 are already on `main` through
+  #143–#152, which were squash-merged, so the branch's own iteration commits are
+  unreachable from `main` even though their content is present. Read branch state
+  from `origin/main`, not a local `main` ref, when sizing this work.
+- **Documented the previously undocumented cwd slice.** Commit `4534851`, titled
+  `fix(ci):`, carried the L1 "bounded cwd tracking" work: `AnalysisCwd`
+  (`Resolved`/`Unavailable`), `resolve_command_path`, the
+  `*_in_cwd` assessment entrypoints, `planning::core`'s `CwdState → AnalysisCwd`
+  mapping, plus watch/TUI changes belonging to Iteration 9. `CHANGELOG.md` now
+  records the slice, the TTY fail-closed change, and the CI pin/`zsh` step.
+- **Review cycle (`code-review` two-axis → `skeptic` Verify):** 14 claims raised,
+  6 survived, 2 routed to human decision, 8 refuted. Refuted, so not acted on:
+  `AnalysisCwd` needing a `CONTEXT.md` entry (the concept is already glossed and
+  `CwdState` has no entry either), the `fix(ci):` subject breaching a documented
+  commit rule (only format/length/trailers are ruled), a claimed
+  analysis-vs-execution cwd fail-open (`shell_flow.rs:53` is the persisted rule
+  scope, not execution), and the `zsh` install being uncovered (it is in the one job
+  that runs the test; macOS ships zsh).
+- **Fixed:** `tests/watch_mode.rs`'s new relative-script test now asserts the
+  result frame (`denied`, exit 2) instead of discarding the process output, which
+  also restores `clippy --all-targets -- -D warnings`. `CLAUDE.md`'s required-check
+  list corrected from `macos-15` to `macos-26` (matching `ci.yml` and branch
+  protection), and `docs/ci.md`'s stale fuzz-job name and unpinned-nightly wording
+  refreshed.
+- **Accepted with a recorded waiver (ADR-022 §6, plan Iteration 10 RED):** a
+  relative direct-exec target under a dynamic cwd is dropped during routing instead
+  of degrading, while the script-file shape degrades. Fail-safe in direction (no
+  Match claimed) but under-reports the reason; closing it needs a degradation
+  carrier that does not presuppose a resolved language.
+- **Deferred with tracked notes:** the three `AnalysisCwd::Resolved(Path::new("."))`
+  convenience wrappers (zero production callers — now carrying explicit doc
+  warnings; removal belongs with `P3-6`), the two Iteration 4 regression pins
+  (`Unavailable` + absolute path, relative `cd -- sub &&` composed with an outer
+  `command_cwd`), and the duplicated `resolve_command_path` prelude in `router.rs`.
+- **Verified:** `rtk cargo test --workspace` = 2030 passed / 103 suites / 0 failed;
+  `rtk cargo clippy --all-targets -- -D warnings` clean; `rtk cargo fmt --all
+  --check` clean; `rtk cargo audit` = 0 CVEs with 6 allowed advisories (the opt-in
+  `starlark` chain, `P3-7`); `rtk cargo deny check` = advisories/bans/licenses/
+  sources ok; scanner bench = **1.84 ms per 1,000 safe commands** (≈1.8 µs each,
+  −37.6 % against the prior 3.03–3.20 ms baseline), dangerous 646 µs, heredoc
+  worst case 611 µs.
+- **Release posture:** everything stays in `CHANGELOG.md` `[Unreleased]` and the
+  version stays `0.6.2`. Merging into `main` is integration, not enablement — the
+  four adapters count as qualified and released only after the Iteration 10 gate
+  (ADR-022 §9: enablement is per release, not per merge). ROADMAP L1 boxes stay
+  unchecked.
+
+---
+
+## Prior session (2026-07-24) — L1 Iteration 9 policy, config, and UX
 
 - **Iteration 9 complete via TDD (ADR-022 §5–§7).** Live planning now merges
   all routed inline, script-file, direct-exec, and dynamic-source analysis

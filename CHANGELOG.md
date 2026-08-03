@@ -13,6 +13,14 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Added
 
+- L1: bounded command-working-directory tracking for Language-aware analysis
+  (ADR-022 §6). Relative script-file and direct-exec sources now resolve against
+  the intercepting command's working directory instead of the Aegis process
+  directory, via `AnalysisCwd` and `RuntimeContext::assess_with_language_analysis_in_cwd`;
+  Shell and Watch map an unresolved working directory to honest `Dynamic source`
+  degradation rather than assuming `.`. Absolute paths and inline sources are
+  unaffected.
+
 - L1 Iteration 9: wired Language-aware assessment into Shell, Watch, hooks,
   JSON, and CI policy before allow auto-approval; added non-persistable Protect
   Analysis confirmation and Strict Analysis override flows, privacy-safe
@@ -54,6 +62,22 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
   with the TypeScript runner-routing slice).
 
 ### Changed
+
+- L1: Watch and Shell now deny a policy-required confirmation when no TTY is
+  available instead of auto-approving it, so a Language-aware degradation cannot be
+  waived by the absence of an interactive terminal.
+
+- L1: documented the accepted degradation gap where a relative direct-exec target
+  under a dynamic working directory is dropped during routing instead of degrading,
+  while the script-file shape degrades (ADR-022 §6). Scheduled for closure in the
+  Iteration 10 qualification gate, which needs a degradation carrier that does not
+  presuppose a resolved language.
+
+- CI: the fuzz job runs on a pinned nightly toolchain (`FUZZ_NIGHTLY_TOOLCHAIN`)
+  after a floating nightly hit an upstream codegen ICE building tokio under
+  ASan/sancov, and the quality job installs `zsh`, which the recovery-degradation
+  integration tests require as an effect-opaque interpreter now that `sh` is a
+  routed interpreter.
 
 - L1 Iteration 7: extracted the shared corpus-test harness into
   `crates/aegis-language/tests/common/corpus_harness.rs`. `ExpectedOp`,
