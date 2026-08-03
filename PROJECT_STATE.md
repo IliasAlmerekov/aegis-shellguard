@@ -65,6 +65,18 @@
   sources ok; scanner bench = **1.84 ms per 1,000 safe commands** (≈1.8 µs each,
   −37.6 % against the prior 3.03–3.20 ms baseline), dangerous 646 µs, heredoc
   worst case 611 µs.
+- **Required CI green on PR #153** (run `30803123790`): all 14 contexts passed —
+  Quality, Security, both release builds, four cross builds, live installer on
+  Ubuntu and macOS, Docker/SQLite snapshot-rollback, scanner bench, and fuzzing.
+- **Closed `H7b`, `H9`, and `M1` in `TASKS.md`** after checking each acceptance
+  criterion against its tests: audit owner-only artifacts plus no-follow opens on
+  active log, lock, parent, rotation slot, and staging paths; non-interactive
+  missing-recovery denial with the audited `recovery_degradation` reason and the
+  interactive prompt path; and `SandboxStatus::Unavailable` reaching the active
+  channel and audit while `required = true` still fails closed. Traceability now
+  names the specific tests and links the CI run. `H9`'s no-new-risk-level and
+  no-package-runner constraints hold — the Script source inspection L1 adds is a
+  separate ADR-022 stage off the safe hot path.
 - **Release posture:** everything stays in `CHANGELOG.md` `[Unreleased]` and the
   version stays `0.6.2`. Merging into `main` is integration, not enablement — the
   four adapters count as qualified and released only after the Iteration 10 gate
