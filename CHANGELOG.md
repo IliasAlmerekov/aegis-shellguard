@@ -32,6 +32,12 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Added
 
+- L1 Iteration 10 Slice 2: qualification regressions now pin source-free
+  Language-aware Assessments across interactive TUI, audit, Watch NDJSON, and
+  CI output; crash/timeout/malformed-worker degradation through fail-closed CI
+  policy; and equivalent Assessment+Decision outcomes across Shell, Watch,
+  Claude/Codex hooks, and CI (ADR-022 §5, §10, §11).
+
 - L1 Iteration 10 (partial): ship Tree-sitter third-party notices with both the
   GitHub Release assets and the npm package, publish release assets fail-closed,
   and gate no-source plus per-grammar parse-latency regressions in the

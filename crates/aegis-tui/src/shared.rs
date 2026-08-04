@@ -111,7 +111,7 @@ fn dangerous_action_text(assessment: &Assessment) -> String {
         .matched
         .iter()
         .filter_map(|m| {
-            let trimmed = m.matched_text.trim();
+            let trimmed = m.public_matched_text().trim();
             if trimmed.is_empty() {
                 None
             } else {

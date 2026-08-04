@@ -130,8 +130,12 @@ The domain a detection rule belongs to: `Filesystem`, `Git`, `Database`, `Cloud`
 `Docker`, `Process`, `Package`.
 
 **Match**:
-One pattern hit (`MatchResult`) — the `Pattern` that fired, the text fragment that
-triggered it, and the highlight span in the original command.
+One pattern hit (`MatchResult`) — the `Pattern` that fired, matched text, and the
+highlight span in the original command. For a regex or Token-prefix rule Match the
+matched text is the actual text fragment that triggered it; a Language-aware Match
+(ADR-022 §10) carries only a stable, source-free label (`public_matched_text`'s
+`LANGUAGE_AWARE_MATCH_LABEL`) and typically no highlight span — the detected
+operation and its metadata-only provenance describe it instead of the source bytes.
 _Avoid_: hit, finding
 
 **Decision source**:
