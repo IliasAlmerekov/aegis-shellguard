@@ -3,6 +3,7 @@
 //! These are the *data* types produced by the scanner. The scanning logic that
 //! builds them lives in the scanner layer; only the shapes live here.
 
+use std::fmt;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -21,8 +22,8 @@ pub struct HighlightRange {
     pub end: usize,
 }
 
-/// The stable, source-free label every language-aware [`MatchResult`] carries
-/// in place of inspected source bytes (ADR-022 §10). Shared by
+/// The stable, source-free label used for production-created language-aware
+/// [`MatchResult`] values in place of inspected source bytes (ADR-022 §10). Shared by
 /// [`crate::analysis::language_match`], which stamps it at construction, and
 /// [`MatchResult::public_matched_text`], which projects it as defense in depth
 /// for manually constructed matches — kept in one place so the two never
@@ -30,14 +31,15 @@ pub struct HighlightRange {
 pub const LANGUAGE_AWARE_MATCH_LABEL: &str = "language-aware operation";
 
 /// A single pattern match with the actual text fragment that triggered it.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MatchResult {
     /// The pattern that matched.
     pub pattern: Arc<Pattern>,
     /// A human-readable description of what matched.
     ///
-    /// For language-aware matches this is always a stable source-free label;
-    /// inspected source bytes never enter an `Assessment`.
+    /// Production language-aware matches use a stable source-free label.
+    /// [`MatchResult::public_matched_text`] and [`fmt::Debug`] also project that
+    /// label if a caller manually constructs a language-aware match.
     pub matched_text: String,
     /// The concrete span in the original command suitable for confirmation UI highlighting.
     pub highlight_range: Option<HighlightRange>,
@@ -47,12 +49,24 @@ pub struct MatchResult {
     pub evidence: MatchEvidence,
 }
 
+impl fmt::Debug for MatchResult {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MatchResult")
+            .field("pattern", &self.pattern)
+            .field("matched_text", &self.public_matched_text())
+            .field("highlight_range", &self.highlight_range)
+            .field("evidence", &self.evidence)
+            .finish()
+    }
+}
+
 impl MatchResult {
     /// Return the match text safe to expose outside the assessment.
     ///
-    /// Language-aware matches are already source-free at construction. This
-    /// projection remains a defense in depth for manually constructed matches;
-    /// persisted and machine-readable surfaces expose the operation,
+    /// Production language-aware matches are source-free at construction. This
+    /// projection is a defense in depth for manually constructed matches;
+    /// rendered, persisted, and machine-readable surfaces expose the operation,
     /// provenance metadata, and stable rule identifier instead of inspected
     /// source bytes (ADR-022 §10).
     #[must_use]
@@ -130,6 +144,10 @@ mod public_matched_text_tests {
             },
         };
         assert_eq!(m.public_matched_text(), LANGUAGE_AWARE_MATCH_LABEL);
+        assert!(
+            !format!("{m:?}").contains("LANGUAGE_SOURCE_PRIVACY_SENTINEL_test"),
+            "Debug must not leak manually supplied language-aware match text"
+        );
     }
 
     #[test]

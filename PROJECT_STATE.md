@@ -23,6 +23,16 @@
 
 ## Last session (2026-08-03 – 2026-08-04) — L1 Iteration 10 license/budget and cwd slices
 
+- **L1 Iteration 10 follow-up in progress:** review found the former universal
+  in-memory source-free claim unenforceable through public `MatchResult`
+  literals, so ADR-022/CONTEXT now state the enforceable production-construction
+  plus outward-projection contract and `Debug` is source-safe. A checked-in
+  per-adapter qualification record ties corpus, fuzz, latency and four-target
+  CI evidence together; `scripts/install.sh` now installs `THIRD_PARTY_NOTICES.md`
+  beside its binary under `share/doc/aegis`. Focused tests and a full-workspace
+  replay passed (the known Unix-socket test flaked once, then passed). Homebrew
+  still installs the binary alone, so final L1 release enablement remains open.
+
 - **L1 Iteration 10, Slice 3 qualification record implemented locally:**
   `docs/performance-baseline.md` now records the worker-free corpus,
   per-grammar parse means, bounded cold worker/RSS observation, explicit

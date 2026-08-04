@@ -384,3 +384,47 @@ fn production_qualification_record_covers_all_remaining_iteration_10_measurement
         );
     }
 }
+
+#[test]
+fn each_foundation_adapter_has_a_checked_in_qualification_record() {
+    let record = read_repo_file("docs/language-qualification.md");
+
+    for (language, corpus, fuzz_target, parse_row) in [
+        (
+            "Python",
+            "crates/aegis-language/tests/python_corpus.rs",
+            "language_python",
+            "parse_latency_per_grammar/parse/python",
+        ),
+        (
+            "JavaScript",
+            "crates/aegis-language/tests/javascript_corpus.rs",
+            "language_javascript",
+            "parse_latency_per_grammar/parse/javascript",
+        ),
+        (
+            "TypeScript",
+            "crates/aegis-language/tests/typescript_corpus.rs",
+            "language_typescript",
+            "parse_latency_per_grammar/parse/typescript",
+        ),
+        (
+            "Shell/Bash",
+            "crates/aegis-language/tests/bash_corpus.rs",
+            "language_bash",
+            "parse_latency_per_grammar/parse/bash",
+        ),
+    ] {
+        for evidence in [language, corpus, fuzz_target, parse_row] {
+            assert!(
+                record.contains(evidence),
+                "qualification record must retain {language}'s evidence `{evidence}`"
+            );
+        }
+    }
+
+    assert!(
+        record.contains("30907622035"),
+        "qualification record must link the all-four-target CI evidence"
+    );
+}

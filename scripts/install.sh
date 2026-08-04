@@ -350,6 +350,34 @@ install_binary() {
     fail "cannot write to ${BINDIR}; rerun as root or install sudo"
 }
 
+install_provenance_notice() {
+    source_path="$1"
+    notice_dir="$(dirname "${BINDIR}")/share/doc/aegis"
+    notice_target="${notice_dir}/THIRD_PARTY_NOTICES.md"
+
+    if [ ! -d "${notice_dir}" ]; then
+        if [ -w "$(dirname "${BINDIR}")" ]; then
+            mkdir -p "${notice_dir}"
+        elif need_cmd sudo; then
+            sudo mkdir -p "${notice_dir}"
+        else
+            fail "cannot create ${notice_dir}; rerun as root or install sudo"
+        fi
+    fi
+
+    if [ -w "${notice_dir}" ]; then
+        install -m 0644 "${source_path}" "${notice_target}"
+        return
+    fi
+
+    if need_cmd sudo; then
+        sudo install -m 0644 "${source_path}" "${notice_target}"
+        return
+    fi
+
+    fail "cannot write ${notice_target}; rerun as root or install sudo"
+}
+
 print_post_install() {
     rc_file="$1"
 
@@ -428,8 +456,10 @@ main() {
     base_url=""
     download_url=""
     checksum_url=""
+    notice_url=""
     binary_path=""
     checksum_path=""
+    notice_path=""
     real_shell="$(detect_real_shell)"
     rc_file="$(resolve_rc_file "${real_shell}")"
 
@@ -439,19 +469,24 @@ main() {
     base_url="$(resolve_base_url)"
     download_url="${base_url}/${asset}"
     checksum_url="${download_url}.sha256"
+    notice_url="${base_url}/THIRD_PARTY_NOTICES.md"
 
     TMPDIR_AEGIS="$(mktemp -d)"
     binary_path="${TMPDIR_AEGIS}/aegis"
     checksum_path="${TMPDIR_AEGIS}/aegis.sha256"
+    notice_path="${TMPDIR_AEGIS}/THIRD_PARTY_NOTICES.md"
 
     printf 'Downloading %s\n' "${download_url}"
     download_or_fail "binary" "${download_url}" "${binary_path}"
     download_or_fail "checksum" "${checksum_url}" "${checksum_path}"
+    download_or_fail "third-party notice" "${notice_url}" "${notice_path}"
     verify_downloaded_binary "${binary_path}" "${checksum_path}" "${asset}"
     chmod 0755 "${binary_path}"
     install_binary "${binary_path}"
+    install_provenance_notice "${notice_path}"
 
     printf 'Installed aegis to %s/aegis\n' "${BINDIR}"
+    printf 'Installed third-party notices to %s/share/doc/aegis/THIRD_PARTY_NOTICES.md\n' "$(dirname "${BINDIR}")"
 
     install_target="$(target_path)"
 

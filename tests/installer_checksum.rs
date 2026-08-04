@@ -200,4 +200,9 @@ fn install_script_falls_back_to_shasum_when_sha256sum_is_missing() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(bindir.join("aegis").exists());
+    assert_eq!(
+        fs::read_to_string(temp.path().join("share/doc/aegis/THIRD_PARTY_NOTICES.md"),).unwrap(),
+        include_str!("../THIRD_PARTY_NOTICES.md"),
+        "the convenience installer must carry the release provenance notice"
+    );
 }
