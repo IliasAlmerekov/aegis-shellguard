@@ -80,12 +80,12 @@ pub fn map_operation(op: &LangOp) -> Option<DetectedOperation> {
 /// Compose one adapter result into a [`MappingOutcome`] for one analysis target
 /// (ADR-022 §2/§3/§7).
 ///
-/// `source` is the analyzed source body — used only to slice the matched-text
-/// snippet for each `Match` from the operation's byte span (the snippet is the
-/// in-memory `MatchResult.matched_text`, not provenance; provenance carries
-/// metadata only, ADR-022 §10). `source_hash` is the optional hex digest of the
-/// analyzed bytes, persisted into each operation's provenance. `parent_depth`
-/// is the depth of the target being mapped; any literal execution-sink payload
+/// The analyzed source body is deliberately not a parameter here: every
+/// language-aware Match receives a stable, source-free label rather than a
+/// slice of it, so this composition step never needs the source bytes
+/// (ADR-022 §10). `source_hash` is the optional hex digest of the analyzed
+/// bytes, persisted into each operation's provenance. `parent_depth` is the
+/// depth of the target being mapped; any literal execution-sink payload
 /// becomes a recursive target at `parent_depth + 1`.
 ///
 /// Status aggregation is monotonic: `Degraded` if any degradation reason was
@@ -95,7 +95,6 @@ pub fn map_operation(op: &LangOp) -> Option<DetectedOperation> {
 #[must_use]
 pub fn map_adapter_result(
     adapter: &AdapterResult,
-    source: &str,
     language: SourceLanguage,
     source_origin: SourceOrigin,
     file_path: Option<String>,
@@ -119,9 +118,6 @@ pub fn map_adapter_result(
             // test prevents this for every currently-defined kind.
             continue;
         };
-        let matched_text = source
-            .get(op.span.byte_start..op.span.byte_end)
-            .unwrap_or_default();
         let span = map_span(op.span);
 
         if op.kind == LangKind::CodeExecution {
@@ -153,7 +149,6 @@ pub fn map_adapter_result(
                 payload_language,
                 resolved_payload,
                 provenance,
-                matched_text,
                 None,
                 parent_depth,
             );
@@ -180,7 +175,7 @@ pub fn map_adapter_result(
                 AnalysisStatus::Complete,
                 None,
             );
-            let mr = language_match(&mapped, provenance, matched_text, None);
+            let mr = language_match(&mapped, provenance, None);
             matches.push(mr);
         }
     }

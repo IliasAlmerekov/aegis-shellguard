@@ -61,7 +61,6 @@ fn map_python(source: &str) -> aegis::analysis::mapping::MappingOutcome {
     let adapter = analyze(source);
     map_adapter_result(
         &adapter,
-        source,
         SourceLanguage::Python,
         SourceOrigin::Inline,
         None,
@@ -262,7 +261,6 @@ fn parse_errors_record_incomplete_syntax_degradation() {
     };
     let outcome = map_adapter_result(
         &adapter,
-        "os.remove('x')",
         SourceLanguage::Python,
         SourceOrigin::Inline,
         None,
@@ -293,7 +291,6 @@ fn empty_adapter_result_is_not_applicable() {
     // No operations and no parse errors → analysis does not apply to this target.
     let outcome = map_adapter_result(
         &AdapterResult::default(),
-        "print(1)",
         SourceLanguage::Python,
         SourceOrigin::Inline,
         None,

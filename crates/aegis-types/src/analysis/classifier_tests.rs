@@ -348,11 +348,13 @@ fn language_match_builds_matchresult_with_language_rule_evidence() {
     let m: MatchResult = language_match(
         &operation,
         pv.clone(),
-        "os.remove(path)",
         Some(HighlightRange { start: 0, end: 16 }),
     );
 
-    assert_eq!(m.matched_text, "os.remove(path)");
+    assert_eq!(
+        m.matched_text,
+        crate::assessment::LANGUAGE_AWARE_MATCH_LABEL
+    );
     assert_eq!(
         m.highlight_range,
         Some(HighlightRange { start: 0, end: 16 })
@@ -381,7 +383,7 @@ fn language_match_pattern_is_builtin_and_carries_classification() {
             ..Default::default()
         },
     );
-    let m = language_match(&operation, provenance(&operation), "shutil.rmtree(x)", None);
+    let m = language_match(&operation, provenance(&operation), None);
 
     assert_eq!(m.pattern.source, PatternSource::Builtin);
     assert_eq!(m.pattern.id.as_ref(), "LANG-FS-DEL-R");
@@ -398,13 +400,11 @@ fn language_match_rule_id_is_stable_across_calls() {
     let a = language_match(
         &op(OperationKind::CodeExecution),
         provenance(&op(OperationKind::CodeExecution)),
-        "subprocess.run(x)",
         None,
     );
     let b = language_match(
         &op(OperationKind::CodeExecution),
         provenance(&op(OperationKind::CodeExecution)),
-        "eval(x)",
         None,
     );
     assert_eq!(a.pattern.id, b.pattern.id);

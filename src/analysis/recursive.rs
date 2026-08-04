@@ -55,7 +55,6 @@ pub fn handle_sink(
     payload_language: SourceLanguage,
     resolved_payload: Option<&str>,
     provenance: AnalysisProvenance,
-    matched_text: &str,
     highlight_range: Option<HighlightRange>,
     parent_depth: u32,
 ) -> SinkDecision {
@@ -72,7 +71,7 @@ pub fn handle_sink(
 
     // The visible sink always emits its CodeExecution Match, regardless of
     // payload certainty (ADR-022 §3/§7 REVIEW GATE).
-    let sink_match = language_match(op, provenance, matched_text, highlight_range);
+    let sink_match = language_match(op, provenance, highlight_range);
 
     match resolved_payload {
         // A statically recovered literal payload becomes a bounded recursive

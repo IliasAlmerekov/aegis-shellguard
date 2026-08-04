@@ -102,7 +102,7 @@ pub(crate) fn render_planned(
                 id: matched.pattern.id.to_string(),
                 category: category_string(matched.pattern.category).to_string(),
                 risk: matched.pattern.risk.to_string(),
-                matched_text: matched.matched_text.clone(),
+                matched_text: matched.public_matched_text().to_string(),
                 description: matched.pattern.description.to_string(),
                 safe_alternative: matched.pattern.safe_alt.as_ref().map(ToString::to_string),
                 source: pattern_source_string(matched.pattern.source).to_string(),

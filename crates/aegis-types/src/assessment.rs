@@ -21,12 +21,23 @@ pub struct HighlightRange {
     pub end: usize,
 }
 
+/// The stable, source-free label every language-aware [`MatchResult`] carries
+/// in place of inspected source bytes (ADR-022 §10). Shared by
+/// [`crate::analysis::language_match`], which stamps it at construction, and
+/// [`MatchResult::public_matched_text`], which projects it as defense in depth
+/// for manually constructed matches — kept in one place so the two never
+/// drift apart.
+pub const LANGUAGE_AWARE_MATCH_LABEL: &str = "language-aware operation";
+
 /// A single pattern match with the actual text fragment that triggered it.
 #[derive(Debug, Clone)]
 pub struct MatchResult {
     /// The pattern that matched.
     pub pattern: Arc<Pattern>,
-    /// The substring of the scanned text that the pattern's regex matched.
+    /// A human-readable description of what matched.
+    ///
+    /// For language-aware matches this is always a stable source-free label;
+    /// inspected source bytes never enter an `Assessment`.
     pub matched_text: String,
     /// The concrete span in the original command suitable for confirmation UI highlighting.
     pub highlight_range: Option<HighlightRange>,
@@ -34,6 +45,105 @@ pub struct MatchResult {
     /// (ADR-022 §4). Populated by the scanner at construction; not projected
     /// into the v1 JSON / audit output, which keep their existing field shapes.
     pub evidence: MatchEvidence,
+}
+
+impl MatchResult {
+    /// Return the match text safe to expose outside the assessment.
+    ///
+    /// Language-aware matches are already source-free at construction. This
+    /// projection remains a defense in depth for manually constructed matches;
+    /// persisted and machine-readable surfaces expose the operation,
+    /// provenance metadata, and stable rule identifier instead of inspected
+    /// source bytes (ADR-022 §10).
+    #[must_use]
+    pub fn public_matched_text(&self) -> &str {
+        match &self.evidence {
+            MatchEvidence::LanguageRule { .. } => LANGUAGE_AWARE_MATCH_LABEL,
+            _ => &self.matched_text,
+        }
+    }
+}
+
+#[cfg(test)]
+mod public_matched_text_tests {
+    use std::sync::Arc;
+
+    use crate::analysis::{
+        AnalysisProvenance, AnalysisStatus, ByteSpan, DetectedOperation, DetectionSource,
+        MatchEvidence, OperandCertainty, OperationKind, OperationModifiers, SourceOrigin,
+    };
+    use crate::pattern::{Category, Pattern, PatternSource};
+    use crate::risk::RiskLevel;
+
+    use super::{HighlightRange, LANGUAGE_AWARE_MATCH_LABEL, MatchResult};
+
+    fn pattern() -> Arc<Pattern> {
+        Arc::new(Pattern {
+            id: "TEST-001".into(),
+            category: Category::Filesystem,
+            risk: RiskLevel::Danger,
+            pattern: "".into(),
+            description: "test".into(),
+            safe_alt: None,
+            justification: None,
+            source: PatternSource::Builtin,
+        })
+    }
+
+    /// Defense-in-depth regression: a hand-built `LanguageRule` match must be
+    /// projected to the stable label even if its `matched_text` field somehow
+    /// carries inspected source bytes (`language_match` itself never lets this
+    /// happen — this test pins the second, independent safety net).
+    #[test]
+    fn hand_built_language_rule_match_is_projected_to_the_stable_label_even_if_matched_text_carries_source()
+     {
+        let operation = DetectedOperation {
+            kind: OperationKind::FilesystemDelete,
+            modifiers: OperationModifiers::default(),
+            certainty: OperandCertainty::Known,
+        };
+        let provenance = AnalysisProvenance {
+            language: Some("python".to_string()),
+            source_origin: SourceOrigin::ScriptFile,
+            rule_id: Some("LANG-FS-DEL".to_string()),
+            operation: Some(operation.clone()),
+            file_path: Some("checked.py".to_string()),
+            source_hash: Some("0".repeat(64)),
+            span: Some(ByteSpan {
+                line: 1,
+                column: 1,
+                byte_start: 0,
+                byte_end: 4,
+            }),
+            certainty: OperandCertainty::Known,
+            status: AnalysisStatus::Complete,
+            degradation_reason: None,
+        };
+        let m = MatchResult {
+            pattern: pattern(),
+            matched_text: "LANGUAGE_SOURCE_PRIVACY_SENTINEL_test".to_string(),
+            highlight_range: Some(HighlightRange { start: 0, end: 4 }),
+            evidence: MatchEvidence::LanguageRule {
+                source: DetectionSource::Builtin,
+                operation,
+                provenance,
+            },
+        };
+        assert_eq!(m.public_matched_text(), LANGUAGE_AWARE_MATCH_LABEL);
+    }
+
+    #[test]
+    fn non_language_match_projects_its_matched_text_verbatim() {
+        let m = MatchResult {
+            pattern: pattern(),
+            matched_text: "rm -rf /".to_string(),
+            highlight_range: None,
+            evidence: MatchEvidence::RegexPattern {
+                source: DetectionSource::Builtin,
+            },
+        };
+        assert_eq!(m.public_matched_text(), "rm -rf /");
+    }
 }
 
 /// What ultimately caused the final interception decision.

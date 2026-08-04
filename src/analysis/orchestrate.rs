@@ -338,7 +338,6 @@ fn map_target_result(
         TargetResult::Responded(Response::Analyzed { result }) => {
             let mut outcome = map_adapter_result(
                 &result,
-                &target.source,
                 target.language,
                 target.source_origin,
                 target.file_path.clone(),

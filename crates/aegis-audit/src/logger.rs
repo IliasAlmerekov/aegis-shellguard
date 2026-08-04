@@ -594,7 +594,7 @@ impl From<&MatchResult> for MatchedPattern {
             description: m.pattern.description.to_string(),
             safe_alt: m.pattern.safe_alt.as_ref().map(ToString::to_string),
             category: Some(m.pattern.category),
-            matched_text: Some(m.matched_text.clone()),
+            matched_text: Some(m.public_matched_text().to_string()),
             source: Some(m.pattern.source),
             // Audit v2: persist typed evidence and a stable detection ID. The
             // detection ID is the stable identifier of THIS detection: a

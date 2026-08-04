@@ -136,7 +136,11 @@ fn log_assessment(assessment: &Assessment, allowlist_match: Option<&AllowlistMat
     for m in &assessment.matched {
         eprintln!(
             "match: id={}, category={:?}, risk={:?}, matched={:?}, description={}",
-            m.pattern.id, m.pattern.category, m.pattern.risk, m.matched_text, m.pattern.description
+            m.pattern.id,
+            m.pattern.category,
+            m.pattern.risk,
+            m.public_matched_text(),
+            m.pattern.description
         );
 
         if let Some(safe_alt) = &m.pattern.safe_alt {

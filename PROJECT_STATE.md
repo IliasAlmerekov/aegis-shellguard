@@ -23,6 +23,18 @@
 
 ## Last session (2026-08-03 – 2026-08-04) — L1 Iteration 10 license/budget and cwd slices
 
+- **L1 Iteration 10, Slice 2 qualification RED suites completed locally:** the
+  public `language_match` constructor no longer accepts source text at all —
+  every language-aware `MatchResult` is source-free at construction, with a
+  defense-in-depth projection (`public_matched_text`) applied at every
+  rendered/persisted interface for any hand-built match; worker crash, timeout,
+  and malformed pipe fixtures degrade to `WorkerFailure` and are denied by
+  non-interactive CI policy; Shell, Watch, Claude/Codex hooks, and CI agree on
+  the full persisted Assessment projection plus Decision. Focused suites,
+  workspace tests, fmt, clippy, audit, and deny pass. Standards/Spec review
+  findings were fixed and a skeptic confirmation closed each one. No
+  `TASKS.md` box changed: L1 remains a roadmap milestone.
+
 - **L1 Iteration 10, license/budget slice completed locally** (same branch as
   the cwd slice below, `agent/l1-iteration-10-slice-1`): both the GitHub Release
   assets and the npm tarball now ship the checked-in Tree-sitter attribution and

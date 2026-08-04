@@ -271,6 +271,17 @@ and degradation reason. It must not persist script contents, full snippets, impo
 source, variable values, or syntax trees. The TUI may render a short in-memory
 snippet, but it does not write that snippet to the Audit log.
 
+L1 Iteration 10 Slice 2 tightens this further: a Language-aware `Match` never
+carries an in-memory source snippet at all, in the TUI or anywhere else. Every
+Language-aware `Match` is built through `aegis_types::language_match`, which stamps
+a stable, source-free label (`LANGUAGE_AWARE_MATCH_LABEL`) instead of accepting
+matched text; a defense-in-depth projection (`MatchResult::public_matched_text`)
+applies the same label to any hand-built `LanguageRule` match reaching a rendered
+or persisted surface. The detected operation and its metadata-only provenance
+describe the finding instead. A future change that wants to restore a rendered
+snippet (still disallowed for the Audit log) must update `language_match` and this
+ADR together, not just the TUI.
+
 Aegis adds no automatic network telemetry. A local-only aggregation command may
 summarize interpreter/language, invocation shape, status, latency, and size buckets;
 export is an explicit user action. Real Audit logs are never automatically uploaded

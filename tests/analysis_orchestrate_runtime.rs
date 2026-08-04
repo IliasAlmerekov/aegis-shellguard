@@ -1,14 +1,30 @@
 //! Live routed-source and effective-budget orchestration regressions.
 
-use std::time::Duration;
+mod support;
+
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use aegis::analysis::{
     AnalysisCwd, OrchestrationBudget, Outcome, run, run_with_budget, run_with_budget_in_cwd,
 };
+use aegis::decision::{
+    ExecutionTransport, PolicyAction, PolicyAllowlistResult, PolicyBlocklistResult, PolicyCiState,
+    PolicyConfigFlags, PolicyExecutionContext, PolicyInput, evaluate_policy,
+};
+use aegis_policy::PolicyRulesResult;
 use aegis_types::{
-    AnalysisStatus, Assessment, DegradationReason, MatchEvidence, ParsedCommand, RiskLevel,
+    AllowlistOverrideLevel, AnalysisStatus, Assessment, CiPolicy, DegradationReason, MatchEvidence,
+    Mode, ParsedCommand, RiskLevel, SnapshotPolicy,
 };
 use sha2::{Digest, Sha256};
+
+#[cfg(unix)]
+fn worker_fixture(dir: &Path, name: &str, body: &str) -> PathBuf {
+    let path = dir.join(name);
+    support::write_executable(&path, &format!("#!/bin/sh\n{body}\n"));
+    path
+}
 
 fn safe_baseline() -> Assessment {
     Assessment {
@@ -183,6 +199,89 @@ async fn run_preserves_dynamic_source_as_typed_degradation() {
         a.degradation_reasons
             .contains(&DegradationReason::DynamicSource)
     }));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn worker_failures_degrade_the_full_assessment_without_fail_open() {
+    // These are executable stand-ins for the self-spawned worker. `Worker::spawn`
+    // adds its private flag, which POSIX shell scripts safely ignore; this keeps
+    // the test at the parent orchestration seam rather than mocking worker_client.
+    let fixtures = tempfile::tempdir().expect("temporary worker fixture directory");
+    let failures = [
+        ("crash", "exit 9"),
+        ("timeout", "sleep 5"),
+        (
+            "pipe-noise",
+            "printf 'not-a-language-worker-frame'; cat >/dev/null",
+        ),
+    ];
+
+    for (name, body) in failures {
+        let worker = worker_fixture(fixtures.path(), name, body);
+        let baseline = safe_baseline();
+        let started = Instant::now();
+        let outcome = run_with_budget(
+            "python3 -c 'print(1)'",
+            &baseline,
+            worker.to_str(),
+            &[],
+            OrchestrationBudget {
+                total_timeout: Duration::from_millis(50),
+                ..OrchestrationBudget::L1_DEFAULT
+            },
+        )
+        .await;
+
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "{name} must observe the bounded worker deadline"
+        );
+        let assessment = match outcome {
+            Outcome::Analyzed { assessment, .. } => assessment,
+            other => panic!("{name} must return a degraded Assessment, got {other:?}"),
+        };
+        assert_eq!(
+            assessment.risk,
+            RiskLevel::Safe,
+            "{name}: baseline risk is retained"
+        );
+        assert!(
+            assessment.matched.is_empty(),
+            "{name}: failure must add no Match"
+        );
+        assert!(
+            assessment.analysis.as_ref().is_some_and(|analysis| {
+                analysis.status == AnalysisStatus::Degraded
+                    && analysis
+                        .degradation_reasons
+                        .contains(&DegradationReason::WorkerFailure)
+            }),
+            "{name} must degrade as WorkerFailure: {assessment:?}"
+        );
+        let decision = evaluate_policy(PolicyInput {
+            assessment: &assessment,
+            mode: Mode::Protect,
+            ci_state: PolicyCiState { detected: true },
+            allowlist: PolicyAllowlistResult { matched: false },
+            blocklist: PolicyBlocklistResult { matched: false },
+            config_flags: PolicyConfigFlags {
+                ci_policy: CiPolicy::Block,
+                allowlist_override_level: AllowlistOverrideLevel::Never,
+                snapshot_policy: SnapshotPolicy::Selective,
+            },
+            execution_context: PolicyExecutionContext {
+                transport: ExecutionTransport::Shell,
+                applicable_snapshot_plugins: &[],
+            },
+            rules: PolicyRulesResult::default(),
+        });
+        assert_eq!(
+            decision.decision,
+            PolicyAction::Block,
+            "{name}: non-interactive CI must deny WorkerFailure"
+        );
+    }
 }
 
 #[tokio::test]

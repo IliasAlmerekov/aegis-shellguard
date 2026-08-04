@@ -116,7 +116,7 @@ pub fn explained_pattern_match_from(value: &MatchResult) -> ExplainedPatternMatc
         id: value.pattern.id.to_string(),
         risk: value.pattern.risk,
         description: value.pattern.description.to_string(),
-        matched_text: value.matched_text.clone(),
+        matched_text: value.public_matched_text().to_string(),
         justification: value.pattern.justification.as_deref().map(str::to_owned),
     }
 }

@@ -51,7 +51,6 @@ fn literal_payload_emits_match_and_recursive_target() {
         SourceLanguage::Bash,
         Some("rm -rf /tmp/x"),
         provenance(&op),
-        "subprocess.run(['bash','-c','rm -rf /tmp/x'])",
         None,
         0,
     );
@@ -86,7 +85,6 @@ fn dynamic_payload_emits_match_and_degradation_without_target() {
         SourceLanguage::Bash,
         None, // dynamic payload — not statically recoverable
         provenance(&op),
-        "subprocess.run(user_input)",
         None,
         0,
     );
@@ -108,15 +106,7 @@ fn partial_payload_emits_match_and_degradation_without_target() {
     // A Partial operand (alias / adjacent literal, not fully resolved) is not
     // a complete literal payload, so it is not enqueued; the sink still Matchs.
     let op = code_exec(OperandCertainty::Partial);
-    let d = handle_sink(
-        &op,
-        SourceLanguage::Bash,
-        None,
-        provenance(&op),
-        "subprocess.run(alias)",
-        None,
-        0,
-    );
+    let d = handle_sink(&op, SourceLanguage::Bash, None, provenance(&op), None, 0);
     assert_eq!(d.sink_match.pattern.risk, RiskLevel::Danger);
     assert!(d.recursive_target.is_none());
     assert_eq!(d.degradation, Some(DegradationReason::DynamicSource));
@@ -129,13 +119,11 @@ fn decode_to_eval_emits_match_and_degradation_without_decoding() {
     // raw encoded string is not treated as literal source either. The visible
     // sink still emits a CodeExecution Match plus degradation.
     let op = code_exec(OperandCertainty::Dynamic);
-    let encoded = "eval(base64.b64decode('b3MucmVtb3ZlKCcp'))";
     let d = handle_sink(
         &op,
         SourceLanguage::Python,
         None, // encoded payload is not a resolved literal
         provenance(&op),
-        encoded,
         None,
         0,
     );
@@ -156,7 +144,6 @@ fn recursive_target_depth_is_parent_depth_plus_one() {
         SourceLanguage::Bash,
         Some("rm x"),
         provenance(&op),
-        "sink",
         None,
         3,
     );
@@ -173,7 +160,6 @@ fn cross_language_payload_target_uses_payload_language() {
         SourceLanguage::JavaScript,
         Some("fs.rmSync('x')"),
         provenance(&op),
-        "subprocess.run(['node','-e','fs.rmSync(\\'x\\')'])",
         None,
         0,
     );
@@ -192,7 +178,6 @@ fn sink_match_is_code_execution_for_both_literal_and_dynamic() {
         SourceLanguage::Bash,
         Some("rm x"),
         provenance(&code_exec(OperandCertainty::Known)),
-        "sink",
         None,
         0,
     );
@@ -201,7 +186,6 @@ fn sink_match_is_code_execution_for_both_literal_and_dynamic() {
         SourceLanguage::Bash,
         None,
         provenance(&code_exec(OperandCertainty::Dynamic)),
-        "sink",
         None,
         0,
     );
@@ -224,7 +208,6 @@ fn degradation_never_lowers_sink_risk() {
         SourceLanguage::Bash,
         None,
         provenance(&code_exec(OperandCertainty::Dynamic)),
-        "sink",
         None,
         0,
     );
@@ -242,7 +225,6 @@ fn cross_language_literal_payload_is_accepted_by_the_queue() {
         SourceLanguage::JavaScript,
         Some("fs.rmSync('x')"),
         provenance(&op),
-        "subprocess.run(['node','-e','fs.rmSync(\\'x\\')'])",
         None,
         0,
     );
@@ -265,15 +247,7 @@ fn dynamic_payload_target_is_not_pushed_to_queue() {
     // The parent never enqueues a dynamic payload: there is no target to push,
     // so the queue stays at its prior state.
     let op = code_exec(OperandCertainty::Dynamic);
-    let d = handle_sink(
-        &op,
-        SourceLanguage::Bash,
-        None,
-        provenance(&op),
-        "subprocess.run(user_input)",
-        None,
-        0,
-    );
+    let d = handle_sink(&op, SourceLanguage::Bash, None, provenance(&op), None, 0);
     assert!(d.recursive_target.is_none());
     let q = AnalysisQueue::new(QueueBudget::L1_DEFAULT);
     assert_eq!(q.accepted_count(), 0);

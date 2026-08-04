@@ -174,13 +174,13 @@ pub fn classify(op: &DetectedOperation) -> Classification {
 /// The resulting [`Pattern`] is always built in ([`PatternSource::Builtin`])
 /// with the stable `LANG-*` rule id, the classified category and risk, and an
 /// empty pattern string (language rules have no regex). The evidence carries
-/// the detected operation and provenance; the caller supplies the matched
-/// source text and optional highlight range.
+/// the detected operation and provenance. Language-aware source bytes are
+/// never accepted by this public constructor; the stable label prevents them
+/// from entering a public [`MatchResult`].
 #[must_use]
 pub fn language_match(
     op: &DetectedOperation,
     provenance: AnalysisProvenance,
-    matched_text: &str,
     highlight_range: Option<HighlightRange>,
 ) -> MatchResult {
     let class = classify(op);
@@ -196,7 +196,7 @@ pub fn language_match(
     });
     MatchResult {
         pattern,
-        matched_text: matched_text.to_string(),
+        matched_text: crate::assessment::LANGUAGE_AWARE_MATCH_LABEL.to_string(),
         highlight_range,
         evidence: MatchEvidence::LanguageRule {
             source: DetectionSource::Builtin,
