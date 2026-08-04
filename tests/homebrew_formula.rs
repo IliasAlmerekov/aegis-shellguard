@@ -59,13 +59,41 @@ fn homebrew_formula_should_pin_each_download_with_a_sha256() {
         .count();
 
     assert_eq!(
-        sha_count, 4,
-        "formula must pin exactly four binary downloads with 64-hex SHA256 values"
+        sha_count, 5,
+        "formula must pin the four binary downloads plus the third-party notices resource with 64-hex SHA256 values"
     );
 }
 
 #[test]
-fn homebrew_formula_should_install_only_the_aegis_binary() {
+fn homebrew_formula_should_ship_third_party_notices_as_a_pinned_resource() {
+    let formula = formula();
+
+    assert!(
+        formula.contains("resource \"third_party_notices\""),
+        "formula must declare a resource for THIRD_PARTY_NOTICES.md"
+    );
+    assert!(
+        formula.contains("/THIRD_PARTY_NOTICES.md\""),
+        "third_party_notices resource must download the checked-in root notice asset"
+    );
+}
+
+#[test]
+fn homebrew_formula_should_install_third_party_notices_into_share_doc_aegis() {
+    let formula = formula();
+
+    assert!(
+        formula.contains("resource(\"third_party_notices\").stage do"),
+        "install must stage the third_party_notices resource"
+    );
+    assert!(
+        formula.contains("(share/\"doc/aegis\").install \"THIRD_PARTY_NOTICES.md\""),
+        "install must place the staged notice under share/doc/aegis, matching scripts/install.sh"
+    );
+}
+
+#[test]
+fn homebrew_formula_should_install_the_binary_without_shell_installer_side_effects() {
     let formula = formula();
 
     assert!(
@@ -130,6 +158,28 @@ fn homebrew_formula_updater_should_exist_and_fail_closed_on_missing_release_inpu
 }
 
 #[test]
+fn homebrew_formula_updater_should_pin_third_party_notices_with_a_locally_computed_checksum() {
+    let script = repo_file("scripts/update-homebrew-formula.sh");
+
+    assert!(
+        script.contains("THIRD_PARTY_NOTICES.md"),
+        "updater must fetch the checked-in root notice asset from the release"
+    );
+    assert!(
+        script.contains("sha256sum") && script.contains("shasum"),
+        "updater must fall back to shasum when sha256sum is unavailable, matching scripts/install.sh"
+    );
+    assert!(
+        script.contains("resource \"third_party_notices\" do"),
+        "updater must emit a third_party_notices resource block into the generated formula"
+    );
+    assert!(
+        script.contains("resource(\"third_party_notices\").stage do"),
+        "updater must emit an install step that stages the third_party_notices resource"
+    );
+}
+
+#[test]
 fn homebrew_formula_should_explain_post_install_setup_caveats() {
     let formula = formula();
 
@@ -188,7 +238,9 @@ fn homebrew_formula_should_download_raw_binaries_without_decompression() {
     let formula = formula();
     let url_lines: Vec<&str> = formula
         .lines()
-        .filter(|line| line.trim_start().starts_with("url \""))
+        .filter(|line| {
+            line.trim_start().starts_with("url \"") && !line.contains("THIRD_PARTY_NOTICES.md")
+        })
         .collect();
 
     assert_eq!(
