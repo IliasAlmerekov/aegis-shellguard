@@ -9,7 +9,7 @@
 
 ## Current version
 
-`0.6.2` — pre-1.0, targeting `1.0.0` (tagged `v0.6.2`)
+`0.6.3` — pre-1.0, targeting `1.0.0` (tag `v0.6.3` pending push)
 
 ## Active branch
 
@@ -21,7 +21,28 @@
 
 ---
 
-## Last session (2026-08-03 – 2026-08-04) — L1 Iteration 10 license/budget and cwd slices
+## Last session (2026-08-04) — v0.6.3 release preparation
+
+- **v0.6.3 release prepared; tag pending.** Version bumped to `0.6.3` across the
+  workspace (`Cargo.toml` + all 12 crates + internal path-dep version pins +
+  `Cargo.lock`), npm `packaging/npm/package.json`, README (badge, `--tag v0.6.3`
+  install line), `tests/npm_package.rs`, `docs/releases/current-line.md`,
+  `docs/releases/v1.0.0.md`, and the landing (`Hero.jsx`, `HowItWorks.jsx`).
+  `CHANGELOG.md` `[Unreleased]` cut to `[0.6.3] — 2026-08-04` with a fresh empty
+  `[Unreleased]` above it. `fuzz/Cargo.lock` is gitignored and regenerates
+  locally; not part of this change. Homebrew (`packaging/homebrew/Formula/
+  aegis.rb`) and npm `checksums.json` stay at their prior pinned values —
+  both are regenerated post-tag from real published Release assets via
+  `scripts/update-homebrew-formula.sh` / `scripts/update-npm-package.sh`, not
+  bumped ahead of the tag. Verified: workspace tests (2054), clippy
+  `-D warnings`, fmt, `cargo test --test npm_package` /
+  `--test release_workflow`, and the landing production build.
+- **This slice ships the Homebrew notices delivery from the prior session**
+  (`packaging/homebrew/Formula/aegis.rb` `third_party_notices` resource,
+  `scripts/update-homebrew-formula.sh` updater, `tests/homebrew_formula.rs`) —
+  merged via PR #158, all 14 required CI contexts green.
+
+## Prior session (2026-08-03 – 2026-08-04) — L1 Iteration 10 license/budget and cwd slices
 
 - **L1 Iteration 10 follow-up in progress:** review found the former universal
   in-memory source-free claim unenforceable through public `MatchResult`

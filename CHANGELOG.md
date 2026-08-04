@@ -11,6 +11,8 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+## [0.6.3] — 2026-08-04
+
 ### Changed
 
 - Rebaselined the `heredoc_worst_case` performance policy row from 300 µs to
