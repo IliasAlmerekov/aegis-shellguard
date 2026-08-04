@@ -9,8 +9,29 @@ The CI performance job runs:
 
 ```bash
 cargo bench --bench scanner_bench
+cargo bench --bench no_source_bench -p aegis-language
+cargo bench --bench parse_latency_bench -p aegis-language
 cargo run --bin aegis_benchcheck -- --baseline perf/scanner_bench_baseline.toml --criterion-root target/criterion
 ```
+
+All three `cargo bench` invocations write into the shared workspace
+`target/criterion` root, so a single `aegis_benchcheck` run evaluates every
+policy row. A policy row whose Criterion result is missing fails the job, so
+dropping a bench invocation from CI cannot silently drop its gate.
+
+That guarantee is not free: Criterion leaves
+`target/criterion/<name>/new/estimates.json` behind from earlier runs, so a bench
+that stops executing yields a stale **PASS** rather than a failure. The CI job
+caches `target/` under a `perf-` key with `restore-keys`, so it is exposed to
+this too — which is why the job discards `target/criterion` before the first
+`cargo bench`. Do the same locally (`rm -rf target/criterion`) before trusting a
+green `aegis_benchcheck`.
+
+Renaming a Criterion group or `BenchmarkId` is the one drift this does not catch
+by itself: rename both the bench and its policy row and the gate stays green
+while measuring something else. `ci_keeps_safe_and_slow_path_qualification_benches_on_the_performance_gate`
+in `tests/l1_qualification_contracts.rs` is the guard for that — it pins the
+`run:` lines and the policy row names at PR time.
 
 Criterion produces per-benchmark `estimates.json` files under `target/criterion/`.
 `aegis_benchcheck` reads the checked-in policy file and compares each benchmark's
@@ -22,7 +43,9 @@ The machine-readable policy lives at:
 
 - `perf/scanner_bench_baseline.toml`
 
-It currently covers:
+It covers two surfaces.
+
+### Scanner hot path (`benches/scanner_bench.rs`)
 
 - `1000_safe_commands`
 - `100_dangerous_commands`
@@ -31,10 +54,45 @@ It currently covers:
 The initial values were rounded from a local benchmark capture on **2026-04-11**
 and then given extra headroom so the policy is stable on shared CI runners.
 
+### Language-aware slow path, since Iteration 10 (the two `aegis-language` benches)
+
+- `no_source_does_not_start_worker` (`benches/no_source_bench.rs`)
+- `parse_latency_per_grammar/parse/{python,javascript,typescript,bash}`
+  (`benches/parse_latency_bench.rs`)
+
+These are padded **ceilings**, not measured means. Each was rounded up from a
+local benchmark capture on **2026-08-03** to roughly 2x the observed value, so
+the effective gate is that ceiling plus the +25% threshold:
+
+| Row | Captured mean | `baseline_ns` | Effective ceiling |
+| --- | ---: | ---: | ---: |
+| `no_source_does_not_start_worker` | 950 ns | 2,000 | 2,500 ns (2.6x) |
+| `parse/python` | 25.8 µs | 50,000 | 62.5 µs (2.4x) |
+| `parse/javascript` | 18.5 µs | 30,000 | 37.5 µs (2.0x) |
+| `parse/typescript` | 21.6 µs | 35,000 | 43.8 µs (2.0x) |
+| `parse/bash` | 13.4 µs | 25,000 | 31.3 µs (2.3x) |
+
+The first ratchet is deliberately loose: it establishes a ceiling that catches an
+order-of-magnitude slow-path regression without failing on developer-machine or
+runner variance, and can be tightened once CI-side variance is known.
+`no_source_does_not_start_worker` gets the widest relative headroom because it is
+the smallest absolute measurement in the file (sub-microsecond, ~95 ns per
+command) and therefore the most sensitive to host differences.
+
+All five rows are **fixture-coupled**, though in different ways.
+`no_source_does_not_start_worker` times all of `NO_SOURCE` in one `b.iter`
+(`crates/aegis-language/tests/common/no_source_corpus.rs`, shared verbatim with
+`tests/no_source.rs`), so *adding corpus entries alone* raises the mean with no
+actual regression. The four `parse/*` rows each time exactly one snippet
+(`bench_with_input` per grammar in `parse_latency_bench.rs`), so they move only
+when that grammar's snippet is edited. Either kind of fixture change requires
+rebaselining — see the update rules below.
+
 ## Threshold policy
 
 - default allowed regression: **+25%**
 - `heredoc_worst_case`: **+30%**
+- the Iteration 10 slow-path rows: **+25%** on top of an already padded ceiling
 
 This is intentionally conservative for the first CI-integrated version. The goal
 is to catch meaningful slowdowns without creating noisy failures from normal
@@ -62,11 +120,14 @@ The CI workflow also exposes a scheduled performance run. Its purpose is to:
 Update the checked-in policy only when:
 
 1. the slowdown is understood and accepted, or
-2. the benchmark itself changed in a way that invalidates the old baseline.
+2. the benchmark itself changed in a way that invalidates the old baseline —
+   including a change to the fixtures a row times (adding `NO_SOURCE` entries,
+   or editing a `parse_latency_bench.rs` snippet).
 
 Recommended update process:
 
-1. run `rtk cargo bench --bench scanner_bench`
+1. run the `cargo bench` invocations listed under "What is checked" that cover
+   the affected rows
 2. inspect `target/criterion/*/new/estimates.json`
 3. adjust `perf/scanner_bench_baseline.toml`
 4. explain the reason in the PR description or ticket summary
@@ -124,10 +185,11 @@ binary in a later iteration; until then it is exactly zero.
   ~1.03 µs per iteration over a 10-command no-source corpus (~103 ns per
   no-source command), and asserts `Outcome::NotStarted` inside `b.iter` so a
   regression that starts the worker panics the bench.
-- Budget: parse latency is a slow-path cost, off the safe-command hot path. No
-  numeric gate is enforced yet; the `aegis_benchcheck` policy file can add a
-  budget row once the worker is wired in and a regression slope is worth
-  gating.
+- Budget: parse latency is a slow-path cost, off the safe-command hot path.
+  Iteration 10 adds checked-in `aegis_benchcheck` rows for the no-source corpus
+  and each foundation grammar; the Performance baseline CI job fails when a
+  recorded mean exceeds its allowed regression. Peak worker RSS and release
+  binary-size measurements remain separate qualification evidence.
 
 ### 4. Peak worker RSS — deferred
 

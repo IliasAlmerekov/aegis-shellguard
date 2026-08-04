@@ -17,3 +17,38 @@ name = "heredoc_worst_case"
 baseline_ns = 300_000
 regression_pct = 30.0
 description = "Worst-case inline-script/heredoc scanning should stay bounded on shared CI hardware."
+
+# Iteration 10 language-aware slow-path rows. These are padded ceilings (~2x the
+# captured mean), not measured means, and every row is coupled to a checked-in
+# fixture — see "Checked-in baseline" in docs/performance-baseline.md for the
+# per-row capture provenance and the rebaseline rules for fixture changes.
+
+[[benchmarks]]
+name = "no_source_does_not_start_worker"
+baseline_ns = 2_000
+regression_pct = 25.0
+description = "No-source commands must remain on the worker-free safe path."
+
+[[benchmarks]]
+name = "parse_latency_per_grammar/parse/python"
+baseline_ns = 50_000
+regression_pct = 25.0
+description = "Python representative inline-source parsing is a bounded slow path."
+
+[[benchmarks]]
+name = "parse_latency_per_grammar/parse/javascript"
+baseline_ns = 30_000
+regression_pct = 25.0
+description = "JavaScript representative inline-source parsing is a bounded slow path."
+
+[[benchmarks]]
+name = "parse_latency_per_grammar/parse/typescript"
+baseline_ns = 35_000
+regression_pct = 25.0
+description = "TypeScript representative inline-source parsing is a bounded slow path."
+
+[[benchmarks]]
+name = "parse_latency_per_grammar/parse/bash"
+baseline_ns = 25_000
+regression_pct = 25.0
+description = "Bash representative inline-source parsing is a bounded slow path."

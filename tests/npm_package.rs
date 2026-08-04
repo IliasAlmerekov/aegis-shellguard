@@ -116,6 +116,142 @@ fn npm_updater_should_fetch_all_sidecars_and_fail_closed() {
         script.contains("checksums.json"),
         "npm updater must write packaging/npm/checksums.json"
     );
+    // The updater is the only producer of the staged notice, and the failure
+    // would surface in `publish-npm` — after the GitHub Release is already
+    // public. Guard the link at PR time.
+    assert!(
+        script.contains("stage-npm-notices.sh"),
+        "npm updater must invoke the third-party notice staging script"
+    );
+}
+
+/// The npm channel distributes the same statically linked Tree-sitter binary as
+/// the GitHub Release assets, so it must carry the same MIT attribution. npm
+/// cannot pack files above the package root, so the notice is staged as a
+/// generated copy. This exercises the staging script for real — it is split out
+/// of `update-npm-package.sh` precisely so it runs without network access.
+#[test]
+fn npm_notice_staging_should_copy_the_root_notice_verbatim() {
+    let staged_dir = tempdir("stage-npm-notices-ok");
+    // Nested, to prove the script creates the destination directory itself.
+    let staged = staged_dir.join("nested").join("THIRD_PARTY_NOTICES.md");
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("THIRD_PARTY_NOTICES.md");
+
+    let ok = run_staging_script(&source, &staged);
+    assert!(
+        ok.status.success(),
+        "staging must succeed with a present notice: {}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(&staged).expect("notice must be staged"),
+        std::fs::read_to_string(&source).expect("root notice must be readable"),
+        "the staged notice must be a byte-identical copy of the root notice"
+    );
+
+    let _ = std::fs::remove_dir_all(&staged_dir);
+}
+
+/// The two cases above override both paths, so they never exercise the CWD-relative
+/// defaults that release automation actually uses. This runs the script bare from
+/// the repo root and checks it lands on `packaging/npm/`.
+///
+/// It must leave the staged file exactly as it found it. `release.yml` runs
+/// `update-npm-package.sh` (which stages the notice) *before* `cargo test --test
+/// npm_package`, and the `npm pack` verification after it — a test that deleted
+/// the staged copy would fail every release.
+#[test]
+fn npm_notice_staging_should_default_to_the_package_directory() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let default_destination = repo_root.join("packaging/npm/THIRD_PARTY_NOTICES.md");
+    let was_staged = default_destination.exists();
+
+    let output = std::process::Command::new("sh")
+        .arg(repo_root.join("scripts/stage-npm-notices.sh"))
+        .current_dir(repo_root)
+        .output()
+        .expect("staging script should be runnable");
+
+    assert!(
+        output.status.success(),
+        "staging must succeed with default paths from the repo root: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(&default_destination).expect("default destination must exist"),
+        std::fs::read_to_string(repo_root.join("THIRD_PARTY_NOTICES.md"))
+            .expect("root notice must be readable"),
+        "the default staged path must hold a copy of the root notice"
+    );
+
+    if !was_staged {
+        // Only clean up what this test created; a copy staged by release
+        // automation must survive, or the pack verification after us breaks.
+        let _ = std::fs::remove_file(&default_destination);
+    }
+}
+
+/// Fail closed: a missing root notice must abort before publish, not warn. A
+/// fail-open staging step would publish the npm channel unattributed.
+#[test]
+fn npm_notice_staging_should_fail_closed_when_the_root_notice_is_absent() {
+    let missing_dir = tempdir("stage-npm-notices-missing");
+    let absent = missing_dir.join("THIRD_PARTY_NOTICES.md");
+    let destination = missing_dir.join("staged.md");
+
+    let failed = run_staging_script(&absent, &destination);
+    assert!(
+        !failed.status.success(),
+        "staging must fail when the root notice is absent"
+    );
+    assert!(
+        !destination.exists(),
+        "staging must not produce an output file when the source is absent"
+    );
+
+    let _ = std::fs::remove_dir_all(&missing_dir);
+}
+
+/// `files` in package.json is an allowlist, so packing the staged notice needs an
+/// explicit entry; CI additionally greps `npm pack --dry-run` output to prove it
+/// reached the tarball. Both halves must stay in place.
+#[test]
+fn npm_package_and_release_workflow_should_pack_and_verify_the_notice() {
+    let package_json = repo_file("packaging/npm/package.json");
+    let workflow = repo_file(".github/workflows/release.yml");
+
+    assert!(
+        package_json.contains("\"THIRD_PARTY_NOTICES.md\""),
+        "npm package `files` must pack the third-party notices"
+    );
+    assert!(
+        workflow.contains("scripts/update-npm-package.sh"),
+        "npm publish must run the updater that stages the notice"
+    );
+    assert!(
+        workflow.contains("grep -q 'THIRD_PARTY_NOTICES.md' pack.log"),
+        "npm publish must verify the notice actually landed in the packed tarball"
+    );
+}
+
+fn tempdir(label: &str) -> std::path::PathBuf {
+    // Each label is used by exactly one test; the pid keeps concurrent
+    // `cargo test` runs on one host from colliding. Removed on success.
+    let dir = std::env::temp_dir().join(format!("aegis-{label}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir should be creatable");
+    dir
+}
+
+fn run_staging_script(source: &Path, destination: &Path) -> std::process::Output {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    std::process::Command::new("sh")
+        .arg(repo_root.join("scripts/stage-npm-notices.sh"))
+        .current_dir(repo_root)
+        .env("AEGIS_NPM_NOTICES_SOURCE", source)
+        .env("AEGIS_NPM_NOTICES", destination)
+        .output()
+        .expect("staging script should be runnable")
 }
 
 #[test]

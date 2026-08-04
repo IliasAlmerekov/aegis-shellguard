@@ -30,7 +30,8 @@
     "bin/",
     "scripts/",
     "checksums.json",
-    "README.md"
+    "README.md",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "keywords": [
     "aegis",

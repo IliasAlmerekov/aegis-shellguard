@@ -242,6 +242,14 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           cache-key-prefix: perf-
 
+      # The `perf-` cache restores `target/` (including `target/criterion`) from
+      # a previous run, so a bench that stops executing — a deleted `run:` line, a
+      # renamed Criterion group — would leave last run's `new/estimates.json` in
+      # place and `aegis_benchcheck` would gate against a stale measurement. Drop
+      # the Criterion tree so a missing result fails the policy, as intended.
+      - name: Discard cached Criterion results
+        run: rm -rf target/criterion
+
       - name: cargo bench --bench scanner_bench
         run: cargo bench --bench scanner_bench
 
@@ -255,14 +263,21 @@ jobs:
         run: cargo bench --bench no_source_bench -p aegis-language
 
       # ADR-022 Iteration 0 GREEN measurement: parse latency per foundation
-      # grammar. A measurement (not asserting) bench — parses one
-      # representative inline-source snippet per grammar so the recorded latency
-      # reflects the slow-path cost an inline interpreter target would pay.
+      # grammar. Parses one representative inline-source snippet per grammar so
+      # the recorded latency reflects the slow-path cost an inline interpreter
+      # target would pay. Since Iteration 10 each recorded mean is also gated by
+      # a row in perf/scanner_bench_baseline.toml, so editing a snippet requires
+      # rebaselining that row (see docs/performance-baseline.md).
       - name: cargo bench --bench parse_latency_bench -p aegis-language
         run: cargo bench --bench parse_latency_bench -p aegis-language
 
       - name: Evaluate benchmark policy
+        # `shell: bash` is load-bearing: Actions' implicit Linux shell is
+        # `bash -e {0}` *without* `pipefail`, so the pipe into `tee` would report
+        # `tee`'s exit code and a failing benchmark policy would go green.
+        shell: bash
         run: |
+          set -euo pipefail
           cargo run --quiet --bin aegis_benchcheck -- \
             --baseline perf/scanner_bench_baseline.toml \
             --criterion-root target/criterion | tee benchmark-report.txt

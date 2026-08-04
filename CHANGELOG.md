@@ -11,7 +11,25 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+### Fixed
+
+- CI: the `Evaluate benchmark policy` step piped `aegis_benchcheck` into `tee`
+  under Actions' implicit `bash -e` shell, which has no `pipefail`, so a failing
+  benchmark policy exited 0 and the `Performance baseline (scanner bench)` gate
+  reported success. The step now declares `shell: bash` with `set -euo pipefail`,
+  and a contract test pins both.
+
 ### Added
+
+- L1 Iteration 10 (partial): ship Tree-sitter third-party notices with both the
+  GitHub Release assets and the npm package, publish release assets fail-closed,
+  and gate no-source plus per-grammar parse-latency regressions in the
+  performance policy (ADR-022 §8, §11). The notice carries the Unicode license
+  for the ICU subset the Tree-sitter runtime vendors, which the crate's declared
+  `MIT` alone does not cover. It is scoped to the Tree-sitter
+  components admitted by ADR-022 §8; it is not yet a distribution-complete
+  attribution set, and Homebrew plus `scripts/install.sh` still install the
+  binary only. Both gaps are recorded in `THIRD_PARTY_NOTICES.md`.
 
 - L1 Iteration 10 (partial): preserve dynamic-cwd direct-exec degradation,
   enforce exact grammar manifest metadata, build the shipping binary across the

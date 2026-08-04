@@ -68,6 +68,11 @@ verified; the ADR and implementation plan alone do not satisfy the gate.
       `aegis-linux-x86_64`, `aegis-linux-aarch64`, `aegis-macos-x86_64`,
       and `aegis-macos-aarch64`.
 - [ ] The release workflow publishes a matching `.sha256` sidecar for each asset.
+- [ ] The release workflow publishes `THIRD_PARTY_NOTICES.md` as a fifth asset
+      (`fail_on_unmatched_files: true` makes a missing path abort the release), and
+      the notice appears on the published Release page.
+- [ ] The npm tarball carries the same notice: the `Verify npm package contents`
+      step greps it out of `npm pack --dry-run` before `npm publish`.
 - [ ] `rtk cargo test --test release_workflow` passes.
 - [ ] `rtk env AEGIS_TEST_LIVE_RELEASE=1 AEGIS_TEST_RELEASE_TAG=vX.Y.Z cargo test --test release_assets_live -- --nocapture`
       passes against the selected real tag.

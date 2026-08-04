@@ -13,15 +13,34 @@
 
 ## Active branch
 
-`feat/language-aware`
+`agent/l1-iteration-10-slice-1`
 
 ## Last updated
 
-2026-08-03
+2026-08-04
 
 ---
 
-## Last session (2026-08-03) — L1 integration review and cwd slice documentation
+## Last session (2026-08-03 – 2026-08-04) — L1 Iteration 10 license/budget and cwd slices
+
+- **L1 Iteration 10, license/budget slice completed locally** (same branch as
+  the cwd slice below, `agent/l1-iteration-10-slice-1`): both the GitHub Release
+  assets and the npm tarball now ship the checked-in Tree-sitter attribution and
+  MIT notices, published fail-closed. Notice rows are asserted against
+  `Cargo.lock` in both directions (no stale version, no unattributed
+  Tree-sitter crate), and resource defaults plus the no-source/per-grammar
+  latency policy are contract tested. Workspace test, audit, deny, fmt, and
+  clippy pass. The local aggregate benchmark policy still fails two
+  **pre-existing, untouched** rows on this developer machine
+  (`heredoc_worst_case` 619 µs versus a 300 µs baseline; `1000_safe_commands`
+  4.26 ms versus 2.80 ms), so no green qualification measurement is recorded.
+  All five new slow-path rows pass. Deciding whether that is a real hot-path
+  regression or developer-machine variance is open — see blockers. Two scope
+  limits are documented in `THIRD_PARTY_NOTICES.md` rather than closed here:
+  the notice covers only the ADR-022 §8 Tree-sitter components (~100 other Rust
+  crates in the release binary are still unattributed — `cargo-about` is the
+  candidate fix), and Homebrew plus `scripts/install.sh` still install the
+  binary alone because no already-published tag carries the asset.
 
 - **L1 Iteration 10, slice 1 in progress:** P7's dynamic-cwd direct-exec route
   now retains `Dynamic source` degradation; CI contracts pin exact grammar
@@ -1796,6 +1815,29 @@ member calls, `ScriptFile`/`DirectExec` fs reads) and the live
   calendar sprint.
 - **H7b closure blocker:** implementation and local gates are clean; required
   PR CI must pass before the `TASKS.md` checkbox is closed.
+- **The perf gate was never enforcing until this slice (2026-08-04):** the
+  `Evaluate benchmark policy` step piped `aegis_benchcheck` into `tee` without
+  `shell: bash`, and Actions' implicit Linux shell (`bash -e`, no `pipefail`)
+  reported `tee`'s exit code — so every benchmark FAIL went green. Fixed, and
+  pinned by a contract test. Consequence: the two rows below have most likely
+  been red in CI for some time without anyone being told, so treat the first
+  green/red signal from this branch as new information, not a regression it
+  introduced.
+- **Scanner hot-path baseline decision (open, 2026-08-03):** `aegis_benchcheck`
+  fails `heredoc_worst_case` (619 µs vs 300 µs, +106%) and `1000_safe_commands`
+  (4.26 ms vs 2.80 ms, +52%) on the current developer machine (WSL2). Both rows
+  are untouched by Iteration 10. Decide from a CI-runner capture whether this is
+  a genuine scanner regression to fix or environment variance that justifies a
+  documented rebaseline. Do not assume variance: nine hot-path commits landed in
+  `src/interceptor/{parser,scanner}.rs` since the 2026-04-11 capture, including
+  pipeline semantic risk analysis, recursive nested execution analysis, and
+  command-normalization hardening — exactly the surface `heredoc_worst_case`
+  covers. L1 is not a plausible cause: the no-source path measures ~95 ns per
+  command against `1000_safe_commands` at ~4.26 µs per command. Until then the `Performance baseline (scanner bench)`
+  gate is not green and Iteration 10 records no green perf measurement. In the
+  same capture, confirm the headroom on the five new slow-path rows — they were
+  set from a WSL2 capture only, and `no_source_does_not_start_worker` gates a
+  sub-microsecond mean, so it is the row most exposed to runner variance.
 - **P1 open contract:** H5 aligns public wording with an unkeyed local `Audit
   integrity chain`; H6 proves snapshot path containment; H7a protects snapshot
   artifact modes; H7b hardens audit modes and symlink opens; H9 finishes only

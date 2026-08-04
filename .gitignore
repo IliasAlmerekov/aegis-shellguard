@@ -11,6 +11,8 @@ fuzz/artifacts/
 fuzz/coverage/
 fuzz/target/
 fuzz/Cargo.lock
+# Staged by scripts/stage-npm-notices.sh from the repo-root notice.
+/packaging/npm/THIRD_PARTY_NOTICES.md
 crates/*/Cargo.lock
 crates/*/target/
 fuzz/corpus/parser/*

@@ -3,14 +3,20 @@
 //! ADR-022 §8 + the Iteration 0 GREEN list require *parse latency* to be
 //! measured, not just the no-source path. This harness parses one
 //! representative inline-source snippet per foundation grammar with the pinned
-//! Tree-sitter runtime and records the per-grammar parse latency. It is a
-//! measurement bench, not an asserting one — it parses real source so the
-//! number reflects the cost the slow path pays when an inline interpreter
-//! target is detected.
+//! Tree-sitter runtime and records the per-grammar parse latency. It parses real
+//! source so the number reflects the cost the slow path pays when an inline
+//! interpreter target is detected.
 //!
 //! The snippets are small but non-trivial (imports, a function, a loop, a
 //! conditional) so the number is representative rather than a degenerate
 //! single-statement parse.
+//!
+//! **Since Iteration 10 the recorded means are gated**, not merely recorded:
+//! `perf/scanner_bench_baseline.toml` holds one `parse_latency_per_grammar/parse/
+//! <lang>` row per snippet, and the `Performance baseline (scanner bench)` CI job
+//! fails when a mean exceeds its ceiling. Each row times exactly one snippet, so
+//! editing a `SNIPPETS` entry moves that row's number with no real regression —
+//! rebaseline it in the same change. See `docs/performance-baseline.md`.
 
 use aegis_language::{SourceLanguage, parse};
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
