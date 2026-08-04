@@ -139,6 +139,33 @@ runner variance, and can be tightened once CI-side variance is known.
 the smallest absolute measurement in the file (sub-microsecond, ~95 ns per
 command) and therefore the most sensitive to host differences.
 
+### Iteration 10 production qualification evidence
+
+This is the local measurement record for the **four foundation adapters under
+qualification**. It is
+evidence for the Iteration 10 gate, not a release-enable claim: the required CI
+contexts and all-four-target artifacts remain the authoritative release record.
+The measurements below were taken on 2026-08-04 from this checkout's release
+build; host-specific figures are observations, while the checked-in Criterion
+ceilings above are the repeatable regression policy.
+
+| Surface | Evidence | Result | Qualification interpretation |
+| --- | --- | --- | --- |
+| No-source safe path | `cargo bench --bench no_source_bench -p aegis-language` | 1.01 µs for the ten-command corpus (about 101 ns/command) | Worker-free and below the 2.5 µs policy ceiling. |
+| Per-grammar parse | `cargo bench --bench parse_latency_bench -p aegis-language` | Python 28.7 µs; JavaScript 21.8 µs; TypeScript 24.5 µs; Bash 14.6 µs | Every row is below its checked-in Criterion ceiling. |
+| Worker cold-session latency | `/usr/bin/time` around one framed `--internal-language-worker` Python parse | below the tool's 10 ms display resolution | This is process start + one bounded request on the release binary; use the 100 ms total deadline, not this host measurement, as the enforced bound. |
+| Worker warm-session latency | Not applicable to the production orchestration | no reusable session | `orchestrate` deliberately spawns, closes, and reaps one ephemeral worker per queued target. The protocol can carry a bounded sequence, but production does not reuse a warm worker; a future reuse optimization needs its own benchmark and review. |
+| Peak worker RSS | five cold worker samples with `/usr/bin/time` | 4.1–4.3 MiB | The direct worker process stayed within this observed host range; it is evidence only, not a cross-platform memory promise. |
+| Aggregate-timeout boundary | `tests/analysis_orchestrate_runtime.rs::run_records_target_aggregate_and_total_time_budget_exhaustion` | enforced at the configured total deadline | The default is 100 ms. The regression asserts typed `LimitExceeded` while retaining prior target results; no timer-derived throughput claim is made. |
+| Per-target release-binary size | native `target/release/aegis` | 9.5 MiB | Local native size is recorded for drift detection. Exact sizes for Linux musl x86_64/aarch64 and macOS x86_64/aarch64 must come from the required CI contexts; local cross-target sizes are not substituted for release artifacts. |
+
+The worker cold-session and RSS commands send one length-bounded `Parse`
+request directly over the documented pipe protocol and discard only the binary
+response. They neither read a script file nor execute analyzed source. The
+warm-session row is intentionally explicit rather than fabricated: an ephemeral
+worker is part of the isolation contract, and no production reuse exists to
+measure today.
+
 All five rows are **fixture-coupled**, though in different ways.
 `no_source_does_not_start_worker` times all of `NO_SOURCE` in one `b.iter`
 (`crates/aegis-language/tests/common/no_source_corpus.rs`, shared verbatim with
