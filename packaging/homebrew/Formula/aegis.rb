@@ -24,13 +24,23 @@ class Aegis < Formula
     end
   end
 
+  resource "third_party_notices" do
+    url "https://github.com/IliasAlmerekov/aegis-shellguard/releases/download/v0.6.2/THIRD_PARTY_NOTICES.md"
+    sha256 "046120a95a821791c900bf9a9b4a40279de5512eb90cc5f048ffdef1d47de404"
+  end
+
   def install
     bin.install Dir["aegis-*"].first => "aegis"
+
+    resource("third_party_notices").stage do
+      (share/"doc/aegis").install "THIRD_PARTY_NOTICES.md"
+    end
   end
 
   def caveats
     <<~EOS
-      Homebrew installs the aegis binary only.
+      Homebrew installs the aegis binary and its third-party notices
+      (share/doc/aegis/THIRD_PARTY_NOTICES.md).
 
       To install supported Claude Code and Codex hooks after installation:
         aegis install-hooks --all
