@@ -11,6 +11,8 @@ fuzz/artifacts/
 fuzz/coverage/
 fuzz/target/
 fuzz/Cargo.lock
+# Staged by scripts/stage-npm-notices.sh from the repo-root notice.
+/packaging/npm/THIRD_PARTY_NOTICES.md
 crates/*/Cargo.lock
 crates/*/target/
 fuzz/corpus/parser/*
@@ -30,11 +32,16 @@ fuzz/corpus/router/*
 !fuzz/corpus/router/heredoc-tee-then-exec.txt
 !fuzz/corpus/router/heredoc-marker-glued-to-chain.txt
 !fuzz/corpus/router/cd-prefix-and-pipeline.txt
-# The language-protocol fuzz corpus is binary (framed bytes — no UTF-8 seed is
-# possible), so unlike the parser text seeds it is not tracked. The fuzzer
-# regenerates coverage from scratch; the audit-integrity wording guard rejects
-# tracked non-UTF-8 files.
-fuzz/corpus/language_protocol/
+fuzz/corpus/language_protocol/*
+!fuzz/corpus/language_protocol/invalid-frame.txt
+fuzz/corpus/language_python/*
+!fuzz/corpus/language_python/destructive.py
+fuzz/corpus/language_javascript/*
+!fuzz/corpus/language_javascript/destructive.js
+fuzz/corpus/language_typescript/*
+!fuzz/corpus/language_typescript/destructive.ts
+fuzz/corpus/language_bash/*
+!fuzz/corpus/language_bash/destructive.sh
 docs/claude-source-borrowings.md
 docs/CODEX-*.md
 docs/tickets/

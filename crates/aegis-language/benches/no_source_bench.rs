@@ -11,6 +11,12 @@
 //! (runs in `cargo test --workspace` on every PR); this harness additionally
 //! keeps the no-source path on the performance-regression wall so a slow path
 //! that quietly grew filesystem metadata calls is caught before main.
+//!
+//! Since Iteration 10 the recorded mean is also gated by the
+//! `no_source_does_not_start_worker` row in `perf/scanner_bench_baseline.toml`.
+//! One iteration walks the *whole* corpus, so adding `NO_SOURCE` entries raises
+//! the mean with no real regression — rebaseline that row in the same change.
+//! See `docs/performance-baseline.md`.
 
 use aegis_language::worker::{Outcome, analyze};
 use criterion::{Criterion, black_box, criterion_group, criterion_main};

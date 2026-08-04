@@ -178,6 +178,10 @@ pub async fn run_with_budget_in_cwd(
     let mut script_files = 0usize;
 
     for target in routed {
+        if let RoutedTarget::Unresolved { reason } = &target {
+            per_target.push(degraded(*reason));
+            continue;
+        }
         if matches!(
             &target,
             RoutedTarget::Inline { source, .. }
@@ -194,6 +198,10 @@ pub async fn run_with_budget_in_cwd(
                 true,
             ),
             RoutedTarget::Dynamic { .. } => (SourceOrigin::Stdin, None, false),
+            RoutedTarget::Unresolved { reason } => {
+                per_target.push(degraded(*reason));
+                continue;
+            }
         };
         if is_script_file {
             script_files += 1;

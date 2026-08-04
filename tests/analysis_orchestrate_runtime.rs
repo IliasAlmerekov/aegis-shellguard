@@ -121,6 +121,45 @@ async fn run_degrades_relative_script_when_command_cwd_is_unavailable() {
 }
 
 #[tokio::test]
+async fn run_degrades_relative_direct_exec_after_dynamic_cd() {
+    // ADR-022 §6 / Iteration 10 P7: this target has no resolved language
+    // until a shebang is read, so routing must preserve the unknown-language
+    // degradation instead of dropping it.
+    let baseline = safe_baseline();
+
+    let workspace = tempfile::tempdir().unwrap();
+    let outcome = run_with_budget_in_cwd(
+        "cd -- $(mktemp -d) && ./script.py",
+        AnalysisCwd::Resolved(workspace.path()),
+        &baseline,
+        Some(env!("CARGO_BIN_EXE_aegis")),
+        &[],
+        OrchestrationBudget {
+            total_timeout: Duration::from_secs(2),
+            ..OrchestrationBudget::L1_DEFAULT
+        },
+    )
+    .await;
+    let assessment = match outcome {
+        Outcome::Analyzed {
+            assessment,
+            target_count,
+        } => {
+            assert_eq!(target_count, 1, "the unresolvable target is retained");
+            assessment
+        }
+        other => panic!("dynamic cwd must produce degradation: {other:?}"),
+    };
+
+    assert!(assessment.analysis.as_ref().is_some_and(|analysis| {
+        analysis.status == AnalysisStatus::Degraded
+            && analysis
+                .degradation_reasons
+                .contains(&DegradationReason::DynamicSource)
+    }));
+}
+
+#[tokio::test]
 async fn run_preserves_dynamic_source_as_typed_degradation() {
     let baseline = safe_baseline();
     let outcome = run(

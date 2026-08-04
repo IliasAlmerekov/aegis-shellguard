@@ -14,6 +14,13 @@ form is `aegis_language::manifest::BUILTIN_MANIFEST`, validated by
 `aegis_language::manifest::validate_manifest`; this prose must stay in sync
 with it.
 
+The release-artifact attribution record is
+[`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md). It pins the same grammar
+versions and upstream provenance for distribution review, and is carried directly
+by two channels (GitHub Release asset and npm tarball); Homebrew and
+`scripts/install.sh` install only the binary, as that file records.
+`cargo deny check` remains the dependency-license enforcement gate.
+
 ## Qualified grammars (L1 foundation)
 
 | Language    | Crate                    | Version  | Upstream                                               | License | ABI |

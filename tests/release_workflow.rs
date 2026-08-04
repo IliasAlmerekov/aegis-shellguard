@@ -31,6 +31,53 @@ fn matrix_entry(workflow: &str, target: &str) -> String {
     panic!("release workflow matrix should define target {target}");
 }
 
+/// Extracts the non-empty lines of the GitHub Release `files: |` block scalar.
+///
+/// `files` is a YAML literal block scalar, so `#` inside it is content, not a
+/// comment: `softprops/action-gh-release` splits the value on newlines and
+/// treats every resulting line as a glob pattern. Combined with
+/// `fail_on_unmatched_files: true` a stray commented line aborts the release, so
+/// callers assert on the parsed lines rather than on raw substrings.
+///
+/// Panics if the block is absent — a test-fixture failure, not a runtime one.
+fn release_files_patterns(workflow: &str) -> Vec<String> {
+    let block = workflow
+        .replace("\r\n", "\n")
+        .split_once("\n          files: |\n")
+        .map(|(_, rest)| rest.to_owned())
+        .expect("release workflow should define a GitHub Release `files:` block");
+
+    block
+        .lines()
+        .map(str::trim_end)
+        // The block ends at the first line that is not indented deeper than the
+        // `files:` key itself (a blank line, or the next key/job).
+        .take_while(|line| line.starts_with("            ") && !line.trim().is_empty())
+        .map(|line| line.trim().to_owned())
+        .collect()
+}
+
+#[test]
+fn release_workflow_files_block_should_contain_only_bare_asset_paths() {
+    let patterns = release_files_patterns(&release_workflow());
+
+    assert!(
+        !patterns.is_empty(),
+        "GitHub Release `files:` block must list at least one asset"
+    );
+    for pattern in &patterns {
+        assert!(
+            !pattern.starts_with('#'),
+            "`{pattern}` is a comment inside the `files:` block scalar, so the action \
+             treats it as an unmatched glob and fails the release"
+        );
+        assert!(
+            !pattern.contains(','),
+            "`{pattern}` contains a comma, which the action splits into extra patterns"
+        );
+    }
+}
+
 #[test]
 fn release_workflow_should_build_linux_musl_targets() {
     let wf = release_workflow();
@@ -166,6 +213,26 @@ fn release_workflow_should_publish_each_binary_and_matching_sha256_sidecar() {
             "GitHub Release files list must publish checksum sidecar {asset}.sha256"
         );
     }
+}
+
+#[test]
+fn release_workflow_should_publish_the_grammar_license_notice() {
+    let wf = release_workflow().replace("\r\n", "\n");
+
+    // Asserted against the parsed `files:` patterns so a passing mention in a
+    // comment or another job cannot satisfy the contract. Unlike its siblings
+    // this entry is repo-relative rather than `artifacts/`-prefixed: the notice
+    // is checked into the repo, not produced by the build matrix.
+    assert!(
+        release_files_patterns(&wf)
+            .iter()
+            .any(|pattern| pattern == "THIRD_PARTY_NOTICES.md"),
+        "GitHub Release files list must publish the grammar license notice"
+    );
+    assert!(
+        wf.contains("fail_on_unmatched_files: true"),
+        "GitHub Release must fail closed if a published asset path stops matching"
+    );
 }
 
 #[test]

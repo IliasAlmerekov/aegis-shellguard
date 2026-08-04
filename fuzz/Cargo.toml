@@ -55,3 +55,31 @@ path = "fuzz_targets/router.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "language_python"
+path = "fuzz_targets/language_python.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "language_javascript"
+path = "fuzz_targets/language_javascript.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "language_typescript"
+path = "fuzz_targets/language_typescript.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "language_bash"
+path = "fuzz_targets/language_bash.rs"
+test = false
+doc = false
+bench = false

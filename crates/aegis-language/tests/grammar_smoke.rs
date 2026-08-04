@@ -232,6 +232,7 @@ fn builtin_manifest_abi_matches_the_live_tree_sitter_runtime() {
 // list) is fully populated, so the `crate_name`/`upstream` fields are not inert.
 
 use std::fs;
+use std::process::Command;
 
 /// Read the workspace `Cargo.lock`. The test crate's `CARGO_MANIFEST_DIR` is
 /// `crates/aegis-language`, so the lockfile is two directories up.
@@ -296,6 +297,50 @@ fn builtin_manifest_versions_match_cargo_lock_pins() {
             "manifest version `{}` for `{}` does not match the Cargo.lock pin `{}` — \
              the manifest must reflect the real lockfile pin, not a caret range",
             entry.version, entry.crate_name, locked[0],
+        );
+    }
+}
+
+#[test]
+fn builtin_manifest_versions_match_exact_cargo_metadata_requirements() {
+    // Cargo metadata is the build tool's view of the package manifest. Exact
+    // requirements prevent a fresh lockfile resolution from silently selecting
+    // a newer grammar than the reviewed manifest records (ADR-022 §8).
+    let workspace_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let output = Command::new(env!("CARGO"))
+        .current_dir(&workspace_root)
+        .args(["metadata", "--locked", "--format-version=1", "--no-deps"])
+        .output()
+        .unwrap_or_else(|err| panic!("cargo metadata should run: {err}"));
+    assert!(
+        output.status.success(),
+        "cargo metadata failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let metadata = String::from_utf8(output.stdout)
+        .unwrap_or_else(|err| panic!("cargo metadata emitted invalid UTF-8: {err}"));
+    let package_start = metadata
+        .find(r#""name":"aegis-language""#)
+        .unwrap_or_else(|| panic!("cargo metadata must contain the aegis-language package"));
+    let package = &metadata[package_start..];
+
+    for entry in aegis_language::manifest::BUILTIN_MANIFEST {
+        let needle = format!(r#""name":"{}","source":"#, entry.crate_name);
+        let dependency_start = package.find(&needle).unwrap_or_else(|| {
+            panic!(
+                "cargo metadata must list grammar dependency `{}`",
+                entry.crate_name
+            )
+        });
+        let dependency = &package[dependency_start..];
+        let exact_requirement = format!(r#""req":"={}""#, entry.version);
+        assert!(
+            dependency.starts_with(&format!(r#""name":"{}","source":"#, entry.crate_name))
+                && dependency.contains(&exact_requirement),
+            "cargo metadata must require `{}` exactly at {}; dependency: {}",
+            entry.crate_name,
+            entry.version,
+            dependency.lines().next().unwrap_or(dependency),
         );
     }
 }

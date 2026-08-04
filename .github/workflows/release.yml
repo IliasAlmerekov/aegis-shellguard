@@ -135,6 +135,18 @@ jobs:
           draft: false
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
           generate_release_notes: true
+          # Fail closed, like `if-no-files-found: error` on the upload steps: a
+          # release missing a binary — or the MIT attribution for the statically
+          # linked Tree-sitter components — must not publish with a warning.
+          fail_on_unmatched_files: true
+          # `files` is a literal block scalar: every line below is a glob pattern
+          # and `#` is content, not a comment — a commented line would be treated
+          # as an unmatched pattern and, with the fail-closed flag above, abort
+          # the release. Keep this block to bare paths only.
+          #
+          # `THIRD_PARTY_NOTICES.md` is repo-relative rather than `artifacts/`-
+          # prefixed: it is checked in and comes from this job's own
+          # `actions/checkout` above, not from the build matrix.
           files: |
             artifacts/aegis-linux-x86_64
             artifacts/aegis-linux-x86_64.sha256
@@ -144,6 +156,7 @@ jobs:
             artifacts/aegis-macos-x86_64.sha256
             artifacts/aegis-macos-aarch64
             artifacts/aegis-macos-aarch64.sha256
+            THIRD_PARTY_NOTICES.md
 
   publish-npm:
     name: Publish npm package
@@ -173,7 +186,15 @@ jobs:
         working-directory: packaging/npm
         env:
           AEGIS_NPM_SKIP_DOWNLOAD: "1"
-        run: npm pack --dry-run
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm pack --dry-run 2>&1 | tee pack.log
+          # `files` in package.json only lists candidates; assert the notice is
+          # actually in the tarball, so the npm channel cannot ship the
+          # statically linked Tree-sitter binary without its MIT attribution.
+          grep -q 'THIRD_PARTY_NOTICES.md' pack.log
+          rm -f pack.log
 
       - name: Configure npm authentication
         env:

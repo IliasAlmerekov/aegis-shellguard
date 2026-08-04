@@ -66,6 +66,10 @@ cat > "$out" <<EOF
 }
 EOF
 
+# The npm channel must carry the same MIT attribution as the Release assets.
+# Fails closed if the root notice is missing (see the staging script).
+sh "$(dirname "$0")/stage-npm-notices.sh"
+
 if [ -f "$package_json" ]; then
   tmp_package="${tmp_dir}/package.json"
   awk -v version="$version" '

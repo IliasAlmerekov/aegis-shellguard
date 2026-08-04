@@ -63,6 +63,13 @@ pub enum RoutedTarget {
         /// Why the source could not be recovered.
         reason: DegradationReason,
     },
+    /// A route whose source language cannot be established without resolving
+    /// an unsafe or unavailable prerequisite. It still carries degradation so
+    /// routing never silently drops a source candidate.
+    Unresolved {
+        /// Why routing could not establish an analyzable target.
+        reason: DegradationReason,
+    },
     /// A path-like program token (`./script.py`, `/abs/path/script`) executed
     /// directly, with no known interpreter naming it. [`resolve`] reads the
     /// file and only treats it as a target if its first line is a verified
@@ -76,8 +83,11 @@ pub enum RoutedTarget {
 /// A route that did not resolve into an analyzable [`SourceTarget`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnresolvedTarget {
-    /// The route that failed to resolve.
-    pub language: SourceLanguage,
+    /// The route language, when routing established one before resolution.
+    ///
+    /// A direct executable under a dynamic cwd has no language until its
+    /// shebang can be read, so its degradation deliberately carries `None`.
+    pub language: Option<SourceLanguage>,
     /// Why it did not resolve.
     pub reason: DegradationReason,
 }
@@ -123,6 +133,7 @@ pub(super) async fn resolve_for_analysis(
             }
         }
         RoutedTarget::Dynamic { reason, .. } => Resolution::Degraded(reason),
+        RoutedTarget::Unresolved { reason } => Resolution::Degraded(reason),
         RoutedTarget::DirectExec { path } => {
             let path = match resolve_command_path(&path, command_cwd) {
                 Ok(path) => path,
@@ -271,13 +282,11 @@ fn is_literal_path(path: &str) -> bool {
     !path.is_empty() && !path.contains(['$', '`', '*', '~', '?', '[', ']', '{', '}'])
 }
 
-/// Rebase a route's relative path onto a resolved `cd`, or degrade/drop it
-/// when the `cd` itself was unresolved. Absolute paths are unaffected either
-/// way. A relative [`RoutedTarget::DirectExec`] after a `Dynamic` `cd` is
-/// dropped outright (`None`) rather than read against a possibly-wrong
-/// directory: unlike `ScriptFile`, it carries no language to attach to a
-/// [`RoutedTarget::Dynamic`] degradation, and misleading evidence from the
-/// wrong file is worse than none.
+/// Rebase a route's relative path onto a resolved `cd`, or degrade it when
+/// the `cd` itself was unresolved. Absolute paths are unaffected either way.
+/// A relative [`RoutedTarget::DirectExec`] retains an untyped degradation:
+/// its language is only knowable from a shebang that must not be read from an
+/// unknown cwd (ADR-022 §6, Iteration 10 P7).
 fn apply_cwd(target: RoutedTarget, cwd: &CwdRoute) -> Option<RoutedTarget> {
     match (target, cwd) {
         (RoutedTarget::ScriptFile { language, path }, CwdRoute::Literal(base))
@@ -299,7 +308,11 @@ fn apply_cwd(target: RoutedTarget, cwd: &CwdRoute) -> Option<RoutedTarget> {
                 path: base.join(path),
             })
         }
-        (RoutedTarget::DirectExec { path }, CwdRoute::Dynamic) if path.is_relative() => None,
+        (RoutedTarget::DirectExec { path }, CwdRoute::Dynamic) if path.is_relative() => {
+            Some(RoutedTarget::Unresolved {
+                reason: DegradationReason::DynamicSource,
+            })
+        }
         (other, _) => Some(other),
     }
 }
@@ -682,15 +695,20 @@ async fn resolve_one(
                         source: read.source,
                     }),
                     Err(err) => Err(UnresolvedTarget {
-                        language,
+                        language: Some(language),
                         reason: degradation_reason(&err),
                     }),
                 },
             )
         }
-        RoutedTarget::Dynamic { language, reason } => {
-            Some(Err(UnresolvedTarget { language, reason }))
-        }
+        RoutedTarget::Dynamic { language, reason } => Some(Err(UnresolvedTarget {
+            language: Some(language),
+            reason,
+        })),
+        RoutedTarget::Unresolved { reason } => Some(Err(UnresolvedTarget {
+            language: None,
+            reason,
+        })),
         RoutedTarget::DirectExec { path } => {
             let read = source_reader::read_script_file(&path, script_file_limit_bytes)
                 .await

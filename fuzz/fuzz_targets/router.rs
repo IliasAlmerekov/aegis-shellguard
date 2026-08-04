@@ -23,6 +23,9 @@ fuzz_target!(|data: &[u8]| {
             router::RoutedTarget::Dynamic { reason, .. } => {
                 let _ = format!("{reason:?}");
             }
+            router::RoutedTarget::Unresolved { reason } => {
+                let _ = format!("{reason:?}");
+            }
         }
     }
 
