@@ -23,6 +23,17 @@
 
 ## Last session (2026-08-03 – 2026-08-04) — L1 Iteration 10 license/budget and cwd slices
 
+- **L1 Iteration 10, Slice 3 qualification record implemented locally:**
+  `docs/performance-baseline.md` now records the worker-free corpus,
+  per-grammar parse means, bounded cold worker/RSS observation, explicit
+  no-warm-worker posture, aggregate-timeout contract, and native size; the
+  release-readiness gate states that this is not release enablement. The new
+  contract test binds each evidence/result/interpretation table row rather than
+  labels alone. Focused test, workspace tests, fmt, clippy, audit, and deny
+  pass (the full suite's Unix-socket test flaked once under parallel execution,
+  then passed on replay). No `TASKS.md` box changed; L1 remains unchecked until
+  its required CI contexts and final gate are complete.
+
 - **L1 Iteration 10, Slice 2 qualification RED suites completed locally:** the
   public `language_match` constructor no longer accepts source text at all —
   every language-aware `MatchResult` is source-free at construction, with a

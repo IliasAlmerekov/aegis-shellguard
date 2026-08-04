@@ -62,6 +62,17 @@ verified; the ADR and implementation plan alone do not satisfy the gate.
       TOCTOU, privacy, and unsupported-language limits without implying program
       verification or sandbox guarantees.
 
+#### Iteration 10 qualification evidence (not release enablement)
+
+`docs/performance-baseline.md` records the current local measurements for the
+four foundation adapters under qualification: the worker-free safe path, each grammar's parse row,
+cold-worker RSS/start evidence, the aggregate-timeout boundary, and native
+release-binary size. This is **not a release-enable claim**. The unchecked gate
+above stays authoritative until the required CI contexts have produced the
+all-four-target release, performance, installer, snapshot/rollback, and fuzz
+evidence. In particular, a local native binary size is not a substitute for
+the release artifacts on the two Linux musl and two macOS targets.
+
 ## GitHub Release asset validation
 
 - [ ] `.github/workflows/release.yml` includes all four supported release assets:

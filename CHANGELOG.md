@@ -32,6 +32,11 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Added
 
+- L1 Iteration 10 Slice 3: recorded and contract-tested the local no-source,
+  per-grammar, worker lifecycle/RSS, aggregate-timeout, and native-size
+  qualification evidence without marking the four foundation adapters enabled
+  or release-qualified (ADR-022 §2, §8, §9, §11).
+
 - L1 Iteration 10 Slice 2: qualification regressions now pin source-free
   Language-aware Assessments across interactive TUI, audit, Watch NDJSON, and
   CI output; crash/timeout/malformed-worker degradation through fail-closed CI

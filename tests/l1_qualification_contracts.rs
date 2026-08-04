@@ -347,3 +347,40 @@ fn ci_keeps_safe_and_slow_path_qualification_benches_on_the_performance_gate() {
         );
     }
 }
+
+#[test]
+fn production_qualification_record_covers_all_remaining_iteration_10_measurements() {
+    let performance = read_repo_file("docs/performance-baseline.md");
+    let readiness = read_repo_file("docs/release-readiness.md");
+
+    // Plan Iteration 10 GREEN requires measured evidence, not merely the
+    // earlier Iteration 0 deferrals. Keep the public qualification record
+    // explicit about the worker lifecycle and the bounded aggregate path so a
+    // later documentation refresh cannot accidentally present the adapters as
+    // qualified with only parse microbenchmarks.
+    for row in [
+        "| No-source safe path | `cargo bench --bench no_source_bench -p aegis-language` | 1.01 µs for the ten-command corpus (about 101 ns/command) | Worker-free and below the 2.5 µs policy ceiling. |",
+        "| Per-grammar parse | `cargo bench --bench parse_latency_bench -p aegis-language` | Python 28.7 µs; JavaScript 21.8 µs; TypeScript 24.5 µs; Bash 14.6 µs | Every row is below its checked-in Criterion ceiling. |",
+        "| Worker cold-session latency | `/usr/bin/time` around one framed `--internal-language-worker` Python parse | below the tool's 10 ms display resolution | This is process start + one bounded request on the release binary; use the 100 ms total deadline, not this host measurement, as the enforced bound. |",
+        "| Worker warm-session latency | Not applicable to the production orchestration | no reusable session | `orchestrate` deliberately spawns, closes, and reaps one ephemeral worker per queued target. The protocol can carry a bounded sequence, but production does not reuse a warm worker; a future reuse optimization needs its own benchmark and review. |",
+        "| Peak worker RSS | five cold worker samples with `/usr/bin/time` | 4.1–4.3 MiB | The direct worker process stayed within this observed host range; it is evidence only, not a cross-platform memory promise. |",
+        "| Aggregate-timeout boundary | `tests/analysis_orchestrate_runtime.rs::run_records_target_aggregate_and_total_time_budget_exhaustion` | enforced at the configured total deadline | The default is 100 ms. The regression asserts typed `LimitExceeded` while retaining prior target results; no timer-derived throughput claim is made. |",
+        "| Per-target release-binary size | native `target/release/aegis` | 9.5 MiB | Local native size is recorded for drift detection. Exact sizes for Linux musl x86_64/aarch64 and macOS x86_64/aarch64 must come from the required CI contexts; local cross-target sizes are not substituted for release artifacts. |",
+    ] {
+        assert!(
+            performance.contains(row),
+            "performance record must retain a complete Iteration 10 evidence row `{row}`"
+        );
+    }
+
+    for needle in [
+        "four foundation adapters under qualification",
+        "not a release-enable claim",
+        "required CI contexts",
+    ] {
+        assert!(
+            readiness.contains(needle),
+            "release readiness must state the Iteration 10 qualification boundary `{needle}`"
+        );
+    }
+}
