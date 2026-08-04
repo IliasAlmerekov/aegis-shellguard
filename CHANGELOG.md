@@ -11,6 +11,17 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+### Changed
+
+- Rebaselined the `heredoc_worst_case` performance policy row from 300 µs to
+  1 ms. The first CI run that actually enforced the gate reported +193.3%; a
+  bisect over `d12e971..8efd524` shows the slowdown accumulated across the
+  shell-security commits (largest step: launcher-prefix normalization, ADR-014,
+  which made the inline body a second regex scan target) and is unrelated to the
+  language-aware series — `Scanner::assess` never enters `aegis-language`. Growth
+  is linear (~118 µs/KB) and bounded by `MAX_INLINE_SCRIPT_LEN`. The redundant
+  second scan is tracked as P3-9; evidence is in `docs/performance-baseline.md`.
+
 ### Fixed
 
 - CI: the `Evaluate benchmark policy` step piped `aegis_benchcheck` into `tee`

@@ -53,6 +53,66 @@ It covers two surfaces.
 
 The initial values were rounded from a local benchmark capture on **2026-04-11**
 and then given extra headroom so the policy is stable on shared CI runners.
+`heredoc_worst_case` was rebaselined on **2026-08-04** — see below.
+
+#### `heredoc_worst_case` rebaseline (2026-08-04)
+
+`baseline_ns` moved from `300_000` to `1_000_000`. This row is the one place in
+the file where a rebaseline followed a **real** four-fold slowdown rather than a
+bench change, so the evidence is recorded here instead of only in a PR
+description.
+
+What the first enforcing CI run reported (the `tee`/`pipefail` fix in `6f886b3`
+is what made the gate enforce at all):
+
+```text
+FAIL heredoc_worst_case observed 879.966 µs baseline 300.000 µs delta +193.3% threshold +30.0%
+```
+
+Bisect over `d12e971..8efd524` with a 400 µs cut (`cargo bench --bench
+scanner_bench -- --quick heredoc_worst_case`, local release build):
+
+| Revision | Mean |
+| --- | ---: |
+| `d12e971` — baseline capture point | 175 µs |
+| `0d750ec` | 166 µs |
+| `bdfbaf9` — `fix: normalize launcher prefix detection` (first over the cut) | 465 µs |
+| `8efd524` — last commit before the language-aware series | 698 µs |
+| `6f886b3` — current | 678 µs |
+
+Three conclusions the numbers support:
+
+1. **The old value was honest.** 175 µs at `d12e971` is consistent with the
+   `300_000` budget; the baseline was not padded to hide anything.
+2. **Language-aware analysis is not involved.** `Scanner::assess` returns
+   `analysis: None` and never enters `aegis-language`; the slowdown is fully
+   present at `8efd524`, before the series began. The four `parse/*` rows and
+   `no_source_does_not_start_worker` all pass well under their ceilings.
+3. **The cost is accumulated detection work, not one defect.** The ramp is
+   gradual across the shell-security commits, with the largest single step at
+   `bdfbaf9` (ADR-014), which made the inline-script body a *second* regex scan target
+   (`effective_token_slices` → `join(" ")` → `full_scan`, on top of the
+   `recursive::scan_targets` pass). The redundant second scan of the same body is
+   tracked as **P3-9** in `TASKS.md`; closing it should recover roughly half of
+   this row and is the reason the new ceiling is 1.3 ms rather than a looser one.
+
+The growth is linear and bounded by the existing input caps, measured on the
+same command shape at increasing body sizes:
+
+| Inline body | Command bytes | Mean | Cost per KB |
+| --- | ---: | ---: | ---: |
+| 50 lines | 1,459 | 163 µs | 114 µs |
+| 200 lines (the bench) | 6,309 | 734 µs | 119 µs |
+| 400 lines | 13,109 | 1,500 µs | 117 µs |
+| 800 lines | 26,709 | 250 µs | 10 µs |
+| 1,600 lines | 56,909 | 528 µs | 10 µs |
+
+The collapse past 26 KB is `MAX_INLINE_SCRIPT_LEN` (16 KiB) returning `SCAN-002`
+before the scan, so the worst case is a body just under that cap: about 1.9 ms
+locally. That is inside the `< 2 ms` product budget but with little margin on a
+slower runner — a second reason P3-9 matters. The budget itself is documented for
+the *safe* hot path, which this row is not: `1000_safe_commands` measured 2.602 ms
+for 1,000 commands (2.6 µs each) and is **faster** than its baseline.
 
 ### Language-aware slow path, since Iteration 10 (the two `aegis-language` benches)
 

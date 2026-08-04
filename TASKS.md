@@ -467,6 +467,26 @@ an implementation review promotes them:
 - **Status:** **Open**.
 - **Traceability:** [consolidated plan](docs/plans/2026-07-14-p3-follow-ups.md#p3-8--destructive-sql-follow-ups).
 
+### [ ] P3-9 — Inline script bodies are regex-scanned twice
+
+- **Finding:** `Scanner::assess` scans each recursive target, then rebuilds an
+  effective target from the same tokens (`effective_token_slices` →
+  `join(" ")` → `full_scan`) whose only difference is program-basename
+  normalization, so a large inline body pays the full regex set twice. Cost is
+  linear at ~118 µs/KB, bounded by `MAX_INLINE_SCRIPT_LEN`, which puts a
+  just-under-cap body at ~1.9 ms — inside the `< 2 ms` budget with little margin.
+- **Acceptance criteria:** an effective target that differs from its source target
+  only by program normalization is not rescanned in full; detection results for
+  launcher-prefixed and path-qualified programs are unchanged (the `bdfbaf9`
+  regression tests still pass); `heredoc_worst_case` improves and its baseline is
+  ratcheted down in the same change.
+- **Status:** **Open** — quantified 2026-08-04 while rebaselining
+  `heredoc_worst_case`; not a correctness defect.
+- **Traceability:** [rebaseline evidence](docs/performance-baseline.md#heredoc_worst_case-rebaseline-2026-08-04);
+  `crates/aegis-scanner/src/scanner/assessment.rs` effective-slice loop;
+  [ADR-014](docs/adr/adr-014-launcher-and-absolute-path-normalization-for-token-prefix-detection.md);
+  `perf/scanner_bench_baseline.toml`.
+
 ---
 
 ## Current implementation order

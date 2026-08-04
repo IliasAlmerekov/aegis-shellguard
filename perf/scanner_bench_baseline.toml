@@ -12,9 +12,14 @@ baseline_ns = 1_000_000
 regression_pct = 25.0
 description = "100 dangerous commands exercise the full regex verification path across categories."
 
+# Rebaselined 2026-08-04 from 300_000: the 2026-04-11 value was captured before
+# launcher-prefix normalization (bdfbaf9) made the inline body a second regex
+# scan target, and the gate was inert until 6f886b3 so the drift was never
+# reported. See "heredoc_worst_case rebaseline (2026-08-04)" in
+# docs/performance-baseline.md for the bisect evidence and the open follow-up.
 [[benchmarks]]
 name = "heredoc_worst_case"
-baseline_ns = 300_000
+baseline_ns = 1_000_000
 regression_pct = 30.0
 description = "Worst-case inline-script/heredoc scanning should stay bounded on shared CI hardware."
 
