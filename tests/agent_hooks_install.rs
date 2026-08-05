@@ -1,133 +1,17 @@
 // Integration tests for install/uninstall flows, split from agent_hooks.rs to
-// keep both files within the 800-line budget (M5.1 quality gate, Task 1).
+// keep both files within the 800-line budget (M5.1 quality gate, Task 1). The
+// script runners and JSON probes are shared with agent_hooks.rs via
+// support::agent_hooks rather than duplicated here.
+
+mod support;
 
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
 
-use serde_json::Value;
 use tempfile::TempDir;
 
-fn script_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("scripts")
-        .join(name)
-}
-
-fn aegis_test_binary() -> PathBuf {
-    std::env::var_os("CARGO_BIN_EXE_aegis")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| panic!("CARGO_BIN_EXE_aegis is not set for agent hook tests"))
-}
-
-fn prepare_agent_dirs(home: &Path, claude: bool, codex: bool) {
-    if claude {
-        fs::create_dir_all(home.join(".claude")).unwrap();
-    }
-
-    if codex {
-        fs::create_dir_all(home.join(".codex")).unwrap();
-    }
-}
-
-fn run_script(script_name: &str, home: &Path, args: &[&str], stdin: Option<&str>) -> Output {
-    let mut command = Command::new("/bin/sh");
-    command.arg(script_path(script_name));
-    command.args(args);
-    command.env("HOME", home);
-    command.env("AEGIS_BIN", aegis_test_binary());
-    for key in [
-        "AEGIS_CI",
-        "CI",
-        "GITHUB_ACTIONS",
-        "GITLAB_CI",
-        "CIRCLECI",
-        "BUILDKITE",
-        "TRAVIS",
-        "TF_BUILD",
-        "JENKINS_URL",
-    ] {
-        command.env_remove(key);
-    }
-    command.stdin(std::process::Stdio::piped());
-    command.stdout(std::process::Stdio::piped());
-    command.stderr(std::process::Stdio::piped());
-
-    let mut child = command.spawn().unwrap();
-
-    if let Some(input) = stdin {
-        use std::io::Write;
-        child
-            .stdin
-            .as_mut()
-            .unwrap()
-            .write_all(input.as_bytes())
-            .unwrap();
-    }
-
-    child.wait_with_output().unwrap()
-}
-
-fn run_script_with_env(
-    script_name: &str,
-    home: &Path,
-    args: &[&str],
-    stdin: Option<&str>,
-    envs: &[(&str, &str)],
-) -> Output {
-    let mut command = Command::new("/bin/sh");
-    command.arg(script_path(script_name));
-    command.args(args);
-    command.env("HOME", home);
-    command.env("AEGIS_BIN", aegis_test_binary());
-    for key in [
-        "AEGIS_CI",
-        "CI",
-        "GITHUB_ACTIONS",
-        "GITLAB_CI",
-        "CIRCLECI",
-        "BUILDKITE",
-        "TRAVIS",
-        "TF_BUILD",
-        "JENKINS_URL",
-    ] {
-        command.env_remove(key);
-    }
-    for (key, value) in envs {
-        command.env(key, value);
-    }
-    command.stdin(Stdio::piped());
-    command.stdout(Stdio::piped());
-    command.stderr(Stdio::piped());
-
-    let mut child = command.spawn().unwrap();
-
-    if let Some(input) = stdin {
-        use std::io::Write;
-        child
-            .stdin
-            .as_mut()
-            .unwrap()
-            .write_all(input.as_bytes())
-            .unwrap();
-    }
-
-    child.wait_with_output().unwrap()
-}
-
-fn read_json(path: &Path) -> Value {
-    serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
-}
-
-fn json_contains_command(json: &Value, section: &str, command: &str) -> bool {
-    json["hooks"][section].as_array().is_some_and(|entries| {
-        entries.iter().any(|entry| {
-            entry["hooks"]
-                .as_array()
-                .is_some_and(|hooks| hooks.iter().any(|hook| hook["command"] == command))
-        })
-    })
-}
+use support::agent_hooks::{
+    json_contains_command, prepare_agent_dirs, read_json, run_script, run_script_with_env,
+};
 
 #[test]
 fn uninstall_prunes_claude_and_codex_hook_registrations() {
@@ -136,8 +20,6 @@ fn uninstall_prunes_claude_and_codex_hook_registrations() {
     let rc_file = home.path().join(".bashrc");
     fs::write(&rc_file, "export FOO=bar\n").unwrap();
 
-    // Seed unrelated user content in Claude settings.json so we can assert it
-    // survives uninstall alongside the aegis migration/prune.
     let claude_settings = home.path().join(".claude").join("settings.json");
     fs::write(
         &claude_settings,
@@ -266,13 +148,6 @@ fn uninstall_prunes_claude_and_codex_hook_registrations() {
 
 #[test]
 fn claude_install_migrates_legacy_aegis_hook_registration_to_absolute_shim() {
-    // End-to-end migration seam through the public binary surface: seed a real
-    // legacy bare `aegis hook` Bash registration alongside an unrelated user hook,
-    // run `aegis install-hooks --claude-code`, and assert the legacy command is
-    // migrated to the absolute shim, the shim is materialized on disk, and the
-    // user hook survives. The JSON-only `apply_installation` unit tests cover the
-    // prune logic with a fake command; this closes the seam between that logic
-    // and a real filesystem install.
     let home = TempDir::new().unwrap();
     prepare_agent_dirs(home.path(), true, false);
     let claude_settings = home.path().join(".claude").join("settings.json");

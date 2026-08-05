@@ -12,6 +12,7 @@
 // forcing every test file to touch every helper.
 #![allow(dead_code)]
 
+pub mod agent_hooks;
 pub mod installer;
 
 use std::fs;
