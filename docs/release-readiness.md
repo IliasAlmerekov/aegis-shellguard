@@ -112,7 +112,7 @@ and `THIRD_PARTY_NOTICES.md`. The tagged
 completed successfully. `rtk cargo test --test release_workflow` (12 tests) and
 `rtk env AEGIS_TEST_LIVE_RELEASE=1 AEGIS_TEST_RELEASE_TAG=v0.6.3 cargo test
 --test release_assets_live -- --nocapture` passed; the live test downloaded and
-verified every binary/sidecar pair. `rtk cargo test --test npm_package` (16
+verified every binary/sidecar pair. `rtk cargo test --test npm_package` (15
 tests) and `rtk cargo test --test homebrew_formula` (13 tests) passed.
 
 ## Security-Grade Checklist
