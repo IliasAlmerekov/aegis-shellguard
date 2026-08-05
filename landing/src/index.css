@@ -1,5 +1,37 @@
 @import "tailwindcss";
 
+/* ── Geist ────────────────────────────────────────────────────────────
+   Self-hosted variable subsets from @fontsource-variable/geist and
+   @fontsource-variable/geist-mono (kept as devDependencies so the files in
+   public/fonts have a versioned provenance and an upgrade path).
+
+   Latin only, upright only: the site is English and uses no italics, so the
+   two files together are ~51 KB. The unicode-range is Fontsource's `latin`
+   subset — it already covers the em dash, ellipsis and arrows used in the
+   copy, so nothing renders from a fallback face. */
+
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("/fonts/geist-latin-variable.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("/fonts/geist-mono-latin-variable.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 @theme {
   --color-void: #000000;
   --color-carbon: #212525;
@@ -15,9 +47,13 @@
   --color-sage: #aed2a4;
   --color-bone: #ffffff;
 
-  --font-display: "Barlow", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  /* One type system: Geist Sans and Geist Mono share metrics and numeral
+     shapes, so headline, prose and terminal output read as one voice. The
+     display and body roles are the same face — hierarchy comes from size,
+     weight and space, not from a second family. */
+  --font-display: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-body: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   --radius-sm: 4px;
   --radius-md: 8px;
@@ -36,14 +72,13 @@ html {
 body {
   background-color: #000000;
   color: #ddffdc;
-  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
-  font-feature-settings: "cv11" on;
+  font-family: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  /* The former `font-feature-settings: "cv11"` was an Inter-only character
+     variant and is dropped rather than translated — Geist has no equivalent.
+     Digit alignment stays where it belongs: `tabular-nums` on the animated
+     stats, not a global numeric override on running prose. */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-h1, h2, h3, h4, h5, h6 {
-  font-feature-settings: "ss01" on;
 }
 
 /* ── Scroll-reveal choreography ───────────────────────────────────────

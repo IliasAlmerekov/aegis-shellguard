@@ -41,7 +41,10 @@ export function Nav() {
               aria-hidden="true"
               className="h-[30px] w-[30px] object-contain"
             />
-            <span className="font-display text-base font-semibold uppercase tracking-wide text-[#ddffdc]">
+            {/* Geist's caps are wider than Barlow's and its sidebearings are
+                tighter, so the wordmark needs real letterspacing at 16px —
+                tracking-wide (0.025em) read as a cramped block. */}
+            <span className="font-display text-base font-semibold uppercase tracking-[0.09em] text-[#ddffdc]">
               aegis
             </span>
           </a>
