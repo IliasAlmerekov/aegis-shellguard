@@ -175,6 +175,8 @@ fn tracked_public_contracts_do_not_overclaim_audit_integrity() {
                 matches!(
                     path.as_str(),
                     "landing/public/favicon.ico"
+                        | "landing/public/fonts/geist-latin-variable.woff2"
+                        | "landing/public/fonts/geist-mono-latin-variable.woff2"
                         | "landing/public/models/shield.glb"
                         | "landing/public/shield-icon.png"
                         | "src/assets/aegis.gif"
