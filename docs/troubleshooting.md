@@ -144,6 +144,20 @@ Codex expects `additionalContext`.
 2. Confirm `~/.codex/hooks/aegis-session-start.sh` emits
    `hookSpecificOutput.additionalContext`.
 
+### Aegis says it is disabled when an agent session starts
+
+**Why:** `aegis off` is an explicit operator control. The local Toggle is
+effective outside CI, so commands use unguarded passthrough until it is
+re-enabled.
+
+**Fix:**
+
+1. Run `aegis status` to inspect the configured and effective state.
+2. Run `aegis on` to re-enable enforcement.
+3. If the session does not show the current effective-state notice after an
+   Aegis upgrade, re-run `aegis install-hooks --all`. Managed hooks are updated
+   explicitly; they never self-update while a session starts.
+
 ### Hooks installed but commands are not intercepted
 
 **Why:** Codex requires hooks to be enabled and trusted. The registration can be
