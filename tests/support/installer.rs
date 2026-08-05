@@ -122,6 +122,13 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "${url}" in
+    *THIRD_PARTY_NOTICES.md)
+        if [ "${TEST_NOTICE_MODE:-present}" = "missing" ]; then
+            printf 'third-party notice asset missing\n' >&2
+            exit 22
+        fi
+        cp "${TEST_NOTICE_ASSET:-THIRD_PARTY_NOTICES.md}" "${output}"
+        ;;
     *.sha256)
         if [ "${TEST_CHECKSUM_MODE:-present}" = "missing" ]; then
             printf 'checksum asset missing\n' >&2

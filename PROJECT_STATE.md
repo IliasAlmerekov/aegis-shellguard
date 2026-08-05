@@ -9,7 +9,7 @@
 
 ## Current version
 
-`0.6.2` — pre-1.0, targeting `1.0.0` (tagged `v0.6.2`)
+`0.6.3` — pre-1.0, targeting `1.0.0` (tag `v0.6.3` pending push)
 
 ## Active branch
 
@@ -17,11 +17,48 @@
 
 ## Last updated
 
-2026-08-04
+2026-08-05
 
 ---
 
-## Last session (2026-08-03 – 2026-08-04) — L1 Iteration 10 license/budget and cwd slices
+## Last session (2026-08-04) — v0.6.3 release preparation
+
+- **v0.6.3 PR #159 CI live-installer fix:** `scripts/install.sh` now permits a
+  missing `THIRD_PARTY_NOTICES.md` only for the already-published pre-v0.6.3
+  binary (currently latest, v0.6.2); it still fails closed before installation
+  for v0.6.3+. Exact 0.6.2/0.6.3 contract tests, the macOS-host live-release
+  installer test, workspace tests, clippy, fmt, audit, and deny passed.
+
+- **v0.6.3 release prepared; tag pending.** Version bumped to `0.6.3` across the
+  workspace (`Cargo.toml` + all 12 crates + internal path-dep version pins +
+  `Cargo.lock`), npm `packaging/npm/package.json`, README (badge, `--tag v0.6.3`
+  install line), `tests/npm_package.rs`, `docs/releases/current-line.md`,
+  `docs/releases/v1.0.0.md`, and the landing (`Hero.jsx`, `HowItWorks.jsx`).
+  `CHANGELOG.md` `[Unreleased]` cut to `[0.6.3] — 2026-08-04` with a fresh empty
+  `[Unreleased]` above it. `fuzz/Cargo.lock` is gitignored and regenerates
+  locally; not part of this change. Homebrew (`packaging/homebrew/Formula/
+  aegis.rb`) and npm `checksums.json` stay at their prior pinned values —
+  both are regenerated post-tag from real published Release assets via
+  `scripts/update-homebrew-formula.sh` / `scripts/update-npm-package.sh`, not
+  bumped ahead of the tag. Verified: workspace tests (2054), clippy
+  `-D warnings`, fmt, `cargo test --test npm_package` /
+  `--test release_workflow`, and the landing production build.
+- **This slice ships the Homebrew notices delivery from the prior session**
+  (`packaging/homebrew/Formula/aegis.rb` `third_party_notices` resource,
+  `scripts/update-homebrew-formula.sh` updater, `tests/homebrew_formula.rs`) —
+  merged via PR #158, all 14 required CI contexts green.
+
+## Prior session (2026-08-03 – 2026-08-04) — L1 Iteration 10 license/budget and cwd slices
+
+- **L1 Iteration 10 follow-up in progress:** review found the former universal
+  in-memory source-free claim unenforceable through public `MatchResult`
+  literals, so ADR-022/CONTEXT now state the enforceable production-construction
+  plus outward-projection contract and `Debug` is source-safe. A checked-in
+  per-adapter qualification record ties corpus, fuzz, latency and four-target
+  CI evidence together; `scripts/install.sh` now installs `THIRD_PARTY_NOTICES.md`
+  beside its binary under `share/doc/aegis`. Focused tests and a full-workspace
+  replay passed (the known Unix-socket test flaked once, then passed). Homebrew
+  still installs the binary alone, so final L1 release enablement remains open.
 
 - **L1 Iteration 10, Slice 3 qualification record implemented locally:**
   `docs/performance-baseline.md` now records the worker-free corpus,

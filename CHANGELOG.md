@@ -11,6 +11,14 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+### Fixed
+
+- CI: retain `scripts/install.sh` compatibility with pre-v0.6.3 releases that
+  do not carry `THIRD_PARTY_NOTICES.md`, while keeping the notice fail-closed
+  for v0.6.3 and later.
+
+## [0.6.3] — 2026-08-04
+
 ### Changed
 
 - Rebaselined the `heredoc_worst_case` performance policy row from 300 µs to
@@ -31,6 +39,11 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
   and a contract test pins both.
 
 ### Added
+
+- L1 Iteration 10: added a per-adapter qualification record and install-script
+  delivery of the Tree-sitter provenance notice; Language-aware `MatchResult`
+  debug output now applies the source-safe public projection (ADR-022 §8, §10,
+  §11).
 
 - L1 Iteration 10 Slice 3: recorded and contract-tested the local no-source,
   per-grammar, worker lifecycle/RSS, aggregate-timeout, and native-size

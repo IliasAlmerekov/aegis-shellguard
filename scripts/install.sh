@@ -350,6 +350,86 @@ install_binary() {
     fail "cannot write to ${BINDIR}; rerun as root or install sudo"
 }
 
+install_provenance_notice() {
+    source_path="$1"
+    notice_dir="$(dirname "${BINDIR}")/share/doc/aegis"
+    notice_target="${notice_dir}/THIRD_PARTY_NOTICES.md"
+
+    if [ ! -d "${notice_dir}" ]; then
+        if [ -w "$(dirname "${BINDIR}")" ]; then
+            mkdir -p "${notice_dir}"
+        elif need_cmd sudo; then
+            sudo mkdir -p "${notice_dir}"
+        else
+            fail "cannot create ${notice_dir}; rerun as root or install sudo"
+        fi
+    fi
+
+    if [ -w "${notice_dir}" ]; then
+        install -m 0644 "${source_path}" "${notice_target}"
+        return
+    fi
+
+    if need_cmd sudo; then
+        sudo install -m 0644 "${source_path}" "${notice_target}"
+        return
+    fi
+
+    fail "cannot write ${notice_target}; rerun as root or install sudo"
+}
+
+downloaded_version_requires_notice() {
+    binary_path="$1"
+    version_output=""
+    version=""
+    version_core=""
+    major=""
+    minor=""
+    patch=""
+    old_ifs=""
+
+    if ! version_output="$("${binary_path}" --version 2>/dev/null)"; then
+        fail "cannot determine downloaded aegis version for third-party notice"
+    fi
+
+    case "${version_output}" in
+        "aegis "*)
+            version="${version_output#aegis }"
+            ;;
+        *)
+            fail "cannot determine downloaded aegis version for third-party notice"
+            ;;
+    esac
+
+    version_core="${version%%-*}"
+    version_core="${version_core%%+*}"
+    old_ifs="${IFS}"
+    IFS=.
+    set -- ${version_core}
+    IFS="${old_ifs}"
+
+    if [ "$#" -ne 3 ]; then
+        fail "cannot determine downloaded aegis version for third-party notice"
+    fi
+
+    major="$1"
+    minor="$2"
+    patch="$3"
+    case "${major}${minor}${patch}" in
+        '' | *[!0-9]*)
+            fail "cannot determine downloaded aegis version for third-party notice"
+            ;;
+    esac
+
+    if [ "${major}" -gt 0 ] \
+        || { [ "${major}" -eq 0 ] && [ "${minor}" -gt 6 ]; } \
+        || { [ "${major}" -eq 0 ] && [ "${minor}" -eq 6 ] && [ "${patch}" -ge 3 ]; }; then
+        return 0
+    fi
+
+    return 1
+}
+
 print_post_install() {
     rc_file="$1"
 
@@ -428,8 +508,11 @@ main() {
     base_url=""
     download_url=""
     checksum_url=""
+    notice_url=""
     binary_path=""
     checksum_path=""
+    notice_path=""
+    notice_installed="false"
     real_shell="$(detect_real_shell)"
     rc_file="$(resolve_rc_file "${real_shell}")"
 
@@ -439,19 +522,34 @@ main() {
     base_url="$(resolve_base_url)"
     download_url="${base_url}/${asset}"
     checksum_url="${download_url}.sha256"
+    notice_url="${base_url}/THIRD_PARTY_NOTICES.md"
 
     TMPDIR_AEGIS="$(mktemp -d)"
     binary_path="${TMPDIR_AEGIS}/aegis"
     checksum_path="${TMPDIR_AEGIS}/aegis.sha256"
+    notice_path="${TMPDIR_AEGIS}/THIRD_PARTY_NOTICES.md"
 
     printf 'Downloading %s\n' "${download_url}"
     download_or_fail "binary" "${download_url}" "${binary_path}"
     download_or_fail "checksum" "${checksum_url}" "${checksum_path}"
     verify_downloaded_binary "${binary_path}" "${checksum_path}" "${asset}"
     chmod 0755 "${binary_path}"
+
+    if download "${notice_url}" "${notice_path}"; then
+        install_provenance_notice "${notice_path}"
+        notice_installed="true"
+    elif downloaded_version_requires_notice "${binary_path}"; then
+        fail "third-party notice download failed"
+    else
+        printf 'Third-party notices are unavailable for this pre-v0.6.3 release; continuing without them.\n' >&2
+    fi
+
     install_binary "${binary_path}"
 
     printf 'Installed aegis to %s/aegis\n' "${BINDIR}"
+    if [ "${notice_installed}" = "true" ]; then
+        printf 'Installed third-party notices to %s/share/doc/aegis/THIRD_PARTY_NOTICES.md\n' "$(dirname "${BINDIR}")"
+    fi
 
     install_target="$(target_path)"
 

@@ -1,10 +1,11 @@
 # Language grammar manifest
 
-> **Status:** L1 foundation — Iteration 0 prototype. The four foundation
-> grammars below are statically linked and parse-qualified on the host build,
-> and the 4-target release matrix (ADR-022 §8) is exercised as a build/link
-> gate by the `cross-matrix` CI job. Runtime behavior beyond parse-only is not
-> yet wired.
+> **Status:** L1 qualification evidence. The four foundation grammars below
+> are statically linked, routed through the production worker, and covered by
+> the 4-target release matrix (ADR-022 §8). Their corpus, fuzz, interface, and
+> benchmark evidence is recorded per adapter in
+> [`language-qualification.md`](language-qualification.md); that record is not
+> itself release enablement.
 
 This document is the human-readable release grammar manifest required by
 [ADR-022 §8](adr/adr-022-language-aware-analysis-is-an-additive-isolated-stage.md):
