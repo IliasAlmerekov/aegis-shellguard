@@ -206,7 +206,7 @@ fn codex_pre_tool_use_is_noop_when_disabled_outside_ci() {
 }
 
 #[test]
-fn codex_session_start_is_noop_when_disabled_outside_ci() {
+fn codex_session_start_reports_unguarded_passthrough_when_disabled_outside_ci() {
     let home = TempDir::new().unwrap();
     prepare_agent_dirs(home.path(), false, true);
     fs::create_dir_all(home.path().join(".aegis")).unwrap();
@@ -221,8 +221,108 @@ fn codex_session_start_is_noop_when_disabled_outside_ci() {
 
     let output = run_script("hooks/codex-session-start.sh", home.path(), &[], None);
     assert!(output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(output.stderr.is_empty());
+    assert!(
+        output.stderr.is_empty(),
+        "session start must not write stderr"
+    );
+
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["hookSpecificOutput"]["hookEventName"], "SessionStart");
+    assert_eq!(
+        json["hookSpecificOutput"]["additionalContext"],
+        "Aegis is disabled: commands run in unguarded passthrough. Run \"aegis on\" to re-enable enforcement; \"aegis status\" shows the effective state."
+    );
+}
+
+fn run_claude_session_start(home: &Path) -> Output {
+    run_script("hooks/claude-session-start.sh", home, &[], None)
+}
+
+#[test]
+fn codex_session_start_reports_ci_override_when_disabled_flag_exists() {
+    let home = TempDir::new().unwrap();
+    fs::create_dir_all(home.path().join(".aegis")).unwrap();
+    fs::write(
+        home.path().join(".aegis").join("disabled"),
+        "timestamp=x\npid=1\n",
+    )
+    .unwrap();
+
+    let output = run_script_with_env(
+        "hooks/codex-session-start.sh",
+        home.path(),
+        &[],
+        None,
+        &[("AEGIS_CI", "1")],
+    );
+    assert!(output.status.success());
+    assert!(
+        output.stderr.is_empty(),
+        "session start must not write stderr"
+    );
+
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let context = json["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(context.contains("Aegis is enforced: the local disabled Toggle is overridden by CI."));
+    assert!(context.contains("All Bash tool commands must be routed through aegis."));
+}
+
+#[test]
+fn claude_session_start_reports_unguarded_passthrough_when_disabled_outside_ci() {
+    let home = TempDir::new().unwrap();
+    fs::create_dir_all(home.path().join(".aegis")).unwrap();
+    fs::write(
+        home.path().join(".aegis").join("disabled"),
+        "timestamp=x\npid=1\n",
+    )
+    .unwrap();
+
+    let output = run_claude_session_start(home.path());
+    assert!(output.status.success());
+    assert!(
+        output.stderr.is_empty(),
+        "session start must not write stderr"
+    );
+
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["hookSpecificOutput"]["hookEventName"], "SessionStart");
+    assert_eq!(
+        json["hookSpecificOutput"]["additionalContext"],
+        "Aegis is disabled: commands run in unguarded passthrough. Run \"aegis on\" to re-enable enforcement; \"aegis status\" shows the effective state."
+    );
+}
+
+#[test]
+fn claude_session_start_reports_ci_override_when_disabled_flag_exists() {
+    let home = TempDir::new().unwrap();
+    fs::create_dir_all(home.path().join(".aegis")).unwrap();
+    fs::write(
+        home.path().join(".aegis").join("disabled"),
+        "timestamp=x\npid=1\n",
+    )
+    .unwrap();
+
+    let output = run_script_with_env(
+        "hooks/claude-session-start.sh",
+        home.path(),
+        &[],
+        None,
+        &[("AEGIS_CI", "1")],
+    );
+    assert!(output.status.success());
+    assert!(
+        output.stderr.is_empty(),
+        "session start must not write stderr"
+    );
+
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let context = json["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(context.contains("Aegis is enforced: the local disabled Toggle is overridden by CI."));
+    assert!(context.contains("All Bash tool commands must be routed through aegis."));
 }
 
 #[test]
@@ -373,6 +473,57 @@ fn codex_agent_setup_installs_hooks_and_is_idempotent() {
     let second_output = run_script("agent-setup.sh", home.path(), &["--all"], None);
     assert!(second_output.status.success());
     assert_eq!(fs::read_to_string(&session_hook).unwrap(), before);
+}
+
+#[test]
+fn claude_agent_setup_installs_session_start_hook() {
+    let home = TempDir::new().unwrap();
+    prepare_agent_dirs(home.path(), true, false);
+
+    let install_output = run_script("agent-setup.sh", home.path(), &["--claude-code"], None);
+    assert!(install_output.status.success());
+
+    let session_hook = home
+        .path()
+        .join(".claude")
+        .join("hooks")
+        .join("aegis-session-start.sh");
+    assert!(
+        session_hook.exists(),
+        "session-start hook must be installed"
+    );
+
+    let settings = read_json(&home.path().join(".claude").join("settings.json"));
+    assert!(
+        settings["hooks"]["SessionStart"]
+            .as_array()
+            .is_some_and(|entries| {
+                entries.iter().any(|entry| {
+                    entry["matcher"] == "startup|resume"
+                        && entry["hooks"].as_array().is_some_and(|hooks| {
+                            hooks.iter().any(|hook| {
+                                hook["type"] == "command"
+                                    && hook["command"] == session_hook.display().to_string()
+                            })
+                        })
+                })
+            }),
+        "Claude settings must register the managed session-start hook"
+    );
+
+    fs::create_dir_all(home.path().join(".aegis")).unwrap();
+    fs::write(home.path().join(".aegis").join("disabled"), "disabled\n").unwrap();
+    let output = Command::new("/bin/sh")
+        .arg(&session_hook)
+        .env("HOME", home.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        json["hookSpecificOutput"]["additionalContext"],
+        "Aegis is disabled: commands run in unguarded passthrough. Run \"aegis on\" to re-enable enforcement; \"aegis status\" shows the effective state."
+    );
 }
 
 #[test]

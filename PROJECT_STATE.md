@@ -21,7 +21,19 @@
 
 ---
 
-## Last session (2026-08-05) — v0.6.3 distribution sync
+## Last session (2026-08-05) — M3a Toggle visibility in progress
+
+- **M3a implementation staged locally:** Claude Code now receives a managed
+  `SessionStart` hook alongside Codex. Both emit protocol-valid effective-state
+  context for disabled passthrough and CI override; command-level JSON remains
+  unchanged. ADR-005, the M3a plan, README, and troubleshooting now record the
+  boundary and explicit hook-refresh requirement. Focused agent-hook tests,
+  fmt, and clippy pass. Workspace replay remains blocked by the pre-existing
+  Unix-socket fixture failure in
+  `analysis::source_reader::tests::unix_socket_is_rejected_as_not_a_regular_file`;
+  M3a remains open pending that gate, review/re-review, and CI.
+
+## Prior session (2026-08-05) — v0.6.3 distribution sync
 
 - **Bash fuzz-crash repaired locally:** the reported `language_bash` ASan
   artifact is now a checked-in corpus regression. The Bash adapter rejects

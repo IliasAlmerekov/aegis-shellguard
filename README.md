@@ -197,7 +197,13 @@ aegis install-hooks --claude-code
 aegis install-hooks --all
 ```
 
-Re-run after upgrading to migrate any older `aegis hook` / `aegis-rewrite.sh` registration to the current shim.
+Re-run after upgrading to refresh the managed hooks, including SessionStart
+effective-state notices, and to migrate any older `aegis hook` /
+`aegis-rewrite.sh` registration to the current shim. If `aegis off` is active,
+each new Claude Code or Codex session visibly reports that commands use
+unguarded passthrough; `aegis on` re-enables enforcement. CI keeps enforcement
+active even if the local disabled flag exists and reports that override at
+session start.
 
 > [!TIP]
 > **Other agents:** for tools that respect `$SHELL`, run `aegis setup-shell`. For an agent with a `shell` config field, find the `shell` field and set it to the output of `command -v aegis`.

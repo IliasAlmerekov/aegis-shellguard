@@ -22,8 +22,12 @@ The current full-disable model uses a single global flag file:
 
 - shell-wrapper mode snapshots toggle state once before enforcement-related I/O
 - watch mode snapshots toggle state once per command-boundary gate
-- disabled local mode is intentionally quiet for ordinary shell / supported
-  hook usage
+- disabled local mode is intentionally quiet at ordinary command boundaries,
+  including shell-wrapper and pre-tool JSON-hook execution, so structured
+  command protocols remain valid
+- every supported agent `SessionStart` hook visibly reports disabled passthrough
+  when the local flag is effective; this startup notice is the deliberate
+  exception to command-boundary quietness
 
 ## Why
 

@@ -10,6 +10,8 @@ use super::{
 };
 
 const CLAUDE_PRE_TOOL_USE_HOOK_SH: &str = include_str!("../../scripts/hooks/claude-code.sh");
+const CLAUDE_SESSION_START_HOOK_SH: &str =
+    include_str!("../../scripts/hooks/claude-session-start.sh");
 
 pub(crate) fn run_claude_install(global: bool) -> AgentInstallResult {
     AgentInstallResult::from_result(run_install_inner(global))
@@ -61,6 +63,8 @@ fn run_install_at_path(settings_path: &Path) -> Result<InstallOutcome, String> {
 
     let shim_path = hooks_dir.join("aegis-pre-tool-use.sh");
     let shim_outcome = write_executable(&shim_path, &render_claude_pre_tool_use_hook())?;
+    let session_shim_path = hooks_dir.join("aegis-session-start.sh");
+    let session_shim_outcome = write_executable(&session_shim_path, CLAUDE_SESSION_START_HOOK_SH)?;
 
     // Resolve to an absolute path so the registered command is PATH-independent
     // even when install ran from a relative cwd (e.g. a project-local install).
@@ -70,12 +74,81 @@ fn run_install_at_path(settings_path: &Path) -> Result<InstallOutcome, String> {
         .ok_or_else(|| "hook path is not valid UTF-8".to_string())?
         .to_owned();
 
-    let settings_outcome = apply_installation(&mut settings, &hook_command)?;
+    let session_hook_command = std::path::absolute(&session_shim_path)
+        .map_err(|err| format!("failed to resolve absolute hook path: {err}"))?
+        .to_str()
+        .ok_or_else(|| "session-start hook path is not valid UTF-8".to_string())?
+        .to_owned();
+
+    let pre_tool_use_outcome = apply_installation(&mut settings, &hook_command)?;
+    let session_start_outcome =
+        apply_session_start_installation(&mut settings, &session_hook_command)?;
+    let settings_outcome = combine_outcomes(pre_tool_use_outcome, session_start_outcome);
     if matches!(settings_outcome, InstallOutcome::Installed) {
         write_settings_atomically(settings_path, &settings)?;
     }
 
-    Ok(combine_outcomes(shim_outcome, settings_outcome))
+    Ok(combine_outcomes(
+        combine_outcomes(shim_outcome, session_shim_outcome),
+        settings_outcome,
+    ))
+}
+
+fn apply_session_start_installation(
+    settings: &mut Value,
+    hook_command: &str,
+) -> Result<InstallOutcome, String> {
+    let root = settings
+        .as_object_mut()
+        .ok_or_else(|| "settings.json must contain a top-level JSON object".to_string())?;
+    let hooks = root
+        .entry("hooks".to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()))
+        .as_object_mut()
+        .ok_or_else(|| "settings.hooks must be a JSON object".to_string())?;
+    let session_start = hooks
+        .entry("SessionStart".to_string())
+        .or_insert_with(|| Value::Array(Vec::new()))
+        .as_array_mut()
+        .ok_or_else(|| "settings.hooks.SessionStart must be a JSON array".to_string())?;
+
+    for entry in session_start.iter() {
+        let entry = entry.as_object().ok_or_else(|| {
+            "settings.hooks.SessionStart entries must contain objects".to_string()
+        })?;
+        let matcher = entry
+            .get("matcher")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                "settings.hooks.SessionStart entries must contain a string matcher".to_string()
+            })?;
+        let hooks = entry
+            .get("hooks")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                format!("settings.hooks.SessionStart matching {matcher} entry must contain hooks")
+            })?;
+        for hook in hooks {
+            let hook = hook.as_object().ok_or_else(|| {
+                "settings.hooks.SessionStart hooks must contain objects".to_string()
+            })?;
+            let hook_type = hook.get("type").and_then(Value::as_str).ok_or_else(|| {
+                "settings.hooks.SessionStart hooks must contain a string type".to_string()
+            })?;
+            let command = hook.get("command").and_then(Value::as_str).ok_or_else(|| {
+                "settings.hooks.SessionStart hooks must contain a string command".to_string()
+            })?;
+            if hook_type == "command" && command == hook_command {
+                return Ok(InstallOutcome::AlreadyPresent);
+            }
+        }
+    }
+
+    session_start.push(serde_json::json!({
+        "matcher": "startup|resume",
+        "hooks": [{ "type": "command", "command": hook_command }]
+    }));
+    Ok(InstallOutcome::Installed)
 }
 
 /// Materialize the Claude PreToolUse hook with `__AEGIS_BIN__` replaced by an
@@ -359,6 +432,7 @@ mod tests {
         let written = fs::read_to_string(&settings_path).expect("read settings");
         let parsed: Value = serde_json::from_str(&written).expect("parse settings");
         let expected_shim = settings_dir.join("hooks").join("aegis-pre-tool-use.sh");
+        let expected_session_shim = settings_dir.join("hooks").join("aegis-session-start.sh");
         assert_eq!(
             parsed,
             serde_json::json!({
@@ -370,6 +444,17 @@ mod tests {
                                 {
                                     "type": "command",
                                     "command": expected_shim.display().to_string()
+                                }
+                            ]
+                        }
+                    ],
+                    "SessionStart": [
+                        {
+                            "matcher": "startup|resume",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": expected_session_shim.display().to_string()
                                 }
                             ]
                         }
@@ -770,5 +855,30 @@ mod tests {
             1,
             "exactly one aegis-managed Bash entry must be present"
         );
+    }
+
+    #[test]
+    fn claude_session_start_install_is_idempotent_and_preserves_user_hooks() {
+        let mut settings = serde_json::json!({
+            "hooks": {
+                "SessionStart": [{
+                    "matcher": "startup",
+                    "hooks": [{ "type": "command", "command": "echo keep" }]
+                }]
+            }
+        });
+
+        let first = apply_session_start_installation(&mut settings, "/tmp/aegis-session-start.sh")
+            .expect("first install");
+        assert!(matches!(first, InstallOutcome::Installed));
+        let second = apply_session_start_installation(&mut settings, "/tmp/aegis-session-start.sh")
+            .expect("second install");
+        assert!(matches!(second, InstallOutcome::AlreadyPresent));
+
+        let entries = settings["hooks"]["SessionStart"]
+            .as_array()
+            .expect("entries");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0]["hooks"][0]["command"], "echo keep");
     }
 }
