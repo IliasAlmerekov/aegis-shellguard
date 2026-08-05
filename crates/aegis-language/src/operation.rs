@@ -139,14 +139,25 @@ pub struct DetectedOperation {
 /// `operations` are the detected destructive effects / execution sinks;
 /// `parse_errors` is the count of Tree-sitter `ERROR` nodes in the parse (a
 /// nonzero count means the source was malformed, which the root mapping records
-/// as `DegradationReason::IncompleteSyntax`). The parent owns status/degradation
-/// aggregation and recursive enqueueing (ADR-022 §2).
+/// as `DegradationReason::IncompleteSyntax`). `degradation` records an adapter
+/// limitation that prevented parsing without pretending that valid source had
+/// syntax errors. The parent owns status/degradation aggregation and recursive
+/// enqueueing (ADR-022 §2).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AdapterResult {
     /// Detected operations, in source order.
     pub operations: Vec<DetectedOperation>,
     /// Number of Tree-sitter `ERROR` nodes in the parse (0 = clean).
     pub parse_errors: u32,
+    /// A typed adapter limitation encountered before or during parsing.
+    pub degradation: Option<AdapterDegradation>,
+}
+
+/// A fail-closed reason an adapter did not fully analyze a source target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdapterDegradation {
+    /// The adapter cannot safely process this source encoding.
+    UnsupportedEncoding,
 }
 
 // ── Wire codec (ADR-022 §2) ───────────────────────────────────────────────
@@ -160,6 +171,7 @@ pub struct AdapterResult {
 //
 //   AdapterResult:
 //     parse_errors: u32 LE
+//     degradation:  u8 (0 = none, 1 = unsupported encoding)
 //     op_count:     u32 LE
 //     op_count × DetectedOperation
 //
@@ -310,6 +322,10 @@ pub fn modifiers_from_wire(bits: u8) -> OperationModifiers {
 pub fn encode_adapter_result(result: &AdapterResult) -> Result<Vec<u8>, EncodeError> {
     let mut out = Vec::new();
     out.extend_from_slice(&result.parse_errors.to_le_bytes());
+    out.push(match result.degradation {
+        None => 0,
+        Some(AdapterDegradation::UnsupportedEncoding) => 1,
+    });
     let op_count = u32::try_from(result.operations.len())
         .map_err(|_| EncodeError::FieldOverflow { field: "op_count" })?;
     out.extend_from_slice(&op_count.to_le_bytes());
@@ -367,6 +383,11 @@ fn encode_span(out: &mut Vec<u8>, span: &ByteSpan) -> Result<(), EncodeError> {
 pub fn decode_adapter_result(buf: &[u8]) -> Result<AdapterResult, DecodeError> {
     let mut cur = Cursor::new(buf);
     let parse_errors = cur.read_u32("parse_errors")?;
+    let degradation = match cur.read_u8("degradation")? {
+        0 => None,
+        1 => Some(AdapterDegradation::UnsupportedEncoding),
+        _ => return Err(DecodeError::InvalidPayload("unknown adapter degradation")),
+    };
     let op_count = cur.read_u32("op_count")? as usize;
     // Cap the *initial* allocation so a malformed `op_count` declaring millions
     // of operations cannot drive a huge speculative allocation; the Vec grows
@@ -383,6 +404,7 @@ pub fn decode_adapter_result(buf: &[u8]) -> Result<AdapterResult, DecodeError> {
     Ok(AdapterResult {
         operations,
         parse_errors,
+        degradation,
     })
 }
 

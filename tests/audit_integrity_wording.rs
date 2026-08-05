@@ -179,6 +179,7 @@ fn tracked_public_contracts_do_not_overclaim_audit_integrity() {
                         | "landing/public/shield-icon.png"
                         | "src/assets/aegis.gif"
                         | "src/assets/howitwork.png"
+                        | "fuzz/corpus/language_bash/non_ascii_native_scanner_crash"
                 ),
                 "tracked non-UTF-8 file `{path}` must be added to the explicit binary allowlist"
             );

@@ -215,7 +215,10 @@ only tighten them; trusted global config may tune them within the ceilings.
 
 The pre-1.0 encoding contract is UTF-8, with a UTF-8 BOM mapped back to original
 byte spans. Source hashes cover the original bytes. Invalid UTF-8 and UTF-16 degrade;
-UTF-16 support is deferred with the PowerShell 1.x adapter.
+UTF-16 support is deferred with the PowerShell 1.x adapter. Until its pinned native
+external scanner is corrected upstream, the Bash adapter additionally degrades
+non-ASCII UTF-8 before parsing; it must not invoke native code known to be unsafe
+for those code points. This is conservative evidence loss, never authorization.
 
 Base64, hex, gzip, encryption, and custom payload decoding are out of scope. A
 decode-to-eval shape still emits a code-execution operation and degradation rather

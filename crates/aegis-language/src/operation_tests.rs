@@ -6,6 +6,7 @@ use super::*;
 fn sample_result() -> AdapterResult {
     AdapterResult {
         parse_errors: 0,
+        degradation: None,
         operations: vec![DetectedOperation {
             kind: OperationKind::FilesystemDelete,
             modifiers: OperationModifiers {
@@ -41,6 +42,8 @@ fn sample_result_bytes() -> Vec<u8> {
     let mut v = Vec::new();
     // parse_errors = 0
     v.extend_from_slice(&0u32.to_le_bytes());
+    // degradation = none
+    v.push(0);
     // op_count = 1
     v.extend_from_slice(&1u32.to_le_bytes());
     // op[0].kind = FilesystemDelete (0)
@@ -127,6 +130,7 @@ fn vocabulary_result() -> AdapterResult {
     });
     AdapterResult {
         parse_errors: 2,
+        degradation: None,
         operations: vec![
             DetectedOperation {
                 kind: OperationKind::FilesystemDelete,
@@ -222,6 +226,18 @@ fn encode_then_decode_round_trips_the_full_vocabulary() {
 }
 
 #[test]
+fn encode_then_decode_round_trips_unsupported_encoding_degradation() {
+    let original = AdapterResult {
+        operations: Vec::new(),
+        parse_errors: 0,
+        degradation: Some(AdapterDegradation::UnsupportedEncoding),
+    };
+    let encoded = encode_adapter_result(&original).expect("degradation encodes");
+    let decoded = decode_adapter_result(&encoded).expect("degradation decodes");
+    assert_eq!(decoded, original);
+}
+
+#[test]
 fn decode_adapter_result_rejects_an_empty_buffer() {
     assert_eq!(
         decode_adapter_result(&[]),
@@ -231,10 +247,22 @@ fn decode_adapter_result_rejects_an_empty_buffer() {
 }
 
 #[test]
-fn decode_adapter_result_rejects_a_truncated_operation() {
-    // Header (parse_errors + op_count = 1) + kind byte, then nothing else.
+fn decode_adapter_result_rejects_an_unknown_degradation_tag() {
     let mut buf = Vec::new();
     buf.extend_from_slice(&0u32.to_le_bytes());
+    buf.push(0xFF);
+    assert_eq!(
+        decode_adapter_result(&buf),
+        Err(DecodeError::InvalidPayload("unknown adapter degradation"))
+    );
+}
+
+#[test]
+fn decode_adapter_result_rejects_a_truncated_operation() {
+    // Header (parse_errors + degradation + op_count = 1) + kind byte.
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&0u32.to_le_bytes());
+    buf.push(0);
     buf.extend_from_slice(&1u32.to_le_bytes());
     buf.push(KIND_FS_DELETE);
     assert_eq!(
@@ -248,6 +276,7 @@ fn decode_adapter_result_rejects_a_truncated_operation() {
 fn decode_adapter_result_rejects_an_unknown_kind_discriminant() {
     let mut buf = Vec::new();
     buf.extend_from_slice(&0u32.to_le_bytes());
+    buf.push(0);
     buf.extend_from_slice(&1u32.to_le_bytes());
     buf.push(0xFF); // no OperationKind maps to 0xFF
     buf.push(0); // modifiers
@@ -270,6 +299,7 @@ fn decode_adapter_result_rejects_an_unknown_kind_discriminant() {
 fn decode_adapter_result_rejects_an_unknown_certainty_discriminant() {
     let mut buf = Vec::new();
     buf.extend_from_slice(&0u32.to_le_bytes());
+    buf.push(0);
     buf.extend_from_slice(&1u32.to_le_bytes());
     buf.push(KIND_FS_DELETE); // kind
     buf.push(0); // modifiers
@@ -292,6 +322,7 @@ fn decode_adapter_result_rejects_an_unknown_certainty_discriminant() {
 fn decode_adapter_result_rejects_an_invalid_has_payload_flag() {
     let mut buf = Vec::new();
     buf.extend_from_slice(&0u32.to_le_bytes());
+    buf.push(0);
     buf.extend_from_slice(&1u32.to_le_bytes());
     buf.push(KIND_FS_DELETE);
     buf.push(0);
@@ -312,6 +343,7 @@ fn decode_adapter_result_rejects_an_invalid_has_payload_flag() {
 fn decode_adapter_result_rejects_an_unknown_payload_language_tag() {
     let mut buf = Vec::new();
     buf.extend_from_slice(&0u32.to_le_bytes());
+    buf.push(0);
     buf.extend_from_slice(&1u32.to_le_bytes());
     buf.push(KIND_CODE_EXEC);
     buf.push(0);
@@ -338,6 +370,7 @@ fn decode_adapter_result_rejects_an_unknown_payload_language_tag() {
 fn decode_adapter_result_rejects_a_payload_source_len_exceeding_remaining_bytes() {
     let mut buf = Vec::new();
     buf.extend_from_slice(&0u32.to_le_bytes());
+    buf.push(0);
     buf.extend_from_slice(&1u32.to_le_bytes());
     buf.push(KIND_CODE_EXEC);
     buf.push(0);

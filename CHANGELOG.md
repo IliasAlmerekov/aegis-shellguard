@@ -19,6 +19,11 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Fixed
 
+- Security: reject non-ASCII Bash source before it reaches the pinned
+  `tree-sitter-bash` native scanner, which AddressSanitizer proved could
+  segfault; preserve the fail-closed result as typed `UnsupportedEncoding`
+  degradation and bump the worker protocol to v2 (ADR-022).
+
 - CI: retain `scripts/install.sh` compatibility with pre-v0.6.3 releases that
   do not carry `THIRD_PARTY_NOTICES.md`, while keeping the notice fail-closed
   for v0.6.3 and later.

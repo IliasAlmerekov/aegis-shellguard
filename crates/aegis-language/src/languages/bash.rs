@@ -38,8 +38,8 @@ use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
 use crate::language::SourceLanguage;
 use crate::operation::{
-    AdapterResult, ByteSpan, DetectedOperation, NestedTarget, OperandCertainty, OperationKind,
-    OperationModifiers,
+    AdapterDegradation, AdapterResult, ByteSpan, DetectedOperation, NestedTarget, OperandCertainty,
+    OperationKind, OperationModifiers,
 };
 
 /// The bundled Bash call-capture query. Compiled once on first use; a failure
@@ -83,6 +83,21 @@ thread_local! {
 /// `DegradationReason::IncompleteSyntax`.
 #[must_use]
 pub fn analyze(source: &str) -> AdapterResult {
+    // tree-sitter-bash 0.25.1's external scanner passes a lexer code point to
+    // C's `isdigit`, whose contract accepts only EOF or unsigned-char values.
+    // Non-ASCII source can therefore make the native grammar crash (the worker
+    // boundary contains that process failure, but this public adapter must also
+    // be safe for its direct callers and fuzz qualification). Treat it as an
+    // unsupported parse so the parent records fail-closed degradation instead
+    // of invoking the scanner until the pinned grammar fixes the defect.
+    if !source.is_ascii() {
+        return AdapterResult {
+            operations: Vec::new(),
+            parse_errors: 0,
+            degradation: Some(AdapterDegradation::UnsupportedEncoding),
+        };
+    }
+
     // `parse` returns `None` only on a NULL C result; treat as a malformed
     // (unrecoverable) parse. A real empty program still produces a tree. The
     // parser is held in `PARSER` (per-thread, one-time `set_language`); the
@@ -91,6 +106,7 @@ pub fn analyze(source: &str) -> AdapterResult {
         return AdapterResult {
             operations: Vec::new(),
             parse_errors: 1,
+            degradation: None,
         };
     };
 
@@ -102,6 +118,7 @@ pub fn analyze(source: &str) -> AdapterResult {
     AdapterResult {
         operations,
         parse_errors,
+        degradation: None,
     }
 }
 

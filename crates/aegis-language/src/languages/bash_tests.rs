@@ -624,6 +624,24 @@ fn unterminated_bash_c_payload_records_parse_errors() {
     malformed("bash -c \"rm x");
 }
 
+#[test]
+fn non_ascii_source_is_rejected_before_the_native_scanner() {
+    // This is the lossy-UTF-8 form of the CI fuzz artifact
+    // crash-a0ad3b80f1ab0d97e9a4964c8b67795a19b60ec6. tree-sitter-bash 0.25.1
+    // passes non-ASCII code points to C's `isdigit`, which is undefined unless
+    // the value is EOF or an unsigned char. The adapter must degrade rather
+    // than enter that native scanner.
+    let result = analyze(
+        "{\u{fffd}\u{fffd}\u{fffd}\u{fffd}\u{fffd}\u{fffd}\u{fffd}\0\0\u{fffd}\u{fffd}\u{fffd}\u{fffd}>\u{fffd}\u{fffd}:r",
+    );
+    assert_eq!(result.parse_errors, 0);
+    assert_eq!(
+        result.degradation,
+        Some(AdapterDegradation::UnsupportedEncoding)
+    );
+    assert!(result.operations.is_empty());
+}
+
 // --- Empty source -------------------------------------------------------
 
 #[test]

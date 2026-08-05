@@ -15,7 +15,7 @@
 //!  offset  field         type        notes
 //!  ------  -----------   ----------  --------------------------------
 //!   0      magic         [u8; 4]     b"AELW" (Aegis Language Worker)
-//!   4      version       u16 LE      wire-format version (currently 1)
+//!   4      version       u16 LE      wire-format version (currently 2)
 //!   6      request_id    u32 LE      correlates a request with its response
 //!  10      kind          u8          message-type tag (see Request/Response)
 //!  11      payload_len   u32 LE      number of bytes following the header
@@ -39,7 +39,7 @@ use crate::language::SourceLanguage;
 pub const MAGIC: [u8; 4] = *b"AELW";
 
 /// The current wire-format version.
-pub const PROTOCOL_VERSION: u16 = 1;
+pub const PROTOCOL_VERSION: u16 = 2;
 
 /// The fixed size of a frame header, in bytes.
 pub const HEADER_LEN: usize = 15;

@@ -42,6 +42,7 @@ fuzz/corpus/language_typescript/*
 !fuzz/corpus/language_typescript/destructive.ts
 fuzz/corpus/language_bash/*
 !fuzz/corpus/language_bash/destructive.sh
+!fuzz/corpus/language_bash/non_ascii_native_scanner_crash
 docs/claude-source-borrowings.md
 docs/CODEX-*.md
 docs/tickets/

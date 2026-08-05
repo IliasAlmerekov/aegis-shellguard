@@ -30,8 +30,8 @@ use aegis::analysis::queue::{AnalysisQueue, PushOutcome, QueueBudget, QueueTarge
 use aegis_language::SourceLanguage;
 use aegis_language::languages::python::analyze;
 use aegis_language::operation::{
-    AdapterResult, ByteSpan as LangSpan, DetectedOperation as LangOp, OperandCertainty as LangCert,
-    OperationKind as LangKind, OperationModifiers as LangMods,
+    AdapterDegradation, AdapterResult, ByteSpan as LangSpan, DetectedOperation as LangOp,
+    OperandCertainty as LangCert, OperationKind as LangKind, OperationModifiers as LangMods,
 };
 use aegis_types::{
     AnalysisStatus, Assessment, Category, DegradationReason, DetectionMechanism,
@@ -258,6 +258,7 @@ fn parse_errors_record_incomplete_syntax_degradation() {
     let adapter = AdapterResult {
         operations: vec![op],
         parse_errors: 1,
+        degradation: None,
     };
     let outcome = map_adapter_result(
         &adapter,
@@ -283,6 +284,29 @@ fn parse_errors_record_incomplete_syntax_degradation() {
             .iter()
             .any(|m| m.pattern.id.as_ref() == "LANG-FS-DEL"),
         "the detected op's Match is retained despite the parse error",
+    );
+}
+
+#[test]
+fn adapter_unsupported_encoding_records_unsupported_encoding_degradation() {
+    let adapter = AdapterResult {
+        operations: Vec::new(),
+        parse_errors: 0,
+        degradation: Some(AdapterDegradation::UnsupportedEncoding),
+    };
+    let outcome = map_adapter_result(
+        &adapter,
+        SourceLanguage::Bash,
+        SourceOrigin::Inline,
+        None,
+        None,
+        0,
+    );
+
+    assert_eq!(outcome.analysis.status, AnalysisStatus::Degraded);
+    assert_eq!(
+        outcome.analysis.degradation_reasons,
+        vec![DegradationReason::UnsupportedEncoding]
     );
 }
 

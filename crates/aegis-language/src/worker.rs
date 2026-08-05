@@ -168,6 +168,7 @@ fn analyze_source(language: &SourceLanguage, source: &[u8]) -> Response {
                 result: crate::operation::AdapterResult {
                     operations: Vec::new(),
                     parse_errors: 1,
+                    degradation: None,
                 },
             };
         }

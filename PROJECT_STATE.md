@@ -23,6 +23,15 @@
 
 ## Last session (2026-08-05) — v0.6.3 distribution sync
 
+- **Bash fuzz-crash repaired locally:** the reported `language_bash` ASan
+  artifact is now a checked-in corpus regression. The Bash adapter rejects
+  non-ASCII source before the unsafe `tree-sitter-bash` 0.25.1 native scanner,
+  reporting typed `UnsupportedEncoding` degradation rather than fabricated
+  incomplete syntax. The worker payload is versioned v2 and codec/mapping
+  regressions pin the new degradation. Workspace tests, clippy, fmt, audit,
+  deny, and a pinned-nightly ASan artifact replay passed; no hot-path benchmark
+  was required.
+
 - **Published-release metadata synchronized:** regenerated npm checksums and
   Homebrew formula pins from the live v0.6.3 assets; the generated formula,
   including the pinned third-party notice resource, was published as the sole
