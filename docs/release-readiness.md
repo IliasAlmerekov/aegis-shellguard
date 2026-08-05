@@ -75,19 +75,19 @@ the release artifacts on the two Linux musl and two macOS targets.
 
 ## GitHub Release asset validation
 
-- [ ] `.github/workflows/release.yml` includes all four supported release assets:
+- [x] `.github/workflows/release.yml` includes all four supported release assets:
       `aegis-linux-x86_64`, `aegis-linux-aarch64`, `aegis-macos-x86_64`,
       and `aegis-macos-aarch64`.
-- [ ] The release workflow publishes a matching `.sha256` sidecar for each asset.
-- [ ] The release workflow publishes `THIRD_PARTY_NOTICES.md` as a fifth asset
+- [x] The release workflow publishes a matching `.sha256` sidecar for each asset.
+- [x] The release workflow publishes `THIRD_PARTY_NOTICES.md` as a fifth asset
       (`fail_on_unmatched_files: true` makes a missing path abort the release), and
       the notice appears on the published Release page.
-- [ ] The npm tarball carries the same notice: the `Verify npm package contents`
+- [x] The npm tarball carries the same notice: the `Verify npm package contents`
       step greps it out of `npm pack --dry-run` before `npm publish`.
-- [ ] `rtk cargo test --test release_workflow` passes.
-- [ ] `rtk env AEGIS_TEST_LIVE_RELEASE=1 AEGIS_TEST_RELEASE_TAG=vX.Y.Z cargo test --test release_assets_live -- --nocapture`
+- [x] `rtk cargo test --test release_workflow` passes.
+- [x] `rtk env AEGIS_TEST_LIVE_RELEASE=1 AEGIS_TEST_RELEASE_TAG=vX.Y.Z cargo test --test release_assets_live -- --nocapture`
       passes against the selected real tag.
-- [ ] Every downloaded sidecar verifies its matching binary with `sha256sum -c`
+- [x] Every downloaded sidecar verifies its matching binary with `sha256sum -c`
       or `shasum -a 256 -c`.
 
 The live release test is gated by `AEGIS_TEST_LIVE_RELEASE=1` so default
@@ -102,6 +102,18 @@ updates.
 AEGIS_TEST_RELEASE_TAG=v0.5.6 cargo test --test release_assets_live --
 --nocapture`: PASS. The GitHub Release contains all four supported binaries and
 all four `.sha256` sidecars; each sidecar verifies its matching binary.
+
+### Evidence recorded 2026-08-05 (release v0.6.3)
+
+The non-draft [v0.6.3 Release](https://github.com/IliasAlmerekov/aegis-shellguard/releases/tag/v0.6.3)
+contains exactly the four supported binaries, their four `.sha256` sidecars,
+and `THIRD_PARTY_NOTICES.md`. The tagged
+[Release workflow](https://github.com/IliasAlmerekov/aegis-shellguard/actions/runs/30986456993)
+completed successfully. `rtk cargo test --test release_workflow` (12 tests) and
+`rtk env AEGIS_TEST_LIVE_RELEASE=1 AEGIS_TEST_RELEASE_TAG=v0.6.3 cargo test
+--test release_assets_live -- --nocapture` passed; the live test downloaded and
+verified every binary/sidecar pair. `rtk cargo test --test npm_package` (16
+tests) and `rtk cargo test --test homebrew_formula` (13 tests) passed.
 
 ## Security-Grade Checklist
 
@@ -159,9 +171,9 @@ and users who opt into the advisory-tainted dependency chain do so explicitly.
 
 ## Homebrew tap validation
 
-- [ ] `packaging/homebrew/Formula/aegis.rb` was generated from the selected
+- [x] `packaging/homebrew/Formula/aegis.rb` was generated from the selected
       GitHub Release tag.
-- [ ] The published tap contains the same `Formula/aegis.rb`.
+- [x] The published tap contains the same `Formula/aegis.rb`.
 - [ ] `brew audit --strict --online --formula aegis` passes in the tap.
 - [ ] `brew install IliasAlmerekov/aegis-shellguard/aegis` succeeds on macOS.
 - [ ] `brew install IliasAlmerekov/aegis-shellguard/aegis` succeeds on Linux.
@@ -193,6 +205,17 @@ IliasAlmerekov/aegis-shellguard/aegis` passed; and
 macOS Homebrew smoke is still an operator follow-up. M3.3 is accepted as closed
 for this release pass based on the published formula, Linux clean-retap smoke,
 and the release asset/checksum contract that covers both macOS assets.
+
+### Evidence recorded 2026-08-05 (release v0.6.3)
+
+`scripts/update-homebrew-formula.sh v0.6.3` regenerated all four binary pins
+and the pinned `THIRD_PARTY_NOTICES.md` resource from the published Release.
+The identical formula was published to
+[`IliasAlmerekov/homebrew-aegis`](https://github.com/IliasAlmerekov/homebrew-aegis)
+in commit `41adf056f387b57770ca4043c0cdc362547833ee`. This Linux host has no
+`brew` executable, so `brew audit`, install, test, version, and notice-delivery
+evidence remain open for Linux; the required real-macOS operator smoke is also
+open. These missing smokes keep the L1 gate unchecked.
 
 ## Homebrew tap publish runbook
 
@@ -254,10 +277,10 @@ so the source-of-truth file is `packaging/homebrew/Formula/aegis.rb`.
 
 ## npm wrapper validation
 
-- [ ] `scripts/update-npm-package.sh vX.Y.Z` regenerated
+- [x] `scripts/update-npm-package.sh vX.Y.Z` regenerated
       `packaging/npm/checksums.json` from the selected release tag.
 - [ ] `npm publish --dry-run` succeeds from `packaging/npm`.
-- [ ] `npm i -g @iliasalmerekov/aegis` succeeds on Linux x64.
+- [x] `npm i -g @iliasalmerekov/aegis` succeeds on Linux x64.
 - [ ] `npm i -g @iliasalmerekov/aegis` succeeds on macOS arm64 or x64.
 - [x] `aegis --version` prints the selected release version after npm install.
 - [x] npm install does not mutate shell startup files or agent config.
@@ -299,6 +322,14 @@ form npm emits in the published tarball). Previously `npm install -g
 `package.json` in place and broke `tests/npm_package.rs` on the next `cargo test`.
 The normalized form is stable under `npm install` and matches the published
 tarball; `tests/npm_package.rs` was updated to assert the same form.
+
+### Evidence recorded 2026-08-05 (release v0.6.3)
+
+`scripts/update-npm-package.sh v0.6.3` regenerated
+`packaging/npm/checksums.json` from the published sidecars. A clean isolated
+registry install, `rtk npm install --prefix /tmp/aegis-v063-npm-smoke
+@iliasalmerekov/aegis@0.6.3`, added one package; its wrapper printed
+`aegis 0.6.3`. The macOS registry install remains open.
 
 ## Cargo install validation
 

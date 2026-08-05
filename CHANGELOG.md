@@ -11,6 +11,12 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+### Changed
+
+- Distribution: regenerated npm checksum pins and the Homebrew formula from the
+  published v0.6.3 Release; published the matching formula to the Homebrew tap
+  while retaining the L1 gate pending platform smoke evidence (ADR-022).
+
 ### Fixed
 
 - CI: retain `scripts/install.sh` compatibility with pre-v0.6.3 releases that

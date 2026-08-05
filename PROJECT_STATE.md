@@ -9,7 +9,7 @@
 
 ## Current version
 
-`0.6.3` — pre-1.0, targeting `1.0.0` (tag `v0.6.3` pending push)
+`0.6.3` — pre-1.0, targeting `1.0.0` (tag `v0.6.3` published; L1 gate open)
 
 ## Active branch
 
@@ -21,7 +21,20 @@
 
 ---
 
-## Last session (2026-08-04) — v0.6.3 release preparation
+## Last session (2026-08-05) — v0.6.3 distribution sync
+
+- **Published-release metadata synchronized:** regenerated npm checksums and
+  Homebrew formula pins from the live v0.6.3 assets; the generated formula,
+  including the pinned third-party notice resource, was published as the sole
+  change in `IliasAlmerekov/homebrew-aegis` commit `41adf056`. Live release
+  checksum validation, npm/Homebrew/release-workflow contract suites, and an
+  isolated Linux npm-registry install (`aegis 0.6.3`) passed.
+- **L1 remains open:** this host has no Homebrew executable, so Linux Homebrew
+  audit/install/test/version/notice evidence is unavailable; the required real
+  macOS Homebrew smoke is also outstanding. `docs/release-readiness.md` records
+  the exact evidence and blockers; no L1 adapter or roadmap checkbox changed.
+
+## Prior session (2026-08-04) — v0.6.3 release preparation
 
 - **v0.6.3 PR #159 CI live-installer fix:** `scripts/install.sh` now permits a
   missing `THIRD_PARTY_NOTICES.md` only for the already-published pre-v0.6.3
