@@ -388,11 +388,22 @@ fn claude_agent_setup_installs_session_start_hook() {
 
     fs::create_dir_all(home.path().join(".aegis")).unwrap();
     fs::write(home.path().join(".aegis").join("disabled"), "disabled\n").unwrap();
-    let output = Command::new("/bin/sh")
-        .arg(&session_hook)
-        .env("HOME", home.path())
-        .output()
-        .unwrap();
+    let mut command = Command::new("/bin/sh");
+    command.arg(&session_hook).env("HOME", home.path());
+    for key in [
+        "AEGIS_CI",
+        "CI",
+        "GITHUB_ACTIONS",
+        "GITLAB_CI",
+        "CIRCLECI",
+        "BUILDKITE",
+        "TRAVIS",
+        "TF_BUILD",
+        "JENKINS_URL",
+    ] {
+        command.env_remove(key);
+    }
+    let output = command.output().unwrap();
     assert!(output.status.success());
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
