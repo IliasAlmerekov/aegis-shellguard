@@ -1,40 +1,61 @@
-import { useRef, Suspense } from 'react'
+import { useRef, useEffect, Suspense } from 'react'
 import { Canvas } from '@react-three/fiber'
-import { useFrame } from '@react-three/fiber'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
 import { Shield } from './Shield'
 
-// Six green point lights placed around the shield like a clock face.
-// Because the model rotates, each facet sweeps through multiple light cones
-// in sequence → more neon glints appear at different spots during rotation.
-// Lights gently pulse at different phases so the highlights aren't all in
-// sync (avoids a "breathing" look; keeps it organic).
+gsap.registerPlugin(useGSAP)
+
+// Four green point lights placed around the shield. Because the shield yaws,
+// each facet sweeps through several light cones in sequence → neon glints
+// appear at different spots during the motion.
+//
+// The pulse amplitudes are deliberately small (≈15% of base): larger swings
+// read as flicker rather than as light. Each light has its own period so the
+// highlights never breathe in unison.
 const LIGHTS = [
-  // [x, y, z,  baseIntensity, pulseAmp, pulseFreq, color]
-  [ 4,  5,  4,  22, 5,  0.40, '#c8f9b6' ],  // top-right key
-  [-4,  4,  4,  14, 4,  0.53, '#7fee64' ],  // top-left
-  [ 4, -4,  4,  12, 3,  0.47, '#7fee64' ],  // bottom-right
-  [-3, -3,  4,   9, 3,  0.61, '#7fee64' ],  // bottom-left fill
-  [ 0,  0, -4,   8, 2,  0.35, '#7fee64' ],  // rim (behind)
-  [ 0,  5, -3,   6, 2,  0.58, '#c8f9b6' ],  // top rim highlight
+  // [x, y, z, baseIntensity, pulseAmp, period(s), color]
+  [ 4,  5,  4, 22, 3, 5.0, '#c8f9b6' ],  // top-right key
+  [-4,  4,  4, 14, 2, 6.4, '#7fee64' ],  // top-left
+  [ 4, -4,  4, 12, 2, 7.1, '#7fee64' ],  // bottom-right fill
+  [ 0,  0, -4,  8, 1, 8.3, '#7fee64' ],  // rim (behind)
 ]
 
-function AnimatedLights() {
-  const refs = LIGHTS.map(() => useRef())
+function AnimatedLights({ active }) {
+  const lightRefs  = useRef([])
+  const timelineRef = useRef(null)
 
-  useFrame(({ clock }) => {
-    const t = clock.getElapsedTime()
-    LIGHTS.forEach(([,, , base, amp, freq], i) => {
-      if (refs[i].current)
-        refs[i].current.intensity = base + Math.sin(t * freq + i * 1.1) * amp
+  useGSAP(() => {
+    const lights = lightRefs.current.filter(Boolean)
+    if (lights.length === 0) return
+
+    const tl = gsap.timeline()
+    timelineRef.current = tl
+
+    lights.forEach((light, i) => {
+      const [, , , base, amp, period] = LIGHTS[i]
+      // Ramp up from dark so the shield lights up with the entrance instead of
+      // appearing fully lit on frame one.
+      tl.fromTo(light, { intensity: 0 }, { intensity: base, duration: 1.4, ease: 'power2.out' }, i * 0.12)
+      tl.fromTo(light,
+        { intensity: base - amp },
+        { intensity: base + amp, duration: period / 2, ease: 'sine.inOut', repeat: -1, yoyo: true },
+      1.6 + i * 0.35)
     })
-  })
+
+    return () => { timelineRef.current = null }
+  }, [])
+
+  useEffect(() => {
+    timelineRef.current?.paused(!active)
+  }, [active])
 
   return (
     <>
-      {LIGHTS.map(([x, y, z, base,,,color], i) => (
+      {LIGHTS.map(([x, y, z, base, , , color], i) => (
         <pointLight
           key={i}
-          ref={refs[i]}
+          ref={(l) => { lightRefs.current[i] = l }}
           position={[x, y, z]}
           intensity={base}
           color={color}
@@ -63,9 +84,9 @@ export function ShieldScene({ active = true }) {
         color="#3d6b38"
         decay={2}
       />
-      <AnimatedLights />
+      <AnimatedLights active={active} />
       <Suspense fallback={null}>
-        <Shield />
+        <Shield active={active} />
       </Suspense>
     </Canvas>
   )
