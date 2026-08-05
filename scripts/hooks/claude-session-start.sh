@@ -51,10 +51,10 @@ aegis_enforcement_enabled() {
   return 0
 }
 
-AEGIS_TOGGLE_HELPER="${HOME}/.aegis/lib/toggle-state.sh"
-if [ -r "${AEGIS_TOGGLE_HELPER}" ]; then
-  . "${AEGIS_TOGGLE_HELPER}"
-fi
+# SessionStart must emit exactly one JSON response. Do not source the mutable
+# managed helper here: a malformed helper could write output and corrupt the
+# agent protocol. The minimal inline state logic above is the deliberate
+# protocol-safe fallback.
 
 if ! aegis_enforcement_enabled; then
   cat <<'JSON'

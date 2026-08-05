@@ -206,6 +206,35 @@ fn claude_session_start_reports_ci_override_when_disabled_flag_exists() {
 }
 
 #[test]
+fn session_start_hooks_keep_json_protocol_when_toggle_helper_is_noisy() {
+    let home = TempDir::new().unwrap();
+    let helper_dir = home.path().join(".aegis/lib");
+    fs::create_dir_all(&helper_dir).unwrap();
+    fs::write(
+        helper_dir.join("toggle-state.sh"),
+        "printf 'unexpected stdout\\n'\nprintf 'unexpected stderr\\n' >&2\n",
+    )
+    .unwrap();
+
+    for hook in [
+        "hooks/claude-session-start.sh",
+        "hooks/codex-session-start.sh",
+    ] {
+        let output = run_script(hook, home.path(), &[], None);
+        assert!(output.status.success(), "{hook} must complete successfully");
+        assert!(
+            output.stderr.is_empty(),
+            "{hook} must not emit helper stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let json: Value = serde_json::from_slice(&output.stdout)
+            .unwrap_or_else(|err| panic!("{hook} must emit one JSON response: {err}"));
+        assert_eq!(json["hookSpecificOutput"]["hookEventName"], "SessionStart");
+    }
+}
+
+#[test]
 fn claude_code_is_noop_when_disabled_outside_ci() {
     let home = TempDir::new().unwrap();
     prepare_agent_dirs(home.path(), true, false);
