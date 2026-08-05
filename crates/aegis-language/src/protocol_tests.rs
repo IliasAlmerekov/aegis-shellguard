@@ -5,8 +5,8 @@ use super::*;
 // (the root crate maps them into `aegis_types`); importing them here does not
 // cross the workspace boundary.
 use crate::operation::{
-    AdapterResult, ByteSpan, DetectedOperation, NestedTarget, OperandCertainty, OperationKind,
-    OperationModifiers,
+    AdapterDegradation, AdapterResult, ByteSpan, DetectedOperation, NestedTarget, OperandCertainty,
+    OperationKind, OperationModifiers,
 };
 
 /// A known-good `Request::Parse` used across the framing tests.
@@ -21,13 +21,13 @@ fn sample_request() -> Request {
 fn encode_request_emits_the_specified_wire_format() {
     // Independent source of truth: the expected bytes are hand-derived
     // from the wire-format spec in this module's docs, NOT by running
-    // `encode_request`. Magic `AELW`, version 1 (LE), request_id 0x0A,
+    // `encode_request`. Magic `AELW`, version 2 (LE), request_id 0x0A,
     // kind 0x01 (Parse), payload = [lang 0x00 = Python] + source bytes.
     let source = b"import os; os.remove('x')";
     let request_id: u32 = 0x0A;
     let mut expected = Vec::new();
     expected.extend_from_slice(b"AELW");
-    expected.extend_from_slice(&1u16.to_le_bytes());
+    expected.extend_from_slice(&2u16.to_le_bytes());
     expected.extend_from_slice(&request_id.to_le_bytes());
     expected.push(Request::KIND_PARSE);
     let payload_len = u32::try_from(1 + source.len()).expect("source fits in u32");
@@ -172,12 +172,12 @@ fn decode_request_rejects_a_response_kind_tag_sent_as_a_request() {
 
 #[test]
 fn encode_response_parsed_emits_the_specified_wire_format() {
-    // Hand-derived: magic AELW, version 1, request_id 0x0B, kind 0x81
+    // Hand-derived: magic AELW, version 2, request_id 0x0B, kind 0x81
     // (Parsed), payload = error_count u32 LE = 2.
     let request_id: u32 = 0x0B;
     let mut expected = Vec::new();
     expected.extend_from_slice(&MAGIC);
-    expected.extend_from_slice(&1u16.to_le_bytes());
+    expected.extend_from_slice(&2u16.to_le_bytes());
     expected.extend_from_slice(&request_id.to_le_bytes());
     expected.push(Response::KIND_PARSED);
     expected.extend_from_slice(&4u32.to_le_bytes()); // payload_len
@@ -459,12 +459,12 @@ fn decode_request_round_trips_an_analyze_request() {
 
 #[test]
 fn encode_response_unsupported_language_emits_the_specified_wire_format() {
-    // Independent source of truth: magic AELW, version 1, request_id 0x0C,
+    // Independent source of truth: magic AELW, version 2, request_id 0x0C,
     // kind 0x84 (UnsupportedLanguage), empty payload (payload_len = 0).
     let request_id: u32 = 0x0C;
     let mut expected = Vec::new();
     expected.extend_from_slice(&MAGIC);
-    expected.extend_from_slice(&1u16.to_le_bytes());
+    expected.extend_from_slice(&2u16.to_le_bytes());
     expected.extend_from_slice(&request_id.to_le_bytes());
     expected.push(Response::KIND_UNSUPPORTED);
     expected.extend_from_slice(&0u32.to_le_bytes()); // payload_len
@@ -497,6 +497,7 @@ fn decode_response_round_trips_unsupported_language() {
 fn sample_adapter_result() -> AdapterResult {
     AdapterResult {
         parse_errors: 0,
+        degradation: None,
         operations: vec![DetectedOperation {
             kind: OperationKind::FilesystemDelete,
             modifiers: OperationModifiers {
@@ -541,9 +542,26 @@ fn decode_response_round_trips_an_analyzed_response() {
 }
 
 #[test]
+fn decode_response_round_trips_an_analyzed_encoding_degradation() {
+    let request_id = 0x0E;
+    let response = Response::Analyzed {
+        result: AdapterResult {
+            operations: Vec::new(),
+            parse_errors: 0,
+            degradation: Some(AdapterDegradation::UnsupportedEncoding),
+        },
+    };
+    let encoded = encode_response(request_id, &response).expect("Analyzed encodes");
+    let decoded = decode_response(&encoded)
+        .expect("a complete Analyzed frame must decode")
+        .expect("a complete Analyzed frame must not be incomplete");
+    assert_eq!(decoded.message, response);
+}
+
+#[test]
 fn decode_response_rejects_a_truncated_analyzed_payload() {
     // A body too short to hold even the AdapterResult header (parse_errors +
-    // op_count = 8 bytes) must be rejected by the codec, surfaced as
+    // degradation + op_count = 9 bytes) must be rejected by the codec, surfaced as
     // InvalidPayload with the codec's own reason.
     let buf = raw_frame(
         &MAGIC,

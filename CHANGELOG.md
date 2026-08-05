@@ -21,6 +21,25 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Changed
 
+- Distribution: regenerated npm checksum pins and the Homebrew formula from the
+  published v0.6.3 Release; published the matching formula to the Homebrew tap
+  while retaining the L1 gate pending platform smoke evidence (ADR-022).
+
+### Fixed
+
+- Security: reject non-ASCII Bash source before it reaches the pinned
+  `tree-sitter-bash` native scanner, which AddressSanitizer proved could
+  segfault; preserve the fail-closed result as typed `UnsupportedEncoding`
+  degradation and bump the worker protocol to v2 (ADR-022).
+
+- CI: retain `scripts/install.sh` compatibility with pre-v0.6.3 releases that
+  do not carry `THIRD_PARTY_NOTICES.md`, while keeping the notice fail-closed
+  for v0.6.3 and later.
+
+## [0.6.3] — 2026-08-04
+
+### Changed
+
 - Rebaselined the `heredoc_worst_case` performance policy row from 300 µs to
   1 ms. The first CI run that actually enforced the gate reported +193.3%; a
   bisect over `d12e971..8efd524` shows the slowdown accumulated across the

@@ -27,8 +27,8 @@
 
 use aegis_language::SourceLanguage;
 use aegis_language::operation::{
-    AdapterResult, ByteSpan as LangSpan, DetectedOperation as LangOp, OperandCertainty as LangCert,
-    OperationKind as LangKind, OperationModifiers as LangMods,
+    AdapterDegradation, AdapterResult, ByteSpan as LangSpan, DetectedOperation as LangOp,
+    OperandCertainty as LangCert, OperationKind as LangKind, OperationModifiers as LangMods,
 };
 use aegis_types::{
     AnalysisProvenance, AnalysisStatus, ByteSpan, DegradationReason, DetectedOperation,
@@ -182,6 +182,12 @@ pub fn map_adapter_result(
 
     if adapter.parse_errors > 0 {
         push_unique(&mut reasons, DegradationReason::IncompleteSyntax);
+    }
+    if matches!(
+        adapter.degradation,
+        Some(AdapterDegradation::UnsupportedEncoding)
+    ) {
+        push_unique(&mut reasons, DegradationReason::UnsupportedEncoding);
     }
 
     let status = if !reasons.is_empty() {

@@ -83,6 +83,7 @@ pub fn analyze(source: &str) -> AdapterResult {
         return AdapterResult {
             operations: Vec::new(),
             parse_errors: 1,
+            degradation: None,
         };
     };
 
@@ -94,6 +95,7 @@ pub fn analyze(source: &str) -> AdapterResult {
     AdapterResult {
         operations,
         parse_errors,
+        degradation: None,
     }
 }
 
