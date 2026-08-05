@@ -17,11 +17,17 @@
 
 ## Last updated
 
-2026-08-04
+2026-08-05
 
 ---
 
 ## Last session (2026-08-04) — v0.6.3 release preparation
+
+- **v0.6.3 PR #159 CI live-installer fix:** `scripts/install.sh` now permits a
+  missing `THIRD_PARTY_NOTICES.md` only for the already-published pre-v0.6.3
+  binary (currently latest, v0.6.2); it still fails closed before installation
+  for v0.6.3+. Exact 0.6.2/0.6.3 contract tests, the macOS-host live-release
+  installer test, workspace tests, clippy, fmt, audit, and deny passed.
 
 - **v0.6.3 release prepared; tag pending.** Version bumped to `0.6.3` across the
   workspace (`Cargo.toml` + all 12 crates + internal path-dep version pins +

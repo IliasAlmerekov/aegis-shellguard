@@ -11,6 +11,12 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+### Fixed
+
+- CI: retain `scripts/install.sh` compatibility with pre-v0.6.3 releases that
+  do not carry `THIRD_PARTY_NOTICES.md`, while keeping the notice fail-closed
+  for v0.6.3 and later.
+
 ## [0.6.3] — 2026-08-04
 
 ### Changed

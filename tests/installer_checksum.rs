@@ -110,6 +110,112 @@ fn install_script_rejects_missing_checksum_before_touching_bindir() {
 }
 
 #[test]
+fn install_script_allows_a_pre_notice_release_without_a_notice_asset() {
+    let temp = TempDir::new().unwrap();
+    let bindir = temp.path().join("bin");
+    let rc_file = temp.path().join(".bashrc");
+    let binary_asset = temp.path().join("aegis-linux-x86_64");
+    let checksum_asset = temp.path().join("aegis-linux-x86_64.sha256");
+    let stub_dir = temp.path().join("stub-bin");
+    let curl_stub = stub_dir.join("curl");
+    let sha256sum_stub = stub_dir.join("sha256sum");
+
+    fs::create_dir_all(&stub_dir).unwrap();
+    fs::write(&rc_file, "").unwrap();
+    support::write_executable(&binary_asset, "#!/bin/sh\necho 'aegis 0.6.2'\n");
+    let binary_digest = sha256_hex(&fs::read(&binary_asset).unwrap());
+    write_release_checksum(&checksum_asset, "aegis-linux-x86_64", &binary_digest);
+    write_curl_stub(&curl_stub);
+    write_sha256sum_stub(&sha256sum_stub);
+
+    let path_value = installer_path(&temp, &stub_dir);
+    let bindir_str = bindir.display().to_string();
+    let rc_file_str = rc_file.display().to_string();
+    let binary_asset_str = binary_asset.display().to_string();
+    let checksum_asset_str = checksum_asset.display().to_string();
+    let output = run_script(
+        "install.sh",
+        &[
+            ("AEGIS_BINDIR", &bindir_str),
+            ("AEGIS_SHELL_RC", &rc_file_str),
+            ("AEGIS_OS", "linux"),
+            ("AEGIS_ARCH", "x86_64"),
+            ("PATH", &path_value),
+            ("SHELL", "/bin/bash"),
+            ("AEGIS_REAL_SHELL", "/bin/bash"),
+            ("TEST_BINARY_ASSET", &binary_asset_str),
+            ("TEST_CHECKSUM_ASSET", &checksum_asset_str),
+            ("TEST_BINARY_DIGEST", &binary_digest),
+            ("TEST_NOTICE_MODE", "missing"),
+        ],
+    );
+
+    assert!(
+        output.status.success(),
+        "a release before v0.6.3 must remain installable without a notice asset: stdout=\n{}\nstderr=\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(bindir.join("aegis").exists());
+    assert!(
+        !temp
+            .path()
+            .join("share/doc/aegis/THIRD_PARTY_NOTICES.md")
+            .exists(),
+        "a missing legacy notice must not create a replacement file"
+    );
+}
+
+#[test]
+fn install_script_rejects_a_notice_missing_from_a_release_that_requires_it() {
+    let temp = TempDir::new().unwrap();
+    let bindir = temp.path().join("bin");
+    let rc_file = temp.path().join(".bashrc");
+    let binary_asset = temp.path().join("aegis-linux-x86_64");
+    let checksum_asset = temp.path().join("aegis-linux-x86_64.sha256");
+    let stub_dir = temp.path().join("stub-bin");
+    let curl_stub = stub_dir.join("curl");
+    let sha256sum_stub = stub_dir.join("sha256sum");
+
+    fs::create_dir_all(&stub_dir).unwrap();
+    fs::write(&rc_file, "").unwrap();
+    support::write_executable(&binary_asset, "#!/bin/sh\necho 'aegis 0.6.3'\n");
+    let binary_digest = sha256_hex(&fs::read(&binary_asset).unwrap());
+    write_release_checksum(&checksum_asset, "aegis-linux-x86_64", &binary_digest);
+    write_curl_stub(&curl_stub);
+    write_sha256sum_stub(&sha256sum_stub);
+
+    let path_value = installer_path(&temp, &stub_dir);
+    let bindir_str = bindir.display().to_string();
+    let rc_file_str = rc_file.display().to_string();
+    let binary_asset_str = binary_asset.display().to_string();
+    let checksum_asset_str = checksum_asset.display().to_string();
+    let output = run_script(
+        "install.sh",
+        &[
+            ("AEGIS_BINDIR", &bindir_str),
+            ("AEGIS_SHELL_RC", &rc_file_str),
+            ("AEGIS_OS", "linux"),
+            ("AEGIS_ARCH", "x86_64"),
+            ("PATH", &path_value),
+            ("SHELL", "/bin/bash"),
+            ("AEGIS_REAL_SHELL", "/bin/bash"),
+            ("TEST_BINARY_ASSET", &binary_asset_str),
+            ("TEST_CHECKSUM_ASSET", &checksum_asset_str),
+            ("TEST_BINARY_DIGEST", &binary_digest),
+            ("TEST_NOTICE_MODE", "missing"),
+        ],
+    );
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("third-party notice download failed"));
+    assert!(
+        !bindir.join("aegis").exists(),
+        "a missing required notice must leave the binary uninstalled"
+    );
+}
+
+#[test]
 fn install_script_fails_when_no_supported_checksum_tool_exists() {
     let temp = TempDir::new().unwrap();
     let bindir = temp.path().join("bin");
