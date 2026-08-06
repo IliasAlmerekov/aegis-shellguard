@@ -114,6 +114,31 @@ fn tracked_files() -> Vec<String> {
         .collect()
 }
 
+/// Individually named binary files. Anything not covered by a directory rule
+/// below has to be listed here, so a stray binary still fails the guard.
+const ALLOWED_BINARY_FILES: [&str; 6] = [
+    "landing/public/favicon.ico",
+    "landing/public/models/shield.glb",
+    "landing/public/shield-icon.png",
+    "src/assets/aegis.gif",
+    "src/assets/howitwork.png",
+    "fuzz/corpus/language_bash/non_ascii_native_scanner_crash",
+];
+
+/// Directories whose whole contents are binary media by construction, paired
+/// with the extension they are allowed to carry. Naming the extension keeps
+/// the rule from turning a directory into a place where any binary can hide,
+/// and spares the allowlist from enumerating asset sets no human maintains
+/// by hand (a webfont family ships several files per weight and format).
+const ALLOWED_BINARY_DIRECTORIES: [(&str, &str); 1] = [("landing/public/fonts/", ".woff2")];
+
+fn is_allowed_binary(path: &str) -> bool {
+    ALLOWED_BINARY_FILES.contains(&path)
+        || ALLOWED_BINARY_DIRECTORIES
+            .iter()
+            .any(|(prefix, extension)| path.starts_with(prefix) && path.ends_with(extension))
+}
+
 fn is_allowed_context(path: &str, line: &str) -> bool {
     ALLOWED_CONTEXTS
         .iter()
@@ -172,17 +197,7 @@ fn tracked_public_contracts_do_not_overclaim_audit_integrity() {
             .unwrap_or_else(|err| panic!("failed to read tracked file `{path}`: {err}"));
         let Ok(contents) = std::str::from_utf8(&bytes) else {
             assert!(
-                matches!(
-                    path.as_str(),
-                    "landing/public/favicon.ico"
-                        | "landing/public/fonts/geist-latin-variable.woff2"
-                        | "landing/public/fonts/geist-mono-latin-variable.woff2"
-                        | "landing/public/models/shield.glb"
-                        | "landing/public/shield-icon.png"
-                        | "src/assets/aegis.gif"
-                        | "src/assets/howitwork.png"
-                        | "fuzz/corpus/language_bash/non_ascii_native_scanner_crash"
-                ),
+                is_allowed_binary(&path),
                 "tracked non-UTF-8 file `{path}` must be added to the explicit binary allowlist"
             );
             continue;
