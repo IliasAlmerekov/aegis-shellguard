@@ -1,3 +1,9 @@
 node_modules
 dist
 .vercel
+
+# Design reference material pulled in while building the redesign. It is
+# working input, not part of the product: the system it describes lives
+# transcribed in src/index.css, which is the authoritative copy.
+theme.css
+tokens.json
