@@ -1,5 +1,34 @@
 @import "tailwindcss";
 
+/* ── Inter Variable + JetBrains Mono ─────────────────────────────────
+   The faces DESIGN.md names for the Linear system, self-hosted from
+   @fontsource-variable on the same terms as Geist: latin only,
+   upright only. Berkeley Mono is commercial and not vendored, so this uses
+   JetBrains Mono — the substitute the token file itself names. Both faces
+   sit above the fold in the hero, so both are preloaded in index.html. */
+
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("/fonts/inter-latin-variable.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "JetBrains Mono Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url("/fonts/jetbrains-mono-latin-variable.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 /* ── Geist ────────────────────────────────────────────────────────────
    Self-hosted variable subsets from @fontsource-variable/geist and
    @fontsource-variable/geist-mono (kept as devDependencies so the files in
@@ -33,8 +62,58 @@
 }
 
 @theme {
-  --color-void: #000000;
-  --color-carbon: #212525;
+  /* ── Design system ──────────────────────────────────────────────────
+     The palette the site is migrating to: near-black substrate, paper-white
+     type, one accent that behaves as a functional flashlight — it marks the
+     action and nothing else. The hero is the first surface on it; the
+     sections below still carry the phosphor palette kept at the bottom of
+     this block until their own slice lands. */
+  --color-void: #08090a;
+  --color-carbon: #0f1011;
+  --color-obsidian: #161718;
+  --color-graphite: #23252a;
+  --color-smoke: #383b3f;
+  --color-ash: #62666d;
+  --color-fog: #8a8f98;
+  --color-mist: #d0d6e0;
+  --color-bone: #e5e5e6;
+  --color-paper: #ffffff;
+  --color-acid-lime: #e4f222;
+
+  /* ── Hero palette ───────────────────────────────────────────────────
+     Supersedes DESIGN.md's Linear greys and acid-lime accent on migrated
+     surfaces. It is sampled from the hero footage itself: the cold blue-grey
+     is the fractured pane's glow, the reds are the glints inside the machine
+     arm. An accent taken out of the image it sits on separates the action
+     without reading as a sticker laid over the shot.
+
+     Measured against `pitch`, which is the only canvas these run on. The
+     role assigned to each is the one its contrast actually allows:
+       haze  10.97  headline, code, any small text
+       steel  5.60  body copy, and the filled accent under dark text
+       tidal  4.44  large text only — never body
+       gunmetal 2.46 / iron 1.98  hairlines and dividers
+       oxide  2.69  cannot carry text here at all; a fill needing white
+                    text on it (7.46), which is why it is registered for the
+                    danger states below the hero and used nowhere above. */
+  --color-pitch: #06080c;
+  --color-tar: #29161b;
+  --color-abyss: #1f2c35;
+  --color-iron: #384444;
+  --color-gunmetal: #3e525f;
+  --color-tidal: #5f7a8d;
+  --color-steel: #718b9b;
+  --color-haze: #b3c2cb;
+  --color-oxide-deep: #50252c;
+  --color-oxide: #8d3a42;
+  /* Oxide raised to a tint that can legally carry text on `pitch` (5.4:1).
+     Oxide itself stays a fill and a hairline; where the red has to be read —
+     a `"denied"` value in the log, a validator warning — it is ember. */
+  --color-ember: #c86b70;
+
+  /* Not yet migrated: the phosphor palette the sections below the hero
+     still render in. `reactor` and `glow` are also read via var() by the
+     terminal cursor and the orbiting-neon frame further down this file. */
   --color-moss: #3e4a3c;
   --color-fern: #485346;
   --color-lichen: #677d64;
@@ -43,22 +122,54 @@
   --color-phosphor: #ddffdc;
   --color-reactor: #7fee64;
   --color-glow: #c8f9b6;
-  --color-mist: #def0dd;
   --color-sage: #aed2a4;
-  --color-bone: #ffffff;
 
-  /* One type system: Geist Sans and Geist Mono share metrics and numeral
-     shapes, so headline, prose and terminal output read as one voice. The
-     display and body roles are the same face — hierarchy comes from size,
-     weight and space, not from a second family. */
+  /* Inter Variable and JetBrains Mono per DESIGN.md — JetBrains is the
+     substitute the token file names for Berkeley Mono, which is commercial
+     and not vendored here. Geist stays registered for the sections that
+     have not migrated yet; it now loads below the fold, so only these two
+     faces are preloaded. */
+  --font-inter-variable: "Inter Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-berkeley-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
   --font-display: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-body: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
-  --radius-sm: 4px;
-  --radius-md: 8px;
+  /* Type scale: size/leading/tracking kept as three tokens so the markup
+     names all three explicitly. */
+  --text-caption: 13px;
+  --leading-caption: 1.2;
+  --text-body-sm: 15px;
+  --leading-body-sm: 1.6;
+  --tracking-body-sm: -0.165px;
+  --text-body-lg: 20px;
+  --leading-body-lg: 1.33;
+  --tracking-body-lg: -0.24px;
+  --text-subheading: 24px;
+  --leading-subheading: 1.33;
+  --tracking-subheading: -0.288px;
+  --text-heading-sm: 32px;
+  --leading-heading-sm: 1.13;
+  --tracking-heading-sm: -0.704px;
+  --text-heading: 48px;
+  --leading-heading: 1;
+  --tracking-heading: -1.056px;
+  --text-heading-lg: 64px;
+  --leading-heading-lg: 1;
+  --tracking-heading-lg: -1.408px;
+  --text-display: 72px;
+  --leading-display: 1;
+  --tracking-display: -1.584px;
+
+  --radius-sm: 2px;
+  --radius-md: 6px;
+  --radius-xl: 12px;
   --radius-lg: 16px;
   --radius-full: 9999px;
+
+  --shadow-subtle: rgb(35, 37, 42) 0px 0px 0px 1px inset;
+  --shadow-xl: rgba(8, 9, 10, 0.6) 0px 4px 32px 0px;
 }
 
 * {
@@ -67,9 +178,20 @@
 
 html {
   scroll-behavior: smooth;
+  /* The gutter is reserved whether or not the page currently scrolls, so the
+     scrollbar can never appear or disappear and re-centre everything by its
+     own width. Every centred container on the page measures against the same
+     width for the whole session. */
+  scrollbar-gutter: stable;
+  /* `clip`, not `hidden`: it forbids a horizontal scroll without turning the
+     root into a scroll container, so `position: sticky` keeps working. A
+     transform that briefly reaches past the right edge can no longer widen
+     the document and shunt the page sideways. */
+  overflow-x: clip;
 }
 
 body {
+  overflow-x: clip;
   background-color: #000000;
   color: #ddffdc;
   font-family: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
@@ -117,6 +239,77 @@ body {
 }
 
 /* Log entry appearing in the tail -f audit terminal */
+/* Gate demo — one terminal, replayed. The caret is the page's steel rather
+   than the phosphor green the how-it-works terminal uses. */
+.gate-caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 1.05em;
+  vertical-align: text-bottom;
+  background: var(--color-haze);
+  animation: term-blink 1.1s steps(1) infinite;
+}
+
+/* Rows print rather than slide: a short lift out of blur, ease-out, done. */
+@keyframes gate-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+.gate-in {
+  animation: gate-in 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* The dialog opens from its own top edge — the command is interrupted, not
+   pushed aside. */
+@keyframes gate-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(8px);
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+    clip-path: inset(0 0 0% 0);
+  }
+}
+.gate-panel-in {
+  animation: gate-panel-in 0.62s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.gate-body {
+  transition:
+    opacity 0.42s ease-out,
+    filter 0.42s ease-out;
+}
+.gate-body.is-clearing {
+  opacity: 0;
+  filter: blur(5px);
+}
+
+@keyframes gate-loop-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.gate-loop-rail {
+  transform-origin: left center;
+  animation: gate-loop-fill linear both;
+}
+
 .tail-entry {
   opacity: 0;
   transform: translateY(6px);
@@ -195,9 +388,9 @@ body {
 .burger svg { transition: filter 0.3s ease-out; }
 
 .burger.is-open svg {
-  filter: drop-shadow(0 0 4px rgba(127, 238, 100, 0.55));
+  filter: drop-shadow(0 0 5px rgba(179, 194, 203, 0.55));
 }
-.burger.is-open .burger-blade { stroke: var(--color-reactor); }
+.burger.is-open .burger-blade { stroke: var(--color-haze); }
 .burger.is-open .burger-blade--top {
   transform: translateY(4px) rotate(45deg);
   animation: blade-draw-top 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -252,8 +445,8 @@ body {
   background: linear-gradient(
     to bottom,
     transparent,
-    var(--color-glow) 35%,
-    var(--color-reactor) 65%,
+    var(--color-haze) 35%,
+    var(--color-steel) 65%,
     transparent
   );
 }
@@ -282,9 +475,50 @@ body {
 .mobile-nav-panel.is-open .mobile-nav-link:nth-child(2) { transition-delay: 0.21s; }
 .mobile-nav-panel.is-open .mobile-nav-link:nth-child(3) { transition-delay: 0.28s; }
 
-@keyframes scroll-hint {
-  0%, 100% { opacity: 0.4; transform: translateX(-50%) translateY(0); }
-  55% { opacity: 0.9; transform: translateX(-50%) translateY(5px); }
+/* ── Hero CTAs (Linear system) ────────────────────────────────────────
+   Acid lime is the one filled chromatic element in the system, so its hover
+   is a lift in value rather than a change of hue; the ghost button next to
+   it stays neutral and only its edge and wash respond. */
+
+.nav-cta {
+  transition:
+    border-color 0.15s ease-out,
+    background-color 0.15s ease-out,
+    transform 0.16s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.nav-cta:active {
+  transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  .nav-cta:hover {
+    border-color: var(--color-tidal);
+    background-color: rgba(113, 139, 155, 0.14);
+  }
+}
+
+.cta-primary {
+  transition:
+    background-color 0.15s ease-out,
+    transform 0.16s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.cta-ghost {
+  transition:
+    border-color 0.15s ease-out,
+    background-color 0.15s ease-out,
+    transform 0.16s cubic-bezier(0.23, 1, 0.32, 1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .cta-primary:hover {
+    background-color: var(--color-haze);
+  }
+  .cta-ghost:hover {
+    border-color: var(--color-tidal);
+    background-color: rgba(113, 139, 155, 0.1);
+  }
+}
+.cta-primary:active,
+.cta-ghost:active {
+  transform: scale(0.97);
 }
 
 /* Copy-to-clipboard confirmation — checkmark pops in over the icon swap */
@@ -349,17 +583,427 @@ body {
   transform: scale(0.97);
 }
 
-/* Trust-strip stat cards — hover lift for interactive consistency */
-.trust-card {
-  transition: background-color 0.2s ease-out, transform 0.2s cubic-bezier(0.23, 1, 0.32, 1), box-shadow 0.2s ease-out;
+/* ── Evidence — six measured facts on a bento grid ───────────────────────
+   A four-column grid where two cells hold a column pair. The wide cells are
+   the two that need a sentence — the fastest path and the honest limit; the
+   four narrow cells are figure, unit, and the file that settles them, and
+   nothing else. The figures are read off the source — the bench, a grep with
+   no hits, the Block-level built-ins, the fields the project ratchet covers,
+   the ADR number — so the grid is a citation, not a stat wall. */
+
+.ev-intro {
+  margin-bottom: 40px;
 }
-@media (hover: hover) and (pointer: fine) {
-  .trust-card:hover {
-    background-color: #d3ecce;
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+@media (min-width: 1024px) {
+  .ev-intro { margin-bottom: 56px; }
+}
+
+.ev-title {
+  max-width: 880px;
+  font-family: var(--font-inter-variable);
+  font-weight: 400;
+  font-size: 26px;
+  line-height: 1.18;
+  letter-spacing: -0.6px;
+  text-wrap: balance;
+  color: var(--color-steel);
+}
+.ev-title-em {
+  font-weight: 590;
+  color: var(--color-haze);
+}
+@media (min-width: 768px) {
+  .ev-title {
+    font-size: var(--text-heading);
+    line-height: 1.08;
+    letter-spacing: var(--tracking-heading);
   }
 }
+@media (min-width: 640px) and (max-width: 767px) {
+  .ev-title {
+    font-size: var(--text-heading-sm);
+    line-height: var(--leading-heading-sm);
+    letter-spacing: var(--tracking-heading-sm);
+  }
+}
+
+/* One column on a phone, two on a tablet, four on a desktop. The wide cells
+   take a column pair at every step above the phone, so the bento rhythm —
+   wide / narrow / narrow, then narrow / narrow / wide — survives the fold
+   down to two columns instead of collapsing into a uniform card wall. */
+.ev-bento {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+@media (min-width: 640px) {
+  .ev-bento { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ev-cell--wide { grid-column: span 2; }
+}
+@media (min-width: 1024px) {
+  .ev-bento {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+}
+
+/* The reveal wrapper is the grid child, so the card itself can stretch to the
+   row height and keep every name on the same baseline. */
+.ev-cell,
+.ev-cell-reveal {
+  display: flex;
+  min-width: 0;
+}
+.ev-cell-reveal { flex: 1; }
+
+/* The whole cell is the link. The file that settles the claim is named on the
+   card, so the reader never has to hunt for a second affordance to check it. */
+.ev-card {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 208px;
+  padding: 26px;
+  border: 1px solid var(--color-iron);
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(180deg, rgba(22, 23, 24, 0.75) 0%, rgba(15, 16, 17, 0.9) 100%);
+  transition:
+    border-color 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (min-width: 640px) {
+  .ev-card { min-height: 252px; padding: 28px; }
+}
+@media (min-width: 1024px) {
+  .ev-card { min-height: 284px; padding: 30px; }
+  .ev-cell--wide .ev-card { padding: 34px 38px; }
+}
+@media (hover: hover) and (pointer: fine) {
+  .ev-card:hover {
+    border-color: var(--color-gunmetal);
+    background-color: rgba(255, 255, 255, 0.014);
+    transform: translateY(-3px);
+    box-shadow: 0 24px 48px -24px rgba(0, 0, 0, 0.65);
+  }
+  .ev-card:hover .ev-icon-tile {
+    border-color: var(--color-gunmetal);
+    transform: scale(1.045);
+    box-shadow:
+      0 20px 32px -14px rgba(0, 0, 0, 0.6),
+      0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  }
+  .ev-card:hover .ev-source { color: var(--color-haze); }
+  .ev-card:hover .ev-arrow { transform: translate(2px, -2px); }
+}
+.ev-card:focus-visible {
+  outline: 1px solid var(--color-haze);
+  outline-offset: 3px;
+  border-color: var(--color-gunmetal);
+}
+
+.ev-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/* The mark carries the cell — drawn large and given real depth (shadow +
+   inset highlight) so it reads as a crafted product glyph, not a chrome-sized
+   affordance icon. Sizing steps up again on wide cells to keep the two lead
+   claims visually heavier than the supporting four. */
+.ev-icon-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  flex: none;
+  overflow: hidden;
+  border: 1px solid var(--color-iron);
+  border-radius: 22px;
+  box-shadow:
+    0 14px 28px -16px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  transition:
+    border-color 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ev-icon {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+@media (min-width: 640px) {
+  .ev-icon-tile { width: 108px; height: 108px; border-radius: 24px; }
+}
+@media (min-width: 768px) {
+  .ev-cell--wide .ev-icon-tile { width: 132px; height: 132px; border-radius: 26px; }
+}
+@media (min-width: 1024px) {
+  .ev-icon-tile { width: 116px; height: 116px; }
+  .ev-cell--wide .ev-icon-tile { width: 144px; height: 144px; }
+}
+
+.ev-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-top: 4px;
+  font-family: var(--font-berkeley-mono);
+  font-size: 11px;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  color: var(--color-fog);
+  transition: color 0.18s ease-out;
+}
+.ev-arrow {
+  flex: none;
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Name and note sit on the floor of the cell — the mark at the top, the words
+   at the bottom, and the gap between them is what keeps a dense grid from
+   reading as a table. */
+.ev-body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: auto;
+  padding-top: 28px;
+}
+@media (min-width: 1024px) {
+  .ev-body { padding-top: 34px; }
+}
+
+.ev-title-card {
+  font-family: var(--font-inter-variable);
+  font-weight: 590;
+  font-size: 20px;
+  line-height: 1.25;
+  letter-spacing: -0.42px;
+  color: var(--color-haze);
+}
+@media (min-width: 768px) {
+  .ev-cell--wide .ev-title-card {
+    font-size: 26px;
+    letter-spacing: -0.6px;
+  }
+}
+
+.ev-note {
+  max-width: 34ch;
+  font-family: var(--font-inter-variable);
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: -0.14px;
+  color: var(--color-steel);
+}
+/* The note reserves two lines whether or not it needs them, so the names in a
+   row land on one baseline instead of stepping with each sentence's wrap. */
+@media (min-width: 640px) {
+  .ev-note { min-height: 42px; }
+}
+@media (min-width: 768px) {
+  .ev-cell--wide .ev-note { font-size: 15px; min-height: 45px; }
+}
+
+/* ── Incident log — a drifting wall of real screenshots ──────────────────
+   The evidence is the artwork: unedited captures of public posts, framed in
+   the page's own hairline-on-carbon idiom and normalised to one row height so
+   the text inside each capture lands at a comparable size. The belt holds two
+   identical tracks and travels exactly one track width, so the loop has no
+   seam. Hover, focus, or the pause control stops it; reduced motion turns the
+   belt into an ordinary horizontal scroller. */
+
+.incident-log {
+  overflow: hidden;
+  padding-bottom: 72px;
+  background: #000000;
+}
+
+.incident-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.incident-heading h2 {
+  max-width: 20ch;
+  font-family: var(--font-inter-variable);
+  font-size: 36px;
+  font-weight: 400;
+  line-height: 1.04;
+  letter-spacing: -0.8px;
+  color: var(--color-haze);
+}
+.incident-heading p {
+  max-width: 52ch;
+  font-family: var(--font-inter-variable);
+  font-size: 15px;
+  line-height: 1.6;
+  letter-spacing: -0.165px;
+  color: var(--color-steel);
+}
+@media (min-width: 768px) {
+  .incident-heading {
+    flex-direction: row;
+    align-items: end;
+    justify-content: space-between;
+    gap: 64px;
+  }
+  .incident-heading h2 {
+    font-size: 48px;
+    line-height: 1;
+    letter-spacing: -1.056px;
+  }
+  .incident-heading p {
+    font-size: 17px;
+    line-height: 1.55;
+    text-align: right;
+  }
+}
+
+.incident-marquee {
+  --shot-height: 268px;
+  --shot-gap: 18px;
+  position: relative;
+  width: 100%;
+  margin-top: 42px;
+  overflow: hidden;
+  /* Horizontal drags move the belt; vertical ones must still scroll the page. */
+  touch-action: pan-y;
+  cursor: grab;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.incident-marquee[data-dragging="true"] { cursor: grabbing; }
+.incident-marquee::before,
+.incident-marquee::after {
+  content: "";
+  position: absolute;
+  z-index: 8;
+  top: 0;
+  bottom: 0;
+  /* Wide enough to dissolve a whole card edge rather than guillotine it. */
+  width: clamp(32px, 13vw, 224px);
+  pointer-events: none;
+}
+.incident-marquee::before {
+  left: 0;
+  background: linear-gradient(90deg, #000000, rgba(0, 0, 0, 0));
+}
+.incident-marquee::after {
+  right: 0;
+  background: linear-gradient(270deg, #000000, rgba(0, 0, 0, 0));
+}
+
+/* The belt's offset is owned by the component's rAF loop, not by a keyframe —
+   a CSS animation cannot be caught mid-flight and handed to a dragging hand.
+   Speed and inertia live in IncidentLog.jsx. */
+.incident-belt {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+}
+
+.incident-track {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--shot-gap);
+  margin: 0;
+  padding: 0;
+  padding-inline-end: var(--shot-gap);
+  list-style: none;
+}
+
+.incident-shot {
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--color-gunmetal);
+  border-radius: var(--radius-xl);
+  background: #0b0f12;
+  box-shadow:
+    rgba(0, 0, 0, 0.55) 0 18px 44px -20px,
+    rgba(255, 255, 255, 0.035) 0 1px 0 inset;
+}
+.incident-shot img {
+  display: block;
+  height: var(--shot-height);
+  width: auto;
+  /* The captures are already framed images of text — never let the browser
+     stretch one, and keep upscaling crisp rather than smeared. */
+  object-fit: contain;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.incident-shot-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 14px;
+  border-top: 1px solid var(--color-iron);
+  font-family: var(--font-berkeley-mono);
+  font-size: 9px;
+  line-height: 1.4;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-steel);
+}
+.incident-shot-caption a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-haze);
+  transition: color 0.15s ease-out;
+}
+.incident-shot-caption a:focus-visible {
+  outline: 1px solid var(--color-haze);
+  outline-offset: 4px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .incident-shot-caption a:hover { color: var(--color-ember); }
+}
+
+@media (min-width: 768px) {
+  .incident-log { padding-bottom: 104px; }
+  .incident-marquee {
+    --shot-height: 330px;
+    --shot-gap: 22px;
+    margin-top: 62px;
+  }
+}
+@media (min-width: 1280px) {
+  .incident-marquee { --shot-height: 358px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No rAF loop runs here, so the row becomes an ordinary scroller: native
+     scrolling reaches every card by keyboard, wheel, and scrollbar, which
+     dragging alone would not. */
+  .incident-marquee {
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    touch-action: auto;
+    cursor: auto;
+    -webkit-user-select: auto;
+    user-select: auto;
+  }
+  .incident-belt { will-change: auto; }
+  .incident-track[aria-hidden="true"] { display: none; }
+  .incident-track { padding-inline: clamp(20px, 6vw, 120px); }
+  .incident-shot { scroll-snap-align: center; }
+}
+
 
 /* Outline buttons (secondary CTAs) — fill + press feedback on top of the
    existing border-color transition-colors class already on each element. */
@@ -396,6 +1040,249 @@ body {
 }
 .stat-static.is-visible {
   opacity: 1;
+}
+
+/* ── Taped get-started footer ──────────────────────────────────────────
+   The final action sits on one slightly skewed sheet, held at its top corners
+   by two torn pieces of cold metal tape. The reference's navigation columns
+   are deliberately absent: Aegis closes on its product truth and two actions. */
+
+.taped-footer-section {
+  width: min(1200px, 100%);
+  margin-inline: auto;
+  padding: 96px 24px 30px;
+}
+
+.taped-footer-card {
+  position: relative;
+  border-radius: var(--radius-xl);
+  background: #101418;
+  box-shadow:
+    rgba(0, 0, 0, 0.72) 0 28px 58px -30px,
+    rgba(95, 122, 141, 0.9) 0 0 0 1px inset,
+    rgba(255, 255, 255, 0.035) 0 1px 0 inset;
+  transform: rotate(0.75deg);
+  transform-origin: center;
+}
+
+.taped-footer-layout {
+  min-height: 328px;
+  display: grid;
+  grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.12fr);
+  align-items: center;
+  gap: 64px;
+  padding: 58px 64px 54px;
+}
+
+.taped-footer-brand {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 48px;
+}
+
+.taped-footer-wordmark {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  font-family: var(--font-inter-variable);
+  font-size: 18px;
+  font-weight: 590;
+  letter-spacing: -0.012em;
+  text-transform: uppercase;
+  color: var(--color-haze);
+}
+.taped-footer-wordmark img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  filter: grayscale(1) brightness(1.45);
+  opacity: 0.88;
+}
+.taped-footer-wordmark:focus-visible {
+  outline: 2px solid var(--color-haze);
+  outline-offset: 5px;
+  border-radius: var(--radius-sm);
+}
+
+.taped-footer-brand > p {
+  max-width: 39ch;
+  font-family: var(--font-inter-variable);
+  font-size: 15px;
+  line-height: 1.62;
+  letter-spacing: -0.165px;
+  color: var(--color-steel);
+}
+
+.taped-footer-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.taped-footer-cta h2 {
+  max-width: 11ch;
+  font-family: var(--font-inter-variable);
+  font-size: 48px;
+  font-weight: 400;
+  line-height: 1.02;
+  letter-spacing: -1.056px;
+  color: var(--color-haze);
+}
+
+.taped-footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 32px;
+}
+.taped-footer-primary,
+.taped-footer-secondary {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 18px;
+  border-radius: var(--radius-md);
+  font-family: var(--font-inter-variable);
+  font-size: 14px;
+  font-weight: 510;
+  letter-spacing: -0.011em;
+  transition:
+    background-color 0.15s ease-out,
+    border-color 0.15s ease-out,
+    color 0.15s ease-out,
+    transform 0.16s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.taped-footer-primary {
+  border: 1px solid var(--color-haze);
+  background: var(--color-haze);
+  color: var(--color-pitch);
+}
+.taped-footer-secondary {
+  border: 1px solid var(--color-gunmetal);
+  background: transparent;
+  color: var(--color-haze);
+}
+.taped-footer-primary:active,
+.taped-footer-secondary:active { transform: scale(0.97); }
+.taped-footer-primary:focus-visible,
+.taped-footer-secondary:focus-visible {
+  outline: 2px solid var(--color-haze);
+  outline-offset: 3px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .taped-footer-primary:hover {
+    border-color: var(--color-paper);
+    background: var(--color-paper);
+  }
+  .taped-footer-secondary:hover {
+    border-color: var(--color-tidal);
+    background: rgba(31, 44, 53, 0.58);
+  }
+}
+
+.taped-footer-tape {
+  position: absolute;
+  z-index: 2;
+  top: -16px;
+  width: 82px;
+  height: 34px;
+  clip-path: polygon(5% 10%, 94% 0, 100% 83%, 9% 100%, 0 37%);
+  background: linear-gradient(105deg, var(--color-oxide-deep), var(--color-gunmetal) 58%, var(--color-abyss));
+  box-shadow: rgba(0, 0, 0, 0.48) 0 8px 15px -7px;
+  opacity: 0.94;
+  pointer-events: none;
+}
+.taped-footer-tape::before {
+  content: "";
+  position: absolute;
+  inset: 7px 9px;
+  border-top: 1px solid rgba(179, 194, 203, 0.2);
+  border-bottom: 1px solid rgba(6, 8, 12, 0.42);
+  transform: skewX(-12deg);
+}
+.taped-footer-tape--left {
+  left: -22px;
+  transform: rotate(-29deg);
+}
+.taped-footer-tape--right {
+  right: -22px;
+  transform: rotate(29deg) scaleX(-1);
+}
+
+.site-footer {
+  padding: 0 24px 36px;
+}
+.site-footer-meta {
+  width: min(1100px, 100%);
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding-inline: 10px;
+  font-family: var(--font-berkeley-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-steel);
+  transform: rotate(0.75deg);
+}
+.site-footer-meta span { color: var(--color-haze); }
+
+@media (max-width: 767px) {
+  .taped-footer-section { padding: 80px 24px 26px; }
+  .taped-footer-card { transform: rotate(0.35deg); }
+  .taped-footer-layout {
+    min-height: 0;
+    grid-template-columns: 1fr;
+    gap: 50px;
+    padding: 46px 28px 38px;
+  }
+  .taped-footer-brand {
+    gap: 24px;
+  }
+  .taped-footer-brand > p {
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .taped-footer-cta h2 {
+    max-width: 10ch;
+    font-size: 38px;
+    line-height: 1.04;
+    letter-spacing: -0.82px;
+  }
+  .taped-footer-actions {
+    width: 100%;
+    flex-direction: column;
+    margin-top: 28px;
+  }
+  .taped-footer-primary,
+  .taped-footer-secondary { width: 100%; }
+  .taped-footer-tape {
+    top: -12px;
+    width: 66px;
+    height: 29px;
+  }
+  .taped-footer-tape--left {
+    left: -12px;
+    transform: rotate(-25deg);
+  }
+  .taped-footer-tape--right {
+    right: -12px;
+    transform: rotate(25deg) scaleX(-1);
+  }
+  .site-footer { padding-bottom: 30px; }
+  .site-footer-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding-inline: 6px;
+    transform: rotate(0.35deg);
+  }
 }
 
 /* Audit-section "view log format" link — arrow nudges forward on hover */

@@ -9,20 +9,22 @@
       content="Aegis is a Rust shell guardrail for AI agents. It asks before risky commands run and blocks catastrophic commands."
     />
     <title>Aegis — AI shell command guardrail</title>
-    <!-- Geist is self-hosted: no third party on the critical render path.
-         Both faces sit above the fold (headline, nav wordmark, install
-         snippet), so both are preloaded — the swap lands before first paint
-         instead of reflowing the hero. -->
+    <!-- Type is self-hosted: no third party on the critical render path.
+         Inter and JetBrains Mono carry the hero (headline, nav wordmark,
+         install snippet), so both are preloaded — the swap lands before
+         first paint instead of reflowing the hero. Geist still serves the
+         sections that have not migrated to the Linear system yet; it now
+         loads entirely below the fold and is deliberately not preloaded. -->
     <link
       rel="preload"
-      href="/fonts/geist-latin-variable.woff2"
+      href="/fonts/inter-latin-variable.woff2"
       as="font"
       type="font/woff2"
       crossorigin
     />
     <link
       rel="preload"
-      href="/fonts/geist-mono-latin-variable.woff2"
+      href="/fonts/jetbrains-mono-latin-variable.woff2"
       as="font"
       type="font/woff2"
       crossorigin
