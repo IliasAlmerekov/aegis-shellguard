@@ -5,7 +5,10 @@
 //!
 //! These helpers are test-only and intentionally panic on internal errors
 //! (`.unwrap()` is acceptable here).
-#![allow(dead_code)]
+#![expect(
+    dead_code,
+    reason = "each integration-test crate compiles this helper separately and uses a different subset"
+)]
 
 use std::fs;
 use std::io::Write;

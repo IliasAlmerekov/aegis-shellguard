@@ -2,8 +2,8 @@
 
 ## Status
 
-Draft — requires a finding-specific `grill-with-docs` session before TDD. M3b
-canonical hook wrapping is already closed.
+Ready for TDD/review closure — finding-specific `grill-with-docs` completed
+2026-08-05. M3b canonical hook wrapping is already closed.
 
 ## Finding
 
@@ -33,11 +33,14 @@ agent session cannot silently inherit disabled enforcement.
   `startup|resume`: effective enabled sessions retain routing guidance,
   effective disabled sessions emit the approved passthrough warning, and CI
   override sessions add the approved effective-state sentence.
-- Decide whether wrapper text mode warns once per process or per invocation;
-  JSON mode must remain structurally valid.
+- Do not add a wrapper text-mode warning per process or invocation; visibility
+  is limited to the protocol-valid agent `SessionStart` surfaces.
 - Preserve CI override behavior.
 - Session-start notices do not create audit events; only `aegis off`/`on`
   transitions retain their existing best-effort audit contract.
+- Existing installations receive the managed session hooks only after an
+  explicit `aegis install-hooks` rerun; session runtime never self-updates
+  installed hooks.
 
 ## TDD seams
 
@@ -57,6 +60,18 @@ agent session cannot silently inherit disabled enforcement.
 5. Document that existing installations receive the new managed session hooks
    after an explicit `aegis install-hooks` rerun; do not self-update hooks at
    session runtime.
+
+## Resolved product decisions
+
+- Visibility is emitted for both `startup` and `resume` session events.
+- The scope is limited to Claude Code and Codex `SessionStart` JSON envelopes;
+  ordinary wrapper invocations receive no additional warning.
+- Session-start visibility is informational, not an audit event. Toggle
+  transitions remain the auditable action.
+- Hook refresh remains an explicit operator action through `aegis install-hooks`.
+- SessionStart hooks use standalone inline Toggle-state logic rather than
+  sourcing the mutable managed helper, so they always retain one protocol-valid
+  JSON response even if that helper is malformed or noisy.
 
 ## Verification
 
