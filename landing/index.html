@@ -6,9 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Aegis is a Rust shell guardrail for AI agents. It asks before risky commands run and blocks catastrophic commands."
+      content="Aegis ShellGuard is a Rust shell guardrail for AI coding agents. rm -rf, git reset --hard and DROP TABLE wait for your approval; safe commands pass through in under 2 ms."
     />
-    <title>Aegis — AI shell command guardrail</title>
+    <title>Aegis ShellGuard — stop your AI agent from deleting your work</title>
     <!-- Type is self-hosted: no third party on the critical render path.
          Inter and JetBrains Mono carry the hero (headline, nav wordmark,
          install snippet), so both are preloaded — the swap lands before
@@ -29,6 +29,24 @@
       type="font/woff2"
       crossorigin
     />
+    <!-- The hand is at the bottom of frame 1 and the headline reads against
+         it, so the first frame is fetched at the same priority as the type
+         rather than after the JS bundle resolves. `media` keeps each
+         viewport from paying for the other's frame set. -->
+    <link
+      rel="preload"
+      href="/frames/frame-0001.webp"
+      as="image"
+      type="image/webp"
+      media="(min-width: 768px)"
+    />
+    <link
+      rel="preload"
+      href="/frames-sm/frame-0001.webp"
+      as="image"
+      type="image/webp"
+      media="(max-width: 767px)"
+    />
     <style>
       html,
       body,
@@ -38,6 +56,25 @@
     </style>
   </head>
   <body style="background-color: #000000; margin: 0">
+    <!--
+      HERO DIRECTION CONTRACT — see DESIGN.md
+      THESIS: the guardrail is a held hand, not a shield. Refuses the
+        product-screenshot hero and the floating 3D mark it replaces.
+      OWN-WORLD: a palette sampled from the shot itself — #06080c pitch
+        substrate, Inter at 400/590 in #718b9b steel over #b3c2cb haze, one
+        #718b9b filled action, #3e525f hairline edges, 6px radii, no
+        ornament. Recognizable with all copy removed.
+      STORY: an agent reaches for something destructive and stops short —
+        so approval is the product, and the visitor installs it.
+      FIRST VIEWPORT: full-bleed frame 001 of the shot, subject held in the
+        right third; graded black scrim on the left carrying a 72px
+        headline and the primary action at the 1200px gutter; hairline
+        scroll rail at the content gutter.
+      FORM: scroll-scrubbed 161-frame canvas sequence, pinned 150vh, text
+        accreting in three beats.
+      FINISH: unreviewed and undocumented is unfinished; this build ends
+        with the finish review, the verdict, and DESIGN.md.
+    -->
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
