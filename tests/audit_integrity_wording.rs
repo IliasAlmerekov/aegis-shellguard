@@ -116,10 +116,8 @@ fn tracked_files() -> Vec<String> {
 
 /// Individually named binary files. Anything not covered by a directory rule
 /// below has to be listed here, so a stray binary still fails the guard.
-const ALLOWED_BINARY_FILES: [&str; 6] = [
+const ALLOWED_BINARY_FILES: [&str; 4] = [
     "landing/public/favicon.ico",
-    "landing/public/models/shield.glb",
-    "landing/public/shield-icon.png",
     "src/assets/aegis.gif",
     "src/assets/howitwork.png",
     "fuzz/corpus/language_bash/non_ascii_native_scanner_crash",
