@@ -1,14 +1,11 @@
 import { useRef } from 'react'
-import gsap from 'gsap'
-import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import { useGSAP } from '@gsap/react'
-
-gsap.registerPlugin(useGSAP, ScrollTrigger)
+import { gsap, ScrollTrigger, useGSAP } from '../../lib/gsap'
 
 /* The two beats of the section, split so the tone can change mid-sentence:
-   `dim` is body-weight steel, `bright` is the haze the hero reserves for the
-   words that carry the claim. The palette is the hero's — nothing new is
-   introduced between the two surfaces. */
+   `dim` is the cloud-dim half, `bright` is the cloud the hero reserves for
+   words that carry the claim. Both render at heading weight (Inter Bold);
+   colour carries the emphasis, not weight. The palette is the hero's —
+   nothing new is introduced between the two surfaces. */
 const LINE_ONE = [
   { text: 'One unchecked AI command can', tone: 'dim' },
   { text: 'delete files, reset commits, or drop tables.', tone: 'bright' },
@@ -32,10 +29,9 @@ function Words({ segments }) {
         <span
           key={key++}
           data-word
-          className={`inline-block will-change-transform ${
-            seg.tone === 'bright' ? 'text-haze' : 'text-steel'
+          className={`inline-block font-bold ${
+            seg.tone === 'bright' ? 'text-cloud' : 'text-cloud-dim'
           }`}
-          style={{ fontWeight: seg.tone === 'bright' ? 520 : 400 }}
         >
           {word}
         </span>
@@ -79,32 +75,39 @@ export function WhyAegis() {
 
           /* Hidden here rather than in CSS so the copy still renders if the
              bundle never arrives. */
-          gsap.set('[data-line="one"] [data-word]', { y: rise, opacity: 0, filter: 'blur(12px)' })
-          gsap.set('[data-line="two"] [data-word]', { y: rise, opacity: 0, filter: 'blur(12px)' })
+          gsap.set('[data-line="one"] [data-word]', { y: rise, opacity: 0, filter: 'blur(10px)' })
+          gsap.set('[data-line="two"] [data-word]', { y: rise, opacity: 0, filter: 'blur(10px)' })
           gsap.set('[data-rule-fill]', { scaleX: 0, transformOrigin: 'left center' })
 
           /* Scroll only decides *when*; the timeline owns its own tempo, so
              the sentences read at a speed the visitor cannot scrub, stall, or
              run backwards. The first sentence lands before the second starts:
-             the order of the argument is the order of the motion. */
+             the order of the argument is the order of the motion.
+
+             The tempo is a middle register: 0.9s per word over a 35ms stagger,
+             so the first sentence is down in roughly 1.3s — slower than a
+             snap, but still inside the window a fast visitor scrolls through
+             the claim. The early trigger below (top 90%) starts the run as
+             soon as the block enters view, so the slower tempo lands without
+             the reader outrunning it. */
           const tl = gsap.timeline({ paused: true, defaults: { ease: 'expo.out' } })
 
           tl.to('[data-line="one"] [data-word]', {
             y: 0,
             opacity: 1,
             filter: 'blur(0px)',
-            duration: 1.25,
-            stagger: { each: 0.045, from: 'start' },
+            duration: 0.9,
+            stagger: { each: 0.035, from: 'start' },
           })
-            .to('[data-rule-fill]', { scaleX: 1, duration: 1.1, ease: 'power3.inOut' }, '<0.45')
+            .to('[data-rule-fill]', { scaleX: 1, duration: 0.9, ease: 'power3.inOut' }, '<0.35')
             .to(
               '[data-line="two"] [data-word]',
               {
                 y: 0,
                 opacity: 1,
                 filter: 'blur(0px)',
-                duration: 1.25,
-                stagger: { each: 0.045, from: 'end' },
+                duration: 0.9,
+                stagger: { each: 0.035, from: 'end' },
               },
               '<0.15'
             )
@@ -151,10 +154,16 @@ export function WhyAegis() {
              its type — measured from its top, the words would arrive while
              still below the fold. Arriving from above is the mirror case, so the
              window closes late enough that the whole block is on screen before
-             the run starts. */
+             the run starts.
+
+             The start sits at 90%, not 78%: the claim is the first thing below
+             the hero and the reveal is short, so it should begin the moment the
+             block peeks into view rather than waiting until it is most of the
+             way up — a late start on a fast scroll lets the visitor pass the
+             text before it lands. */
           const runIn = ScrollTrigger.create({
             trigger: copyRef.current,
-            start: 'top 78%',
+            start: 'top 90%',
             end: 'bottom 55%',
             onEnter: run,
             onEnterBack: run,
@@ -202,8 +211,8 @@ export function WhyAegis() {
 
         {/* A hairline that draws left-to-right between the two claims — the
             hinge the second sentence swings back from. */}
-        <div aria-hidden="true" className="my-8 h-px w-full bg-iron md:my-12">
-          <div data-rule-fill className="h-full w-full bg-tidal" />
+        <div aria-hidden="true" className="my-8 h-px w-full bg-night-edge md:my-12">
+          <div data-rule-fill className="h-full w-full bg-cyan-neon" />
         </div>
 
         <div data-line="two" className="ml-auto max-w-[880px] text-right will-change-transform">
