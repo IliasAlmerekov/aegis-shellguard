@@ -13,6 +13,42 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Fixed
 
+- Landing: play the hero frame sequence as the single continuous gesture it
+  actually is. The 161-frame render was treated as a closed loop and mirrored by
+  travel direction, but frame 161 is not frame 1 — the set is one reach
+  (1–113), a fast recoil (114–119), and the start of a second reach. The hero
+  now scrubs frames 1–119 strictly forward, with the recoil placed at the end of
+  the pin, so the hand reaches through the scroll and is pulled back only at the
+  close instead of lurching downward mid-scroll.
+
+### Changed
+
+- Landing: render the hero shot at a fractional position rather than at the
+  nearest frame index, compositing the two frames a position falls between at
+  the fractional weight. A slow scroll now moves the hand continuously instead
+  of stepping one frame at a time, and frames still downloading widen the
+  blended pair so gaps play as a dissolve rather than a step.
+
+- Landing: cap the hero canvas backing store at 2.7 megapixels and bound the
+  scrubbed timeline's per-frame work — no animated filters, `power2.out` instead
+  of `expo.out` on scrubbed arrivals, and `ignoreMobileResize` so a collapsing
+  URL bar no longer refreshes the pin mid-scroll. Pin length 100vh → 140vh.
+
+- Landing: recast the "Built to be trusted" evidence grid as a bento layout —
+  four columns with two double-width cells, each cell a single link carrying a
+  large Lucide mark, the file that settles the claim, and a bottom-anchored
+  name with one line of note.
+
+- Landing: reshape the closing Get started/footer into a taped, slightly
+  skewed panel without navigation, retaining the Aegis description, actions,
+  and steel/oxide palette.
+
+- Landing: recast the sourced AI-agent incident reports as a responsive
+  discussion-thread carousel with swipe and keyboard navigation, explicit
+  pause/resume, reduced-motion behavior, and the Aegis steel/oxide palette.
+
+### Fixed
+
 - CI: retain `scripts/install.sh` compatibility with pre-v0.6.3 releases that
   do not carry `THIRD_PARTY_NOTICES.md`, while keeping the notice fail-closed
   for v0.6.3 and later.

@@ -17,11 +17,25 @@
 
 ## Last updated
 
-2026-08-05
+2026-08-06
 
 ---
 
-## Last session (2026-08-05) — M3a Toggle visibility in progress
+## Last session (2026-08-06) — landing carousel and taped footer
+
+- **Landing incident section rebuilt locally:** the five source-linked AI
+  incidents now render as an Aegis-themed reconstructed discussion carousel
+  with swipe, keyboard, explicit pause/resume, reduced-motion behavior, and
+  responsive cards. The production build and desktop/mobile Playwright
+  contracts pass; review/re-review closed overflow, carousel semantics,
+  autoplay, announcement, and source-provenance findings.
+
+- **Landing closing footer rebuilt locally:** the Get started area is now a
+  responsive taped panel with no navigation columns, preserving the Aegis
+  description and actions in the steel/oxide palette. Production build,
+  desktop/mobile Playwright contracts, and review/re-review pass.
+
+## Prior session (2026-08-05) — M3a Toggle visibility in progress
 
 - **M3a implementation staged locally:** Claude Code now receives a managed
   `SessionStart` hook alongside Codex. Both emit protocol-valid effective-state
