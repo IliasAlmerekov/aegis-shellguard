@@ -7,3 +7,9 @@ dist
 # transcribed in src/index.css, which is the authoritative copy.
 theme.css
 tokens.json
+design/
+
+# Throwaway Playwright capture scripts used while authoring screenshots.
+# They hardcode absolute paths to other projects' node_modules and are
+# regenerated per session, not committed.
+shot-*.mjs

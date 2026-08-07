@@ -1,11 +1,20 @@
 @import "tailwindcss";
 
-/* ── Inter Variable + JetBrains Mono ─────────────────────────────────
-   The faces DESIGN.md names for the Linear system, self-hosted from
-   @fontsource-variable on the same terms as Geist: latin only,
-   upright only. Berkeley Mono is commercial and not vendored, so this uses
-   JetBrains Mono — the substitute the token file itself names. Both faces
-   sit above the fold in the hero, so both are preloaded in index.html. */
+/* ── Inter + Shadows Into Light ────────────────────────────────────────
+   The site's pairing: Inter (variable neo-grotesque sans, wght 100–900)
+   carries every headline, UI label, and body line; Shadows Into Light
+   (Kimberly Geswein's single-weight handwriting face) is the accent — the
+   brand signature on the hero eyebrow and the footer wordmark, nothing
+   else. Both self-hosted from @fontsource on the same terms as the
+   prior faces: latin only, upright only. Inter sits above the fold in
+   the hero, so it is preloaded in index.html; Shadows Into Light is a
+   short label off the critical path and is not preloaded. JetBrains Mono
+   remains the code/terminal face below.
+
+   Weight contract: headlines and large display text render at 700
+   (Inter Bold); body copy and running prose render at 400 (Inter
+   Regular). The two-tone emphasis within a heading (cloud-dim vs cloud) is
+   carried by colour, not by weight. */
 
 @font-face {
   font-family: "Inter Variable";
@@ -13,6 +22,17 @@
   font-display: swap;
   font-weight: 100 900;
   src: url("/fonts/inter-latin-variable.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Shadows Into Light";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("/fonts/shadows-into-light-latin-400-normal.woff2") format("woff2");
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
     U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
     U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
@@ -29,112 +49,83 @@
     U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-/* ── Geist ────────────────────────────────────────────────────────────
-   Self-hosted variable subsets from @fontsource-variable/geist and
-   @fontsource-variable/geist-mono (kept as devDependencies so the files in
-   public/fonts have a versioned provenance and an upgrade path).
-
-   Latin only, upright only: the site is English and uses no italics, so the
-   two files together are ~51 KB. The unicode-range is Fontsource's `latin`
-   subset — it already covers the em dash, ellipsis and arrows used in the
-   copy, so nothing renders from a fallback face. */
-
-@font-face {
-  font-family: "Geist";
-  font-style: normal;
-  font-display: swap;
-  font-weight: 100 900;
-  src: url("/fonts/geist-latin-variable.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
-    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
-    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
-@font-face {
-  font-family: "Geist Mono";
-  font-style: normal;
-  font-display: swap;
-  font-weight: 100 900;
-  src: url("/fonts/geist-mono-latin-variable.woff2") format("woff2");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
-    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
-    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
 @theme {
-  /* ── Design system ──────────────────────────────────────────────────
-     The palette the site is migrating to: near-black substrate, paper-white
-     type, one accent that behaves as a functional flashlight — it marks the
-     action and nothing else. The hero is the first surface on it; the
-     sections below still carry the phosphor palette kept at the bottom of
-     this block until their own slice lands. */
-  --color-void: #08090a;
-  --color-carbon: #0f1011;
-  --color-obsidian: #161718;
-  --color-graphite: #23252a;
-  --color-smoke: #383b3f;
-  --color-ash: #62666d;
-  --color-fog: #8a8f98;
-  --color-mist: #d0d6e0;
-  --color-bone: #e5e5e6;
-  --color-paper: #ffffff;
-  --color-acid-lime: #e4f222;
+  /* ── Brand palette ──────────────────────────────────────────────────
+     Four brand colours and the tonal steps derived from them. Split
+     60 / 30 / 10 by area on every surface:
 
-  /* ── Hero palette ───────────────────────────────────────────────────
-     Supersedes DESIGN.md's Linear greys and acid-lime accent on migrated
-     surfaces. It is sampled from the hero footage itself: the cold blue-grey
-     is the fractured pane's glow, the reds are the glints inside the machine
-     arm. An accent taken out of the image it sits on separates the action
-     without reading as a sticker laid over the shot.
+       60  Night Black family — substrate, scrim, surfaces, hairlines
+       30  Cloud White family — headline, body copy, labels
+       10  Electric Blue — the one action (CTAs, the gate, the held state)
+           Cyan Neon    — live state (the scroll rail, the shell prompt,
+                          the terminal cursor, the status dot)
 
-     Measured against `pitch`, which is the only canvas these run on. The
-     role assigned to each is the one its contrast actually allows:
-       haze  10.97  headline, code, any small text
-       steel  5.60  body copy, and the filled accent under dark text
-       tidal  4.44  large text only — never body
-       gunmetal 2.46 / iron 1.98  hairlines and dividers
-       oxide  2.69  cannot carry text here at all; a fill needing white
-                    text on it (7.46), which is why it is registered for the
-                    danger states below the hero and used nowhere above. */
-  --color-pitch: #06080c;
-  --color-tar: #29161b;
-  --color-abyss: #1f2c35;
-  --color-iron: #384444;
-  --color-gunmetal: #3e525f;
-  --color-tidal: #5f7a8d;
-  --color-steel: #718b9b;
-  --color-haze: #b3c2cb;
-  --color-oxide-deep: #50252c;
-  --color-oxide: #8d3a42;
-  /* Oxide raised to a tint that can legally carry text on `pitch` (5.4:1).
-     Oxide itself stays a fill and a hairline; where the red has to be read —
-     a `"denied"` value in the log, a validator warning — it is ember. */
-  --color-ember: #c86b70;
+     Only `night` and `night-void` are ever a background, so contrast is
+     quoted against `night-void`, the substrate:
+       cloud       18.2  headline, code, any small text
+       cloud-dim    9.8  body copy
+       cloud-mute   7.6  large text (the headline's unemphasised half)
+       cloud-faint  5.5  labels, meta, the copy button at rest
+       cyan-neon   10.2  live state — the scroll rail, the shell prompt
+       electric     5.2  passes AA as text, but it is spent as a fill; the
+                         label on it is `night-void` (4.6), never white (3.6)
+       night-edge   1.5  hairlines and dividers only
+       night-rim   2.3   hover/active borders — one step lighter than edge
 
-  /* Not yet migrated: the phosphor palette the sections below the hero
-     still render in. `reactor` and `glow` are also read via var() by the
-     terminal cursor and the orbiting-neon frame further down this file. */
-  --color-moss: #3e4a3c;
-  --color-fern: #485346;
-  --color-lichen: #677d64;
-  --color-slate: #697368;
-  --color-stone: #859085;
-  --color-phosphor: #ddffdc;
-  --color-reactor: #7fee64;
-  --color-glow: #c8f9b6;
-  --color-sage: #aed2a4;
+     `night-void` is a darkened Night Black rather than the brand value
+     itself: it is the hero's ground, and the footage it sits under fades to
+     roughly #00050a in its own corners. At full #1e272e the frame would
+     read as a lighter rectangle pasted onto the page. Night Black proper
+     stays the surface colour — the install field, the nav bar, the
+     terminal. The page canvas itself is pure #000, which the hero's own
+     gradients terminate on so the shot meets the section below without a
+     seam; #000 is the darkest member of the Night Black family. */
+  --color-night: #1e272e;
+  --color-night-deep: #141c22;
+  --color-night-void: #04090e;
+  --color-night-edge: #27333c;
+  --color-night-rim: #36424d;
 
-  /* Inter Variable and JetBrains Mono per DESIGN.md — JetBrains is the
-     substitute the token file names for Berkeley Mono, which is commercial
-     and not vendored here. Geist stays registered for the sections that
-     have not migrated yet; it now loads below the fold, so only these two
-     faces are preloaded. */
+  --color-cloud: #f5f6fa;
+  --color-cloud-dim: #aeb8c4;
+  --color-cloud-mute: #93a1ae;
+  --color-cloud-faint: #7d8894;
+
+  --color-electric: #0984e3;
+  /* The hover step, not a second brand colour: Electric Blue lifted enough
+     to read as a state change without shifting hue. */
+  --color-electric-lift: #3a9fea;
+  --color-cyan-neon: #00cec9;
+
+  /* There used to be a second set of names here — `pitch`, `abyss`, `iron`,
+     `gunmetal`, `tidal`, `steel`, `haze`, `fog`, `paper` — aliasing the exact
+     same nine values as a bridge for sections written against an older
+     palette. The bridge outlived its crossing: the hero reached for
+     `cloud-mute` while the nav two elements away reached for `haze`, and
+     nothing in either name told a reader they were the same colour, or which
+     one a new surface should pick.
+
+     Every call site now names the family and the step — `night-edge` is a
+     hairline, `cloud-dim` is body copy — so the palette can only be read one
+     way, and a colour can be retuned in exactly one place. */
+
+  /* Inter is the workhorse — headlines, UI labels, body — and Shadows
+     Into Light is the brand-signature accent (hero eyebrow, footer
+     wordmark). The `--font-inter-variable` name is kept as the alias every
+     live call site already uses, so retargeting the whole page is one edit
+     here; `--font-display` / `--font-body` / `--font-mono` are the legacy
+     section aliases, repointed off the removed Geist/Oswald faces to the
+     same Inter / JetBrains Mono pair so nothing falls through to a
+     fallback if those sections are re-mounted. JetBrains Mono stays the
+     code and terminal face — it is functional mono, and neither Inter nor
+     Shadows is monospaced. */
   --font-inter-variable: "Inter Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-berkeley-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-accent: "Shadows Into Light", "Segoe Script", "Bradley Hand", cursive;
 
-  --font-display: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-body: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-display: "Inter Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-body: "Inter Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
 
   /* Type scale: size/leading/tracking kept as three tokens so the markup
      names all three explicitly. */
@@ -178,6 +169,12 @@
 
 html {
   scroll-behavior: smooth;
+  /* The header is 64px and fixed, so an anchor that lands flush with the
+     viewport top lands *under* it. Reserving the header's height plus a
+     little air here fixes every in-page link at once — including the
+     `#audit-trail` marker, which was carrying its own hand-rolled -80px
+     offset for exactly this reason. */
+  scroll-padding-top: 88px;
   /* The gutter is reserved whether or not the page currently scrolls, so the
      scrollbar can never appear or disappear and re-centre everything by its
      own width. Every centred container on the page measures against the same
@@ -193,14 +190,49 @@ html {
 body {
   overflow-x: clip;
   background-color: #000000;
-  color: #ddffdc;
-  font-family: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  /* The former `font-feature-settings: "cv11"` was an Inter-only character
-     variant and is dropped rather than translated — Geist has no equivalent.
-     Digit alignment stays where it belongs: `tabular-nums` on the animated
-     stats, not a global numeric override on running prose. */
+  color: var(--color-cloud-dim);
+  font-family: var(--font-inter-variable);
+  /* Digit alignment stays where it belongs: `tabular-nums` on the animated
+     stats, not a global numeric override on running prose. Inter has no
+     optical-size axis in this wght-only subset and no character variants,
+     so nothing is translated from the prior Oswald/Geist global settings. */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Off-canvas rather than `display: none`, so it stays focusable; it rides in
+   on focus at the same 6px gutter the content column uses, and takes the
+   page's own filled-action treatment so it reads as part of the site rather
+   than as a browser artefact. */
+.skip-link {
+  position: fixed;
+  top: 12px;
+  left: 24px;
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: var(--radius-md);
+  background: var(--color-electric);
+  color: var(--color-night-void);
+  font-family: var(--font-inter-variable);
+  font-size: 14px;
+  font-weight: 510;
+  letter-spacing: -0.011em;
+  transform: translateY(calc(-100% - 20px));
+  transition: transform 0.18s ease-out;
+}
+.skip-link:focus-visible {
+  transform: none;
+  outline: 2px solid var(--color-cyan-neon);
+  outline-offset: 3px;
+}
+/* The target is `tabindex="-1"`, which makes it programmatically focusable —
+   and would draw a focus ring on a whole-page container the moment the skip
+   link is used. The ring belongs on the link, not on the landmark. */
+main:focus {
+  outline: none;
 }
 
 /* ── Scroll-reveal choreography ───────────────────────────────────────
@@ -225,15 +257,8 @@ body {
   }
 }
 
-/* Terminal block cursor — live sessions and tail -f logs */
-.term-cursor {
-  display: inline-block;
-  width: 0.55em;
-  height: 1.05em;
-  vertical-align: text-bottom;
-  background: var(--color-reactor);
-  animation: term-blink 1.1s steps(1) infinite;
-}
+/* The blink the gate demo's caret runs on. `.term-cursor`, the class that
+   used to share it, went out with the live-terminal component. */
 @keyframes term-blink {
   50% { opacity: 0; }
 }
@@ -246,7 +271,7 @@ body {
   width: 0.5em;
   height: 1.05em;
   vertical-align: text-bottom;
-  background: var(--color-haze);
+  background: var(--color-cyan-neon);
   animation: term-blink 1.1s steps(1) infinite;
 }
 
@@ -287,10 +312,15 @@ body {
   animation: gate-panel-in 0.62s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* The clearing fade has to finish inside the beat the run gives it, or the
+   loop resets on a half-faded body and the reset reads as a cut. Its duration
+   comes from `BEATS.clear` in GateDemo.jsx, handed down as a custom property,
+   so retuning that beat retunes the fade with it. The fallback is the value
+   the beat happens to hold today — only ever used if the property is missing. */
 .gate-body {
   transition:
-    opacity 0.42s ease-out,
-    filter 0.42s ease-out;
+    opacity var(--gate-clear, 340ms) ease-out,
+    filter var(--gate-clear, 340ms) ease-out;
 }
 .gate-body.is-clearing {
   opacity: 0;
@@ -310,73 +340,26 @@ body {
   animation: gate-loop-fill linear both;
 }
 
-.tail-entry {
-  opacity: 0;
-  transform: translateY(6px);
-  transition:
-    opacity 0.35s ease-out,
-    transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.tail-entry.is-live {
-  opacity: 1;
-  transform: none;
-}
-
-/* ── Terminal frames: patrolling neon scanner ─────────────────────────
-   A phosphor-green light segment orbits the terminal border like a
-   perimeter scan. Conic gradient rotated via a registered @property,
-   masked down to a 1px ring; a blurred twin of the ring provides the
-   neon halo. Browsers without @property get a static frame — fine. */
-
-@property --neon-orbit {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 0deg;
-}
-
-.terminal-neon {
-  position: relative;
-}
-.terminal-neon::before,
-.terminal-neon::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  pointer-events: none;
-  z-index: 2;
-  background: conic-gradient(
-    from var(--neon-orbit),
-    transparent 0%,
-    transparent 72%,
-    rgba(127, 238, 100, 0.12) 82%,
-    rgba(127, 238, 100, 0.55) 91%,
-    var(--color-glow) 96%,
-    var(--color-reactor) 99%,
-    transparent 100%
-  );
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  animation: neon-orbit 7s linear infinite;
-  animation-delay: var(--neon-delay, 0s);
-}
-.terminal-neon::after {
-  filter: blur(5px);
-  opacity: 0.6;
-}
-
-@keyframes neon-orbit {
-  to { --neon-orbit: 360deg; }
-}
-
 /* ── Burger: crossed-blades choreography ─────────────────────────────
    Open: middle line retracts like a sheath, then top/bottom "blades"
    collapse to a point mid-swing and shoot out into a crossed X —
    bottom blade lands a beat after the top one. Close: plain fast
    transition back (no reverse theatrics). */
+
+/* The visual box stays 36px so the burger keeps its weight beside the 36px
+   Install pill — and so the desktop hand-off, which measures `offsetWidth` to
+   know how far to slide the CTA, keeps measuring the slot it actually sees.
+   The touch minimum is met by an invisible 44px pad instead: it costs no
+   layout, and it cannot drift from the box it is centred on. */
+.burger::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
 
 .burger-blade {
   transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.15s ease-out;
@@ -388,9 +371,9 @@ body {
 .burger svg { transition: filter 0.3s ease-out; }
 
 .burger.is-open svg {
-  filter: drop-shadow(0 0 5px rgba(179, 194, 203, 0.55));
+  filter: drop-shadow(0 0 5px rgba(245, 246, 250, 0.55));
 }
-.burger.is-open .burger-blade { stroke: var(--color-haze); }
+.burger.is-open .burger-blade { stroke: var(--color-cloud); }
 .burger.is-open .burger-blade--top {
   transform: translateY(4px) rotate(45deg);
   animation: blade-draw-top 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -445,8 +428,8 @@ body {
   background: linear-gradient(
     to bottom,
     transparent,
-    var(--color-haze) 35%,
-    var(--color-steel) 65%,
+    var(--color-cloud) 35%,
+    var(--color-cloud-dim) 65%,
     transparent
   );
 }
@@ -491,29 +474,43 @@ body {
 }
 @media (hover: hover) and (pointer: fine) {
   .nav-cta:hover {
-    border-color: var(--color-tidal);
-    background-color: rgba(113, 139, 155, 0.14);
+    border-color: var(--color-night-rim);
+    background-color: rgba(54, 66, 77, 0.4);
   }
 }
 
+/* The two hero actions carry the label treatment the taped footer's buttons
+   already use — 510 is a real axis position on variable Inter, half a step
+   above Regular, and it is what keeps a 14px label on a filled button from
+   looking thin without tipping into Medium. It lives here rather than as an
+   inline style on each anchor so the pair cannot drift apart. */
+.cta-primary,
+.cta-ghost {
+  letter-spacing: -0.011em;
+}
 .cta-primary {
+  font-weight: 510;
   transition:
     background-color 0.15s ease-out,
     transform 0.16s cubic-bezier(0.23, 1, 0.32, 1);
 }
 .cta-ghost {
+  font-weight: 400;
   transition:
     border-color 0.15s ease-out,
     background-color 0.15s ease-out,
     transform 0.16s cubic-bezier(0.23, 1, 0.32, 1);
 }
+/* The hero's two actions carry the palette's whole 10%: the filled one is
+   Electric Blue and lifts on hover, the ghost borrows the same blue for its
+   edge rather than introducing a third tone. */
 @media (hover: hover) and (pointer: fine) {
   .cta-primary:hover {
-    background-color: var(--color-haze);
+    background-color: var(--color-electric-lift);
   }
   .cta-ghost:hover {
-    border-color: var(--color-tidal);
-    background-color: rgba(113, 139, 155, 0.1);
+    border-color: var(--color-electric);
+    background-color: rgba(9, 132, 227, 0.12);
   }
 }
 .cta-primary:active,
@@ -531,25 +528,6 @@ body {
   animation: copy-icon-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* Danger box entrance — a quick shake plus a settling pulse, since this
-   is the one moment in the demo terminal that should read as urgent. */
-@keyframes danger-box-shake {
-  10%, 90% { transform: translateX(-1px); }
-  20%, 80% { transform: translateX(2px); }
-  30%, 50%, 70% { transform: translateX(-4px); }
-  40%, 60% { transform: translateX(4px); }
-}
-@keyframes danger-box-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(127, 238, 100, 0.35); }
-  70%  { box-shadow: 0 0 0 8px rgba(127, 238, 100, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(127, 238, 100, 0); }
-}
-.danger-box-enter {
-  animation:
-    danger-box-shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both,
-    danger-box-pulse 1.2s ease-out 0.4s 2;
-}
-
 /* Key-press feedback in the demo terminal's y/N/? action row */
 @keyframes key-press {
   0%   { transform: scale(1); }
@@ -558,29 +536,6 @@ body {
 }
 .key-pressed {
   animation: key-press 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-/* Feature tabs — indicator slides to the active tab instead of snapping,
-   panel content fades in behind it. A transition (not a keyframe) so rapid
-   tab-clicking retargets smoothly instead of snapping back to 0%. */
-.tab-indicator {
-  transition:
-    left 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-    width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.tab-panel-fade {
-  opacity: 0;
-  transform: translateY(4px);
-  transition: opacity 0.25s ease-out, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.tab-panel-fade.is-visible {
-  opacity: 1;
-  transform: none;
-}
-
-/* Tab buttons — press feedback */
-.tab-button:active {
-  transform: scale(0.97);
 }
 
 /* ── Evidence — six measured facts on a bento grid ───────────────────────
@@ -601,16 +556,16 @@ body {
 .ev-title {
   max-width: 880px;
   font-family: var(--font-inter-variable);
-  font-weight: 400;
+  font-weight: 700;
   font-size: 26px;
   line-height: 1.18;
   letter-spacing: -0.6px;
   text-wrap: balance;
-  color: var(--color-steel);
+  color: var(--color-cloud-dim);
 }
 .ev-title-em {
-  font-weight: 590;
-  color: var(--color-haze);
+  font-weight: 700;
+  color: var(--color-cloud);
 }
 @media (min-width: 768px) {
   .ev-title {
@@ -666,12 +621,12 @@ body {
   flex: 1;
   flex-direction: column;
   min-width: 0;
-  min-height: 208px;
+  min-height: 244px;
   padding: 26px;
-  border: 1px solid var(--color-iron);
+  border: 1px solid var(--color-night-edge);
   border-radius: var(--radius-xl);
   background:
-    linear-gradient(180deg, rgba(22, 23, 24, 0.75) 0%, rgba(15, 16, 17, 0.9) 100%);
+    linear-gradient(180deg, rgba(30, 39, 46, 0.5) 0%, rgba(20, 28, 34, 0.85) 100%);
   transition:
     border-color 0.28s cubic-bezier(0.16, 1, 0.3, 1),
     background-color 0.28s cubic-bezier(0.16, 1, 0.3, 1),
@@ -679,33 +634,33 @@ body {
     box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 @media (min-width: 640px) {
-  .ev-card { min-height: 252px; padding: 28px; }
+  .ev-card { min-height: 292px; padding: 28px; }
 }
 @media (min-width: 1024px) {
-  .ev-card { min-height: 284px; padding: 30px; }
+  .ev-card { min-height: 324px; padding: 30px; }
   .ev-cell--wide .ev-card { padding: 34px 38px; }
 }
 @media (hover: hover) and (pointer: fine) {
   .ev-card:hover {
-    border-color: var(--color-gunmetal);
-    background-color: rgba(255, 255, 255, 0.014);
+    border-color: var(--color-night-rim);
+    background-color: rgba(245, 246, 250, 0.02);
     transform: translateY(-3px);
     box-shadow: 0 24px 48px -24px rgba(0, 0, 0, 0.65);
   }
   .ev-card:hover .ev-icon-tile {
-    border-color: var(--color-gunmetal);
+    border-color: var(--color-night-rim);
     transform: scale(1.045);
     box-shadow:
       0 20px 32px -14px rgba(0, 0, 0, 0.6),
-      0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+      0 0 0 1px rgba(245, 246, 250, 0.05) inset;
   }
-  .ev-card:hover .ev-source { color: var(--color-haze); }
+  .ev-card:hover .ev-source { color: var(--color-cloud); }
   .ev-card:hover .ev-arrow { transform: translate(2px, -2px); }
 }
 .ev-card:focus-visible {
-  outline: 1px solid var(--color-haze);
+  outline: 1px solid var(--color-cloud);
   outline-offset: 3px;
-  border-color: var(--color-gunmetal);
+  border-color: var(--color-night-rim);
 }
 
 .ev-card-head {
@@ -723,15 +678,15 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 96px;
-  height: 96px;
+  width: 116px;
+  height: 116px;
   flex: none;
   overflow: hidden;
-  border: 1px solid var(--color-iron);
-  border-radius: 22px;
+  border: 1px solid var(--color-night-edge);
+  border-radius: 24px;
   box-shadow:
     0 14px 28px -16px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+    0 0 0 1px rgba(245, 246, 250, 0.03) inset;
   transition:
     border-color 0.28s cubic-bezier(0.16, 1, 0.3, 1),
     transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
@@ -743,14 +698,14 @@ body {
   object-fit: cover;
 }
 @media (min-width: 640px) {
-  .ev-icon-tile { width: 108px; height: 108px; border-radius: 24px; }
+  .ev-icon-tile { width: 130px; height: 130px; border-radius: 26px; }
 }
 @media (min-width: 768px) {
-  .ev-cell--wide .ev-icon-tile { width: 132px; height: 132px; border-radius: 26px; }
+  .ev-cell--wide .ev-icon-tile { width: 158px; height: 158px; border-radius: 30px; }
 }
 @media (min-width: 1024px) {
-  .ev-icon-tile { width: 116px; height: 116px; }
-  .ev-cell--wide .ev-icon-tile { width: 144px; height: 144px; }
+  .ev-icon-tile { width: 140px; height: 140px; border-radius: 28px; }
+  .ev-cell--wide .ev-icon-tile { width: 172px; height: 172px; }
 }
 
 .ev-source {
@@ -762,7 +717,7 @@ body {
   font-size: 11px;
   line-height: 1.2;
   letter-spacing: 0.02em;
-  color: var(--color-fog);
+  color: var(--color-cloud-faint);
   transition: color 0.18s ease-out;
 }
 .ev-arrow {
@@ -786,11 +741,11 @@ body {
 
 .ev-title-card {
   font-family: var(--font-inter-variable);
-  font-weight: 590;
+  font-weight: 700;
   font-size: 20px;
   line-height: 1.25;
   letter-spacing: -0.42px;
-  color: var(--color-haze);
+  color: var(--color-cloud);
 }
 @media (min-width: 768px) {
   .ev-cell--wide .ev-title-card {
@@ -805,7 +760,7 @@ body {
   font-size: 14px;
   line-height: 1.5;
   letter-spacing: -0.14px;
-  color: var(--color-steel);
+  color: var(--color-cloud-dim);
 }
 /* The note reserves two lines whether or not it needs them, so the names in a
    row land on one baseline instead of stepping with each sentence's wrap. */
@@ -839,10 +794,10 @@ body {
   max-width: 20ch;
   font-family: var(--font-inter-variable);
   font-size: 36px;
-  font-weight: 400;
+  font-weight: 700;
   line-height: 1.04;
   letter-spacing: -0.8px;
-  color: var(--color-haze);
+  color: var(--color-cloud);
 }
 .incident-heading p {
   max-width: 52ch;
@@ -850,7 +805,7 @@ body {
   font-size: 15px;
   line-height: 1.6;
   letter-spacing: -0.165px;
-  color: var(--color-steel);
+  color: var(--color-cloud-dim);
 }
 @media (min-width: 768px) {
   .incident-heading {
@@ -927,12 +882,12 @@ body {
 .incident-shot {
   flex: 0 0 auto;
   overflow: hidden;
-  border: 1px solid var(--color-gunmetal);
+  border: 1px solid var(--color-night-rim);
   border-radius: var(--radius-xl);
-  background: #0b0f12;
+  background: var(--color-night-deep);
   box-shadow:
     rgba(0, 0, 0, 0.55) 0 18px 44px -20px,
-    rgba(255, 255, 255, 0.035) 0 1px 0 inset;
+    rgba(245, 246, 250, 0.035) 0 1px 0 inset;
 }
 .incident-shot img {
   display: block;
@@ -950,27 +905,31 @@ body {
   justify-content: space-between;
   gap: 14px;
   padding: 11px 14px;
-  border-top: 1px solid var(--color-iron);
+  border-top: 1px solid var(--color-night-edge);
   font-family: var(--font-berkeley-mono);
-  font-size: 9px;
+  /* Was 9px. Uppercase mono at 9px is below the size at which the letterforms
+     resolve at all on a standard-density screen, and this caption carries the
+     attribution — the handle is what makes the screenshot evidence rather
+     than decoration. 12px is the floor; the tracking already opens it up. */
+  font-size: 12px;
   line-height: 1.4;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--color-steel);
+  color: var(--color-cloud-dim);
 }
 .incident-shot-caption a {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--color-haze);
+  color: var(--color-cloud);
   transition: color 0.15s ease-out;
 }
 .incident-shot-caption a:focus-visible {
-  outline: 1px solid var(--color-haze);
+  outline: 1px solid var(--color-cloud);
   outline-offset: 4px;
 }
 @media (hover: hover) and (pointer: fine) {
-  .incident-shot-caption a:hover { color: var(--color-ember); }
+  .incident-shot-caption a:hover { color: var(--color-cyan-neon); }
 }
 
 @media (min-width: 768px) {
@@ -1005,41 +964,9 @@ body {
 }
 
 
-/* Outline buttons (secondary CTAs) — fill + press feedback on top of the
-   existing border-color transition-colors class already on each element. */
-.btn-outline {
-  transition: border-color 0.15s ease-out, background-color 0.15s ease-out, transform 0.16s cubic-bezier(0.23, 1, 0.32, 1);
-}
-@media (hover: hover) and (pointer: fine) {
-  .btn-outline:hover {
-    background-color: rgba(127, 238, 100, 0.06);
-  }
-}
-.btn-outline:active {
-  transform: scale(0.97);
-}
-
-/* Primary (filled) CTAs — press feedback alongside the JS-driven bg swap */
-.btn-fill {
-  transition: transform 0.16s cubic-bezier(0.23, 1, 0.32, 1);
-}
-.btn-fill:active {
-  transform: scale(0.97);
-}
-
 /* Copy button — press feedback */
 .copy-btn:active {
   transform: scale(0.97);
-}
-
-/* Non-numeric stat values (e.g. "MIT") fade in like their ticking
-   neighbors instead of appearing instantly and unannounced. */
-.stat-static {
-  opacity: 0;
-  transition: opacity 0.5s ease-out;
-}
-.stat-static.is-visible {
-  opacity: 1;
 }
 
 /* ── Taped get-started footer ──────────────────────────────────────────
@@ -1056,11 +983,11 @@ body {
 .taped-footer-card {
   position: relative;
   border-radius: var(--radius-xl);
-  background: #101418;
+  background: var(--color-night-deep);
   box-shadow:
     rgba(0, 0, 0, 0.72) 0 28px 58px -30px,
-    rgba(95, 122, 141, 0.9) 0 0 0 1px inset,
-    rgba(255, 255, 255, 0.035) 0 1px 0 inset;
+    rgba(54, 66, 77, 0.9) 0 0 0 1px inset,
+    rgba(245, 246, 250, 0.035) 0 1px 0 inset;
   transform: rotate(0.75deg);
   transform-origin: center;
 }
@@ -1087,12 +1014,15 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 11px;
-  font-family: var(--font-inter-variable);
-  font-size: 18px;
-  font-weight: 590;
-  letter-spacing: -0.012em;
-  text-transform: uppercase;
-  color: var(--color-haze);
+  /* The handwriting accent face — the footer echoes the hero eyebrow so the
+     brand reads as one signature at the top and bottom of the page. Single
+     weight, no uppercase, no negative tracking: the face carries its own
+     rhythm and would be smothered by the prior Oswald-settings. */
+  font-family: var(--font-accent);
+  font-size: 26px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--color-cloud);
 }
 .taped-footer-wordmark img {
   width: 30px;
@@ -1102,7 +1032,7 @@ body {
   opacity: 0.88;
 }
 .taped-footer-wordmark:focus-visible {
-  outline: 2px solid var(--color-haze);
+  outline: 2px solid var(--color-cloud);
   outline-offset: 5px;
   border-radius: var(--radius-sm);
 }
@@ -1113,7 +1043,7 @@ body {
   font-size: 15px;
   line-height: 1.62;
   letter-spacing: -0.165px;
-  color: var(--color-steel);
+  color: var(--color-cloud-dim);
 }
 
 .taped-footer-cta {
@@ -1125,10 +1055,10 @@ body {
   max-width: 11ch;
   font-family: var(--font-inter-variable);
   font-size: 48px;
-  font-weight: 400;
+  font-weight: 700;
   line-height: 1.02;
   letter-spacing: -1.056px;
-  color: var(--color-haze);
+  color: var(--color-cloud);
 }
 
 .taped-footer-actions {
@@ -1156,30 +1086,30 @@ body {
     transform 0.16s cubic-bezier(0.23, 1, 0.32, 1);
 }
 .taped-footer-primary {
-  border: 1px solid var(--color-haze);
-  background: var(--color-haze);
-  color: var(--color-pitch);
+  border: 1px solid var(--color-electric);
+  background: var(--color-electric);
+  color: var(--color-night-void);
 }
 .taped-footer-secondary {
-  border: 1px solid var(--color-gunmetal);
+  border: 1px solid var(--color-night-rim);
   background: transparent;
-  color: var(--color-haze);
+  color: var(--color-cloud);
 }
 .taped-footer-primary:active,
 .taped-footer-secondary:active { transform: scale(0.97); }
 .taped-footer-primary:focus-visible,
 .taped-footer-secondary:focus-visible {
-  outline: 2px solid var(--color-haze);
+  outline: 2px solid var(--color-cyan-neon);
   outline-offset: 3px;
 }
 @media (hover: hover) and (pointer: fine) {
   .taped-footer-primary:hover {
-    border-color: var(--color-paper);
-    background: var(--color-paper);
+    border-color: var(--color-electric-lift);
+    background: var(--color-electric-lift);
   }
   .taped-footer-secondary:hover {
-    border-color: var(--color-tidal);
-    background: rgba(31, 44, 53, 0.58);
+    border-color: var(--color-night-rim);
+    background: rgba(30, 39, 46, 0.58);
   }
 }
 
@@ -1190,7 +1120,7 @@ body {
   width: 82px;
   height: 34px;
   clip-path: polygon(5% 10%, 94% 0, 100% 83%, 9% 100%, 0 37%);
-  background: linear-gradient(105deg, var(--color-oxide-deep), var(--color-gunmetal) 58%, var(--color-abyss));
+  background: linear-gradient(105deg, var(--color-night-deep), var(--color-night-rim) 58%, var(--color-night-void));
   box-shadow: rgba(0, 0, 0, 0.48) 0 8px 15px -7px;
   opacity: 0.94;
   pointer-events: none;
@@ -1199,8 +1129,8 @@ body {
   content: "";
   position: absolute;
   inset: 7px 9px;
-  border-top: 1px solid rgba(179, 194, 203, 0.2);
-  border-bottom: 1px solid rgba(6, 8, 12, 0.42);
+  border-top: 1px solid rgba(245, 246, 250, 0.2);
+  border-bottom: 1px solid rgba(4, 9, 14, 0.42);
   transform: skewX(-12deg);
 }
 .taped-footer-tape--left {
@@ -1224,14 +1154,17 @@ body {
   gap: 20px;
   padding-inline: 10px;
   font-family: var(--font-berkeley-mono);
-  font-size: 10px;
+  /* Was 10px. The licence and the build line are the page's last factual
+     claims, not a watermark — they read at the same 12px floor as every
+     other caption. */
+  font-size: 12px;
   line-height: 1.5;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-steel);
+  color: var(--color-cloud-dim);
   transform: rotate(0.75deg);
 }
-.site-footer-meta span { color: var(--color-haze); }
+.site-footer-meta span { color: var(--color-cloud); }
 
 @media (max-width: 767px) {
   .taped-footer-section { padding: 80px 24px 26px; }
@@ -1302,5 +1235,12 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+  /* Smooth scrolling is neither an animation nor a transition, so the blanket
+     rule above never reached it — a visitor who asked for less motion still
+     got the whole page gliding under them on every anchor click, and on this
+     page the anchors jump across several viewports. */
+  html {
+    scroll-behavior: auto;
   }
 }

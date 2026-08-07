@@ -116,8 +116,9 @@ fn tracked_files() -> Vec<String> {
 
 /// Individually named binary files. Anything not covered by a directory rule
 /// below has to be listed here, so a stray binary still fails the guard.
-const ALLOWED_BINARY_FILES: [&str; 4] = [
+const ALLOWED_BINARY_FILES: [&str; 5] = [
     "landing/public/favicon.ico",
+    "landing/public/aegis.webp",
     "src/assets/aegis.gif",
     "src/assets/howitwork.png",
     "fuzz/corpus/language_bash/non_ascii_native_scanner_crash",
@@ -128,10 +129,12 @@ const ALLOWED_BINARY_FILES: [&str; 4] = [
 /// the rule from turning a directory into a place where any binary can hide,
 /// and spares the allowlist from enumerating asset sets no human maintains
 /// by hand (a webfont family ships several files per weight and format).
-const ALLOWED_BINARY_DIRECTORIES: [(&str, &str); 3] = [
+const ALLOWED_BINARY_DIRECTORIES: [(&str, &str); 5] = [
     ("landing/public/fonts/", ".woff2"),
     ("landing/public/frames/", ".webp"),
     ("landing/public/frames-sm/", ".webp"),
+    ("landing/public/icons/", ".webp"),
+    ("landing/public/incidents/", ".webp"),
 ];
 
 fn is_allowed_binary(path: &str) -> bool {

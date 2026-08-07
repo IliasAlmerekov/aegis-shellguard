@@ -2,7 +2,7 @@
 <html lang="en" style="background-color: #000000; color-scheme: dark">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="favicon.ico" />
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
@@ -12,9 +12,11 @@
     <!-- Type is self-hosted: no third party on the critical render path.
          Inter and JetBrains Mono carry the hero (headline, nav wordmark,
          install snippet), so both are preloaded — the swap lands before
-         first paint instead of reflowing the hero. Geist still serves the
-         sections that have not migrated to the Linear system yet; it now
-         loads entirely below the fold and is deliberately not preloaded. -->
+         first paint instead of reflowing the hero. Shadows Into Light is the
+         brand-signature accent on the hero eyebrow and the footer wordmark;
+         it is self-hosted but not preloaded (a single short label, off the
+         critical path). The legacy Geist/Oswald faces were removed when the
+         site migrated to the Inter + Shadows pairing. -->
     <link
       rel="preload"
       href="/fonts/inter-latin-variable.woff2"
@@ -60,16 +62,20 @@
       HERO DIRECTION CONTRACT — see DESIGN.md
       THESIS: the guardrail is a held hand, not a shield. Refuses the
         product-screenshot hero and the floating 3D mark it replaces.
-      OWN-WORLD: a palette sampled from the shot itself — #06080c pitch
-        substrate, Inter at 400/590 in #718b9b steel over #b3c2cb haze, one
-        #718b9b filled action, #3e525f hairline edges, 6px radii, no
-        ornament. Recognizable with all copy removed.
+      OWN-WORLD: the brand four, split 60/30/10 — 60% Night Black (#1e272e,
+        darkened to #04090e as the substrate the footage fades into), 30%
+        Cloud White (#f5f6fa headline over #93a1ae/#aeb8c4 copy), 10% accent
+        held to two jobs: Electric Blue #0984e3 is the one action, Cyan Neon
+        #00cec9 is live state (the scroll rail, the shell prompt). #27333c
+        hairline edges, 6px radii, no ornament. Recognizable with all copy
+        removed.
       STORY: an agent reaches for something destructive and stops short —
         so approval is the product, and the visitor installs it.
       FIRST VIEWPORT: full-bleed frame 001 of the shot, subject held in the
-        right third; graded black scrim on the left carrying a 72px
-        headline and the primary action at the 1200px gutter; hairline
-        scroll rail at the content gutter.
+        right third and its own headroom leaving air under the nav; graded
+        substrate scrim on the left carrying a 72px headline and the primary
+        action at the 1200px gutter; hairline scroll rail at the content
+        gutter.
       FORM: scroll-scrubbed 161-frame canvas sequence, pinned 150vh, text
         accreting in three beats.
       FINISH: unreviewed and undocumented is unfinished; this build ends
