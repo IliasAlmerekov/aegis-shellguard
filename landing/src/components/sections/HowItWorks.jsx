@@ -328,9 +328,9 @@ export function HowItWorks() {
       id="how-it-works"
       ref={rootRef}
       aria-labelledby="how-it-works-heading"
-      className="py-24 md:py-32"
+      className="py-section md:py-section-lg"
     >
-      <div className="mx-auto w-full max-w-[1200px] px-6">
+      <div className="mx-auto w-full max-w-[1200px] px-gutter">
         <Reveal>
           <h2
             id="how-it-works-heading"
@@ -350,8 +350,32 @@ export function HowItWorks() {
                 <div
                   key={step.num}
                   data-step={i}
-                  className="relative py-8 lg:min-h-[42vh] lg:flex lg:items-center"
+                  /* 42vh a step was scroll distance bought with emptiness: at
+                     900px that is 378px holding 144px of type, so each step
+                     sat in ~110px of nothing above and below it and the column
+                     read as three stranded paragraphs. 30vh keeps the step
+                     comfortably taller than its content — the scrub still has
+                     ~810px of column to map the session onto — without the
+                     stranding. */
+                  className="relative py-8 lg:min-h-[30vh] lg:flex lg:items-center"
                 >
+                  {/* The rail, on desktop, belongs to the step and not to the
+                      button inside it. Scoped to the button it stopped at the
+                      text and restarted at the next one, so the column showed
+                      three floating tick marks with breaks between them — a
+                      broken line reads as a mistake, where a continuous one
+                      reads as the structure it is. Each step's rail meets its
+                      neighbour's exactly, so the three together are one line
+                      down the column with the active segment lit. */}
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-y-0 left-0 hidden w-px transition-colors duration-300 lg:block"
+                    style={{
+                      backgroundColor: isActive
+                        ? 'var(--color-cyan-neon)'
+                        : 'var(--color-night-edge)',
+                    }}
+                  />
                   <Reveal delay={i * 60}>
                     <button
                       type="button"
@@ -361,10 +385,15 @@ export function HowItWorks() {
                     >
                       {/* A 1px hairline that brightens on the active step — the
                           rail motif the hero and the why-aegis rule already
-                          use, kept to 1px so it reads as structure, not chrome. */}
+                          use, kept to 1px so it reads as structure, not chrome.
+                          Phone only: each step there is text plus its own
+                          terminal fragment, so a rail spanning the whole step
+                          would run down the side of a terminal window it says
+                          nothing about. Desktop takes the step-spanning rail
+                          above instead. */}
                       <span
                         aria-hidden="true"
-                        className="absolute left-0 top-0 h-full w-px transition-colors duration-300"
+                        className="absolute left-0 top-0 h-full w-px transition-colors duration-300 lg:hidden"
                         style={{
                           backgroundColor: isActive
                             ? 'var(--color-cyan-neon)'
