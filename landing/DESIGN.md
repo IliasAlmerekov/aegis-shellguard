@@ -15,6 +15,34 @@ paint instead of reflowing the hero. Weights stay in a low 400–590 band and
 tracking stays tight — the page gets its emphasis from scale and contrast, not
 from bold.
 
+## Space
+
+Two steps of vertical rhythm and one horizontal gutter, all three custom
+properties in `src/index.css` — `--spacing-section`, `--spacing-section-lg`,
+`--spacing-gutter`. Every top-level section pads itself with the pair and
+nothing else, so the gap between any two of them is the same gap, and a
+divider laid on that boundary is centred in it without being told to be.
+
+They exist because the alternative was measured: with each section carrying
+its own number the inter-section gaps ran 304, 272, 240, 232 and 224px down
+the page — a 1.36× spread, monotonically decreasing, which reads as the page
+losing interest in itself on the way down.
+
+The gutter is a `clamp` rather than a set of breakpoints, because the content
+column is fluid from the phone to about 950px and a step would only move the
+seam. It leaves the phone where it was and stops growing once the 1200px
+max-width is what governs the column anyway.
+
+Two names, not a scale: section rhythm is the thing that drifts across a
+page this long, and component rhythm is already served by the numeric
+utilities.
+
+One section does not centre its content in a viewport-tall box, and none of
+them should. `min-h-svh` on a padded section is two instructions for one
+job — the padding is already inside the min-height — and all the min-height
+adds is emptiness that scales with the visitor's window. The claim section
+carried 616px of it on a 1024px-tall tablet before this was removed.
+
 ## Motion
 
 ### Hero scroll sequence

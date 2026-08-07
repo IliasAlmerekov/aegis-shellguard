@@ -249,11 +249,11 @@ export function GateDemo() {
     <section
       id="gate"
       aria-label="Aegis snapshotting before a destructive command"
-      className="py-24 md:py-36"
+      className="py-section md:py-section-lg"
     >
       <p className="sr-only">{SUMMARY}</p>
 
-      <div className="mx-auto w-full max-w-[1200px] px-6" aria-hidden="true">
+      <div className="mx-auto w-full max-w-[1200px] px-gutter" aria-hidden="true">
         <div
           ref={stageRef}
           className="mx-auto w-full max-w-[820px] overflow-hidden rounded-xl border border-night-rim/80 bg-night-void shadow-[0_28px_80px_rgba(0,0,0,0.55)]"

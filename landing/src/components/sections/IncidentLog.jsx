@@ -323,7 +323,7 @@ export function IncidentLog() {
 
   return (
     <section aria-label="Real incidents where AI agents destroyed work" className="incident-log">
-      <div className="mx-auto max-w-[1200px] px-6 pt-20 lg:pt-28">
+      <div className="mx-auto max-w-[1200px] px-gutter">
         <Reveal className="incident-heading">
           <h2>The “my AI deleted everything” club is getting crowded.</h2>
           <p>

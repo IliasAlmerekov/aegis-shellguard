@@ -407,8 +407,23 @@ export function Hero() {
         className="relative flex h-svh w-full flex-col overflow-hidden bg-black md:block"
       >
         {/* Phone: a full-bleed band under the nav. Desktop: the whole
-            viewport, with the type reading against the shot's dark left. */}
-        <div className="relative h-[54svh] shrink-0 md:absolute md:inset-0 md:h-full">
+            viewport, with the type reading against the shot's dark left.
+
+            The band was a fixed `54svh`, which fixed the wrong half. The copy
+            below it is a stack of known blocks — eyebrow, headline, actions,
+            subhead, install field — and on a 667px phone that stack is taller
+            than the 46svh the band left it, so the install field rendered at
+            full opacity *below* the pinned viewport and was clipped by the
+            pin's `overflow-hidden`. Nothing could scroll it into view either,
+            because the pin holds the hero still for its whole length.
+
+            So the copy is now what is measured and the band takes the
+            remainder: `flex-1` against a `shrink-0` sibling. `min-h-[32svh]`
+            keeps the shot from collapsing to a strip on a very short viewport
+            — past that point the phone is short enough that the reach reads
+            better cropped than the sentence does truncated. Desktop is
+            untouched: the band goes back to `absolute inset-0` at `md`. */}
+        <div className="relative min-h-[30svh] flex-1 md:absolute md:inset-0 md:h-full md:flex-none">
           <FrameSequence
             ref={seqRef}
             label={SHOT_LABEL}
@@ -501,8 +516,8 @@ export function Hero() {
           }}
         />
 
-        <div className="relative flex min-h-0 flex-1 items-start pt-2 md:absolute md:inset-0 md:h-full md:items-center md:pt-0">
-          <div className="relative mx-auto w-full max-w-[1200px] px-6">
+        <div className="relative flex shrink-0 items-start pt-4 pb-6 md:absolute md:inset-0 md:h-full md:items-center md:py-0">
+          <div className="relative mx-auto w-full max-w-[1200px] px-gutter">
             {/* Scroll rail — a hairline that measures the pin, hung on the
                 content gutter so it belongs to the text column rather than
                 floating at the window edge. It is the only affordance telling
@@ -530,7 +545,7 @@ export function Hero() {
                   reads as a signed name above the headline. */}
               <p
                 data-enter
-                className="mb-5 font-accent text-[24px] leading-none text-cloud-mute md:mb-7 md:text-[28px]"
+                className="mb-4 font-accent text-[24px] leading-none text-cloud-mute md:mb-7 md:text-[28px]"
               >
                 Aegis ShellGuard
               </p>
@@ -545,7 +560,7 @@ export function Hero() {
                 </span>
               </h1>
 
-              <div data-enter className="mt-7 flex flex-wrap md:mt-9 items-center gap-3">
+              <div data-enter className="mt-5 flex flex-wrap md:mt-9 items-center gap-3">
                 <a
                   href="https://github.com/IliasAlmerekov/aegis-shellguard"
                   target="_blank"
@@ -564,7 +579,7 @@ export function Hero() {
 
               <p
                 data-beat="subhead"
-                className="mt-6 max-w-[500px] font-inter-variable md:mt-8 text-body-sm leading-body-sm tracking-body-sm text-cloud-dim md:text-body-lg md:leading-body-lg md:tracking-body-lg"
+                className="mt-4 max-w-[500px] font-inter-variable md:mt-8 text-body-sm leading-body-sm tracking-body-sm text-cloud-dim md:text-body-lg md:leading-body-lg md:tracking-body-lg"
               >
                 Aegis checks every command before it runs. Safe commands pass;
                 risky ones wait for you; catastrophic ones are blocked.
@@ -575,7 +590,7 @@ export function Hero() {
                   not a panel laid over it. */}
               <div
                 data-beat="install"
-                className="mt-6 flex w-full max-w-[420px] items-center md:mt-8 gap-3 rounded-md border border-night-edge/80 bg-night/60 px-3.5 py-2.5"
+                className="mt-4 flex w-full max-w-[420px] items-center md:mt-8 gap-3 rounded-md border border-night-edge/80 bg-night/60 px-3.5 py-2.5"
               >
                 <span
                   aria-hidden="true"

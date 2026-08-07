@@ -31,7 +31,7 @@ function Divider() {
   return (
     <div
       aria-hidden="true"
-      className="mx-auto max-w-[1200px] px-6"
+      className="mx-auto max-w-[1200px] px-gutter"
     >
       <div className="h-px bg-night-edge" />
     </div>

@@ -94,7 +94,7 @@ export function Evidence() {
     <section
       id="trust"
       aria-labelledby="trust-heading"
-      className="relative bg-[#000000] py-24 lg:py-32"
+      className="relative bg-[#000000] py-section md:py-section-lg"
     >
       {/* Kept so any existing link to #audit-trail still lands on the section
           that carries the claim. The clearance for the fixed nav is the root's
@@ -106,7 +106,7 @@ export function Evidence() {
         className="pointer-events-none absolute top-0 left-0 h-px w-px"
       />
 
-      <div className="mx-auto max-w-[1200px] px-6">
+      <div className="mx-auto max-w-[1200px] px-gutter">
         <Reveal className="ev-intro">
           <h2 id="trust-heading" className="ev-title">
             Built to be <span className="ev-title-em">trusted</span>—six claims,

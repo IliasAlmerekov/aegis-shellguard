@@ -153,6 +153,36 @@
   --leading-display: 1;
   --tracking-display: -1.584px;
 
+  /* ── Section rhythm ─────────────────────────────────────────────────
+     The two steps every top-level section pads itself with, and the only
+     two it may use. Before these existed each section carried its own
+     number — py-40, py-36, py-32, pt-28/pb-104, 96px — which summed to
+     inter-section gaps of 304, 272, 240, 232 and 224px on desktop: a 1.36×
+     spread that read as the page running out of breath on the way down.
+     One pair of steps means one gap, everywhere: 192px on a phone, 256px
+     above it.
+
+     Tailwind's `--spacing-*` namespace, so these are `py-section` and
+     `py-section-lg` in the markup and `var(--spacing-section…)` in the
+     stylesheet's own sections. Two names, not a full scale: a landing page
+     has section rhythm and it has component rhythm, and component rhythm is
+     already served by the numeric utilities. */
+  --spacing-section: 96px;
+  --spacing-section-lg: 128px;
+
+  /* The horizontal inset every content column uses — `px-gutter` in the
+     markup, `var(--spacing-gutter)` in this file's own sections. It was a
+     flat 24px from a 360px phone to a 1920px desktop, which is a phone's
+     gutter left on a tablet: between 768 and 1248 the container is still
+     fluid, so the text ran to within 24px of both screen edges.
+
+     A clamp rather than breakpoints, because the container is fluid across
+     that whole span and a step would just move the problem to either side of
+     itself. It leaves the phone exactly where it was, reaches ~32px at 768,
+     and tops out at 40px around 950 — past which the 1200px max-width is
+     what governs the column anyway. */
+  --spacing-gutter: clamp(24px, 4.2vw, 40px);
+
   --radius-sm: 2px;
   --radius-md: 6px;
   --radius-xl: 12px;
@@ -233,6 +263,31 @@ body {
    link is used. The ring belongs on the link, not on the landmark. */
 main:focus {
   outline: none;
+}
+
+/* ── Hero on a short phone ────────────────────────────────────────────
+   The hero is pinned, so it gets exactly one viewport and no more: whatever
+   does not fit is not scrolled to, it is clipped and lost. The copy is a
+   fixed stack of five blocks, so on a 640px-tall phone the band and the copy
+   are competing for the same 640px, and the band is the one that has to give
+   — which on the shortest phones left it at 30svh, with the hand cropped out
+   of frame entirely and only the pane's glow surviving.
+
+   Rather than cropping the one authored moment on the page, the copy shrinks
+   where it is cheapest: the headline drops from 40px to 34px and the eyebrow
+   from 24px to 21px, which is three lines instead of four and buys the band
+   roughly 60px back. Keyed on viewport *height*, not width — a 414×896 phone
+   has the room and keeps the full display size. The `sm:` step (640px wide)
+   overrides both, so nothing above the phone breakpoint is touched. */
+@media (max-height: 700px) and (max-width: 639px) {
+  #hero h1 {
+    font-size: 34px;
+    letter-spacing: -0.75px;
+  }
+  #hero [data-enter]:first-child {
+    margin-bottom: 12px;
+    font-size: 21px;
+  }
 }
 
 /* ── Scroll-reveal choreography ───────────────────────────────────────
@@ -601,7 +656,7 @@ main:focus {
 @media (min-width: 1024px) {
   .ev-bento {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 10px;
+    gap: 12px;
   }
 }
 
@@ -638,7 +693,11 @@ main:focus {
 }
 @media (min-width: 1024px) {
   .ev-card { min-height: 324px; padding: 30px; }
-  .ev-cell--wide .ev-card { padding: 34px 38px; }
+  /* The wide cell is roomier across, not taller inside: the extra horizontal
+     inset is what makes it read as the heavier claim, while the vertical
+     padding stays at the row's value so its mark and its note sit on the same
+     two lines as the narrow cells beside it. */
+  .ev-cell--wide .ev-card { padding: 30px 38px; }
 }
 @media (hover: hover) and (pointer: fine) {
   .ev-card:hover {
@@ -663,11 +722,24 @@ main:focus {
   border-color: var(--color-night-rim);
 }
 
+/* The mark and the citation share the top of the cell, and on a wide cell they
+   fit side by side. On a narrow one they cannot: at the 1024 breakpoint the
+   cell is 233px, which is 173px of content against a 140px mark — 33px for a
+   ~100px mono filename. Without a wrap the label simply overflowed the card
+   and drew itself across the neighbouring cell, by as much as 96px.
+
+   `flex-wrap` lets it drop to its own line under the mark instead, and
+   `margin-left: auto` keeps it right-aligned there, so the resting
+   composition on a wide cell is unchanged and only the cells that cannot hold
+   the row stack it. The label is a citation — a path the reader is meant to
+   open — so it wraps rather than truncating: an elided `patterns.to…` would
+   be worse than a second line. */
 .ev-card-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 10px 16px;
 }
 
 /* The mark carries the cell — drawn large and given real depth (shadow +
@@ -711,6 +783,8 @@ main:focus {
 .ev-source {
   display: inline-flex;
   align-items: center;
+  margin-left: auto;
+  min-width: 0;
   gap: 5px;
   padding-top: 4px;
   font-family: var(--font-berkeley-mono);
@@ -754,11 +828,17 @@ main:focus {
   }
 }
 
+/* The leading is a fixed 21px rather than a 1.5 ratio, because the wide cells
+   set this text one step larger and a ratio made their line box 22.5px. Two
+   lines of that is 45px against the narrow cells' 42px, and since the body is
+   bottom-anchored the extra 3px pushed the wide cell's note — and the name
+   above it — up out of line with its own row. A shared line box is what makes
+   the row a row; the size step is still visible in the letterforms. */
 .ev-note {
   max-width: 34ch;
   font-family: var(--font-inter-variable);
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 21px;
   letter-spacing: -0.14px;
   color: var(--color-cloud-dim);
 }
@@ -768,7 +848,7 @@ main:focus {
   .ev-note { min-height: 42px; }
 }
 @media (min-width: 768px) {
-  .ev-cell--wide .ev-note { font-size: 15px; min-height: 45px; }
+  .ev-cell--wide .ev-note { font-size: 15px; }
 }
 
 /* ── Incident log — a drifting wall of real screenshots ──────────────────
@@ -779,9 +859,13 @@ main:focus {
    seam. Hover, focus, or the pause control stops it; reduced motion turns the
    belt into an ordinary horizontal scroller. */
 
+/* The section pads itself on both edges. It used to carry only a
+   `padding-bottom` here while the top came from a `pt-20 lg:pt-28` on the
+   heading's inner container — two owners for one section's rhythm, and the
+   pair did not even agree with each other or with any neighbouring section. */
 .incident-log {
   overflow: hidden;
-  padding-bottom: 72px;
+  padding-block: var(--spacing-section);
   background: #000000;
 }
 
@@ -933,7 +1017,7 @@ main:focus {
 }
 
 @media (min-width: 768px) {
-  .incident-log { padding-bottom: 104px; }
+  .incident-log { padding-block: var(--spacing-section-lg); }
   .incident-marquee {
     --shot-height: 330px;
     --shot-gap: 22px;
@@ -974,10 +1058,14 @@ main:focus {
    by two torn pieces of cold metal tape. The reference's navigation columns
    are deliberately absent: Aegis closes on its product truth and two actions. */
 
+/* The top edge takes the page's section step like everything else. The bottom
+   does not: what follows is the footer meta line, which belongs to this card
+   rather than being the next section, so the space under the card is an
+   intra-group gap and stays small. */
 .taped-footer-section {
   width: min(1200px, 100%);
   margin-inline: auto;
-  padding: 96px 24px 30px;
+  padding: var(--spacing-section-lg) var(--spacing-gutter) 30px;
 }
 
 .taped-footer-card {
@@ -998,7 +1086,7 @@ main:focus {
   grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.12fr);
   align-items: center;
   gap: 64px;
-  padding: 58px 64px 54px;
+  padding: 56px 64px 56px;
 }
 
 .taped-footer-brand {
@@ -1142,17 +1230,23 @@ main:focus {
   transform: rotate(29deg) scaleX(-1);
 }
 
+/* The meta line takes the page's container recipe verbatim — `min(1200px,
+   100%)` centred, 24px of gutter — because it is the last line of the same
+   column everything above it sits in. It used to be `min(1100px)` with a
+   10px inline pad, which put its text 35px to the right of the CTA card's
+   edge and of every section's text edge above that: three different left
+   margins in the last two screens of the page. */
 .site-footer {
-  padding: 0 24px 36px;
+  padding: 0 0 36px;
 }
 .site-footer-meta {
-  width: min(1100px, 100%);
+  width: min(1200px, 100%);
   margin-inline: auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding-inline: 10px;
+  padding-inline: var(--spacing-gutter);
   font-family: var(--font-berkeley-mono);
   /* Was 10px. The licence and the build line are the page's last factual
      claims, not a watermark — they read at the same 12px floor as every
@@ -1167,13 +1261,13 @@ main:focus {
 .site-footer-meta span { color: var(--color-cloud); }
 
 @media (max-width: 767px) {
-  .taped-footer-section { padding: 80px 24px 26px; }
+  .taped-footer-section { padding: var(--spacing-section) var(--spacing-gutter) 26px; }
   .taped-footer-card { transform: rotate(0.35deg); }
   .taped-footer-layout {
     min-height: 0;
     grid-template-columns: 1fr;
-    gap: 50px;
-    padding: 46px 28px 38px;
+    gap: 48px;
+    padding: 48px 28px 40px;
   }
   .taped-footer-brand {
     gap: 24px;
@@ -1213,7 +1307,6 @@ main:focus {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
-    padding-inline: 6px;
     transform: rotate(0.35deg);
   }
 }

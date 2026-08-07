@@ -149,10 +149,11 @@ export function WhyAegis() {
             },
           })
 
-          /* Playing wants the block in frame: anchored to the copy rather than
-             the section, since the section is a full viewport tall and centres
-             its type — measured from its top, the words would arrive while
-             still below the fold. Arriving from above is the mirror case, so the
+          /* Playing wants the block in frame, so both triggers are anchored to
+             the copy rather than to the section: the section carries its own
+             padding and the words sit somewhere inside it, so a window measured
+             from the section's top edge would open while the text is still
+             below the fold. Arriving from above is the mirror case, so the
              window closes late enough that the whole block is on screen before
              the run starts.
 
@@ -195,14 +196,22 @@ export function WhyAegis() {
     /* No background of its own: the hero's shot ends on pure black and the
        page canvas is the same black, so the two surfaces are one field and
        there is no seam to see. `overflow-hidden` contains the words while
-       they are still off-page. */
+       they are still off-page.
+
+       It used to be `min-h-svh` *and* padded, which is one instruction too
+       many: the padding is inside the min-height, so all the min-height
+       actually did was hold a full viewport open and centre 408px of type in
+       it. On a 768×1024 tablet that was 616px of nothing inside a single
+       section, and it scaled with the window — the taller the screen, the more
+       emptiness. The padding alone gives the claim the air it was after and
+       stops it from growing without limit. */
     <section
       id="why-aegis"
       ref={rootRef}
       aria-label="Why Aegis"
-      className="relative flex min-h-svh items-center overflow-hidden py-28 md:py-40"
+      className="relative overflow-hidden py-section md:py-section-lg"
     >
-      <div ref={copyRef} className="mx-auto w-full max-w-[1200px] px-6">
+      <div ref={copyRef} className="mx-auto w-full max-w-[1200px] px-gutter">
         <div data-line="one" className="max-w-[880px] will-change-transform">
           <p className="font-inter-variable text-[26px] leading-[1.18] tracking-[-0.6px] sm:text-heading-sm sm:leading-heading-sm sm:tracking-heading-sm md:text-heading md:leading-[1.08] md:tracking-heading">
             <Words segments={LINE_ONE} />
