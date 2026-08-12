@@ -1,0 +1,54 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "incremental": true,
+    // The eight sections, the nav, the footer and the GSAP helper are .jsx
+    // and stay that way: they are working, reviewed code, and holding them to
+    // a type contract they were never written against would mean editing
+    // 2500 lines of someone else's prose for no behavioural gain. `allowJs`
+    // without `checkJs` lets the new .ts/.tsx hero scene import them and be
+    // type-checked itself.
+    "allowJs": true,
+    "checkJs": false,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.jsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "out",
+    ".next"
+  ]
+}

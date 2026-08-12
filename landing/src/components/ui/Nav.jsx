@@ -245,7 +245,16 @@ export function Nav() {
         ref={panelRef}
         className={`mobile-nav-panel fixed left-0 right-0 z-40 overflow-hidden${open ? ' is-open' : ''}`}
         style={{ top: '64px' }}
-        {...(open ? {} : { inert: '', 'aria-hidden': true })}
+        {...(open
+          ? {}
+          : {
+              /* A boolean, not the empty string HTML itself wants: React 19
+                 reflects the boolean onto the attribute, and reads an empty
+                 string as false — which would leave the closed panel
+                 tabbable, the exact bug `inert` is here to prevent. */
+              inert: true,
+              'aria-hidden': true,
+            })}
       >
         <div className="slash-edge" aria-hidden="true" />
         <div className="border-b border-night-rim/40 bg-night-deep/95 backdrop-blur-md px-6 py-4">
