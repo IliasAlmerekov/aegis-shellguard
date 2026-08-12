@@ -59,6 +59,12 @@ precision highp float;
 
 varying vec2 vUv;
 
+/* GLSL3 has no gl_FragColor. three's prefix bridges the varying and texture2D
+   keywords for compatibility, but deliberately leaves the fragment output
+   alone, so the shader declares its own. GLSL3 is not optional here: it is
+   what provides textureLod, transpose and gl_FragDepth. */
+out vec4 fragColor;
+
 uniform float uTime;
 uniform vec2  uResolution;
 
@@ -438,6 +444,6 @@ void main() {
   }
 
   gl_FragDepth = clamp(depth, 0.0, 1.0);
-  gl_FragColor = vec4(col, 1.0);
+  fragColor = vec4(col, 1.0);
 }
 `

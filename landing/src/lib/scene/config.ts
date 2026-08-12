@@ -425,8 +425,17 @@ export const particles = {
   shellRadius: 2.6,
   shellThickness: 1.4,
 
-  /** Size in pixels at full quality, before the distance attenuation. */
-  size: 2.2,
+  /** Size in *world units*, not pixels — the material attenuates by distance,
+      which makes this a physical diameter. At 2.2 (the pixel-sized value this
+      replaced) every particle was the size of the matter itself and the
+      screen filled with squares. A particle is a mote: sub-centimetre against
+      a body two units across. */
+  size: 0.02,
+
+  /** Ceiling on particle opacity. They exist for scale and for the moment the
+      camera passes through them; anything a viewer can consciously count is
+      already too strong. */
+  opacity: 0.32,
 
   /** Drift speed, world units per second. Slow enough to read as suspended
       rather than falling. */

@@ -22,6 +22,7 @@ export function Particles({ sceneRef, animate, count }: Props) {
   const pointsRef = useRef<THREE.Points>(null)
   const materialRef = useRef<THREE.PointsMaterial>(null)
   const elapsed = useRef(0)
+  const sprite = useSprite()
 
   const { geometry, base } = useMemo(() => {
     const field = createParticleField(count)
@@ -52,7 +53,7 @@ export function Particles({ sceneRef, animate, count }: Props) {
       /* The cloud fades up as the camera arrives rather than existing from
          the first frame: seen from outside it would read as dust on the lens,
          and the whole point of it is the moment of passing through. */
-      materialRef.current.opacity = 0.25 + 0.75 * insideCloud
+      materialRef.current.opacity = particles.opacity * (0.35 + 0.65 * insideCloud)
       materialRef.current.size = particles.size * (1 + insideCloud * 0.6)
     }
 
@@ -78,6 +79,7 @@ export function Particles({ sceneRef, animate, count }: Props) {
     <points ref={pointsRef} geometry={geometry}>
       <pointsMaterial
         ref={materialRef}
+        map={sprite}
         vertexColors
         transparent
         // Additive on near-black would make the dim majority invisible and
@@ -88,4 +90,48 @@ export function Particles({ sceneRef, animate, count }: Props) {
       />
     </points>
   )
+}
+
+/**
+ * A soft round dot.
+ *
+ * Without a map, a point is a hard square — which at the sizes this cloud
+ * reaches during the fly-through reads as a screen full of confetti rather
+ * than as suspended matter. Generated rather than shipped: it is a radial
+ * gradient, and a 64px PNG of one would be an asset to load, cache and
+ * account for in CREDITS for no gain.
+ */
+function useSprite(): THREE.Texture | null {
+  return useMemo(() => {
+    if (typeof document === 'undefined') return null
+
+    const size = 64
+    const canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+
+    const g = ctx.createRadialGradient(
+      size / 2,
+      size / 2,
+      0,
+      size / 2,
+      size / 2,
+      size / 2
+    )
+    // Falls off well before the edge: a gradient that reaches the rim still
+    // shows the quad's corners once hundreds of them overlap.
+    g.addColorStop(0, 'rgba(255,255,255,1)')
+    g.addColorStop(0.45, 'rgba(255,255,255,0.35)')
+    g.addColorStop(1, 'rgba(255,255,255,0)')
+
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, size, size)
+
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.needsUpdate = true
+    return texture
+  }, [])
 }
