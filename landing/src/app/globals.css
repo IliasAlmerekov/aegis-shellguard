@@ -198,6 +198,14 @@
 }
 
 html {
+  /* The root carries the page ground as well as body, so the overscroll area
+     a trackpad exposes past either end of the document is the same black as
+     the page rather than the browser's own white. This used to be an inline
+     style on the <html> tag; it moved here because an inline style is a
+     hydration surface — the browser normalises `#000000` to `rgb(0, 0, 0)`
+     before React compares the server HTML with the live DOM, and the two no
+     longer match. */
+  background-color: #000000;
   scroll-behavior: smooth;
   /* The header is 64px and fixed, so an anchor that lands flush with the
      viewport top lands *under* it. Reserving the header's height plus a

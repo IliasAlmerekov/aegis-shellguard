@@ -50,8 +50,12 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" style={{ backgroundColor: '#000000' }}>
-      <body style={{ backgroundColor: '#000000', margin: 0 }}>
+    /* No inline style on either tag: the ground is set in globals.css, and
+       `margin: 0` is already Tailwind's preflight. Inline styles here cost a
+       hydration mismatch for nothing — the browser rewrites them into
+       longhand and normalised colour before React can compare its tree. */
+    <html lang="en">
+      <body>
         {/* Type is self-hosted: no third party on the critical render path.
             Inter and JetBrains Mono carry the hero (headline, nav wordmark,
             install snippet), so both are preloaded — the swap lands before
