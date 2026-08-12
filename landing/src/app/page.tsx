@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic'
 import { Nav } from '@/components/ui/Nav'
-import { HeroDarkMatter } from '@/components/sections/HeroDarkMatter'
+import { Hero } from '@/components/sections/Hero'
 import { Footer } from '@/components/sections/Footer'
 
 // Below-the-fold sections are code-split: the hero is the LCP surface and
@@ -56,7 +56,7 @@ export default function Page() {
       </a>
       <Nav />
       <main id="main" tabIndex={-1}>
-        <HeroDarkMatter />
+        <Hero />
         {/* No rule between the hero and the claim: the shot ends on black and
             the type stands on the same black, so the two read as one fall
             rather than two panels. The gate then shows what the claim just

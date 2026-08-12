@@ -17,25 +17,31 @@ export const viewport: Viewport = {
 }
 
 /*
-  HERO DIRECTION CONTRACT — see PLAN.md for the scene, DESIGN.md for the page.
-  THESIS: the guardrail watches. Dark organic matter hangs in the frame and
-    something inside it is looking back — the product's argument before a
-    word of copy is read. Refuses the product screenshot and the floating
-    logo alike.
-  OWN-WORLD: the brand four, split 60/30/10 — 60% Night Black (#1e272e down
-    to #04090e as the ground the matter floats on), 30% Cloud White (#f5f6fa
-    headline over #93a1ae/#aeb8c4 copy), 10% accent held to two jobs:
-    Electric Blue #0984e3 is the one action, Cyan Neon #00cec9 is live state.
-    In the scene the same accents arrive as light through a membrane rather
-    than as paint on it. #27333c hairline edges, 6px radii, no ornament.
-  STORY: the visitor meets something alive and attentive, then reads what it
-    does, then installs it.
-  FIRST VIEWPORT: the matter in the right half with negative space around it,
-    72px headline and the primary action on clean black at the 1200px gutter.
-  FORM: a raymarched signed distance field on a full-screen quad — one custom
-    shader, no models — pinned two viewport heights, the camera closing on
-    the matter and passing through the particle cloud beside it.
-  FINISH: unreviewed and undocumented is unfinished.
+  HERO DIRECTION CONTRACT — see DESIGN.md
+  THESIS: the guardrail is a held hand, not a shield. Refuses the
+    product-screenshot hero and the floating 3D mark it replaces.
+  OWN-WORLD: the brand four, split 60/30/10 — 60% Night Black (#1e272e,
+    darkened to #04090e as the substrate the footage fades into), 30%
+    Cloud White (#f5f6fa headline over #93a1ae/#aeb8c4 copy), 10% accent
+    held to two jobs: Electric Blue #0984e3 is the one action, Cyan Neon
+    #00cec9 is live state (the scroll rail, the shell prompt). #27333c
+    hairline edges, 6px radii, no ornament. Recognizable with all copy
+    removed.
+  STORY: an agent reaches for something destructive and stops short —
+    so approval is the product, and the visitor installs it.
+  FIRST VIEWPORT: full-bleed frame 001 of the shot, subject held in the
+    right third and its own headroom leaving air under the nav; graded
+    substrate scrim on the left carrying a 72px headline and the primary
+    action at the 1200px gutter; hairline scroll rail at the content
+    gutter.
+  FORM: scroll-scrubbed 161-frame canvas sequence, pinned 150vh, text
+    accreting in three beats.
+  FINISH: unreviewed and undocumented is unfinished; this build ends
+    with the finish review, the verdict, and DESIGN.md.
+
+  PLAN.md describes a Dark Matter scene intended to replace this hero. It was
+  built and reverted; the contract above is the one the page actually runs
+  against.
 */
 
 export default function RootLayout({
@@ -74,6 +80,24 @@ export default function RootLayout({
           as="font"
           type="font/woff2"
           crossOrigin="anonymous"
+        />
+        {/* The hand is at the bottom of frame 1 and the headline reads
+            against it, so the first frame is fetched at the same priority as
+            the type rather than after the JS bundle resolves. `media` keeps
+            each viewport from paying for the other's frame set. */}
+        <link
+          rel="preload"
+          href="/frames/frame-0001.webp"
+          as="image"
+          type="image/webp"
+          media="(min-width: 768px)"
+        />
+        <link
+          rel="preload"
+          href="/frames-sm/frame-0001.webp"
+          as="image"
+          type="image/webp"
+          media="(max-width: 767px)"
         />
         {children}
       </body>
