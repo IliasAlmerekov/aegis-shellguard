@@ -148,10 +148,15 @@ float sphere(vec3 p, float r, float squash) {
 vec3 warpSpace(vec3 p) {
   float t = uTime * ${f(warp.timeScale)};
   vec3 q = p * ${f(warp.frequency)} + vec3(0.0, 0.0, t);
+  /* One octave per component, not a full FBM. The warp is low-frequency by
+     definition — its whole job is to reorganise the space the detail is
+     sampled in — so the octaves above the first were paying for detail that
+     the FBM downstream then sampled anyway. Three FBM calls here cost more
+     than everything else in the field put together. */
   return p + ${f(warp.strength)} * vec3(
-    fbm(q),
-    fbm(q + vec3(5.2, 1.3, 0.0)),
-    fbm(q + vec3(0.0, 9.1, 4.7))
+    valueNoise(q),
+    valueNoise(q + vec3(5.2, 1.3, 0.0)),
+    valueNoise(q + vec3(0.0, 9.1, 4.7))
   );
 }
 
@@ -160,8 +165,7 @@ float relief(vec3 p) {
   vec3 w = warpSpace(p);
   return
     fbm(w * ${f(noise.largeFrequency)} + vec3(0.0, t, 0.0)) * ${f(noise.largeAmplitude)} +
-    fbm(w * ${f(noise.mediumFrequency)} - vec3(t, 0.0, 0.0)) * ${f(noise.mediumAmplitude)} +
-    fbm(w * ${f(noise.smallFrequency)}) * ${f(noise.smallAmplitude)};
+    valueNoise(w * ${f(noise.mediumFrequency)} - vec3(t, 0.0, 0.0)) * ${f(noise.mediumAmplitude)};
 }
 
 /** Body only, without the eye. Kept separate so the eye can be shaded from
@@ -188,12 +192,18 @@ vec2 map(vec3 p) {
 }
 
 vec3 calcNormal(vec3 p) {
-  vec2 e = vec2(${f(march.normalEpsilon)}, 0.0);
-  return normalize(vec3(
-    map(p + e.xyy).x - map(p - e.xyy).x,
-    map(p + e.yxy).x - map(p - e.yxy).x,
-    map(p + e.yyx).x - map(p - e.yyx).x
-  ));
+  /* Tetrahedron sampling: four evaluations of the field instead of the six a
+     central difference needs. On a field this expensive that is a third of
+     the normal's cost removed, and the direction it returns is the same to
+     well within what a surface this soft can show. */
+  const vec2 k = vec2(1.0, -1.0);
+  float e = ${f(march.normalEpsilon)};
+  return normalize(
+    k.xyy * map(p + k.xyy * e).x +
+    k.yyx * map(p + k.yyx * e).x +
+    k.yxy * map(p + k.yxy * e).x +
+    k.xxx * map(p + k.xxx * e).x
+  );
 }
 
 /* ── Object space ────────────────────────────────────────────────────────

@@ -77,7 +77,7 @@ export const body = {
    * dissolves into the core: the silhouette rounds off into one blob and the
    * whole reason for having satellites disappears.
    */
-  smoothness: 0.38,
+  smoothness: 0.26,
 } as const
 
 /* ── Deformation ─────────────────────────────────────────────────────────
@@ -91,31 +91,33 @@ export const noise = {
       silhouette. Above ~1.2 the mass stops having a readable overall form and
       becomes evenly lumpy; below ~0.6 it barely deviates from the sphere
       union underneath. */
-  largeFrequency: 0.85,
+  largeFrequency: 0.8,
   /** How far the large scale can push the surface, in world units. This is
       the amplitude that decides whether a sphere is still visible in the
       silhouette. At 0.5+ the marcher starts overstepping badly (see
       `march.stepScale`) and the edges tear. */
-  largeAmplitude: 0.34,
+  largeAmplitude: 0.52,
 
   /** The fold scale. Frequency roughly 3× the large scale so the two do not
       beat against each other into a regular pattern. */
-  mediumFrequency: 2.6,
-  mediumAmplitude: 0.11,
+  mediumFrequency: 2.4,
+  mediumAmplitude: 0.2,
 
-  /** Micro-relief. Deliberately weak: this is the scale that turns matter
-      into stone if it is allowed to compete. Most of the fine detail a viewer
-      actually sees comes from the normal map, which costs one texture fetch
-      rather than a whole octave inside the march loop. */
-  smallFrequency: 7.4,
-  smallAmplitude: 0.022,
+  /* There used to be a third, fine scale here, at frequency 7.4 and
+     amplitude 0.022. It was deleted rather than turned down: at that
+     amplitude it moved the surface by two hundredths of a unit — far below
+     what the silhouette can show — while costing a full FBM evaluation
+     inside the march loop, which is the most expensive place in the project
+     to spend anything. The micro-detail it was meant to provide comes from
+     the normal map, at the price of one texture fetch on surfaces the ray
+     has already hit. */
 
-  /** Octaves inside each FBM call. Every octave is evaluated at every march
-      step, so this multiplies against `march.maxSteps` — the single most
-      expensive number in the file. Three is where the surface stops looking
-      mathematically clean; four is barely distinguishable and costs a third
-      more. */
-  octaves: 3,
+  /** Octaves inside each FBM call. Every octave runs at every march step, so
+      this multiplies against `march.maxSteps` and against the number of FBM
+      calls per step — the single most expensive number in the file. Two is
+      enough once domain warping is doing the structural work; three cost
+      about half again as much for detail the warp already implies. */
+  octaves: 2,
 
   /** How fast the field evolves. The matter should read as existing rather
       than as animating: at 0.1 it visibly churns, at 0.02 the movement is
@@ -132,7 +134,7 @@ export const warp = {
       over itself and the marcher finds surfaces where there is no coherent
       normal — the result is speckle. Below ~0.25 the effect reads as a
       slightly wobbly sphere and the whole point is lost. */
-  strength: 0.55,
+  strength: 0.9,
   /** Deliberately lower than `noise.largeFrequency`: the warp has to be
       broader than the thing it distorts, or it just adds another noise
       octave instead of reorganising the field. */
@@ -150,7 +152,7 @@ export const march = {
       pulls first after render scale. Below ~48 the silhouette's grazing
       edges — where rays travel nearly parallel to the surface — dissolve
       into noise. */
-  maxSteps: 72,
+  maxSteps: 56,
 
   /** How close counts as a hit, in world units. Too large and the surface
       gains a soft halo of near-misses; too small and grazing rays burn their
@@ -169,12 +171,12 @@ export const march = {
    * punching holes in the silhouette.
    *
    * Multiplying every step by this recovers correctness the cheap way. It is
-   * roughly 1/(1 + total noise gradient); with the amplitudes above, 0.62 is
+   * roughly 1/(1 + total noise gradient); with the amplitudes above, 0.5 is
    * where the tearing stops. Raising it toward 1 brings the holes back —
    * first as sparkle on the fold edges, then as gaps. Lowering it is safe but
    * pure cost: every 0.1 removed is about 15% more steps for the same image.
    */
-  stepScale: 0.62,
+  stepScale: 0.5,
 
   /** Offset used to sample the field for the surface normal. Must be larger
       than `epsilon` — sampling closer than the hit tolerance returns the same
@@ -241,7 +243,7 @@ export const sss = {
   probeDistance: 0.9,
   /** Samples along the probe. Four is enough to distinguish a fin from a
       body; more just smooths a value that is already an approximation. */
-  probeSamples: 4,
+  probeSamples: 3,
 
   /** Overall scatter brightness. The first thing to turn down if the hero
       reads as "glowing blue thing" instead of "dark matter". */
@@ -308,10 +310,15 @@ export const eye = {
   /** Sits inside a fold on the camera-facing side, below the mass's centre.
       Moving it outward past the surface turns it into a bauble stuck to the
       front; too far in and the body swallows it completely. */
-  position: [0.16, -0.12, 0.72] as const,
+  /* The magnitude of this vector matters more than its direction: the body's
+     undeformed radius is 1, so an eye centred at 0.75 with radius 0.17
+     reached only 0.92 and was swallowed whole — which is exactly what the
+     first build showed. Just under 1 puts it at the surface, where the relief
+     opens over it in some places and closes over it in others. */
+  position: [0.2, -0.1, 0.86] as const,
 
   /** Radius. Small enough that it is discovered rather than presented. */
-  radius: 0.17,
+  radius: 0.19,
 
   /** How much smaller the iris is than the eyeball, as a fraction. */
   irisScale: 0.52,
@@ -486,17 +493,21 @@ export const quality = {
       upward would oscillate: the higher tier is what caused the low frame
       rate, so restoring it re-triggers the drop, forever. */
   tiers: {
-    full: { renderScale: 1.0, maxSteps: march.maxSteps, sss: true, bloom: true },
-    reduced: { renderScale: 0.8, maxSteps: 56, sss: false, bloom: false },
-    low: { renderScale: 0.4, maxSteps: 40, sss: false, bloom: false },
-    still: { renderScale: 0.6, maxSteps: march.maxSteps, sss: true, bloom: true },
+    /* Full quality already renders below the display's own resolution. For a
+       marcher the pixel count is the whole cost, and this scene — dark, soft,
+       almost without hard edges — loses less to a 15% reduction than any
+       other lever gives back. */
+    full: { renderScale: 0.85, maxSteps: march.maxSteps, sss: true, bloom: true },
+    reduced: { renderScale: 0.7, maxSteps: 44, sss: false, bloom: false },
+    low: { renderScale: 0.4, maxSteps: 32, sss: false, bloom: false },
+    still: { renderScale: 0.85, maxSteps: march.maxSteps, sss: true, bloom: true },
   },
 
   /** Upper bound on device pixel ratio, before `renderScale`. A phone at
       DPR 3 would otherwise ask the marcher for nine times the pixels of a
       DPR-1 display for detail this scene — dark, soft, low-contrast — cannot
       show. */
-  maxDpr: 2,
+  maxDpr: 1.5,
 } as const
 
 /** The still tier renders exactly one frame and then stops the loop. There is

@@ -5,6 +5,7 @@ import {
   nextTierDown,
   resolveDpr,
   sampleFrame,
+  settingsFor,
   TIER_ORDER,
 } from '@/lib/scene/quality'
 import { quality } from '@/lib/scene/config'
@@ -78,15 +79,35 @@ describe('sampleFrame', () => {
 })
 
 describe('resolveDpr', () => {
+  /* Asserted against `settingsFor`, not against the tiers' current numbers:
+     render scales are artistic settings and are expected to move. What must
+     not move is the rule — cap first, scale second. */
+
   it('caps the display ratio before applying the tier scale', () => {
-    // A DPR-3 phone on the lowest tier must not slip past the cap by way of
-    // the multiplication.
-    expect(resolveDpr(3, 'full')).toBe(quality.maxDpr)
-    expect(resolveDpr(3, 'low')).toBe(quality.maxDpr * 0.4)
+    // The order matters: scaling first would let a DPR-3 phone on a 0.4 tier
+    // arrive at 1.2 and slip under a cap it should have hit at 3.
+    for (const tier of TIER_ORDER) {
+      expect(resolveDpr(3, tier)).toBeCloseTo(
+        quality.maxDpr * settingsFor(tier).renderScale
+      )
+    }
   })
 
-  it('never renders below one device pixel per CSS pixel of scale', () => {
-    expect(resolveDpr(0.5, 'full')).toBe(1)
+  it('never renders a display at less than one device pixel per CSS pixel', () => {
+    // Before the tier's own scale, that is: a sub-1 devicePixelRatio is
+    // something a zoomed-out browser reports, not an instruction to render
+    // the scene at a quarter of the page's resolution.
+    const tier = 'full'
+    expect(resolveDpr(0.5, tier)).toBeCloseTo(settingsFor(tier).renderScale)
+  })
+
+  it('gives every tier a scale at or below the one above it', () => {
+    let previous = Infinity
+    for (const tier of ['full', 'reduced', 'low'] as const) {
+      const scale = settingsFor(tier).renderScale
+      expect(scale).toBeLessThanOrEqual(previous)
+      previous = scale
+    }
   })
 })
 
