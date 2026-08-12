@@ -17,6 +17,7 @@ import {
   eye,
   march,
   material,
+  glow,
   noise,
   palette,
   pointer,
@@ -45,12 +46,12 @@ void main() {
 }
 `
 
-const lobeCode = body.lobes
+const armCode = body.arms
   .map(
-    (l) =>
-      `  d = smin(d, sphere(p - ${v3(l.position)}, ${f(l.radius)}, ${f(
-        l.squash
-      )}), ${f(body.smoothness)});`
+    (a) =>
+      `  d = smin(d, roundCone(p, ${v3(a.from)}, ${v3(a.to)}, ${f(
+        a.fromRadius
+      )}, ${f(a.toRadius)}), ${f(body.smoothness)});`
   )
   .join('\n')
 
@@ -137,9 +138,48 @@ float smin(float a, float b, float k) {
   return mix(b, a, h) - k * h * (1.0 - h);
 }
 
-float sphere(vec3 p, float r, float squash) {
-  p.y /= squash;
+float sphere(vec3 p, float r) {
   return length(p) - r;
+}
+
+/* A capsule whose radius tapers from one end to the other — the primitive the
+   arms are made of. Exact rather than an approximation, because an inexact
+   distance here would compound with the noise offset and force the march to
+   under-step even further than it already does. */
+float roundCone(vec3 p, vec3 a, vec3 b, float r1, float r2) {
+  vec3 ba = b - a;
+  float l2 = dot(ba, ba);
+  float rr = r1 - r2;
+  float a2 = l2 - rr * rr;
+  float il2 = 1.0 / l2;
+
+  vec3 pa = p - a;
+  float y = dot(pa, ba);
+  float z = y - l2;
+  vec3 xp = pa * l2 - ba * y;
+  float x2 = dot(xp, xp);
+  float y2 = y * y * l2;
+  float z2 = z * z * l2;
+
+  float k = sign(rr) * rr * rr * x2;
+  if (sign(z) * a2 * z2 > k) return sqrt(x2 + z2) * il2 - r2;
+  if (sign(y) * a2 * y2 < k) return sqrt(x2 + y2) * il2 - r1;
+  return (sqrt(x2 * a2 * il2) + y * rr) * il2 - r1;
+}
+
+/* Ridged noise: the absolute value of the field, inverted. Where plain noise
+   has a smooth zero crossing this has a crease, which is the difference
+   between a surface that reads as folded fabric and one that reads as a
+   heap of stones. */
+float ridged(vec3 p) {
+  float sum = 0.0;
+  float amp = 0.5;
+  for (int i = 0; i < OCTAVES; i++) {
+    sum += amp * (1.0 - abs(valueNoise(p)));
+    p *= 2.02;
+    amp *= 0.5;
+  }
+  return sum;
 }
 
 /* Domain warping: the coordinate space the fractal is sampled in is itself
@@ -165,14 +205,16 @@ float relief(vec3 p) {
   vec3 w = warpSpace(p);
   return
     fbm(w * ${f(noise.largeFrequency)} + vec3(0.0, t, 0.0)) * ${f(noise.largeAmplitude)} +
-    valueNoise(w * ${f(noise.mediumFrequency)} - vec3(t, 0.0, 0.0)) * ${f(noise.mediumAmplitude)};
+    (ridged(w * ${f(noise.mediumFrequency)} - vec3(t, 0.0, 0.0)) - ${f(
+      noise.ridgeBias
+    )}) * ${f(noise.mediumAmplitude)};
 }
 
 /** Body only, without the eye. Kept separate so the eye can be shaded from
     its own geometry while still being occluded by the body's folds. */
 float bodyField(vec3 p) {
-  float d = sphere(p, ${f(body.coreRadius)}, 1.0);
-${lobeCode}
+  float d = sphere(p, ${f(body.coreRadius)});
+${armCode}
   return d - relief(p);
 }
 
@@ -278,6 +320,26 @@ float triplanarRoughness(vec3 p, vec3 n) {
    surface early the material is a fin, and a fin lets light through. This is
    the source of nearly all the blue in the scene. */
 
+/* Ambient occlusion, read as a crevice mask. Probing outward along the
+   normal, the field comes back closer than the probe distance exactly where
+   the surface is enclosed by other surface — the gaps between arms, the
+   bottoms of folds. That is where the reference puts its blue, and it is a
+   fundamentally different measurement from thickness: one finds gaps, the
+   other finds fins. */
+float crevice(vec3 p, vec3 n) {
+  float occ = 0.0;
+  float weight = 1.0;
+  for (int i = 1; i <= ${glow.samples}; i++) {
+    float h = ${f(glow.spacing)} * float(i);
+    float d = map(p + n * h).x;
+    occ += (h - d) * weight;
+    // Nearer samples count for more: a gap one step away is a crack, the
+    // same reading three steps out is just a shallow bowl.
+    weight *= 0.6;
+  }
+  return clamp(occ * 2.0, 0.0, 1.0);
+}
+
 float thinness(vec3 p, vec3 n) {
   float step = ${f(sss.probeDistance)} / float(${sss.probeSamples});
   float inside = 0.0;
@@ -364,7 +426,17 @@ vec3 shadeBody(vec3 p, vec3 n, vec3 rd) {
   float rim = pow(1.0 - ndv, ${f(material.fresnelPower)});
   col += ${v3(material.fresnelColor)} * rim * ${f(material.fresnelStrength)};
 
+  /* The crevice light, and the scene's main source of colour. Unlike the
+     scatter below it runs on every tier: without it the mass is a black
+     shape on a black ground, which is not a cheaper version of the image but
+     a different one. */
+  float gap = pow(crevice(p, n), ${f(glow.falloff)});
+  col += mix(${v3(glow.deepColor)}, ${v3(glow.hotColor)}, gap) * gap * ${f(
+    glow.strength
+  )};
+
   if (uUseSss > 0.5) {
+    // Light through the thin trailing edges where the arms taper out.
     float thin = pow(thinness(p, nm), ${f(sss.falloff)});
     vec3 scatter = mix(${v3(sss.deepColor)}, ${v3(sss.thinColor)}, thin);
     col += scatter * thin * ${f(sss.strength)};

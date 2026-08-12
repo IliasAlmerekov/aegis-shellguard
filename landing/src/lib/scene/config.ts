@@ -36,48 +36,51 @@ export const palette = {
 } as const
 
 /* ── The body ────────────────────────────────────────────────────────────
-   A union of spheres, welded by a polynomial smooth-minimum. The spheres are
-   scaffolding: nothing here should be recognisable as a sphere in the final
-   image, which is the job of `smoothness` below and of the noise on top. */
+   A small core with tapered arms thrown out of it, welded by a smooth
+   minimum. The arms are the point: a union of spheres, however deformed,
+   returns a lump, and the reference is a splash — long thin ribbons
+   radiating from a dense middle. That silhouette has to be built, not
+   noised into existence. */
 
 export const body = {
-  /** Radius of the core sphere, in world units. Everything else is sized
-      against this, and the camera framing in `camera` assumes it. */
-  coreRadius: 1.0,
+  /** Radius of the core. Small relative to the arms on purpose: the core is
+      the dense middle they emerge from, not the subject. Raise it much past
+      0.9 and the arms sink into it and the splash becomes a ball again. */
+  coreRadius: 0.72,
 
   /**
-   * The satellites, each `{ position, radius, squash }`. Deliberately not
-   * symmetric and deliberately not evenly spaced: a symmetric arrangement
-   * survives the noise and reads as an ornament, which is the one thing an
-   * organic mass must never look like.
+   * The arms, as tapered capsules from `from` to `to` with a radius at each
+   * end. `toRadius` well under `fromRadius` is what makes them ribbons that
+   * thin out rather than sausages.
    *
-   * `squash` scales the sphere's local Y before the distance is taken, which
-   * is what turns a ball into a lobe. Values far from 1 start to show the
-   * ellipsoid's own axis, so they stay inside roughly 0.55–1.5.
+   * Directions, lengths and thicknesses are all deliberately unequal and
+   * deliberately not opposed in pairs. Any regularity here survives every
+   * later stage and reads instantly as an ornament.
    */
-  lobes: [
-    { position: [0.78, 0.42, -0.18], radius: 0.62, squash: 0.72 },
-    { position: [-0.66, 0.58, 0.24], radius: 0.55, squash: 1.28 },
-    { position: [-0.34, -0.72, -0.3], radius: 0.68, squash: 0.85 },
-    { position: [0.46, -0.58, 0.42], radius: 0.48, squash: 1.1 },
-    { position: [0.12, 0.86, 0.36], radius: 0.4, squash: 0.9 },
+  arms: [
+    { from: [0.1, 0.3, 0.0], to: [0.35, 1.75, -0.25], fromRadius: 0.34, toRadius: 0.05 },
+    { from: [-0.2, 0.1, 0.1], to: [-1.5, 0.85, 0.3], fromRadius: 0.3, toRadius: 0.04 },
+    { from: [0.2, -0.1, 0.1], to: [1.62, 0.25, 0.15], fromRadius: 0.32, toRadius: 0.05 },
+    { from: [-0.1, -0.2, 0.0], to: [-0.75, -1.35, -0.2], fromRadius: 0.28, toRadius: 0.04 },
+    { from: [0.15, -0.25, 0.05], to: [0.9, -1.55, 0.35], fromRadius: 0.3, toRadius: 0.05 },
+    { from: [0.0, 0.15, 0.2], to: [-0.45, 1.2, 0.95], fromRadius: 0.24, toRadius: 0.03 },
+    { from: [0.1, 0.0, -0.15], to: [1.1, -0.7, -0.85], fromRadius: 0.26, toRadius: 0.04 },
+    { from: [-0.15, 0.05, -0.1], to: [-1.15, -0.35, -0.7], fromRadius: 0.22, toRadius: 0.03 },
   ] as ReadonlyArray<{
-    position: readonly [number, number, number]
-    radius: number
-    squash: number
+    from: readonly [number, number, number]
+    to: readonly [number, number, number]
+    fromRadius: number
+    toRadius: number
   }>,
 
   /**
-   * The `smin` blend radius. This is the single most character-defining
-   * number in the file.
+   * The `smin` blend radius where arms meet the core and each other.
    *
-   * Too low (< 0.2) and the lobes read as separate balls stuck together —
-   * visible waists between them, which is exactly the seam problem that made
-   * us abandon meshes in the first place. Too high (> 0.6) and every lobe
-   * dissolves into the core: the silhouette rounds off into one blob and the
-   * whole reason for having satellites disappears.
+   * Too low (< 0.1) and the arms read as tubes glued on. Too high (> 0.35)
+   * and the webbing between them fills in until the silhouette closes back
+   * into a blob — which is the failure this whole structure exists to avoid.
    */
-  smoothness: 0.26,
+  smoothness: 0.18,
 } as const
 
 /* ── Deformation ─────────────────────────────────────────────────────────
@@ -98,10 +101,19 @@ export const noise = {
       `march.stepScale`) and the edges tear. */
   largeAmplitude: 0.52,
 
-  /** The fold scale. Frequency roughly 3× the large scale so the two do not
-      beat against each other into a regular pattern. */
+  /** The crease scale, and the one that decides whether the surface reads as
+      liquid or as terrain. It is sampled *ridged* — one minus the absolute
+      value of the noise — which puts sharp creases where plain noise puts
+      round bumps. The reference is full of them: the folds meet at edges,
+      not at shoulders. */
   mediumFrequency: 2.4,
-  mediumAmplitude: 0.2,
+  mediumAmplitude: 0.16,
+
+  /** Where the ridged scale sits before it is scaled, so the creases push out
+      and the flats pull in rather than the whole surface inflating. Roughly
+      the mean of the ridged sum; away from it the mass gains or loses volume
+      overall instead of gaining creases. */
+  ridgeBias: 0.46,
 
   /* There used to be a third, fine scale here, at frequency 7.4 and
      amplitude 0.022. It was deleted rather than turned down: at that
@@ -159,10 +171,10 @@ export const march = {
       whole step budget without converging. */
   epsilon: 0.0016,
 
-  /** Ray distance at which we give up and return background. The body is
-      ~2 units across sitting ~4.2 from the camera, so anything past this is
-      empty space. */
-  maxDistance: 12.0,
+  /** Ray distance at which we give up and return background. The arms reach
+      about 1.8 from the origin and the camera starts 6.3 out, so anything
+      past this is empty space in every direction. */
+  maxDistance: 14.0,
 
   /**
    * Offsetting a distance field by noise breaks the Lipschitz guarantee that
@@ -231,11 +243,38 @@ export const material = {
   fresnelColor: palette.nightRim,
 } as const
 
+/* ── Crevice glow ────────────────────────────────────────────────────────
+   Where the reference's blue actually lives: not around the silhouette but
+   down in the gaps between masses, brightest where two folds nearly touch.
+   Measured with an ambient-occlusion probe along the normal — the field is
+   closer than the probe distance exactly where the surface is enclosed. */
+
+export const glow = {
+  /** Probe steps. Three is enough to tell a gap from an open face; each one
+      is a full evaluation of the field, on hit pixels only. */
+  samples: 3,
+  /** Spacing of the probe, in world units. Comparable to the width of the
+      gaps worth lighting — too far and every concave patch glows, too near
+      and only hairline cracks do. */
+  spacing: 0.11,
+
+  /** Overall brightness of the crevice light. */
+  strength: 2.6,
+  /** Exponent on occlusion. High values confine the light to the deepest
+      cracks, which is what keeps it from washing the whole body blue. */
+  falloff: 2.4,
+
+  /** Ramps from electric in ordinary gaps to cyan in the deepest, which is
+      the reference's own distribution — cyan is rare and always at maximum
+      energy. */
+  deepColor: palette.electric,
+  hotColor: palette.cyanNeon,
+} as const
+
 /* ── Subsurface scatter ──────────────────────────────────────────────────
-   What makes it a membrane rather than a solid. Thickness is estimated by
-   marching back into the field from the hit point toward the light; thin
-   places glow. This is also where nearly all of the scene's blue comes
-   from. */
+   The membrane read: light through the thin trailing edges of the arms,
+   where they taper to nothing. Secondary to the crevice glow now, and much
+   weaker than it was when it was carrying the whole scene's colour. */
 
 export const sss = {
   /** How far the thickness probe reaches, in world units. Beyond the body's
@@ -247,7 +286,7 @@ export const sss = {
 
   /** Overall scatter brightness. The first thing to turn down if the hero
       reads as "glowing blue thing" instead of "dark matter". */
-  strength: 1.25,
+  strength: 0.7,
 
   /** Exponent applied to normalised thinness. Above ~3 the glow retreats to
       a hairline on the very thinnest fins and the membrane read is lost;
@@ -313,12 +352,13 @@ export const eye = {
   /* The magnitude of this vector matters more than its direction: the body's
      undeformed radius is 1, so an eye centred at 0.75 with radius 0.17
      reached only 0.92 and was swallowed whole — which is exactly what the
-     first build showed. Just under 1 puts it at the surface, where the relief
-     opens over it in some places and closes over it in others. */
-  position: [0.2, -0.1, 0.86] as const,
+     first build showed. It is measured against the core, which is now 0.72,
+     so a centre at 0.66 puts it at that surface — the relief opens over it in
+     some places and closes over it in others. */
+  position: [0.14, -0.08, 0.66] as const,
 
   /** Radius. Small enough that it is discovered rather than presented. */
-  radius: 0.19,
+  radius: 0.17,
 
   /** How much smaller the iris is than the eyeball, as a fraction. */
   irisScale: 0.52,
@@ -382,10 +422,10 @@ export const camera = {
   /** Where the camera starts, at scroll progress 0. The X offset frames the
       mass in the right half of the viewport, leaving the left for the
       headline — the composition PLAN.md specifies. */
-  startPosition: [-0.55, 0.08, 4.2] as const,
+  startPosition: [-0.6, 0.1, 6.3] as const,
   /** Where it ends, at progress 1: forward and slightly up, passing beside
       the mass rather than into it. */
-  endPosition: [0.22, 0.34, 0.35] as const,
+  endPosition: [0.3, 0.4, 0.5] as const,
 
   /** The camera keeps looking at the body through the whole move, so the
       mass swings across frame as the camera passes it. */
