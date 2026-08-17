@@ -73,10 +73,17 @@ export function WhyAegis() {
              is legible before it lands. */
           const rise = isDesktop ? 22 : 14
 
-          /* Hidden here rather than in CSS so the copy still renders if the
-             bundle never arrives. */
+          /* The words are hidden here rather than in CSS so the copy still
+             renders if the bundle never arrives. */
           gsap.set('[data-line="one"] [data-word]', { y: rise, opacity: 0, filter: 'blur(10px)' })
           gsap.set('[data-line="two"] [data-word]', { y: rise, opacity: 0, filter: 'blur(10px)' })
+
+          /* The rule cannot follow that rule, and the difference is what the
+             visitor sees. A word held back costs nothing on the way there —
+             it is invisible either way. The fill's natural state is a
+             full-width neon bar, so every millisecond before this line ran, it
+             was painted. Its collapsed state is in `globals.css` now; this set
+             only tells GSAP where the tween starts. */
           gsap.set('[data-rule-fill]', { scaleX: 0, transformOrigin: 'left center' })
 
           /* Scroll only decides *when*; the timeline owns its own tempo, so

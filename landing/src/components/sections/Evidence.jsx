@@ -1,4 +1,12 @@
 import { Reveal } from '../ui/Reveal'
+import {
+  FigAuditTrail,
+  FigConfigRatchet,
+  FigHonestLimits,
+  FigIntrinsicBlocks,
+  FigNoTelemetry,
+  FigSafePath,
+} from './EvidenceFigures'
 
 /* Inline rather than pulled from an icon package: it is the only glyph on the
    page that is not one of the marks below, and the project ships no icon
@@ -28,30 +36,34 @@ const REPO = 'https://github.com/IliasAlmerekov/aegis-shellguard/blob/main/'
 // Every figure below is read off the repository, not written for the page:
 // the bench number, a grep that returns nothing, the count of Block-level
 // built-ins, the count of fields the project ratchet covers, the ADR number.
-// Each cell is the whole link, so the file that settles the claim is named on
-// the card rather than hidden behind a second affordance.
+// Each cell is the whole link, so the file that settles the claim is named in
+// the column rather than hidden behind a second affordance.
 //
-// `wide` marks the two cells that hold a column pair from the two-column fold
-// up — the fastest path and the honest limit, the two the page leads with.
+// `fig` is the plate number, and it is not decoration: the section's whole
+// conceit is that these are figures a reader can go and check, so each one is
+// numbered the way a figure in a paper is, and the number is what the drawing
+// above it is captioned by.
 const PILLARS = [
   {
     id: 'safe-path',
-    icon: '/icons/safe.webp',
+    fig: 'FIG 0.1',
+    Figure: FigSafePath,
     title: 'Safe path',
     note: '1.84 ms per 1,000 commands scanned.',
-    wide: true,
     source: { label: 'scanner_bench.rs', href: REPO + 'benches/scanner_bench.rs' },
   },
   {
     id: 'no-telemetry',
-    icon: '/icons/telemetry.webp',
+    fig: 'FIG 0.2',
+    Figure: FigNoTelemetry,
     title: 'No telemetry',
     note: 'Zero HTTP clients in the tree.',
     source: { label: 'Cargo.lock', href: REPO + 'Cargo.lock' },
   },
   {
     id: 'audit-trail-card',
-    icon: '/icons/audit.webp',
+    fig: 'FIG 0.3',
+    Figure: FigAuditTrail,
     title: 'Audit trail',
     note: 'One hash-chained line per decision.',
     source: {
@@ -61,14 +73,16 @@ const PILLARS = [
   },
   {
     id: 'intrinsic-block',
-    icon: '/icons/blocks.webp',
+    fig: 'FIG 0.4',
+    Figure: FigIntrinsicBlocks,
     title: 'Intrinsic blocks',
     note: 'Seven patterns nothing bypasses.',
     source: { label: 'patterns.toml', href: REPO + 'crates/aegis-scanner/patterns.toml' },
   },
   {
     id: 'config-ratchet',
-    icon: '/icons/config.webp',
+    fig: 'FIG 0.5',
+    Figure: FigConfigRatchet,
     title: 'Config ratchet',
     note: '29 fields a cloned config can only tighten.',
     source: {
@@ -78,10 +92,10 @@ const PILLARS = [
   },
   {
     id: 'honest-limits',
-    icon: '/icons/limits.webp',
+    fig: 'FIG 0.6',
+    Figure: FigHonestLimits,
     title: 'Honest limits',
     note: 'A guardrail on command text, not OS isolation.',
-    wide: true,
     source: {
       label: 'ADR-003',
       href: REPO + 'docs/adr/adr-003-aegis-is-a-heuristic-guardrail-not-a-sandbox.md',
@@ -114,43 +128,36 @@ export function Evidence() {
           </h2>
         </Reveal>
 
-        <ul className="ev-bento">
+        {/* A plate table, not a card wall. The hairline between two columns
+            is the only edge in the section: nothing is boxed, so the drawings
+            sit on the page's own black and the eye groups them by the rules
+            and the shared baselines instead of by six containers. */}
+        <ul className="ev-plates">
           {PILLARS.map((p, i) => {
+            const { Figure } = p
             return (
-              <li
-                key={p.id}
-                className={`ev-cell${p.wide ? ' ev-cell--wide' : ''}`}
-              >
-                <Reveal delay={60 + i * 70} className="ev-cell-reveal">
+              <li key={p.id} className="ev-plate">
+                <Reveal delay={60 + (i % 3) * 70} className="ev-plate-reveal">
                   <a
-                    className="ev-card"
+                    className="ev-figure"
                     id={p.id}
                     href={p.source.href}
                     target="_blank"
                     rel="noreferrer"
                   >
-                    <span className="ev-card-head">
-                      <span className="ev-icon-tile" aria-hidden="true">
-                        <img
-                          className="ev-icon"
-                          src={p.icon}
-                          alt=""
-                          width="384"
-                          height="384"
-                          loading="lazy"
-                          decoding="async"
-                        />
-                      </span>
+                    <span className="ev-fig-no">{p.fig}</span>
 
+                    <span className="ev-fig-art" aria-hidden="true">
+                      <Figure />
+                    </span>
+
+                    <span className="ev-caption">
+                      <span className="ev-title-card">{p.title}</span>
+                      <span className="ev-note">{p.note}</span>
                       <span className="ev-source">
                         <span>{p.source.label}</span>
                         <ArrowUpRight className="ev-arrow" />
                       </span>
-                    </span>
-
-                    <span className="ev-body">
-                      <span className="ev-title-card">{p.title}</span>
-                      <span className="ev-note">{p.note}</span>
                     </span>
 
                     <span className="sr-only">

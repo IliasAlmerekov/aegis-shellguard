@@ -60,17 +60,33 @@
            Cyan Neon    — live state (the scroll rail, the shell prompt,
                           the terminal cursor, the status dot)
 
+     The whole family was taken down and cooled: the page was reading as a
+     bright, friendly product page, and it is a guardrail for commands that
+     can destroy a repository. Seriousness here is not a darker background
+     with the same cheerful accents on it — it is the accents losing their
+     cheer. Azure became deep cobalt, mint-teal became a glacial cyan, and
+     the near-white came off pure white, which is the single loudest
+     friendly note a dark page has.
+
      Only `night` and `night-void` are ever a background, so contrast is
      quoted against `night-void`, the substrate:
-       cloud       18.2  headline, code, any small text
-       cloud-dim    9.8  body copy
-       cloud-mute   7.6  large text (the headline's unemphasised half)
-       cloud-faint  5.5  labels, meta, the copy button at rest
-       cyan-neon   10.2  live state — the scroll rail, the shell prompt
-       electric     5.2  passes AA as text, but it is spent as a fill; the
-                         label on it is `night-void` (4.6), never white (3.6)
-       night-edge   1.5  hairlines and dividers only
-       night-rim   2.3   hover/active borders — one step lighter than edge
+       cloud       16.8  headline, code, any small text
+       cloud-dim    8.3  body copy
+       cloud-mute   6.1  large text (the headline's unemphasised half)
+       cloud-faint  5.1  labels, meta, the copy button at rest
+       cyan-neon    6.8  live state — the scroll rail, the shell prompt
+       electric     2.6  a fill and only a fill; it no longer passes as text
+       electric-text 5.1 the same blue when it *is* the text
+       night-edge   1.4  hairlines and dividers only
+       night-rim   1.8  hover/active borders — one step lighter than edge
+
+     **The label on `electric` is `cloud` now, never `night-void`.** This is
+     the one change that could not be avoided by tuning: the old azure was
+     light enough to carry dark type (4.6) and too light to carry white
+     (3.6), and a deep cobalt is the exact reverse — `night-void` on it is
+     2.6 and fails, `cloud` on it is 6.5 and passes. A dark label on a
+     bright button is also most of what made the CTA read as friendly, so
+     the flip is the direction, not a cost of it.
 
      `night-void` is a darkened Night Black rather than the brand value
      itself: it is the hero's ground, and the footage it sits under fades to
@@ -80,22 +96,35 @@
      terminal. The page canvas itself is pure #000, which the hero's own
      gradients terminate on so the shot meets the section below without a
      seam; #000 is the darkest member of the Night Black family. */
-  --color-night: #1e272e;
-  --color-night-deep: #141c22;
-  --color-night-void: #04090e;
-  --color-night-edge: #27333c;
-  --color-night-rim: #36424d;
+  --color-night: #151b23;
+  --color-night-deep: #0d1219;
+  --color-night-void: #020509;
+  --color-night-edge: #212a36;
+  --color-night-rim: #313b4a;
 
-  --color-cloud: #f5f6fa;
-  --color-cloud-dim: #aeb8c4;
-  --color-cloud-mute: #93a1ae;
-  --color-cloud-faint: #7d8894;
+  --color-cloud: #e4e9f2;
+  --color-cloud-dim: #9aa6b6;
+  --color-cloud-mute: #808e9f;
+  --color-cloud-faint: #75818f;
 
-  --color-electric: #0984e3;
+  --color-electric: #1a4fa0;
   /* The hover step, not a second brand colour: Electric Blue lifted enough
      to read as a state change without shifting hue. */
-  --color-electric-lift: #3a9fea;
-  --color-cyan-neon: #00cec9;
+  --color-electric-lift: #2461bd;
+  /* The text step. Two surfaces already claimed in their own comments that
+     `held` "has to clear 4.5:1 at 11px" and then wrote `electric`, which is
+     2.6 — the requirement was stated and the value never followed it, so an
+     eleven-pixel label carrying the one thing the section is about sat at
+     roughly half the legibility of the body copy beside it.
+
+     Raising `electric` itself was not available: it is a *fill*, and a fill
+     bright enough for 11px type is the cheerful azure the whole family was
+     cooled away from. So the value moves and the hue does not — same blue,
+     lifted to where small type survives on `night-void` (5.1). Fill and text
+     are two jobs; they were one token because the page had not yet needed
+     the second. */
+  --color-electric-text: #3b7ee0;
+  --color-cyan-neon: #2aa3ad;
 
   /* There used to be a second set of names here — `pitch`, `abyss`, `iron`,
      `gunmetal`, `tidal`, `steel`, `haze`, `fog`, `paper` — aliasing the exact
@@ -253,7 +282,7 @@ body {
   padding: 0 16px;
   border-radius: var(--radius-md);
   background: var(--color-electric);
-  color: var(--color-night-void);
+  color: var(--color-cloud);
   font-family: var(--font-inter-variable);
   font-size: 14px;
   font-weight: 510;
@@ -601,13 +630,18 @@ main:focus {
   animation: key-press 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* ── Evidence — six measured facts on a bento grid ───────────────────────
-   A four-column grid where two cells hold a column pair. The wide cells are
-   the two that need a sentence — the fastest path and the honest limit; the
-   four narrow cells are figure, unit, and the file that settles them, and
-   nothing else. The figures are read off the source — the bench, a grep with
-   no hits, the Block-level built-ins, the fields the project ratchet covers,
-   the ADR number — so the grid is a citation, not a stat wall. */
+/* ── Evidence — six measured facts as a plate table ──────────────────────
+   The figures are read off the source — the bench, a grep with no hits, the
+   Block-level built-ins, the fields the project ratchet covers, the ADR
+   number — so this is a citation, not a stat wall. The layout says so: the
+   six read as numbered plates in a technical document, not as product cards.
+
+   Nothing here is boxed. The only edge in the section is the hairline
+   between two columns, which is also the only thing doing the grouping —
+   a card would have drawn four edges to say what one rule and a shared
+   baseline already say. That leaves the drawings sitting directly on the
+   page's black, which is what lets a wireframe read as a wireframe instead
+   of as an illustration pasted into a panel. */
 
 .ev-intro {
   margin-bottom: 40px;
@@ -645,220 +679,205 @@ main:focus {
   }
 }
 
-/* One column on a phone, two on a tablet, four on a desktop. The wide cells
-   take a column pair at every step above the phone, so the bento rhythm —
-   wide / narrow / narrow, then narrow / narrow / wide — survives the fold
-   down to two columns instead of collapsing into a uniform card wall. */
-.ev-bento {
+/* One column on a phone, two on a tablet, three on a desktop — six plates
+   fold to 3x2, 2x3, 1x6 and never leave an orphan row. */
+.ev-plates {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
   list-style: none;
   margin: 0;
   padding: 0;
 }
 @media (min-width: 640px) {
-  .ev-bento { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .ev-cell--wide { grid-column: span 2; }
+  .ev-plates { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (min-width: 1024px) {
-  .ev-bento {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
-  }
+  .ev-plates { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-/* The reveal wrapper is the grid child, so the card itself can stretch to the
-   row height and keep every name on the same baseline. */
-.ev-cell,
-.ev-cell-reveal {
+/* The rule is drawn by the plate that sits to the right of it, never by the
+   grid, so the section can never end on a hanging edge. `nth-child` is keyed
+   to the same counts as the breakpoints above: whichever plate opens a row
+   has no rule, because a rule there would be an outer border. */
+.ev-plate {
   display: flex;
   min-width: 0;
+  padding: 34px 0;
+  border-top: 1px solid var(--color-night-edge);
 }
-.ev-cell-reveal { flex: 1; }
+.ev-plate:first-child { border-top: none; }
 
-/* The whole cell is the link. The file that settles the claim is named on the
-   card, so the reader never has to hunt for a second affordance to check it. */
-.ev-card {
+/* Each breakpoint restates the full set — rule, inline padding, and the two
+   ends of the row — rather than patching the one before it. The column count
+   changes between them, so `nth-child(2n + 1)` means the row opener at one
+   width and a mid-row plate at the next; inheriting any part of that across a
+   breakpoint is how a plate ends up with its caption welded to the rule. */
+@media (min-width: 640px) {
+  .ev-plate {
+    padding: 0 26px;
+    border-top: none;
+    border-left: 1px solid var(--color-night-edge);
+  }
+  .ev-plate:nth-child(2n + 1) { border-left: none; padding-left: 0; }
+  .ev-plate:nth-child(2n) { padding-right: 0; }
+  /* Rows below the first need their own separation, and it has to be space
+     rather than a second rule: a horizontal hairline crossing the vertical
+     ones would turn a set of plates into a table of cells. */
+  .ev-plate:nth-child(n + 3) { padding-top: 56px; }
+}
+@media (min-width: 1024px) {
+  .ev-plate {
+    padding: 0 34px;
+    border-left: 1px solid var(--color-night-edge);
+  }
+  .ev-plate:nth-child(n) { padding-top: 0; }
+  .ev-plate:nth-child(3n + 1) { border-left: none; padding-left: 0; }
+  .ev-plate:nth-child(3n + 2) { border-left: 1px solid var(--color-night-edge); padding-left: 34px; }
+  .ev-plate:nth-child(3n) { border-left: 1px solid var(--color-night-edge); padding-left: 34px; padding-right: 0; }
+  .ev-plate:nth-child(n + 4) { padding-top: 64px; }
+}
+
+.ev-plate-reveal { display: flex; flex: 1; min-width: 0; }
+
+/* The whole plate is the link — figure number, drawing, name, claim, and the
+   file that settles it are one target, because they are one citation. */
+.ev-figure {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-width: 0;
-  min-height: 244px;
-  padding: 26px;
-  border: 1px solid var(--color-night-edge);
-  border-radius: var(--radius-xl);
-  background:
-    linear-gradient(180deg, rgba(30, 39, 46, 0.5) 0%, rgba(20, 28, 34, 0.85) 100%);
-  transition:
-    border-color 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-    background-color 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  color: var(--color-cloud-faint);
 }
-@media (min-width: 640px) {
-  .ev-card { min-height: 292px; padding: 28px; }
-}
-@media (min-width: 1024px) {
-  .ev-card { min-height: 324px; padding: 30px; }
-  /* The wide cell is roomier across, not taller inside: the extra horizontal
-     inset is what makes it read as the heavier claim, while the vertical
-     padding stays at the row's value so its mark and its note sit on the same
-     two lines as the narrow cells beside it. */
-  .ev-cell--wide .ev-card { padding: 30px 38px; }
-}
-@media (hover: hover) and (pointer: fine) {
-  .ev-card:hover {
-    border-color: var(--color-night-rim);
-    background-color: rgba(245, 246, 250, 0.02);
-    transform: translateY(-3px);
-    box-shadow: 0 24px 48px -24px rgba(0, 0, 0, 0.65);
-  }
-  .ev-card:hover .ev-icon-tile {
-    border-color: var(--color-night-rim);
-    transform: scale(1.045);
-    box-shadow:
-      0 20px 32px -14px rgba(0, 0, 0, 0.6),
-      0 0 0 1px rgba(245, 246, 250, 0.05) inset;
-  }
-  .ev-card:hover .ev-source { color: var(--color-cloud); }
-  .ev-card:hover .ev-arrow { transform: translate(2px, -2px); }
-}
-.ev-card:focus-visible {
+.ev-figure:focus-visible {
   outline: 1px solid var(--color-cloud);
-  outline-offset: 3px;
-  border-color: var(--color-night-rim);
+  outline-offset: 8px;
 }
 
-/* The mark and the citation share the top of the cell, and on a wide cell they
-   fit side by side. On a narrow one they cannot: at the 1024 breakpoint the
-   cell is 233px, which is 173px of content against a 140px mark — 33px for a
-   ~100px mono filename. Without a wrap the label simply overflowed the card
-   and drew itself across the neighbouring cell, by as much as 96px.
+/* The plate number, set the way a plate number is set: mono, tracked wide
+   open, and quiet enough that it reads as apparatus rather than as content.
 
-   `flex-wrap` lets it drop to its own line under the mark instead, and
-   `margin-left: auto` keeps it right-aligned there, so the resting
-   composition on a wide cell is unchanged and only the cells that cannot hold
-   the row stack it. The label is a citation — a path the reader is meant to
-   open — so it wraps rather than truncating: an elided `patterns.to…` would
-   be worse than a second line. */
-.ev-card-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px 16px;
-}
-
-/* The mark carries the cell — drawn large and given real depth (shadow +
-   inset highlight) so it reads as a crafted product glyph, not a chrome-sized
-   affordance icon. Sizing steps up again on wide cells to keep the two lead
-   claims visually heavier than the supporting four. */
-.ev-icon-tile {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 116px;
-  height: 116px;
-  flex: none;
-  overflow: hidden;
-  border: 1px solid var(--color-night-edge);
-  border-radius: 24px;
-  box-shadow:
-    0 14px 28px -16px rgba(0, 0, 0, 0.6),
-    0 0 0 1px rgba(245, 246, 250, 0.03) inset;
-  transition:
-    border-color 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.ev-icon {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-@media (min-width: 640px) {
-  .ev-icon-tile { width: 130px; height: 130px; border-radius: 26px; }
-}
-@media (min-width: 768px) {
-  .ev-cell--wide .ev-icon-tile { width: 158px; height: 158px; border-radius: 30px; }
-}
-@media (min-width: 1024px) {
-  .ev-icon-tile { width: 140px; height: 140px; border-radius: 28px; }
-  .ev-cell--wide .ev-icon-tile { width: 172px; height: 172px; }
-}
-
-.ev-source {
-  display: inline-flex;
-  align-items: center;
-  margin-left: auto;
-  min-width: 0;
-  gap: 5px;
-  padding-top: 4px;
+   Quiet has a floor, and this was under it: `night-rim` is a border token
+   (1.8:1, and the palette above says so in as many words), and at 11px it put
+   the number at 1.86:1 — not quiet, absent. `cloud-faint` is the token whose
+   stated job is exactly this, labels and meta, and it clears AA at 5.1. The
+   figures are the section's whole claim — numbered so a reader can go and
+   check them — so the number has to be readable to a reader who is not
+   hovering it. */
+.ev-fig-no {
   font-family: var(--font-berkeley-mono);
   font-size: 11px;
-  line-height: 1.2;
-  letter-spacing: 0.02em;
+  line-height: 1;
+  letter-spacing: 0.16em;
   color: var(--color-cloud-faint);
-  transition: color 0.18s ease-out;
-}
-.ev-arrow {
-  flex: none;
-  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Name and note sit on the floor of the cell — the mark at the top, the words
-   at the bottom, and the gap between them is what keeps a dense grid from
-   reading as a table. */
-.ev-body {
+/* The drawing gets the height, and it gets it as a fixed box so all six sit
+   on one horizon: a figure that grew with its own content would put six
+   different baselines under six captions that are supposed to line up. */
+.ev-fig-art {
   display: flex;
-  flex-direction: column;
-  gap: 7px;
-  margin-top: auto;
-  padding-top: 28px;
+  align-items: center;
+  justify-content: center;
+  margin: 26px 0 30px;
+  height: 190px;
+}
+.ev-fig-art svg {
+  width: 100%;
+  max-width: 300px;
+  height: 100%;
+  overflow: visible;
 }
 @media (min-width: 1024px) {
-  .ev-body { padding-top: 34px; }
+  .ev-fig-art { margin: 34px 0 40px; height: 210px; }
+}
+
+/* Three stroke roles, and the split is what makes six drawings read as one
+   set. `dim` is the body of the object. `key` is the part that carries the
+   claim — the rail, the chain, the pawl, the strike-through. `dash` is what
+   is absent, blocked, or out of scope. A viewer never has to be told which
+   line to look at. */
+.ev-fig-dim,
+.ev-fig-key,
+.ev-fig-dash {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  transition: stroke-opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ev-fig-dim { stroke-width: 1; stroke-opacity: 0.38; }
+.ev-fig-key { stroke-width: 1.1; stroke-opacity: 0.85; }
+.ev-fig-dash {
+  stroke-width: 1;
+  stroke-opacity: 0.5;
+  stroke-dasharray: 3 5;
+}
+
+.ev-caption {
+  display: flex;
+  flex-direction: column;
+  margin-top: auto;
+  gap: 8px;
 }
 
 .ev-title-card {
   font-family: var(--font-inter-variable);
   font-weight: 700;
-  font-size: 20px;
-  line-height: 1.25;
-  letter-spacing: -0.42px;
+  font-size: 16px;
+  line-height: 1.3;
+  letter-spacing: -0.2px;
   color: var(--color-cloud);
 }
-@media (min-width: 768px) {
-  .ev-cell--wide .ev-title-card {
-    font-size: 26px;
-    letter-spacing: -0.6px;
-  }
-}
 
-/* The leading is a fixed 21px rather than a 1.5 ratio, because the wide cells
-   set this text one step larger and a ratio made their line box 22.5px. Two
-   lines of that is 45px against the narrow cells' 42px, and since the body is
-   bottom-anchored the extra 3px pushed the wide cell's note — and the name
-   above it — up out of line with its own row. A shared line box is what makes
-   the row a row; the size step is still visible in the letterforms. */
-.ev-note {
-  max-width: 34ch;
-  font-family: var(--font-inter-variable);
-  font-size: 14px;
-  line-height: 21px;
-  letter-spacing: -0.14px;
-  color: var(--color-cloud-dim);
-}
 /* The note reserves two lines whether or not it needs them, so the names in a
    row land on one baseline instead of stepping with each sentence's wrap. */
-@media (min-width: 640px) {
-  .ev-note { min-height: 42px; }
+.ev-note {
+  max-width: 32ch;
+  font-family: var(--font-inter-variable);
+  font-size: 15px;
+  line-height: 24px;
+  letter-spacing: -0.1px;
+  color: var(--color-cloud-dim);
 }
-@media (min-width: 768px) {
-  .ev-cell--wide .ev-note { font-size: 15px; }
+@media (min-width: 640px) {
+  .ev-note { min-height: 48px; }
 }
 
+.ev-source {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  margin-top: 4px;
+  min-width: 0;
+  gap: 5px;
+  font-family: var(--font-berkeley-mono);
+  font-size: 11px;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  color: var(--color-cloud-faint);
+  transition: color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ev-arrow {
+  flex: none;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Hover lifts the drawing out of the page rather than moving the plate. There
+   is no card to raise and no border to light up, so the only thing that can
+   answer the pointer is the ink itself — which is also the thing the visitor
+   is pointing at. */
+@media (hover: hover) and (pointer: fine) {
+  .ev-figure:hover .ev-fig-dim { stroke-opacity: 0.6; }
+  .ev-figure:hover .ev-fig-key { stroke-opacity: 1; }
+  .ev-figure:hover .ev-fig-dash { stroke-opacity: 0.72; }
+  /* One step up from the resting `cloud-faint`, so hover is still a change
+     now that rest is legible on its own. */
+  .ev-figure:hover .ev-fig-no { color: var(--color-cloud-dim); }
+  .ev-figure:hover .ev-source { color: var(--color-cloud); }
+  .ev-figure:hover .ev-arrow { transform: translate(2px, -2px); }
+}
 /* ── Incident log — a drifting wall of real screenshots ──────────────────
    The evidence is the artwork: unedited captures of public posts, framed in
    the page's own hairline-on-carbon idiom and normalised to one row height so
@@ -1009,10 +1028,17 @@ main:focus {
   text-transform: uppercase;
   color: var(--color-cloud-dim);
 }
+/* The padding buys the target, the negative margin gives back the layout: at
+   12px on a 1.4 line the link was 17px tall, under the 24px floor of WCAG
+   2.5.8, and it is the only way out of this section. Four pixels either side
+   clear the floor; the matching negative margin keeps the caption bar the
+   height the row of screenshots was measured against. */
 .incident-shot-caption a {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  padding-block: 4px;
+  margin-block: -4px;
   color: var(--color-cloud);
   transition: color 0.15s ease-out;
 }
@@ -1059,6 +1085,29 @@ main:focus {
 /* Copy button — press feedback */
 .copy-btn:active {
   transform: scale(0.97);
+}
+
+/* The visible box stays 21px, because the button sits inside a 40px-tall
+   install field and a real 44px control would either burst that field or push
+   the command's truncation in by two characters. The target grows instead of
+   the box: the same invisible pad the burger uses, centred on what the eye
+   already aims at. 21px is under even the 24px floor of WCAG 2.5.8, and this
+   is the one control on the page a phone visitor is most likely to press.
+
+   `position: relative` is not inherited from a utility here — the button
+   carries no positioning class — so it is declared with the pad it anchors,
+   rather than left to a Tailwind class someone could drop later. */
+.copy-btn {
+  position: relative;
+}
+.copy-btn::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
 }
 
 /* ── Taped get-started footer ──────────────────────────────────────────
@@ -1184,7 +1233,7 @@ main:focus {
 .taped-footer-primary {
   border: 1px solid var(--color-electric);
   background: var(--color-electric);
-  color: var(--color-night-void);
+  color: var(--color-cloud);
 }
 .taped-footer-secondary {
   border: 1px solid var(--color-night-rim);
@@ -1326,6 +1375,25 @@ main:focus {
 @media (hover: hover) and (pointer: fine) {
   .link-arrow-group:hover .link-arrow {
     transform: translateX(3px);
+  }
+}
+
+/* The claim section's hairline starts collapsed in CSS, not in JS.
+   Its drawn state is the element's natural one — `w-full bg-cyan-neon` — so
+   until GSAP mounted and set `scaleX: 0`, the browser painted the finished
+   neon bar at full width. Measured on the production build: `transform: none`
+   at 1120px wide for the first ~200ms after navigation, ~800ms in dev, and
+   wherever the layout happens to put it — over the hero on the first paint
+   before the pin spacer exists, or straight across the viewport on a reload
+   that restores scroll. A line that draws itself is the intent; a line that is
+   already there and then vanishes is not.
+   Only the fill is hidden. The `bg-night-edge` track it rides on is untouched,
+   so a visitor whose bundle never arrives still gets the hairline — the same
+   contract the words keep by rendering at full opacity. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-rule-fill] {
+    transform: scaleX(0);
+    transform-origin: left center;
   }
 }
 
