@@ -58,6 +58,12 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Fixed
 
+- `aegis install-hooks`/`uninstall` fully own Aegis' hook registrations: one
+  shared prune (every matcher, both hook kinds, both agents) drops any
+  Aegis-managed command that is not the canonical `(matcher, command)` entry;
+  `uninstall` also removes the Claude session-start payload and registration it
+  previously left behind. (#175)
+
 - `aegis install-hooks` no longer aborts an agent's install because another
   tool's `SessionStart` or `PreToolUse` entry omits `matcher`. Both agents treat
   the field as optional, so a third-party hook could stop Aegis registering

@@ -311,8 +311,13 @@ fn install_is_idempotent_and_preserves_existing_entries() {
     );
 }
 
+/// A non-`Bash` matcher carrying an Aegis-managed command is a superseded
+/// registration the agent no longer fires Aegis on. The unified prune walks
+/// every matcher, so a rerun drops the managed command (and the entry it
+/// emptied) instead of leaving a dead registration alongside the canonical
+/// one (#175 gap 2).
 #[test]
-fn install_ignores_non_bash_hook_with_aegis_command() {
+fn install_prunes_a_non_bash_hook_with_an_aegis_managed_command() {
     let mut settings = serde_json::json!({
         "hooks": {
             "PreToolUse": [
@@ -331,12 +336,16 @@ fn install_ignores_non_bash_hook_with_aegis_command() {
 
     let outcome = apply_installation(&mut settings, TEST_HOOK_COMMAND).expect("install");
     assert!(matches!(outcome, InstallOutcome::Installed));
+
+    let pre_tool_use = &settings["hooks"]["PreToolUse"];
+    assert!(
+        !any_hook_command(pre_tool_use, "aegis hook"),
+        "the superseded non-Bash aegis registration must be pruned; settings=\n{pre_tool_use}"
+    );
     assert_eq!(
-        settings["hooks"]["PreToolUse"]
-            .as_array()
-            .expect("PreToolUse array")
-            .len(),
-        2
+        aegis_entry_count(pre_tool_use, TEST_HOOK_COMMAND),
+        1,
+        "exactly one canonical aegis-managed Bash entry must remain; settings=\n{pre_tool_use}"
     );
 }
 

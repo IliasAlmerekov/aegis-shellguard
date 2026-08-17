@@ -4,6 +4,7 @@ mod hook;
 mod shell;
 
 use std::env;
+use std::ffi::OsStr;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -194,29 +195,154 @@ pub(crate) fn combine_outcomes(lhs: InstallOutcome, rhs: InstallOutcome) -> Inst
     }
 }
 
-/// True when `entries` already registers `command` under `matcher` — that is,
-/// when Aegis' own hook is present *and* wired to fire.
+/// A Bash hook command that Aegis owns and may migrate away on install. The
+/// predicate matches by **basename** for the file-backed forms so a moved or
+/// renamed home directory still migrates; the bare two-token `aegis hook`
+/// command is matched as a whole string (it is not a path). A user hook that
+/// merely contains the substring `aegis` but is none of these is preserved.
+pub(crate) fn is_aegis_managed_bash_command(command: &str) -> bool {
+    if command == "aegis hook" {
+        return true;
+    }
+    let Some(basename) = Path::new(command).file_name().and_then(OsStr::to_str) else {
+        return false;
+    };
+    basename == "aegis-rewrite.sh" || basename == "aegis-pre-tool-use.sh"
+}
+
+/// A `SessionStart` hook command that Aegis owns. Matched by **basename** so a
+/// moved home directory still migrates. Aegis has only ever installed the
+/// session-start payload as `aegis-session-start.sh`, so that is the sole
+/// managed name.
+pub(crate) fn is_aegis_managed_session_start_command(command: &str) -> bool {
+    Path::new(command)
+        .file_name()
+        .and_then(OsStr::to_str)
+        .is_some_and(|basename| basename == "aegis-session-start.sh")
+}
+
+/// Walk `entries` and prune every Aegis-managed hook command that is not the
+/// canonical `(canonical_matcher, canonical_command)` registration, then drop
+/// any entry the pruning emptied. Returns `(pruned_any, canonical_present)`.
 ///
-/// Both halves are load-bearing. Matching on the command alone would accept a
-/// registration under a matcher Aegis never installs, which the agent never
-/// fires: the operator would be left unguarded while a rerun of
-/// `aegis install-hooks` reported success. Requiring the matcher lets a rerun
-/// repair such a dead registration by adding a correctly-matched entry.
+/// `section_label` names the section for fail-closed error messages.
 ///
-/// Anything else is another tool's entry, and other tools' entries are not ours
-/// to validate — `matcher` is optional to the agent, and a third-party entry may
-/// be shaped however that tool likes. Unrecognized shapes are skipped rather
-/// than rejected: refusing to install because a foreign entry looks unfamiliar
-/// leaves the operator with no hook at all (TASKS.md#M3a).
-pub(crate) fn hook_registered_under(entries: &[Value], matcher: &str, command: &str) -> bool {
-    entries.iter().any(|entry| {
-        entry["matcher"] == matcher
-            && entry["hooks"].as_array().is_some_and(|hooks| {
-                hooks
-                    .iter()
-                    .any(|hook| hook["type"] == "command" && hook["command"] == command)
-            })
-    })
+/// Under the canonical matcher Aegis owns the namespace and validates it
+/// strictly — a malformed entry fails closed rather than risking a missed
+/// stale registration or a corrupted prune. Under any other matcher a foreign
+/// shape is left untouched; Aegis still drops its own managed commands
+/// wherever it finds them, including the canonical command under a wrong
+/// matcher. `is_managed` identifies Aegis' own commands by basename.
+/// `canonical_present` is true only when the canonical command sits under the
+/// canonical matcher, so a rerun adds a fresh registration when a stale one
+/// moved matcher.
+pub(crate) fn prune_aegis_managed_hooks(
+    entries: &mut Vec<Value>,
+    section_label: &str,
+    canonical_matcher: &str,
+    canonical_command: &str,
+    is_managed: impl Fn(&str) -> bool,
+) -> Result<(bool, bool), String> {
+    let mut pruned_any = false;
+    let mut canonical_present = false;
+    let mut drop_indices: Vec<usize> = Vec::new();
+
+    for (idx, entry) in entries.iter_mut().enumerate() {
+        // A non-object entry is not one Aegis manages — `matcher` is optional
+        // to the agent and a third-party entry may be shaped however that tool
+        // likes. Skip it rather than rejecting it: refusing to install over a
+        // foreign shape leaves the operator with no hook at all (TASKS.md#M3a).
+        let Some(entry_obj) = entry.as_object_mut() else {
+            continue;
+        };
+
+        // Read the matcher before borrowing `hooks` mutably.
+        let matcher = entry_obj
+            .get("matcher")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let matcher_is_canonical = matcher == canonical_matcher;
+
+        let Some(hooks) = entry_obj.get_mut("hooks").and_then(Value::as_array_mut) else {
+            // Missing/non-array `hooks`: under the canonical matcher Aegis owns
+            // the namespace and fails closed; elsewhere it is a foreign shape
+            // left untouched.
+            if matcher_is_canonical {
+                return Err(format!(
+                    "{section_label} matching {canonical_matcher} must contain a hooks array"
+                ));
+            }
+            continue;
+        };
+
+        if matcher_is_canonical {
+            // Validate every hook shape before pruning so malformed hooks fail
+            // closed exactly as the historical validation did — Aegis writes
+            // into this namespace and must be able to safely prune and add.
+            for hook in hooks.iter() {
+                let hook_obj = hook.as_object().ok_or_else(|| {
+                    format!(
+                        "{section_label} matching {canonical_matcher} hooks must contain objects"
+                    )
+                })?;
+                hook_obj
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        format!(
+                            "{section_label} matching {canonical_matcher} hook must contain a string type"
+                        )
+                    })?;
+                hook_obj
+                    .get("command")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        format!(
+                            "{section_label} matching {canonical_matcher} hook must contain a string command"
+                        )
+                    })?;
+            }
+        }
+
+        let before = hooks.len();
+        let mut found_canonical_here = false;
+        hooks.retain(|hook| {
+            let Some(command) = hook
+                .as_object()
+                .and_then(|h| h.get("command"))
+                .and_then(|c| c.as_str())
+            else {
+                // A foreign hook shape under a non-canonical matcher. Keep it.
+                return true;
+            };
+            if matcher_is_canonical && command == canonical_command {
+                found_canonical_here = true;
+                return true;
+            }
+            // Keep third-party hooks; drop only Aegis-managed commands,
+            // including the canonical command under a wrong matcher.
+            !is_managed(command)
+        });
+
+        if hooks.len() < before {
+            pruned_any = true;
+        }
+        if found_canonical_here {
+            canonical_present = true;
+        }
+        // Drop the entry only if pruning emptied a previously-non-empty entry,
+        // so an already-empty or foreign entry is left untouched.
+        if before > 0 && hooks.is_empty() {
+            drop_indices.push(idx);
+        }
+    }
+
+    // Remove emptied entries in reverse index order to keep indices valid.
+    for idx in drop_indices.into_iter().rev() {
+        entries.remove(idx);
+    }
+
+    Ok((pruned_any, canonical_present))
 }
 
 pub(crate) fn load_settings(path: &Path) -> Result<Value, String> {

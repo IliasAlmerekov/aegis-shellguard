@@ -13,7 +13,7 @@
 
 ## Active branch
 
-`agent/close-m3a`
+`agent/prune-superseded-hooks`
 
 ## Last updated
 
@@ -21,7 +21,28 @@
 
 ---
 
-## Last session (2026-08-17) — M3a closed
+## Last session (2026-08-17) — #175 install/uninstall own Aegis' hook registrations
+
+- **#175 closed.** One shared `prune_aegis_managed_hooks` in `src/install/mod.rs`
+  walks every matcher and drops any Aegis-managed command that is not the
+  canonical `(matcher, command)` registration; both hook kinds (`PreToolUse`,
+  `SessionStart`) for both agents route through it, replacing the Bash-only
+  prune and the add-without-prune `SessionStart` path. `scripts/uninstall.sh`
+  additionally removes the Claude `aegis-session-start.sh` payload and its
+  `SessionStart` registration, which it previously left behind. Design decision
+  (user-confirmed): strict on the canonical matcher (fail closed), tolerant of
+  foreign shapes elsewhere — the pre-existing Claude `Bash`-malformed contract
+  is preserved.
+
+- **Verified:** `cargo test --workspace` = 2081 / 0 failed; `clippy
+  --all-targets -- -D warnings`; `fmt --all --check` clean. Hot path untouched.
+
+- **Open:** `code-review` ran (Standards + Spec); `re-review` + any fixes in
+  progress before push/PR.
+
+---
+
+## Prior session (2026-08-17) — M3a closed
 
 - **M3a is closed.** The session-start visibility work was already on `main`;
   this session audited it against each acceptance criterion, closed the gaps the
