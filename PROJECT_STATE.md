@@ -76,7 +76,15 @@
   benchmark run required — the scanner hot path is untouched and the one extra
   fork per hook invocation is outside the sub-2 ms safe-path budget.
 
-- **Open:** `code-review` (Standards + Spec) and `re-review` before push/PR.
+- **Review (2026-08-17):** `code-review` (Standards + Spec) and `re-review`
+  (adversarial) ran. Standards: no hard violations; 4 baseline smells, of which
+  the two actionable ones were fixed. Spec: 3 findings, of which the two
+  actionable ones were fixed. `re-review` verdicts: REAL #1 (factor
+  `assert_abnormal_deny`), #5 (assert exactly one stderr line); FALSE-POSITIVE
+  #3/#4/#7; JUDGEMENT-CALL #6/#8 (not live bugs). Both REAL findings fixed via
+  TDD in `tests/agent_hooks_m4.rs` and confirmed closed; workspace tests,
+  clippy `-D warnings`, fmt, audit, deny all green. M4 checked off in `TASKS.md`.
+- **Open:** push branch and open PR for #178; close #178 on merge.
 
 ---
 

@@ -317,16 +317,18 @@ the project Definition of Done in `~/.agents/ENGINEERING_GATES.md` is satisfied.
 - **Traceability:** [ADR-011](docs/adr/adr-011-hooks-rewrite-transparently-in-rust-and-setup-shell-escapes.md);
   commit `091950c`; hook rewrite tests.
 
-### [ ] M4 — Hook panics can produce no deny response
+### [x] M4 — Hook panics can produce no deny response
 
 - **Finding:** an unwind across the hook entry point can leave the agent without
   a structured deny response.
 - **Acceptance criteria:** panics at the hook boundary are contained and converted
   into the correct Claude/Codex deny shape; ordinary error handling and panic-free
   paths remain unchanged.
-- **Status:** **Open** — confirmed.
+- **Status:** **Closed** — verified 2026-08-17.
 - **Traceability:** [plan](docs/plans/2026-07-14-m4-hook-panic-fail-closed.md);
-  `src/install/hook.rs`.
+  [ADR-023](docs/adr/adr-023-hook-panic-fails-closed-in-two-layers.md);
+  commits `7e6d73e`, `766c0d9`; `src/install/hook.rs`, `scripts/hooks/*.sh`,
+  `tests/agent_hooks_m4.rs`.
 
 ### [ ] M5 — Remaining point pattern gaps
 
