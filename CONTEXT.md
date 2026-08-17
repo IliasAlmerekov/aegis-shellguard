@@ -321,6 +321,33 @@ The global on/off switch checked at command boundaries; when off, Aegis passes c
 through unguarded (ADR-005).
 _Avoid_: enable flag, kill switch
 
+**CI override**:
+The rule that a continuous-integration environment keeps enforcement on regardless of a
+`Toggle` that is off, so an operator's local escape hatch cannot silently travel into
+automation (ADR-006). It only ever tightens: it cannot turn enforcement off.
+_Avoid_: CI mode, CI bypass, forced mode
+
+**Effective enforcement state**:
+Whether Aegis actually inspects commands right now, after resolving the `Toggle` against
+the `CI override` — as opposed to what the `Toggle` alone says. `aegis status` is the
+authoritative surface for it; every other surface reports it rather than deciding it.
+The three states are enforcing, enforcing by `CI override`, and disabled passthrough.
+_Avoid_: toggle state, effective mode, actual state
+
+**Disabled passthrough**:
+The `Effective enforcement state` in which Aegis runs commands without inspecting them.
+Intentional and operator-chosen — not a failure and not a `Decision`. Nothing is
+classified, confirmed, or snapshotted while it holds.
+_Avoid_: bypass, off mode, unguarded mode
+
+**Session-start notice**:
+The message an agent integration emits when a session begins, reporting the
+`Effective enforcement state` so a new session cannot inherit `Disabled passthrough`
+unseen. Informational only: it is not a `Decision` and produces no audit entry — only
+`Toggle` transitions are auditable. It travels inside the agent's own protocol envelope
+and never as loose output that would corrupt it.
+_Avoid_: session warning, startup banner, session audit
+
 **Sandbox**:
 An OS-level confinement profile optionally applied to an approved command before it
 executes. A best-effort write/network guardrail add-on, not a security or

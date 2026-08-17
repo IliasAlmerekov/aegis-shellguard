@@ -178,8 +178,12 @@ fn global_claude_install_errors_on_malformed_nested_bash_hook_entry() {
     assert!(err.contains("settings.hooks.PreToolUse"));
 }
 
+// Neither shape below is one Aegis wrote or manages, so neither may block the
+// install. A `Bash`-matched entry with a malformed body still fails closed —
+// that case is covered by the malformed-nested-hook test above.
+
 #[test]
-fn global_claude_install_errors_on_non_object_pre_tool_use_member() {
+fn global_claude_install_ignores_a_foreign_non_object_pre_tool_use_member() {
     let home = TempDir::new().expect("home dir");
     let claude_dir = home.path().join(".claude");
     fs::create_dir_all(&claude_dir).expect("create claude dir");
@@ -194,14 +198,14 @@ fn global_claude_install_errors_on_non_object_pre_tool_use_member() {
     )
     .expect("write settings");
 
-    let err = run_global_claude_install_at_home(Some(home.path()))
-        .expect_err("non-object pre-tool-use member should error");
+    let outcome =
+        run_global_claude_install_at_home(Some(home.path())).expect("install must not be blocked");
 
-    assert!(err.contains("settings.hooks.PreToolUse"));
+    assert!(matches!(outcome, InstallOutcome::Installed));
 }
 
 #[test]
-fn global_claude_install_errors_on_non_string_bash_matcher() {
+fn global_claude_install_ignores_a_foreign_entry_with_a_non_string_matcher() {
     let home = TempDir::new().expect("home dir");
     let claude_dir = home.path().join(".claude");
     fs::create_dir_all(&claude_dir).expect("create claude dir");
@@ -212,7 +216,7 @@ fn global_claude_install_errors_on_non_string_bash_matcher() {
                 "PreToolUse": [
                     {
                         "matcher": 7,
-                        "hooks": []
+                        "hooks": [{ "type": "command", "command": "echo foreign" }]
                     }
                 ]
             }
@@ -221,10 +225,30 @@ fn global_claude_install_errors_on_non_string_bash_matcher() {
     )
     .expect("write settings");
 
-    let err = run_global_claude_install_at_home(Some(home.path()))
-        .expect_err("non-string matcher should error");
+    let outcome =
+        run_global_claude_install_at_home(Some(home.path())).expect("install must not be blocked");
 
-    assert!(err.contains("settings.hooks.PreToolUse"));
+    assert!(matches!(outcome, InstallOutcome::Installed));
+
+    let settings: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(claude_dir.join("settings.json")).expect("read settings"),
+    )
+    .expect("parse settings");
+    let commands: Vec<String> = settings["hooks"]["PreToolUse"]
+        .as_array()
+        .expect("PreToolUse array")
+        .iter()
+        .filter_map(|entry| entry["hooks"].as_array())
+        .flatten()
+        .filter_map(|hook| hook["command"].as_str())
+        .map(str::to_owned)
+        .collect();
+    assert!(commands.iter().any(|command| command == "echo foreign"));
+    assert!(
+        commands
+            .iter()
+            .any(|command| command.ends_with("aegis-pre-tool-use.sh"))
+    );
 }
 
 #[test]

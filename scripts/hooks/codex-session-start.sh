@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # aegis-hook-version: 2
-# Codex SessionStart hook — injects the aegis command-routing instruction.
+# Codex SessionStart hook — reports Aegis' effective enforcement state.
 # Installed to: ~/.codex/hooks/aegis-session-start.sh
 
 set -u

@@ -13,15 +13,126 @@
 
 ## Active branch
 
-`agent/l1-iteration-10-slice-1`
+`agent/close-m3a`
 
 ## Last updated
 
-2026-08-06
+2026-08-17
 
 ---
 
-## Last session (2026-08-06) — landing carousel and taped footer
+## Last session (2026-08-17) — M3a closed
+
+- **M3a is closed.** The session-start visibility work was already on `main`;
+  this session audited it against each acceptance criterion, closed the gaps the
+  audit found, and recorded the evidence. Three criteria were already covered by
+  tests (`aegis off`/`on` auditing including the loud audit-failure path, the
+  session-start notice on both agents, `aegis status` authority). The fourth —
+  documented disabled-passthrough semantics — had prose but no contract test,
+  unlike H9 and M1, which each got one at closure.
+
+- **Added `tests/toggle_parity.rs`.** The hooks resolve the Toggle and the CI
+  override inline in shell (ADR-007), so nothing kept them agreeing with
+  `runtime_gate::is_ci_environment` and the toggle flag path — a drift there
+  would make the notice report a state the wrapper does not act on. Each case
+  derives the effective state twice, from `aegis status` stdout and from the
+  notice text, and requires agreement across six environments including a falsy
+  `AEGIS_CI` and a non-empty `JENKINS_URL`. Parity held on all six; the suite was
+  mutation-checked (dropping Jenkins detection from one hook fails exactly the
+  Jenkins case).
+
+- **Fixed two install defects.** The first was found by the live smoke, not the
+  suite: `aegis install-hooks` validated *every* existing `SessionStart`/
+  `PreToolUse` entry and aborted that agent's install when one lacked a string
+  `matcher`. Both agents treat the field as optional, so a third-party hook that
+  omits it blocked Aegis from registering anything for that agent — reproduced on
+  this machine, where `--all` failed on Codex after the Claude half was written
+  (the halves run independently, so `--all` fails only the affected agent). The
+  same over-strict scan was latent in the Claude installer.
+
+  The second was found by review of the first fix: dropping the matcher
+  comparison went too far. An entry registering Aegis' own command under a
+  matcher Aegis never installs — one the agent never fires — was read as already
+  present, so a rerun reported success over a dead registration and never
+  repaired it. For Codex that covered `PreToolUse`, i.e. interception itself.
+  Presence now requires the command *and* the matcher, shared by both installers
+  through `install::hook_registered_under`; unrecognized entries are still
+  skipped rather than rejected. Four unit tests that pinned the old rejections
+  were retargeted to pin coexistence.
+
+  A third defect surfaced in the round-2 adversarial pass and was fixed the same
+  way: Claude's `PreToolUse` prune-then-add still rejected a foreign entry that
+  omitted `matcher`, and because that pass runs before SessionStart it aborted
+  the whole Claude install — no interception *and* no notice. Pre-existing, not
+  introduced by this branch, but it defeats the same acceptance criterion, so it
+  is closed here. Entries that *are* `Bash`-matched stay strictly validated:
+  those sit in the namespace Aegis prunes.
+
+- **Review cycle (`code-review` two-axis → `skeptic` Verify → `skeptic` Confirm):**
+  9 atomic claims in round 1.
+  Confirmed and fixed: the matcher regression above (behavioral replay: post-fix
+  `["never"]` vs pre-diff `["never","Bash"]`), the overstated "pinned by a test"
+  claim (no test asserted a *successful* toggle appends an audit entry — only the
+  failure path; now pinned by
+  `toggle_cli.rs::a_successful_toggle_appends_an_audit_entry_for_each_transition`),
+  the inaccurate "whole install" wording, and two duplication findings. Refuted:
+  the claim that `CONTEXT.md`'s `_Avoid_: effective mode` contradicts the
+  `aegis status` label — `_Avoid_` is per-concept naming guidance, as the `Hook`
+  entry shows by listing "wrapper" while `Wrapper` remains canonical. Accepted
+  without change: a corrupted *own* entry now yields a duplicate registration
+  rather than an error; that is the intended tolerant direction, and the
+  container-type errors one level up are what must hold to append at all.
+
+  Round 2 replayed both behavioral packets against the fix and closed them
+  (`["never","Bash"]` restored; both agents gain `startup|resume`), and found
+  the Claude `PreToolUse` defect recorded above. **One open human decision:** the
+  repair adds a correctly-matched entry but never prunes the superseded Aegis
+  one, so a hand-edited config can fire the notice twice. The notice is pure
+  stdout — no state, no audit — so the cost is duplicated advisory text, and
+  Aegis has never itself installed SessionStart under any other matcher, making
+  the configuration hypothetical. Claude's `PreToolUse` path *does* prune its
+  stale entries, so the asymmetry is SessionStart-only. Left as is rather than
+  teaching the installer to delete registrations it did not certainly write.
+
+- **Glossary:** `CONTEXT.md` carried `Toggle` alone. Added `Effective enforcement
+  state` (with `aegis status` named authoritative), `CI override`, `Disabled
+  passthrough`, and `Session-start notice` (informational, not auditable).
+
+- **Verified:** `cargo test --workspace` = 2080 passed / 108 suites / 0 failed;
+  `clippy --all-targets -- -D warnings` clean; `fmt --all --check` clean;
+  `cargo audit` = 0 CVEs with the 6 known allowed advisories (opt-in `starlark`
+  chain, P3-7); `cargo deny check` ok. Hot path untouched, so no benchmark run
+  was required. The `analysis::source_reader` Unix-socket test that blocked the
+  prior session's replay did not fire in either full run.
+
+- **Live evidence, both agents (2026-08-17).** A branch build was installed via
+  `cargo install --path .` and `aegis install-hooks --all`. Running the installed
+  hooks directly against the real `HOME` emits the disabled-passthrough notice,
+  matching `aegis status` (`effective mode: disabled passthrough`).
+
+  Real sessions confirm the envelope is accepted, which no unit test can show. A
+  new Codex session reported `SessionStart hook (completed)` and carried the
+  notice verbatim, with no `hook returned invalid session start JSON output`
+  error, then independently ran `aegis status` and agreed with it. A new Claude
+  Code session quoted the same notice as a SessionStart system message. Both
+  agents therefore see the effective state at session start, which is the
+  criterion no in-process test could close.
+
+- **Two live findings worth carrying forward.** (1) This machine's
+  `~/.claude/hooks/aegis-pre-tool-use.sh` had `AEGIS_BIN` templated to
+  `/tmp/aegis-v063-npm-smoke/...`, a path left by the v0.6.3 npm smoke and long
+  since gone; per ADR-007 the hook fails closed, so `aegis on` would have denied
+  every Bash command until hooks were reinstalled. Repaired by the reinstall
+  above. (2) `v0.6.3` does **not** contain M3a — the tag predates it — so the
+  published release cannot demonstrate this feature; it ships in the next
+  release.
+
+- **Reading the history:** PRs #163–#172 are titled "Docs/close m3a toggle
+  visibility" but carry landing work, not M3a. The M3a implementation is commits
+  `671b261`, `b90ca2a`, and `3646fc7` (PR #162). Do not size this work from the
+  PR titles.
+
+## Prior session (2026-08-06) — landing carousel and taped footer
 
 - **Landing incident section rebuilt locally:** the five source-linked AI
   incidents now render as an Aegis-themed reconstructed discussion carousel
@@ -1841,7 +1952,7 @@ Full history of prior sessions: `git log` and `CHANGELOG.md`.
 | P0 security blockers (C1–C4) | Uppercase bypass, `$IFS` obfuscation, project-config weakening, token-prefix anchoring | ✅ Done |
 | P1 security findings (H1–H4, H8) | Segmentation, destructive SQL, H3 patterns, hooks, destructive Git forms | ✅ Done |
 | P1 security findings (H5, H6, H7a, H7b, H9) | Integrity wording, containment, artifact hardening, ADR-016 degradation | 🔲 Open (H5/H6/H7a closed; H7b/H9 remain) |
-| P2 security findings | M3b/M6/M10 closed; M1, M2, M3a, M4, M5, M7, M8, M9 open | 🔲 Open |
+| P2 security findings | M1/M3a/M3b/M6/M10 closed; M2, M4, M5, M7, M8, M9 open | 🔲 Open |
 | 1.0 perf gate | Hot path < 2 ms (p99) via criterion | 🔲 Open |
 | 1.0 test gate | Zero false-negatives on security bypass corpus | 🔲 Open |
 
@@ -1920,7 +2031,7 @@ member calls, `ScriptFile`/`DirectExec` fs reads) and the live
   historical commit would require a separate explicitly approved rewrite.
 - **Current security order** (`TASKS.md`): H6 → H7a → H7b; H9; M3a; M4 → M7;
   M9; M1; M2 → M5; H5 → M8; then P3. This is dependency/risk order, not a
-  calendar sprint.
+  calendar sprint. H6, H7a, H7b, H9, M1, and M3a are closed; **M4 → M7 is next**.
 - **H7b closure blocker:** implementation and local gates are clean; required
   PR CI must pass before the `TASKS.md` checkbox is closed.
 - **The perf gate was never enforcing until this slice (2026-08-04):** the
