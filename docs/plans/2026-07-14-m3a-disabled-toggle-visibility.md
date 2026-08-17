@@ -2,8 +2,15 @@
 
 ## Status
 
-Ready for TDD/review closure — finding-specific `grill-with-docs` completed
-2026-08-05. M3b canonical hook wrapping is already closed.
+Closed 2026-08-17. M3b canonical hook wrapping was already closed.
+
+Closure added two guards the implementation lacked: a behavioral parity contract
+between the session-start notice and `aegis status`
+(`tests/toggle_parity.rs`), and a documentation contract following the H9/M1
+precedent. It also fixed a defect found by the live smoke rather than by the
+suite — `aegis install-hooks` rejected the whole install when a third-party
+`SessionStart`/`PreToolUse` entry omitted the optional `matcher`, which left the
+operator with no notice at all.
 
 ## Finding
 

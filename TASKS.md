@@ -277,7 +277,7 @@ the project Definition of Done in `~/.agents/ENGINEERING_GATES.md` is satisfied.
 - **Status:** **Open** — confirmed.
 - **Traceability:** [plan](docs/plans/2026-07-14-m2-custom-regex-limits.md).
 
-### [ ] M3a — Disabled Toggle state is operationally invisible
+### [x] M3a — Disabled Toggle state is operationally invisible
 
 - **Finding:** the intentional global `Toggle` can leave Aegis in unguarded
   passthrough for multiple sessions without a visible indication on shell-wrapper
@@ -286,10 +286,23 @@ the project Definition of Done in `~/.agents/ENGINEERING_GATES.md` is satisfied.
   audited when toggled; every newly started agent session receives a visible
   disabled-state notice without corrupting hook/JSON protocols; `aegis status`
   remains authoritative; disabled passthrough semantics remain explicit in docs.
-- **Status:** **Open** — split from M3; toggle auditing exists, persistent
-  visibility does not.
+- **Status:** **Closed** — every criterion is met and pinned by a test. `aegis off`
+  and `aegis on` remain explicit operator controls and still append audit entries,
+  with an audit failure reported loudly without misstating the already-changed
+  Toggle. Claude Code and Codex sessions receive the effective state through their
+  own `SessionStart` envelopes, and `aegis status` stays authoritative: the notice
+  is required to agree with it, never to decide on its own.
 - **Traceability:** [plan](docs/plans/2026-07-14-m3a-disabled-toggle-visibility.md);
-  [ADR-005](docs/adr/adr-005-global-toggle-at-command-boundaries.md).
+  [ADR-005](docs/adr/adr-005-global-toggle-at-command-boundaries.md),
+  [ADR-006](docs/adr/adr-006-ci-detection-has-an-explicit-override-contract.md),
+  [ADR-007](docs/adr/adr-007-shell-hooks-share-one-managed-helper-but-must-not-fail-open.md).
+  Implementation: commits `671b261` (session-start visibility), `b90ca2a` (installed
+  hook environment isolation), `3646fc7` (session hook JSON protocol, PR #162).
+  Closure: `tests/toggle_parity.rs` (notice ↔ `aegis status` agreement across six
+  environments), `tests/contracts_docs.rs::m3a_docs_keep_disabled_passthrough_and_hook_refresh_explicit`,
+  `tests/agent_hooks.rs` session-start cases, `tests/toggle_cli.rs` status and
+  audit-failure cases, and the coexistence cases in `tests/agent_hooks_install.rs`
+  covering the install defect this closure found and fixed.
 
 ### [x] M3b — Non-canonical `aegis` hook commands bypass wrapping
 

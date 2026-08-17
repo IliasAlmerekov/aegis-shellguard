@@ -13,6 +13,22 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Added
 
+- Claude Code and Codex sessions now report Aegis' effective enforcement state
+  when they start, so a disabled Toggle can no longer stay invisible across
+  sessions. The notice travels inside each agent's `SessionStart` envelope as
+  `additionalContext`, names unguarded passthrough when the Toggle is off, and
+  reports enforcement when CI overrides it. Informational only — session starts
+  produce no audit entry; Toggle transitions remain the auditable action.
+  Existing installations receive the managed hooks on an explicit
+  `aegis install-hooks` rerun; hooks never self-update at session runtime.
+  (M3a, ADR-005, ADR-006, ADR-007)
+
+- The session-start notice is pinned to `aegis status`, the authoritative
+  surface for effective state: a contract test derives the state from both and
+  requires agreement across six environments, including a falsy `AEGIS_CI`
+  override and a non-empty `JENKINS_URL`. The hooks resolve the Toggle inline in
+  shell (ADR-007), so nothing else kept the two from drifting apart. (M3a)
+
 - Landing: a real-time WebGL hero — a fractured stone cube, pinned 200vh and
   scrubbed by scroll through a camera approach, the fracture opening, a Policy
   Lock and a handoff to black. Built on react-three-fiber (`three`,
@@ -41,6 +57,14 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
   the repository rather than from a working directory.
 
 ### Fixed
+
+- `aegis install-hooks` no longer refuses to install because another tool's
+  `SessionStart` or `PreToolUse` entry omits `matcher`. Both agents treat the
+  field as optional, so a third-party hook could block Aegis from registering
+  anything and leave the operator with no effective-state notice at all — with
+  `--all`, after the Claude half had already been written. The scan now answers
+  only whether Aegis' own command is registered and skips entries it does not
+  recognize. (M3a)
 
 - Landing: render every quality tier through the same post-processing chain.
   ACES tone mapping lives only in the composer and the renderer is
