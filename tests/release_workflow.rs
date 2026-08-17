@@ -261,6 +261,69 @@ fn release_workflow_should_use_node24_actions_for_release_publication() {
 }
 
 #[test]
+fn release_workflow_should_publish_the_changelog_section_as_the_release_body() {
+    let wf = release_workflow().replace("\r\n", "\n");
+
+    assert!(
+        wf.contains("name: Extract release notes from CHANGELOG"),
+        "release workflow must derive the Release body from CHANGELOG.md"
+    );
+    assert!(
+        wf.contains("body_path: release-notes.md"),
+        "GitHub Release must take its body from the extracted CHANGELOG section"
+    );
+    assert!(
+        wf.contains("generate_release_notes: false"),
+        "GitHub Release must not fall back to the auto-generated commit/PR list, \
+         which would replace the curated CHANGELOG entries"
+    );
+
+    let extract = wf
+        .split_once("name: Extract release notes from CHANGELOG")
+        .and_then(|(_, rest)| rest.split_once("\n      - name: "))
+        .map(|(step, _)| step.to_owned())
+        .expect("extraction step must be followed by another step");
+    assert!(
+        extract.contains("set -euo pipefail"),
+        "extraction step must fail on the first error, not continue with a partial body"
+    );
+    assert!(
+        extract.contains("release-notes.md") && extract.contains("exit 1"),
+        "extraction step must fail closed when the tag has no CHANGELOG section"
+    );
+}
+
+/// The Release body is extracted by tag, so a tag can only be cut once its
+/// version owns a section in `CHANGELOG.md`.
+#[test]
+fn changelog_should_carry_a_section_for_the_current_crate_version() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let manifest = std::fs::read_to_string(root.join("Cargo.toml"))
+        .expect("workspace manifest should be readable");
+    let version = manifest
+        .lines()
+        .find_map(|line| line.strip_prefix("version = \""))
+        .and_then(|rest| rest.split('"').next())
+        .expect("workspace manifest should declare a package version");
+
+    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md"))
+        .expect("CHANGELOG should be readable")
+        .replace("\r\n", "\n");
+    let heading = format!("## [{version}]");
+    let sections = changelog
+        .lines()
+        .filter(|line| line.starts_with(&heading))
+        .count();
+
+    assert_eq!(
+        sections, 1,
+        "CHANGELOG.md must carry exactly one `{heading}` section for the released \
+         crate version — the release workflow publishes that section verbatim, so a \
+         missing section fails the release and a duplicate silently truncates it"
+    );
+}
+
+#[test]
 fn release_workflow_should_generate_sha256_before_uploading_artifacts() {
     let wf = release_workflow();
     let checksum_step = wf

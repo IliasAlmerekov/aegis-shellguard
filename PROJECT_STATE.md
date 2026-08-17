@@ -9,11 +9,12 @@
 
 ## Current version
 
-`0.6.3` — pre-1.0, targeting `1.0.0` (tag `v0.6.3` published; L1 gate open)
+`0.6.4` — pre-1.0, targeting `1.0.0` (prepared; tag `v0.6.4` pending. Last
+published tag: `v0.6.3`; L1 gate open)
 
 ## Active branch
 
-`agent/m4-hook-panic-fail-closed`
+`docs/close-m4-179`
 
 ## Last updated
 
@@ -21,7 +22,49 @@
 
 ---
 
-## Current session (2026-08-17) — #181 Document Hook fail-closed guarantee
+## Current session (2026-08-17) — v0.6.4 release preparation
+
+- **Version bumped `0.6.3` → `0.6.4`** across the workspace root and all twelve
+  member crates (`Cargo.toml` + `Cargo.lock`), `packaging/npm/package.json`,
+  `README.md` (badge and the `--tag v0.6.4` install line, pinned by
+  `tests/npm_package.rs`), `docs/releases/current-line.md`,
+  `docs/releases/v1.0.0.md`, and the landing install transcript
+  (`landing/src/components/sections/HowItWorks.jsx`).
+  `scripts/install.sh` and `tests/installer_checksum.rs` keep their
+  `pre-v0.6.3` references — that is the release boundary at which
+  `THIRD_PARTY_NOTICES.md` began shipping, not a version pin.
+  `packaging/npm/checksums.json` and the Homebrew formula stay on v0.6.3: both
+  are regenerated from the published assets *after* the tag.
+
+- **`CHANGELOG.md` `[Unreleased]` cut to `[0.6.4] — 2026-08-17`** with a fresh
+  empty `[Unreleased]` above it, and the section reordered into a single block
+  per category (Security / Added / Changed / Fixed / Removed).
+
+- **Repaired the released `[0.6.3]` section.** Commit `8f945bf` had inserted
+  post-tag entries under a *second* `## [0.6.3] — 2026-08-04` heading, so three
+  changes made after the tag were attributed to a release that never contained
+  them. The duplicate heading is gone and those entries (npm/Homebrew pin
+  regeneration, the non-ASCII Bash source rejection, the pre-v0.6.3 installer
+  compatibility fix) now sit in `[0.6.4]`; the `[0.6.3]` section again matches
+  what `git show v0.6.3:CHANGELOG.md` published.
+
+- **The GitHub Release body is now the CHANGELOG section, not a commit list.**
+  `.github/workflows/release.yml` gained an `Extract release notes from
+  CHANGELOG` step that awk-slices `## [<version>]` up to the next `## [`
+  heading into `release-notes.md`, passed to the release action as `body_path`
+  with `generate_release_notes: false`. It fails closed under
+  `set -euo pipefail` when the tag has no non-empty section, so a tag can no
+  longer publish a Release documenting nothing. Two contract tests in
+  `tests/release_workflow.rs` pin the workflow shape and require exactly one
+  `## [<crate version>]` section in `CHANGELOG.md`.
+
+- **Verified:** `cargo test --workspace` = 2096 passed / 0 failed;
+  `cargo clippy --workspace --all-targets -- -D warnings` = 0 issues;
+  `cargo fmt --check` clean. The hot path was not touched, so no benchmark run.
+
+---
+
+## Last session (2026-08-17) — #181 Document Hook fail-closed guarantee
 
 - **#181 closed via TDD (ADR-023 verification).** Documented the two-layer 
   fail-closed Hook guarantee that was implemented in #177:
@@ -46,7 +89,7 @@
 
 ---
 
-## Last session (2026-08-17) — #177 M4 Hook panic fails closed in two layers
+## Prior session (2026-08-17) — #177 M4 Hook panic fails closed in two layers
 
 - **#177 closed via TDD (ADR-023).** A contained panic or abnormal termination
   of the `Hook` now reaches the agent as the ordinary deny response, never as

@@ -11,6 +11,8 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+## [0.6.4] — 2026-08-17
+
 ### Security
 
 - A contained panic at the `Hook` boundary now fails closed: an unwind anywhere
@@ -20,6 +22,11 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
   exit status. The agent never mistakes a crash for permission to run the
   command. Existing installations must re-run `aegis install-hooks` to refresh
   the scripts. (M4, ADR-023)
+
+- Reject non-ASCII Bash source before it reaches the pinned `tree-sitter-bash`
+  native scanner, which AddressSanitizer proved could segfault; the fail-closed
+  result is preserved as typed `UnsupportedEncoding` degradation and the worker
+  protocol is bumped to v2. (ADR-022)
 
 ### Added
 
@@ -66,7 +73,46 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
   `public/textures/CREDITS.md`, so the texture pipeline is reproducible from
   the repository rather than from a working directory.
 
+### Changed
+
+- Distribution: regenerated npm checksum pins and the Homebrew formula from the
+  published v0.6.3 Release; published the matching formula to the Homebrew tap
+  while retaining the L1 gate pending platform smoke evidence. (ADR-022)
+
+- Landing: phones get a 512² normal map (158 KB) instead of the 1024² desktop
+  one (653 KB), built by `scripts/textures.mjs` and selected by the same media
+  query in both the preload and the loader. Total transfer on a phone: 2.04 MB
+  → 0.85 MB.
+
+- Landing: render the hero shot at a fractional position rather than at the
+  nearest frame index, compositing the two frames a position falls between at
+  the fractional weight. A slow scroll now moves the hand continuously instead
+  of stepping one frame at a time, and frames still downloading widen the
+  blended pair so gaps play as a dissolve rather than a step.
+
+- Landing: cap the hero canvas backing store at 2.7 megapixels and bound the
+  scrubbed timeline's per-frame work — no animated filters, `power2.out` instead
+  of `expo.out` on scrubbed arrivals, and `ignoreMobileResize` so a collapsing
+  URL bar no longer refreshes the pin mid-scroll. Pin length 100vh → 140vh.
+
+- Landing: recast the "Built to be trusted" evidence grid as a bento layout —
+  four columns with two double-width cells, each cell a single link carrying a
+  large Lucide mark, the file that settles the claim, and a bottom-anchored
+  name with one line of note.
+
+- Landing: reshape the closing Get started/footer into a taped, slightly
+  skewed panel without navigation, retaining the Aegis description, actions,
+  and steel/oxide palette.
+
+- Landing: recast the sourced AI-agent incident reports as a responsive
+  discussion-thread carousel with swipe and keyboard navigation, explicit
+  pause/resume, reduced-motion behavior, and the Aegis steel/oxide palette.
+
 ### Fixed
+
+- CI: retain `scripts/install.sh` compatibility with pre-v0.6.3 releases that
+  do not carry `THIRD_PARTY_NOTICES.md`, while keeping the notice fail-closed
+  for v0.6.3 and later.
 
 - `aegis install-hooks`/`uninstall` fully own Aegis' hook registrations: one
   shared prune (every matcher, both hook kinds, both agents) drops any
@@ -146,62 +192,6 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
   moment the code disagrees with it, and keeping it alongside `DESIGN.md`
   invited a reader to trust the wrong one. Everything worth keeping from it now
   lives in `DESIGN.md` as an account of what the code does.
-
-### Changed
-
-- Landing: phones get a 512² normal map (158 KB) instead of the 1024² desktop
-  one (653 KB), built by `scripts/textures.mjs` and selected by the same media
-  query in both the preload and the loader. Total transfer on a phone: 2.04 MB
-  → 0.85 MB.
-
-- Landing: render the hero shot at a fractional position rather than at the
-  nearest frame index, compositing the two frames a position falls between at
-  the fractional weight. A slow scroll now moves the hand continuously instead
-  of stepping one frame at a time, and frames still downloading widen the
-  blended pair so gaps play as a dissolve rather than a step.
-
-- Landing: cap the hero canvas backing store at 2.7 megapixels and bound the
-  scrubbed timeline's per-frame work — no animated filters, `power2.out` instead
-  of `expo.out` on scrubbed arrivals, and `ignoreMobileResize` so a collapsing
-  URL bar no longer refreshes the pin mid-scroll. Pin length 100vh → 140vh.
-
-- Landing: recast the "Built to be trusted" evidence grid as a bento layout —
-  four columns with two double-width cells, each cell a single link carrying a
-  large Lucide mark, the file that settles the claim, and a bottom-anchored
-  name with one line of note.
-
-- Landing: reshape the closing Get started/footer into a taped, slightly
-  skewed panel without navigation, retaining the Aegis description, actions,
-  and steel/oxide palette.
-
-- Landing: recast the sourced AI-agent incident reports as a responsive
-  discussion-thread carousel with swipe and keyboard navigation, explicit
-  pause/resume, reduced-motion behavior, and the Aegis steel/oxide palette.
-
-### Fixed
-
-- CI: retain `scripts/install.sh` compatibility with pre-v0.6.3 releases that
-  do not carry `THIRD_PARTY_NOTICES.md`, while keeping the notice fail-closed
-  for v0.6.3 and later.
-
-## [0.6.3] — 2026-08-04
-
-### Changed
-
-- Distribution: regenerated npm checksum pins and the Homebrew formula from the
-  published v0.6.3 Release; published the matching formula to the Homebrew tap
-  while retaining the L1 gate pending platform smoke evidence (ADR-022).
-
-### Fixed
-
-- Security: reject non-ASCII Bash source before it reaches the pinned
-  `tree-sitter-bash` native scanner, which AddressSanitizer proved could
-  segfault; preserve the fail-closed result as typed `UnsupportedEncoding`
-  degradation and bump the worker protocol to v2 (ADR-022).
-
-- CI: retain `scripts/install.sh` compatibility with pre-v0.6.3 releases that
-  do not carry `THIRD_PARTY_NOTICES.md`, while keeping the notice fail-closed
-  for v0.6.3 and later.
 
 ## [0.6.3] — 2026-08-04
 
