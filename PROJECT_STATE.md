@@ -9,11 +9,12 @@
 
 ## Current version
 
-`0.6.3` — pre-1.0, targeting `1.0.0` (tag `v0.6.3` published; L1 gate open)
+`0.6.4` — pre-1.0, targeting `1.0.0` (prepared; tag `v0.6.4` pending. Last
+published tag: `v0.6.3`; L1 gate open)
 
 ## Active branch
 
-`agent/m4-hook-panic-fail-closed`
+`docs/close-m4-179`
 
 ## Last updated
 
@@ -21,7 +22,49 @@
 
 ---
 
-## Current session (2026-08-17) — #181 Document Hook fail-closed guarantee
+## Current session (2026-08-17) — v0.6.4 release preparation
+
+- **Version bumped `0.6.3` → `0.6.4`** across the workspace root and all twelve
+  member crates (`Cargo.toml` + `Cargo.lock`), `packaging/npm/package.json`,
+  `README.md` (badge and the `--tag v0.6.4` install line, pinned by
+  `tests/npm_package.rs`), `docs/releases/current-line.md`,
+  `docs/releases/v1.0.0.md`, and the landing install transcript
+  (`landing/src/components/sections/HowItWorks.jsx`).
+  `scripts/install.sh` and `tests/installer_checksum.rs` keep their
+  `pre-v0.6.3` references — that is the release boundary at which
+  `THIRD_PARTY_NOTICES.md` began shipping, not a version pin.
+  `packaging/npm/checksums.json` and the Homebrew formula stay on v0.6.3: both
+  are regenerated from the published assets *after* the tag.
+
+- **`CHANGELOG.md` `[Unreleased]` cut to `[0.6.4] — 2026-08-17`** with a fresh
+  empty `[Unreleased]` above it, and the section reordered into a single block
+  per category (Security / Added / Changed / Fixed / Removed).
+
+- **Repaired the released `[0.6.3]` section.** Commit `8f945bf` had inserted
+  post-tag entries under a *second* `## [0.6.3] — 2026-08-04` heading, so three
+  changes made after the tag were attributed to a release that never contained
+  them. The duplicate heading is gone and those entries (npm/Homebrew pin
+  regeneration, the non-ASCII Bash source rejection, the pre-v0.6.3 installer
+  compatibility fix) now sit in `[0.6.4]`; the `[0.6.3]` section again matches
+  what `git show v0.6.3:CHANGELOG.md` published.
+
+- **The GitHub Release body is now the CHANGELOG section, not a commit list.**
+  `.github/workflows/release.yml` gained an `Extract release notes from
+  CHANGELOG` step that awk-slices `## [<version>]` up to the next `## [`
+  heading into `release-notes.md`, passed to the release action as `body_path`
+  with `generate_release_notes: false`. It fails closed under
+  `set -euo pipefail` when the tag has no non-empty section, so a tag can no
+  longer publish a Release documenting nothing. Two contract tests in
+  `tests/release_workflow.rs` pin the workflow shape and require exactly one
+  `## [<crate version>]` section in `CHANGELOG.md`.
+
+- **Verified:** `cargo test --workspace` = 2096 passed / 0 failed;
+  `cargo clippy --workspace --all-targets -- -D warnings` = 0 issues;
+  `cargo fmt --check` clean. The hot path was not touched, so no benchmark run.
+
+---
+
+## Last session (2026-08-17) — #181 Document Hook fail-closed guarantee
 
 - **#181 closed via TDD (ADR-023 verification).** Documented the two-layer 
   fail-closed Hook guarantee that was implemented in #177:
@@ -46,7 +89,7 @@
 
 ---
 
-## Last session (2026-08-17) — #177 M4 Hook panic fails closed in two layers
+## Prior session (2026-08-17) — #177 M4 Hook panic fails closed in two layers
 
 - **#177 closed via TDD (ADR-023).** A contained panic or abnormal termination
   of the `Hook` now reaches the agent as the ordinary deny response, never as
@@ -103,16 +146,17 @@
   benchmark run required — the scanner hot path is untouched and the one extra
   fork per hook invocation is outside the sub-2 ms safe-path budget.
 
-- **Review cycle clean.** `code-review` (Standards + Spec) and `re-review`
-  (skeptic Verify → Confirm) are done. Issue #179 (script-level fail-closed
-  layer) is fully covered — all ten acceptance criteria met, including the
-  previously untested criterion 5 (a zero-exit body is forwarded unchanged,
-  exactly one deny, no double-print), pinned by the two new
-  `assert_forwards_body` script-seam tests. Skeptic verdicts: S1 (helper
-  duplication) → human decision, pre-existing partial pattern, not fixed; S2
-  (redundant `!contains("terminated abnormally")` assert) → confirmed and
-  closed by removing the dead assert, the exact-equality pin retained. Gate
-  clean; push/PR is the remaining step.
+- **Review cycle clean; #179 closed and merged.** `code-review` (Standards +
+  Spec) and `re-review` (skeptic Verify → Confirm) are done. Issue #179
+  (script-level fail-closed layer) is fully covered — all ten acceptance
+  criteria met, including the previously untested criterion 5 (a zero-exit
+  body is forwarded unchanged, exactly one deny, no double-print), pinned by
+  the two new `assert_forwards_body` script-seam tests. Skeptic verdicts: S1
+  (helper duplication) → human decision, pre-existing partial pattern, not
+  fixed; S2 (redundant `!contains("terminated abnormally")` assert) → confirmed
+  and closed by removing the dead assert, the exact-equality pin retained.
+  Merged via PR #185 (commit `799cc71`); CI green. M4 box checked in
+  `TASKS.md`.
 
 ---
 
@@ -2047,7 +2091,7 @@ Full history of prior sessions: `git log` and `CHANGELOG.md`.
 | P0 security blockers (C1–C4) | Uppercase bypass, `$IFS` obfuscation, project-config weakening, token-prefix anchoring | ✅ Done |
 | P1 security findings (H1–H4, H8) | Segmentation, destructive SQL, H3 patterns, hooks, destructive Git forms | ✅ Done |
 | P1 security findings (H5, H6, H7a, H7b, H9) | Integrity wording, containment, artifact hardening, ADR-016 degradation | 🔲 Open (H5/H6/H7a closed; H7b/H9 remain) |
-| P2 security findings | M1/M3a/M3b/M6/M10 closed; M2, M4, M5, M7, M8, M9 open | 🔲 Open |
+| P2 security findings | M1/M3a/M3b/M4/M6/M10 closed; M2, M5, M7, M8, M9 open | 🔲 Open |
 | 1.0 perf gate | Hot path < 2 ms (p99) via criterion | 🔲 Open |
 | 1.0 test gate | Zero false-negatives on security bypass corpus | 🔲 Open |
 
@@ -2165,8 +2209,8 @@ member calls, `ScriptFile`/`DirectExec` fs reads) and the live
 - **P2 open contract:** M1 surfaces optional `Sandbox` degradation without making
   confinement mandatory; M3a makes the intentional disabled `Toggle` visible;
   M8 aligns Snapshot/Rollback wording with captured pre-execution state rather
-  than building a general backup system. M2, M4, M5, M7, and M9 retain their
-  focused correctness findings. M3b, M6, and M10 are closed.
+  than building a general backup system. M2, M5, M7, and M9 retain their
+  focused correctness findings. M3b, M4, M6, and M10 are closed.
 - **Docs accuracy regressions (2026-07-09 checkup):** ARCHITECTURE.md references
   removed paths (`src/decision/engine.rs`, `src/interceptor/…`, `src/config/…`,
   `src/snapshot/*.rs`), states a stale 1500/2000 LoC budget (actual 800), and

@@ -378,7 +378,7 @@ fn readme_should_document_npm_and_cargo_without_overclaiming_shell_setup() {
     );
     assert!(
         readme.contains(
-            "cargo install --git https://github.com/IliasAlmerekov/aegis-shellguard --tag v0.6.3 aegis"
+            "cargo install --git https://github.com/IliasAlmerekov/aegis-shellguard --tag v0.6.4 aegis"
         ),
         "README must document cargo install from a release tag"
     );
