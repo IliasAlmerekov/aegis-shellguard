@@ -55,99 +55,125 @@ export function Nav() {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [open])
 
+  /* Everything below runs inside `gsap.matchMedia` rather than a one-off
+     `window.matchMedia` read, because the desktop hand-off *hides* the burger
+     with inline styles. A plain read happens once at mount and never again:
+     load the page at ≥768px and then narrow the window — rotate a tablet,
+     open the responsive inspector, drag the browser edge — and the burger
+     stays stuck behind `visibility: hidden` at mobile widths, where it is the
+     only way into the menu. `matchMedia` reverts every style and ScrollTrigger
+     it created the moment its query stops matching, so the mobile viewport
+     always gets the untouched markup: burger visible from the first frame. */
   useGSAP(
     () => {
-      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-
       const header = headerRef.current
       const actions = actionsRef.current
       const cta = ctaRef.current
       const burger = burgerRef.current
-      if (!header || !actions || !cta || !burger) return
+      if (!header || !actions || !cta || !burger) return undefined
 
-      const desktop = window.matchMedia('(min-width: 768px)').matches
-      if (desktop) {
-        gsap.set(burger, {
-          autoAlpha: 0,
-          x: 8,
-          scale: 0.98,
-          pointerEvents: 'none',
-        })
-      }
+      const mm = gsap.matchMedia()
 
-      let hidden = false
+      mm.add(
+        {
+          desktop: '(min-width: 768px) and (prefers-reduced-motion: no-preference)',
+          /* .98, not 767: a fractional viewport width — browser zoom, a
+             half-pixel device ratio — would fall between the two queries and
+             leave neither context running. */
+          mobile: '(max-width: 767.98px) and (prefers-reduced-motion: no-preference)',
+        },
+        (ctx) => {
+          const desktop = Boolean(ctx.conditions.desktop)
 
-      const hideHeader = () => {
-        setOpen(false)
-        gsap.set(header, { pointerEvents: 'none' })
-        gsap.to(header, {
-          yPercent: -100,
-          opacity: 0,
-          duration: 0.32,
-          ease: 'power3.inOut',
-          overwrite: 'auto',
-          onComplete: () => gsap.set(header, { visibility: 'hidden' }),
-        })
-
-        if (!desktop) return
-
-        // The burger lives in an absolute slot, so no flex reflow occurs
-        // during the exchange. Only compositor-friendly transforms and
-        // opacity change; Install moves left while the burger takes its slot.
-        const gap = Number.parseFloat(getComputedStyle(actions).gap) || 0
-        const shift = burger.offsetWidth + gap
-        gsap.timeline({ defaults: { overwrite: 'auto' } })
-          .to(cta, { x: -shift, duration: 0.82, ease: 'power2.inOut' })
-          .to(
-            burger,
-            { autoAlpha: 1, x: 0, scale: 1, duration: 0.62, ease: 'power2.out', pointerEvents: 'auto' },
-            0.16
-          )
-      }
-
-      const showHeader = () => {
-        setOpen(false)
-        gsap.set(header, { visibility: 'visible', pointerEvents: 'auto' })
-        gsap.to(header, {
-          yPercent: 0,
-          opacity: 1,
-          duration: 0.42,
-          ease: 'expo.out',
-          overwrite: 'auto',
-        })
-
-        if (!desktop) return
-
-        gsap.timeline({ defaults: { overwrite: 'auto' } })
-          .to(cta, { x: 0, duration: 0.82, ease: 'power2.inOut' })
-          .to(
-            burger,
-            {
+          if (desktop) {
+            gsap.set(burger, {
               autoAlpha: 0,
               x: 8,
               scale: 0.98,
-              duration: 0.52,
-              ease: 'power2.in',
               pointerEvents: 'none',
-            },
-            0.06
-          )
-      }
-
-      const st = ScrollTrigger.create({
-        onUpdate: (self) => {
-          const y = self.scroll()
-          if (self.direction === 1 && y > CONDENSE_THRESHOLD && !hidden) {
-            hidden = true
-            hideHeader()
-          } else if ((self.direction === -1 || y <= 0) && hidden) {
-            hidden = false
-            showHeader()
+            })
           }
-        },
-      })
 
-      return () => st.kill()
+          let hidden = false
+
+          const hideHeader = () => {
+            setOpen(false)
+            gsap.set(header, { pointerEvents: 'none' })
+            gsap.to(header, {
+              yPercent: -100,
+              opacity: 0,
+              duration: 0.32,
+              ease: 'power3.inOut',
+              overwrite: 'auto',
+              onComplete: () => gsap.set(header, { visibility: 'hidden' }),
+            })
+
+            if (!desktop) return
+
+            // The burger lives in an absolute slot, so no flex reflow occurs
+            // during the exchange. Only compositor-friendly transforms and
+            // opacity change; Install moves left while the burger takes its slot.
+            const gap = Number.parseFloat(getComputedStyle(actions).gap) || 0
+            const shift = burger.offsetWidth + gap
+            gsap.timeline({ defaults: { overwrite: 'auto' } })
+              .to(cta, { x: -shift, duration: 0.82, ease: 'power2.inOut' })
+              .to(
+                burger,
+                { autoAlpha: 1, x: 0, scale: 1, duration: 0.62, ease: 'power2.out', pointerEvents: 'auto' },
+                0.16
+              )
+          }
+
+          const showHeader = () => {
+            setOpen(false)
+            gsap.set(header, { visibility: 'visible', pointerEvents: 'auto' })
+            gsap.to(header, {
+              yPercent: 0,
+              opacity: 1,
+              duration: 0.42,
+              ease: 'expo.out',
+              overwrite: 'auto',
+            })
+
+            if (!desktop) return
+
+            gsap.timeline({ defaults: { overwrite: 'auto' } })
+              .to(cta, { x: 0, duration: 0.82, ease: 'power2.inOut' })
+              .to(
+                burger,
+                {
+                  autoAlpha: 0,
+                  x: 8,
+                  scale: 0.98,
+                  duration: 0.52,
+                  ease: 'power2.in',
+                  pointerEvents: 'none',
+                },
+                0.06
+              )
+          }
+
+          ScrollTrigger.create({
+            onUpdate: (trigger) => {
+              const y = trigger.scroll()
+              if (trigger.direction === 1 && y > CONDENSE_THRESHOLD && !hidden) {
+                hidden = true
+                hideHeader()
+              } else if ((trigger.direction === -1 || y <= 0) && hidden) {
+                hidden = false
+                showHeader()
+              }
+            },
+          })
+
+          /* Leaving this breakpoint mid-scroll would otherwise strand the
+             header off-screen and the panel open: matchMedia's revert undoes
+             the inline styles, but `open` is React state it cannot reach. */
+          return () => setOpen(false)
+        }
+      )
+
+      return () => mm.revert()
     },
     { scope: headerRef }
   )
@@ -192,7 +218,12 @@ export function Nav() {
               <a
                 key={label}
                 href={href}
-                className="font-inter-variable text-caption text-cloud-dim transition-colors duration-150 hover:text-cloud focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cloud rounded-sm px-1"
+                /* `py-1.5` buys the target, not the look: a 13px label on its
+                   own line box is 20px tall, under the 24px floor of WCAG
+                   2.5.8, and the bar is 64px so the taller box costs no
+                   layout — the links are centred in a row that was always
+                   more than twice their height. */
+                className="font-inter-variable text-caption text-cloud-dim transition-colors duration-150 hover:text-cloud focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cloud rounded-sm px-1 py-1.5"
               >
                 {label}
               </a>
@@ -245,7 +276,16 @@ export function Nav() {
         ref={panelRef}
         className={`mobile-nav-panel fixed left-0 right-0 z-40 overflow-hidden${open ? ' is-open' : ''}`}
         style={{ top: '64px' }}
-        {...(open ? {} : { inert: '', 'aria-hidden': true })}
+        {...(open
+          ? {}
+          : {
+              /* A boolean, not the empty string HTML itself wants: React 19
+                 reflects the boolean onto the attribute, and reads an empty
+                 string as false — which would leave the closed panel
+                 tabbable, the exact bug `inert` is here to prevent. */
+              inert: true,
+              'aria-hidden': true,
+            })}
       >
         <div className="slash-edge" aria-hidden="true" />
         <div className="border-b border-night-rim/40 bg-night-deep/95 backdrop-blur-md px-6 py-4">

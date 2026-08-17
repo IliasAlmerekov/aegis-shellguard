@@ -3,25 +3,39 @@
 What is deliberate about the marketing surface, and why. This file covers the
 decisions a reader cannot recover from the code alone. Anything mechanical —
 the palette, the type scale, the spacing steps — lives as custom properties at
-the top of `src/index.css` and is authoritative there; do not restate values
-here, they will drift.
+the top of `src/app/globals.css` and is authoritative there; every number in
+the hero scene lives in `src/lib/scene/config.ts` and is authoritative there.
+Do not restate values in this file, they will drift.
+
+This is the only design document for the surface. The hero was built against a
+written brief, but a pre-code brief goes stale the moment the code disagrees
+with it, and keeping both invites a reader to trust the wrong one — so the brief
+is gone and everything worth keeping from it is stated here, as an account of
+what the code actually does.
 
 ## Type
 
 Inter carries prose and headings; JetBrains Mono carries anything the visitor
-could paste into a shell. Both are self-hosted variable faces under
-`public/fonts` and preloaded from `index.html`, so the swap lands before first
-paint instead of reflowing the hero. Weights stay in a low 400–590 band and
-tracking stays tight — the page gets its emphasis from scale and contrast, not
-from bold.
+could paste into a shell; Shadows Into Light is the brand-signature accent, and
+appears exactly twice — the hero eyebrow and the footer wordmark. All three are
+self-hosted under `public/fonts`. Inter and JetBrains Mono carry the hero, so
+both are preloaded from `src/app/layout.tsx` and the swap lands before first
+paint instead of reflowing it; Shadows is not preloaded, being a single short
+label off the critical path.
+
+Headings take Inter Bold and body copy runs at 400. The two-tone emphasis
+inside a heading — a dimmer opening clause resolving into full Cloud White — is
+carried by colour rather than by a third weight, and tracking stays tight: the
+page gets its emphasis from scale and contrast.
 
 ## Space
 
 Two steps of vertical rhythm and one horizontal gutter, all three custom
-properties in `src/index.css` — `--spacing-section`, `--spacing-section-lg`,
-`--spacing-gutter`. Every top-level section pads itself with the pair and
-nothing else, so the gap between any two of them is the same gap, and a
-divider laid on that boundary is centred in it without being told to be.
+properties in `src/app/globals.css` — `--spacing-section`,
+`--spacing-section-lg`, `--spacing-gutter`. Every top-level section pads itself
+with the pair and nothing else, so the gap between any two of them is the same
+gap, and a divider laid on that boundary is centred in it without being told to
+be.
 
 They exist because the alternative was measured: with each section carrying
 its own number the inter-section gaps ran 304, 272, 240, 232 and 224px down
@@ -45,145 +59,180 @@ carried 616px of it on a 1024px-tall tablet before this was removed.
 
 ## Motion
 
-### Hero scroll sequence
+### The hero: a fractured stone under a guardrail
 
 **Role:** the one authored moment on the marketing surface.
 
-A pre-rendered shot — a machine hand holding a suspended, fractured plate of
-light, the tethers running off its wrist drawing taut and releasing — scrubbed
-by scroll through a Canvas 2D blit (`src/components/ui/FrameSequence.jsx`),
-driven by a single GSAP ScrollTrigger timeline pinned for 160vh.
+A cube of dark rock, split into four quarters along the planes X = 0 and
+Y = 0, hanging slightly above the centre of a lit blue field with light in its
+fractures. It is a real-time WebGL scene — react-three-fiber, in
+`src/components/hero/` — pinned for 200vh and scrubbed by scroll.
 
-**The render is a single directed reach, and only its first 119 frames are
-used.** A machine hand rises out of the dark toward a suspended, fractured pane
-of light, opens into its bloom, and is at full extension by ~114 without
-touching it. 161 frames ship, but past the arrival the hand recoils and settles,
-and 130–161 is a near-static tail of the same held pose. Scrubbed, that tail
-would be a third of the pin in which the picture does not change and the one
-thing that did happen quietly comes undone, so `range` stops the span at 119 —
-a few frames past the arrival, not enough to start giving it back. Scroll
-position *is* frame position; scrolling up rewinds, which is the visitor undoing
-their own scroll.
+It replaced a pre-rendered 161-frame canvas sequence, and the reason it did is
+worth recording, because the sequence was not obviously worse: it was 8.7 MB of
+frames that could not answer the cursor, could not be relit, and had to be
+re-rendered offline for any change at all. The static export dropped from 13 MB
+to 3.8 MB with the swap. What the scene buys beyond the bytes is that the
+central gesture is now a consequence of the model rather than a picture of one —
+see the glow, below.
 
-**The span is not uniform, and it is not scrubbed as if it were.** Frames 1–90
-are travel: the hand crossing the dark. The arrival is the only *event* in it,
-and it is the product's argument in one image — the hand is not stopped, it is
-held just short. It gets the emphasis.
+#### One number between scroll and scene
 
-The emphasis is authored as a **scroll density**, not as a segmented map. What
-the code defines is how much scroll each part of the span costs:
-`1 + gain × bump`, flat to frame 90 and humped from there to the end of the
-span, integrated once at module load into a 512-step table that is read
-backwards to turn pin progress into frame position. At a gain of 3 the accent
-span takes ~40% of the pin against the ~25% its frame count would earn evenly,
-and the shot runs at quarter speed through the arrival.
+The pin publishes a single value, its progress in 0..1, into a ref. Everything
+downstream reads that ref: the camera, the cube, the post-processing chain and
+the copy. There is deliberately no second channel and no per-object timeline
+that could drift out of phase with the first.
 
-The hump is a raised cosine, and the shape is the point. Two or three linear
-segments meeting at frames 90 and 112 would be continuous in *position* but not
-in *speed*: at each joint the frames-per-pixel rate changes instantly and the
-shot visibly drops a gear going in and picks it back up coming out. A raised
-cosine has zero slope at all three of its joints, so the slowdown arrives, peaks
-and leaves at the ambient rate. The visitor should feel the shot get heavy as
-the hand nears the pane, not catch the moment it does.
+Pin progress is not scene progress. Between them sits a **scroll density map**
+(`src/lib/scene/progress.ts`): what is declared is not a partition into
+segments but the price of scroll — how many pixels each part of the scene
+costs. `1 + gain × bump` is integrated once into a 512-step table and read
+backwards. The opening of the fracture is the event the whole scene is for, and
+the map buys it a dwell without lengthening the pin; without it the camera
+approach would occupy two thirds of the scroll in which nothing happens but
+getting closer.
 
-The hump's peak is placed at frame 112 rather than centred, because the footage
-is asymmetric: the approach is 22 frames of travel worth dwelling on, and the
-seven frames after the arrival are all but identical to it, so the tail is cheap
-and reads as the pin releasing rather than as the shot speeding up. A centred
-bump would spend the dwell halfway up the reach and hit full ambient speed at
-exactly the frame the whole shot is for.
+The bump is a raised cosine, and the shape matters more than the gain. Two or
+three linear segments meeting at the span's ends would be continuous in
+*position* but not in *speed*: at each joint the rate changes instantly and the
+scene visibly drops a gear going into the slowdown and picks it back up coming
+out. A raised cosine has zero slope at all three of its nodes. The map is
+monotonic, so scrolling back is playback in reverse and nothing needs a special
+case for it.
 
-The curve lives in the map, aimed at a named span of footage, rather than on the
-tween, where it would silently re-time the text beats as well. The map is
-monotonic, so direction-of-travel behaviour is unaffected.
+Because the map is where the emphasis lives, the spans in `SCROLL` are declared
+in *scene* progress rather than pin progress — 0.6–0.85 of the scene occupies
+appreciably more than a quarter of the pin.
 
-**Smoothness is three mechanisms, and none substitutes for another.** They are
-worth keeping distinct because each fixes a case the others cannot see.
+#### The beats
 
-*Sub-frame interpolation* fixes a slow, deliberate scroll. The renderer draws a
-fractional position, not a frame index: the two frames the position falls
-between are composited at the fractional weight. Without it the shot advances a
-whole frame at a time — a hundred-odd discrete steps — however continuously the
-timeline is driven underneath, because the scrub is continuous and the picture
-is not, and what the eye reports is the picture.
+Camera approach, the copy flying past, the fracture opening, the Policy Lock,
+the handoff to black. Two of those deserve their reasoning here.
 
-*Scrub lag* (0.5s) fixes a discrete input. A wheel notch is a fifty-pixel jump
-with nothing in between, so a position-mapped scrub has no intermediate values
-to draw; easing the timeline toward the scroll position gives the canvas a run
-of ticker frames to be driven through instead. Half a second is the ceiling —
-the lag is a debt the shot repays before the pin releases.
+**The copy does not fade — the camera drives through it.** It is a
+fronto-parallel plane in front of the stone, and its motion is driven by the
+*same span and the same curve* as the camera approach, not by a duration of its
+own. A duration of its own would mean the text and the stone live in two
+different spaces that happen to be overlaid, and that is exactly what used to
+read as "the text disappeared": it faded on its own clock while the camera was
+still only starting to move. The magnification is done entirely by perspective,
+and the CSS `perspective` value is derived from the scene's own 30° fov, so the
+markup and the scene share one lens. Depth alone is not enough and this was
+measured, not assumed: a copy block half a frame tall straddles the vanishing
+point and never leaves through the bottom edge at any magnification, so the
+camera's rise — which the scene performs anyway, moving its aim up to the
+cube's centre — carries the block out whole.
 
-*Pin length* (150vh) is how much scroll the shot is worth: three or four
-trackpad flicks, enough that the reach is travelled through rather than
-overshot, and enough that the text beats land as beats. It buys no smoothness on
-its own. At a 900px viewport it is 1350px over a 119-frame span, which leaves
-the approach at roughly eight pixels a frame and the arrival at about
-twenty-five. Shorter and the reach reads as a hurry to get to the good part;
-longer and the travel before frame 90 outstays its interest.
+**The curtain is the one thing driven by raw scroll.** Everything else runs on
+the smoothed scrub, which is correct: a wheel notch is a fifty-pixel jump with
+no intermediate values and the scene needs frames to fill in between. But
+smoothing is lag, and the pin releases on exactly its last pixel. Measured, a
+curtain on the common clock reached full black at 103.3% of the pin — sixty
+pixels after the page had already started moving, so the visitor watched a lit
+canyon at a quarter opacity turn into a flat sheet and slide upward. The
+curtain has the right to leave the common clock for the same reason the bottom
+scrim does: it is not an object in space but a darkening of the frame. Objects
+must not drift apart from one another; a darkening has nothing to drift from.
 
-The backing store is capped at 2.7 megapixels, scaled down proportionally so the
-fit maths never sees it. Uncapped, the cost of a frame is set by the visitor's
-monitor — a 2560px window at DPR 2 asks to resample the source into 14.7
-megapixels, twice per frame now that frames blend — and there is nothing to buy
-with them, since the desktop render is only 1920px wide.
+#### Why the parts mate
 
-Nothing in the scrubbed timeline animates a filter. The one-shot entrance can
-afford a blur; the scrubbed beats cannot, because that is a filter re-resolved
-over a text block on every frame the canvas is also compositing two
-full-viewport blits on. Transform and opacity carry the same accretion for free.
-Scrubbed arrivals also use `power2.out`, not `expo.out`: under a scrub the
-visitor is the clock, so an exponential curve inverts and spends nine tenths of
-its movement in the first tenth of the scroll — the beat snaps in over a few
-pixels and then crawls.
+Each quarter is displaced by a vector field evaluated at the vertex's position
+**in the coordinates of the whole cube, before the cut**. The displacement
+depends on nothing else — not on which part the vertex belongs to, not on the
+face normal. So two coincident vertices of neighbouring parts get the same
+displacement and stay coincident: the mating surface is not fitted, it is one
+surface computed twice. This is also why the displacement cannot follow the
+normal, and why no part may ever rotate on its own.
 
-Frames are held as `<img>` elements decoded ahead of paint, never as
-`ImageBitmap`, so the browser can evict decoded surfaces under memory pressure.
-The download order is coarse to fine — every 8th frame, then 4th, 2nd, all —
-and viewer-biased within each pass: a visitor reaches the end of the shot long
-before the whole span has landed, so the first pass buys the *whole* gesture at
-low frame rate rather than a fraction of it at full. Frames that have not landed
-widen the blended pair instead of breaking it, so the gap plays as a dissolve —
-the sequence degrades in smoothness, never into a step or a blank canvas.
+The lift direction is the pure diagonal, which is the only direction carrying a
+part away from *both* cut planes at once. The brief asked for the parts to
+rise, so the diagonal is mixed with +Y — and that mixing has a hard ceiling at
+`1/(1+√2)`, past which a lower part starts sliding *along* its cut plane and
+the jags pierce each other. The configured bias sits inside the limit with
+margin, and a test asserts it.
 
-Text accretes over the pin in three beats — headline and actions, then the
-subhead, then the install snippet — rather than swapping: nothing already read
-is taken away, and the pin releases on the complete composition. Both later
-beats are in by 0.48, which the accent map makes exactly the right place for
-them: frame 90 lands at 55% of the pin, so the copy finishes arriving just
-before the reach starts to slow.
+#### The glow is a consequence, not an animation
 
-The scroll rail leaves through 0.74–0.9, inside the accent, and that is
-deliberate. A progress meter is the one thing that can flatten the emphasis — it
-reports that the scroll is still moving at its usual rate while the picture
-deliberately is not, inviting the visitor to read the slowdown as the page
-lagging. It is gone by frame 112, so the shot has the frame to itself through
-the arrival.
+Light lives on the fracture surfaces and grows toward the cube's centre, so
+what shows at rest is a lit lip rather than a neon tube. When a part moves
+away it exposes a deeper — and therefore brighter — band of surface to the
+camera, and the intensification comes for free. There is no separate flash to
+animate, which is precisely why light and motion cannot fall out of step. Only
+the page's two accent colours appear in it: Electric Blue as the body, Cyan
+Neon reserved for the hottest places.
 
-Under `prefers-reduced-motion: reduce` the pin is never created and the hero
-renders at frame 114 — the hand at full extension, fingers open inside the
-pane's bloom and not touching it. Neither end of the reach is a composition, so
-the still is the frame the accent exists to dwell on.
+The crack network across the rock comes from a photoscan channel, not from
+noise. Noise draws grooves; a fracture has junctions, branches and dead ends,
+and it is that statistic the eye recognises as real. It also has to come from a
+texture rather than be computed: a hash lattice aliases at any distance where a
+cell falls below a pixel — sparkle in stills, shimmer in motion — and no mipmap
+saves something that is never sampled. Sources and licences are in
+`public/textures/CREDITS.md`.
 
-**The render carries no headroom, so the composition supplies it.** The pane's
-top edge sits ~4% down the 16:9 field, which leaves the glass pinned against the
-nav; the shot is dropped 10% of frame height on desktop and 12% on the phone's
-band. That is the most it takes — there is almost no image above the pane, so
-past a small nudge the exposed band stops reading as air and starts reading as a
-bar, and zooming to the same drop would need ~3.4× and throw the hand out of
-frame. The exposed band is masked with the substrate at exactly `shiftY`, both
-sized from the same constants so they cannot drift apart, fading 6% past it
-because the shot's top row is not quite the substrate's black.
+#### Cost
 
-The desktop scrim is heavier than a shot with a contained highlight would need:
-this render throws a wide, soft column of bloom down the middle of the field, so
-the grade manufactures the headline's contrast rather than merely guaranteeing
-it. It holds most of its weight to 68% of the width and is clear by 88%; the
-pane sits past 90% and is never touched.
+Three knobs dominate, and they are ranked. MSAA on the composer's buffer is
+first and is non-linear — the buffer is half-precision, so every sample is
+eight bytes per pixel written and read back at resolve; the default of eight
+samples is half a gigabyte of traffic per frame at 4K, before a single fragment
+is shaded. `maxDpr` is second and is quadratic. Subdivision is third and is the
+cheapest of the three to give up.
 
-Two frame sets ship, both cut from the same render, which is why positions are
-expressed as fractions of the render rather than as frame numbers:
-`public/frames` at 1920w for `min-width: 768px`, and `public/frames-sm` at 960w
-every second frame for phones and `save-data`. The phone gets the same shot at
-half the temporal resolution and roughly a fifth of the bytes; because fractions
-resolve per set, the trim and the accent land on the same moments at either
-breakpoint.
+Quality descends a **one-way** ladder measured in frame time
+(`src/lib/scene/ladder.ts`): down only, never back up. A two-way ladder
+oscillates and the visitor watches the picture breathe quality at them, which
+is worse than a steady low tier. The measurement uses a median rather than a
+mean, warms up first, and gives every stretch two limits — in frames *and* in
+milliseconds — closing on whichever arrives first. Frames alone would stretch
+the ladder further the weaker the machine, so the visitor it exists for would
+wait longest of all; verified on a software rasteriser at 833 ms per frame,
+where an earlier outlier threshold left it silent forever.
+
+The composer is never dropped, on any tier. ACES tone mapping lives only in
+that chain and the renderer is deliberately `NoToneMapping`, so a tier without
+it would ship a visibly different, untone-mapped picture to exactly the
+weakest machine. The lowest tier drops Bloom instead, which is the expensive
+pass.
+
+The canvas stops drawing entirely once the hero leaves the screen — with a
+200vh pin the visitor spends most of the visit below it, so the scene stands
+switched off longer than it stands on — and resumes 20% of a viewport early, so
+the one frame that switching on costs does not land on the visible edge.
+
+Phones get a 512² normal map instead of the 1024² desktop one, chosen by the
+same media query in both the preload and the loader; letting those diverge
+would mean preloading one file and fetching another. The preloads carry
+`crossOrigin`, which is not decoration: Three's ImageLoader requests as
+`anonymous`, and a preload without the attribute is a different CORS mode, so
+the browser refuses the warm entry and fetches every map twice.
+
+#### Reduced motion
+
+Under `prefers-reduced-motion: reduce` the pin is not created at all, rather
+than created with zero durations: a pin is itself page motion. The scene stays
+at full quality and renders one still frame on demand. Scene time is frozen at
+a value incommensurable with all three sway periods — not at zero, where every
+oscillator sits at its starting point simultaneously and the stone stands in a
+pose that never occurs in motion.
+
+#### What is not in the scene
+
+The blue field the stone hangs in is a CSS gradient in the markup, not scene
+geometry: it must not cost a frame. It darkens from the outside in and reaches
+full black at 96% — inside the frame rather than past its edge — which is what
+makes the join with the section below seamless, since that section stands on
+pure `#000`.
+
+There is deliberately no poster image behind the canvas. A baked still would
+drift away from the material at the first edit, and the discrepancy would
+surface a month later on somebody's phone. What the visitor sees while the GPU
+assembles the first frame is a labelled loading state, and it only leaves after
+a frame in which the finished stone could actually have been painted.
+
+### Elsewhere on the page
+
+Scrubbed arrivals use `power2.out`, not `expo.out`: under a scrub the visitor
+is the clock, so an exponential curve inverts and spends nine tenths of its
+movement in the first tenth of the scroll — the beat snaps in over a few pixels
+and then crawls. Nothing in a scrubbed timeline animates a filter; transform
+and opacity carry the same accretion for free.

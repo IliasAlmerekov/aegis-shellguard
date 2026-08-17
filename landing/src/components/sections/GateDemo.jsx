@@ -75,7 +75,7 @@ const LOOP_MS =
    in the section, so it has to clear 4.5:1 at 11px against the terminal — the
    panel's border keeps the deeper oxide. */
 const NOTE_COLOR = {
-  held: 'var(--color-electric)',
+  held: 'var(--color-electric-text)',
   allowed: 'var(--color-cyan-neon)',
 }
 
@@ -362,7 +362,7 @@ export function GateDemo() {
                           ? {
                               borderColor: 'var(--color-electric)',
                               backgroundColor: 'var(--color-electric)',
-                              color: 'var(--color-night-void)',
+                              color: 'var(--color-cloud)',
                             }
                           : {
                               borderColor: 'var(--color-night-edge)',

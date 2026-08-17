@@ -11,7 +11,74 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+### Added
+
+- Landing: a real-time WebGL hero — a fractured stone cube, pinned 200vh and
+  scrubbed by scroll through a camera approach, the fracture opening, a Policy
+  Lock and a handoff to black. Built on react-three-fiber (`three`,
+  `@react-three/fiber`, `@react-three/drei`, `@react-three/postprocessing`)
+  under `src/components/hero/`, with every number in `src/lib/scene/config.ts`.
+  The geometry is generated rather than authored: a displacement field
+  evaluated in pre-cut coordinates, so neighbouring quarters mate jag for jag
+  by construction. Scroll reaches the scene as one number passed through a
+  density map, so the copy, the camera and the stone cannot drift out of phase.
+  Replaces the frame-sequence hero (see Removed).
+
+- Landing: a one-way quality ladder driven by measured frame time
+  (`src/lib/scene/ladder.ts`) — median rather than mean, warm-up before it
+  judges, and every stretch bounded in both frames and milliseconds so a weak
+  machine is not the one that waits longest for its own downgrade. Tiers can be
+  pinned with `?tier=`, and scene time frozen with `?freeze=`, so captures are
+  reproducible.
+
+- Landing: a Vitest suite (66 tests) over the parts of the scene that are pure
+  arithmetic — the fracture geometry, the density map and phase spans, the
+  hover approach, the quality ladder. `npm test` in `landing/`.
+
+- Landing: `scripts/rock-to-webp.mjs` and `scripts/textures.mjs` build the
+  stone maps and the phone-sized normal map from the CC0 sources recorded in
+  `public/textures/CREDITS.md`, so the texture pipeline is reproducible from
+  the repository rather than from a working directory.
+
 ### Fixed
+
+- Landing: render every quality tier through the same post-processing chain.
+  ACES tone mapping lives only in the composer and the renderer is
+  deliberately `NoToneMapping`, but the lowest tier dropped the composer
+  altogether — shipping an untone-mapped, visibly brighter frame with blown
+  highlights to exactly the weakest machine. That tier now drops Bloom, which
+  is the expensive pass, and keeps the chain.
+
+- Landing: keep the mobile burger reachable from the first frame. The nav read
+  its breakpoint once at mount, so the desktop hand-off (which hides the burger
+  behind inline `visibility: hidden` until the header condenses) stayed applied
+  after the viewport narrowed — rotating a device or resizing the window left a
+  mobile layout with no way into the menu until a scroll revealed it. The
+  hand-off now runs inside `gsap.matchMedia`, which reverts its own styles and
+  ScrollTriggers as soon as the viewport crosses back below 768px.
+
+- Landing: stop downloading every scene texture twice. The head preloads them
+  as images without `crossOrigin`, while Three's ImageLoader requests them as
+  `anonymous` — a different CORS mode, so the browser refused the warm entry
+  and fetched each map a second time. A phone paid 1.6 MB for 805 KB of
+  distinct bytes.
+
+- Landing: text tokens that could not be read as text. `held` in the gate demo
+  and in the three-step terminal used `--color-electric` (2.6:1) at 11px, and
+  the evidence plate numbers used `--color-night-rim` (1.86:1), a border
+  token — both surfaces documented a legibility requirement in their own
+  comments and then missed it. Adds `--color-electric-text`, the text-weight
+  step of Electric Blue, and moves the plate numbers to `cloud-faint`
+  (WCAG 2.2 AA, 1.4.3).
+
+- Landing: targets below the 24px floor of WCAG 2.2 SC 2.5.8 — the install
+  snippet's copy button (21×21), the incident captions' "View post" links
+  (17px tall) and the desktop nav links (20px tall). None of the visible boxes
+  changed; the targets grew by an invisible pad or by padding a taller row
+  absorbs.
+
+- Landing: `?freeze=` with an empty value froze the hero scene at second zero
+  instead of being ignored — `Number('')` is 0, and 0 is a valid freeze point.
 
 - Landing: play the hero frame sequence as the single continuous gesture it
   actually is. The 161-frame render was treated as a closed loop and mirrored by
@@ -21,7 +88,23 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
   the pin, so the hand reaches through the scroll and is pulled back only at the
   close instead of lurching downward mid-scroll.
 
+### Removed
+
+- Landing: the frame-sequence hero. `public/frames` and `public/frames-sm`
+  (8.7 MB) and `src/components/ui/FrameSequence.jsx` were unreferenced after
+  the WebGL scene replaced them; the static export drops from 13 MB to 3.8 MB.
+
+- Landing: `PLAN.md`, the pre-code brief for the hero. A brief goes stale the
+  moment the code disagrees with it, and keeping it alongside `DESIGN.md`
+  invited a reader to trust the wrong one. Everything worth keeping from it now
+  lives in `DESIGN.md` as an account of what the code does.
+
 ### Changed
+
+- Landing: phones get a 512² normal map (158 KB) instead of the 1024² desktop
+  one (653 KB), built by `scripts/textures.mjs` and selected by the same media
+  query in both the preload and the loader. Total transfer on a phone: 2.04 MB
+  → 0.85 MB.
 
 - Landing: render the hero shot at a fractional position rather than at the
   nearest frame index, compositing the two frames a position falls between at

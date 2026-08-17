@@ -17,8 +17,9 @@ import { Reveal } from '../ui/Reveal'
 
 /* `held` is the only chromatic note in the section — it has to read at 11px
    against the terminal, so it takes the blue the gate demo uses for the same
-   state. */
-const NOTE_HELD = 'var(--color-electric)'
+   state. The *text* step of that blue: the fill step is 2.6:1 and this is
+   eleven-pixel type. See `--color-electric-text`. */
+const NOTE_HELD = 'var(--color-electric-text)'
 
 const STEPS = [
   {
