@@ -85,6 +85,43 @@ jobs:
       - name: cargo test --workspace (includes architecture_boundaries)
         run: cargo test --workspace
 
+  # The landing page is a separate npm workspace with its own test suite and
+  # its own build. It shipped for a while with neither running in CI, so a
+  # broken static export or a failing scene test could only be caught by
+  # someone building it by hand. Cheap enough (~1 min) to run unconditionally
+  # rather than behind a path filter — a filter would also have to be kept in
+  # step with which files the build actually reads.
+  landing:
+    name: Landing (test, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: landing
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # Matches `engines.node` in landing/package.json.
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: landing/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      - name: tsc --noEmit
+        run: npx tsc --noEmit
+
+      - name: npm test
+        run: npm test
+
+      # `output: 'export'` means the build is the deploy artifact: if this
+      # fails, DigitalOcean has nothing to serve.
+      - name: npm run build
+        run: npm run build
+
   security:
     name: Security (audit, deny)
     runs-on: ubuntu-latest

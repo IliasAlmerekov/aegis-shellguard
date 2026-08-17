@@ -9,10 +9,18 @@ theme.css
 tokens.json
 design/
 
-# Throwaway Playwright capture scripts used while authoring screenshots.
-# They hardcode absolute paths to other projects' node_modules and are
-# regenerated per session, not committed.
+# Throwaway Playwright capture and inspection scripts written while authoring
+# a section. They are regenerated per session and often hardcode absolute
+# paths, so they are working input rather than product. The dotted form is
+# what an agent reaches for when it wants a scratch file out of the way of
+# `ls` — catch it here so it never reaches a commit.
 shot-*.mjs
+.*.mjs
 
 # TypeScript incremental build cache.
 tsconfig.tsbuildinfo
+
+# Local tooling cache. It was excluded via .git/info/exclude, which is
+# per-clone and therefore invisible to everyone else — the file showed up as
+# untracked for anyone who checked the repository out.
+.impeccable/

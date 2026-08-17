@@ -50,6 +50,7 @@ job except `gate` itself, since the heavy-job `gate` sets `heavy=true` whenever
 `github.event.pull_request.base.ref == 'main'`):
 
 - `Quality (fmt, clippy, test)`
+- `Landing (test, build)`
 - `Security (audit, deny)`
 - `Release build (ubuntu-latest)`
 - `Release build (macos-26)`
