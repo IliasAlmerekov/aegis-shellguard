@@ -21,6 +21,31 @@
 
 ---
 
+## Current session (2026-08-17) — #181 Document Hook fail-closed guarantee
+
+- **#181 closed via TDD (ADR-023 verification).** Documented the two-layer 
+  fail-closed Hook guarantee that was implemented in #177:
+  - **ADR-023** already existed, documenting the two-layer decision, rationale, 
+    and honest non-goals (external SIGKILL, agent OOM-kill, corrupted script).
+  - **CONTEXT.md** defines **Contained Hook Panic** with cross-references from 
+    the **Hook** entry, added per domain-modeling workflow.
+  - **threat-model.md** section 9 describes the guarantee and non-goals with no 
+    overselling claims.
+  - **troubleshooting.md** instructs existing installations to refresh Hook 
+    scripts via `aegis install-hooks` to gain the outer layer.
+  - **tests/contracts_docs.rs** contains `m4_docs_keep_the_fail_closed_hook_panic_guarantee_and_its_non_goals_explicit()` 
+    pinning all documented promises.
+  - **CHANGELOG.md** carries a Security entry referencing M4/ADR-023.
+  - **Plan document** (2026-07-14-m4-hook-panic-fail-closed.md) is Accepted and 
+    includes script-level layer scope.
+
+- **Verified:** `cargo test --workspace` = 2094 passed / 0 failed; `clippy 
+  --all-targets -- -D warnings` = 0 issues; `fmt --all --check` clean; 
+  `cargo audit` = 0 CVEs + 6 known allowed; `cargo deny check` ok. 
+  Documentation-contract test passes. All acceptance criteria met.
+
+---
+
 ## Last session (2026-08-17) — #177 M4 Hook panic fails closed in two layers
 
 - **#177 closed via TDD (ADR-023).** A contained panic or abnormal termination
@@ -47,15 +72,17 @@
     unchanged. Existing installations are repaired by the idempotent installer,
     which rewrites on content mismatch.
 
-- **Tests (11 new):** process-seam boundary-panic test (real `aegis hook` child
+- **Tests (13 new):** process-seam boundary-panic test (real `aegis hook` child
   with the injection env var → deny JSON + exit 0 + deterministic stderr line);
   two process-seam opt-in tests (`RUST_BACKTRACE=0` omits the payload line,
   `RUST_BACKTRACE=1` appends it); three unit tests in `hook.rs` (non-string
-  payload → stable placeholder, fixed detail-free reason); four script-seam
+  payload → stable placeholder, fixed detail-free reason); six script-seam
   parity tests in the new `tests/agent_hooks_m4.rs` (one per agent: stub exits
   non-zero → script deny + exit 0; one per agent: stub exits 0 no output →
-  silence); one docs-contract test in `tests/contracts_docs.rs`.
-  `tests/agent_hooks.rs` was split to keep it under the 800-line budget.
+  silence; one per agent: stub exits 0 with a deny body → script forwards it
+  unchanged, exactly once, no double-print — closes #179 criterion 5); one
+  docs-contract test in `tests/contracts_docs.rs`. `tests/agent_hooks.rs` was
+  split to keep it under the 800-line budget.
 
 - **Review fix (TDD):** the opt-in debug check now treats `RUST_BACKTRACE=0` as
   not opted in (`env_opt_in` requires a truthy value), so a value that
@@ -76,7 +103,16 @@
   benchmark run required — the scanner hot path is untouched and the one extra
   fork per hook invocation is outside the sub-2 ms safe-path budget.
 
-- **Open:** `code-review` (Standards + Spec) and `re-review` before push/PR.
+- **Review cycle clean.** `code-review` (Standards + Spec) and `re-review`
+  (skeptic Verify → Confirm) are done. Issue #179 (script-level fail-closed
+  layer) is fully covered — all ten acceptance criteria met, including the
+  previously untested criterion 5 (a zero-exit body is forwarded unchanged,
+  exactly one deny, no double-print), pinned by the two new
+  `assert_forwards_body` script-seam tests. Skeptic verdicts: S1 (helper
+  duplication) → human decision, pre-existing partial pattern, not fixed; S2
+  (redundant `!contains("terminated abnormally")` assert) → confirmed and
+  closed by removing the dead assert, the exact-equality pin retained. Gate
+  clean; push/PR is the remaining step.
 
 ---
 
