@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft — requires a finding-specific `grill-with-docs` session before TDD.
+Accepted — implemented via TDD (ADR-023).
 
 ## Finding
 
@@ -19,6 +19,11 @@ may interpret missing output as permission to continue.
 - Keep the panic hook/logging behavior deterministic and avoid double-printing
   protocol output.
 - Do not use panics for expected hook errors; existing typed paths remain primary.
+- **Script-level layer (added at implementation):** the installed per-agent
+  `Hook` scripts stop `exec`-ing the binary, capture its stdout and exit status,
+  and emit their own deny response on a non-zero exit status — covering the
+  failure classes an in-process unwind guard structurally cannot (`abort`,
+  SIGSEGV, OOM-kill). Empty stdout with exit 0 stays a legitimate noop.
 
 ## TDD seams
 
@@ -26,6 +31,9 @@ may interpret missing output as permission to continue.
   deny JSON with exit behavior expected by Claude/Codex.
 - Ordinary allow/noop/deny inputs remain byte/structure compatible.
 - A non-string panic payload still produces a stable generic reason.
+- Script seam: point each installed `Hook` script at a stub binary that exits
+  non-zero without output and assert the script's own deny response and exit 0;
+  a companion test pins that a stub exiting 0 with no output stays silent.
 
 ## Implementation sequence
 
@@ -34,6 +42,9 @@ may interpret missing output as permission to continue.
    document why.
 3. Reuse `hook_deny_output` and existing render/exit flow.
 4. Add parity coverage for both installed hook shims.
+5. Stop `exec`-ing the binary in both `Hook` scripts; capture stdout and exit
+   status and deny on a non-zero exit status.
+6. Add script-level parity tests (one per agent) plus the noop-contract pin.
 
 ## Verification
 

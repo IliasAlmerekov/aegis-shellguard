@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# aegis-hook-version: 3
+# aegis-hook-version: 4
 # Claude Code PreToolUse hook — transparently rewrites unwrapped Bash commands
 # through aegis by delegating to the Rust `aegis hook` rewrite. No jq/python3
 # required. Installed to: ~/.claude/hooks/aegis-pre-tool-use.sh
@@ -82,4 +82,23 @@ if ! command -v "${AEGIS_BIN}" >/dev/null 2>&1; then
   printf '%s\n' '{"reason":"aegis binary unavailable; refusing to run command unscanned","hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"aegis binary unavailable; refusing to run command unscanned"}}'
   exit 0
 fi
-exec "${AEGIS_BIN}" hook
+
+# Run the binary (not exec) so the script survives the binary's death. Capture
+# its stdout and record its exit status. Abnormal termination is defined as a
+# non-zero exit status only: empty stdout with exit 0 stays a legitimate noop
+# and is forwarded as silence. On abnormal termination the script emits its own
+# deny response with a distinct reason and exits 0, symmetric to the
+# binary-unavailable fail-closed path above. Double-printing is structurally
+# impossible: a contained unwind exits 0 with the deny JSON, which the script
+# merely forwards; an abnormal termination produces no stdout, and only then
+# does the script speak (M4).
+hook_output="$("${AEGIS_BIN}" hook)"
+hook_status=$?
+if [ "${hook_status}" -ne 0 ]; then
+  printf '%s\n' '{"reason":"aegis hook terminated abnormally; refusing to run command unscanned","hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"aegis hook terminated abnormally; refusing to run command unscanned"}}'
+  exit 0
+fi
+if [ -n "${hook_output}" ]; then
+  printf '%s\n' "${hook_output}"
+fi
+exit 0

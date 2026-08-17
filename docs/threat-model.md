@@ -301,6 +301,30 @@ equivalent out-of-band execution paths.
 policy reduces agent-assisted bypass coaching; it does not turn Aegis into a
 sandbox or prevent deliberate manual execution.
 
+### 9. Hook panic or abnormal termination
+
+**Threat:** The Aegis `Hook` is the component that decides whether a command may
+proceed. If it dies without emitting a structured decision — a Rust panic that
+unwinds before any response, an `abort`, a stack-overflow SIGSEGV, or an
+OOM-kill — the agent may read the empty stdout as "nothing objected" and run the
+command unscanned. The one moment a guardrail must be loudest is the moment it
+goes silent.
+
+**Mitigations (ADR-023):**
+
+- an in-process unwind guard at the `Hook` boundary converts a contained panic
+  into the ordinary deny response with one fixed, detail-free reason
+- the installed per-agent `Hook` script runs the binary (not `exec`) and emits
+  its own deny response when the binary terminates with a non-zero exit status
+- both layers exit 0 so the agent parses the JSON decision rather than treating
+  it as a non-blocking hook error
+
+**Residual risk (non-goals, stated honestly):** external SIGKILL, an OOM-kill of
+the agent process itself, and a corrupted `Hook` script are not covered — the
+only signal the outer layer has is a non-zero exit status. The shell-proxy path
+already fails closed structurally; the `watch` NDJSON path has a different
+streaming contract and is not hardened here.
+
 ## Security invariants
 
 The following properties are part of Aegis' intended contract:

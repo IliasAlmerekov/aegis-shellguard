@@ -144,6 +144,21 @@ Codex expects `additionalContext`.
 2. Confirm `~/.codex/hooks/aegis-session-start.sh` emits
    `hookSpecificOutput.additionalContext`.
 
+### Hook scripts are not fail-closed on a panic or crash
+
+The fail-closed `Hook` layer (ADR-023) lives in the installed per-agent `Hook`
+scripts. If you installed Aegis before this protection shipped, your installed
+scripts still `exec` the binary and would go silent if it crashed. Refresh them
+to the current content:
+
+1. Re-run `aegis install-hooks --all` (or `--claude-code` / `--codex`).
+2. The installer rewrites any managed hook whose content differs from the
+   current template; it reports `hook installed` when it did.
+
+Managed hooks are updated explicitly; they never self-update while a session
+starts. A stale script is the one failure mode the outer layer cannot cover, so
+refreshing after an upgrade is the documented way to gain the protection.
+
 ### Aegis says it is disabled when an agent session starts
 
 **Why:** `aegis off` is an explicit operator control. The local Toggle is

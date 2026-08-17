@@ -476,5 +476,17 @@ _Avoid_: shim (reserve "shim"/"hook" for per-agent routing)
 
 **Hook**:
 A per-agent shim (`claude-code.sh`, the Codex hook) that routes a tool call through
-Aegis. Must fail **closed** (deny) on missing dependencies or invalid input.
+Aegis. Must fail **closed** (deny) on missing dependencies or invalid input. A
+panic or abnormal termination of the Hook is contained as a deny — see
+**Contained Hook Panic**.
 _Avoid_: wrapper, plugin (reserve "wrapper" for the shell `$SHELL` proxy itself)
+
+**Contained Hook Panic**:
+A panic or abnormal termination of the `Hook` that is converted into the ordinary
+deny response instead of dying silently, so the agent never mistakes a crash for
+permission to run the command. Two layers provide it: an in-process unwind guard
+at the `Hook` boundary (fixed, detail-free deny reason) and the installed per-agent
+`Hook` script, which survives the binary's death and denies on a non-zero exit
+status. External SIGKILL, an OOM-kill of the agent process itself, and a corrupted
+`Hook` script are not covered (ADR-023).
+_Avoid_: crash handling, panic recovery (reserve "recovery" for snapshot rollback)

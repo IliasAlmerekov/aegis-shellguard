@@ -466,7 +466,25 @@ mod tests {
         // The transparent-rewrite hook must not reintroduce jq/python3 parsing.
         assert!(!rendered.contains("python3 -"));
         assert!(!rendered.contains("jq -"));
-        assert!(rendered.contains("exec \"${AEGIS_BIN}\" hook"));
+        // The hook must run the binary (not exec) so it survives the binary's
+        // death and can fail closed on abnormal termination (M4).
+        assert!(
+            !rendered.contains("exec \"${AEGIS_BIN}\" hook"),
+            "the hook must not exec the binary; it must capture output and exit status"
+        );
+        assert!(
+            rendered.contains("hook_output=\"$(\"${AEGIS_BIN}\" hook)\""),
+            "the hook must capture the binary's stdout"
+        );
+        assert!(
+            rendered.contains("hook_status=$?"),
+            "the hook must record the binary's exit status"
+        );
+        assert!(
+            rendered
+                .contains("aegis hook terminated abnormally; refusing to run command unscanned"),
+            "the hook must emit its own deny on abnormal termination"
+        );
     }
 
     #[test]
