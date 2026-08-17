@@ -149,6 +149,70 @@ fn m1_docs_define_visible_optional_sandbox_degradation_without_confidentiality_c
 }
 
 #[test]
+fn m3a_docs_keep_disabled_passthrough_and_hook_refresh_explicit() {
+    // Prose wraps at the author's discretion, so match against a
+    // whitespace-normalized copy: reflowing a paragraph must not fail this
+    // contract, and deleting the promise must.
+    fn unwrapped(path: &str) -> String {
+        fs::read_to_string(repo_path(path))
+            .unwrap()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    let readme = unwrapped("README.md");
+    let troubleshooting = unwrapped("docs/troubleshooting.md");
+
+    // The Toggle is an operator escape hatch (ADR-005), so the docs must say
+    // plainly what an operator gets while it is off, and that a session says so.
+    for needle in [
+        "SessionStart effective-state notices",
+        "unguarded passthrough",
+        "`aegis on` re-enables enforcement",
+    ] {
+        assert!(
+            readme.contains(needle),
+            "README must document the disabled-Toggle session contract `{needle}`"
+        );
+    }
+
+    // The CI override is the one case where the local Toggle does not decide
+    // the effective state; a doc that omits it teaches operators to trust a
+    // stale `aegis off`.
+    assert!(
+        readme.contains("CI keeps enforcement active even if the local disabled flag exists"),
+        "README must document that CI overrides a local disabled Toggle"
+    );
+
+    // `aegis status` is the authoritative effective-state surface; the notice
+    // only reports it.
+    for needle in [
+        "Run `aegis status` to inspect the configured and effective state.",
+        "Managed hooks are updated explicitly; they never self-update while a session starts.",
+    ] {
+        assert!(
+            troubleshooting.contains(needle),
+            "troubleshooting must document `{needle}`"
+        );
+    }
+
+    // Visibility is informational. Promising an audit trail for session starts
+    // would exceed the contract — only Toggle transitions are auditable.
+    for forbidden in [
+        "session start is audited",
+        "audits every session start",
+        "session-start notices are recorded in the audit log",
+    ] {
+        let lower = readme.to_ascii_lowercase();
+        assert!(
+            !lower.contains(forbidden),
+            "docs must not claim session-start notices are audited: `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn m1_sandbox_api_docs_define_failure_and_non_return_contracts() {
     let source = fs::read_to_string(repo_path("crates/aegis-sandbox/src/lib.rs")).unwrap();
     let plan = fs::read_to_string(repo_path(
