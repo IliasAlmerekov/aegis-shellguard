@@ -98,8 +98,16 @@ fn apply_codex_hooks_json(
         .or_insert_with(|| Value::Array(Vec::new()))
         .as_array_mut()
         .ok_or_else(|| "hooks.hooks.SessionStart must be an array".to_string())?;
-    let session_present =
-        super::hook_registered_under(session_entries, "startup|resume", &session_cmd);
+    // Prune-then-add: drop every aegis-managed SessionStart registration that
+    // is not the canonical `startup|resume` one, including a stale entry under
+    // another matcher, while preserving unrelated user hooks.
+    let (session_pruned, session_present) = super::prune_aegis_managed_hooks(
+        session_entries,
+        "hooks.hooks.SessionStart",
+        "startup|resume",
+        &session_cmd,
+        super::is_aegis_managed_session_start_command,
+    )?;
     if !session_present {
         session_entries.push(serde_json::json!({
             "matcher": "startup|resume",
@@ -112,7 +120,13 @@ fn apply_codex_hooks_json(
         .or_insert_with(|| Value::Array(Vec::new()))
         .as_array_mut()
         .ok_or_else(|| "hooks.hooks.PreToolUse must be an array".to_string())?;
-    let ptu_present = super::hook_registered_under(ptu_entries, "Bash", &ptu_cmd);
+    let (ptu_pruned, ptu_present) = super::prune_aegis_managed_hooks(
+        ptu_entries,
+        "hooks.hooks.PreToolUse",
+        "Bash",
+        &ptu_cmd,
+        super::is_aegis_managed_bash_command,
+    )?;
     if !ptu_present {
         ptu_entries.push(serde_json::json!({
             "matcher": "Bash",
@@ -120,7 +134,9 @@ fn apply_codex_hooks_json(
         }));
     }
 
-    if session_present && ptu_present {
+    // Idempotent only when both canonical entries were already the sole
+    // aegis-managed ones and nothing was pruned.
+    if (session_present && !session_pruned) && (ptu_present && !ptu_pruned) {
         return Ok(InstallOutcome::AlreadyPresent);
     }
 
@@ -265,6 +281,12 @@ mod tests {
 
     #[test]
     fn codex_install_ignores_a_foreign_entry_whose_hooks_are_not_an_array() {
+        // The malformed entry sits under a matcher Aegis does not own
+        // (`startup`, not the canonical `startup|resume`): a foreign/corrupted
+        // shape outside Aegis' canonical namespace is left untouched rather
+        // than blocking the install (TASKS.md#M3a). Under the canonical
+        // matcher the same shape fails closed — covered by the Claude
+        // malformed-nested-hook test.
         let home = TempDir::new().expect("home dir");
         let codex_dir = home.path().join(".codex");
         fs::create_dir_all(&codex_dir).expect("create codex dir");
@@ -274,7 +296,7 @@ mod tests {
                 "hooks": {
                     "SessionStart": [
                         {
-                            "matcher": "startup|resume",
+                            "matcher": "startup",
                             "hooks": "not-an-array"
                         }
                     ]
@@ -291,6 +313,37 @@ mod tests {
             registered_commands(&codex_dir, "SessionStart")
                 .iter()
                 .any(|command| command.ends_with("aegis-session-start.sh"))
+        );
+    }
+
+    // The same malformed shape under the canonical `startup|resume` matcher
+    // fails closed: Aegis owns that namespace and must be able to safely prune
+    // and add into it. This is the counterpart to the tolerant non-canonical
+    // case above and pins the unified strict-on-canonical rule (#175).
+    #[test]
+    fn codex_install_errors_on_a_malformed_canonical_session_start_entry() {
+        let home = TempDir::new().expect("home dir");
+        let codex_dir = home.path().join(".codex");
+        fs::create_dir_all(&codex_dir).expect("create codex dir");
+        fs::write(
+            codex_dir.join("hooks.json"),
+            serde_json::json!({
+                "hooks": {
+                    "SessionStart": [
+                        { "matcher": "startup|resume", "hooks": "not-an-array" }
+                    ]
+                }
+            })
+            .to_string(),
+        )
+        .expect("write hooks.json");
+
+        let err = run_codex_install_at_dir(&codex_dir)
+            .expect_err("a malformed entry under the canonical matcher must fail closed");
+
+        assert!(
+            err.contains("hooks.hooks.SessionStart"),
+            "error must name the canonical section, got: {err}"
         );
     }
 

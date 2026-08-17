@@ -59,6 +59,11 @@ fn uninstall_prunes_claude_and_codex_hook_registrations() {
         .join(".claude")
         .join("hooks")
         .join("aegis-pre-tool-use.sh");
+    let claude_session_hook = home
+        .path()
+        .join(".claude")
+        .join("hooks")
+        .join("aegis-session-start.sh");
 
     assert!(claude_settings.exists());
     assert!(codex_hooks.exists());
@@ -67,6 +72,10 @@ fn uninstall_prunes_claude_and_codex_hook_registrations() {
     assert!(
         claude_shim.exists(),
         "Claude shim must be materialized by install"
+    );
+    assert!(
+        claude_session_hook.exists(),
+        "Claude session-start hook must be materialized by install"
     );
 
     let claude_json = read_json(&claude_settings);
@@ -112,6 +121,10 @@ fn uninstall_prunes_claude_and_codex_hook_registrations() {
         !claude_shim.exists(),
         "uninstall must remove the absolute Claude hook shim"
     );
+    assert!(
+        !claude_session_hook.exists(),
+        "uninstall must remove the Claude session-start hook payload"
+    );
 
     let claude_json = read_json(&claude_settings);
     assert!(
@@ -121,6 +134,11 @@ fn uninstall_prunes_claude_and_codex_hook_registrations() {
     assert!(
         !json_contains_command(&claude_json, "PreToolUse", "aegis hook"),
         "Claude settings.json must not retain the legacy bare aegis hook registration"
+    );
+    let claude_session_command = claude_session_hook.display().to_string();
+    assert!(
+        !json_contains_command(&claude_json, "SessionStart", &claude_session_command),
+        "Claude settings.json must not retain the SessionStart registration"
     );
     assert!(
         json_contains_command(&claude_json, "PreToolUse", "echo user-keep"),
@@ -459,6 +477,13 @@ fn install_repairs_its_own_session_start_entry_under_a_stale_matcher() {
         assert!(
             matchers.iter().any(|matcher| matcher == "startup|resume"),
             "{agent_dir}: a rerun must register the notice under startup|resume; matchers={matchers:?}"
+        );
+        // The superseded `startup` registration is a dead one the agent no
+        // longer fires Aegis on; a rerun must prune it rather than leave it
+        // alongside the canonical entry (#175 gap 1).
+        assert!(
+            !matchers.iter().any(|matcher| matcher == "startup"),
+            "{agent_dir}: the stale startup registration must be pruned; matchers={matchers:?}"
         );
     }
 }

@@ -1,4 +1,3 @@
-use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 
@@ -112,14 +111,30 @@ fn apply_session_start_installation(
         .as_array_mut()
         .ok_or_else(|| "settings.hooks.SessionStart must be a JSON array".to_string())?;
 
-    if super::hook_registered_under(session_start, "startup|resume", hook_command) {
+    // Prune-then-add: drop every aegis-managed SessionStart registration that
+    // is not the canonical `startup|resume` one (including a stale entry under
+    // another matcher that fires the notice twice), while preserving unrelated
+    // user hooks.
+    let (pruned_any, canonical_present) = super::prune_aegis_managed_hooks(
+        session_start,
+        "settings.hooks.SessionStart",
+        "startup|resume",
+        hook_command,
+        super::is_aegis_managed_session_start_command,
+    )?;
+
+    // Idempotent only when the canonical entry was already the sole
+    // aegis-managed hook and nothing was pruned.
+    if canonical_present && !pruned_any {
         return Ok(InstallOutcome::AlreadyPresent);
     }
+    if !canonical_present {
+        session_start.push(serde_json::json!({
+            "matcher": "startup|resume",
+            "hooks": [{ "type": "command", "command": hook_command }]
+        }));
+    }
 
-    session_start.push(serde_json::json!({
-        "matcher": "startup|resume",
-        "hooks": [{ "type": "command", "command": hook_command }]
-    }));
     Ok(InstallOutcome::Installed)
 }
 
@@ -152,10 +167,16 @@ fn apply_installation(settings: &mut Value, hook_command: &str) -> Result<Instal
 
     // Prune-then-add: remove every aegis-managed legacy Bash registration (the
     // bare `aegis hook`, the legacy `aegis-rewrite.sh` file, and any stale
-    // `aegis-pre-tool-use.sh` at a different absolute path) while preserving the
-    // canonical entry and any unrelated user hooks.
-    let (pruned_any, canonical_present) =
-        prune_aegis_managed_bash_hooks(pre_tool_use, hook_command)?;
+    // `aegis-pre-tool-use.sh` at a different absolute path or under a matcher
+    // Aegis does not install) while preserving the canonical entry and any
+    // unrelated user hooks.
+    let (pruned_any, canonical_present) = super::prune_aegis_managed_hooks(
+        pre_tool_use,
+        "settings.hooks.PreToolUse",
+        "Bash",
+        hook_command,
+        super::is_aegis_managed_bash_command,
+    )?;
 
     // Idempotent only when the canonical entry was already the sole aegis-managed
     // hook and nothing was pruned. Any pruning or a missing canonical entry means
@@ -176,134 +197,6 @@ fn apply_installation(settings: &mut Value, hook_command: &str) -> Result<Instal
     }
 
     Ok(InstallOutcome::Installed)
-}
-
-/// A Bash hook command that Aegis owns and may migrate away on install. The
-/// predicate matches by **basename** for the file-backed forms so a moved or
-/// renamed home directory still migrates; the bare two-token `aegis hook`
-/// command is matched as a whole string (it is not a path). A user hook that
-/// merely contains the substring `aegis` but is none of these is preserved.
-fn is_aegis_managed_bash_command(command: &str) -> bool {
-    if command == "aegis hook" {
-        return true;
-    }
-    let Some(basename) = Path::new(command).file_name().and_then(OsStr::to_str) else {
-        return false;
-    };
-    basename == "aegis-rewrite.sh" || basename == "aegis-pre-tool-use.sh"
-}
-
-/// Walk `PreToolUse`, and for each `matcher == "Bash"` entry drop hook objects
-/// whose command is aegis-managed **except** the canonical `hook_command`. Drop
-/// entries emptied by pruning. Returns `(pruned_any, canonical_present)`.
-///
-/// Malformed entries/hooks fail closed with the same typed errors as the
-/// historical validation, so the existing malformed-input tests still hold.
-fn prune_aegis_managed_bash_hooks(
-    entries: &mut Vec<Value>,
-    canonical_command: &str,
-) -> Result<(bool, bool), String> {
-    let mut pruned_any = false;
-    let mut canonical_present = false;
-    let mut drop_indices: Vec<usize> = Vec::new();
-
-    for (idx, entry) in entries.iter_mut().enumerate() {
-        // An entry that is not a `Bash`-matched object is not one Aegis manages:
-        // `matcher` is optional to the agent, so a third-party hook may omit it
-        // entirely. Skip it rather than rejecting it — this installer registers
-        // PreToolUse before SessionStart, so failing here would take the
-        // effective-state notice down with the interception hook and leave the
-        // operator with neither (TASKS.md#M3a). Entries that *are* `Bash`-matched
-        // sit in the namespace Aegis prunes, so their shapes are still validated
-        // below and still fail closed.
-        let Some(entry_obj) = entry.as_object_mut() else {
-            continue;
-        };
-        // Scope the matcher borrow so it ends before the mutable `hooks` borrow.
-        let matcher_is_bash = entry_obj
-            .get("matcher")
-            .and_then(Value::as_str)
-            .is_some_and(|matcher| matcher == "Bash");
-
-        if !matcher_is_bash {
-            continue;
-        }
-
-        let hooks = entry_obj
-            .get_mut("hooks")
-            .ok_or_else(|| {
-                "settings.hooks.PreToolUse matching Bash entry must contain hooks".to_string()
-            })?
-            .as_array_mut()
-            .ok_or_else(|| {
-                "settings.hooks.PreToolUse matching Bash entry hooks must be an array".to_string()
-            })?;
-
-        // Validate every hook shape before pruning so malformed hooks fail
-        // closed exactly as the historical validation did.
-        for hook in hooks.iter() {
-            let hook_obj = hook.as_object().ok_or_else(|| {
-                "settings.hooks.PreToolUse matching Bash entry hooks must contain objects"
-                    .to_string()
-            })?;
-            hook_obj
-                .get("type")
-                .ok_or_else(|| {
-                    "settings.hooks.PreToolUse matching Bash hook must contain type".to_string()
-                })?
-                .as_str()
-                .ok_or_else(|| {
-                    "settings.hooks.PreToolUse matching Bash hook type must be a string".to_string()
-                })?;
-            hook_obj
-                .get("command")
-                .ok_or_else(|| {
-                    "settings.hooks.PreToolUse matching Bash hook must contain command".to_string()
-                })?
-                .as_str()
-                .ok_or_else(|| {
-                    "settings.hooks.PreToolUse matching Bash hook command must be a string"
-                        .to_string()
-                })?;
-        }
-
-        let before = hooks.len();
-        let mut found_canonical = false;
-        hooks.retain(|hook| {
-            let Some(command) = hook
-                .as_object()
-                .and_then(|h| h.get("command"))
-                .and_then(|c| c.as_str())
-            else {
-                return true;
-            };
-            if command == canonical_command {
-                found_canonical = true;
-                return true;
-            }
-            // Keep user hooks; drop only aegis-managed legacy commands.
-            !is_aegis_managed_bash_command(command)
-        });
-
-        if hooks.len() < before {
-            pruned_any = true;
-        }
-        if found_canonical {
-            canonical_present = true;
-        }
-        // Drop the entry only if pruning emptied a previously non-empty entry,
-        // so an already-empty user entry is left untouched.
-        if before > 0 && hooks.is_empty() {
-            drop_indices.push(idx);
-        }
-    }
-
-    // Remove emptied entries in reverse index order to keep indices valid.
-    for idx in drop_indices.into_iter().rev() {
-        entries.remove(idx);
-    }
-
-    Ok((pruned_any, canonical_present))
 }
 
 #[cfg(test)]
