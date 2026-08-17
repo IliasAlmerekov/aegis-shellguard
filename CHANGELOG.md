@@ -64,7 +64,10 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
   anything for that agent, which left its sessions with no notice and no
   interception. Each agent installs independently, so with `--all` the other
   agent was unaffected. Entries Aegis does not recognize are now skipped rather
-  than rejected. (M3a)
+  than rejected — in the Claude installer this covers the `PreToolUse` pass too,
+  which runs first and so used to take the notice down with it. A `Bash`-matched
+  entry with a malformed body still fails closed: that one is in the namespace
+  Aegis prunes. (M3a)
 
 - `aegis install-hooks` now repairs its own registration when it sits under a
   matcher Aegis never installs — a registration the agent never fires. Presence

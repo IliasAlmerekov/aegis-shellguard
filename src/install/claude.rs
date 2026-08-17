@@ -208,22 +208,22 @@ fn prune_aegis_managed_bash_hooks(
     let mut drop_indices: Vec<usize> = Vec::new();
 
     for (idx, entry) in entries.iter_mut().enumerate() {
-        let entry_obj = entry
-            .as_object_mut()
-            .ok_or_else(|| "settings.hooks.PreToolUse entries must contain objects".to_string())?;
-        // Scope the matcher borrow so it ends before the mutable `hooks` borrow.
-        let matcher_is_bash = {
-            let matcher = entry_obj
-                .get("matcher")
-                .ok_or_else(|| {
-                    "settings.hooks.PreToolUse entries must contain matcher".to_string()
-                })?
-                .as_str()
-                .ok_or_else(|| {
-                    "settings.hooks.PreToolUse entry matcher must be a string".to_string()
-                })?;
-            matcher == "Bash"
+        // An entry that is not a `Bash`-matched object is not one Aegis manages:
+        // `matcher` is optional to the agent, so a third-party hook may omit it
+        // entirely. Skip it rather than rejecting it — this installer registers
+        // PreToolUse before SessionStart, so failing here would take the
+        // effective-state notice down with the interception hook and leave the
+        // operator with neither (TASKS.md#M3a). Entries that *are* `Bash`-matched
+        // sit in the namespace Aegis prunes, so their shapes are still validated
+        // below and still fail closed.
+        let Some(entry_obj) = entry.as_object_mut() else {
+            continue;
         };
+        // Scope the matcher borrow so it ends before the mutable `hooks` borrow.
+        let matcher_is_bash = entry_obj
+            .get("matcher")
+            .and_then(Value::as_str)
+            .is_some_and(|matcher| matcher == "Bash");
 
         if !matcher_is_bash {
             continue;

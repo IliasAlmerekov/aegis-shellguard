@@ -60,7 +60,16 @@
   skipped rather than rejected. Four unit tests that pinned the old rejections
   were retargeted to pin coexistence.
 
-- **Review cycle (`code-review` two-axis → `skeptic` Verify):** 9 atomic claims.
+  A third defect surfaced in the round-2 adversarial pass and was fixed the same
+  way: Claude's `PreToolUse` prune-then-add still rejected a foreign entry that
+  omitted `matcher`, and because that pass runs before SessionStart it aborted
+  the whole Claude install — no interception *and* no notice. Pre-existing, not
+  introduced by this branch, but it defeats the same acceptance criterion, so it
+  is closed here. Entries that *are* `Bash`-matched stay strictly validated:
+  those sit in the namespace Aegis prunes.
+
+- **Review cycle (`code-review` two-axis → `skeptic` Verify → `skeptic` Confirm):**
+  9 atomic claims in round 1.
   Confirmed and fixed: the matcher regression above (behavioral replay: post-fix
   `["never"]` vs pre-diff `["never","Bash"]`), the overstated "pinned by a test"
   claim (no test asserted a *successful* toggle appends an audit entry — only the
@@ -74,11 +83,22 @@
   rather than an error; that is the intended tolerant direction, and the
   container-type errors one level up are what must hold to append at all.
 
+  Round 2 replayed both behavioral packets against the fix and closed them
+  (`["never","Bash"]` restored; both agents gain `startup|resume`), and found
+  the Claude `PreToolUse` defect recorded above. **One open human decision:** the
+  repair adds a correctly-matched entry but never prunes the superseded Aegis
+  one, so a hand-edited config can fire the notice twice. The notice is pure
+  stdout — no state, no audit — so the cost is duplicated advisory text, and
+  Aegis has never itself installed SessionStart under any other matcher, making
+  the configuration hypothetical. Claude's `PreToolUse` path *does* prune its
+  stale entries, so the asymmetry is SessionStart-only. Left as is rather than
+  teaching the installer to delete registrations it did not certainly write.
+
 - **Glossary:** `CONTEXT.md` carried `Toggle` alone. Added `Effective enforcement
   state` (with `aegis status` named authoritative), `CI override`, `Disabled
   passthrough`, and `Session-start notice` (informational, not auditable).
 
-- **Verified:** `cargo test --workspace` = 2079 passed / 108 suites / 0 failed;
+- **Verified:** `cargo test --workspace` = 2080 passed / 108 suites / 0 failed;
   `clippy --all-targets -- -D warnings` clean; `fmt --all --check` clean;
   `cargo audit` = 0 CVEs with the 6 known allowed advisories (opt-in `starlark`
   chain, P3-7); `cargo deny check` ok. Hot path untouched, so no benchmark run

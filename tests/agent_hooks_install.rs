@@ -462,3 +462,63 @@ fn install_repairs_its_own_session_start_entry_under_a_stale_matcher() {
         );
     }
 }
+
+/// The Claude installer registers PreToolUse before SessionStart, so a foreign
+/// `PreToolUse` entry that omits the optional `matcher` used to abort the whole
+/// Claude install — taking the effective-state notice down with the
+/// interception hook (TASKS.md#M3a).
+#[test]
+fn claude_install_coexists_with_a_foreign_pre_tool_use_entry_without_a_matcher() {
+    let home = TempDir::new().unwrap();
+    prepare_agent_dirs(home.path(), true, false);
+    let claude_settings = home.path().join(".claude").join("settings.json");
+    fs::write(
+        &claude_settings,
+        serde_json::json!({
+            "hooks": {
+                "PreToolUse": [
+                    { "hooks": [{ "type": "command", "command": "echo foreign-keep" }] }
+                ]
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let install_output = run_script("agent-setup.sh", home.path(), &["--claude-code"], None);
+    assert!(
+        install_output.status.success(),
+        "claude install must survive a matcher-less foreign PreToolUse entry: stdout=\n{}\nstderr=\n{}",
+        String::from_utf8_lossy(&install_output.stdout),
+        String::from_utf8_lossy(&install_output.stderr)
+    );
+
+    let hooks_dir = home.path().join(".claude").join("hooks");
+    let json = read_json(&claude_settings);
+    assert!(
+        json_contains_command(
+            &json,
+            "PreToolUse",
+            &hooks_dir
+                .join("aegis-pre-tool-use.sh")
+                .display()
+                .to_string()
+        ),
+        "the interception hook must still be registered; settings=\n{json}"
+    );
+    assert!(
+        json_contains_command(
+            &json,
+            "SessionStart",
+            &hooks_dir
+                .join("aegis-session-start.sh")
+                .display()
+                .to_string()
+        ),
+        "the session-start notice must still be registered; settings=\n{json}"
+    );
+    assert!(
+        json_contains_command(&json, "PreToolUse", "echo foreign-keep"),
+        "the foreign entry must survive the install; settings=\n{json}"
+    );
+}
