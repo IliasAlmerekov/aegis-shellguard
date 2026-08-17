@@ -486,3 +486,94 @@ fn adr022_records_the_iteration10_direct_exec_degradation_closure() {
         "ADR-022 must not retain the closed P7 waiver as a current gap"
     );
 }
+
+#[test]
+fn m4_docs_keep_the_fail_closed_hook_panic_guarantee_and_its_non_goals_explicit() {
+    // Prose wraps at the author's discretion, so match against a
+    // whitespace-normalized copy: reflowing a paragraph must not fail this
+    // contract, and deleting the promise must.
+    fn unwrapped(path: &str) -> String {
+        fs::read_to_string(repo_path(path))
+            .unwrap()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    let adr = unwrapped("docs/adr/adr-023-hook-panic-fails-closed-in-two-layers.md");
+    let threat_model = unwrapped("docs/threat-model.md");
+    let troubleshooting = unwrapped("docs/troubleshooting.md");
+    let readme = unwrapped("README.md");
+    let context = fs::read_to_string(repo_path("CONTEXT.md")).unwrap();
+    let plan = fs::read_to_string(repo_path(
+        "docs/plans/2026-07-14-m4-hook-panic-fail-closed.md",
+    ))
+    .unwrap();
+
+    // The ADR must record the two-layer decision and the honest non-goals, so a
+    // future contributor does not "simplify" the script back to `exec`.
+    for needle in [
+        "catch_unwind",
+        "aegis hook failed internally; refusing to run command unscanned",
+        "aegis hook terminated abnormally; refusing to run command unscanned",
+        "non-zero exit status only",
+        "external SIGKILL",
+        "OOM-kill of the agent process itself",
+        "corrupted `Hook` script",
+    ] {
+        assert!(
+            adr.contains(needle),
+            "ADR-023 must document the fail-closed guarantee `{needle}`"
+        );
+    }
+
+    // The threat model must state plainly which failure modes are not covered.
+    for needle in [
+        "Hook panic or abnormal termination",
+        "external SIGKILL",
+        "OOM-kill of the agent process itself",
+        "corrupted `Hook` script",
+    ] {
+        assert!(
+            threat_model.contains(needle),
+            "threat model must document the M4 guarantee and non-goals `{needle}`"
+        );
+    }
+
+    // Existing installations must be told that refreshing the Hook scripts is
+    // required to gain the protection.
+    for needle in [
+        "fail-closed `Hook` layer",
+        "re-run `aegis install-hooks --all`",
+        "never self-update while a session starts",
+    ] {
+        assert!(
+            troubleshooting.contains(needle),
+            "troubleshooting must document the Hook-refresh step `{needle}`"
+        );
+    }
+    assert!(
+        readme.contains("fail-closed panic layer"),
+        "README must tell users that refreshing the hooks gains the fail-closed panic layer"
+    );
+
+    // The glossary must define the concept once, cross-referenced from Hook.
+    assert!(
+        context.contains("**Contained Hook Panic**"),
+        "CONTEXT.md must define the canonical term `Contained Hook Panic`"
+    );
+    assert!(
+        context.contains("Contained Hook Panic"),
+        "CONTEXT.md Hook entry must cross-reference `Contained Hook Panic`"
+    );
+
+    // The plan must have left Draft and gained the script-level layer.
+    assert!(
+        plan.contains("Accepted"),
+        "the M4 plan must have left Draft status"
+    );
+    assert!(
+        plan.contains("Script-level layer"),
+        "the M4 plan scope must mention the script-level layer"
+    );
+}

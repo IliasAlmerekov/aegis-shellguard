@@ -13,7 +13,7 @@
 
 ## Active branch
 
-`agent/prune-superseded-hooks`
+`agent/m4-hook-panic-fail-closed`
 
 ## Last updated
 
@@ -21,24 +21,57 @@
 
 ---
 
-## Last session (2026-08-17) — #175 install/uninstall own Aegis' hook registrations
+## Last session (2026-08-17) — #177 M4 Hook panic fails closed in two layers
 
-- **#175 closed.** One shared `prune_aegis_managed_hooks` in `src/install/mod.rs`
-  walks every matcher and drops any Aegis-managed command that is not the
-  canonical `(matcher, command)` registration; both hook kinds (`PreToolUse`,
-  `SessionStart`) for both agents route through it, replacing the Bash-only
-  prune and the add-without-prune `SessionStart` path. `scripts/uninstall.sh`
-  additionally removes the Claude `aegis-session-start.sh` payload and its
-  `SessionStart` registration, which it previously left behind. Design decision
-  (user-confirmed): strict on the canonical matcher (fail closed), tolerant of
-  foreign shapes elsewhere — the pre-existing Claude `Bash`-malformed contract
-  is preserved.
+- **#177 closed via TDD (ADR-023).** A contained panic or abnormal termination
+  of the `Hook` now reaches the agent as the ordinary deny response, never as
+  silence. Two independent layers:
+  - **Layer 1 (in-process).** `run_hook` installs a minimal panic hook scoped to
+    `Hook` mode and wraps the stdin-read + outcome production in
+    `std::panic::catch_unwind`. On unwind the outcome is the existing deny
+    variant with one fixed, detail-free reason (`aegis hook failed internally;
+    refusing to run command unscanned`), used identically for `&str`, `String`,
+    and non-string payloads. The panic hook prints one deterministic stderr
+    line (`aegis: internal hook panic contained`) and appends payload/location
+    only under `RUST_BACKTRACE`/`AEGIS_DEBUG`. Response emission moved off
+    `println!` to an explicit locked-stdout write + flush (write errors ignored
+    silently). Exit stays 0 for allow/noop/deny/contained-panic alike. No audit
+    entry, no `tracing` event. Panic injection is a `cfg(debug_assertions)`-only
+    `AEGIS_TEST_PANIC_HOOK` env read, so a shipped binary has no such path.
+  - **Layer 2 (installed per-agent `Hook` scripts).** Both `claude-code.sh` and
+    `codex-pre-tool-use.sh` stop `exec`-ing the binary; they capture stdout and
+    exit status, and on a non-zero exit emit their own deny with a distinct
+    reason (`aegis hook terminated abnormally; refusing to run command
+    unscanned`), exiting 0. Empty stdout with exit 0 stays a silent noop.
+    `Toggle`/CI-override handling and the binary-unavailable branch are
+    unchanged. Existing installations are repaired by the idempotent installer,
+    which rewrites on content mismatch.
 
-- **Verified:** `cargo test --workspace` = 2081 / 0 failed; `clippy
-  --all-targets -- -D warnings`; `fmt --all --check` clean. Hot path untouched.
+- **Tests (8 new):** process-seam boundary-panic test (real `aegis hook` child
+  with the injection env var → deny JSON + exit 0 + deterministic stderr line);
+  three unit tests in `hook.rs` (non-string payload → stable placeholder, fixed
+  detail-free reason); three script-seam parity tests in the new
+  `tests/agent_hooks_m4.rs` (one per agent: stub exits non-zero → script deny +
+  exit 0; companion: stub exits 0 no output → silence); one docs-contract test
+  in `tests/contracts_docs.rs`. `tests/agent_hooks.rs` was split to keep it
+  under the 800-line budget.
 
-- **Open:** `code-review` ran (Standards + Spec); `re-review` + any fixes in
-  progress before push/PR.
+- **Docs:** ADR-023 (two-layer decision + honest non-goals: external SIGKILL,
+  OOM-kill of the agent itself, corrupted `Hook` script not covered), ADR index,
+  `CONTEXT.md` gains **Contained Hook Panic** (cross-referenced from **Hook**),
+  threat-model section 9, troubleshooting Hook-refresh step, README mention,
+  CHANGELOG `Security` entry, M4 plan leaves Draft and gains the script-level
+  layer.
+
+- **Verified:** `cargo test --workspace` = 2089 / 0 failed (the scanner
+  `ten_thousand_safe_commands_under_25ms` timing test flaked once under load and
+  passed on replay — unrelated to this change, hot path untouched); `clippy
+  --all-targets -- -D warnings` clean; `fmt --all --check` clean; `cargo audit`
+  = 0 CVEs with the 6 known allowed advisories; `cargo deny check` ok. No
+  benchmark run required — the scanner hot path is untouched and the one extra
+  fork per hook invocation is outside the sub-2 ms safe-path budget.
+
+- **Open:** `code-review` (Standards + Spec) and `re-review` before push/PR.
 
 ---
 

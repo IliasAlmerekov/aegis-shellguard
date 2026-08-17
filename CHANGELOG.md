@@ -11,6 +11,16 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+### Security
+
+- A contained panic at the `Hook` boundary now fails closed: an unwind anywhere
+  across the `Hook` entry point is converted into the ordinary deny response
+  with one fixed, detail-free reason, and the installed per-agent `Hook` scripts
+  stop `exec`-ing the binary so they survive its death and deny on a non-zero
+  exit status. The agent never mistakes a crash for permission to run the
+  command. Existing installations must re-run `aegis install-hooks` to refresh
+  the scripts. (M4, ADR-023)
+
 ### Added
 
 - Claude Code and Codex sessions now report Aegis' effective enforcement state
