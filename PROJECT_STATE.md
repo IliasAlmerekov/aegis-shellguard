@@ -9,12 +9,11 @@
 
 ## Current version
 
-`0.6.4` — pre-1.0, targeting `1.0.0` (prepared; tag `v0.6.4` pending. Last
-published tag: `v0.6.3`; L1 gate open)
+`0.6.4` — pre-1.0, targeting `1.0.0` (tag `v0.6.4` published; L1 gate open)
 
 ## Active branch
 
-`docs/close-m4-179`
+`chore/sync-v0.6.4-distribution`
 
 ## Last updated
 
@@ -22,7 +21,34 @@ published tag: `v0.6.3`; L1 gate open)
 
 ---
 
-## Current session (2026-08-17) — v0.6.4 release preparation
+## Current session (2026-08-17) — v0.6.4 tagged and distribution synced
+
+- **`v0.6.4` tagged on `c2c5241` and pushed** after CI on `main` went green.
+  The Release workflow completed all six jobs: four target builds, the GitHub
+  Release, and the npm publish (`@iliasalmerekov/aegis@0.6.4` is live on the
+  registry). The published Release body is the `[0.6.4]` CHANGELOG section
+  verbatim — the auto-generated commit/PR list is gone.
+
+- **Distribution metadata regenerated from the published assets.**
+  `scripts/update-homebrew-formula.sh v0.6.4` and
+  `scripts/update-npm-package.sh v0.6.4` rewrote
+  `packaging/homebrew/Formula/aegis.rb` and `packaging/npm/checksums.json`;
+  the four binary checksums agree across both files, which are produced by
+  independent paths (sidecar fetch vs. asset download). `cargo test --test
+  homebrew_formula --test npm_package --test installer_checksum` = 34 passed.
+  The npm workflow regenerates `checksums.json` in CI but never commits it
+  back, so this sync is the only thing that keeps the checked-in pins honest.
+
+- **Open operator steps (need a Homebrew host; `brew` is absent on this
+  machine):** publish `Formula/aegis.rb` to the
+  `IliasAlmerekov/homebrew-aegis` tap, run `brew audit --strict --online`, and
+  smoke `brew tap`/`install`/`test` on macOS and Linux — the runbook is in
+  `docs/release-readiness.md` §"Homebrew tap publish runbook". Evidence for
+  v0.6.4 is not yet recorded in that document.
+
+---
+
+## Last session (2026-08-17) — v0.6.4 release preparation
 
 - **Version bumped `0.6.3` → `0.6.4`** across the workspace root and all twelve
   member crates (`Cargo.toml` + `Cargo.lock`), `packaging/npm/package.json`,
@@ -64,7 +90,7 @@ published tag: `v0.6.3`; L1 gate open)
 
 ---
 
-## Last session (2026-08-17) — #181 Document Hook fail-closed guarantee
+## Prior session (2026-08-17) — #181 Document Hook fail-closed guarantee
 
 - **#181 closed via TDD (ADR-023 verification).** Documented the two-layer 
   fail-closed Hook guarantee that was implemented in #177:

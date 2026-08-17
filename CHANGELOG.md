@@ -11,6 +11,12 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+### Changed
+
+- Distribution: regenerated the Homebrew formula pins and the npm checksum
+  pins from the published v0.6.4 Release assets. Publication to the Homebrew
+  tap and the `brew audit`/install smoke remain open operator steps.
+
 ## [0.6.4] — 2026-08-17
 
 ### Security
