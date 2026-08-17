@@ -129,12 +129,11 @@ const ALLOWED_BINARY_FILES: [&str; 5] = [
 /// the rule from turning a directory into a place where any binary can hide,
 /// and spares the allowlist from enumerating asset sets no human maintains
 /// by hand (a webfont family ships several files per weight and format).
-const ALLOWED_BINARY_DIRECTORIES: [(&str, &str); 5] = [
+const ALLOWED_BINARY_DIRECTORIES: [(&str, &str); 4] = [
     ("landing/public/fonts/", ".woff2"),
-    ("landing/public/frames/", ".webp"),
-    ("landing/public/frames-sm/", ".webp"),
-    ("landing/public/icons/", ".webp"),
     ("landing/public/incidents/", ".webp"),
+    ("landing/public/textures/", ".webp"),
+    ("landing/public/hdri/", ".hdr"),
 ];
 
 fn is_allowed_binary(path: &str) -> bool {
