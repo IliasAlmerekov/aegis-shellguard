@@ -29,6 +29,10 @@ fn run_hook_process(envs: &[(&str, &str)]) -> Output {
         .arg("hook")
         .env("HOME", home.path())
         .env("AEGIS_TEST_PANIC_HOOK", "1")
+        // The child must not inherit an ambient opt-in (CI sets RUST_BACKTRACE=1
+        // for cargo test). Remove AEGIS_DEBUG so the tests control opt-in solely
+        // through the RUST_BACKTRACE override they pass in.
+        .env_remove("AEGIS_DEBUG")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -51,7 +55,11 @@ fn run_hook_process(envs: &[(&str, &str)]) -> Output {
 /// environment variable that exists only in non-release builds.
 #[test]
 fn hook_contained_panic_emits_deny_and_exits_zero() {
-    let output = run_hook_process(&[]);
+    // Pin RUST_BACKTRACE=0 so the child deterministically does not opt into the
+    // debug payload/location lines regardless of the ambient environment (CI
+    // sets RUST_BACKTRACE=1 for cargo test) — the assertion below requires
+    // exactly one stderr line.
+    let output = run_hook_process(&[("RUST_BACKTRACE", "0")]);
 
     assert_eq!(
         output.status.code(),
@@ -87,12 +95,14 @@ fn hook_contained_panic_emits_deny_and_exits_zero() {
         "a contained panic must not emit updatedInput; json=\n{json}"
     );
 
-    // The human must see a single deterministic stderr line saying the panic
-    // was contained (user story 5).
+    // The human must see exactly one deterministic stderr line saying the panic
+    // was contained (user story 5) — nothing more, so a regression that printed
+    // two lines would fail.
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("aegis: internal hook panic contained"),
-        "contained panic must print the deterministic stderr line; stderr=\n{stderr}"
+    assert_eq!(
+        stderr.trim(),
+        "aegis: internal hook panic contained",
+        "contained panic must print exactly one deterministic stderr line; stderr=\n{stderr}"
     );
 }
 
@@ -146,15 +156,14 @@ fn stub_aegis_bin(body: &str) -> (TempDir, String) {
 /// The script-level fail-closed layer must emit its own deny response when the
 /// binary terminates abnormally (non-zero exit) — the failure class an
 /// in-process unwind guard structurally cannot cover (M4). One test per agent.
-#[test]
-fn claude_hook_fails_closed_when_binary_terminates_abnormally() {
+fn assert_abnormal_deny(script: &str) {
     let home = TempDir::new().unwrap();
     let (_dir, stub) = stub_aegis_bin("exit 3");
     let stdin_json =
         serde_json::json!({ "tool_input": { "command": "rm -rf /tmp/x" } }).to_string();
 
     let output = run_script_with_env(
-        "hooks/claude-code.sh",
+        script,
         home.path(),
         &[],
         Some(stdin_json.as_str()),
@@ -187,43 +196,13 @@ fn claude_hook_fails_closed_when_binary_terminates_abnormally() {
 }
 
 #[test]
+fn claude_hook_fails_closed_when_binary_terminates_abnormally() {
+    assert_abnormal_deny("hooks/claude-code.sh");
+}
+
+#[test]
 fn codex_hook_fails_closed_when_binary_terminates_abnormally() {
-    let home = TempDir::new().unwrap();
-    let (_dir, stub) = stub_aegis_bin("exit 3");
-    let stdin_json =
-        serde_json::json!({ "tool_input": { "command": "rm -rf /tmp/x" } }).to_string();
-
-    let output = run_script_with_env(
-        "hooks/codex-pre-tool-use.sh",
-        home.path(),
-        &[],
-        Some(stdin_json.as_str()),
-        &[("AEGIS_BIN", &stub)],
-    );
-
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "the script must exit 0 so the agent parses the JSON decision; stderr=\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let json: Value = serde_json::from_slice(&output.stdout).expect(
-        "the script must emit valid deny JSON on abnormal termination; stdout was empty or unparseable",
-    );
-    assert_eq!(
-        json["hookSpecificOutput"]["permissionDecision"], "deny",
-        "the script must deny (fail closed) on abnormal termination; json=\n{json}"
-    );
-    let reason = "aegis hook terminated abnormally; refusing to run command unscanned";
-    assert_eq!(
-        json["reason"], reason,
-        "the script's deny reason must be distinct from the binary-unavailable reason; json=\n{json}"
-    );
-    assert_eq!(
-        json["hookSpecificOutput"]["permissionDecisionReason"], reason,
-        "permissionDecisionReason must mirror the script's deny reason; json=\n{json}"
-    );
+    assert_abnormal_deny("hooks/codex-pre-tool-use.sh");
 }
 
 /// Empty stdout with exit status 0 is a legitimate noop and must be forwarded
