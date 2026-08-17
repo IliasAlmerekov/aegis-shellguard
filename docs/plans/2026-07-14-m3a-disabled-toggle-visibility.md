@@ -88,6 +88,12 @@ agent session cannot silently inherit disabled enforcement.
 
 ## Verification
 
+- Live session smoke, 2026-08-17: a new Codex session reported
+  `SessionStart hook (completed)` and carried the disabled-passthrough notice
+  verbatim with no invalid-JSON error, then agreed with `aegis status`; a new
+  Claude Code session quoted the same notice as a SessionStart system message.
+  Only a real session can show the envelope is accepted.
+- `tests/toggle_parity.rs`, `tests/agent_hooks_install.rs`
 - `tests/agent_hooks.rs`, `tests/toggle_cli.rs`, `tests/full_pipeline_toggle.rs`,
   `tests/watch_mode.rs`
 - `rtk cargo test --workspace`

@@ -105,10 +105,18 @@
   was required. The `analysis::source_reader` Unix-socket test that blocked the
   prior session's replay did not fire in either full run.
 
-- **Live evidence:** a branch build installed via `cargo install --path .` and
-  `aegis install-hooks --all`; both installed hooks emit the disabled-passthrough
-  notice against the real `HOME`, matching `aegis status` (`effective mode:
-  disabled passthrough`).
+- **Live evidence, both agents (2026-08-17).** A branch build was installed via
+  `cargo install --path .` and `aegis install-hooks --all`. Running the installed
+  hooks directly against the real `HOME` emits the disabled-passthrough notice,
+  matching `aegis status` (`effective mode: disabled passthrough`).
+
+  Real sessions confirm the envelope is accepted, which no unit test can show. A
+  new Codex session reported `SessionStart hook (completed)` and carried the
+  notice verbatim, with no `hook returned invalid session start JSON output`
+  error, then independently ran `aegis status` and agreed with it. A new Claude
+  Code session quoted the same notice as a SessionStart system message. Both
+  agents therefore see the effective state at session start, which is the
+  criterion no in-process test could close.
 
 - **Two live findings worth carrying forward.** (1) This machine's
   `~/.claude/hooks/aegis-pre-tool-use.sh` had `AEGIS_BIN` templated to
