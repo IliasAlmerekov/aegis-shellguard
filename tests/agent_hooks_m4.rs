@@ -244,3 +244,54 @@ fn claude_hook_forwards_silence_when_binary_exits_zero_without_output() {
 fn codex_hook_forwards_silence_when_binary_exits_zero_without_output() {
     assert_noop_silence("hooks/codex-pre-tool-use.sh");
 }
+
+/// A zero exit status with a response body must forward that body unchanged, so
+/// exactly one deny reaches the agent and the two layers never double-print
+/// (M4, user story 16). The script must not append its own abnormal-termination
+/// deny on top of a body the binary already produced. One test per agent.
+fn assert_forwards_body(script: &str) {
+    let home = TempDir::new().unwrap();
+    // The stub exits 0 with a deny body — the case where the in-process layer
+    // already spoke and the script must relay it verbatim, never speak again.
+    let body = r#"{"reason":"aegis hook denied; refusing to run command unscanned","hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"aegis hook denied; refusing to run command unscanned"}}"#;
+    let (_dir, stub) = stub_aegis_bin(&format!("printf '%s\\n' '{body}'\nexit 0"));
+    let stdin_json =
+        serde_json::json!({ "tool_input": { "command": "rm -rf /tmp/x" } }).to_string();
+
+    let output = run_script_with_env(
+        script,
+        home.path(),
+        &[],
+        Some(stdin_json.as_str()),
+        &[("AEGIS_BIN", &stub)],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "forwarding a body must still exit 0; stderr=\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // The script relays the binary's stdout verbatim (one trailing newline from
+    // its own printf), so the agent sees exactly one deny — never a second,
+    // script-authored one. The exact-equality assert is the whole pin: any
+    // double-print (the body twice, or a script-authored abnormal-termination
+    // deny appended) makes stdout longer than `{body}\n` and fails it.
+    let expected = format!("{body}\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        expected,
+        "the script must forward the binary's body unchanged, exactly once; stdout=\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+#[test]
+fn claude_hook_forwards_binary_deny_body_unchanged() {
+    assert_forwards_body("hooks/claude-code.sh");
+}
+
+#[test]
+fn codex_hook_forwards_binary_deny_body_unchanged() {
+    assert_forwards_body("hooks/codex-pre-tool-use.sh");
+}
