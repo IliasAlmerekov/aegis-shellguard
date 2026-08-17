@@ -103,16 +103,17 @@
   benchmark run required — the scanner hot path is untouched and the one extra
   fork per hook invocation is outside the sub-2 ms safe-path budget.
 
-- **Review cycle clean.** `code-review` (Standards + Spec) and `re-review`
-  (skeptic Verify → Confirm) are done. Issue #179 (script-level fail-closed
-  layer) is fully covered — all ten acceptance criteria met, including the
-  previously untested criterion 5 (a zero-exit body is forwarded unchanged,
-  exactly one deny, no double-print), pinned by the two new
-  `assert_forwards_body` script-seam tests. Skeptic verdicts: S1 (helper
-  duplication) → human decision, pre-existing partial pattern, not fixed; S2
-  (redundant `!contains("terminated abnormally")` assert) → confirmed and
-  closed by removing the dead assert, the exact-equality pin retained. Gate
-  clean; push/PR is the remaining step.
+- **Review cycle clean; #179 closed and merged.** `code-review` (Standards +
+  Spec) and `re-review` (skeptic Verify → Confirm) are done. Issue #179
+  (script-level fail-closed layer) is fully covered — all ten acceptance
+  criteria met, including the previously untested criterion 5 (a zero-exit
+  body is forwarded unchanged, exactly one deny, no double-print), pinned by
+  the two new `assert_forwards_body` script-seam tests. Skeptic verdicts: S1
+  (helper duplication) → human decision, pre-existing partial pattern, not
+  fixed; S2 (redundant `!contains("terminated abnormally")` assert) → confirmed
+  and closed by removing the dead assert, the exact-equality pin retained.
+  Merged via PR #185 (commit `799cc71`); CI green. M4 box checked in
+  `TASKS.md`.
 
 ---
 
@@ -2047,7 +2048,7 @@ Full history of prior sessions: `git log` and `CHANGELOG.md`.
 | P0 security blockers (C1–C4) | Uppercase bypass, `$IFS` obfuscation, project-config weakening, token-prefix anchoring | ✅ Done |
 | P1 security findings (H1–H4, H8) | Segmentation, destructive SQL, H3 patterns, hooks, destructive Git forms | ✅ Done |
 | P1 security findings (H5, H6, H7a, H7b, H9) | Integrity wording, containment, artifact hardening, ADR-016 degradation | 🔲 Open (H5/H6/H7a closed; H7b/H9 remain) |
-| P2 security findings | M1/M3a/M3b/M6/M10 closed; M2, M4, M5, M7, M8, M9 open | 🔲 Open |
+| P2 security findings | M1/M3a/M3b/M4/M6/M10 closed; M2, M5, M7, M8, M9 open | 🔲 Open |
 | 1.0 perf gate | Hot path < 2 ms (p99) via criterion | 🔲 Open |
 | 1.0 test gate | Zero false-negatives on security bypass corpus | 🔲 Open |
 
@@ -2165,8 +2166,8 @@ member calls, `ScriptFile`/`DirectExec` fs reads) and the live
 - **P2 open contract:** M1 surfaces optional `Sandbox` degradation without making
   confinement mandatory; M3a makes the intentional disabled `Toggle` visible;
   M8 aligns Snapshot/Rollback wording with captured pre-execution state rather
-  than building a general backup system. M2, M4, M5, M7, and M9 retain their
-  focused correctness findings. M3b, M6, and M10 are closed.
+  than building a general backup system. M2, M5, M7, and M9 retain their
+  focused correctness findings. M3b, M4, M6, and M10 are closed.
 - **Docs accuracy regressions (2026-07-09 checkup):** ARCHITECTURE.md references
   removed paths (`src/decision/engine.rs`, `src/interceptor/…`, `src/config/…`,
   `src/snapshot/*.rs`), states a stale 1500/2000 LoC budget (actual 800), and
