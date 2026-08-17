@@ -66,8 +66,7 @@ pub(crate) fn run_hook() -> i32 {
 fn install_hook_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
         write_stderr(CONTAINED_PANIC_STDERR);
-        if std::env::var_os("RUST_BACKTRACE").is_some() || std::env::var_os("AEGIS_DEBUG").is_some()
-        {
+        if env_opt_in("RUST_BACKTRACE") || env_opt_in("AEGIS_DEBUG") {
             write_stderr(&format!(
                 "aegis: panic payload: {}",
                 panic_payload_text(info.payload())
@@ -77,6 +76,16 @@ fn install_hook_panic_hook() {
             }
         }
     }));
+}
+
+/// True when `name` is set to a truthy value — present, non-empty, and not
+/// `0`. Used for the opt-in debug/backtrace environment variables so a value
+/// that conventionally disables output (`RUST_BACKTRACE=0`) is not read as
+/// opt-in and does not leak panic details (M4).
+fn env_opt_in(name: &str) -> bool {
+    std::env::var(name)
+        .map(|value| !value.is_empty() && value != "0")
+        .unwrap_or(false)
 }
 
 /// Render a panic payload as text for the opt-in debug stderr line. A non-string

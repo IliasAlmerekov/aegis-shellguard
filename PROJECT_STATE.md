@@ -47,14 +47,19 @@
     unchanged. Existing installations are repaired by the idempotent installer,
     which rewrites on content mismatch.
 
-- **Tests (8 new):** process-seam boundary-panic test (real `aegis hook` child
+- **Tests (11 new):** process-seam boundary-panic test (real `aegis hook` child
   with the injection env var → deny JSON + exit 0 + deterministic stderr line);
-  three unit tests in `hook.rs` (non-string payload → stable placeholder, fixed
-  detail-free reason); three script-seam parity tests in the new
-  `tests/agent_hooks_m4.rs` (one per agent: stub exits non-zero → script deny +
-  exit 0; companion: stub exits 0 no output → silence); one docs-contract test
-  in `tests/contracts_docs.rs`. `tests/agent_hooks.rs` was split to keep it
-  under the 800-line budget.
+  two process-seam opt-in tests (`RUST_BACKTRACE=0` omits the payload line,
+  `RUST_BACKTRACE=1` appends it); three unit tests in `hook.rs` (non-string
+  payload → stable placeholder, fixed detail-free reason); four script-seam
+  parity tests in the new `tests/agent_hooks_m4.rs` (one per agent: stub exits
+  non-zero → script deny + exit 0; one per agent: stub exits 0 no output →
+  silence); one docs-contract test in `tests/contracts_docs.rs`.
+  `tests/agent_hooks.rs` was split to keep it under the 800-line budget.
+
+- **Review fix (TDD):** the opt-in debug check now treats `RUST_BACKTRACE=0` as
+  not opted in (`env_opt_in` requires a truthy value), so a value that
+  conventionally disables backtraces cannot leak panic details.
 
 - **Docs:** ADR-023 (two-layer decision + honest non-goals: external SIGKILL,
   OOM-kill of the agent itself, corrupted `Hook` script not covered), ADR index,
@@ -63,7 +68,7 @@
   CHANGELOG `Security` entry, M4 plan leaves Draft and gains the script-level
   layer.
 
-- **Verified:** `cargo test --workspace` = 2089 / 0 failed (the scanner
+- **Verified:** `cargo test --workspace` = 2092 / 0 failed (the scanner
   `ten_thousand_safe_commands_under_25ms` timing test flaked once under load and
   passed on replay — unrelated to this change, hot path untouched); `clippy
   --all-targets -- -D warnings` clean; `fmt --all --check` clean; `cargo audit`

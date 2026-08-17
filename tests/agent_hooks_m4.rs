@@ -10,19 +10,17 @@ mod support;
 
 use std::fs;
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 
 use serde_json::Value;
 use tempfile::TempDir;
 
 use support::agent_hooks::run_script_with_env;
 
-/// The `Hook` boundary must convert a contained panic into the ordinary deny
-/// shape rather than dying silently (M4). This drives the real `aegis hook`
-/// subcommand as a child process with a panic injected through a dedicated
-/// environment variable that exists only in non-release builds.
-#[test]
-fn hook_contained_panic_emits_deny_and_exits_zero() {
+/// Run the real `aegis hook` subcommand as a child process with a panic
+/// injected through `AEGIS_TEST_PANIC_HOOK` (a `cfg(debug_assertions)`-only
+/// read) plus any extra environment overrides. Returns the child's output.
+fn run_hook_process(envs: &[(&str, &str)]) -> Output {
     let home = TempDir::new().unwrap();
     let input = serde_json::json!({ "tool_input": { "command": "rm -rf /tmp/x" } }).to_string();
 
@@ -34,6 +32,9 @@ fn hook_contained_panic_emits_deny_and_exits_zero() {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    for (key, value) in envs {
+        command.env(key, value);
+    }
     let mut child = command.spawn().expect("aegis hook must spawn");
     child
         .stdin
@@ -41,7 +42,16 @@ fn hook_contained_panic_emits_deny_and_exits_zero() {
         .expect("hook stdin")
         .write_all(input.as_bytes())
         .expect("hook input");
-    let output = child.wait_with_output().expect("aegis hook must finish");
+    child.wait_with_output().expect("aegis hook must finish")
+}
+
+/// The `Hook` boundary must convert a contained panic into the ordinary deny
+/// shape rather than dying silently (M4). This drives the real `aegis hook`
+/// subcommand as a child process with a panic injected through a dedicated
+/// environment variable that exists only in non-release builds.
+#[test]
+fn hook_contained_panic_emits_deny_and_exits_zero() {
+    let output = run_hook_process(&[]);
 
     assert_eq!(
         output.status.code(),
@@ -83,6 +93,36 @@ fn hook_contained_panic_emits_deny_and_exits_zero() {
     assert!(
         stderr.contains("aegis: internal hook panic contained"),
         "contained panic must print the deterministic stderr line; stderr=\n{stderr}"
+    );
+}
+
+/// The opt-in debug detail must not leak when `RUST_BACKTRACE=0` — a value that
+/// conventionally disables backtraces must not be read as opt-in (M4).
+#[test]
+fn hook_contained_panic_omits_payload_when_backtrace_is_zero() {
+    let output = run_hook_process(&[("RUST_BACKTRACE", "0")]);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("aegis: internal hook panic contained"),
+        "the contained line must still print; stderr=\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("aegis: panic payload"),
+        "RUST_BACKTRACE=0 must not opt into the debug payload line; stderr=\n{stderr}"
+    );
+}
+
+/// Opting in through `RUST_BACKTRACE=1` must append the payload and location so
+/// a developer can diagnose a contained panic (user story 6).
+#[test]
+fn hook_contained_panic_includes_payload_when_backtrace_opted_in() {
+    let output = run_hook_process(&[("RUST_BACKTRACE", "1")]);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("aegis: panic payload: injected hook panic for test"),
+        "RUST_BACKTRACE=1 must append the panic payload; stderr=\n{stderr}"
     );
 }
 
@@ -188,16 +228,15 @@ fn codex_hook_fails_closed_when_binary_terminates_abnormally() {
 
 /// Empty stdout with exit status 0 is a legitimate noop and must be forwarded
 /// as silence — the fail-closed layer must not reinterpret the existing noop
-/// contract (M4, user story 14/15).
-#[test]
-fn hook_script_forwards_silence_when_binary_exits_zero_without_output() {
+/// contract (M4, user story 14/15). One test per agent for parity.
+fn assert_noop_silence(script: &str) {
     let home = TempDir::new().unwrap();
     let (_dir, stub) = stub_aegis_bin("exit 0");
     let stdin_json =
         serde_json::json!({ "tool_input": { "command": "rm -rf /tmp/x" } }).to_string();
 
     let output = run_script_with_env(
-        "hooks/claude-code.sh",
+        script,
         home.path(),
         &[],
         Some(stdin_json.as_str()),
@@ -215,4 +254,14 @@ fn hook_script_forwards_silence_when_binary_exits_zero_without_output() {
         "empty stdout with exit 0 must stay a silent noop; stdout=\n{}",
         String::from_utf8_lossy(&output.stdout)
     );
+}
+
+#[test]
+fn claude_hook_forwards_silence_when_binary_exits_zero_without_output() {
+    assert_noop_silence("hooks/claude-code.sh");
+}
+
+#[test]
+fn codex_hook_forwards_silence_when_binary_exits_zero_without_output() {
+    assert_noop_silence("hooks/codex-pre-tool-use.sh");
 }
