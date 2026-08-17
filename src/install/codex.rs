@@ -98,12 +98,7 @@ fn apply_codex_hooks_json(
         .or_insert_with(|| Value::Array(Vec::new()))
         .as_array_mut()
         .ok_or_else(|| "hooks.hooks.SessionStart must be an array".to_string())?;
-    let session_present = codex_hook_present(
-        session_entries,
-        "startup|resume",
-        &session_cmd,
-        "hooks.hooks.SessionStart",
-    )?;
+    let session_present = codex_hook_present(session_entries, &session_cmd);
     if !session_present {
         session_entries.push(serde_json::json!({
             "matcher": "startup|resume",
@@ -116,7 +111,7 @@ fn apply_codex_hooks_json(
         .or_insert_with(|| Value::Array(Vec::new()))
         .as_array_mut()
         .ok_or_else(|| "hooks.hooks.PreToolUse must be an array".to_string())?;
-    let ptu_present = codex_hook_present(ptu_entries, "Bash", &ptu_cmd, "hooks.hooks.PreToolUse")?;
+    let ptu_present = codex_hook_present(ptu_entries, &ptu_cmd);
     if !ptu_present {
         ptu_entries.push(serde_json::json!({
             "matcher": "Bash",
@@ -222,58 +217,23 @@ fn write_toml_atomically(path: &Path, value: &toml::Value) -> Result<(), String>
     Ok(())
 }
 
-fn codex_hook_present(
-    entries: &[Value],
-    matcher: &str,
-    command: &str,
-    location: &str,
-) -> Result<bool, String> {
-    let mut found = false;
-
-    for entry in entries {
-        let obj = entry
-            .as_object()
-            .ok_or_else(|| format!("{location} entries must contain objects"))?;
-        let entry_matcher = obj
-            .get("matcher")
-            .ok_or_else(|| format!("{location} entries must contain matcher"))?
-            .as_str()
-            .ok_or_else(|| format!("{location} entry matcher must be a string"))?;
-
-        if entry_matcher != matcher {
-            continue;
-        }
-
-        let hooks = obj
-            .get("hooks")
-            .ok_or_else(|| format!("{location} matching entry must contain hooks"))?
-            .as_array()
-            .ok_or_else(|| format!("{location} matching entry hooks must be an array"))?;
-
-        for hook in hooks {
-            let hook = hook
-                .as_object()
-                .ok_or_else(|| format!("{location} matching entry hooks must contain objects"))?;
-            let hook_type = hook
-                .get("type")
-                .ok_or_else(|| format!("{location} matching entry hook must contain type"))?
-                .as_str()
-                .ok_or_else(|| format!("{location} matching entry hook type must be a string"))?;
-            let hook_command = hook
-                .get("command")
-                .ok_or_else(|| format!("{location} matching entry hook must contain command"))?
-                .as_str()
-                .ok_or_else(|| {
-                    format!("{location} matching entry hook command must be a string")
-                })?;
-
-            if hook_type == "command" && hook_command == command {
-                found = true;
-            }
-        }
-    }
-
-    Ok(found)
+/// True when `entries` already registers `command` as a command hook.
+///
+/// This answers one question: is our own hook already registered? An entry that
+/// does not register our command belongs to another tool, and other tools'
+/// entries are not ours to validate — `matcher` is optional to the agent, and a
+/// third-party entry may be shaped however that tool likes. Unrecognized shapes
+/// are skipped rather than rejected: refusing to install because a foreign entry
+/// looks unfamiliar would leave the operator with no effective-state notice at
+/// all, which is the gap these hooks exist to close (TASKS.md#M3a).
+fn codex_hook_present(entries: &[Value], command: &str) -> bool {
+    entries.iter().any(|entry| {
+        entry["hooks"].as_array().is_some_and(|hooks| {
+            hooks
+                .iter()
+                .any(|hook| hook["type"] == "command" && hook["command"] == command)
+        })
+    })
 }
 
 #[cfg(test)]
@@ -296,8 +256,33 @@ mod tests {
         assert!(err.contains("hooks.json"));
     }
 
+    /// Reads the commands registered under `section`, so a case can assert both
+    /// that ours arrived and that a foreign entry was left alone.
+    fn registered_commands(codex_dir: &Path, section: &str) -> Vec<String> {
+        let hooks: Value =
+            serde_json::from_str(&fs::read_to_string(codex_dir.join("hooks.json")).expect("read"))
+                .expect("parse hooks.json");
+        hooks["hooks"][section]
+            .as_array()
+            .map(|entries| {
+                entries
+                    .iter()
+                    .filter_map(|entry| entry["hooks"].as_array())
+                    .flatten()
+                    .filter_map(|hook| hook["command"].as_str())
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    // The four cases below each hold a `SessionStart`/`PreToolUse` entry Aegis
+    // did not write and does not recognize. None of them is ours, so none of
+    // them may block our install: an operator whose agent config contains a
+    // third-party entry must still end up with an effective-state notice.
+
     #[test]
-    fn codex_install_errors_on_malformed_nested_session_start_hook_entry() {
+    fn codex_install_ignores_a_foreign_entry_whose_hooks_are_not_an_array() {
         let home = TempDir::new().expect("home dir");
         let codex_dir = home.path().join(".codex");
         fs::create_dir_all(&codex_dir).expect("create codex dir");
@@ -317,14 +302,18 @@ mod tests {
         )
         .expect("write hooks.json");
 
-        let err = run_codex_install_at_dir(&codex_dir)
-            .expect_err("malformed nested session start hook should error");
+        let outcome = run_codex_install_at_dir(&codex_dir).expect("install must not be blocked");
 
-        assert!(err.contains("hooks.hooks.SessionStart"));
+        assert!(matches!(outcome, InstallOutcome::Installed));
+        assert!(
+            registered_commands(&codex_dir, "SessionStart")
+                .iter()
+                .any(|command| command.ends_with("aegis-session-start.sh"))
+        );
     }
 
     #[test]
-    fn codex_install_errors_on_non_object_session_start_member() {
+    fn codex_install_ignores_a_foreign_non_object_session_start_member() {
         let home = TempDir::new().expect("home dir");
         let codex_dir = home.path().join(".codex");
         fs::create_dir_all(&codex_dir).expect("create codex dir");
@@ -339,14 +328,18 @@ mod tests {
         )
         .expect("write hooks.json");
 
-        let err = run_codex_install_at_dir(&codex_dir)
-            .expect_err("non-object session-start member should error");
+        let outcome = run_codex_install_at_dir(&codex_dir).expect("install must not be blocked");
 
-        assert!(err.contains("hooks.hooks.SessionStart"));
+        assert!(matches!(outcome, InstallOutcome::Installed));
+        assert!(
+            registered_commands(&codex_dir, "SessionStart")
+                .iter()
+                .any(|command| command.ends_with("aegis-session-start.sh"))
+        );
     }
 
     #[test]
-    fn codex_install_errors_on_non_string_session_start_matcher() {
+    fn codex_install_ignores_a_foreign_session_start_entry_with_a_non_string_matcher() {
         let home = TempDir::new().expect("home dir");
         let codex_dir = home.path().join(".codex");
         fs::create_dir_all(&codex_dir).expect("create codex dir");
@@ -357,7 +350,7 @@ mod tests {
                     "SessionStart": [
                         {
                             "matcher": 42,
-                            "hooks": []
+                            "hooks": [{ "type": "command", "command": "echo foreign" }]
                         }
                     ]
                 }
@@ -366,14 +359,20 @@ mod tests {
         )
         .expect("write hooks.json");
 
-        let err = run_codex_install_at_dir(&codex_dir)
-            .expect_err("non-string session-start matcher should error");
+        let outcome = run_codex_install_at_dir(&codex_dir).expect("install must not be blocked");
 
-        assert!(err.contains("hooks.hooks.SessionStart"));
+        assert!(matches!(outcome, InstallOutcome::Installed));
+        let commands = registered_commands(&codex_dir, "SessionStart");
+        assert!(
+            commands
+                .iter()
+                .any(|command| command.ends_with("aegis-session-start.sh"))
+        );
+        assert!(commands.iter().any(|command| command == "echo foreign"));
     }
 
     #[test]
-    fn codex_install_errors_on_non_string_pre_tool_use_matcher() {
+    fn codex_install_ignores_a_foreign_pre_tool_use_entry_with_a_non_string_matcher() {
         let home = TempDir::new().expect("home dir");
         let codex_dir = home.path().join(".codex");
         fs::create_dir_all(&codex_dir).expect("create codex dir");
@@ -384,7 +383,7 @@ mod tests {
                     "PreToolUse": [
                         {
                             "matcher": false,
-                            "hooks": []
+                            "hooks": [{ "type": "command", "command": "echo foreign" }]
                         }
                     ]
                 }
@@ -393,10 +392,16 @@ mod tests {
         )
         .expect("write hooks.json");
 
-        let err = run_codex_install_at_dir(&codex_dir)
-            .expect_err("non-string pre-tool-use matcher should error");
+        let outcome = run_codex_install_at_dir(&codex_dir).expect("install must not be blocked");
 
-        assert!(err.contains("hooks.hooks.PreToolUse"));
+        assert!(matches!(outcome, InstallOutcome::Installed));
+        let commands = registered_commands(&codex_dir, "PreToolUse");
+        assert!(
+            commands
+                .iter()
+                .any(|command| command.ends_with("aegis-pre-tool-use.sh"))
+        );
+        assert!(commands.iter().any(|command| command == "echo foreign"));
     }
 
     #[test]

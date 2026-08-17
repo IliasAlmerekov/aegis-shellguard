@@ -112,36 +112,23 @@ fn apply_session_start_installation(
         .as_array_mut()
         .ok_or_else(|| "settings.hooks.SessionStart must be a JSON array".to_string())?;
 
-    for entry in session_start.iter() {
-        let entry = entry.as_object().ok_or_else(|| {
-            "settings.hooks.SessionStart entries must contain objects".to_string()
-        })?;
-        let matcher = entry
-            .get("matcher")
-            .and_then(Value::as_str)
-            .ok_or_else(|| {
-                "settings.hooks.SessionStart entries must contain a string matcher".to_string()
-            })?;
-        let hooks = entry
-            .get("hooks")
-            .and_then(Value::as_array)
-            .ok_or_else(|| {
-                format!("settings.hooks.SessionStart matching {matcher} entry must contain hooks")
-            })?;
-        for hook in hooks {
-            let hook = hook.as_object().ok_or_else(|| {
-                "settings.hooks.SessionStart hooks must contain objects".to_string()
-            })?;
-            let hook_type = hook.get("type").and_then(Value::as_str).ok_or_else(|| {
-                "settings.hooks.SessionStart hooks must contain a string type".to_string()
-            })?;
-            let command = hook.get("command").and_then(Value::as_str).ok_or_else(|| {
-                "settings.hooks.SessionStart hooks must contain a string command".to_string()
-            })?;
-            if hook_type == "command" && command == hook_command {
-                return Ok(InstallOutcome::AlreadyPresent);
-            }
-        }
+    // This scan answers one question: is our own hook already registered? A
+    // `SessionStart` entry that does not register our command belongs to
+    // another tool, and other tools' entries are not ours to validate —
+    // `matcher` is optional to the agent, and a third-party entry may be shaped
+    // however that tool likes. Skip what we do not recognize instead of
+    // rejecting it: refusing to install because a foreign entry looks
+    // unfamiliar leaves the operator with no effective-state notice at all,
+    // which is the gap this hook exists to close (TASKS.md#M3a).
+    let already_registered = session_start.iter().any(|entry| {
+        entry["hooks"].as_array().is_some_and(|hooks| {
+            hooks
+                .iter()
+                .any(|hook| hook["type"] == "command" && hook["command"] == hook_command)
+        })
+    });
+    if already_registered {
+        return Ok(InstallOutcome::AlreadyPresent);
     }
 
     session_start.push(serde_json::json!({
