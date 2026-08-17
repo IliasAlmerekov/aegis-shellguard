@@ -345,3 +345,120 @@ fn claude_install_coexists_with_a_foreign_session_start_entry_without_a_matcher(
         "the foreign matcher-less entry must survive the install; settings=\n{json}"
     );
 }
+
+/// An entry registering Aegis' own command under a matcher Aegis never
+/// installs is a dead registration: the agent will not fire it. Reading it as
+/// "already present" would leave the operator unprotected while the installer
+/// reports success, so a rerun must add a correctly-matched entry.
+#[test]
+fn codex_install_repairs_its_own_pre_tool_use_entry_under_a_wrong_matcher() {
+    let home = TempDir::new().unwrap();
+    prepare_agent_dirs(home.path(), false, true);
+    let hooks_json = home.path().join(".codex").join("hooks.json");
+    let ptu_shim = home
+        .path()
+        .join(".codex")
+        .join("hooks")
+        .join("aegis-pre-tool-use.sh");
+    fs::write(
+        &hooks_json,
+        serde_json::json!({
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": "never",
+                        "hooks": [{ "type": "command", "command": ptu_shim.display().to_string() }]
+                    }
+                ]
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    assert!(
+        run_script("agent-setup.sh", home.path(), &["--codex"], None)
+            .status
+            .success()
+    );
+
+    let json = read_json(&hooks_json);
+    let matchers: Vec<String> = json["hooks"]["PreToolUse"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| {
+            entry["hooks"].as_array().is_some_and(|hooks| {
+                hooks
+                    .iter()
+                    .any(|hook| hook["command"] == ptu_shim.display().to_string())
+            })
+        })
+        .map(|entry| entry["matcher"].as_str().unwrap_or_default().to_owned())
+        .collect();
+
+    assert!(
+        matchers.iter().any(|matcher| matcher == "Bash"),
+        "a rerun must register the interception hook under Bash; matchers={matchers:?}"
+    );
+}
+
+#[test]
+fn install_repairs_its_own_session_start_entry_under_a_stale_matcher() {
+    for (agent_dir, flag, settings_name) in [
+        (".claude", "--claude-code", "settings.json"),
+        (".codex", "--codex", "hooks.json"),
+    ] {
+        let home = TempDir::new().unwrap();
+        prepare_agent_dirs(home.path(), agent_dir == ".claude", agent_dir == ".codex");
+        let settings = home.path().join(agent_dir).join(settings_name);
+        let session_shim = home
+            .path()
+            .join(agent_dir)
+            .join("hooks")
+            .join("aegis-session-start.sh");
+        fs::write(
+            &settings,
+            serde_json::json!({
+                "hooks": {
+                    "SessionStart": [
+                        {
+                            "matcher": "startup",
+                            "hooks": [
+                                { "type": "command", "command": session_shim.display().to_string() }
+                            ]
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        assert!(
+            run_script("agent-setup.sh", home.path(), &[flag], None)
+                .status
+                .success()
+        );
+
+        let json = read_json(&settings);
+        let matchers: Vec<String> = json["hooks"]["SessionStart"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|entry| {
+                entry["hooks"].as_array().is_some_and(|hooks| {
+                    hooks
+                        .iter()
+                        .any(|hook| hook["command"] == session_shim.display().to_string())
+                })
+            })
+            .map(|entry| entry["matcher"].as_str().unwrap_or_default().to_owned())
+            .collect();
+
+        assert!(
+            matchers.iter().any(|matcher| matcher == "startup|resume"),
+            "{agent_dir}: a rerun must register the notice under startup|resume; matchers={matchers:?}"
+        );
+    }
+}

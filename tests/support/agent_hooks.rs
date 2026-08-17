@@ -20,7 +20,7 @@ use serde_json::Value;
 /// CI detection variables the hooks consult. Cleared for every scripted run so
 /// a developer's own environment cannot flip a hook into its CI-override
 /// branch and mask a failure in the "outside CI" cases.
-const CI_MARKER_VARS: [&str; 9] = [
+pub const CI_MARKER_VARS: [&str; 9] = [
     "AEGIS_CI",
     "CI",
     "GITHUB_ACTIONS",

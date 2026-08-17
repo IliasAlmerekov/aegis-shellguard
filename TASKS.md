@@ -300,9 +300,11 @@ the project Definition of Done in `~/.agents/ENGINEERING_GATES.md` is satisfied.
   hook environment isolation), `3646fc7` (session hook JSON protocol, PR #162).
   Closure: `tests/toggle_parity.rs` (notice ↔ `aegis status` agreement across six
   environments), `tests/contracts_docs.rs::m3a_docs_keep_disabled_passthrough_and_hook_refresh_explicit`,
-  `tests/agent_hooks.rs` session-start cases, `tests/toggle_cli.rs` status and
-  audit-failure cases, and the coexistence cases in `tests/agent_hooks_install.rs`
-  covering the install defect this closure found and fixed.
+  `tests/agent_hooks.rs` session-start cases, `tests/toggle_cli.rs` status cases plus
+  `a_successful_toggle_appends_an_audit_entry_for_each_transition` and the two
+  audit-failure cases, and the coexistence and matcher-repair cases in
+  `tests/agent_hooks_install.rs` covering the two install defects this closure
+  found and fixed.
 
 ### [x] M3b — Non-canonical `aegis` hook commands bypass wrapping
 

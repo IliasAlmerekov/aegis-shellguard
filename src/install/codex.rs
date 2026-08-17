@@ -98,7 +98,8 @@ fn apply_codex_hooks_json(
         .or_insert_with(|| Value::Array(Vec::new()))
         .as_array_mut()
         .ok_or_else(|| "hooks.hooks.SessionStart must be an array".to_string())?;
-    let session_present = codex_hook_present(session_entries, &session_cmd);
+    let session_present =
+        super::hook_registered_under(session_entries, "startup|resume", &session_cmd);
     if !session_present {
         session_entries.push(serde_json::json!({
             "matcher": "startup|resume",
@@ -111,7 +112,7 @@ fn apply_codex_hooks_json(
         .or_insert_with(|| Value::Array(Vec::new()))
         .as_array_mut()
         .ok_or_else(|| "hooks.hooks.PreToolUse must be an array".to_string())?;
-    let ptu_present = codex_hook_present(ptu_entries, &ptu_cmd);
+    let ptu_present = super::hook_registered_under(ptu_entries, "Bash", &ptu_cmd);
     if !ptu_present {
         ptu_entries.push(serde_json::json!({
             "matcher": "Bash",
@@ -215,25 +216,6 @@ fn write_toml_atomically(path: &Path, value: &toml::Value) -> Result<(), String>
         .map_err(|err| format!("failed to replace {}: {err}", path.display()))?;
 
     Ok(())
-}
-
-/// True when `entries` already registers `command` as a command hook.
-///
-/// This answers one question: is our own hook already registered? An entry that
-/// does not register our command belongs to another tool, and other tools'
-/// entries are not ours to validate — `matcher` is optional to the agent, and a
-/// third-party entry may be shaped however that tool likes. Unrecognized shapes
-/// are skipped rather than rejected: refusing to install because a foreign entry
-/// looks unfamiliar would leave the operator with no effective-state notice at
-/// all, which is the gap these hooks exist to close (TASKS.md#M3a).
-fn codex_hook_present(entries: &[Value], command: &str) -> bool {
-    entries.iter().any(|entry| {
-        entry["hooks"].as_array().is_some_and(|hooks| {
-            hooks
-                .iter()
-                .any(|hook| hook["type"] == "command" && hook["command"] == command)
-        })
-    })
 }
 
 #[cfg(test)]

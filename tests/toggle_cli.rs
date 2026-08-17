@@ -249,3 +249,44 @@ fn truthy_aegis_ci_forces_enforcing_ci_override() {
         );
     }
 }
+
+/// The Toggle is an operator escape hatch, so the acceptance criterion for M3a
+/// requires the transition itself to be auditable — the session-start notice is
+/// informational and deliberately records nothing. The failure path is covered
+/// above; this pins the successful half, which nothing else asserted.
+#[test]
+fn a_successful_toggle_appends_an_audit_entry_for_each_transition() {
+    let home = TempDir::new().unwrap();
+    let cwd = TempDir::new().unwrap();
+
+    assert!(run_aegis_in(&home, &cwd, &["off"]).status.success());
+    assert!(run_aegis_in(&home, &cwd, &["on"]).status.success());
+
+    let audit_log = home.path().join(".aegis").join("audit.jsonl");
+    let contents = fs::read_to_string(&audit_log).unwrap_or_else(|err| {
+        panic!(
+            "a successful toggle must append to {}: {err}",
+            audit_log.display()
+        )
+    });
+    let commands: Vec<String> = contents
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            serde_json::from_str::<serde_json::Value>(line)
+                .expect("each audit line must be JSON")["command"]
+                .as_str()
+                .expect("each audit entry must carry a command")
+                .to_owned()
+        })
+        .collect();
+
+    assert!(
+        commands.iter().any(|command| command == "aegis off"),
+        "disabling must be audited; audited commands: {commands:?}"
+    );
+    assert!(
+        commands.iter().any(|command| command == "aegis on"),
+        "re-enabling must be audited; audited commands: {commands:?}"
+    );
+}

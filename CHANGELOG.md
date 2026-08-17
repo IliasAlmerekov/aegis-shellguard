@@ -58,13 +58,18 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Fixed
 
-- `aegis install-hooks` no longer refuses to install because another tool's
-  `SessionStart` or `PreToolUse` entry omits `matcher`. Both agents treat the
-  field as optional, so a third-party hook could block Aegis from registering
-  anything and leave the operator with no effective-state notice at all — with
-  `--all`, after the Claude half had already been written. The scan now answers
-  only whether Aegis' own command is registered and skips entries it does not
-  recognize. (M3a)
+- `aegis install-hooks` no longer aborts an agent's install because another
+  tool's `SessionStart` or `PreToolUse` entry omits `matcher`. Both agents treat
+  the field as optional, so a third-party hook could stop Aegis registering
+  anything for that agent, which left its sessions with no notice and no
+  interception. Each agent installs independently, so with `--all` the other
+  agent was unaffected. Entries Aegis does not recognize are now skipped rather
+  than rejected. (M3a)
+
+- `aegis install-hooks` now repairs its own registration when it sits under a
+  matcher Aegis never installs — a registration the agent never fires. Presence
+  requires the command *and* the matcher, so a rerun adds a correctly-matched
+  entry instead of reporting success over a dead one. (M3a)
 
 - Landing: render every quality tier through the same post-processing chain.
   ACES tone mapping lives only in the composer and the renderer is

@@ -194,6 +194,31 @@ pub(crate) fn combine_outcomes(lhs: InstallOutcome, rhs: InstallOutcome) -> Inst
     }
 }
 
+/// True when `entries` already registers `command` under `matcher` — that is,
+/// when Aegis' own hook is present *and* wired to fire.
+///
+/// Both halves are load-bearing. Matching on the command alone would accept a
+/// registration under a matcher Aegis never installs, which the agent never
+/// fires: the operator would be left unguarded while a rerun of
+/// `aegis install-hooks` reported success. Requiring the matcher lets a rerun
+/// repair such a dead registration by adding a correctly-matched entry.
+///
+/// Anything else is another tool's entry, and other tools' entries are not ours
+/// to validate — `matcher` is optional to the agent, and a third-party entry may
+/// be shaped however that tool likes. Unrecognized shapes are skipped rather
+/// than rejected: refusing to install because a foreign entry looks unfamiliar
+/// leaves the operator with no hook at all (TASKS.md#M3a).
+pub(crate) fn hook_registered_under(entries: &[Value], matcher: &str, command: &str) -> bool {
+    entries.iter().any(|entry| {
+        entry["matcher"] == matcher
+            && entry["hooks"].as_array().is_some_and(|hooks| {
+                hooks
+                    .iter()
+                    .any(|hook| hook["type"] == "command" && hook["command"] == command)
+            })
+    })
+}
+
 pub(crate) fn load_settings(path: &Path) -> Result<Value, String> {
     let raw = match fs::read_to_string(path) {
         Ok(raw) => raw,

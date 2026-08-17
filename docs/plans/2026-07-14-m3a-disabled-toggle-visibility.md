@@ -4,13 +4,19 @@
 
 Closed 2026-08-17. M3b canonical hook wrapping was already closed.
 
-Closure added two guards the implementation lacked: a behavioral parity contract
-between the session-start notice and `aegis status`
-(`tests/toggle_parity.rs`), and a documentation contract following the H9/M1
-precedent. It also fixed a defect found by the live smoke rather than by the
-suite — `aegis install-hooks` rejected the whole install when a third-party
-`SessionStart`/`PreToolUse` entry omitted the optional `matcher`, which left the
-operator with no notice at all.
+Closure added three guards the implementation lacked: a behavioral parity
+contract between the session-start notice and `aegis status`
+(`tests/toggle_parity.rs`), a documentation contract following the H9/M1
+precedent, and a positive test that a successful toggle transition is audited
+(only the audit-failure path was covered).
+
+It also fixed two install defects. The first was found by the live smoke rather
+than by the suite: `aegis install-hooks` aborted an agent's install when a
+third-party `SessionStart`/`PreToolUse` entry omitted the optional `matcher`,
+leaving that agent with no notice and no interception. The second was found by
+review of the first fix: presence must be judged on the command *and* the
+matcher, or a registration under a matcher Aegis never installs — one the agent
+never fires — is read as already present and never repaired.
 
 ## Finding
 

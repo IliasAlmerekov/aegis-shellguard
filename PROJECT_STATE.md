@@ -41,21 +41,44 @@
   mutation-checked (dropping Jenkins detection from one hook fails exactly the
   Jenkins case).
 
-- **Fixed a real install defect the live smoke found.** `aegis install-hooks`
-  validated *every* existing `SessionStart`/`PreToolUse` entry and refused the
-  whole install when one lacked a string `matcher`. Both agents treat the field
-  as optional, so a third-party hook that omits it blocked Aegis from registering
-  anything — reproduced on this machine, where `--all` failed after the Claude
-  half was already written. The same over-strict scan was latent in the Claude
-  installer. Both now answer only "is our own command registered?" and skip what
-  they do not recognize. Four unit tests that pinned the rejections were
-  retargeted to pin coexistence.
+- **Fixed two install defects.** The first was found by the live smoke, not the
+  suite: `aegis install-hooks` validated *every* existing `SessionStart`/
+  `PreToolUse` entry and aborted that agent's install when one lacked a string
+  `matcher`. Both agents treat the field as optional, so a third-party hook that
+  omits it blocked Aegis from registering anything for that agent — reproduced on
+  this machine, where `--all` failed on Codex after the Claude half was written
+  (the halves run independently, so `--all` fails only the affected agent). The
+  same over-strict scan was latent in the Claude installer.
+
+  The second was found by review of the first fix: dropping the matcher
+  comparison went too far. An entry registering Aegis' own command under a
+  matcher Aegis never installs — one the agent never fires — was read as already
+  present, so a rerun reported success over a dead registration and never
+  repaired it. For Codex that covered `PreToolUse`, i.e. interception itself.
+  Presence now requires the command *and* the matcher, shared by both installers
+  through `install::hook_registered_under`; unrecognized entries are still
+  skipped rather than rejected. Four unit tests that pinned the old rejections
+  were retargeted to pin coexistence.
+
+- **Review cycle (`code-review` two-axis → `skeptic` Verify):** 9 atomic claims.
+  Confirmed and fixed: the matcher regression above (behavioral replay: post-fix
+  `["never"]` vs pre-diff `["never","Bash"]`), the overstated "pinned by a test"
+  claim (no test asserted a *successful* toggle appends an audit entry — only the
+  failure path; now pinned by
+  `toggle_cli.rs::a_successful_toggle_appends_an_audit_entry_for_each_transition`),
+  the inaccurate "whole install" wording, and two duplication findings. Refuted:
+  the claim that `CONTEXT.md`'s `_Avoid_: effective mode` contradicts the
+  `aegis status` label — `_Avoid_` is per-concept naming guidance, as the `Hook`
+  entry shows by listing "wrapper" while `Wrapper` remains canonical. Accepted
+  without change: a corrupted *own* entry now yields a duplicate registration
+  rather than an error; that is the intended tolerant direction, and the
+  container-type errors one level up are what must hold to append at all.
 
 - **Glossary:** `CONTEXT.md` carried `Toggle` alone. Added `Effective enforcement
   state` (with `aegis status` named authoritative), `CI override`, `Disabled
   passthrough`, and `Session-start notice` (informational, not auditable).
 
-- **Verified:** `cargo test --workspace` = 2076 passed / 108 suites / 0 failed;
+- **Verified:** `cargo test --workspace` = 2079 passed / 108 suites / 0 failed;
   `clippy --all-targets -- -D warnings` clean; `fmt --all --check` clean;
   `cargo audit` = 0 CVEs with the 6 known allowed advisories (opt-in `starlark`
   chain, P3-7); `cargo deny check` ok. Hot path untouched, so no benchmark run

@@ -112,22 +112,7 @@ fn apply_session_start_installation(
         .as_array_mut()
         .ok_or_else(|| "settings.hooks.SessionStart must be a JSON array".to_string())?;
 
-    // This scan answers one question: is our own hook already registered? A
-    // `SessionStart` entry that does not register our command belongs to
-    // another tool, and other tools' entries are not ours to validate —
-    // `matcher` is optional to the agent, and a third-party entry may be shaped
-    // however that tool likes. Skip what we do not recognize instead of
-    // rejecting it: refusing to install because a foreign entry looks
-    // unfamiliar leaves the operator with no effective-state notice at all,
-    // which is the gap this hook exists to close (TASKS.md#M3a).
-    let already_registered = session_start.iter().any(|entry| {
-        entry["hooks"].as_array().is_some_and(|hooks| {
-            hooks
-                .iter()
-                .any(|hook| hook["type"] == "command" && hook["command"] == hook_command)
-        })
-    });
-    if already_registered {
+    if super::hook_registered_under(session_start, "startup|resume", hook_command) {
         return Ok(InstallOutcome::AlreadyPresent);
     }
 

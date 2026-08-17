@@ -22,21 +22,11 @@ use std::process::Command;
 use serde_json::Value;
 use tempfile::TempDir;
 
-use support::agent_hooks::{aegis_test_binary, run_script_with_env};
-
-/// CI detection variables cleared before every case, so the developer's own
-/// environment cannot flip either surface into its override branch.
-const CI_MARKER_VARS: [&str; 9] = [
-    "AEGIS_CI",
-    "CI",
-    "GITHUB_ACTIONS",
-    "GITLAB_CI",
-    "CIRCLECI",
-    "BUILDKITE",
-    "TRAVIS",
-    "TF_BUILD",
-    "JENKINS_URL",
-];
+// `CI_MARKER_VARS` is the same list `run_script_with_env` clears for the hook,
+// shared rather than restated: if the two lists drifted apart, the two surfaces
+// would stop running under identical environments — the exact property these
+// cases exist to compare.
+use support::agent_hooks::{CI_MARKER_VARS, aegis_test_binary, run_script_with_env};
 
 /// The session-start hooks under this contract, by script path.
 const SESSION_START_HOOKS: [&str; 2] = [
