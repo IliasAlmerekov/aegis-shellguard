@@ -23,9 +23,9 @@ fn str_eq_maybe_case(a: &str, b: &str) -> bool {
 /// Check whether `tokens` matches `pattern` as a token prefix.
 ///
 /// Supports [`PatternToken::Single`], [`PatternToken::Alts`],
-/// [`PatternToken::Any`] and [`PatternToken::AnyStar`]. The pattern must be a
-/// prefix of `tokens` — extra trailing tokens are allowed. Empty patterns never
-/// match.
+/// [`PatternToken::Any`], [`PatternToken::AnyStar`] and
+/// [`PatternToken::ShortFlag`]. The pattern must be a prefix of `tokens` —
+/// extra trailing tokens are allowed. Empty patterns never match.
 pub fn matches_prefix(pattern: &PrefixPattern, tokens: &[&str]) -> bool {
     if pattern.is_empty() {
         return false;
@@ -68,6 +68,18 @@ fn matches_from(pattern: &PrefixPattern, tokens: &[&str], pat_idx: usize) -> boo
             }
             false
         }
+        PatternToken::ShortFlag { short, long } => {
+            if tokens.is_empty() {
+                return false;
+            }
+            let tok = tokens[0];
+            let matches = long.contains(&tok)
+                || (tok.starts_with('-') && !tok.starts_with("--") && tok.contains(*short));
+            if !matches {
+                return false;
+            }
+            matches_from(pattern, &tokens[1..], pat_idx + 1)
+        }
     }
 }
 
@@ -83,6 +95,10 @@ mod tests {
 
     fn alts(alts: &[&'static str]) -> PatternToken {
         PatternToken::Alts(alts.iter().map(|&s| Cow::Borrowed(s)).collect())
+    }
+
+    fn short_flag(short: char, long: &'static [&'static str]) -> PatternToken {
+        PatternToken::ShortFlag { short, long }
     }
 
     #[test]
@@ -133,5 +149,44 @@ mod tests {
         assert!(matches_prefix(&pattern, &["git", "log", "status"]));
         assert!(matches_prefix(&pattern, &["git", "a", "b", "c", "status"]));
         assert!(!matches_prefix(&pattern, &["git", "log"]));
+    }
+
+    #[test]
+    fn short_flag_matches_alone() {
+        let pattern = vec![single("chmod"), short_flag('R', &["--recursive"])];
+        assert!(matches_prefix(&pattern, &["chmod", "-R"]));
+    }
+
+    #[test]
+    fn short_flag_matches_inside_cluster() {
+        let pattern = vec![single("chmod"), short_flag('R', &["--recursive"])];
+        assert!(matches_prefix(&pattern, &["chmod", "-Rf"]));
+        assert!(matches_prefix(&pattern, &["chmod", "-fR"]));
+        assert!(matches_prefix(&pattern, &["chmod", "-fRv"]));
+    }
+
+    #[test]
+    fn short_flag_matches_declared_long_form() {
+        let pattern = vec![single("chmod"), short_flag('R', &["--recursive"])];
+        assert!(matches_prefix(&pattern, &["chmod", "--recursive"]));
+    }
+
+    #[test]
+    fn short_flag_is_case_sensitive() {
+        let pattern = vec![single("chmod"), short_flag('R', &["--recursive"])];
+        // `-r` is a mode expression (read), not the recursion flag.
+        assert!(!matches_prefix(&pattern, &["chmod", "-r"]));
+    }
+
+    #[test]
+    fn short_flag_rejects_non_synonym_long_flag() {
+        let pattern = vec![single("chmod"), short_flag('R', &["--recursive"])];
+        assert!(!matches_prefix(&pattern, &["chmod", "--recursive-ish"]));
+    }
+
+    #[test]
+    fn short_flag_rejects_bare_non_flag_token() {
+        let pattern = vec![single("chmod"), short_flag('R', &["--recursive"])];
+        assert!(!matches_prefix(&pattern, &["chmod", "file"]));
     }
 }

@@ -50,6 +50,20 @@ pub enum PatternToken {
     Any,
     /// Matches zero or more arbitrary tokens (like `.*` in regex).
     AnyStar,
+    /// Matches one short flag whether it stands alone or is bundled into a
+    /// cluster, plus that flag's long-form synonyms.
+    ///
+    /// A token matches when it equals one of `long`, or when it begins with a
+    /// single `-` (i.e. is a short-flag cluster, not a `--` long flag) and
+    /// contains `short`. Flags compare case-sensitively, so `-r` does not
+    /// satisfy `ShortFlag { short: 'R', .. }` — load-bearing for `chmod -r`
+    /// (a mode expression, not a recursion flag).
+    ShortFlag {
+        /// The short flag character, e.g. `'R'` for `-R`.
+        short: char,
+        /// Long-form synonyms, e.g. `&["--recursive"]`.
+        long: &'static [&'static str],
+    },
 }
 
 /// Unified runtime pattern.

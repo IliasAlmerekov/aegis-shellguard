@@ -13,38 +13,44 @@
 
 ## Active branch
 
-`chore/sync-v0.6.4-distribution`
+`feat/m5-point-pattern-gaps`
 
 ## Last updated
 
-2026-08-17
+2026-08-18
 
 ---
 
-## Current session (2026-08-17) — v0.6.4 tagged and distribution synced
+## Current session (2026-08-18) — M5.1 ShortFlag pattern token (#189)
 
-- **`v0.6.4` tagged on `c2c5241` and pushed** after CI on `main` went green.
-  The Release workflow completed all six jobs: four target builds, the GitHub
-  Release, and the npm publish (`@iliasalmerekov/aegis@0.6.4` is live on the
-  registry). The published Release body is the `[0.6.4]` CHANGELOG section
-  verbatim — the auto-generated commit/PR list is gone.
+- **Added `PatternToken::ShortFlag { short: char, long: &'static [&'static str] }`**
+  to `aegis-types` and an explicit match arm in `aegis_parser::matches_prefix`.
+  A token matches when it equals one of `long`, or when it begins with a single
+  `-` (a short-flag cluster, not a `--` long flag) and contains `short`. Flags
+  compare case-sensitively, so `-r` does not satisfy `short: 'R'` — load-bearing
+  for `chmod -r` (a mode expression, not a recursion flag). The variant does
+  **not** gain `#[non_exhaustive]`; the matcher has no catch-all arm, so a future
+  variant is a compile error. No rule adopts the construct yet; the `chmod` rule
+  that follows consumes it.
 
-- **Distribution metadata regenerated from the published assets.**
-  `scripts/update-homebrew-formula.sh v0.6.4` and
-  `scripts/update-npm-package.sh v0.6.4` rewrote
-  `packaging/homebrew/Formula/aegis.rb` and `packaging/npm/checksums.json`;
-  the four binary checksums agree across both files, which are produced by
-  independent paths (sidecar fetch vs. asset download). `cargo test --test
-  homebrew_formula --test npm_package --test installer_checksum` = 34 passed.
-  The npm workflow regenerates `checksums.json` in CI but never commits it
-  back, so this sync is the only thing that keeps the checked-in pins honest.
+- **`scanner/mod.rs` now lists `ShortFlag` explicitly at both `PatternToken`
+  match sites** (keyword extraction and the `prefix_by_program` index), replacing
+  the `_ => continue` catch-all with an explicit `Any | AnyStar | ShortFlag |
+  None` arm. A first token that does not name a program (a wildcard or a flag)
+  contributes no quick-scan keyword and cannot be indexed by an Effective
+  program (ADR-014). The hard-coded `wipefs -af` (FS-011) and `redis-cli`
+  (DB-006) branches in `prefix_rule.rs` are untouched.
 
-- **Open operator steps (need a Homebrew host; `brew` is absent on this
-  machine):** publish `Formula/aegis.rb` to the
-  `IliasAlmerekov/homebrew-aegis` tap, run `brew audit --strict --online`, and
-  smoke `brew tap`/`install`/`test` on macOS and Linux — the runbook is in
-  `docs/release-readiness.md` §"Homebrew tap publish runbook". Evidence for
-  v0.6.4 is not yet recorded in that document.
+- **Verified:** `cargo test --workspace` (2102 passed), `clippy -- -D warnings`
+  clean, `fmt --check` clean, `cargo audit` (only the 6 pre-existing allowed
+  warnings from the opt-in `aegis-starlark` feature), `cargo deny check` all ok.
+
+- **Follow-up (out of scope for #189):** a prefix rule whose first token is not
+  `Single`/`Alts` (e.g. `[ShortFlag('R'), …]`) is silently dropped from the
+  `prefix_by_program` index and can never fire, yet `validate_examples()` calls
+  `matches_tokens` directly and would not catch it. Pre-existing for `Any`/
+  `AnyStar` too. The cheap fix is a startup validation that the first token of a
+  prefix rule must be `Single` or `Alts`.
 
 ---
 

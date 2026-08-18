@@ -11,6 +11,16 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+### Added
+
+- New `PatternToken::ShortFlag { short, long }` prefix-pattern token that
+  matches one short flag whether it stands alone or is bundled into a cluster
+  (`-R`, `-Rf`, `-fR`) together with its declared long-form synonyms
+  (`--recursive`). Flags compare case-sensitively, so `-r` does not satisfy
+  `short: 'R'`. The prefix matcher handles it explicitly with no catch-all arm,
+  so a future token variant is a compile error. No rule adopts it yet; the
+  `chmod` rule that follows consumes it. (M5.1, #189)
+
 ### Changed
 
 - Distribution: regenerated the Homebrew formula pins and the npm checksum
