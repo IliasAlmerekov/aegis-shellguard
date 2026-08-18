@@ -13,6 +13,10 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Added
 
+- New `FS-019` `Danger` rule detects recursive `chmod` over a literal system
+  root, independent of the requested mode; `PS-005` keeps its audit/allowlist
+  ID and matching behavior while moving to `Filesystem`. (M5.3, ADR-025, #193)
+
 - New `DK-007` token-prefix rule detects `docker volume rm <name>`, which
   deletes a named Docker volume (usually the only copy of a database's data).
   `Danger`, deliberately breaking the `DK-*` family's `Warn` parity: `prune`

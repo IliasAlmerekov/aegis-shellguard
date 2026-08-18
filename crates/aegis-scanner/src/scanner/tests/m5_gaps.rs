@@ -1,5 +1,34 @@
 use super::*;
 
+// FS-019 deliberately covers literal system-root targets only. A glob has no
+// resolved target at scan time, and a prior `cd` is not shell evaluation; both
+// are explicit non-coverage rather than a reason to broaden the rule.
+#[test]
+fn m5_fs019_non_recursive_and_non_literal_root_targets_do_not_fire() {
+    let s = scanner();
+    for cmd in [
+        "chmod -r 000 /",
+        "chmod -R 000 ./build",
+        "chmod 000 /etc/passwd",
+        "chmod -R 000 /*",
+        "cd /usr && chmod -R 000 .",
+    ] {
+        let assessment = s.assess(cmd);
+        assert!(
+            !assessment
+                .matched
+                .iter()
+                .any(|matched| matched.pattern.id.as_ref() == "FS-019"),
+            "FS-019 must not fire for {cmd:?}: {:?}",
+            assessment
+                .matched
+                .iter()
+                .map(|matched| matched.pattern.id.as_ref())
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
 // M5.4 — DB-009 narrowness guards. The positive (must-fire) cases live in
 // `m5_followups.rs`; these guard the opposite direction — the near-miss
 // invocations that must NOT raise DB-009 — so the rule stays narrow and

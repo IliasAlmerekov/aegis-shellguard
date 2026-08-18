@@ -218,7 +218,7 @@ pub(super) fn rules() -> Vec<PrefixRule> {
         },
         PrefixRule {
             id: Cow::Borrowed("PS-005"),
-            category: Category::Process,
+            category: Category::Filesystem,
             pattern: vec![s("chmod"), PatternToken::AnyStar, s("777"), s("/")],
             risk: RiskLevel::Danger,
             description: Cow::Borrowed(
@@ -234,6 +234,70 @@ pub(super) fn rules() -> Vec<PrefixRule> {
             suppressed_by: &[],
             match_examples: &["chmod 777 /"],
             not_match_examples: &["chmod 755 /"],
+        },
+        // FS-019 keys on the recursive target rather than the mode: a
+        // recursive chmod of a system root can break the machine even when the
+        // requested mode is not 000 or 777. Trailing-slash spellings remain
+        // explicit to this rule rather than changing shared token equality.
+        PrefixRule {
+            id: Cow::Borrowed("FS-019"),
+            category: Category::Filesystem,
+            pattern: vec![
+                s("chmod"),
+                PatternToken::AnyStar,
+                PatternToken::ShortFlag {
+                    short: 'R',
+                    long: &["--recursive"],
+                },
+                PatternToken::AnyStar,
+                PatternToken::Alts(vec![
+                    Cow::Borrowed("/"),
+                    Cow::Borrowed("/usr"),
+                    Cow::Borrowed("/usr/"),
+                    Cow::Borrowed("/etc"),
+                    Cow::Borrowed("/etc/"),
+                    Cow::Borrowed("/bin"),
+                    Cow::Borrowed("/bin/"),
+                    Cow::Borrowed("/sbin"),
+                    Cow::Borrowed("/sbin/"),
+                    Cow::Borrowed("/lib"),
+                    Cow::Borrowed("/lib/"),
+                    Cow::Borrowed("/var"),
+                    Cow::Borrowed("/var/"),
+                    Cow::Borrowed("/boot"),
+                    Cow::Borrowed("/boot/"),
+                ]),
+            ],
+            risk: RiskLevel::Danger,
+            description: Cow::Borrowed(
+                "chmod -R on a system root — recursively rewrites permissions across critical system files",
+            ),
+            safe_alt: Some(Cow::Borrowed(
+                "Apply permissions only to a specific application-owned directory",
+            )),
+            justification: Some(Cow::Borrowed(
+                "Recursive chmod over /, /usr, /etc, /bin, /sbin, /lib, /var, or /boot can break boot, service, authentication, and package-managed files regardless of the requested mode. Danger rather than Block because a throwaway container can have a deliberate use.",
+            )),
+            source: PatternSource::Builtin,
+            suppressed_by: &[],
+            match_examples: &[
+                "chmod -R 000 /",
+                "chmod -R 755 /usr",
+                "chmod -R 700 /etc",
+                "chmod -Rf 000 /bin",
+                "chmod --recursive 000 /sbin",
+                "chmod -R 000 /lib",
+                "chmod -R 000 /var",
+                "chmod -R 000 /boot",
+                "chmod -R 000 /usr/",
+            ],
+            not_match_examples: &[
+                "chmod -r 000 /",
+                "chmod -R 000 ./build",
+                "chmod 000 /etc/passwd",
+                "chmod -R 000 /*",
+                "cd /usr && chmod -R 000 .",
+            ],
         },
         // ── Package ───────────────────────────────────────────────────────────
         PrefixRule {
