@@ -87,7 +87,10 @@ the core classification / approval pipeline when enforcement is active.
 | ADR-021 | Sandbox preparation reports the actual execution path | [`adr-021-sandbox-preparation-reports-the-actual-execution-path.md`](adr-021-sandbox-preparation-reports-the-actual-execution-path.md) |
 | ADR-022 | Language-aware analysis is an additive isolated stage | [`adr-022-language-aware-analysis-is-an-additive-isolated-stage.md`](adr-022-language-aware-analysis-is-an-additive-isolated-stage.md) |
 | ADR-023 | A contained Hook panic fails closed in two layers | [`adr-023-hook-panic-fails-closed-in-two-layers.md`](adr-023-hook-panic-fails-closed-in-two-layers.md) |
+| ADR-024 | Language-aware analysis ships opt-in and is not a 1.0 release gate | [`adr-024-language-aware-analysis-ships-opt-in-and-is-not-a-1-0-release-gate.md`](adr-024-language-aware-analysis-ships-opt-in-and-is-not-a-1-0-release-gate.md) |
 | ADR-025 | Recursive chmod over system roots is target-keyed | [`adr-025-recursive-chmod-system-roots-are-target-keyed.md`](adr-025-recursive-chmod-system-roots-are-target-keyed.md) |
+| ADR-026 | The 1.0 Snapshot/Rollback contract: six mandatory providers, copyable ids, verified recovery | [`adr-026-snapshot-rollback-contract-for-1-0.md`](adr-026-snapshot-rollback-contract-for-1-0.md) |
+| ADR-027 | One 1.0 release gate, and it lives in the issue tracker | [`adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md`](adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md) |
 
 `ADR-009` is intentionally absent from the active set; numbering is preserved
 as-is so historical references do not drift.

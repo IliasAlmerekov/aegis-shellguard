@@ -378,10 +378,17 @@ the project Definition of Done in `~/.agents/ENGINEERING_GATES.md` is satisfied.
   `Rollback` as restoration of that captured state; surfaces disclose when no
   plugin applies and do not claim full backup or universal undo. Implementing
   targeted copies or a general backup system is out of scope.
+  Widened by [ADR-026](docs/adr/adr-026-snapshot-rollback-contract-for-1-0.md):
+  `README.md:5` no longer says "Undo them when they don't"; when no provider
+  applies to a `Danger` command the confirmation dialog states in red that the
+  command cannot be rolled back and accepts only the full word `yes` (not `y`),
+  with the same text, uncoloured, on Shell stderr and in the audit entry.
 - **Status:** **Open** — reframed to the actual heuristic-guardrail and
-  best-effort snapshot contract.
+  best-effort snapshot contract; confirmed a 1.0 blocker in
+  [#201](https://github.com/IliasAlmerekov/aegis-shellguard/issues/201).
 - **Traceability:** [plan](docs/plans/2026-07-14-m8-snapshot-product-contract.md);
-  [ADR-004](docs/adr/adr-004-snapshots-are-best-effort-audit-is-append-only.md).
+  [ADR-004](docs/adr/adr-004-snapshots-are-best-effort-audit-is-append-only.md);
+  [ADR-026](docs/adr/adr-026-snapshot-rollback-contract-for-1-0.md).
 
 ### [ ] M9 — Snapshot identifiers do not round-trip through the rollback CLI
 
@@ -390,9 +397,15 @@ the project Definition of Done in `~/.agents/ENGINEERING_GATES.md` is satisfied.
 - **Acceptance criteria:** every listed snapshot exposes a ready-to-use rollback
   path; Git and database IDs round-trip without reconstructing literal tabs;
   legacy audit entries remain recoverable.
-- **Status:** **Open** — live-confirmed for Git and MySQL.
+  Fixed by [ADR-026](docs/adr/adr-026-snapshot-rollback-contract-for-1-0.md):
+  the separator becomes `:` at format version `v3`, `v2` tab-joined ids stay
+  parseable permanently, and `aegis snapshot list` prints a ready-to-use
+  `aegis rollback '<id>'` line per row.
+- **Status:** **Open** — live-confirmed for Git and MySQL; confirmed a 1.0
+  blocker in [#201](https://github.com/IliasAlmerekov/aegis-shellguard/issues/201).
 - **Traceability:** [plan](docs/plans/2026-07-14-m9-rollback-id-round-trip.md);
-  `src/rollback.rs` and snapshot plugin ID parsers.
+  `src/rollback.rs` and snapshot plugin ID parsers;
+  [ADR-026](docs/adr/adr-026-snapshot-rollback-contract-for-1-0.md).
 
 ### [x] M10 — README shows a snapshot before approval
 
