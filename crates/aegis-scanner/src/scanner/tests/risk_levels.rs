@@ -68,7 +68,7 @@ fn assess_risk_levels() {
             "pip install requests --trusted-host pypi.org",
             RiskLevel::Warn,
         ),
-        // ── Danger (30) ──────────────────────────────────────────────────
+        // ── Danger (31) ──────────────────────────────────────────────────
         // DK-007: docker volume rm — Danger, deliberately NOT with its DK-*
         // Warn neighbours: prune collects garbage, rm <name> destroys the
         // volume the user named. Equating them would understate the second.
