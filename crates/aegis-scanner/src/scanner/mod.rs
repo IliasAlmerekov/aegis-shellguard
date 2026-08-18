@@ -160,7 +160,13 @@ impl Scanner {
                         keywords.push(s.as_ref().to_string());
                     }
                 }
-                _ => continue,
+                // A first token that does not name a program (a wildcard or a
+                // flag) contributes no quick-scan keyword. Listed explicitly so
+                // a future token variant is a compile error, not a silent skip.
+                Some(PatternToken::Any)
+                | Some(PatternToken::AnyStar)
+                | Some(PatternToken::ShortFlag { .. })
+                | None => continue,
             }
         }
 
@@ -178,7 +184,14 @@ impl Scanner {
             let keys: Vec<&str> = match rule.pattern.first() {
                 Some(PatternToken::Single(first)) => vec![&**first],
                 Some(PatternToken::Alts(alts)) => alts.iter().map(|s| &**s).collect(),
-                Some(PatternToken::Any) | Some(PatternToken::AnyStar) | None => continue,
+                // The index key is the Effective program (ADR-014): a rule whose
+                // first token is a wildcard or a flag does not name a program and
+                // cannot be indexed by one. ShortFlag is no different from Any /
+                // AnyStar here.
+                Some(PatternToken::Any)
+                | Some(PatternToken::AnyStar)
+                | Some(PatternToken::ShortFlag { .. })
+                | None => continue,
             };
             for key in keys {
                 let lower = key.to_ascii_lowercase();
