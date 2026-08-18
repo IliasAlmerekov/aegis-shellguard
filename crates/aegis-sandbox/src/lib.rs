@@ -21,6 +21,9 @@ use aegis_types::SandboxStatus;
 mod support;
 
 #[cfg(target_os = "linux")]
+mod landlock;
+
+#[cfg(target_os = "linux")]
 #[path = "linux.rs"]
 mod platform;
 
@@ -33,6 +36,11 @@ mod platform;
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 #[path = "unsupported.rs"]
 mod platform;
+
+/// Internal flag that re-execs the Aegis binary as a thin landlock wrapper
+/// inside bwrap's mount namespace. Owned here so `main.rs` and the sandbox
+/// crate cannot drift.
+pub const INNER_LANDLOCK_FLAG: &str = "--aegis-inner-landlock";
 
 /// Typed error for sandbox operations.
 #[derive(Debug, thiserror::Error)]
@@ -96,21 +104,14 @@ pub struct PreparedSandboxCommand {
     pub command: std::process::Command,
     /// Factual Sandbox status for the prepared command.
     pub status: SandboxStatus,
-    #[cfg(target_os = "linux")]
-    exec_config: Option<SandboxConfig>,
 }
 
 impl PreparedSandboxCommand {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    fn active(
-        command: std::process::Command,
-        #[cfg(target_os = "linux")] exec_config: Option<SandboxConfig>,
-    ) -> Self {
+    fn active(command: std::process::Command) -> Self {
         Self {
             command,
             status: SandboxStatus::Active,
-            #[cfg(target_os = "linux")]
-            exec_config,
         }
     }
 
@@ -118,29 +119,19 @@ impl PreparedSandboxCommand {
         Self {
             command,
             status: SandboxStatus::Unavailable,
-            #[cfg(target_os = "linux")]
-            exec_config: None,
         }
     }
 
-    /// Apply exec-only restrictions immediately before process replacement.
+    /// Replace the current process with the prepared command.
     ///
-    /// Watch callers must not call this method because it may restrict the
-    /// current process on Linux.
+    /// On Linux the Landlock layer is applied by the innermost re-exec'd
+    /// wrapper inside bwrap's mount namespace, so this method never restricts
+    /// the current process. Watch callers may therefore use it safely.
     ///
     /// This method does not return when process replacement succeeds. It
-    /// returns [`SandboxError::Execution`] if deferred Linux restrictions
-    /// cannot be applied, or [`SandboxError::Io`] if the operating-system
-    /// `exec` call fails.
+    /// returns [`SandboxError::Io`] if the operating-system `exec` call fails.
     #[cfg(unix)]
     pub fn exec(mut self) -> SandboxError {
-        #[cfg(target_os = "linux")]
-        if let Some(config) = self.exec_config.as_ref()
-            && let Err(err) = platform::apply_landlock_restrictions(config)
-        {
-            return err;
-        }
-
         use std::os::unix::process::CommandExt;
         SandboxError::Io(self.command.exec())
     }
@@ -211,6 +202,24 @@ pub fn prepare_for_spawn(
     args: &[OsString],
 ) -> Result<PreparedSandboxCommand, SandboxError> {
     platform::prepare_for_spawn(config, program, args)
+}
+
+/// Run the inner landlock wrapper: read the serialized `allow_write` config
+/// from the environment, apply Landlock, then exec the real program. Returns a
+/// process exit code; never returns on success (exec replaces the process).
+///
+/// This is the re-exec'd innermost process inside bwrap's mount namespace. It
+/// must stay thin: no config-from-disk, no audit, no snapshots. Fail-closed:
+/// if Landlock cannot be applied, it exits non-zero before exec'ing the target.
+#[cfg(target_os = "linux")]
+pub fn run_inner_landlock_wrapper() -> i32 {
+    landlock::run_inner_landlock_wrapper()
+}
+
+/// Return the Landlock ABI version supported by this kernel (0 if unavailable).
+#[cfg(target_os = "linux")]
+pub fn landlock_abi() -> u32 {
+    landlock::landlock_abi()
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
