@@ -41,16 +41,18 @@
   program (ADR-014). The hard-coded `wipefs -af` (FS-011) and `redis-cli`
   (DB-006) branches in `prefix_rule.rs` are untouched.
 
-- **Verified:** `cargo test --workspace` (2102 passed), `clippy -- -D warnings`
+- **Verified:** `cargo test --workspace` (2103 passed), `clippy -- -D warnings`
   clean, `fmt --check` clean, `cargo audit` (only the 6 pre-existing allowed
   warnings from the opt-in `aegis-starlark` feature), `cargo deny check` all ok.
 
-- **Follow-up (out of scope for #189):** a prefix rule whose first token is not
-  `Single`/`Alts` (e.g. `[ShortFlag('R'), …]`) is silently dropped from the
-  `prefix_by_program` index and can never fire, yet `validate_examples()` calls
-  `matches_tokens` directly and would not catch it. Pre-existing for `Any`/
-  `AnyStar` too. The cheap fix is a startup validation that the first token of a
-  prefix rule must be `Single` or `Alts`.
+- **Closed the unreachable-rule hole (code-review follow-up):** `validate_prefix_rule`
+  now rejects any prefix rule whose first token is not `Single`/`Alts` (a
+  wildcard or a flag cannot be indexed by an Effective program, ADR-014, and
+  would never fire at runtime). Previously such a rule was silently dropped from
+  the `prefix_by_program` index while `validate_examples()` — which calls
+  `matches_tokens` directly — would not catch it. The hole was pre-existing for
+  `Any`/`AnyStar`; the new `ShortFlag` variant made it visible. Covered by an
+  in-module test on `validate_prefix_rule`.
 
 ---
 

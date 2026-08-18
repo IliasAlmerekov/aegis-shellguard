@@ -23,6 +23,10 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Changed
 
+- Prefix rules whose first token is not `Single`/`Alts` (a wildcard or a flag)
+  are now rejected at load time instead of being silently dropped from the
+  program index and never firing at runtime. (M5.1, #189)
+
 - Distribution: regenerated the Homebrew formula pins and the npm checksum
   pins from the published v0.6.4 Release assets. Publication to the Homebrew
   tap and the `brew audit`/install smoke remain open operator steps.

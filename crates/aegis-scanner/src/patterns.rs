@@ -225,6 +225,23 @@ impl PatternSet {
             });
         }
 
+        // The first token must name a program (Single or Alts). A rule whose
+        // first token is a wildcard or a flag cannot be indexed by an Effective
+        // program (ADR-014) and would never fire at runtime — reject it instead
+        // of silently dropping it from the index.
+        match rule.pattern.first() {
+            Some(PatternToken::Single(_)) | Some(PatternToken::Alts(_)) => {}
+            Some(other) => {
+                return Err(ScannerError::InvalidPattern {
+                    id: rule.id.to_string(),
+                    reason: format!(
+                        "prefix rule first token must be Single or Alts (names a program), got {other:?}"
+                    ),
+                });
+            }
+            None => unreachable!("empty prefix rule pattern rejected above"),
+        }
+
         if rule.description.trim().is_empty() {
             return Err(ScannerError::InvalidPattern {
                 id: rule.id.to_string(),
@@ -266,4 +283,62 @@ fn builtin_prefix_rules() -> Vec<PrefixRule> {
     let mut rules = builtins_a::rules();
     rules.extend(builtins_b::rules());
     rules
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    fn rule_with_first(first: PatternToken) -> PrefixRule {
+        PrefixRule {
+            id: Cow::Borrowed("T-001"),
+            category: Category::Process,
+            pattern: vec![first, PatternToken::AnyStar],
+            risk: RiskLevel::Danger,
+            description: Cow::Borrowed("test"),
+            safe_alt: None,
+            justification: None,
+            source: PatternSource::Builtin,
+            match_examples: &[],
+            not_match_examples: &[],
+        }
+    }
+
+    #[test]
+    fn prefix_rule_first_token_must_name_a_program() {
+        let ids = HashSet::new();
+
+        // Valid: Single and Alts name a program and are accepted.
+        assert!(
+            PatternSet::validate_prefix_rule(
+                &rule_with_first(PatternToken::Single(Cow::Borrowed("rm"))),
+                &ids
+            )
+            .is_ok()
+        );
+        assert!(
+            PatternSet::validate_prefix_rule(
+                &rule_with_first(PatternToken::Alts(vec![Cow::Borrowed("rm")])),
+                &ids
+            )
+            .is_ok()
+        );
+
+        // Invalid: a wildcard or flag first token cannot be indexed by an
+        // Effective program and would never fire at runtime — reject it.
+        for first in [
+            PatternToken::Any,
+            PatternToken::AnyStar,
+            PatternToken::ShortFlag {
+                short: 'R',
+                long: &["--recursive"],
+            },
+        ] {
+            assert!(
+                PatternSet::validate_prefix_rule(&rule_with_first(first.clone()), &ids).is_err(),
+                "prefix rule with first token {first:?} must be rejected"
+            );
+        }
+    }
 }
