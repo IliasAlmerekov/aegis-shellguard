@@ -42,6 +42,12 @@ mod platform;
 /// crate cannot drift.
 pub const INNER_LANDLOCK_FLAG: &str = "--aegis-inner-landlock";
 
+/// Exit code for internal Aegis errors (CONVENTION.md §3): codes 1–N are the
+/// executed command's exit code; internal errors are 4. The inner landlock
+/// wrapper returns this when it cannot set up Landlock, so a failure is
+/// distinguishable from a command that ran and exited 1.
+pub const EXIT_INTERNAL: i32 = 4;
+
 /// Typed error for sandbox operations.
 #[derive(Debug, thiserror::Error)]
 pub enum SandboxError {
@@ -104,14 +110,77 @@ pub struct PreparedSandboxCommand {
     pub command: std::process::Command,
     /// Factual Sandbox status for the prepared command.
     pub status: SandboxStatus,
+    /// Whether the inner landlock wrapper will report the actual status over a
+    /// pipe when spawned (true on the exec path with a non-empty `allow_write`).
+    #[cfg(target_os = "linux")]
+    reports_status: bool,
+}
+
+/// A sandbox child that has reported its actual confinement status.
+///
+/// On Linux with the inner Landlock wrapper, the wrapped program remains
+/// stopped until [`Self::release`] is called. Dropping this value closes the
+/// gate, causing the wrapper to fail closed before it can exec the program.
+pub struct ReportedSandboxChild {
+    child: Option<std::process::Child>,
+    status: SandboxStatus,
+    #[cfg(target_os = "linux")]
+    release_fd: Option<i32>,
+}
+
+impl ReportedSandboxChild {
+    /// Wrap an already-started child whose status needs no release gate.
+    pub fn from_child(child: std::process::Child, status: SandboxStatus) -> Self {
+        Self {
+            child: Some(child),
+            status,
+            #[cfg(target_os = "linux")]
+            release_fd: None,
+        }
+    }
+
+    /// Return the actual status the launch path reported.
+    pub fn status(&self) -> SandboxStatus {
+        self.status
+    }
+
+    /// Permit the inner wrapper to exec the wrapped program and return its child.
+    pub fn release(mut self) -> Result<std::process::Child, SandboxError> {
+        #[cfg(target_os = "linux")]
+        if let Some(fd) = self.release_fd.take() {
+            let byte = b'1';
+            let n = unsafe { libc::write(fd, &byte as *const u8 as *const libc::c_void, 1) };
+            unsafe { libc::close(fd) };
+            if n != 1 {
+                return Err(SandboxError::Io(std::io::Error::last_os_error()));
+            }
+        }
+        self.child
+            .take()
+            .ok_or_else(|| SandboxError::Execution("sandbox child was already released".into()))
+    }
+}
+
+impl Drop for ReportedSandboxChild {
+    fn drop(&mut self) {
+        #[cfg(target_os = "linux")]
+        if let Some(fd) = self.release_fd.take() {
+            unsafe { libc::close(fd) };
+        }
+    }
 }
 
 impl PreparedSandboxCommand {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    fn active(command: std::process::Command) -> Self {
+    fn active(
+        command: std::process::Command,
+        #[cfg(target_os = "linux")] reports_status: bool,
+    ) -> Self {
         Self {
             command,
             status: SandboxStatus::Active,
+            #[cfg(target_os = "linux")]
+            reports_status,
         }
     }
 
@@ -119,6 +188,8 @@ impl PreparedSandboxCommand {
         Self {
             command,
             status: SandboxStatus::Unavailable,
+            #[cfg(target_os = "linux")]
+            reports_status: false,
         }
     }
 
@@ -134,6 +205,113 @@ impl PreparedSandboxCommand {
     pub fn exec(mut self) -> SandboxError {
         use std::os::unix::process::CommandExt;
         SandboxError::Io(self.command.exec())
+    }
+
+    /// Spawn the prepared command and return the actual status reported by the
+    /// inner landlock wrapper, so the caller can audit what actually applied at
+    /// the execution seam rather than what preparation predicted.
+    ///
+    /// When the landlock wrapper is present, a pipe is set up and the wrapper
+    /// writes its actual status over it; an empty read (EOF) means the wrapper
+    /// failed closed and the command never ran (`NotAttempted`). When the
+    /// wrapper is absent, the command is spawned directly and the preparation
+    /// status is returned.
+    #[cfg(target_os = "linux")]
+    pub fn spawn_and_report(mut self) -> Result<ReportedSandboxChild, SandboxError> {
+        if !self.reports_status {
+            let child = self.command.spawn().map_err(SandboxError::Io)?;
+            return Ok(ReportedSandboxChild {
+                child: Some(child),
+                status: self.status,
+                release_fd: None,
+            });
+        }
+
+        // Set up the status-report pipe.
+        let mut fds = [0; 2];
+        if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
+            return Err(SandboxError::Io(std::io::Error::last_os_error()));
+        }
+        let (read_fd, write_fd) = (fds[0], fds[1]);
+        let mut gate_fds = [0; 2];
+        if unsafe { libc::pipe(gate_fds.as_mut_ptr()) } != 0 {
+            unsafe { libc::close(read_fd) };
+            unsafe { libc::close(write_fd) };
+            return Err(SandboxError::Io(std::io::Error::last_os_error()));
+        }
+        let (gate_read_fd, gate_write_fd) = (gate_fds[0], gate_fds[1]);
+
+        // Set the write end as fd 3 on the command, and tell the inner wrapper
+        // which fd to report over.
+        self.command.env(landlock::AEGIS_LANDLOCK_STATUS_FD, "3");
+        self.command.env(landlock::AEGIS_LANDLOCK_RELEASE_FD, "4");
+        use std::os::unix::process::CommandExt;
+        unsafe {
+            self.command.pre_exec(move || {
+                if libc::dup2(write_fd, 3) == -1 || libc::dup2(gate_read_fd, 4) == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if write_fd != 3 {
+                    libc::close(write_fd);
+                }
+                if gate_read_fd != 4 {
+                    libc::close(gate_read_fd);
+                }
+                Ok(())
+            });
+        }
+
+        // Spawn the command.
+        let child = self.command.spawn().map_err(SandboxError::Io)?;
+
+        // Close the parent's copy of the write end so the read returns EOF once
+        // the inner wrapper closes it.
+        unsafe {
+            libc::close(write_fd);
+            libc::close(gate_read_fd);
+        }
+
+        // Read the actual status.
+        let status = read_status_from_fd(read_fd)?;
+        unsafe {
+            libc::close(read_fd);
+        }
+
+        Ok(ReportedSandboxChild {
+            child: Some(child),
+            status,
+            release_fd: Some(gate_write_fd),
+        })
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn spawn_and_report(self) -> Result<ReportedSandboxChild, SandboxError> {
+        let child = self.command.spawn().map_err(SandboxError::Io)?;
+        Ok(ReportedSandboxChild {
+            child: Some(child),
+            status: self.status,
+        })
+    }
+}
+
+/// Read the status byte the inner landlock wrapper wrote to `fd`. An empty read
+/// (EOF) means the wrapper failed closed and the command never ran.
+#[cfg(target_os = "linux")]
+fn read_status_from_fd(fd: i32) -> Result<SandboxStatus, SandboxError> {
+    let mut buf = [0u8; 1];
+    let n = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, 1) };
+    if n < 0 {
+        return Err(SandboxError::Io(std::io::Error::last_os_error()));
+    }
+    if n == 0 {
+        return Ok(SandboxStatus::NotAttempted);
+    }
+    match buf[0] {
+        b'a' => Ok(SandboxStatus::Active),
+        b'u' => Ok(SandboxStatus::Unavailable),
+        b'n' => Ok(SandboxStatus::NotAttempted),
+        b'c' => Ok(SandboxStatus::NotConfigured),
+        _ => Err(SandboxError::Execution("unknown status byte".into())),
     }
 }
 

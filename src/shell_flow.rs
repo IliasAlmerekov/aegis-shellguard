@@ -259,6 +259,7 @@ fn complete_approved_shell_execution(execution: ShellExecution<'_>, decision: De
         },
         |message| eprintln!("warning: {message}"),
         exec_prepared_command,
+        crate::shell_compat::wait_for_child,
         |message| eprintln!("error: {message}"),
     )
 }
@@ -349,27 +350,81 @@ fn sandbox_status_before_preparation(
     }
 }
 
-fn complete_shell_execution<C, AuditError>(
+fn complete_shell_execution<C, X, AuditError>(
     decision: Decision,
     prepare: impl FnOnce() -> Result<(C, SandboxStatus), aegis_sandbox::SandboxError>,
     append_audit: impl FnOnce(Decision, SandboxStatus) -> Result<(), AuditError>,
     warn: impl FnOnce(&str),
-    execute: impl FnOnce(C) -> i32,
+    execute: impl FnOnce(C) -> Result<(X, SandboxStatus), aegis_sandbox::SandboxError>,
+    wait: impl FnOnce(X) -> i32,
     report_error: impl FnOnce(&str),
 ) -> i32
 where
     AuditError: std::fmt::Display,
 {
     match prepare() {
-        Ok((command, status)) => {
-            if let Err(err) = append_audit(decision, status) {
-                report_error(&format!("failed to write audit log: {err}"));
-                return EXIT_INTERNAL;
+        Ok((command, prep_status)) => {
+            // Only Linux's inner Landlock wrapper can change `Active` after
+            // preparation. It is held at its release gate, so reporting its
+            // status before Audit does not start the wrapped program. Every
+            // other launch path has a final preparation status and retains the
+            // M1 audit-before-spawn ordering.
+            let needs_inner_report =
+                cfg!(target_os = "linux") && prep_status == SandboxStatus::Active;
+            if !needs_inner_report {
+                if let Err(err) = append_audit(decision, prep_status) {
+                    report_error(&format!("failed to write audit log: {err}"));
+                    return EXIT_INTERNAL;
+                }
+                if prep_status == SandboxStatus::Unavailable {
+                    warn(aegis::runtime::SANDBOX_UNAVAILABLE_MESSAGE);
+                }
+                return match execute(command) {
+                    Ok((child, _)) => wait(child),
+                    Err(err) => {
+                        report_error(&format!(
+                            "Sandbox setup failed; command not executed: {err}"
+                        ));
+                        EXIT_INTERNAL
+                    }
+                };
             }
-            if status == SandboxStatus::Unavailable {
-                warn(aegis::runtime::SANDBOX_UNAVAILABLE_MESSAGE);
+
+            match execute(command) {
+                Ok((child, actual_status)) => {
+                    if actual_status == SandboxStatus::NotAttempted {
+                        if let Err(err) = append_audit(Decision::Blocked, actual_status) {
+                            report_error(&format!("failed to write audit log: {err}"));
+                            return EXIT_INTERNAL;
+                        }
+                        let _ = wait(child);
+                        report_error(
+                            "Sandbox setup failed; command not executed: inner sandbox wrapper did not report status",
+                        );
+                        return EXIT_INTERNAL;
+                    }
+                    if let Err(err) = append_audit(decision, actual_status) {
+                        report_error(&format!("failed to write audit log: {err}"));
+                        return EXIT_INTERNAL;
+                    }
+                    if actual_status == SandboxStatus::Unavailable {
+                        warn(aegis::runtime::SANDBOX_UNAVAILABLE_MESSAGE);
+                    }
+                    wait(child)
+                }
+                Err(err) => {
+                    if let Err(audit_err) =
+                        append_audit(Decision::Blocked, SandboxStatus::NotAttempted)
+                    {
+                        report_error(&format!("failed to write audit log: {audit_err}"));
+                        return EXIT_INTERNAL;
+                    }
+                    report_error(&format!(
+                        "Sandbox setup failed; command not executed: {err}"
+                    ));
+                    EXIT_INTERNAL
+                }
             }
-            execute(command)
         }
         Err(aegis_sandbox::SandboxError::Required) => {
             if let Err(err) = append_audit(Decision::Blocked, SandboxStatus::Unavailable) {

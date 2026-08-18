@@ -9,6 +9,8 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
+use aegis_types::SandboxStatus;
+
 use crate::{SandboxConfig, SandboxError};
 
 // ── Landlock syscalls ─────────────────────────────────────────────────────────
@@ -219,6 +221,62 @@ pub(crate) fn apply_landlock_restrictions(config: &SandboxConfig) -> Result<(), 
 /// landlock wrapper.
 pub(crate) const AEGIS_LANDLOCK_ALLOW_WRITE: &str = "AEGIS_LANDLOCK_ALLOW_WRITE";
 
+/// Env var naming the fd the inner landlock wrapper writes its actual status
+/// to, so the parent can audit what actually applied at the execution seam
+/// rather than what preparation predicted.
+pub(crate) const AEGIS_LANDLOCK_STATUS_FD: &str = "AEGIS_LANDLOCK_STATUS_FD";
+
+/// Env var naming the fd the inner wrapper waits on after reporting status.
+pub(crate) const AEGIS_LANDLOCK_RELEASE_FD: &str = "AEGIS_LANDLOCK_RELEASE_FD";
+
+/// Report the actual [`SandboxStatus`] to the parent over the status fd named
+/// by [`AEGIS_LANDLOCK_STATUS_FD`]. No-op when the fd is not set (e.g. the
+/// wrapper invoked directly in a test). Closes the fd so the parent's read
+/// returns EOF.
+fn report_status(status: SandboxStatus) -> Result<(), SandboxError> {
+    let fd = match std::env::var(AEGIS_LANDLOCK_STATUS_FD) {
+        Ok(s) => s
+            .parse::<i32>()
+            .map_err(|_| SandboxError::Execution("invalid status fd".into()))?,
+        Err(_) => return Ok(()),
+    };
+    let byte = match status {
+        SandboxStatus::Active => b'a',
+        SandboxStatus::Unavailable => b'u',
+        SandboxStatus::NotAttempted => b'n',
+        SandboxStatus::NotConfigured => b'c',
+    };
+    // SAFETY: fd is a valid open descriptor; writing one byte is benign.
+    let n = unsafe { libc::write(fd, &byte as *const u8 as *const libc::c_void, 1) };
+    if n != 1 {
+        return Err(SandboxError::Io(std::io::Error::last_os_error()));
+    }
+    // SAFETY: fd is a valid open descriptor.
+    unsafe {
+        libc::close(fd);
+    }
+    Ok(())
+}
+
+/// Wait for the parent to commit Audit before execing the wrapped program.
+fn wait_for_release() -> Result<(), SandboxError> {
+    let fd = match std::env::var(AEGIS_LANDLOCK_RELEASE_FD) {
+        Ok(s) => s
+            .parse::<i32>()
+            .map_err(|_| SandboxError::Execution("invalid release fd".into()))?,
+        Err(_) => return Ok(()),
+    };
+    let mut byte = [0_u8; 1];
+    let n = unsafe { libc::read(fd, byte.as_mut_ptr() as *mut libc::c_void, 1) };
+    unsafe { libc::close(fd) };
+    if n != 1 {
+        return Err(SandboxError::Execution(
+            "parent did not release inner landlock wrapper".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Upper bound for the serialized `allow_write` env var, matching the kernel's
 /// per-argument limit (`MAX_ARG_STRLEN` = 128 KiB). Exceeding it fails closed
 /// at prepare time rather than silently truncating.
@@ -316,14 +374,14 @@ pub(crate) fn run_inner_landlock_wrapper() -> i32 {
         Some(v) => v.into_vec(),
         None => {
             eprintln!("aegis: inner landlock wrapper: missing {AEGIS_LANDLOCK_ALLOW_WRITE}");
-            return 1;
+            return crate::EXIT_INTERNAL;
         }
     };
     let allow_write = match parse_allow_write(&encoded) {
         Ok(paths) => paths,
         Err(e) => {
             eprintln!("aegis: inner landlock wrapper: {e}");
-            return 1;
+            return crate::EXIT_INTERNAL;
         }
     };
     let config = SandboxConfig {
@@ -332,20 +390,28 @@ pub(crate) fn run_inner_landlock_wrapper() -> i32 {
     };
     if let Err(e) = apply_landlock_restrictions(&config) {
         eprintln!("aegis: failed to apply landlock: {e}");
-        return 1;
+        return crate::EXIT_INTERNAL;
+    }
+    if let Err(e) = report_status(SandboxStatus::Active) {
+        eprintln!("aegis: failed to report status: {e}");
+        return crate::EXIT_INTERNAL;
+    }
+    if let Err(e) = wait_for_release() {
+        eprintln!("aegis: inner landlock wrapper: {e}");
+        return crate::EXIT_INTERNAL;
     }
 
     // argv after the flag: [program, args...].
     let argv: Vec<OsString> = std::env::args_os().skip(2).collect();
     let Some(program) = argv.first() else {
         eprintln!("aegis: inner landlock wrapper: no program to exec");
-        return 1;
+        return crate::EXIT_INTERNAL;
     };
 
     use std::os::unix::process::CommandExt;
     let err = std::process::Command::new(program).args(&argv[1..]).exec();
     eprintln!("aegis: failed to exec {program:?}: {err}");
-    1
+    crate::EXIT_INTERNAL
 }
 
 /// Return the Landlock ABI version supported by this kernel (0 if unavailable).

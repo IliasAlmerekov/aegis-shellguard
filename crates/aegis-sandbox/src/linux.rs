@@ -85,9 +85,9 @@ fn prepare(
     // The Shell exec path applies Landlock in the innermost re-exec'd wrapper
     // (inside bwrap's mount namespace) so the two layers compose. The Watch
     // spawn path (apply_exec_restrictions = false) stays bwrap-only per
-    // ADR-021. When allow_write is empty there is nothing for Landlock to
-    // restrict, so the wrapper is omitted entirely.
-    let use_landlock_wrapper = apply_exec_restrictions && !config.allow_write.is_empty();
+    // ADR-021. The wrapper also gates an empty `allow_write` profile: Shell
+    // must obtain its actual status before the Audit entry is committed.
+    let use_landlock_wrapper = apply_exec_restrictions;
     let mut cmd = std::process::Command::new("bwrap");
 
     if use_landlock_wrapper {
@@ -112,7 +112,7 @@ fn prepare(
     }
 
     cmd.args(&bwrap_args);
-    Ok(PreparedSandboxCommand::active(cmd))
+    Ok(PreparedSandboxCommand::active(cmd, use_landlock_wrapper))
 }
 
 // ── Sandbox availability probe ────────────────────────────────────────────────

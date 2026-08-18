@@ -172,11 +172,43 @@ pub(crate) fn exec_command(
     sandbox: Option<&aegis_sandbox::SandboxConfig>,
 ) -> i32 {
     match prepare_command(cmd, launch, sandbox) {
-        Ok((prepared, _)) => exec_prepared_command(prepared),
+        Ok((prepared, _)) => match exec_prepared_command(prepared) {
+            Ok((child, _status)) => wait_for_child(child),
+            Err(err) => {
+                eprintln!("error: sandbox setup failed: {err}");
+                EXIT_INTERNAL
+            }
+        },
         Err(err) => {
             eprintln!("error: sandbox setup failed: {err}");
             EXIT_INTERNAL
         }
+    }
+}
+
+/// Wait for a spawned child and return its exit code, mapping a signal death to
+/// `128 + signal` (matching the Watch runner's convention).
+pub(crate) fn wait_for_child(child: aegis_sandbox::ReportedSandboxChild) -> i32 {
+    let mut child = match child.release() {
+        Ok(child) => child,
+        Err(err) => {
+            eprintln!("error: failed to release sandboxed shell: {err}");
+            return EXIT_INTERNAL;
+        }
+    };
+    match child.wait() {
+        Ok(status) => status.code().unwrap_or_else(|| {
+            #[cfg(unix)]
+            {
+                use std::os::unix::process::ExitStatusExt;
+                128 + status.signal().unwrap_or(0)
+            }
+            #[cfg(not(unix))]
+            {
+                EXIT_INTERNAL
+            }
+        }),
+        Err(_) => EXIT_INTERNAL,
     }
 }
 
@@ -219,43 +251,40 @@ pub(crate) fn prepare_command(
     ))
 }
 
-pub(crate) fn exec_prepared_command(prepared: PreparedShellCommand) -> i32 {
+pub(crate) fn exec_prepared_command(
+    prepared: PreparedShellCommand,
+) -> Result<(aegis_sandbox::ReportedSandboxChild, SandboxStatus), aegis_sandbox::SandboxError> {
     #[cfg(unix)]
     {
-        use std::os::unix::process::CommandExt;
-        let err = match prepared {
+        match prepared {
             PreparedShellCommand::Direct(mut command) => {
-                aegis_sandbox::SandboxError::Io(command.exec())
+                let child = command.spawn().map_err(aegis_sandbox::SandboxError::Io)?;
+                Ok((
+                    aegis_sandbox::ReportedSandboxChild::from_child(
+                        child,
+                        SandboxStatus::NotConfigured,
+                    ),
+                    SandboxStatus::NotConfigured,
+                ))
             }
-            PreparedShellCommand::Sandboxed(command) => command.exec(),
-        };
-        eprintln!("error: failed to exec shell: {err}");
-        EXIT_INTERNAL
+            PreparedShellCommand::Sandboxed(command) => command.spawn_and_report().map(|child| {
+                let status = child.status();
+                (child, status)
+            }),
+        }
     }
 
     #[cfg(not(unix))]
     {
-        #[cfg(windows)]
-        {
-            let _ = prepared;
-            eprintln!("error: native Windows is unsupported; run Aegis inside WSL2/Linux instead");
-            return EXIT_INTERNAL;
-        }
-
-        #[cfg(not(windows))]
-        {
-            let mut command = match prepared {
-                PreparedShellCommand::Direct(command) => command,
-                PreparedShellCommand::Sandboxed(prepared) => prepared.command,
-            };
-            match command.status() {
-                Ok(status) => status.code().unwrap_or(EXIT_INTERNAL),
-                Err(err) => {
-                    eprintln!("error: failed to spawn shell: {err}");
-                    EXIT_INTERNAL
-                }
-            }
-        }
+        let mut command = match prepared {
+            PreparedShellCommand::Direct(command) => command,
+            PreparedShellCommand::Sandboxed(prepared) => prepared.command,
+        };
+        let child = command.spawn().map_err(aegis_sandbox::SandboxError::Io)?;
+        Ok((
+            aegis_sandbox::ReportedSandboxChild::from_child(child, SandboxStatus::NotConfigured),
+            SandboxStatus::NotConfigured,
+        ))
     }
 }
 

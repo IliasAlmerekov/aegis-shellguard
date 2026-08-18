@@ -19,7 +19,11 @@ fn optional_unavailability_is_audited_then_warned_before_execution() {
         },
         |message| events.borrow_mut().push(format!("warning:{message}")),
         |()| {
-            events.borrow_mut().push("execute".to_string());
+            events.borrow_mut().push("spawn".to_string());
+            Ok(((), SandboxStatus::Unavailable))
+        },
+        |()| {
+            events.borrow_mut().push("wait".to_string());
             0
         },
         |message| events.borrow_mut().push(format!("error:{message}")),
@@ -31,7 +35,8 @@ fn optional_unavailability_is_audited_then_warned_before_execution() {
         vec![
             "audit:AutoApproved:Unavailable".to_string(),
             format!("warning:{}", aegis::runtime::SANDBOX_UNAVAILABLE_MESSAGE),
-            "execute".to_string(),
+            "spawn".to_string(),
+            "wait".to_string(),
         ]
     );
 }
@@ -50,10 +55,8 @@ fn required_unavailability_is_audited_as_blocked_and_never_executes() {
             Ok::<_, String>(())
         },
         |message| events.borrow_mut().push(format!("warning:{message}")),
-        |()| {
-            events.borrow_mut().push("execute".to_string());
-            0
-        },
+        |_: ()| unreachable!("required preparation must not execute"),
+        |_: ()| unreachable!("required preparation must not wait"),
         |message| events.borrow_mut().push(format!("error:{message}")),
     );
 
@@ -88,10 +91,8 @@ fn setup_failure_is_audited_as_not_attempted_and_never_executes() {
             Ok::<_, String>(())
         },
         |message| events.borrow_mut().push(format!("warning:{message}")),
-        |()| {
-            events.borrow_mut().push("execute".to_string());
-            0
-        },
+        |_: ()| unreachable!("failed preparation must not execute"),
+        |_: ()| unreachable!("failed preparation must not wait"),
         |message| events.borrow_mut().push(format!("error:{message}")),
     );
 
@@ -107,7 +108,7 @@ fn setup_failure_is_audited_as_not_attempted_and_never_executes() {
 }
 
 #[test]
-fn audit_failure_prevents_optional_warning_and_execution() {
+fn audit_failure_prevents_optional_warning_and_child_spawn() {
     let events = RefCell::new(Vec::new());
 
     let exit_code = complete_shell_execution(
@@ -116,7 +117,11 @@ fn audit_failure_prevents_optional_warning_and_execution() {
         |_decision, _status| Err::<(), _>("permission denied".to_string()),
         |message| events.borrow_mut().push(format!("warning:{message}")),
         |()| {
-            events.borrow_mut().push("execute".to_string());
+            events.borrow_mut().push("spawn".to_string());
+            Ok(((), SandboxStatus::Unavailable))
+        },
+        |()| {
+            events.borrow_mut().push("wait".to_string());
             0
         },
         |message| events.borrow_mut().push(format!("error:{message}")),
@@ -130,6 +135,44 @@ fn audit_failure_prevents_optional_warning_and_execution() {
 }
 
 #[test]
+fn missing_inner_wrapper_report_is_audited_as_blocked_before_reaping_the_child() {
+    let events = RefCell::new(Vec::new());
+
+    let exit_code = complete_shell_execution(
+        Decision::AutoApproved,
+        || Ok(((), SandboxStatus::Active)),
+        |decision, status| {
+            events
+                .borrow_mut()
+                .push(format!("audit:{decision:?}:{status:?}"));
+            Ok::<_, String>(())
+        },
+        |message| events.borrow_mut().push(format!("warning:{message}")),
+        |()| {
+            events.borrow_mut().push("spawn".to_string());
+            Ok(((), SandboxStatus::NotAttempted))
+        },
+        |()| {
+            events.borrow_mut().push("reap".to_string());
+            0
+        },
+        |message| events.borrow_mut().push(format!("error:{message}")),
+    );
+
+    assert_eq!(exit_code, EXIT_INTERNAL);
+    assert_eq!(
+        events.into_inner(),
+        vec![
+            "spawn".to_string(),
+            "audit:Blocked:NotAttempted".to_string(),
+            "reap".to_string(),
+            "error:Sandbox setup failed; command not executed: inner sandbox wrapper did not report status"
+                .to_string(),
+        ]
+    );
+}
+
+#[test]
 fn unconfigured_sandbox_is_silent() {
     let events = RefCell::new(Vec::new());
 
@@ -139,12 +182,55 @@ fn unconfigured_sandbox_is_silent() {
         |_decision, _status| Ok::<_, String>(()),
         |message| events.borrow_mut().push(format!("warning:{message}")),
         |()| {
-            events.borrow_mut().push("execute".to_string());
+            events.borrow_mut().push("spawn".to_string());
+            Ok(((), SandboxStatus::NotConfigured))
+        },
+        |()| {
+            events.borrow_mut().push("wait".to_string());
             0
         },
         |message| events.borrow_mut().push(format!("error:{message}")),
     );
 
     assert_eq!(exit_code, 0);
-    assert_eq!(events.into_inner(), vec!["execute".to_string()]);
+    assert_eq!(
+        events.into_inner(),
+        vec!["spawn".to_string(), "wait".to_string()]
+    );
+}
+
+#[test]
+fn execution_audits_the_inner_wrapper_status_before_waiting_for_the_child() {
+    let events = RefCell::new(Vec::new());
+
+    let exit_code = complete_shell_execution(
+        Decision::AutoApproved,
+        || Ok(((), SandboxStatus::Active)),
+        |decision, status| {
+            events
+                .borrow_mut()
+                .push(format!("audit:{decision:?}:{status:?}"));
+            Ok::<_, String>(())
+        },
+        |message| events.borrow_mut().push(format!("warning:{message}")),
+        |()| {
+            events.borrow_mut().push("spawn".to_string());
+            Ok(((), SandboxStatus::Active))
+        },
+        |()| {
+            events.borrow_mut().push("wait".to_string());
+            17
+        },
+        |message| events.borrow_mut().push(format!("error:{message}")),
+    );
+
+    assert_eq!(exit_code, 17);
+    assert_eq!(
+        events.into_inner(),
+        vec![
+            "spawn".to_string(),
+            "audit:AutoApproved:Active".to_string(),
+            "wait".to_string(),
+        ]
+    );
 }

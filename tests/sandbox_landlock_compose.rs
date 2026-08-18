@@ -21,6 +21,105 @@ fn encode_single_allow_write(path: &std::path::Path) -> String {
     format!("{}:{}", s.len(), s)
 }
 
+/// The inner landlock wrapper must return the internal-error exit code (4),
+/// not a command exit code, when it cannot set up Landlock (CONVENTION.md §3:
+/// codes 1–N are the executed command's code; internal Aegis errors are 4).
+#[test]
+fn inner_landlock_wrapper_returns_internal_error_code_on_missing_config() {
+    let output = Command::new(aegis_bin())
+        .args(["--aegis-inner-landlock", "/bin/sh", "-c", "exit 0"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(4),
+        "missing AEGIS_LANDLOCK_ALLOW_WRITE must yield the internal-error exit code (4), \
+         not a command exit code; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// The inner landlock wrapper must report the actual status (Active) over the
+/// status fd after applying Landlock, so the parent can audit what actually
+/// applied at the execution seam rather than what preparation predicted.
+#[test]
+fn inner_landlock_wrapper_reports_active_status() {
+    if aegis_sandbox::landlock_abi() < 1 {
+        eprintln!("skipping: Landlock ABI < 1");
+        return;
+    }
+
+    let workspace = TempDir::new().unwrap();
+
+    let mut fds = [0; 2];
+    assert_eq!(
+        unsafe { libc::pipe(fds.as_mut_ptr()) },
+        0,
+        "pipe must succeed"
+    );
+    let (read_fd, write_fd) = (fds[0], fds[1]);
+
+    let mut child = Command::new(aegis_bin())
+        .env(
+            "AEGIS_LANDLOCK_ALLOW_WRITE",
+            encode_single_allow_write(workspace.path()),
+        )
+        .env("AEGIS_LANDLOCK_STATUS_FD", write_fd.to_string())
+        .args(["--aegis-inner-landlock", "/bin/sh", "-c", "exit 0"])
+        .spawn()
+        .unwrap();
+
+    // Close the parent's copy of the write end so the read returns EOF once the
+    // inner wrapper closes it.
+    unsafe {
+        libc::close(write_fd);
+    }
+
+    // Read the status byte.
+    let mut buf = [0u8; 1];
+    let n = unsafe { libc::read(read_fd, buf.as_mut_ptr() as *mut libc::c_void, 1) };
+    unsafe {
+        libc::close(read_fd);
+    }
+
+    let status = child.wait().unwrap();
+
+    assert_eq!(n, 1, "inner wrapper must report a status byte");
+    assert_eq!(buf[0], b'a', "status must be Active");
+    assert!(status.success(), "command must run");
+}
+
+/// `spawn_and_report` must spawn the prepared bwrap command and return the
+/// actual status. The spawn-safe path has no inner wrapper, so it returns the
+/// preparation status (Active). The exec path's wrapper gate is exercised
+/// end-to-end through the aegis binary in the shell-flow tests.
+#[test]
+fn spawn_and_report_spawns_and_returns_active_status() {
+    let config = aegis_sandbox::SandboxConfig {
+        allow_write: vec![],
+        ..Default::default()
+    };
+    let prepared = aegis_sandbox::prepare_for_spawn(
+        &config,
+        std::ffi::OsStr::new("/bin/sh"),
+        &[
+            std::ffi::OsString::from("-c"),
+            std::ffi::OsString::from("exit 0"),
+        ],
+    )
+    .expect("prepare_for_exec must succeed");
+
+    let reported = prepared
+        .spawn_and_report()
+        .expect("spawn_and_report must succeed");
+    let status = reported.status();
+    let child = reported.release().expect("child must be released");
+    let output = child.wait_with_output().unwrap();
+
+    assert_eq!(status, aegis_types::SandboxStatus::Active);
+    assert!(output.status.success(), "command must run");
+}
+
 /// The inner landlock wrapper, invoked directly (no bwrap), must apply Landlock
 /// and deny a write outside `allow_write`. This isolates the Landlock layer
 /// from bwrap's namespace isolation.
