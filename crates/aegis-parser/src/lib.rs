@@ -19,7 +19,7 @@ pub use embedded_scripts::{
     extract_process_substitution_bodies,
 };
 pub use nested_shells::extract_nested_commands;
-pub use prefix_match::matches_prefix;
+pub use prefix_match::{contains_any_token, matches_prefix};
 pub use segmentation::{logical_segments, top_level_pipelines};
 pub use tokenizer::{extract_prefix, split_tokens};
 
