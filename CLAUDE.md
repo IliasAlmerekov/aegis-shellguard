@@ -1,175 +1,38 @@
-# CLAUDE.md — Aegis Development Conventions
+# CLAUDE.md — Aegis Development Conventions (Detailed Reference)
 
-## What this project is
-
-Aegis is a lightweight Rust CLI that acts as a `$SHELL` proxy for AI coding
-agents (Claude Code, Codex). It intercepts every command an agent tries to
-run, classifies it (`Safe` / `Warn` / `Danger` / `Block`), and requires human
-confirmation before anything destructive executes. It is a heuristic
-guardrail, not a sandbox — see
-`docs/adr/adr-003-aegis-is-a-heuristic-guardrail-not-a-sandbox.md`. It must
-stay fast (< 2 ms on the safe-command hot path), correct, and minimal.
-
-The binary lives at the workspace root; the actual logic is split across
-focused library crates under `crates/` (parser, scanner, policy engine,
-config, snapshot backends, audit log, TUI). See `ARCHITECTURE.md` for the
-current structural contract and `docs/adr/` for why it looks this way.
-
-Read `PROJECT_STATE.md` at the start of any non-trivial task to see what
-changed last session and what is currently open.
-
----
-
-## Agent Configuration
-
-Before starting any non-trivial task, use the global skills installed under
-`~/.agents/skills/` (symlinked into `~/.claude/skills/`) in this order:
-
-1. **`grill-me`** (or **`grill-with-docs`** when a PRD/spec already exists) — interview
-   the task to a shared understanding before writing a plan.
-2. **`tdd`** — implement the planned slice red-green. For any Rust code touched
-   during this step, self-trigger **`rust-best-practices`**
-   (`Skill({skill: "rust-best-practices"})`) before writing the first line —
-   it encodes the idiomatic-Rust guidance this project expects
-   (ownership/borrowing, error handling, testing style), applied on top of —
-   never instead of — `CONVENTION.md`, which is authoritative for this
-   project's architecture, security invariants, and release gates.
-3. **`code-review`** — review the diff on the Standards and Spec axes.
-4. **`re-review`** — adversarially verify `code-review`'s findings are real, then,
-   after `tdd` fixes them, confirm the fix actually closed them. Capped at 2
-   rounds; see `~/.agents/ENGINEERING_GATES.md`.
-
-Only push and open a PR once `re-review` reports a clean cycle.
-
-The Definition-of-Done checklist, `TASKS.md` traceability convention, and branch
-protection requirements are defined once, project-agnostically, in
-`~/.agents/ENGINEERING_GATES.md` — consult it, don't duplicate it here. This
-project's required CI status checks (for branch protection on `main`) are every
-job in `.github/workflows/ci.yml` that runs on a PR targeting `main` (i.e. every
-job except `gate` itself, since the heavy-job `gate` sets `heavy=true` whenever
-`github.event.pull_request.base.ref == 'main'`):
-
-- `Quality (fmt, clippy, test)`
-- `Landing (test, build)`
-- `Security (audit, deny)`
-- `Release build (ubuntu-latest)`
-- `Release build (macos-26)`
-- `Performance baseline (scanner bench)`
-- `Live installer validation (ubuntu-latest)`
-- `Live installer validation (macos-26)`
-- `Live snapshot/rollback (Docker + SQLite)`
-- `Fuzzing (parser, scanner, routing, protocol, adapters)`
-
-If a job is renamed or the heavy-job gate condition changes, update this list in
-the same change.
-
----
-
-## Project Conventions
-
-**Always follow `CONVENTION.md`** — it is the authoritative project-level contract for
-code style, architecture, security invariants, dependency rules, testing requirements,
-and release gates. When `CONVENTION.md` conflicts with any other document, use the
-precedence order defined within it (security invariants → CI-enforced rules → CONVENTION.md → contributor guidance).
-
----
-
-## Ubiquitous Language
-
-**`CONTEXT.md` (repo root) is the project's domain glossary — the single source of truth
-for terminology shared by humans, agents, and code.** Before naming a type, field,
-config key, audit field, or before describing a concept in a PR or commit, use the exact
-canonical term from `CONTEXT.md` and avoid the words listed under each term's `_Avoid_`.
-
-- When a task introduces or sharpens a domain term, update `CONTEXT.md` in the same
-  change (via the `domain-modeling` skill). Do not batch glossary updates.
-- If a requirement uses a word that conflicts with the glossary (e.g. "block" — the
-  `RiskLevel`, a blocklist entry, or a `PolicyRuleDecision`?), resolve the ambiguity
-  against `CONTEXT.md` before writing code.
-- `CONTEXT.md` holds glossary entries only — no implementation details, specs, or notes.
-
----
-
-## Shell Commands
-
-**Always prefix all shell commands with `rtk`** to reduce noise in the context window:
-
-```bash
-rtk cargo build
-rtk cargo test
-rtk git status
-rtk cargo clippy
-```
-
-Never run bare `cargo`, `git`, `rustc`, or other CLI tools — always `rtk <command>`.
-
-Denied Aegis decisions must be respected; do not propose out-of-band bypass
-instructions or shell-escape workarounds for blocked risky commands.
-
----
-
-## Commit Style
-
-Use short conventional commits. **Never** add `Co-Authored-By` trailers.
-
----
-
-## Session Context
-
-**At the start of every session:** read `PROJECT_STATE.md` to understand what was done
-before and where the project stands. Do not skip this step on non-trivial tasks.
-
-**After finishing a task — verify, then document.** Do not fill in these files
-before the task is actually done and verified. Order matters:
-
-1. Finish the change.
-2. Verify it: `rtk cargo test --workspace`, `rtk cargo clippy -- -D warnings`,
-   `rtk cargo fmt --check`, plus a benchmark run if the hot path was touched.
-   Only proceed once this is green.
-3. Only then, in the same change, update `PROJECT_STATE.md`:
-   - Update "Last updated" date.
-   - Replace the "Last session" section with a concise summary of what
-     changed and what was verified.
-   - Update "Milestone status" rows whose status changed.
-   - Update "Open decisions / blockers" if any were resolved or new ones surfaced.
-
-The full Definition-of-Done (including when `TASKS.md` may be checked off and
-how commits trace back to it) is defined once in `~/.agents/ENGINEERING_GATES.md`
-— consult it, don't duplicate it here.
-
----
-
-## Changelog Maintenance
-
-After every feature, fix, or breaking change **that has passed verification**,
-prepend an entry under `## [Unreleased]` in `CHANGELOG.md`:
-
-- Use Keep a Changelog categories: `Added`, `Changed`, `Fixed`, `Removed`, `Security`.
-- One line per change; reference the milestone (e.g. `M5.4`) or ADR (e.g. `ADR-011`)
-  when applicable.
-- When cutting a release, rename `[Unreleased]` to the version and date, then add a fresh
-  empty `[Unreleased]` block above it.
-
----
-
-## Architecture Decision Records
-
-When making a significant architectural decision — new crate, change to a public API,
-new plugin, performance trade-off, security model change, or intentional non-goal —
-write an ADR in `docs/adr/`:
-
-- Number sequentially: check existing files (`rtk git ls-files docs/adr/`) for the next free number.
-- Filename: `adr-NNN-short-slug.md`.
-- Required sections: **Status** (Accepted / Proposed / Deprecated), **Context**,
-  **Decision**, **Consequences**.
-- Keep it short — one page max.
-- Update `docs/adr/README.md` index after adding a new ADR.
+**For the entry point, see [`AGENTS.md`](AGENTS.md).** This document contains detailed project conventions organized by topic — read this to understand the architectural requirements, testing strategy, performance rules, and implementation details.
 
 ---
 
 ## Project Overview
 
-Aegis is a lightweight Rust CLI that acts as a `$SHELL` proxy, intercepting AI agent commands and requiring human confirmation before destructive operations. It must be fast (< 2ms for safe paths), correct, and minimal.
+Aegis is a lightweight Rust CLI that acts as a `$SHELL` proxy for AI coding agents (Claude Code, Codex). It intercepts every command an agent tries to run, classifies it (`Safe` / `Warn` / `Danger` / `Block`), and requires human confirmation before anything destructive executes. It is a heuristic guardrail, not a sandbox — see `docs/adr/adr-003-aegis-is-a-heuristic-guardrail-not-a-sandbox.md`. It must stay fast (< 2 ms on the safe-command hot path), correct, and minimal.
+
+The binary lives at the workspace root; the actual logic is split across focused library crates under `crates/` (parser, scanner, policy engine, config, snapshot backends, audit log, TUI). See `ARCHITECTURE.md` for the current structural contract and `docs/adr/` for why it looks this way.
+
+---
+
+## Authoritative Rules
+
+**`CONVENTION.md`** is the authoritative project-level contract for code style, architecture, security invariants, dependency rules, testing requirements, and release gates. When conflicts arise, apply its internal precedence order (security invariants → CI-enforced rules → architecture → style).
+
+**`CONTEXT.md`** is the domain glossary — single source of truth for terminology. Before naming a type, field, config key, or audit field, use its canonical terms. If a requirement uses a word that conflicts with the glossary (e.g., "block" — the `RiskLevel`, a blocklist entry, or a `PolicyRuleDecision`?), resolve against `CONTEXT.md` before writing code.
+
+---
+
+## Commit Style
+
+Use short conventional commits with the co-author trailer:
+
+```
+feat: add PostgreSQL snapshot plugin
+fix: handle heredoc with embedded single quotes
+perf: eliminate allocation in Aho-Corasick hot path
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+```
+
+Scope is optional. Subject line ≤ 72 characters. Body explains _why_, not _what_.
 
 ---
 
@@ -428,22 +291,6 @@ User config is TOML (`aegis.toml` global, `.aegis.toml` per-project). When addin
 ## Audit Log Format
 
 Audit log is append-only JSONL at `~/.aegis/audit.jsonl`. Each line is one `AuditEntry` serialized as JSON. Never rewrite the file — only append. The format is part of the public contract from v1.
-
----
-
-## Commit Style
-
-Use conventional commits:
-
-```
-feat: add PostgreSQL snapshot plugin
-fix: handle heredoc with embedded single quotes
-perf: eliminate allocation in Aho-Corasick hot path
-test: add 15 fixture cases for cloud patterns
-docs: update pattern table in AEGIS.md
-```
-
-Scope is optional. Keep the subject line under 72 characters. Body explains _why_, not _what_.
 
 ---
 

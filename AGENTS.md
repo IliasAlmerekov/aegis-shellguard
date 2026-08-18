@@ -1,150 +1,68 @@
 # AGENTS.md — Aegis (Codex instructions)
 
-@RTK.md
+**Aegis** is a lightweight Rust CLI that acts as a `$SHELL` proxy for AI coding agents, intercepting commands and requiring human confirmation before destructive operations. It must stay fast (< 2ms for safe paths), correct, and minimal.
 
-## Project Overview
+See [`CLAUDE.md`](CLAUDE.md) for detailed project conventions; this document is the entry point.
 
-Aegis is a lightweight Rust CLI that acts as a `$SHELL` proxy for AI coding
-agents (Claude Code, Codex). It intercepts every command an agent tries to
-run, classifies it (`Safe` / `Warn` / `Danger` / `Block`), and requires human
-confirmation before anything destructive executes. It is a heuristic
-guardrail, not a sandbox — see `docs/adr/adr-003-aegis-is-a-heuristic-guardrail-not-a-sandbox.md`.
-It must stay fast (< 2 ms on the safe-command hot path), correct, and minimal.
+---
 
-The binary lives at the workspace root; the actual logic is split across
-focused library crates under `crates/` (parser, scanner, policy engine,
-config, snapshot backends, audit log, TUI). See `ARCHITECTURE.md` for the
-current structural contract and `docs/adr/` for why it looks this way.
+## Session Context — read before any code change
 
-## Session Context — mandatory before starting a task
+Before writing code or running commands, read these documents in order:
 
-**Before any non-trivial task**, read in this order:
+1. [`PROJECT_STATE.md`](PROJECT_STATE.md) — last session's work, milestone status, open blockers
+2. [`CONVENTION.md`](CONVENTION.md) — authoritative rules (precedence: security invariants → CI gates → architecture → style)
+3. [`CONTEXT.md`](CONTEXT.md) — domain glossary; use canonical terms in code and commits
+4. [`TASKS.md`](TASKS.md) — open security findings blocking 1.0 (P0/P1/P2)
 
-1. [`PROJECT_STATE.md`](PROJECT_STATE.md) — what changed last session, current
-   milestone status, open blockers. Do not skip this step.
-2. [`CONVENTION.md`](CONVENTION.md) — authoritative contract for style,
-   architecture, security invariants, dependency rules, testing, and release
-   gates. When it conflicts with other documents, use the precedence order
-   defined inside `CONVENTION.md` (security invariants → CI-enforced rules →
-   `CONVENTION.md` → contributor guidance).
-3. [`CONTEXT.md`](CONTEXT.md) — the project's domain glossary. Use its
-   canonical terms, and avoid the words listed under each term's `_Avoid_`, in
-   code, commits, and PR descriptions.
-4. [`TASKS.md`](TASKS.md) — the open security-finding backlog blocking 1.0
-   (P0/P1/P2), with a `[ ]`/`[x]` status per item.
+**Completion criterion:** You understand the current milestone, no active blockers impede your task, and you know the domain vocabulary.
 
-**After completing any significant change**, update:
+---
 
-- `CHANGELOG.md` — prepend one line under `## [Unreleased]` (Keep a Changelog
-  categories: `Added`, `Changed`, `Fixed`, `Removed`, `Security`), referencing
-  the ADR or milestone ID when applicable.
-- `PROJECT_STATE.md` — update "Last session" with what changed and what was
-  verified, any `Milestone status` rows that changed, and `Open decisions /
-  blockers` if something was resolved or newly surfaced. Keep it terse —
-  history belongs in git and `CHANGELOG.md`.
-- `TASKS.md` — flip the relevant `[ ]` to `[x]` only if the task closes a
-  tracked finding and verification passed.
-- `CONTEXT.md` — if the task introduces or sharpens a domain term, record it in
-  the same change.
+## Workflow: Skills in sequence
 
-Do not fill these files in before the task is actually done and verified.
+Before starting any code task, use global skills from `~/.agents/skills/` in this order:
 
-## Agent Configuration
+1. **`grill-me`** (or **`grill-with-docs`** when a spec exists) — interview the task
+2. **`tdd`** — red-green implementation (load **`rust-best-practices`** before writing Rust)
+3. **`code-review`** — Standards and Spec axes  
+4. **`re-review`** — verify findings and fixes (max 2 rounds; see `~/.agents/ENGINEERING_GATES.md`)
 
-Before starting any non-trivial task, use the global skills installed under
-`~/.agents/skills/` (symlinked into `~/.codex/skills/`) in this order:
+Only push once `re-review` reports green.
 
-1. **`grill-me`** (or **`grill-with-docs`** when a PRD/spec already exists) —
-   interview the task to a shared understanding before writing a plan. Plans for
-   Aegis security-finding work belong under `docs/superpowers/plans/` unless a
-   task says otherwise.
-2. **`tdd`** — implement the planned slice red-green.
-3. **`code-review`** — review the diff on the Standards and Spec axes.
-4. **`re-review`** — adversarially verify `code-review` findings are real,
-   then, after `tdd` fixes them, confirm the fix actually closed them. The
-   loop is capped at 2 rounds; see `~/.agents/ENGINEERING_GATES.md`.
+---
 
-Only push and open a PR once `re-review` reports a clean cycle.
+## Post-task: Verify, then update docs
 
-The Definition-of-Done checklist, `TASKS.md` traceability convention, and
-branch protection policy are defined once, project-agnostically, in
-`~/.agents/ENGINEERING_GATES.md` — consult it, don't duplicate it here.
+After code passes all gates, update in this order:
 
-This project's required GitHub branch-protection status checks are the CI job
-contexts from `.github/workflows/ci.yml`:
+1. **Verification gates:** `rtk cargo test --workspace`, `rtk cargo clippy -- -D warnings`, `rtk cargo fmt --check`, `rtk cargo audit`, `rtk cargo deny check` (benchmark if hot path was touched). Wait for all to pass.
 
-- `Determine heavy-job gate`
-- `Quality (fmt, clippy, test)`
-- `Security (audit, deny)`
-- `Release build (ubuntu-latest)`
-- `Release build (macos-26)`
-- `Performance baseline (scanner bench)`
-- `Live installer validation (ubuntu-latest)`
-- `Live installer validation (macos-26)`
-- `Live snapshot/rollback (Docker + SQLite)`
-- `Fuzzing (parser + scanner + heredoc)`
+2. **Update `PROJECT_STATE.md`:** Last updated date, Last session summary, Milestone status rows, Open blockers.
 
-Do not require `release.yml` jobs for ordinary branch protection; that workflow
-is for tagged release artifacts.
+3. **Update `CHANGELOG.md`:** Prepend one line under `## [Unreleased]` (category: Added/Changed/Fixed/Removed/Security; reference milestone or ADR).
 
-## Rust Skills
+4. **Update `CONTEXT.md`** (if needed): If the task introduces or sharpens a domain term, update glossary in the same change.
 
-**Always load and follow the `rust-best-practices` skill
-(`~/agents/skills/rust-best-practies/SKILL.md`) before writing or reviewing
-Rust code in this repo.** It encodes the idiomatic-Rust guidance this project
-expects (ownership/borrowing, error handling, testing style). Apply it on top
-of — never instead of — `CONVENTION.md`, which is authoritative for this
-project's specific architecture, security invariants, and release gates.
+5. **Update `TASKS.md`** (if applicable): Flip `[ ]` to `[x]` only if a tracked finding is closed and verified.
 
-## Execution Policy
+6. **Write ADR** (if needed): For significant architecture, API, or security model changes, write `docs/adr/adr-NNN-slug.md` (required sections: Status, Context, Decision, Consequences; update `docs/adr/README.md` index).
 
-- All shell commands must go through `rtk` (for example `rtk cargo build`,
-  `rtk cargo test`, `rtk git status`).
-- Never execute raw commands directly (`cargo`, `git`, `rustc`, etc.).
-- `rtk` is an agent-side execution guard and context-noise reducer; it is not
-  part of Aegis' runtime product contract or a requirement for end users.
+**Completion criterion:** All verifications green and all affected docs updated.
 
-Aegis governs command execution in this repo. If Aegis denies a command, that
-decision must be respected — do not propose shell-escape workarounds or
-out-of-band bypasses for a blocked risky command.
+---
 
-## Architecture decisions
+## Execution
 
-When you make a significant architectural decision (new crate, public API
-change, security-model change, intentional non-goal), write an ADR in
-`docs/adr/` — number sequentially, required sections: Status, Context,
-Decision, Consequences. Update `docs/adr/README.md`'s index in the same
-change. Do not record decisions anywhere else (not in `PROJECT_STATE.md`, not
-in scattered planning docs).
+- Route all shell commands through `rtk` — see [`RTK.md`](RTK.md) for examples
+- Respect denied Aegis decisions; do not propose bypasses
+- For Rust code, apply `rust-best-practices` skill before writing
 
-## Verification
+---
 
-For code changes, finish the change, then verify with:
+## Key references
 
-- `rtk cargo test --workspace`
-- `rtk cargo clippy -- -D warnings`
-- `rtk cargo fmt --check`
-- `rtk cargo audit`
-- `rtk cargo deny check`
-- a benchmark run if the hot path was touched
-
-Only mark tasks complete or update completion state after the relevant gates
-are green. For docs-only changes, verify the edited files and skip product
-runtime gates unless the docs change asserts runtime behavior that should be
-tested.
-
-## Commit style
-
-Short conventional commits (`feat:`, `fix:`, `perf:`, `test:`, `docs:`).
-Never add a `Co-Authored-By` trailer or other attribution footer.
-
-## What not to do
-
-- Do not put business logic in `main.rs`.
-- Do not use `regex` in the scanner's quick first pass — Aho-Corasick only.
-- Do not block the main thread during subprocess calls — use `tokio`.
-- Do not add dependencies that require a C build step, except for the pinned
-  Tree-sitter runtime and production-qualified generated grammars under ADR-022.
-  This is a narrow exception, not permission for general native dependencies.
-- Do not use `once_cell` — use `std::sync::LazyLock` (stable since Rust 1.80).
-- Do not `.unwrap()`/`.expect()` on a production path — see `CONVENTION.md`.
+- **`CLAUDE.md`** — detailed conventions (error handling, performance, module structure, testing, naming, key types, approved dependencies)
+- **`CONVENTION.md`** — authoritative rules with precedence order
+- **`.github/workflows/ci.yml`** — required branch-protection status checks
+- **`~/.agents/ENGINEERING_GATES.md`** — Definition-of-Done, traceability, branch policy
