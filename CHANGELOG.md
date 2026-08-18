@@ -13,6 +13,10 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Added
 
+- New `DK-007` pattern for `docker volume rm` (Danger), deliberately breaking
+  parity with the other DK-* rules (all Warn): it destroys the named volume
+  the user pointed at, usually the only copy of a database's data (M5.5 #192).
+
 - New `PatternToken::ShortFlag { short, long }` prefix-pattern token that
   matches one short flag whether it stands alone or is bundled into a cluster
   (`-R`, `-Rf`, `-fR`) together with its declared long-form synonyms

@@ -143,6 +143,24 @@ pub(super) fn rules() -> Vec<PrefixRule> {
             match_examples: &["docker network prune -f"],
             not_match_examples: &["docker network ls"],
         },
+        PrefixRule {
+            id: Cow::Borrowed("DK-007"),
+            category: Category::Docker,
+            pattern: vec![s("docker"), s("volume"), s("rm")],
+            risk: RiskLevel::Danger,
+            description: Cow::Borrowed(
+                "docker volume rm — deletes a named Docker volume, usually the only copy of a database's data",
+            ),
+            safe_alt: Some(Cow::Borrowed(
+                "Back up the volume first: 'docker run --rm -v pgdata:/data -v $PWD:/backup alpine tar czf /backup/pgdata.tgz -C /data .'",
+            )),
+            justification: Some(Cow::Borrowed(
+                "Danger, deliberately breaking parity with the six other DK-* rules (all Warn): prune collects garbage, rm <name> destroys the volume the user named. Equating them would understate the second. docker rm -v (removing anonymous volumes alongside a container) is not folded in — a different argument model and false-positive profile.",
+            )),
+            source: PatternSource::Builtin,
+            match_examples: &["docker volume rm pgdata", "docker volume rm -f pgdata"],
+            not_match_examples: &["docker volume ls", "docker volume inspect pgdata"],
+        },
         // ── Process ───────────────────────────────────────────────────────────
         PrefixRule {
             id: Cow::Borrowed("PS-001"),
