@@ -36,6 +36,23 @@ pub struct PrefixRule {
     pub justification: Option<Cow<'static, str>>,
     /// Whether the rule is built-in or user-defined.
     pub source: PatternSource,
+    /// Negative condition: tokens whose presence anywhere in the command's
+    /// tokens suppresses this rule.
+    ///
+    /// A prefix rule matches a prefix and ignores the tail, so a rule on
+    /// `npm publish` also fires on `npm publish --dry-run` — a safe rehearsal.
+    /// Listing `--dry-run` here silences the rule for that form. Position is
+    /// irrelevant: the token is looked for anywhere, because a flag can be
+    /// written anywhere in the tail.
+    ///
+    /// Cost: a rule declaring this can be silenced by the presence of a token,
+    /// so the list must stay short and semantically unambiguous — every token
+    /// on it must mean "this invocation does not perform the action" on its
+    /// own, regardless of what else is on the command line.
+    ///
+    /// An empty list (the default for every rule that does not need one) leaves
+    /// matching exactly as it was.
+    pub suppressed_by: &'static [&'static str],
     /// Example commands that MUST match this prefix rule.
     pub match_examples: &'static [&'static str],
     /// Example commands that MUST NOT match this prefix rule.
@@ -249,6 +266,20 @@ impl PatternSet {
             });
         }
 
+        // A blank suppressing token can never equal a real token, so it is dead
+        // data that reads as an active negative condition — reject it rather
+        // than let a rule look guarded when it is not.
+        if let Some(blank) = rule
+            .suppressed_by
+            .iter()
+            .find(|token| token.trim().is_empty())
+        {
+            return Err(ScannerError::InvalidPattern {
+                id: rule.id.to_string(),
+                reason: format!("blank suppressing token {blank:?} in suppressed_by"),
+            });
+        }
+
         // Prevent a prefix rule from shadowing a regex pattern with the same ID.
         let id = rule.id.as_ref();
         if pattern_ids.contains(id) {
@@ -290,6 +321,20 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
+    #[test]
+    fn prefix_rule_rejects_a_blank_suppressing_token() {
+        let ids = HashSet::new();
+        let mut rule = rule_with_first(PatternToken::Single(Cow::Borrowed("npm")));
+
+        rule.suppressed_by = &["--dry-run"];
+        assert!(PatternSet::validate_prefix_rule(&rule, &ids).is_ok());
+
+        // A blank entry can never equal a real token: it reads as a guard that
+        // is not there.
+        rule.suppressed_by = &["--dry-run", "  "];
+        assert!(PatternSet::validate_prefix_rule(&rule, &ids).is_err());
+    }
+
     fn rule_with_first(first: PatternToken) -> PrefixRule {
         PrefixRule {
             id: Cow::Borrowed("T-001"),
@@ -300,6 +345,7 @@ mod tests {
             safe_alt: None,
             justification: None,
             source: PatternSource::Builtin,
+            suppressed_by: &[],
             match_examples: &[],
             not_match_examples: &[],
         }

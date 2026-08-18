@@ -20,6 +20,23 @@ fn str_eq_maybe_case(a: &str, b: &str) -> bool {
     }
 }
 
+/// Check whether any token in `tokens` equals one of `candidates`.
+///
+/// Token comparison follows the same rule as prefix matching: flags are
+/// compared case-sensitively, everything else case-insensitively. Position is
+/// irrelevant — a candidate anywhere in the token list counts.
+///
+/// Used for a prefix rule's negative condition: a token whose presence
+/// suppresses the rule (e.g. `--dry-run`) can appear at any position, so a
+/// positional pattern token cannot express it.
+pub fn contains_any_token(tokens: &[&str], candidates: &[&str]) -> bool {
+    candidates.iter().any(|candidate| {
+        tokens
+            .iter()
+            .any(|token| str_eq_maybe_case(token, candidate))
+    })
+}
+
 /// Check whether `tokens` matches `pattern` as a token prefix.
 ///
 /// Supports [`PatternToken::Single`], [`PatternToken::Alts`],
@@ -85,7 +102,7 @@ fn matches_from(pattern: &PrefixPattern, tokens: &[&str], pat_idx: usize) -> boo
 
 #[cfg(test)]
 mod tests {
-    use super::matches_prefix;
+    use super::{contains_any_token, matches_prefix};
     use aegis_types::PatternToken;
     use std::borrow::Cow;
 
@@ -188,5 +205,60 @@ mod tests {
     fn short_flag_rejects_bare_non_flag_token() {
         let pattern = vec![single("chmod"), short_flag('R', &["--recursive"])];
         assert!(!matches_prefix(&pattern, &["chmod", "file"]));
+    }
+
+    // ── contains_any_token ────────────────────────────────────────────────
+
+    #[test]
+    fn contains_any_token_finds_candidate_at_any_position() {
+        let candidates = ["--dry-run"];
+        assert!(contains_any_token(
+            &["npm", "publish", "--dry-run"],
+            &candidates
+        ));
+        assert!(contains_any_token(
+            &["npm", "--dry-run", "publish"],
+            &candidates
+        ));
+        assert!(contains_any_token(
+            &["npm", "publish", "--dry-run", "--access", "public"],
+            &candidates
+        ));
+    }
+
+    #[test]
+    fn contains_any_token_is_false_without_a_candidate() {
+        assert!(!contains_any_token(&["npm", "publish"], &["--dry-run"]));
+    }
+
+    #[test]
+    fn contains_any_token_with_no_candidates_is_false() {
+        assert!(!contains_any_token(&["npm", "publish", "--dry-run"], &[]));
+    }
+
+    #[test]
+    fn contains_any_token_matches_any_of_several_candidates() {
+        let candidates = ["--dry-run", "-n"];
+        assert!(contains_any_token(&["npm", "publish", "-n"], &candidates));
+    }
+
+    #[test]
+    fn contains_any_token_compares_flags_case_sensitively() {
+        assert!(!contains_any_token(&["npm", "--DRY-RUN"], &["--dry-run"]));
+    }
+
+    #[test]
+    fn contains_any_token_compares_non_flags_case_insensitively() {
+        assert!(contains_any_token(&["psql", "READONLY"], &["readonly"]));
+    }
+
+    #[test]
+    fn contains_any_token_requires_a_whole_token() {
+        // A candidate embedded in a longer token is not a match: suppression is
+        // token equality, not substring containment.
+        assert!(!contains_any_token(
+            &["npm", "publish", "--dry-run-please"],
+            &["--dry-run"]
+        ));
     }
 }

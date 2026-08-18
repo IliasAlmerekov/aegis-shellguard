@@ -11,7 +11,15 @@ impl PrefixRule {
     /// Delegates to [`aegis_parser::matches_prefix`], which supports
     /// `Single`/`Alts`/`Any`/`AnyStar` tokens. The pattern must be a prefix of
     /// `tokens` — extra trailing tokens are allowed. Empty patterns never match.
+    ///
+    /// The rule's negative condition ([`PrefixRule::suppressed_by`]) is checked
+    /// first: a rule listing suppressing tokens never fires when any of them is
+    /// present, at any position. A rule listing none is unaffected.
     pub fn matches_tokens(&self, tokens: &[&str]) -> bool {
+        if aegis_parser::contains_any_token(tokens, self.suppressed_by) {
+            return false;
+        }
+
         if self.id.as_ref() == "FS-011" && wipefs_all_flag_present(tokens) {
             return true;
         }
@@ -198,6 +206,7 @@ mod tests {
             safe_alt: None,
             justification: None,
             source: PatternSource::Builtin,
+            suppressed_by: &[],
             match_examples: &[],
             not_match_examples: &[],
         };
@@ -215,6 +224,7 @@ mod tests {
             safe_alt: None,
             justification: None,
             source: PatternSource::Builtin,
+            suppressed_by: &[],
             match_examples: &[],
             not_match_examples: &[],
         };
@@ -232,6 +242,7 @@ mod tests {
             safe_alt: None,
             justification: None,
             source: PatternSource::Builtin,
+            suppressed_by: &[],
             match_examples: &[],
             not_match_examples: &[],
         };
@@ -250,6 +261,7 @@ mod tests {
             safe_alt: None,
             justification: None,
             source: PatternSource::Builtin,
+            suppressed_by: &[],
             match_examples: &[],
             not_match_examples: &[],
         };
@@ -267,6 +279,7 @@ mod tests {
             safe_alt: None,
             justification: None,
             source: PatternSource::Builtin,
+            suppressed_by: &[],
             match_examples: &[],
             not_match_examples: &[],
         };
@@ -284,6 +297,7 @@ mod tests {
             safe_alt: None,
             justification: None,
             source: PatternSource::Builtin,
+            suppressed_by: &[],
             match_examples: &[],
             not_match_examples: &[],
         };
@@ -301,6 +315,7 @@ mod tests {
             safe_alt: None,
             justification: None,
             source: PatternSource::Builtin,
+            suppressed_by: &[],
             match_examples: &[],
             not_match_examples: &[],
         };
@@ -318,6 +333,7 @@ mod tests {
             safe_alt: None,
             justification: None,
             source: PatternSource::Builtin,
+            suppressed_by: &[],
             match_examples: &[],
             not_match_examples: &[],
         };
@@ -336,6 +352,7 @@ mod tests {
             safe_alt: None,
             justification: None,
             source: PatternSource::Builtin,
+            suppressed_by: &[],
             match_examples: &[],
             not_match_examples: &[],
         };
@@ -354,6 +371,7 @@ mod tests {
             safe_alt: None,
             justification: None,
             source: PatternSource::Builtin,
+            suppressed_by: &[],
             match_examples: &[],
             not_match_examples: &[],
         };
@@ -376,6 +394,7 @@ mod tests {
             safe_alt: None,
             justification: None,
             source: PatternSource::Builtin,
+            suppressed_by: &[],
             match_examples: &[],
             not_match_examples: &[],
         };
@@ -395,6 +414,7 @@ mod tests {
             safe_alt: None,
             justification: None,
             source: PatternSource::Builtin,
+            suppressed_by: &[],
             match_examples: &[],
             not_match_examples: &[],
         };
@@ -415,6 +435,7 @@ mod tests {
             safe_alt: None,
             justification: None,
             source: PatternSource::Builtin,
+            suppressed_by: &[],
             match_examples: &[],
             not_match_examples: &[],
         };
@@ -434,6 +455,7 @@ mod tests {
             safe_alt: None,
             justification: Some(Cow::Borrowed("rewrites remote history")),
             source: PatternSource::Builtin,
+            suppressed_by: &[],
             match_examples: &[],
             not_match_examples: &[],
         };
@@ -455,6 +477,7 @@ mod tests {
             safe_alt: None,
             justification: Some(Cow::Borrowed("test")),
             source: PatternSource::Builtin,
+            suppressed_by: &[],
             match_examples: &["echo hello"],
             not_match_examples: &[],
         };
@@ -479,6 +502,7 @@ mod tests {
             safe_alt: None,
             justification: None,
             source: PatternSource::Builtin,
+            suppressed_by: &[],
             match_examples: &[],
             not_match_examples: &[],
         };
@@ -493,6 +517,130 @@ mod tests {
         assert!(!rule.matches_tokens(&["wipefs", "--almost", "/dev/sda"]));
     }
 
+    // ── Negative condition (suppressed_by) ────────────────────────────────
+
+    /// A rule shaped like the `npm publish` case the field exists for: a prefix
+    /// that a safe rehearsal flag appears *after*.
+    fn rule_suppressed_by(suppressed_by: &'static [&'static str]) -> PrefixRule {
+        PrefixRule {
+            id: Cow::Borrowed("T-014"),
+            category: Category::Process,
+            pattern: vec![single("npm"), single("publish")],
+            risk: RiskLevel::Warn,
+            description: Cow::Borrowed("test"),
+            safe_alt: None,
+            justification: None,
+            source: PatternSource::Builtin,
+            suppressed_by,
+            match_examples: &[],
+            not_match_examples: &[],
+        }
+    }
+
+    #[test]
+    fn prefix_rule_without_suppressing_tokens_is_unchanged() {
+        let rule = rule_suppressed_by(&[]);
+        assert!(rule.matches_tokens(&["npm", "publish"]));
+        assert!(rule.matches_tokens(&["npm", "publish", "--dry-run"]));
+    }
+
+    #[test]
+    fn prefix_rule_does_not_fire_when_suppressing_token_present() {
+        let rule = rule_suppressed_by(&["--dry-run"]);
+        assert!(rule.matches_tokens(&["npm", "publish"]));
+        assert!(!rule.matches_tokens(&["npm", "publish", "--dry-run"]));
+    }
+
+    #[test]
+    fn prefix_rule_suppression_is_position_independent() {
+        let rule = rule_suppressed_by(&["--dry-run"]);
+        assert!(!rule.matches_tokens(&["npm", "publish", "--dry-run"]));
+        assert!(!rule.matches_tokens(&["npm", "publish", "--access", "public", "--dry-run"]));
+        // Even inside the matched prefix's own span.
+        assert!(!rule.matches_tokens(&["npm", "--dry-run", "publish"]));
+    }
+
+    #[test]
+    fn prefix_rule_any_listed_suppressing_token_silences_the_rule() {
+        let rule = rule_suppressed_by(&["--dry-run", "-n"]);
+        assert!(!rule.matches_tokens(&["npm", "publish", "-n"]));
+        assert!(!rule.matches_tokens(&["npm", "publish", "--dry-run"]));
+        assert!(rule.matches_tokens(&["npm", "publish", "--access", "public"]));
+    }
+
+    #[test]
+    fn prefix_rule_suppression_requires_a_whole_token() {
+        let rule = rule_suppressed_by(&["--dry-run"]);
+        assert!(rule.matches_tokens(&["npm", "publish", "--dry-run-later"]));
+    }
+
+    #[test]
+    fn prefix_rule_suppression_outranks_a_matcher_side_predicate() {
+        // FS-011's wipefs short-flag predicate short-circuits to `true`; the
+        // negative condition is checked first, so a rule declaring one is not
+        // silently overridden by a predicate.
+        let rule = PrefixRule {
+            id: Cow::Borrowed("FS-011"),
+            category: Category::Filesystem,
+            pattern: vec![
+                single("wipefs"),
+                PatternToken::AnyStar,
+                alts(&["-a", "--all"]),
+            ],
+            risk: RiskLevel::Danger,
+            description: Cow::Borrowed("test"),
+            safe_alt: None,
+            justification: None,
+            source: PatternSource::Builtin,
+            suppressed_by: &["--no-act"],
+            match_examples: &[],
+            not_match_examples: &[],
+        };
+        assert!(rule.matches_tokens(&["wipefs", "-af", "/dev/sda"]));
+        assert!(!rule.matches_tokens(&["wipefs", "-af", "--no-act", "/dev/sda"]));
+    }
+
+    #[test]
+    fn prefix_rule_not_match_example_can_pin_the_negative_condition() {
+        let rule = PrefixRule {
+            id: Cow::Borrowed("T-015"),
+            category: Category::Process,
+            pattern: vec![single("npm"), single("publish")],
+            risk: RiskLevel::Warn,
+            description: Cow::Borrowed("test"),
+            safe_alt: None,
+            justification: None,
+            source: PatternSource::Builtin,
+            suppressed_by: &["--dry-run"],
+            match_examples: &["npm publish"],
+            not_match_examples: &["npm publish --dry-run"],
+        };
+        assert!(
+            rule.validate_examples().is_ok(),
+            "a not_match_example covered by the negative condition must validate"
+        );
+    }
+
+    #[test]
+    fn prefix_rule_example_validation_catches_a_dropped_negative_condition() {
+        // Same examples, condition removed: validation must now fail, so the
+        // rule's own examples are what pins the condition.
+        let rule = PrefixRule {
+            id: Cow::Borrowed("T-016"),
+            category: Category::Process,
+            pattern: vec![single("npm"), single("publish")],
+            risk: RiskLevel::Warn,
+            description: Cow::Borrowed("test"),
+            safe_alt: None,
+            justification: None,
+            source: PatternSource::Builtin,
+            suppressed_by: &[],
+            match_examples: &["npm publish"],
+            not_match_examples: &["npm publish --dry-run"],
+        };
+        assert!(rule.validate_examples().is_err());
+    }
+
     #[test]
     fn prefix_rule_validate_examples_detects_bad_not_match_example() {
         let rule = PrefixRule {
@@ -504,6 +652,7 @@ mod tests {
             safe_alt: None,
             justification: Some(Cow::Borrowed("test")),
             source: PatternSource::Builtin,
+            suppressed_by: &[],
             match_examples: &[],
             not_match_examples: &["rm -rf /"],
         };
