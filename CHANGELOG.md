@@ -13,9 +13,11 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Added
 
-- New `DK-007` pattern for `docker volume rm` (Danger), deliberately breaking
-  parity with the other DK-* rules (all Warn): it destroys the named volume
-  the user pointed at, usually the only copy of a database's data (M5.5 #192).
+- New `DK-007` token-prefix rule detects `docker volume rm <name>`, which
+  deletes a named Docker volume (usually the only copy of a database's data).
+  `Danger`, deliberately breaking the `DK-*` family's `Warn` parity: `prune`
+  collects garbage, `rm <name>` destroys the volume the user named. `docker rm
+  -v <container>` is not folded in (different argument model). (M5.5, #192)
 
 - New `PatternToken::ShortFlag { short, long }` prefix-pattern token that
   matches one short flag whether it stands alone or is bundled into a cluster
