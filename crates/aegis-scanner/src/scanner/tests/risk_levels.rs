@@ -68,7 +68,7 @@ fn assess_risk_levels() {
             "pip install requests --trusted-host pypi.org",
             RiskLevel::Warn,
         ),
-        // ── Danger (31) ──────────────────────────────────────────────────
+        // ── Danger (32) ──────────────────────────────────────────────────
         // DK-007: docker volume rm — Danger, deliberately NOT with its DK-*
         // Warn neighbours: prune collects garbage, rm <name> destroys the
         // volume the user named. Equating them would understate the second.
@@ -87,6 +87,8 @@ fn assess_risk_levels() {
         ("shred -uzn 3 secrets.key", RiskLevel::Danger),
         // FS-010: mv /etc contents
         ("mv /etc/hosts /tmp/hosts.bak", RiskLevel::Danger),
+        // FS-019: recursive chmod over a system root, independent of mode
+        ("chmod -R 755 /usr", RiskLevel::Danger),
         // GIT-004: filter-branch
         (
             "git filter-branch --tree-filter 'rm -f secret.txt' HEAD",

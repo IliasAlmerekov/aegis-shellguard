@@ -21,7 +21,38 @@
 
 ---
 
-## Current session (2026-08-18) — M5.5 DK-007 docker volume rm (#192)
+## Current session (2026-08-18) — M5.3 FS-019 recursive chmod system roots (#193)
+
+- **Added `FS-019` `Danger` Filesystem rule** for recursive `chmod` whose
+  literal target is `/`, `/usr`, `/etc`, `/bin`, `/sbin`, `/lib`, `/var`, or
+  `/boot` (with the local trailing-slash spellings). The target, not the mode,
+  is the destructive property: `chmod -R 755 /usr` fires alongside `chmod -R
+  000 /`. The prefix rule consumes `ShortFlag { short: 'R' }`, covering `-R`,
+  `-Rf`, and `--recursive` while preserving the case-sensitive `-r` near miss.
+  Globs and relative targets reached via a prior `cd` are explicit non-coverage;
+  resolving either would be shell evaluation.
+
+- **`PS-005` is now `Filesystem`, with its ID and behavior unchanged.**
+  `chmod -R 777 /` is intentionally reported by both `PS-005` and `FS-019` at
+  `Danger`; match collection is not collapsed. ADR-025 records the target-keyed
+  decision, fixed system-root set, local trailing-slash handling, and boundaries.
+
+- **Tests (TDD seam `Scanner::assess`):** positive cases cover every system
+  root, mode independence, clustered/long recursion flags, trailing slash,
+  launcher/absolute-path normalization, compounds, and the intended overlap;
+  narrowness tests pin `-r`, application paths, non-recursive chmod, globs, and
+  preceding `cd`. The risk-level census carries one `FS-019` representative and
+  the `PS-005` category migration is asserted directly.
+
+- **Verified:** focused scanner tests; `cargo test --workspace`; `clippy
+  --workspace --all-targets -- -D warnings`; `fmt --check`; `cargo audit`; and
+  `cargo deny check` all pass. Safe quick-scan coverage already contained
+  `chmod`, so the additive prefix rule does not alter the Safe-path gate; no
+  benchmark was required.
+
+---
+
+## Last session (2026-08-18) — M5.5 DK-007 docker volume rm (#192)
 
 - **Added `DK-007` `Danger` rule (category `Docker`) for `docker volume rm
   <name>`**, which deletes a named Docker volume — usually the only copy of a
