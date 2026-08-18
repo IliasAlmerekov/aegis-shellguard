@@ -221,6 +221,25 @@ description = "ALTER TABLE DROP COLUMN — removes a column and all its data per
 safe_alt = "Add a NOT NULL DEFAULT before removing to safely migrate dependent queries first"
 justification = "Removes a column and all its data permanently. Dependent views, triggers, and queries will fail."
 
+# DB-009 (TRUNCATE without TABLE) is a match-anywhere regex Pattern like the
+# other destructive-SQL rules (ADR-015): the SQL verb is an argument to a
+# database client, never the Effective program. It fires only on forms carrying
+# a SQL-only anchor — the ONLY keyword, a CASCADE/RESTRICT referential action,
+# a RESTART/CONTINUE IDENTITY clause, or a comma-separated table list followed
+# by one of those strong anchors. Bare `TRUNCATE <ident>` and a bare comma list
+# are declared uncovered forms: the word collides with the coreutils command
+# (FS-006) and with ordinary prose, and neither carries a SQL-only anchor.
+# Identifiers containing spaces inside quotes are a stated limit (the
+# identifier class `[^\s,]+` cannot span a space).
+[[patterns]]
+id = "DB-009"
+category = "Database"
+risk = "Danger"
+pattern = '\btruncate\s+(?:(?:table\s+)?only\s+[^\s,;]+[ \t]*(?:[;\n]|$|\b(?:cascade|restrict|restart|continue)\b)|[^\s,]+(?:\s*,\s*[^\s,]+)*\s+cascade\b|[^\s,]+(?:\s*,\s*[^\s,]+)*\s+restrict\b|[^\s,]+(?:\s*,\s*[^\s,]+)*\s+(?:restart|continue)\s+identity\b)'
+description = "TRUNCATE without TABLE — removes all rows from a table without logging individual row deletions; data is unrecoverable"
+safe_alt = "Use DELETE with a WHERE clause if you need to remove specific rows; for full removal, ensure backups exist"
+justification = "TRUNCATE is a metadata operation that drops all data pages instantly. Unlike DELETE, it does not log individual row removals, making recovery impossible without a backup. This rule fires only on forms carrying a SQL-only anchor (ONLY, CASCADE/RESTRICT, RESTART/CONTINUE IDENTITY, or a comma list before one of those) so the coreutils truncate command and ordinary prose stay clear."
+
 # ─── Cloud ───────────────────────────────────────────────────────────────────
 #
 # CL-001..CL-010 are now token-prefix rules in builtin_prefix_rules().
@@ -228,7 +247,7 @@ justification = "Removes a column and all its data permanently. Dependent views,
 
 # ─── Docker ──────────────────────────────────────────────────────────────────
 #
-# DK-001..DK-006 are now token-prefix rules in builtin_prefix_rules().
+# DK-001..DK-007 are now token-prefix rules in builtin_prefix_rules().
 # No regex patterns remain in this category.
 
 # ─── Process ─────────────────────────────────────────────────────────────────

@@ -21,6 +21,17 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
   so a future token variant is a compile error. No rule adopts it yet; the
   `chmod` rule that follows consumes it. (M5.1, #189)
 
+- New `DB-009` `Danger` rule detects destructive SQL `TRUNCATE` written without
+  the `TABLE` keyword, closing the gap where the shorter MySQL/PostgreSQL
+  spelling passed as `Safe` (`DB-004` only covered `truncate table`). It is a
+  match-anywhere regex `Pattern` (ADR-015), so it is delivery-agnostic across
+  `-c`/`-e`/`--command`/`--execute`/heredoc/stdin/`;`-compound. It fires only on
+  forms carrying a SQL-only anchor — the `ONLY` keyword, a `CASCADE`/`RESTRICT`
+  referential action, a `RESTART`/`CONTINUE IDENTITY` clause, or a comma list
+  before one of those — so the coreutils `truncate` command (FS-006) and
+  ordinary prose stay clear. Bare `TRUNCATE <ident>` and a bare comma list are
+  declared uncovered forms. (M5.4, #191)
+
 ### Changed
 
 - Prefix rules whose first token is not `Single`/`Alts` (a wildcard or a flag)

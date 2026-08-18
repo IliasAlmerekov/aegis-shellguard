@@ -21,7 +21,61 @@
 
 ---
 
-## Current session (2026-08-18) — M5.1 ShortFlag pattern token (#189)
+## Current session (2026-08-18) — M5.4 DB-009 TRUNCATE without TABLE (#191)
+
+- **Added `DB-009` `Danger` rule (category `Database`) for destructive SQL
+  `TRUNCATE` written without the optional `TABLE` keyword**, closing the gap
+  where the shorter MySQL/PostgreSQL spelling passed as `Safe` (`DB-004` only
+  covered `truncate table`). It is a match-anywhere regex `Pattern` in
+  `patterns.toml` (ADR-015): a SQL verb is an argument to a database client,
+  never the `Effective program`, so it is delivery-agnostic across
+  `-c`/`-e`/`--command`/`--execute`/heredoc/stdin/`;`-compound without
+  enumerating clients.
+
+- **The rule fires only on forms carrying a SQL-only anchor** — the `ONLY`
+  keyword (with an optional `TABLE`, so `TRUNCATE TABLE ONLY x` overlaps
+  `DB-004` at the same `Danger`), a `CASCADE`/`RESTRICT` referential action, a
+  `RESTART`/`CONTINUE IDENTITY` clause, or a comma-separated table list followed
+  by one of those strong clauses. Bare `TRUNCATE <ident>` and a bare comma list
+  are **declared uncovered forms** (the word collides with the coreutils command
+  covered by `FS-006` and with ordinary prose; the comma alone is punctuation,
+  not SQL syntax), so the coreutils `truncate` command and prose like
+  `git commit -m "truncate logs, rebuild index"` stay clear. Identifiers
+  containing spaces inside quotes are a stated limit (the identifier class
+  `[^\s,]+` cannot span a space), pinned by a must-not-fire example. The
+  `ONLY` terminator accepts `;`/`\n`/end-of-text/strong-clause so heredoc
+  delivery fires.
+
+- **Tests (7 new):** positive (must-fire) cases in the new
+  `scanner/tests/m5_followups.rs` (ONLY, CASCADE/RESTRICT, RESTART/CONTINUE
+  IDENTITY, schema-qualified and quoted identifiers, comma list before a strong
+  anchor, `mysql -e` and `;`-compound delivery, `TRUNCATE TABLE ONLY x`
+  overlap, and a heredoc-body delivery test); negative (must-not-fire) cases in
+  the new `scanner/tests/m5_gaps.rs` (bare `TRUNCATE users`, coreutils
+  `truncate -s 0`/`--size=0`, prose with comma/`only`, bare comma list, spaced
+  quoted identifier). Both modules registered in `scanner/tests/mod.rs`,
+  mirroring the H3 `*_followups`/`*_gaps` positive/negative split.
+
+- **Issue #191 updated** to reflect the review decision: the acceptance
+  criterion "`TRUNCATE orders, order_items` fires" is no longer met — a bare
+  comma list without a strong clause is now a declared uncovered form (same
+  category as bare `TRUNCATE users`), and the criterion now reads
+  "`TRUNCATE orders, order_items CASCADE` fires".
+
+- **Verified:** `cargo test -p aegis-scanner` (177 passed), `clippy
+  --all-targets -- -D warnings` clean, `fmt --check` clean, `cargo audit` (only
+  the 6 pre-existing allowed warnings from the opt-in `aegis-starlark` feature),
+  `cargo deny check` all ok. Scanner bench: `1000_safe_commands` ≈ 1.9 ms
+  (≈1.9 µs each, within the ADR-002 < 2 ms budget); the rule's keyword
+  `truncate` is already in the quick-scan set from `DB-004`, so the safe-path
+  hot path is untouched. **Note:** the workspace `rust_source_files_should_stay_under_800_lines`
+  budget test is currently red because the parallel uncommitted `DK-007`
+  (`docker volume rm`) work pushed `scanner/tests/basic.rs` to 825 lines
+  (798 at HEAD); the user is moving those cases out of `basic.rs` themselves.
+
+---
+
+## Last session (2026-08-18) — M5.1 ShortFlag pattern token (#189)
 
 - **Added `PatternToken::ShortFlag { short: char, long: &'static [&'static str] }`**
   to `aegis-types` and an explicit match arm in `aegis_parser::matches_prefix`.
@@ -56,7 +110,7 @@
 
 ---
 
-## Last session (2026-08-17) — v0.6.4 release preparation
+## Prior session (2026-08-17) — v0.6.4 release preparation
 
 - **Version bumped `0.6.3` → `0.6.4`** across the workspace root and all twelve
   member crates (`Cargo.toml` + `Cargo.lock`), `packaging/npm/package.json`,
