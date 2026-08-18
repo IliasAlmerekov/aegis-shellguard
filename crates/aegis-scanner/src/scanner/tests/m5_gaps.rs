@@ -135,3 +135,55 @@ fn m5_db009_spaced_quoted_identifier_does_not_fire() {
             .collect::<Vec<_>>()
     );
 }
+
+// ── Docker volume rm narrowness (DK-007) ───────────────────────────────────
+//
+// DK-007 keys on the exact `docker volume rm` prefix. `ls` and `inspect` are
+// read-only and must stay clear; `docker rm -v <container>` removes anonymous
+// volumes alongside a container — a different argument model and
+// false-positive profile, deliberately not folded into DK-007.
+#[test]
+fn m5_docker_volume_ls_and_inspect_do_not_fire_dk007() {
+    let s = scanner();
+    for cmd in ["docker volume ls", "docker volume inspect pgdata"] {
+        let assessment = s.assess(cmd);
+        assert!(
+            !assessment
+                .matched
+                .iter()
+                .any(|m| m.pattern.id.as_ref() == "DK-007"),
+            "DK-007 must not fire for {cmd:?}: {:?}",
+            assessment
+                .matched
+                .iter()
+                .map(|m| m.pattern.id.as_ref())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            assessment.risk < RiskLevel::Danger,
+            "{cmd:?} must not reach Danger (got {:?})",
+            assessment.risk
+        );
+    }
+}
+
+#[test]
+fn m5_docker_rm_v_is_not_detected_as_dk007() {
+    // Deliberate scope: `docker rm -v <container>` removes anonymous volumes
+    // alongside a container — a different argument model and false-positive
+    // profile. It is not folded into DK-007.
+    let s = scanner();
+    let assessment = s.assess("docker rm -v my-container");
+    assert!(
+        !assessment
+            .matched
+            .iter()
+            .any(|m| m.pattern.id.as_ref() == "DK-007"),
+        "DK-007 must not fire for 'docker rm -v my-container': {:?}",
+        assessment
+            .matched
+            .iter()
+            .map(|m| m.pattern.id.as_ref())
+            .collect::<Vec<_>>()
+    );
+}

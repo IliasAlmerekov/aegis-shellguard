@@ -21,7 +21,50 @@
 
 ---
 
-## Current session (2026-08-18) — M5.4 DB-009 TRUNCATE without TABLE (#191)
+## Current session (2026-08-18) — M5.5 DK-007 docker volume rm (#192)
+
+- **Added `DK-007` `Danger` rule (category `Docker`) for `docker volume rm
+  <name>`**, which deletes a named Docker volume — usually the only copy of a
+  database's data. Nothing fired before; the nearest rule, `DK-002`, covers
+  `docker volume prune` (unused volumes only), a strictly milder operation.
+  The rule is a token-prefix rule `[docker, volume, rm]` (ADR-014): the
+  dangerous verb is the leading program, so a prefix match covers the tail and
+  `-f` needs no special handling. `docker rm -v <container>` (removing
+  anonymous volumes alongside a container) is deliberately not folded in — a
+  different argument model and false-positive profile.
+
+- **`Danger` deliberately breaks the `DK-*` family's `Warn` parity.** The
+  rule's own `justification` states why: `prune` collects garbage, `rm <name>`
+  destroys the volume the user named; equating them would understate the
+  second. The risk-level census in `risk_levels.rs` carries the same note so a
+  reader does not "fix" the divergence as a typo.
+
+- **Tests (TDD, seam `Scanner::assess`):** positive (must-fire) cases in
+  `m5_followups.rs` (`docker volume rm pgdata`, `docker volume rm -f pgdata`,
+  and the compound `echo ok && docker volume rm pgdata`); launcher/absolute
+  path delivery (`/usr/bin/docker volume rm`, `sudo docker volume rm`, `rtk
+  docker volume rm`) added to the ADR-014 table in `basic.rs`; negative
+  narrowness guards in the new `m5_gaps.rs` (`docker volume ls`, `docker
+  volume inspect pgdata`, and `docker rm -v my-container` as the declared
+  boundary). `docker volume prune` regression is pinned by the existing
+  `DK-002`/`Warn` cases, unchanged.
+
+- **Prefactor (budget gate):** `basic.rs` was at 797/800 lines before M5 and
+  would have tripped `tests/file_size_budget.rs` on this rule. Extracted the
+  188-line `assess_risk_levels` census into a new `risk_levels.rs` module
+  (pure move, behavior unchanged); `basic.rs` is now 621 lines, leaving headroom
+  for the remaining M5 rules (#193 FS-019, #194 PKG-006/007) that write to the
+  same two tables.
+
+- **Verified:** `cargo test --workspace` = 2111 passed / 0 failed; `clippy
+  --all-targets -- -D warnings` clean; `fmt --all --check` clean; `cargo audit`
+  = 0 CVEs with the 6 known allowed advisories (opt-in `starlark` chain);
+  `cargo deny check` ok. Hot path untouched (additive rule + tests), so no
+  benchmark run was required.
+
+---
+
+## Last session (2026-08-18) — M5.4 DB-009 TRUNCATE without TABLE (#191)
 
 - **Added `DB-009` `Danger` rule (category `Database`) for destructive SQL
   `TRUNCATE` written without the optional `TABLE` keyword**, closing the gap
