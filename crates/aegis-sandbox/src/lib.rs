@@ -285,7 +285,7 @@ impl PreparedSandboxCommand {
     }
 
     #[cfg(not(target_os = "linux"))]
-    pub fn spawn_and_report(self) -> Result<ReportedSandboxChild, SandboxError> {
+    pub fn spawn_and_report(mut self) -> Result<ReportedSandboxChild, SandboxError> {
         let child = self.command.spawn().map_err(SandboxError::Io)?;
         Ok(ReportedSandboxChild {
             child: Some(child),
