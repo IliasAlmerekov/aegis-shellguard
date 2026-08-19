@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted
+Accepted. Partially superseded by
+[ADR-031](adr-031-unattended-destructive-execution-requires-recovery.md) for
+`Unattended destructive execution`: there a `Ready` Recovery is required rather
+than best-effort. The Audit integrity decisions below remain in force.
 
 ## Decision
 
