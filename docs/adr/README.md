@@ -87,6 +87,7 @@ the core classification / approval pipeline when enforcement is active.
 | ADR-021 | Sandbox preparation reports the actual execution path | [`adr-021-sandbox-preparation-reports-the-actual-execution-path.md`](adr-021-sandbox-preparation-reports-the-actual-execution-path.md) |
 | ADR-022 | Language-aware analysis is an additive isolated stage | [`adr-022-language-aware-analysis-is-an-additive-isolated-stage.md`](adr-022-language-aware-analysis-is-an-additive-isolated-stage.md) |
 | ADR-023 | A contained Hook panic fails closed in two layers | [`adr-023-hook-panic-fails-closed-in-two-layers.md`](adr-023-hook-panic-fails-closed-in-two-layers.md) |
+| ADR-025 | Recursive chmod over system roots is target-keyed | [`adr-025-recursive-chmod-system-roots-are-target-keyed.md`](adr-025-recursive-chmod-system-roots-are-target-keyed.md) |
 
 `ADR-009` is intentionally absent from the active set; numbering is preserved
 as-is so historical references do not drift.

@@ -1,5 +1,64 @@
 use super::*;
 
+// M5.3 — FS-019: recursive chmod over a system root. The rule is a
+// token-prefix rule (ADR-014), but it keys on the target path rather than the
+// mode: any recursive permission rewrite of a system root can destroy boot,
+// service, or authentication behaviour.
+#[test]
+fn assess_m5_fs019_recursive_chmod_system_roots_fire() {
+    let cases: &[(&str, RiskLevel, &str)] = &[
+        ("chmod -R 000 /", RiskLevel::Danger, "FS-019"),
+        ("chmod -R 755 /usr", RiskLevel::Danger, "FS-019"),
+        ("chmod -R 700 /etc", RiskLevel::Danger, "FS-019"),
+        ("chmod -Rf 000 /bin", RiskLevel::Danger, "FS-019"),
+        ("chmod --recursive 000 /sbin", RiskLevel::Danger, "FS-019"),
+        ("chmod -R 000 /lib", RiskLevel::Danger, "FS-019"),
+        ("chmod -R 000 /var", RiskLevel::Danger, "FS-019"),
+        ("chmod -R 000 /boot", RiskLevel::Danger, "FS-019"),
+        // The trailing slash spelling is deliberately local to FS-019.
+        ("chmod -R 000 /usr/", RiskLevel::Danger, "FS-019"),
+        // Effective-program normalization and segmentation (ADR-014).
+        ("/usr/bin/chmod -R 000 /", RiskLevel::Danger, "FS-019"),
+        ("sudo chmod -R 000 /", RiskLevel::Danger, "FS-019"),
+        ("rtk chmod -R 000 /", RiskLevel::Danger, "FS-019"),
+        ("echo ok && chmod -R 000 /", RiskLevel::Danger, "FS-019"),
+        // FS-019 overlaps PS-005 at the same risk level by design.
+        ("chmod -R 777 /", RiskLevel::Danger, "FS-019"),
+    ];
+
+    for (cmd, risk, id) in cases {
+        assert_assessment_matches_pattern(cmd, *risk, id);
+    }
+
+    let overlap = scanner().assess("chmod -R 777 /");
+    for id in ["FS-019", "PS-005"] {
+        assert!(
+            overlap
+                .matched
+                .iter()
+                .any(|matched| matched.pattern.id.as_ref() == id),
+            "chmod -R 777 / must retain {id}: {:?}",
+            overlap
+                .matched
+                .iter()
+                .map(|matched| matched.pattern.id.as_ref())
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+fn assess_m5_ps005_is_filesystem_without_changing_its_match() {
+    let assessment = scanner().assess("chmod 777 /");
+    let ps005 = assessment
+        .matched
+        .iter()
+        .find(|matched| matched.pattern.id.as_ref() == "PS-005")
+        .expect("chmod 777 / must keep matching PS-005");
+
+    assert_eq!(ps005.pattern.category, Category::Filesystem);
+}
+
 // M5.4 — DB-009: destructive SQL `TRUNCATE` without the `TABLE` keyword.
 // Positive (must-fire) cases. The rule is a match-anywhere regex `Pattern`
 // (ADR-015): a SQL verb is an argument to a database client, never the
