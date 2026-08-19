@@ -469,23 +469,61 @@ is tightened only when the current owner owns it, otherwise rejected before a
 sensitive write.
 _Avoid_: private snapshot, chmod security
 
+**Unattended destructive execution**:
+The execution of a `Danger` command or an `Effect-opaque execution` for which no
+human decision was taken in the current run — auto-approval by an allowlist
+override, a `Policy rule`, or a previously persisted always-allow. Defined by the
+missing decision, never by a missing terminal: a terminal can be present while
+the command is auto-approved, and absent while a persisted approval applies.
+_Avoid_: non-interactive execution, CI execution, headless run
+
 **Required recovery**:
-The obligation to create at least one `Snapshot` before executing a command.
-The obligation is independent of whether any `Snapshot plugin` is available or
-succeeds; an explicit trusted opt-out means recovery is not required rather than
-degraded.
+The obligation to hold at least one `Snapshot` whose `Snapshot attempt readiness`
+is `Ready` before an `Unattended destructive execution` proceeds. The obligation
+is independent of whether any `Snapshot plugin` is available or succeeds; a
+`Recovery opt-out` means recovery is not required rather than degraded. An
+interactive `Danger` command is not subject to it — the human decides in the
+moment and is told when no provider applies.
 _Avoid_: mandatory backup, available snapshot
 
+**Snapshot attempt readiness**:
+The result of the local check of the expected artifact after one `Snapshot
+plugin` attempt: `Ready` when the artifact passed the `Validation level`
+reached, `Invalid` when it was found but failed a minimal check, `Unavailable`
+when the artifact is missing or unreadable or the attempt produced no
+`SnapshotRecord` at all. A property of the attempt, not of the artifact — an
+attempt can be recorded when no artifact exists. It is not a liveness check and
+proves nothing about whether a `Rollback` would succeed.
+_Avoid_: snapshot verification, artifact validity, snapshot health
+
+**Validation level**:
+The depth of local checking a `Snapshot attempt readiness` result actually
+reached: `PresenceOnly` when only existence, readability, and non-emptiness were
+established, or `Structural` when a local tool additionally parsed the artifact.
+An absent or unresponsive checking tool yields `PresenceOnly`, never `Invalid`.
+_Avoid_: verification strength, check depth
+
+**Recovery opt-out**:
+The trusted, deliberate declining of `Required recovery`, from either of two
+sources: `Mode::Audit`, which declines all enforcement, or a global
+`SnapshotPolicy::None`, which declines recovery while enforcement continues.
+Neither is a `Recovery degradation` and neither may be recorded as one; a project
+config cannot introduce either, and both are visible in the `Audit log`.
+_Avoid_: recovery disabled, snapshot off, degraded recovery
+
 **Recovery degradation**:
-The state where `Required recovery` applies but no `Snapshot` was created. It is
-distinct from an explicit trusted recovery opt-out and must never silently become
-permission to execute.
+The state where `Required recovery` applies but no attempt reached `Ready`. It is
+distinct from a `Recovery opt-out` and must never silently become permission to
+execute. It is never recorded while `Recovery status` is `Ready` — a partial
+failure alongside a usable `Snapshot` is a per-attempt fact, not a degradation of
+the obligation.
 _Avoid_: snapshot warning, best-effort failure
 
 **Recovery status**:
-The post-attempt state of `Required recovery`: `Ready` when at least one
-`Snapshot` was created, or `Degraded` when none was created. Execution surfaces
-derive their deny or `Recovery override` behavior from this shared fact.
+The post-attempt state of `Required recovery`: `Ready` when at least one attempt
+reached `Snapshot attempt readiness::Ready`, or `Degraded` when none did.
+Execution surfaces derive their deny or `Recovery override` behavior from this
+shared fact.
 _Avoid_: snapshot result, recovery verdict
 
 **Recovery override**:
