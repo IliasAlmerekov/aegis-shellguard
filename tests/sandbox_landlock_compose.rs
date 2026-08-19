@@ -5,6 +5,11 @@
 //!
 //! Both tests are gated on a Landlock-capable host (ABI >= 1) and skip
 //! otherwise, so they stay green on kernels without Landlock.
+//!
+//! The whole file is Linux-only: `landlock_abi` and the inner Landlock wrapper
+//! it exercises are `cfg(target_os = "linux")`, so on macOS this target must
+//! compile to an empty test binary rather than fail to build.
+#![cfg(target_os = "linux")]
 
 mod support;
 
