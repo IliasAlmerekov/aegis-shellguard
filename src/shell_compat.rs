@@ -276,11 +276,26 @@ pub(crate) fn exec_prepared_command(
 
     #[cfg(not(unix))]
     {
+        // Native Windows is unsupported (M4.1): Aegis runs on Windows only
+        // inside WSL2, where it takes the Unix path above. Refusing here keeps
+        // the platform scope explicit instead of silently spawning the command
+        // on a platform with no confinement backend.
+        #[cfg(windows)]
+        {
+            let _ = prepared;
+            return Err(aegis_sandbox::SandboxError::Execution(
+                "native Windows is unsupported; run Aegis inside WSL2/Linux instead".to_string(),
+            ));
+        }
+
+        #[cfg(not(windows))]
         let mut command = match prepared {
             PreparedShellCommand::Direct(command) => command,
             PreparedShellCommand::Sandboxed(prepared) => prepared.command,
         };
+        #[cfg(not(windows))]
         let child = command.spawn().map_err(aegis_sandbox::SandboxError::Io)?;
+        #[cfg(not(windows))]
         Ok((
             aegis_sandbox::ReportedSandboxChild::from_child(child, SandboxStatus::NotConfigured),
             SandboxStatus::NotConfigured,
