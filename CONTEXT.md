@@ -377,11 +377,44 @@ and never as loose output that would corrupt it.
 _Avoid_: session warning, startup banner, session audit
 
 **Sandbox**:
-An OS-level confinement profile optionally applied to an approved command before it
-executes. A best-effort write/network guardrail add-on, not a security or
-confidentiality boundary; it does not promise that file reads or secrets are
-hidden from the command.
-_Avoid_: jail, container
+The OS-level layer that restricts what an executed command may write and whether it
+may reach the network. Mandatory on Linux and macOS (ADR-029): confinement is
+attempted for every executed command, and unavailability blocks rather than
+degrading to an unconfined run. Not a security or confidentiality boundary; it does
+not promise that file reads or secrets are hidden from the command.
+_Avoid_: jail, container, confinement profile (the profile is the
+`Effective confinement profile`; the Sandbox is the layer that applies it)
+
+**Trusted ceiling**:
+The upper bound on the authority any command may receive, resolved from
+configuration before classification: writable roots plus network. Nothing later in
+the flow may exceed it. Its default admits the workspace tree and `/tmp` with the
+network off, because a mandatory `Sandbox` whose default forbids all writes cannot
+run ordinary work (ADR-030).
+_Avoid_: static profile, base profile, session profile
+
+**Confinement restriction**:
+An optional declaration on a Rule stating how the `Trusted ceiling` narrows when that
+Rule matches. It can only subtract. Targets are located by a named
+program-specific extractor, never by argv position and never by `Category`
+inference. A Rule that declares none is the identity — the ceiling passes through
+unchanged (ADR-030).
+_Avoid_: permission grant, capability, sandbox rule
+
+**Effective confinement profile**:
+The writable roots and network permission actually applied to one command: the
+`Trusted ceiling` intersected with project tightening, with every matched
+`Confinement restriction`, and with any outer agent sandbox. Recorded in the
+`AuditEntry`, because `Sandbox status` alone no longer says what was confined once
+the profile varies per command.
+_Avoid_: derived profile, computed profile, final profile
+
+**Confinement degradation**:
+The state where a `Confinement restriction` was declared but its extractor resolved
+no target, so the command runs under the `Trusted ceiling` instead of a narrowed
+profile. Like `Recovery degradation` it must never be silent: it is visible in the
+confirmation dialog, not only in the `Audit log`.
+_Avoid_: extractor failure, profile fallback
 
 **Sandbox status**:
 The confinement path selected during command preparation (`SandboxStatus`),
