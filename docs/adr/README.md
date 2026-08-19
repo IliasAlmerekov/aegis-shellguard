@@ -94,6 +94,7 @@ the core classification / approval pipeline when enforcement is active.
 | ADR-028 | The Starlark policy DSL is removed before 1.0 | [`adr-028-the-starlark-policy-dsl-is-removed-before-1-0.md`](adr-028-the-starlark-policy-dsl-is-removed-before-1-0.md) |
 | ADR-029 | The Sandbox is a mandatory 1.0 layer (supersedes ADR-003) | [`adr-029-the-sandbox-is-a-mandatory-1-0-layer.md`](adr-029-the-sandbox-is-a-mandatory-1-0-layer.md) |
 | ADR-030 | The confinement profile is derived from the Assessment (extends ADR-029) | [`adr-030-the-confinement-profile-is-derived-from-the-assessment.md`](adr-030-the-confinement-profile-is-derived-from-the-assessment.md) |
+| ADR-031 | Unattended destructive execution requires Recovery (partially supersedes ADR-004) | [`adr-031-unattended-destructive-execution-requires-recovery.md`](adr-031-unattended-destructive-execution-requires-recovery.md) |
 
 `ADR-009` is intentionally absent from the active set; numbering is preserved
 as-is so historical references do not drift.
