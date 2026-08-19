@@ -190,7 +190,11 @@ _Avoid_: operand confidence, resolution level
 **Analysis status**:
 The per-target state of language-aware analysis: `NotApplicable`, `Complete`, or
 `Degraded` (`AnalysisStatus`). Ordered by increasing degradation, so the worst
-target drives the merged `Assessment` (ADR-022 §4).
+target drives the merged `Assessment` (ADR-022 §4). Distinct from an **absent**
+`AnalysisSummary`, which means the stage never ran — not built into this binary,
+or not reached; `NotApplicable` means it ran and found no analyzable source.
+Absence is the ordinary case while the stage is not `Default-on`, and it is never
+evidence about the command.
 _Avoid_: analysis state, result status
 
 **Analysis degradation**:
@@ -268,6 +272,21 @@ The Strict-mode one-time human decision narrowly attached to a non-`Block`
 semantic `Match`, or to a Safe assessment with Analysis degradation. It cannot
 authorize an unrelated Strict denial and cannot be persisted.
 _Avoid_: strict bypass, allowlist override
+
+**Adapter qualification**:
+The evidence gate one language adapter must pass before it may be linked and
+trusted — its corpus, degradation, ABI, supply-chain, and all-target release
+checks (ADR-022 §11, recorded in `docs/language-qualification.md`). It is a
+property of the adapter's evidence and says nothing about whether the stage is
+switched on for users.
+_Avoid_: adapter readiness, certification
+
+**Default-on**:
+Whether language-aware analysis runs for a user without opting in. A release
+decision, held separately from `Adapter qualification` — a qualified adapter is
+not thereby default-on, and per ADR-024 none is in 1.0. The two must never be
+stated as one condition.
+_Avoid_: enabled, production-enabled, shipped
 
 ## Policy
 
