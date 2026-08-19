@@ -223,11 +223,15 @@ fn m1_sandbox_api_docs_define_failure_and_non_return_contracts() {
     let exec_docs = source
         .split("pub fn exec")
         .next()
-        .and_then(|prefix| prefix.rsplit("/// Apply exec-only restrictions").next())
+        .and_then(|prefix| prefix.rsplit("/// Replace the current process").next())
         .expect("PreparedSandboxCommand::exec docs must exist");
     assert!(exec_docs.contains("does not return when process replacement succeeds"));
-    assert!(exec_docs.contains("SandboxError::Execution"));
     assert!(exec_docs.contains("SandboxError::Io"));
+    // Issue #211: Landlock is applied in the innermost re-exec'd wrapper inside
+    // bwrap's mount namespace, so exec() no longer returns
+    // SandboxError::Execution; a Landlock failure fails closed inside the
+    // wrapper with a non-zero exit code.
+    assert!(exec_docs.contains("innermost re-exec'd"));
 
     let prepare_exec_docs = source
         .split("pub fn prepare_for_exec")

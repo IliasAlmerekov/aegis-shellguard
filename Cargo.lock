@@ -41,6 +41,7 @@ dependencies = [
  "clap",
  "criterion",
  "flate2",
+ "libc",
  "regex",
  "schemars",
  "serde",

@@ -190,7 +190,11 @@ _Avoid_: operand confidence, resolution level
 **Analysis status**:
 The per-target state of language-aware analysis: `NotApplicable`, `Complete`, or
 `Degraded` (`AnalysisStatus`). Ordered by increasing degradation, so the worst
-target drives the merged `Assessment` (ADR-022 §4).
+target drives the merged `Assessment` (ADR-022 §4). Distinct from an **absent**
+`AnalysisSummary`, which means the stage never ran — not built into this binary,
+or not reached; `NotApplicable` means it ran and found no analyzable source.
+Absence is the ordinary case while the stage is not `Default-on`, and it is never
+evidence about the command.
 _Avoid_: analysis state, result status
 
 **Analysis degradation**:
@@ -269,6 +273,21 @@ semantic `Match`, or to a Safe assessment with Analysis degradation. It cannot
 authorize an unrelated Strict denial and cannot be persisted.
 _Avoid_: strict bypass, allowlist override
 
+**Adapter qualification**:
+The evidence gate one language adapter must pass before it may be linked and
+trusted — its corpus, degradation, ABI, supply-chain, and all-target release
+checks (ADR-022 §11, recorded in `docs/language-qualification.md`). It is a
+property of the adapter's evidence and says nothing about whether the stage is
+switched on for users.
+_Avoid_: adapter readiness, certification
+
+**Default-on**:
+Whether language-aware analysis runs for a user without opting in. A release
+decision, held separately from `Adapter qualification` — a qualified adapter is
+not thereby default-on, and per ADR-024 none is in 1.0. The two must never be
+stated as one condition.
+_Avoid_: enabled, production-enabled, shipped
+
 ## Policy
 
 **Mode**:
@@ -285,6 +304,15 @@ _Avoid_: whitelist, blacklist
 The ceiling an allowlist entry may downgrade to (`AllowlistOverrideLevel`): `Warn`
 (default), `Danger`, or `Never`. Above the ceiling, the allowlist does not auto-approve.
 _Avoid_: allow ceiling, max downgrade
+
+**Ratchet**:
+The rule that a project-local `.aegis.toml` may only **tighten** a security-critical
+field, never **weaken** it. Global config stays the user's trusted layer; a project
+layer that asks for a weaker value keeps the more restrictive one and `config validate`
+warns (ADR-013). "Tighten" and "weaken" are the canonical directions, and the stricter
+direction is field-specific — more confinement, more Snapshot coverage, and fewer
+write paths are all tightenings regardless of the underlying boolean.
+_Avoid_: override, downgrade, merge (reserve "override" for `Override level`)
 
 **Policy rule**:
 A typed `[[rules]]` entry in config whose outcome is a `PolicyRuleDecision` — `Allow`,
@@ -349,11 +377,44 @@ and never as loose output that would corrupt it.
 _Avoid_: session warning, startup banner, session audit
 
 **Sandbox**:
-An OS-level confinement profile optionally applied to an approved command before it
-executes. A best-effort write/network guardrail add-on, not a security or
-confidentiality boundary; it does not promise that file reads or secrets are
-hidden from the command.
-_Avoid_: jail, container
+The OS-level layer that restricts what an executed command may write and whether it
+may reach the network. Mandatory on Linux and macOS (ADR-029): confinement is
+attempted for every executed command, and unavailability blocks rather than
+degrading to an unconfined run. Not a security or confidentiality boundary; it does
+not promise that file reads or secrets are hidden from the command.
+_Avoid_: jail, container, confinement profile (the profile is the
+`Effective confinement profile`; the Sandbox is the layer that applies it)
+
+**Trusted ceiling**:
+The upper bound on the authority any command may receive, resolved from
+configuration before classification: writable roots plus network. Nothing later in
+the flow may exceed it. Its default admits the workspace tree and `/tmp` with the
+network off, because a mandatory `Sandbox` whose default forbids all writes cannot
+run ordinary work (ADR-030).
+_Avoid_: static profile, base profile, session profile
+
+**Confinement restriction**:
+An optional declaration on a Rule stating how the `Trusted ceiling` narrows when that
+Rule matches. It can only subtract. Targets are located by a named
+program-specific extractor, never by argv position and never by `Category`
+inference. A Rule that declares none is the identity — the ceiling passes through
+unchanged (ADR-030).
+_Avoid_: permission grant, capability, sandbox rule
+
+**Effective confinement profile**:
+The writable roots and network permission actually applied to one command: the
+`Trusted ceiling` intersected with project tightening, with every matched
+`Confinement restriction`, and with any outer agent sandbox. Recorded in the
+`AuditEntry`, because `Sandbox status` alone no longer says what was confined once
+the profile varies per command.
+_Avoid_: derived profile, computed profile, final profile
+
+**Confinement degradation**:
+The state where a `Confinement restriction` was declared but its extractor resolved
+no target, so the command runs under the `Trusted ceiling` instead of a narrowed
+profile. Like `Recovery degradation` it must never be silent: it is visible in the
+confirmation dialog, not only in the `Audit log`.
+_Avoid_: extractor failure, profile fallback
 
 **Sandbox status**:
 The confinement path selected during command preparation (`SandboxStatus`),

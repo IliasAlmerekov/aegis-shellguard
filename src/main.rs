@@ -286,6 +286,17 @@ fn main() {
         process::exit(cli_dispatch::run_internal_language_worker());
     }
 
+    // The inner landlock wrapper is a minimal, synchronous, exec-only process
+    // re-exec'd inside bwrap's mount namespace. It must not pay for clap
+    // parsing or the Tokio runtime, so it short-circuits here like the language
+    // worker. The flag literal is owned by `aegis_sandbox::INNER_LANDLOCK_FLAG`
+    // so the detector here and the wrapper builder in the sandbox crate cannot
+    // drift.
+    #[cfg(target_os = "linux")]
+    if std::env::args().any(|a| a == aegis_sandbox::INNER_LANDLOCK_FLAG) {
+        process::exit(aegis_sandbox::run_inner_landlock_wrapper());
+    }
+
     let invocation = match shell_compat::parse_invocation_mode() {
         Ok(invocation) => invocation,
         Err(message) => {

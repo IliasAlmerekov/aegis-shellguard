@@ -16,11 +16,10 @@ pub(crate) fn run(config: &SandboxConfig, cmd: &str) -> Result<SandboxResult, Sa
         return run_unavailable_result(config.required);
     }
 
-    // NOTE: Landlock is NOT applied here because apply_landlock_restrictions
-    // would restrict the Aegis parent process, not the bwrap child.
-    // For the subprocess path, bwrap namespace isolation provides the
-    // necessary confinement. Landlock is applied in prepare_for_exec()
-    // where it is inherited across the POSIX exec() boundary.
+    // NOTE: Landlock is NOT applied here. This legacy subprocess path stays
+    // bwrap-only; bwrap namespace isolation provides the confinement. The
+    // Shell exec path applies Landlock in the innermost re-exec'd wrapper
+    // inside bwrap's mount namespace (see crate::landlock).
 
     let bwrap_args = build_bwrap_args(config)?;
     let mut all_args = bwrap_args;
@@ -83,13 +82,37 @@ fn prepare(
         return Ok(PreparedSandboxCommand::unavailable(cmd));
     }
 
-    bwrap_args.push(program.to_owned());
-    bwrap_args.extend_from_slice(args);
-
+    // The Shell exec path applies Landlock in the innermost re-exec'd wrapper
+    // (inside bwrap's mount namespace) so the two layers compose. The Watch
+    // spawn path (apply_exec_restrictions = false) stays bwrap-only per
+    // ADR-021. The wrapper also gates an empty `allow_write` profile: Shell
+    // must obtain its actual status before the Audit entry is committed.
+    let use_landlock_wrapper = apply_exec_restrictions;
     let mut cmd = std::process::Command::new("bwrap");
+
+    if use_landlock_wrapper {
+        bwrap_args.extend(crate::landlock::build_landlock_wrapper_args(
+            config, program, args,
+        )?);
+
+        let encoded = crate::landlock::serialize_allow_write(&config.allow_write);
+        if encoded.len() > crate::landlock::MAX_ALLOW_WRITE_ENV_LEN {
+            return Err(SandboxError::Execution(
+                "allow_write config too large to pass to the inner wrapper".into(),
+            ));
+        }
+        use std::os::unix::ffi::OsStringExt;
+        cmd.env(
+            crate::landlock::AEGIS_LANDLOCK_ALLOW_WRITE,
+            OsString::from_vec(encoded),
+        );
+    } else {
+        bwrap_args.push(program.to_owned());
+        bwrap_args.extend_from_slice(args);
+    }
+
     cmd.args(&bwrap_args);
-    let exec_config = apply_exec_restrictions.then(|| config.clone());
-    Ok(PreparedSandboxCommand::active(cmd, exec_config))
+    Ok(PreparedSandboxCommand::active(cmd, use_landlock_wrapper))
 }
 
 // ── Sandbox availability probe ────────────────────────────────────────────────
@@ -155,192 +178,6 @@ fn probe_sandbox_works(allow_network: bool) -> bool {
         .unwrap_or(false)
 }
 
-// ── Landlock ──────────────────────────────────────────────────────────────────
-
-/// Apply Landlock filesystem write restrictions described by `config`.
-///
-/// When `allow_write` is empty, no restrictions are applied. When Landlock is
-/// not supported by the kernel (ENOSYS, ABI 0), the function degrades
-/// gracefully and returns `Ok(())`. This should be called in the current
-/// process immediately before a POSIX `exec()` so restrictions are inherited
-/// by the exec'd process.
-pub(crate) fn apply_landlock_restrictions(config: &SandboxConfig) -> Result<(), SandboxError> {
-    // Nothing to restrict if no write paths are configured.
-    if config.allow_write.is_empty() {
-        return Ok(());
-    }
-
-    let abi = landlock::detect_abi();
-    if abi == 0 {
-        // Kernel < 5.13 or Landlock not compiled in — degrade gracefully.
-        return Ok(());
-    }
-
-    // Build handled_access_fs mask for the detected ABI.
-    let mut handled_fs = landlock::ALL_WRITE_V1;
-    if abi >= 2 {
-        handled_fs |= landlock::ACCESS_FS_REFER;
-    }
-    if abi >= 3 {
-        handled_fs |= landlock::ACCESS_FS_TRUNCATE;
-    }
-
-    let attr = landlock::RulesetAttr {
-        handled_access_fs: handled_fs,
-        handled_access_net: 0,
-    };
-    let size = std::mem::size_of::<landlock::RulesetAttr>();
-
-    let ruleset = landlock::create_ruleset(&attr, size)
-        .map_err(|e| SandboxError::Execution(format!("landlock create_ruleset: {e}")))?;
-
-    for path in &config.allow_write {
-        let canonical = path.canonicalize().map_err(|e| {
-            SandboxError::Execution(format!("canonicalize {}: {e}", path.display()))
-        })?;
-        let dir_file = std::fs::File::open(&canonical)
-            .map_err(|e| SandboxError::Execution(format!("open {}: {e}", canonical.display())))?;
-
-        use std::os::unix::io::{AsFd, AsRawFd};
-        let rule_attr = landlock::PathBeneathAttr {
-            allowed_access: handled_fs,
-            parent_fd: dir_file.as_raw_fd(),
-        };
-        landlock::add_path_beneath(ruleset.as_fd(), &rule_attr)
-            .map_err(|e| SandboxError::Execution(format!("landlock add_rule: {e}")))?;
-    }
-
-    use std::os::unix::io::AsFd;
-    landlock::restrict_self(ruleset.as_fd())
-        .map_err(|e| SandboxError::Execution(format!("landlock restrict_self: {e}")))?;
-
-    Ok(())
-}
-
-mod landlock {
-    // Landlock filesystem access rights (from linux/landlock.h).
-    pub const ACCESS_FS_WRITE_FILE: u64 = 1 << 1;
-    pub const ACCESS_FS_REMOVE_DIR: u64 = 1 << 4;
-    pub const ACCESS_FS_REMOVE_FILE: u64 = 1 << 5;
-    pub const ACCESS_FS_MAKE_CHAR: u64 = 1 << 6;
-    pub const ACCESS_FS_MAKE_DIR: u64 = 1 << 7;
-    pub const ACCESS_FS_MAKE_REG: u64 = 1 << 8;
-    pub const ACCESS_FS_MAKE_SOCK: u64 = 1 << 9;
-    pub const ACCESS_FS_MAKE_FIFO: u64 = 1 << 10;
-    pub const ACCESS_FS_MAKE_BLOCK: u64 = 1 << 11;
-    pub const ACCESS_FS_MAKE_SYM: u64 = 1 << 12;
-    /// ABI 2+ only.
-    pub const ACCESS_FS_REFER: u64 = 1 << 13;
-    /// ABI 3+ only.
-    pub const ACCESS_FS_TRUNCATE: u64 = 1 << 14;
-
-    /// All write-related accesses supported in ABI 1 (baseline).
-    pub const ALL_WRITE_V1: u64 = ACCESS_FS_WRITE_FILE
-        | ACCESS_FS_REMOVE_DIR
-        | ACCESS_FS_REMOVE_FILE
-        | ACCESS_FS_MAKE_CHAR
-        | ACCESS_FS_MAKE_DIR
-        | ACCESS_FS_MAKE_REG
-        | ACCESS_FS_MAKE_SOCK
-        | ACCESS_FS_MAKE_FIFO
-        | ACCESS_FS_MAKE_BLOCK
-        | ACCESS_FS_MAKE_SYM;
-
-    pub const RULE_PATH_BENEATH: u32 = 1;
-    /// Flag for `landlock_create_ruleset` that returns the ABI version instead
-    /// of creating a ruleset.
-    pub const CREATE_RULESET_VERSION: u32 = 1;
-
-    #[repr(C)]
-    pub struct RulesetAttr {
-        pub handled_access_fs: u64,
-        pub handled_access_net: u64,
-    }
-
-    #[repr(C)]
-    pub struct PathBeneathAttr {
-        pub allowed_access: u64,
-        pub parent_fd: i32,
-    }
-
-    /// Return the Landlock ABI version supported by this kernel, or 0 if
-    /// Landlock is not available (kernel < 5.13 or not compiled in).
-    pub fn detect_abi() -> u32 {
-        // SAFETY: SYS_landlock_create_ruleset with the version flag is a
-        // read-only query syscall that cannot cause side effects.
-        let ret = unsafe {
-            libc::syscall(
-                libc::SYS_landlock_create_ruleset,
-                std::ptr::null::<RulesetAttr>(),
-                0usize,
-                CREATE_RULESET_VERSION,
-            )
-        };
-        if ret < 0 { 0 } else { ret as u32 }
-    }
-
-    pub fn create_ruleset(
-        attr: &RulesetAttr,
-        size: usize,
-    ) -> std::io::Result<std::os::unix::io::OwnedFd> {
-        use std::os::unix::io::FromRawFd;
-        // SAFETY: SYS_landlock_create_ruleset creates a new file descriptor; we
-        // take ownership via OwnedFd if the call succeeds.
-        let fd = unsafe {
-            libc::syscall(
-                libc::SYS_landlock_create_ruleset,
-                attr as *const _ as *const libc::c_void,
-                size,
-                0u32,
-            )
-        };
-        if fd < 0 {
-            Err(std::io::Error::last_os_error())
-        } else {
-            Ok(unsafe { std::os::unix::io::OwnedFd::from_raw_fd(fd as std::os::unix::io::RawFd) })
-        }
-    }
-
-    pub fn add_path_beneath(
-        ruleset_fd: std::os::unix::io::BorrowedFd<'_>,
-        attr: &PathBeneathAttr,
-    ) -> std::io::Result<()> {
-        use std::os::unix::io::AsRawFd;
-        // SAFETY: valid file descriptors and well-formed attr struct.
-        let ret = unsafe {
-            libc::syscall(
-                libc::SYS_landlock_add_rule,
-                ruleset_fd.as_raw_fd(),
-                RULE_PATH_BENEATH,
-                attr as *const _ as *const libc::c_void,
-                0u32,
-            )
-        };
-        if ret != 0 {
-            Err(std::io::Error::last_os_error())
-        } else {
-            Ok(())
-        }
-    }
-
-    pub fn restrict_self(ruleset_fd: std::os::unix::io::BorrowedFd<'_>) -> std::io::Result<()> {
-        use std::os::unix::io::AsRawFd;
-        // SAFETY: valid file descriptor; restricts the calling thread.
-        let ret = unsafe {
-            libc::syscall(
-                libc::SYS_landlock_restrict_self,
-                ruleset_fd.as_raw_fd(),
-                0u32,
-            )
-        };
-        if ret != 0 {
-            Err(std::io::Error::last_os_error())
-        } else {
-            Ok(())
-        }
-    }
-}
-
 // ── bwrap argument builder ────────────────────────────────────────────────────
 
 /// Build the `bwrap` argument list for the given `config`.
@@ -349,16 +186,14 @@ mod landlock {
 /// symlink confusion. Returns an error if a path cannot be canonicalized
 /// (e.g. it does not exist).
 pub(crate) fn build_bwrap_args(config: &SandboxConfig) -> Result<Vec<OsString>, SandboxError> {
+    // A read-only view of the whole filesystem (ROADMAP §6.1), with
+    // `allow_write` paths bound writable on top. Binding `/` (rather than a
+    // minimal set of system dirs) keeps any `allow_write` path — wherever its
+    // parent lives — visible inside the namespace.
     let mut args: Vec<OsString> = vec![
         "--ro-bind".into(),
-        "/usr".into(),
-        "/usr".into(),
-        "--ro-bind".into(),
-        "/lib".into(),
-        "/lib".into(),
-        "--ro-bind".into(),
-        "/lib64".into(),
-        "/lib64".into(),
+        "/".into(),
+        "/".into(),
         "--proc".into(),
         "/proc".into(),
         "--dev".into(),
@@ -401,9 +236,7 @@ mod tests {
         sandbox_available_for,
     };
 
-    use super::{
-        apply_landlock_restrictions, build_bwrap_args, prepare_for_exec, sysctl_userns_available,
-    };
+    use super::{build_bwrap_args, prepare_for_exec, sysctl_userns_available};
 
     // ── Linux: forced-unavailable via thread-local ────────────────────────────
 
@@ -474,15 +307,6 @@ mod tests {
         set_force_sandbox_unavailable(true);
         let _guard = ForceUnavailableGuard;
         assert!(!sandbox_available_for(&SandboxConfig::default()));
-    }
-
-    // ── Linux: Landlock restrictions (callable, gracefully degrades) ──────────
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn apply_landlock_restrictions_ok_on_empty_allow_write() {
-        // No write paths → no Landlock ruleset created → Ok(()).
-        assert!(apply_landlock_restrictions(&SandboxConfig::default()).is_ok());
     }
 
     // ── Linux: bwrap argument builder ────────────────────────────────────────
@@ -648,12 +472,6 @@ mod tests {
             }
             Err(e) => panic!("expected Ok(Unavailable) when forced-unavailable, got Err({e})"),
         }
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn test_landlock_stub_is_callable() {
-        assert!(apply_landlock_restrictions(&SandboxConfig::default()).is_ok());
     }
 
     #[cfg(target_os = "linux")]
