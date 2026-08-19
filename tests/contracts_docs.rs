@@ -101,12 +101,93 @@ fn h9_public_docs_distinguish_required_recovery_from_best_effort_snapshots() {
     }
 }
 
+/// The six confidentiality overclaims ADR-029 keeps banned. They survive the
+/// move from an optional add-on to a mandatory layer unchanged: the layer
+/// confines writes and network access, and no document may promise more.
+const BANNED_CONFIDENTIALITY_OVERCLAIMS: [&str; 6] = [
+    "provides a confidentiality boundary",
+    "guarantees confidentiality",
+    "provides complete read isolation",
+    "all file reads are blocked",
+    "hides all readable files",
+    "hides all secrets",
+];
+
+fn assert_no_confidentiality_overclaims(contents: &str, doc: &str) {
+    let lower = contents.to_ascii_lowercase();
+    for forbidden in BANNED_CONFIDENTIALITY_OVERCLAIMS {
+        assert!(
+            !lower.contains(forbidden),
+            "{doc} must not claim `{forbidden}`"
+        );
+    }
+}
+
+/// `PRD.md` is the normative source of the Sandbox contract, so it is pinned to
+/// the mandatory-layer wording of ADR-029 and the derived-profile wording of
+/// ADR-030.
 #[test]
-fn m1_docs_define_visible_optional_sandbox_degradation_without_confidentiality_claims() {
+fn prd_defines_the_mandatory_sandbox_contract() {
+    let prd = fs::read_to_string(repo_path("PRD.md")).unwrap();
+
+    for needle in [
+        // ADR-029: the layer is mandatory, and unavailability is one event with
+        // the block rather than a warning followed by an unconfined run.
+        "mandatory Sandbox",
+        "sandbox_status = \"unavailable\" accompanies Decision::Blocked",
+        // ADR-029 decision 7: the surviving honesty claim, both halves.
+        "not a confidentiality boundary",
+        "not a privilege boundary",
+        "write/network guardrail",
+        // ADR-030: the ceiling bounds, derivation only subtracts.
+        "Trusted ceiling",
+        "Confinement degradation",
+    ] {
+        assert!(
+            prd.contains(needle),
+            "PRD.md must state the mandatory Sandbox contract term `{needle}`"
+        );
+    }
+
+    for stale in [
+        // ADR-029 decision 2 removed the flag; a mandatory layer has no
+        // bypass switch to document.
+        "sandbox.required = true",
+        // A mandatory layer never falls back to running unconfined.
+        "optional unconfined fallback",
+        // ADR-030: the PRD must not fix an index or a per-session profile.
+        "MultiMap",
+    ] {
+        assert!(
+            !prd.contains(stale),
+            "PRD.md must not retain the pre-ADR-029 claim `{stale}`"
+        );
+    }
+
+    assert!(!prd.contains("`WARN` is emitted on the\n  `aegis::sandbox` target"));
+    assert_no_confidentiality_overclaims(&prd, "PRD.md");
+}
+
+/// Pins the Sandbox wording of the documents that have **not** been rewritten
+/// yet, so it cannot drift by accident before its own ticket lands.
+///
+/// The literals below are the *pre-ADR-029* wording. They are a deliberate,
+/// named record of known debt — not normative truth. `PRD.md` is the normative
+/// source (see `prd_defines_the_mandatory_sandbox_contract`), and these three
+/// documents contradict it today.
+///
+/// Rewriting them is
+/// <https://github.com/IliasAlmerekov/aegis-shellguard/issues/205>, which is in
+/// turn blocked by the `[sandbox]` migration contract
+/// (<https://github.com/IliasAlmerekov/aegis-shellguard/issues/240>) —
+/// `docs/config-schema.md` enumerates the config fields line by line and cannot
+/// stay silent on `enabled` the way a prose section can. When #205 lands, this
+/// test is rewritten into the derived-doc contract rather than deleted.
+#[test]
+fn derived_sandbox_docs_remain_pinned_until_issue_205_rewrites_them() {
     let readme = fs::read_to_string(repo_path("README.md")).unwrap();
     let config_schema = fs::read_to_string(repo_path("docs/config-schema.md")).unwrap();
     let threat_model = fs::read_to_string(repo_path("docs/threat-model.md")).unwrap();
-    let prd = fs::read_to_string(repo_path("PRD.md")).unwrap();
     let roadmap = fs::read_to_string(repo_path("ROADMAP.md")).unwrap();
     let architecture = fs::read_to_string(repo_path("ARCHITECTURE.md")).unwrap();
 
@@ -114,37 +195,22 @@ fn m1_docs_define_visible_optional_sandbox_degradation_without_confidentiality_c
         assert!(contents.contains("write/network guardrail"));
         assert!(contents.contains("not a confidentiality boundary"));
     }
-    for contents in [&config_schema, &prd, &roadmap, &architecture] {
+    for contents in [&config_schema, &roadmap, &architecture] {
         assert!(contents.contains("sandbox_status = \"unavailable\""));
         assert!(contents.contains("sandbox.required = true"));
     }
     assert!(config_schema.contains("macOS permits `file-read*`"));
     assert!(config_schema.contains("read-only system mounts"));
     assert!(architecture.contains("prepare_for_spawn"));
-    assert!(!prd.contains("`WARN` is emitted on the\n  `aegis::sandbox` target"));
 
-    for contents in [
-        &readme,
-        &config_schema,
-        &threat_model,
-        &prd,
-        &roadmap,
-        &architecture,
+    for (contents, doc) in [
+        (&readme, "README.md"),
+        (&config_schema, "docs/config-schema.md"),
+        (&threat_model, "docs/threat-model.md"),
+        (&roadmap, "ROADMAP.md"),
+        (&architecture, "ARCHITECTURE.md"),
     ] {
-        let lower = contents.to_ascii_lowercase();
-        for forbidden in [
-            "provides a confidentiality boundary",
-            "guarantees confidentiality",
-            "provides complete read isolation",
-            "all file reads are blocked",
-            "hides all readable files",
-            "hides all secrets",
-        ] {
-            assert!(
-                !lower.contains(forbidden),
-                "Sandbox docs must not claim `{forbidden}`"
-            );
-        }
+        assert_no_confidentiality_overclaims(contents, doc);
     }
 }
 

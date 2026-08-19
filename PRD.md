@@ -1,8 +1,15 @@
 # PRD — Aegis 1.0
 
-**Status:** approved specification for the 1.0 production release
-**Document version:** 1.0
-**Date:** 2026-06-15
+**Status:** Approved specification for the Aegis 1.0 production release
+**Document revision:** 2
+**Last updated:** 2026-08-19
+
+This PRD is the single normative source of the Aegis 1.0 product promise.
+The `1.0` milestone is the live release gate under
+[ADR-027](docs/adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md).
+`ROADMAP.md` records the historical path taken, `docs/release-readiness.md` holds
+release evidence, and `TASKS.md` is the historical registry of security findings.
+None of them restates the gate.
 
 ---
 
@@ -19,30 +26,54 @@ point between the agent's intent and the irreversible action.
 
 **Promise (one-liner).** Aegis is the last barrier between an AI agent and a
 dangerous command: safe commands run instantly, risky ones require confirmation,
-the worst are always blocked, and approved commands can run inside an OS sandbox.
+the worst are always blocked, and every command that does run is confined by the
+OS.
 
 ---
 
 ## 2. Positioning
 
-Aegis 1.0 is positioned as a **heuristic guardrail with an optional OS sandbox**.
+Aegis 1.0 is a **rule-driven guardrail for AI-agent shell commands**. It is built
+from three layers, and their 1.0 status is not uniform:
 
-- Base layer — a fast heuristic text filter for commands (token scanner).
-- Reinforcing layer — an optional OS sandbox (bubblewrap + Landlock on Linux,
-  Seatbelt on macOS) that restricts an approved command's capabilities at the OS
-  level.
+- **Heuristic decision layer — the core of 1.0.** A fast rule corpus over parsed
+  commands decides `Safe` / `Warn` / `Danger` / `Block` and drives the
+  confirmation dialog.
+- **Snapshot / Rollback — mandatory in 1.0.** All six providers are part of the
+  promise and are proven by a CI snapshot → rollback cycle
+  ([ADR-026](docs/adr/adr-026-snapshot-rollback-contract-for-1-0.md)). Recovery is
+  an obligation, not a convenience, wherever no human made the decision (§5.10).
+- **Sandbox — a mandatory 1.0 layer.** Confinement is attempted for every
+  executed command; failure to establish it blocks execution rather than
+  downgrading to an unconfined run
+  ([ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md)).
+- **Language-aware analysis — not in 1.0.** It ships after 1.0 behind an opt-in
+  cargo feature and is an explicit 1.0 Non-Goal; see §5.11 and §11.
 
-**Honest boundaries (must be reflected in the product and docs).** Aegis is
-**not** a replacement for a sandbox as a hard security boundary and **not** a
-guarantee against malicious code. The heuristic layer does not catch:
+**Relationship to the agent's own sandbox.** An agent's sandbox protects the host
+*from* the agent, and the region it permits is the workspace itself — everything
+inside that region is granted wholesale. Aegis confines what the agent does
+*inside* that permitted region, driven by its own rule corpus, which knows which
+commands destroy what. The two layers are therefore complementary rather than
+duplicative: the outer one decides where the agent may act at all, the inner one
+narrows each individual command within it. Nesting was measured on Linux and can
+only ever tighten authority, never widen it
+([#208](https://github.com/IliasAlmerekov/aegis-shellguard/issues/208)).
+
+**Honest boundaries (must be reflected in the product and docs).** Aegis confines
+writes and network access per command; it is **not a confidentiality boundary and
+not a privilege boundary**. No document may promise that file reads or secrets are
+hidden from a command. Aegis is also **not** a guarantee against malicious code:
+the heuristic layer does not catch
 
 - obfuscated or encoded commands,
 - `eval "$(...)"` and commands assembled at runtime,
 - indirect execution (write a script first, run it later).
 
-These limitations are documented in `docs/threat-model.md` and must be visible
-in the README. The OS sandbox reduces blast radius, but its availability depends
-on platform and environment (see §8).
+Indirect execution is instead handled as `Effect-opaque execution` under the
+Recovery obligation of §5.10 rather than by inspecting the referenced script.
+These limitations are documented in `docs/threat-model.md` and must be visible in
+the README.
 
 ---
 
@@ -73,15 +104,20 @@ path, but team features are not shipped in 1.0.
 3. **Learning via persistence.** The user picks "Always allow" — the decision is
    automatically written to config as a typed rule; the same command is no longer
    re-prompted.
-4. **Snapshot and rollback.** Before a destructive command, Aegis takes a
-   best-effort snapshot via a configured provider; if needed, the user rolls back
-   with `aegis rollback '<snapshot-id>'`.
-5. **Sandboxed execution.** An approved command runs inside an OS sandbox with a
-   read-only view of the filesystem except for explicitly allowed write paths.
-6. **Audit.** Every decision and every execution is written to an append-only
+4. **Snapshot and rollback.** Before an approved destructive command, Aegis takes
+   a snapshot via an applicable provider; if needed, the user rolls back with
+   `aegis rollback '<snapshot-id>'`. When no provider applies, that fact is
+   disclosed rather than passed over in silence.
+5. **Recovery on an unattended run.** In CI, an auto-approved destructive command
+   has no human to warn. Aegis re-checks Recovery readiness on every such run and
+   halts the command when the obligation cannot be met (§5.10).
+6. **Confined execution.** Every executed command runs inside an OS confinement
+   whose write and network authority is bounded by the `Trusted ceiling` and
+   narrowed further by whichever rules matched the command.
+7. **Audit.** Every decision and every execution is written to an append-only
    JSONL log; the user reviews history and verifies the chain integrity
    (`aegis audit --verify-integrity`).
-7. **Temporary disable.** `aegis off` / `aegis on` / `aegis status`; in a
+8. **Temporary disable.** `aegis off` / `aegis on` / `aegis status`; in a
    detected CI environment, policy stays enforced by default.
 
 ---
@@ -93,24 +129,28 @@ path, but team features are not shipped in 1.0.
 - Intercept every shell command in the `$SHELL` proxy role and in `aegis -c` mode.
 - Classify by `RiskLevel`: `Safe`, `Warn`, `Danger`, `Block` (the order is
   semantically ordered by severity and does not change).
-- Token scanner as the single source of truth: tokenize → `ParsedCommand` →
-  token-level matching via `MultiMap<program, PrefixRule>` (O(1) lookup of the
-  relevant rules). The raw string is used only for display and audit.
+- Commands are parsed into logical scan targets and evaluated by the built-in
+  token-prefix and regex rule corpus. The original command text is retained for
+  user-visible explanation and Audit. The index that makes this fast is an
+  implementation concern and is deliberately not specified here; the observable
+  requirement is the hot-path budget in §6.
 - Support for `Alts` (semantic flag equivalents in one rule), `justification`,
   `match_examples` / `not_match_examples`.
 - Built-in rules (≥70) are validated against their own examples in debug/tests.
 
 ### 5.2 Policy DSL
 
-- **Typed TOML DSL** (`[[rules]]`): `pattern` with `Alts`, `decision`
+- **The typed TOML DSL is the only way to declare a Policy rule in 1.0.** There is
+  no second, scripted authoring path
+  ([ADR-028](docs/adr/adr-028-the-starlark-policy-dsl-is-removed-before-1-0.md)).
+  A `~/.aegis/policy.star` left over from a pre-1.0 installation is a permanent
+  startup error — never a warning, never a silent ignore.
+- `[[rules]]` fields: `pattern` with `Alts`, `decision`
   (`allow`/`prompt`/`block`), `justification`, `match_examples`,
-  `not_match_examples`, a `when` clause (environment-conditional decision). Rules
-  are validated at load time; an invalid rule is a startup error with a
-  human-readable message and line numbers.
-- **Starlark DSL** (`~/.aegis/policy.star`) as an opt-in power-user feature:
-  `prefix_rule(...)` and `on_command(cmd)`. Starlark is evaluated at startup and
-  compiled into the same `MultiMap<program, PrefixRule>`; Starlark never runs on
-  the hot path.
+  `not_match_examples`, a `when` clause (environment-conditional decision), and an
+  optional `Confinement restriction` (§5.5).
+- Rules are validated at load time. Invalid rules fail configuration loading with
+  a human-readable validation error.
 
 ### 5.3 Decision persistence
 
@@ -125,39 +165,110 @@ path, but team features are not shipped in 1.0.
 
 ### 5.4 Snapshot / rollback
 
+This section defines the Snapshot machinery. **When a Snapshot is an obligation
+rather than a best effort is defined in §5.10**, which holds the single policy
+invariant; nothing here overrides it.
+
 - `SnapshotPlugin` trait (async, via `async-trait`) + 6 providers: Git, Docker,
-  PostgreSQL, MySQL/MariaDB, SQLite, Supabase.
-- Snapshot is best-effort before `Danger`-level commands. It is taken **only when
-  the command is approved (`Allow`)** — never for `Block`ed commands — and runs
-  **before** the (optionally sandboxed) execution, so a rollback target exists
-  regardless of sandbox availability.
-- `aegis rollback '<snapshot-id>'` restores state. `aegis snapshot list`
-  enumerates available snapshots with their `snapshot_id`, provider, and creation
-  time so the opaque `cwd+hash` id is discoverable.
+  PostgreSQL, MySQL/MariaDB, SQLite, Supabase. **There is no provider tiering** —
+  all six are part of the 1.0 promise and each must be proven by a CI
+  snapshot → rollback cycle, Supabase through its Postgres compatibility plus one
+  live pre-release run
+  ([ADR-026](docs/adr/adr-026-snapshot-rollback-contract-for-1-0.md)).
+- A Snapshot is taken **only when the command is approved (`Allow`)** — never for
+  `Block`ed commands — and runs **before** confined execution, so a rollback
+  target exists independently of the confinement layer.
+- **Silent degradation ends.** When no provider applies to the command, that is
+  disclosed in the confirmation dialog in red and requires the full word `yes`;
+  it is never passed over.
+- `snapshot_id` is `v3`, using `:` as its separator. Legacy `v2` tab-joined ids
+  stay parseable permanently.
+- `aegis rollback '<snapshot-id>'` restores state, behind a preflight that
+  distinguishes "artifact absent" from "check inconclusive". With no TTY,
+  `rollback` fails closed.
+- `aegis snapshot list` enumerates available snapshots with their `snapshot_id`,
+  provider, and creation time so the opaque id is discoverable.
+  `aegis snapshot verify` is the separate, uncached liveness check; liveness is
+  never folded into the pre-command path.
 - **Lifecycle:** snapshots are subject to a configurable retention policy
-  (by count and/or age) under `[snapshot]`; `aegis snapshot prune` removes
-  snapshots beyond the retention bound. Retention applies across providers
-  (git stashes, Docker images, SQLite/PostgreSQL/MySQL dumps) to bound unlimited
-  growth.
+  (by count and/or age) under `[prune]`; `aegis snapshot prune` removes snapshots
+  beyond the retention bound. Retention applies across providers (git stashes,
+  Docker images, SQLite/PostgreSQL/MySQL dumps) to bound unlimited growth.
 - No blocking I/O in async context (`tokio::time::sleep`, no `spawn_blocking`
   workarounds).
 
 ### 5.5 Sandbox
 
-- **Linux:** bubblewrap (namespace sandbox, read-only filesystem except
-  `allow_write`) + Landlock (LSM) for defense in depth.
+The Sandbox is a **mandatory Sandbox** layer of Aegis 1.0, not an add-on
+([ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md)), and the
+profile it applies is derived per command rather than fixed for the session
+([ADR-030](docs/adr/adr-030-the-confinement-profile-is-derived-from-the-assessment.md)).
+
+**Obligation.** Confinement is applied to every command Aegis executes outside
+`Mode::Audit`. Failure to establish the required confinement **blocks execution**;
+a command never runs silently unconfined, and there is no configuration flag that
+turns unavailability back into a fallback. Invalid profiles and unexpected setup
+errors remain fail-closed.
+
+**Platform mechanisms.**
+
+- **Linux:** bubblewrap plus Landlock (LSM) for defense in depth. Aegis prefers a
+  `bwrap` found on `PATH` and otherwise falls back to bubblewrap built from
+  vendored C sources; it warns at startup when neither is usable and refuses the
+  commands that would need the unavailable path.
 - **macOS:** Seatbelt via `/usr/bin/sandbox-exec` with a `.sbpl` profile.
-- **Windows:** not supported. On Windows, Aegis runs only inside WSL2, where it
-  behaves as a Linux environment and uses the Linux sandbox.
-- `[sandbox]` config: `enabled`, `allow_write`, `allow_network`, `required`.
-- The optional Sandbox is a best-effort write/network guardrail add-on, not a
-  confidentiality boundary; current profiles do not promise to hide all
-  readable files or secrets.
-- **Bypass is an audit and active-channel event:** if infrastructure is
-  unavailable, the log records `sandbox_status = "unavailable"` and Shell stderr
-  or Watch NDJSON warns before an optional unconfined fallback. With
-  `sandbox.required = true`, unavailability is a hard block. Invalid profiles
-  and unexpected setup errors remain fail-closed.
+- **Windows:** not supported. On Windows, Aegis runs only inside WSL2, where it is
+  a Linux environment and uses the Linux mechanism (§8).
+
+**The `Trusted ceiling`.** The statically configured profile is the upper bound on
+what any command may be granted, never a command's final profile. Its default is a
+working one, because a mandatory layer whose default forbids all writes is
+unusable: writes within the workspace tree and `/tmp`, with network access
+disabled. A `cwd` of `/` does not implicitly make `/` a workspace. The project
+config layer may only narrow the ceiling, never widen it.
+
+**Derivation only ever subtracts, and only where a rule fired.** The effective
+profile is the `Trusted ceiling` intersected with the project tightening, with the
+restrictions carried by the rules that matched, and with any outer agent sandbox.
+Consequences of that shape, all of them normative:
+
+- An empty `matched` yields the ceiling unchanged, so the safe hot path performs
+  no derivation work and stays inside the §6 budget.
+- A rule may carry an optional typed `Confinement restriction`. `RiskLevel` and
+  `Category` take no part in derivation, and a restriction is never expressed as
+  an argv index: a wrong profile here is a broken command with no dialog to catch
+  it.
+- No derived profile may grant a path, a network permission, or any other
+  authority the ceiling withholds.
+- When a restriction is declared but its extractor resolves no target, the command
+  runs under the ceiling and a `Confinement degradation` is recorded. The
+  degradation is **visible in the confirmation dialog**, not only in the Audit log,
+  and it never blocks: blocking would turn a parser gap into an outage.
+
+**Observability.** The effective profile is shown in the confirmation dialog and
+recorded in the Audit log as a new field. When the layer cannot be established the
+Audit records `sandbox_status = "unavailable" accompanies Decision::Blocked`,
+because under a mandatory layer those two facts are one event rather than two.
+`SandboxStatus` keeps its four values — the Audit format is a public contract from
+1.0 and `Unavailable` remains an accurate description of the fact; only its
+consequence changed. The active-channel warning survives for `NotConfigured` and
+for `Mode::Audit`, where no confinement is expected.
+
+**Boundaries.** The Sandbox is a write/network guardrail. It is
+**not a confidentiality boundary and not a privilege boundary**: profiles do not
+promise to hide readable files or secrets from a command.
+
+**Configuration.** `sandbox.required` is not part of the 1.0 configuration
+contract — a mandatory layer cannot also be skippable, so no flag expresses
+"mandatory, but may be bypassed".
+
+> **This section is not final.** The mode-level opt-out and the migration
+> behaviour for legacy `[sandbox]` fields — `enabled`, `required`, `allow_write`,
+> `allow_network` — are decided by
+> [#240](https://github.com/IliasAlmerekov/aegis-shellguard/issues/240). Until that
+> decision is accepted, this document states no per-field semantics for
+> `allow_write`, and §5.9's backward-compatibility promise cannot be evaluated
+> against the `[sandbox]` section.
 
 ### 5.6 Audit log
 
@@ -202,6 +313,67 @@ path, but team features are not shipped in 1.0.
 - `aegis config init|show|validate`; a JSON schema is generated from the type for
   editor autocompletion.
 
+### 5.10 Recovery
+
+Recovery is the ability to undo an executed destructive command. The **obligation**
+to have it attaches to the absence of a human decision, not to `RiskLevel`
+([ADR-031](docs/adr/adr-031-unattended-destructive-execution-requires-recovery.md)).
+This section holds that invariant; §5.4 holds the machinery.
+
+#### Attended `Danger`
+
+A `Danger` command a human confirmed in the dialog carries a deliberately weaker
+promise, stated honestly rather than dressed up:
+
+- A Snapshot is taken when a provider applies to the command.
+- When no provider applies, the absence of Recovery is disclosed in the dialog
+  (§5.4) rather than passed over.
+- The Sandbox bounds the blast radius of what was confirmed (§5.5).
+- **A mistakenly confirmed deletion with no applicable provider can still be
+  irreversible.** 1.0 does not promise otherwise.
+
+#### `Unattended destructive execution`
+
+When no human decided — an auto-approved `Danger` command, or
+`Effect-opaque execution` where Aegis cannot see what will run — Recovery becomes
+a precondition of execution:
+
+- Recovery readiness is re-checked on **every** unattended run. A persisted
+  approval is not a persisted permission to run without Recovery.
+- An unsatisfiable obligation **halts** the command. It does not evaporate into a
+  warning, and it does not degrade into an unprotected run.
+- The halted path offers the `Recovery override` dialog, which grants a
+  **one-time Recovery override** for a single run and is never persisted.
+- `Mode::Audit` and a trusted `snapshot_policy = None` remain the two `Recovery
+  opt-out`s. Both stop being silent.
+- **A persisted `Allow` rule for a `Danger` command no longer guarantees execution
+  in CI.** This is a deliberate behavioural change: configurations that opted out
+  of the dialog now pay a per-run readiness gate.
+- Readiness verification is a cheap local artifact check — bounded at ≤ 100 ms per
+  attempt and ≤ 500 ms per command, with no network access. It is never the §5.4
+  liveness check, and a missing checking tool yields a presence-only readiness
+  rather than an invalid one.
+
+### 5.11 Language-aware analysis is a 1.0 Non-Goal
+
+Language-aware analysis — parsing the *contents* of scripts and source files to
+reason about what they do — is **explicitly not part of 1.0**
+([ADR-022](docs/adr/adr-022-language-aware-analysis-is-an-additive-isolated-stage.md),
+[ADR-024](docs/adr/adr-024-language-aware-analysis-ships-opt-in-and-is-not-a-1-0-release-gate.md)).
+It ships after 1.0 behind the `language-analysis` cargo feature, default off, and
+the Tree-sitter grammars are absent from the 1.0 release binaries. The target is
+"after 1.0" with no version number attached; finishing the qualification matrix
+early does not return it to 1.0, because the grounds are scope rather than
+schedule.
+
+The type surface that anticipates it — `aegis-types::analysis` and the
+`[language_analysis]` config section — stays unconditional, so enabling the feature
+later is additive.
+
+This document deliberately makes **no** functional promise about analysing file
+contents anywhere in §5, §9, or §10. That silence is correct and must not be
+"fixed" by adding language-aware analysis as a 1.0 feature.
+
 ---
 
 ## 6. Non-Functional Requirements
@@ -214,7 +386,19 @@ path, but team features are not shipped in 1.0.
   findings; permissive licenses only (MIT/Apache-2.0/ISC); no duplicate core
   crates and no banned crates.
 - **Portability:** no dependencies with a C build step; a statically portable
-  binary.
+  binary. There are exactly **two named exceptions**, both narrowly scoped: the
+  pinned Tree-sitter runtime and its production-qualified generated grammars,
+  confined to `aegis-language`
+  ([ADR-022](docs/adr/adr-022-language-aware-analysis-is-an-additive-isolated-stage.md)
+  §8), and **bubblewrap**, built from vendored C sources at a pinned version and
+  confined to `aegis-sandbox`
+  ([ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md)). The
+  general prohibition stands; neither exception is permission for further native
+  dependencies.
+- **Third-party licence obligations:** bubblewrap is `LGPL-2.0-or-later`, which
+  `cargo deny` cannot see because vendored C is not a cargo dependency. It must be
+  recorded in `THIRD_PARTY_NOTICES.md`, and the licence check must read vendored
+  sources rather than only the cargo graph.
 - **Architecture:** edition 2024, MSRV `1.80`, no file in `src/` exceeds 800 LoC,
   the crate dependency DAG is enforced by `tests/architecture_boundaries.rs`.
 - **Code:** no `.unwrap()`/`.expect()` in production paths; typed errors
@@ -248,13 +432,22 @@ Officially supported 1.0 channels:
 | macOS arm64            | ✅           | Seatbelt (`sandbox-exec`)       |
 | macOS x86_64           | ✅           | Seatbelt (`sandbox-exec`)       |
 | Windows (WSL2)         | ✅ (Linux)   | bubblewrap + Landlock (Linux)   |
+| Windows (WSL1)         | ❌           | cannot be established           |
 
 - Native Windows is **not** supported. Native Windows shells (PowerShell,
   cmd.exe) do not work; Aegis runs on Windows only inside WSL2, where it is a
-  Linux environment.
+  Linux environment and uses the Linux confinement mechanism.
+- **WSL1 cannot establish the mandatory layer**, so Aegis refuses to execute
+  commands there rather than running them unconfined.
 - Automatic shell setup recognizes `bash` and `zsh`; others via `AEGIS_SHELL_RC`.
-- Sandbox unavailability on a platform/environment is an audit event (§5.5), not
-  a silent skip.
+- Sandbox unavailability is recorded in the Audit log **and blocks the
+  execution-eligible command** (§5.5). There is no unconfined fallback on any
+  supported platform.
+- macOS nesting under an outer agent sandbox is not yet measured. Should a nested
+  inner profile turn out to be able to *widen* authority,
+  [ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md) reopens —
+  that would make the inner layer a privilege-escalation vector rather than a
+  guardrail.
 
 ---
 
@@ -274,33 +467,36 @@ Officially supported 1.0 channels:
 
 - **Dangerous-pattern coverage:** every built-in pattern has ≥1 positive and ≥1
   negative test; all `RiskLevel` variants are covered both ways.
-- **Share of commands executed in the sandbox** (from the audit log) when the
-  sandbox is enabled.
+- **Mandatory Sandbox establishment failure rate:** the share of
+  execution-eligible commands refused because the mandatory Sandbox could not be
+  established. The denominator excludes `Block` and `Denied` commands — they never
+  reach the layer. **Target: 0%.** The pre-1.0 "share of commands executed in the
+  sandbox" is retired: a successfully executed command outside `Mode::Audit` has
+  `SandboxStatus::Active` by definition, so that figure is now identically 100%.
+- **Confinement degradation rate:** the share of executed commands that fell back
+  to the `Trusted ceiling` because a declared restriction's extractor resolved no
+  target (§5.5). Non-zero is expected; a rising trend indicates extractor gaps.
 - **Prevented incidents:** the count of `Block` and `Deny` on `Danger` commands
   in the audit log as an indicator of real protection.
 
 ---
 
-## 10. Release Readiness Criteria 1.0 (Definition of Done)
+## 10. Release Gate
 
-- [ ] README and docs accurately describe all features through Phase 6.
-- [ ] Convenience installer documented and tested (`curl | sh`).
-- [ ] Homebrew formula/tap published and tested.
-- [ ] npm wrapper published and installs the correct platform binary.
-- [ ] Release workflow exercised on a real tag; artifacts include `.sha256`
-      sidecars.
-- [ ] CI includes ARM cross-compilation (`aarch64-unknown-linux-musl`).
-- [ ] Threat model and known limitations visible on the README.
-- [ ] Typed TOML Policy DSL (5.2) implemented; invalid rules produce a startup
-      error with line numbers; hot path shows no regression.
-- [ ] Sandbox works and is tested on `ubuntu-latest` and `macos-latest`; a
-      command writing outside allowed paths is killed by the sandbox; audit
-      records the applied profile/status for every execution.
-- [ ] Snapshot/rollback integration tests run in CI against real Docker/SQLite
-      daemons.
-- [ ] Fuzz corpus in CI at ≥ 100 000 iterations per target.
-- [ ] `cargo audit` and `cargo deny check` both pass with zero findings.
-- [ ] CHANGELOG.md updated for every release.
+**The criterion.** A finding blocks 1.0 **if and only if it falsifies something
+this document promises.** The `C` / `H` / `M` / `P3` severity prefix carries no
+release weight, and neither does the phase a finding was discovered in.
+
+**The live gate is the `1.0` milestone on the issue tracker.** Every blocking item
+is an issue in that milestone; implementation order is expressed as native
+blocked-by relationships between those issues. The gate is passed when the
+milestone holds no open issues
+([ADR-027](docs/adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)).
+
+This section deliberately carries **no checklist**. The promises 1.0 must satisfy
+are stated normatively in §5 through §8; restating them here would create a second
+expression of the same set, which drifts from the first. Anything that reads like a
+release checklist elsewhere in the repository is evidence of work done, not a gate.
 
 ---
 
@@ -308,9 +504,20 @@ Officially supported 1.0 channels:
 
 - Team/centralized mode: shared server-side policies, multi-user management,
   centralized audit collection.
-- Native Windows shells (PowerShell, cmd.exe) — WSL2 only.
+- Native Windows shells (PowerShell, cmd.exe) — WSL2 only; WSL1 refuses execution
+  (§8).
+- **Language-aware analysis** of file and script contents — see §5.11. It ships
+  after 1.0 behind an opt-in cargo feature.
+- **A scripted Policy DSL.** The typed TOML DSL is the only rule-authoring path in
+  1.0 (§5.2).
 - Protection against obfuscation, encoding, and runtime `eval` of commands —
-  beyond the heuristic model (documented in the threat model).
+  beyond the heuristic model (documented in the threat model). Indirect execution
+  is covered by the Recovery obligation of §5.10, not by analysing what will run.
+- **Confidentiality and privilege guarantees.** The Sandbox confines writes and
+  network access; it does not hide readable files or secrets, and it is not a
+  privilege boundary (§5.5).
+- Full shell evaluation and deferred execution
+  ([ADR-010](docs/adr/adr-010-full-shell-evaluation-and-deferred-execution-remain-non-goals.md)).
 - SBOM, provenance metadata, and attestations in the release workflow.
 - A guarantee of byte-for-byte reproducible builds across all environments.
 - First-class integration with agents other than Claude Code and Codex (others
