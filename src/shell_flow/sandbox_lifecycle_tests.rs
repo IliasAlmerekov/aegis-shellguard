@@ -134,6 +134,11 @@ fn audit_failure_prevents_optional_warning_and_child_spawn() {
     );
 }
 
+// Linux-only: a prepared `Active` status routes through the inner Landlock
+// wrapper's report only on Linux (`needs_inner_report` in
+// `complete_shell_execution`). Every other platform keeps the M1
+// audit-before-spawn ordering, which the next two cases would contradict.
+#[cfg(target_os = "linux")]
 #[test]
 fn missing_inner_wrapper_report_is_audited_as_blocked_before_reaping_the_child() {
     let events = RefCell::new(Vec::new());
@@ -199,6 +204,7 @@ fn unconfigured_sandbox_is_silent() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn execution_audits_the_inner_wrapper_status_before_waiting_for_the_child() {
     let events = RefCell::new(Vec::new());
