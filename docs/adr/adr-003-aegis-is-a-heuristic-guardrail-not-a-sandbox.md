@@ -2,7 +2,11 @@
 
 ## Status
 
-Accepted
+Superseded by [ADR-029](adr-029-the-sandbox-is-a-mandatory-1-0-layer.md), which
+makes the Sandbox a mandatory 1.0 layer. The honesty constraint below survives in
+narrower form: Aegis is not a confidentiality boundary and not a privilege
+boundary, and no document may promise that file reads or secrets are hidden from
+a command.
 
 ## Decision
 
