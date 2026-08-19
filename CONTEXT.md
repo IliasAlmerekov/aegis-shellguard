@@ -286,6 +286,15 @@ The ceiling an allowlist entry may downgrade to (`AllowlistOverrideLevel`): `War
 (default), `Danger`, or `Never`. Above the ceiling, the allowlist does not auto-approve.
 _Avoid_: allow ceiling, max downgrade
 
+**Ratchet**:
+The rule that a project-local `.aegis.toml` may only **tighten** a security-critical
+field, never **weaken** it. Global config stays the user's trusted layer; a project
+layer that asks for a weaker value keeps the more restrictive one and `config validate`
+warns (ADR-013). "Tighten" and "weaken" are the canonical directions, and the stricter
+direction is field-specific — more confinement, more Snapshot coverage, and fewer
+write paths are all tightenings regardless of the underlying boolean.
+_Avoid_: override, downgrade, merge (reserve "override" for `Override level`)
+
 **Policy rule**:
 A typed `[[rules]]` entry in config whose outcome is a `PolicyRuleDecision` — `Allow`,
 `Prompt`, or `Block`. A rule `Allow` auto-approves the command ahead of `Mode` and with

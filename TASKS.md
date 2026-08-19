@@ -22,6 +22,17 @@ the project Definition of Done in `~/.agents/ENGINEERING_GATES.md` is satisfied.
   remains open; the checkbox stays unchecked.
 - **Closed** — acceptance criteria are met and verification evidence is linked.
 
+## ID vocabulary
+
+Finding IDs in this file are the **only** meaning of these prefixes anywhere in the
+repository. The letter is severity: `C<n>` critical (P0), `H<n>` high (P1), `M<n>`
+medium (P2), `P3-<n>` low/informational. A trailing letter splits one finding into
+independently closable parts (`H7a`/`H7b`); a trailing `.<n>` names an implementation
+slice of one finding (`M5.3` is the third slice of `M5`, not a separate finding).
+
+Roadmap milestones use a disjoint namespace — `Phase <n>` and `L<n>` in `ROADMAP.md` —
+and never `C`/`H`/`M`/`P3`. See `CONVENTION.md` §11.
+
 ---
 
 ## P0 — Critical

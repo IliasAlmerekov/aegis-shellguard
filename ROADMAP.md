@@ -547,6 +547,12 @@ applied for every executed command.
 agents pass to interpreters, without replacing the shell Scanner or regressing
 the no-source safe-command hot path.
 
+**`L1` is defined here and nowhere else.** It names this milestone — the language-aware
+analysis track — and carries no other meaning in the repository. In particular it is not
+a distribution gate: Homebrew, npm, and installer smoke evidence belongs to the
+distribution gates in [`docs/release-readiness.md`](docs/release-readiness.md) and never
+blocks `L1`. Milestone IDs and finding IDs are disjoint namespaces (`CONVENTION.md` §11).
+
 Architecture and trade-offs are fixed by
 [`ADR-022`](docs/adr/adr-022-language-aware-analysis-is-an-additive-isolated-stage.md).
 The test-first delivery sequence is in
