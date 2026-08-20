@@ -63,13 +63,26 @@ Scope is optional. Subject line ≤ 72 characters. Body explains _why_, not _wha
 | Structured logging      | `tracing` + `tracing-subscriber` |
 | Benchmarks              | `criterion 0.5`                  |
 | Language-aware parsing  | `tree-sitter 0.26.11` + pinned grammars (`aegis-language` only) |
+| OS confinement          | vendored `bubblewrap`, pinned version (`aegis-sandbox` only) |
 
 Do not add new dependencies without a clear justification. Prefer stdlib when sufficient.
 
-The Tree-sitter row is the sole sanctioned native-C build input and is scoped to
-`aegis-language` (ADR-022 §8): `tree-sitter-python 0.25.0`,
-`tree-sitter-javascript 0.25.0`, `tree-sitter-typescript 0.23.2`, and
-`tree-sitter-bash 0.25.1`. No other crate may depend on Tree-sitter.
+There are exactly **two sanctioned native-C build inputs**, each scoped to a
+single crate. No third one may be added without an ADR.
+
+1. **Tree-sitter**, scoped to `aegis-language` (ADR-022 §8):
+   `tree-sitter-python 0.25.0`, `tree-sitter-javascript 0.25.0`,
+   `tree-sitter-typescript 0.23.2`, and `tree-sitter-bash 0.25.1`. No other crate
+   may depend on Tree-sitter.
+2. **bubblewrap**, scoped to `aegis-sandbox` (ADR-029): built from vendored C
+   sources at a pinned version, used only when no usable `bwrap` is found on
+   `PATH`. Because the Sandbox is a mandatory 1.0 layer, this is a build input
+   rather than an optional extra. It is `LGPL-2.0-or-later`, which `cargo deny`
+   cannot see — vendored C is not a cargo dependency — so it must be recorded in
+   `THIRD_PARTY_NOTICES.md` and covered by a check that reads vendored sources.
+
+Neither exception is permission for further native dependencies; the general
+prohibition below still stands.
 
 **Explicitly prohibited dependencies:**
 
@@ -300,10 +313,11 @@ Audit log is append-only JSONL at `~/.aegis/audit.jsonl`. Each line is one `Audi
 - Do not use `regex` in the quick scan (first pass) — only Aho-Corasick.
 - Do not block the main thread during subprocess calls — use `tokio`.
 - Do not write to stdout in library modules — use `tracing` events.
-- Do not add dependencies that bring in C build steps (keep the binary portable),
-  except for the pinned Tree-sitter runtime and production-qualified generated
-  grammars under ADR-022. This is a narrow exception scoped to `aegis-language`,
-  not permission for general native dependencies.
+- Do not add dependencies that bring in C build steps (keep the binary portable).
+  There are exactly two exceptions, each scoped to one crate: the pinned
+  Tree-sitter runtime and its generated grammars in `aegis-language` (ADR-022 §8),
+  and vendored bubblewrap in `aegis-sandbox` (ADR-029). Neither is permission for
+  general native dependencies.
 - Do not change the `RiskLevel` order — it is semantically ordered by severity.
 - Do not use `once_cell` — use `std::sync::LazyLock` (stable since Rust 1.80).
 - Do not write `async fn` in a trait without `#[async_trait]` — it will not compile as `dyn Trait`.
