@@ -19,15 +19,15 @@ fn ci_defines_live_snapshot_rollback_job() {
 
     assert!(
         ci.contains("snapshot-rollback-live:"),
-        "CI must define the M5.3 snapshot-rollback-live job"
+        "CI must define the live snapshot-rollback job"
     );
     assert!(
         ci.contains("name: Live snapshot/rollback (Docker + SQLite)"),
-        "M5.3 job must have a clear human-readable name"
+        "live snapshot-rollback job must have a clear human-readable name"
     );
     assert!(
         ci.contains("runs-on: ubuntu-latest"),
-        "M5.3 job should run on ubuntu-latest where Docker and sqlite3 are available"
+        "live snapshot-rollback job should run on ubuntu-latest where Docker and sqlite3 are available"
     );
 }
 

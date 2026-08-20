@@ -406,9 +406,9 @@ pub fn landlock_abi() -> u32 {
 mod tests {
     use super::*;
 
-    // ── Refactor acceptance guards (M5.1 split) ───────────────────────────────
+    // ── Refactor acceptance guards (file-size split) ──────────────────────────
 
-    /// Size guard for the M5.1 split-aegis-sandbox refactor.
+    /// Size guard for the split-aegis-sandbox refactor.
     ///
     /// Acceptance criterion from the plan: "No `crates/aegis-sandbox/src/*.rs`
     /// file exceeds 800 LoC." This test scans every `*.rs` direct child of
@@ -445,11 +445,11 @@ mod tests {
 
         assert!(
             offenders.is_empty(),
-            "aegis-sandbox source files exceed 800 LoC (M5.1 acceptance gate): {offenders:?}"
+            "aegis-sandbox source files exceed 800 LoC (acceptance gate): {offenders:?}"
         );
     }
 
-    /// Public API presence guard for the M5.1 split-aegis-sandbox refactor.
+    /// Public API presence guard for the split-aegis-sandbox refactor.
     ///
     /// The refactor must preserve every public item listed in the plan's
     /// "No public API changes for" acceptance criterion. Constructing/valuing

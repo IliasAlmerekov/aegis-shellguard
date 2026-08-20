@@ -1,5 +1,4 @@
-//! Regression test for the Aegis 800-LoC file-size budget (M5.1 quality gate,
-//! Task 1).
+//! Regression test for the Aegis 800-LoC file-size budget.
 //!
 //! Every Rust source file in the active workspace must stay at or below 800
 //! lines. The test walks `CARGO_MANIFEST_DIR` recursively, skips build/cache
@@ -90,7 +89,7 @@ fn rust_source_files_should_stay_under_800_lines() -> Result<(), Box<dyn std::er
         offenders.sort_by(|a, b| b.1.cmp(&a.1));
         let mut msg = String::from(
             "The following Rust source files exceed the 800-line budget \
-             (M5.1 quality gate, Task 1):\n",
+             (quality gate):\n",
         );
         for (path, lines) in &offenders {
             msg.push_str(&format!("  {} ({} lines)\n", path.display(), lines));

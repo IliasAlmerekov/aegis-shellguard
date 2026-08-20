@@ -151,7 +151,7 @@ sqlite_snapshot_path = "app.db"
 [[allow]]
 pattern = "terraform destroy -target=module.test.*"
 cwd = "{}"
-reason = "M5.3 live SQLite snapshot rollback test"
+reason = "live SQLite snapshot rollback test"
 "#,
             workspace_cwd.display()
         ),

@@ -16,7 +16,7 @@ fn ci_security_job_runs_full_cargo_deny_check() {
     );
     assert!(
         !workflow.contains("cargo deny check bans licenses sources"),
-        "CI must not omit advisories from cargo deny check after M5.4"
+        "CI must not omit advisories from cargo deny check after the supply-chain gate"
     );
 }
 

@@ -1,4 +1,4 @@
-//! Red tests for M1.3 snapshot ordering.
+//! Snapshot ordering regression tests.
 //!
 //! These tests enforce the PRD contract that snapshots are created only after a
 //! dangerous command is approved and before it runs; blocked and denied commands

@@ -9,7 +9,8 @@
 
 ## Current version
 
-`0.6.4` — pre-1.0, targeting `1.0.0` (tag `v0.6.4` published; L1 gate open)
+`0.6.4` — pre-1.0, targeting `1.0.0` (tag `v0.6.4` published; distribution
+smoke gates open)
 
 ## Active branch
 
@@ -17,7 +18,23 @@
 
 ## Last updated
 
-2026-08-18
+2026-08-20
+
+---
+
+## Current session (2026-08-20) — documentation vocabulary sweep (#227)
+
+- Removed retired milestone IDs from current release, CI, roadmap, project-state,
+  and test wording while preserving finding-sense IDs and historical session
+  records. The drop-native-Windows references now name that decision directly.
+- Decoupled distribution smoke evidence from `L1`: the language-analysis
+  checklist is now explicitly a 1.x re-entry condition, and the current state
+  identifies the open Homebrew smoke gate. The historical v0.6.3 plan is
+  retained with a supersession annotation; released CHANGELOG entries remain
+  unchanged.
+- **Verified:** focused contract tests; `cargo test --workspace` (2146 passed);
+  `clippy --workspace --all-targets -- -D warnings`; `fmt --check`; `cargo
+  audit` (six existing allowed warnings); and `cargo deny check` all pass.
 
 ---
 
@@ -476,7 +493,7 @@
   change in `IliasAlmerekov/homebrew-aegis` commit `41adf056`. Live release
   checksum validation, npm/Homebrew/release-workflow contract suites, and an
   isolated Linux npm-registry install (`aegis 0.6.3`) passed.
-- **L1 remains open:** this host has no Homebrew executable, so Linux Homebrew
+- **Homebrew smoke gate remains open:** this host has no Homebrew executable, so Linux Homebrew
   audit/install/test/version/notice evidence is unavailable; the required real
   macOS Homebrew smoke is also outstanding. `docs/release-readiness.md` records
   the exact evidence and blockers; no L1 adapter or roadmap checkbox changed.
@@ -2241,21 +2258,21 @@ Full history of prior sessions: `git log` and `CHANGELOG.md`.
 
 ## Milestone status
 
-| Milestone | Title | Status |
-|-----------|-------|--------|
-| Phase 0–4 | Foundation → Multi-crate workspace | ✅ Done |
-| M1 | Snapshot lifecycle & rollback UX | ✅ Done |
-| M2 | Audit log hardening | ✅ Done |
-| M3 | Distribution (installer, musl, brew, npm, releases) | ✅ Done |
-| M4 | Scope reduction (drop native Windows) | ✅ Done |
-| M5.1–M5.4 | 800-LoC budget, fuzz CI, snapshot/rollback CI, supply-chain gates | ✅ Done |
-| 1.0 docs gate | README, threat model, docs accuracy | 🔲 Open (reopened 2026-07-09 checkup — ARCHITECTURE/CONVENTION/ROADMAP/CHANGELOG stale; see Open decisions) |
-| P0 security blockers (C1–C4) | Uppercase bypass, `$IFS` obfuscation, project-config weakening, token-prefix anchoring | ✅ Done |
-| P1 security findings (H1–H4, H8) | Segmentation, destructive SQL, H3 patterns, hooks, destructive Git forms | ✅ Done |
-| P1 security findings (H5, H6, H7a, H7b, H9) | Integrity wording, containment, artifact hardening, ADR-016 degradation | 🔲 Open (H5/H6/H7a closed; H7b/H9 remain) |
-| P2 security findings | M1/M3a/M3b/M4/M6/M10 closed; M2, M5, M7, M8, M9 open | 🔲 Open |
-| 1.0 perf gate | Hot path < 2 ms (p99) via criterion | 🔲 Open |
-| 1.0 test gate | Zero false-negatives on security bypass corpus | 🔲 Open |
+| Title | Status |
+|-------|--------|
+| Phase 0–4 — Foundation → Multi-crate workspace | ✅ Done |
+| Snapshot lifecycle & rollback UX | ✅ Done |
+| Audit log hardening | ✅ Done |
+| Distribution (installer, musl, brew, npm, releases) | ✅ Done |
+| Scope reduction (drop native Windows) | ✅ Done |
+| 800-LoC budget, fuzz CI, snapshot/rollback CI, supply-chain gates | ✅ Done |
+| 1.0 docs gate — README, threat model, docs accuracy | 🔲 Open (reopened 2026-07-09 checkup — ARCHITECTURE/CONVENTION/ROADMAP/CHANGELOG stale; see Open decisions) |
+| P0 security blockers (C1–C4) — Uppercase bypass, `$IFS` obfuscation, project-config weakening, token-prefix anchoring | ✅ Done |
+| P1 security findings (H1–H4, H8) — Segmentation, destructive SQL, H3 patterns, hooks, destructive Git forms | ✅ Done |
+| P1 security findings (H5, H6, H7a, H7b, H9) — Integrity wording, containment, artifact hardening, ADR-016 degradation | 🔲 Open (H5/H6/H7a closed; H7b/H9 remain) |
+| P2 security findings — M1/M3a/M3b/M4/M6/M10 closed; M2, M5, M7, M8, M9 open | 🔲 Open |
+| 1.0 perf gate — Hot path < 2 ms (p99) via criterion | 🔲 Open |
+| 1.0 test gate — Zero false-negatives on security bypass corpus | 🔲 Open |
 
 Full task breakdown: `TASKS.md`. Phase/milestone definitions: `ROADMAP.md`.
 

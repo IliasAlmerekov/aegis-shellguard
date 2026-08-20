@@ -1,4 +1,4 @@
-//! Gated live M3.5 release-asset verification.
+//! Gated live release-asset verification.
 //!
 //! This test is network-bound and disabled by default so `cargo test` stays
 //! network-free. Release operators run it after publishing a tag with:

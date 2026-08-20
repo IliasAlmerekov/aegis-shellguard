@@ -36,10 +36,12 @@ These items are launch blockers for the current public line:
 - [x] Threat-model and limitation language is visible, honest, and easy to
       find.
 
-### Language-aware analysis 1.0 gate (ADR-022)
+## Language-aware analysis re-entry conditions (ADR-022)
 
+Language-aware analysis is an opt-in 1.x feature, not a 1.0 launch blocker.
 These items remain unchecked until runtime implementation and qualification are
-verified; the ADR and implementation plan alone do not satisfy the gate.
+verified; the ADR and implementation plan alone do not satisfy the conditions
+for enabling it by default in a later release.
 
 - [ ] The additive analysis foundation preserves existing Scanner results,
       starts no worker on the no-source safe path, and keeps that path under
@@ -91,7 +93,7 @@ the release artifacts on the two Linux musl and two macOS targets.
       or `shasum -a 256 -c`.
 
 The live release test is gated by `AEGIS_TEST_LIVE_RELEASE=1` so default
-`rtk cargo test` stays network-free. M3.5 is not complete until this live check
+`rtk cargo test` stays network-free. The release asset gate is not complete until this live check
 passes against the tag being used for installer, Homebrew, and npm checksum
 updates.
 
@@ -135,7 +137,7 @@ The convenience installer is exercised end-to-end in CI on `ubuntu-latest` and `
 
 ## Snapshot/rollback live backend validation
 
-The `Live snapshot/rollback (Docker + SQLite)` CI job closes M5.3 by exercising snapshot and rollback against real backends on `ubuntu-latest`.
+The `Live snapshot/rollback (Docker + SQLite)` CI job closes the live snapshot/rollback gate by exercising snapshot and rollback against real backends on `ubuntu-latest`.
 
 - Docker coverage runs `tests/docker_integration.rs::snapshot_rollback_reverts_filesystem_change` with `AEGIS_DOCKER_TESTS=1` after pulling the `alpine` fixture image.
 - SQLite coverage runs `tests/snapshot_rollback_live.rs::sqlite_snapshot_rollback_restores_database_file_through_aegis_cli` with `AEGIS_SQLITE_SNAPSHOT_TESTS=1` after installing the real `sqlite3` CLI.
@@ -202,9 +204,10 @@ IliasAlmerekov/aegis-shellguard/aegis` passed; and
 `/home/linuxbrew/.linuxbrew/opt/aegis/bin/aegis --version` printed
 `aegis 0.5.6`.
 
-macOS Homebrew smoke is still an operator follow-up. M3.3 is accepted as closed
-for this release pass based on the published formula, Linux clean-retap smoke,
-and the release asset/checksum contract that covers both macOS assets.
+For the v0.5.6 release pass, the available formula, Linux clean-retap smoke,
+and release asset/checksum contract were accepted as sufficient evidence. The
+missing macOS smoke remained an operator follow-up; the current Homebrew tap
+gate status is recorded with the v0.6.3 evidence below.
 
 ### Evidence recorded 2026-08-05 (release v0.6.3)
 
@@ -215,11 +218,11 @@ The identical formula was published to
 in commit `41adf056f387b57770ca4043c0cdc362547833ee`. This Linux host has no
 `brew` executable, so `brew audit`, install, test, version, and notice-delivery
 evidence remain open for Linux; the required real-macOS operator smoke is also
-open. These missing smokes keep the L1 gate unchecked.
+open. These missing smokes leave the Homebrew tap gate open.
 
 ## Homebrew tap publish runbook
 
-Operator runbook for closing M3.3 Task 6. Run every step on release; the
+Operator runbook for closing the Homebrew tap gate. Run every step on release; the
 formula is generated deterministically by `scripts/update-homebrew-formula.sh`
 so the source-of-truth file is `packaging/homebrew/Formula/aegis.rb`.
 
@@ -273,7 +276,7 @@ so the source-of-truth file is `packaging/homebrew/Formula/aegis.rb`.
    ```
 
 7. Record evidence for both platforms (macOS and Linux) in the release notes,
-   then proceed to the M3.3 completion checklist.
+   then proceed to the Homebrew tap completion checklist.
 
 ## npm wrapper validation
 
@@ -311,7 +314,7 @@ worked: `npm install -g --prefix /tmp/aegis-npm-registry
 `/tmp/aegis-npm-registry/bin/aegis --version` printed `aegis 0.5.6` on Linux
 x64.
 
-macOS npm smoke is still an operator follow-up. M3.4 is accepted as closed for
+macOS npm smoke is still an operator follow-up. The npm wrapper gate is accepted as closed for
 this release pass based on the public npm package, Linux registry install smoke,
 and the package checksum contract that covers both macOS assets.
 
@@ -342,7 +345,7 @@ registry install, `rtk npm install --prefix /tmp/aegis-v063-npm-smoke
 npm wrapper validation is currently a release-operator smoke test rather than a
 default CI job. Network-free contract tests live in `tests/npm_package.rs` and
 the gated live test (`AEGIS_TEST_LIVE_NPM=1`) lives in `tests/npm_live.rs`; both
-keep default `cargo test` network-free. Cargo support for M3.4 is the documented
+keep default `cargo test` network-free. Cargo support for the cargo-install gate is the documented
 `cargo install --git` source-build path; crates.io publication remains a
 separate human-controlled release checkpoint.
 
@@ -425,7 +428,7 @@ aegis audit --verify-integrity
 
 ## Fuzz CI validation
 
-- M5.2 is covered by `.github/workflows/ci.yml` job `fuzz`, which runs
+- The fuzz CI gate is covered by `.github/workflows/ci.yml` job `fuzz`, which runs
   `parser`, `scanner`, and `heredoc` fuzz targets with `-runs=100000`.
 - Corpora are committed under `fuzz/corpus/parser`, `fuzz/corpus/scanner`, and
   `fuzz/corpus/heredoc`.

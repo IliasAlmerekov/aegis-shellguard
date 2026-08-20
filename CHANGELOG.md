@@ -44,6 +44,10 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Changed
 
+- Retired milestone IDs from current release and CI documentation; historical
+  release entries remain unchanged, and the v0.6.3 distribution plan now
+  points to the current L1 and distribution-gate definitions. (#227)
+
 - Prefix rules whose first token is not `Single`/`Alts` (a wildcard or a flag)
   are now rejected at load time instead of being silently dropped from the
   program index and never firing at runtime. (M5.1, #189)

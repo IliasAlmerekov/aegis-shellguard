@@ -74,7 +74,7 @@ with `HOME` unset.
 
 ### 0.5 Declare MSRV and add Windows to CI
 
-> **Superseded by M4 (drop native Windows, 2026):** native Windows is out of
+> **Superseded by the 2026 decision to drop native Windows:** native Windows is out of
 > scope — Windows is supported only inside WSL2 (see `docs/platform-support.md`,
 > `README.md`). The Windows-CI portion of this item no longer applies; the MSRV
 > portion stands.
@@ -515,7 +515,7 @@ approved command. Profile templates live in `crates/aegis-sandbox/profiles/`.
 
 ### 6.3 Windows — Job Objects (withdrawn)
 
-> **Withdrawn by M4 (drop native Windows).** No native Windows build ships;
+> **Withdrawn by the decision to drop native Windows.** No native Windows build ships;
 > Windows is supported only through WSL2, which uses the Linux bwrap + Landlock
 > path. This subsection is retained for historical context only.
 
@@ -601,7 +601,7 @@ a 1.0 release.
 - [ ] README and docs accurately describe all features through Phase 4.
 - [ ] Convenience installer documented and tested (`curl | sh` or package manager).
 - [ ] Release workflow exercised on a real tag; artifacts include checksum sidecars.
-- [ ] Supported platforms (Linux x86_64/aarch64, macOS arm64/x86_64; Windows via WSL2 only — native Windows dropped per M4)
+- [ ] Supported platforms (Linux x86_64/aarch64, macOS arm64/x86_64; Windows via WSL2 only — native Windows dropped by the decision to drop native Windows)
       stated clearly with notes on sandboxing availability per platform.
 - [ ] CI includes ARM cross-compilation jobs (`aarch64-unknown-linux-musl`).
 - [ ] Threat model and known limitations visible on the project README.
