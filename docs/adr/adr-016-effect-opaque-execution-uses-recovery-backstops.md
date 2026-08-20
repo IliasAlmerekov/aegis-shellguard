@@ -44,7 +44,14 @@ default mitigation for effect opacity.
 
 This fail-closed rule is scoped to bounded effect-opaque execution. Ordinary
 non-effect-opaque `Danger` Snapshot failures retain the best-effort contract from ADR-004;
-ADR-016 does not turn every missing Danger Snapshot into a new execution denial. An
+ADR-016 does not turn every missing Danger Snapshot into a new execution denial.
+(**Narrowed by
+[ADR-031](adr-031-unattended-destructive-execution-requires-recovery.md):** that
+best-effort contract now holds only while a human decides for the current run.
+`Danger` executed *unattended* — auto-approved by an allowlist override, a policy
+rule, or a persisted `ApproveAlways` — requires a `Ready` Recovery on every run.
+ADR-016 itself is unchanged and remains `Accepted`; ADR-031 extends its model to
+that case.) An
 effect-opaque command that is also `Danger` still uses the ADR-016 required-recovery rule.
 Allowlist and policy-rule approval do not waive that rule.
 
