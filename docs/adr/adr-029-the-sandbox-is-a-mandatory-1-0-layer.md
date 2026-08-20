@@ -61,7 +61,8 @@ Confinement is attempted for every executed command on Linux and macOS.
 **2. `sandbox.required` is removed from the configuration.** A mandatory layer
 cannot also be skippable: `required = false` would mean "mandatory, but may be
 bypassed", which is the failure mode M1 was raised to fix. Unavailability blocks;
-there is no second flag expressing it.
+there is no second flag expressing it. *(Amended 2026-08-20: `sandbox.enabled`
+goes with it, and the migration contract for both is below.)*
 
 **3. Linux confinement follows the Codex pattern.** Prefer a `bwrap` found on
 `PATH`; fall back to bubblewrap built from vendored C sources inside
@@ -101,6 +102,74 @@ Until it is run, decisions 1–7 hold for Linux, and macOS follows the same fail
 policy. If the measurement shows that a nested inner profile can **widen**
 authority, this ADR is reopened — that would make an inner layer a
 privilege-escalation vector rather than a guardrail.
+
+## Amendment — 2026-08-20: the `[sandbox]` migration contract
+
+Decided in [#240](https://github.com/IliasAlmerekov/aegis-shellguard/issues/240).
+Decision 2 above was incomplete rather than wrong: it removed `required` and left
+`enabled`, whose `false` value reproduces the identical "mandatory, unless
+disabled" hole this ADR was raised to close. `enabled` is not a setting inside the
+layer but the constructor of the whole layer —
+`config.sandbox.enabled.then(|| SandboxConfig { .. })` (`src/runtime/context.rs:52`)
+— so removing `required` alone was cosmetic. The amendment also settles what
+happens to config files that already carry either field, which neither this ADR
+nor [ADR-030](adr-030-the-confinement-profile-is-derived-from-the-assessment.md)
+addressed at all.
+
+**A. Both runtime flags leave the configuration contract.** `sandbox.enabled` and
+`sandbox.required` are removed from the 1.0 contract together. The obligation,
+stated precisely: confinement is applied outside `Mode::Audit` to every command
+that reaches the enforcement flow. `Toggle` and `Disabled passthrough` remain a
+separate operator mechanism and are **not** an opt-out of the layer.
+
+**B. Legacy keys are accepted, ignored, and warned — never rewritten.** Both
+fields are tolerated by **exact name only**, so every other unknown key stays
+rejected by `deny_unknown_fields` and a typo keeps failing. The value is ignored
+**whatever it is**: `enabled = false` is a released, valid configuration, and
+ignoring it is not fail-open, because the layer applies regardless. Each
+occurrence raises a typed `deprecated_sandbox_field` warning carrying its layer
+and location, alongside the existing `project_security_ratchet` family, and the
+message names `mode = "Audit"` for observe-only use. **The file is not rewritten.**
+The existing allowlist auto-migration (`crates/aegis-config/src/model/migration.rs:64`)
+is a precedent for in-place rewriting, but a syntactic, meaning-preserving one;
+deleting a security field changes meaning, which is exactly why Aegis should not
+be the one editing it.
+
+**C. Lifetime: the whole support life of config schema v1.** Removing the shim
+requires a separate decision to end schema v1 support. The ground is the
+compatibility contract of schema v1 plus the low cost of an exact-name shim — not
+the [ADR-026](adr-026-snapshot-rollback-contract-for-1-0.md) legacy `snapshot_id`
+precedent, which rests on append-only Audit lines being required for Rollback.
+`config_version` was considered as the migration channel and rejected: the field
+is optional and defaults to `CURRENT_CONFIG_VERSION`
+(`crates/aegis-config/src/model/serde_helpers.rs:38`), so after a bump a
+versionless 0.6.x config is indistinguishable from a freshly generated one, and
+migration would be guessing.
+
+**D. `allow_write`, path containment, and the empty ceiling.** Absent means the
+computed default ceiling; present is an explicit override of it, never an
+addition; an explicit `[]` is valid and means zero configured writable roots. A
+ceiling emptied by configuration or by omitted entries gets no fallback. A
+malformed entry is omitted with a typed `trusted_ceiling_path_omitted` outcome
+rather than failing the load. The full per-field matrix, the containment rules,
+and the reasons are recorded in the resolution of
+[#240](https://github.com/IliasAlmerekov/aegis-shellguard/issues/240); the
+normative statement is `PRD.md` §5.5, and
+[ADR-030](adr-030-the-confinement-profile-is-derived-from-the-assessment.md)
+carries the matching refinement.
+
+**E. Migration may only ever reduce authority, never grant it.** Every rule above
+obeys this invariant, and it is the reason an emptied ceiling gets no fallback and
+a symlink escape is caught at enforcement rather than trusted at merge.
+
+Consequences of the amendment: [ADR-013](adr-013-project-config-security-ratchet.md)
+loses two of its ratcheted fields and gains a semantic-intersection rule for
+`allow_write` (annotated there); the removal in the code is owned by
+[#229](https://github.com/IliasAlmerekov/aegis-shellguard/issues/229), whose scope
+this amendment supersedes; `docs/config-schema.md`, `CONTEXT.md`, and
+`aegis-schema.json` follow on
+[#205](https://github.com/IliasAlmerekov/aegis-shellguard/issues/205) and
+[#242](https://github.com/IliasAlmerekov/aegis-shellguard/issues/242).
 
 ## Consequences
 

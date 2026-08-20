@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. Annotated 2026-08-20 — see [Annotation](#annotation--2026-08-20-two-ratcheted-fields-leave-the-set).
 
 ## Context
 
@@ -73,3 +73,36 @@ de-safeguarding a `Warn`/`Danger` command:
   `Off`. (The chain is an integrity/corruption check, not adversarial
   tamper-evidence — see TASKS.md H5 — but silently disabling even that from an
   untrusted repo is the same weakening shape and is closed here.)
+
+## Annotation — 2026-08-20: two ratcheted fields leave the set
+
+Decided in [#240](https://github.com/IliasAlmerekov/aegis-shellguard/issues/240),
+recorded as an amendment to
+[ADR-029](adr-029-the-sandbox-is-a-mandatory-1-0-layer.md). The ratchet stands;
+what changes is which fields it covers and how one of them merges.
+
+- **`sandbox.enabled` and `sandbox.required` are no longer ratcheted fields.**
+  Both leave the 1.0 configuration contract entirely: they are accepted by exact
+  name, ignored at any value, and warned about with `deprecated_sandbox_field`.
+  There is nothing left for a project layer to weaken, because there is no
+  effective flag. The bypass this ADR closed is closed more strongly than a
+  ratchet could: the Sandbox is a mandatory layer, so it applies whatever any
+  layer says. The Decision text above that names them — the ratcheted set, the
+  `base || requested` directionality, and the "`auto_snapshot_*` and
+  `sandbox.enabled` close the bypass" paragraph — is superseded for those two
+  fields only; every other field in the set is untouched.
+- **`sandbox.allow_write` becomes a semantic tree intersection.** "The Project
+  layer keeps the trusted base set and ignores the project value entirely" is
+  replaced by a component-wise intersection of path trees, computed at merge with
+  no filesystem access. A project layer may therefore narrow the ceiling, which
+  the old rule made impossible. An attempted widening still keeps the base and
+  still emits `project_security_ratchet` — the project asked for more than it
+  received, so the warning is owed. A malformed individual entry gets its own
+  outcome, `trusted_ceiling_path_omitted`, rather than being reported as a
+  merge-time weakening.
+- **The Consequences paragraph is narrowed.** "It can no longer silently disable
+  … the sandbox itself, required sandbox behavior" now describes the mandatory
+  layer rather than this ratchet. The remaining list — prompts, snapshots, CI
+  blocking, audit integrity — is unchanged.
+
+`PRD.md` §5.5 is the normative statement of the resulting `[sandbox]` semantics.

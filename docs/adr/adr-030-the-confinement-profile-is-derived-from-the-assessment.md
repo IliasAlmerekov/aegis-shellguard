@@ -3,6 +3,7 @@
 ## Status
 
 Accepted. Extends [ADR-029](adr-029-the-sandbox-is-a-mandatory-1-0-layer.md).
+Refined 2026-08-20 — see [Refinement](#refinement--2026-08-20-the-ceiling-under-the-sandbox-migration-contract).
 
 ## Context
 
@@ -169,3 +170,56 @@ revisable independently of derivation.
 - **A wrong restriction is a hard failure, not a prompt.** This is the feature's
   central risk and the reason `Category` inference and argv indices are both
   refused.
+
+## Refinement — 2026-08-20: the ceiling under the `[sandbox]` migration contract
+
+Decided in [#240](https://github.com/IliasAlmerekov/aegis-shellguard/issues/240)
+and recorded as an amendment to
+[ADR-029](adr-029-the-sandbox-is-a-mandatory-1-0-layer.md). Decision 2 above gave
+the `Trusted ceiling` a working default; that decision alone did not say what an
+existing `[sandbox]` section does to it. Four points refine it.
+
+**1. The computed default applies only to an absent field.** `allow_write` absent
+yields the computed default of decision 2 — workspace tree plus `/tmp`. A present
+`allow_write` is an explicit **override** of that default, never an addition to
+it. "The full writable set" is unexpressible, because the workspace is resolved at
+the runtime boundary rather than being a literal a user can type; treating a list
+as an addition would silently widen authority for a config that believed it stated
+everything.
+
+**2. An explicit `[]` is valid, and an empty effective ceiling gets no fallback.**
+Decision 2 says an empty *default* is unusable for ordinary work; it does not make
+an explicit empty ceiling invalid. `allow_write = []` is accepted and means zero
+configured writable roots. A ceiling emptied by an explicit `[]` **or** by omitted
+entries stays empty: falling back to the computed default would be fail-open, and
+the one place Aegis grants authority the config never asked for — precisely at the
+moment it failed to understand the config. The cost is stated rather than hidden:
+an upgrade can leave an installation with no configured writable roots, where
+commands fail on write rather than with a clear message.
+
+**3. `Trusted ceiling path omission` is not a `Confinement degradation`.**
+Decision 5 gives `Confinement degradation` a narrow meaning: a rule declared a
+restriction, its extractor found no target, and the command received the whole
+`Trusted ceiling` — the profile **widens**. A malformed ceiling entry is the
+opposite movement: the entry is excluded and the profile **narrows**. It gets its
+own typed outcome, `trusted_ceiling_path_omitted`, with a reason
+(`relative` / `parent_dir` / `not_found` / `outside_trusted_ceiling`), a layer, and
+a location. Reusing `Confinement degradation` would blur this ADR, `CONTEXT.md`,
+and the metric that counts degradations.
+
+**4. The Audit log stores the resulting profile, not the omission reasons.**
+Decision 7's new field keeps its shape: the effective profile actually granted.
+The causal diagnostics of how that profile was built belong to config and runtime
+diagnostics — the Audit log is not a history of config provenance. Both arguments
+that would have forced the reasons out of the record are false and were not used:
+a new optional field enters `AuditIntegrityPayload` from day one with
+`skip_serializing_if`, and an omission is not always static, since `not_found` and
+a canonical symlink escape depend on filesystem state.
+
+The per-field matrix and the containment rules are in the resolution of
+[#240](https://github.com/IliasAlmerekov/aegis-shellguard/issues/240); the
+normative statement is `PRD.md` §5.5. Containment is checked at two moments —
+component-wise at merge with no filesystem access, and canonically at enforcement
+on both the trusted and the effective roots — which requires the trusted base and
+its provenance to reach enforcement
+([#242](https://github.com/IliasAlmerekov/aegis-shellguard/issues/242)).

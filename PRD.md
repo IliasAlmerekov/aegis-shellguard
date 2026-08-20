@@ -1,8 +1,8 @@
 # PRD — Aegis 1.0
 
 **Status:** Approved specification for the Aegis 1.0 production release
-**Document revision:** 2
-**Last updated:** 2026-08-19
+**Document revision:** 3
+**Last updated:** 2026-08-20
 
 This PRD is the single normative source of the Aegis 1.0 product promise.
 The `1.0` milestone is the live release gate under
@@ -258,17 +258,67 @@ for `Mode::Audit`, where no confinement is expected.
 **not a confidentiality boundary and not a privilege boundary**: profiles do not
 promise to hide readable files or secrets from a command.
 
-**Configuration.** `sandbox.required` is not part of the 1.0 configuration
-contract — a mandatory layer cannot also be skippable, so no flag expresses
-"mandatory, but may be bypassed".
+**Configuration.** An existing `[sandbox]` section keeps loading under the
+mandatory layer, and the two flags that could switch the layer off leave the 1.0
+configuration contract. One invariant governs every field below: migration may
+only ever reduce authority, never grant it.
 
-> **This section is not final.** The mode-level opt-out and the migration
-> behaviour for legacy `[sandbox]` fields — `enabled`, `required`, `allow_write`,
-> `allow_network` — are decided by
-> [#240](https://github.com/IliasAlmerekov/aegis-shellguard/issues/240). Until that
-> decision is accepted, this document states no per-field semantics for
-> `allow_write`, and §5.9's backward-compatibility promise cannot be evaluated
-> against the `[sandbox]` section.
+- **`sandbox.enabled` and `sandbox.required` are not part of the 1.0
+  configuration contract.** A mandatory layer cannot also be skippable, so no
+  flag expresses "mandatory, but may be bypassed". Both are still accepted **by
+  exact name and ignored at whatever value they carry**, for the whole support
+  life of config schema v1, and each raises a typed `deprecated_sandbox_field`
+  warning naming its layer and location. `enabled = false` is not fail-open: the
+  layer applies regardless. Observe-only operation is `mode = "Audit"`, which is
+  where the obligation itself stops. `Toggle` and `Disabled passthrough` stay a
+  separate operator mechanism and are not an opt-out of the layer.
+- **Aegis never rewrites a config file to migrate it.** Deleting a security field
+  changes what the file means, so the record of what an installation once asked
+  for stays where its owner put it.
+- Every other unrecognised `[sandbox]` key is still rejected, so a typo keeps
+  failing the load rather than being silently tolerated.
+- **`sandbox.allow_write` is an explicit override of the computed default
+  ceiling, never an addition to it.** Absent, the ceiling is the computed default
+  above; present, the listed roots are the whole configured set; an explicit `[]`
+  is valid and means **zero configured writable roots**. A ceiling emptied by
+  configuration or by omitted entries gets **no fallback** to the computed
+  default — a fallback would be the one place Aegis grants authority the config
+  never asked for. At the project layer the list is a semantic intersection of
+  path trees with the trusted base, and an attempted widening keeps the base and
+  warns.
+- A ceiling entry that is relative, contains `..`, does not exist, or resolves
+  canonically outside the ceiling is **omitted from the effective ceiling** with a
+  typed `trusted_ceiling_path_omitted` outcome carrying its reason
+  (`relative` / `parent_dir` / `not_found` / `outside_trusted_ceiling`), its
+  layer, and its location. Authority only narrows. This is deliberately not a
+  `Confinement degradation`, which names the opposite movement — a profile that
+  widened to the ceiling. Absolute paths only; `.` may be dropped
+  component-wise; `..` is never folded lexically, because `/workspace/link/../secret`
+  with `link -> /etc/subdir` folds to a path the filesystem does not resolve to.
+  Containment is therefore checked at two moments: component-wise at merge, with
+  no filesystem access, so a ceiling path that does not exist yet is not a startup
+  error; and canonically at enforcement, on **both** the trusted and the effective
+  roots.
+- `sandbox.allow_network` is unchanged by the mandatory layer: absent is `false`,
+  the global layer is last-wins, and the project layer may only tighten.
+
+The omission promise is bounded rather than absolute: a malformed ceiling entry
+never blocks the shell, but the command can still fail on write under the
+narrower profile, and a path that disappears between canonicalisation and
+`bwrap --bind` fails setup.
+
+**Where the diagnostics surface.** `deprecated_sandbox_field` and
+`trusted_ceiling_path_omitted` are typed warnings, not startup logs: a
+per-invocation warning on the `$SHELL -c` path would be noise and a risk to the
+Hook protocols. `aegis config validate` is the authoritative surface and
+`aegis status` an ordinary discovery surface for the same warnings; neither
+changes its exit code on warnings alone. The promise is that the warning is
+**available** on a discovery surface, not that every user reads it.
+
+The Audit log records the effective profile that was granted (§5.5,
+Observability) and not the causal diagnostics of how it was built. Config and
+runtime diagnostics own the reason; the Audit log is not a history of config
+provenance.
 
 ### 5.6 Audit log
 
@@ -309,7 +359,9 @@ contract — a mandatory layer cannot also be skippable, so no flag expresses
 - TOML: `~/.config/aegis/config.toml` (global) and `.aegis.toml` (per-project),
   with layered merge.
 - All fields are optional with defaults via `#[serde(default)]`; backward
-  compatibility with existing config files is not broken.
+  compatibility with existing config files is not broken. The `[sandbox]`
+  section is the worked case: a released config keeps loading even though two of
+  its fields left the contract (§5.5).
 - `aegis config init|show|validate`; a JSON schema is generated from the type for
   editor autocompletion.
 
