@@ -370,6 +370,15 @@ required = true
 // is currently last-wins (sandbox.enabled, auto_snapshot_*, allow_network,
 // allow_write). The effective-value ratchet is asserted in model::tests::merge;
 // here we assert the validation report surfaces an advisory warning too.
+//
+// `validate_warns_when_project_disables_globally_enabled_sandbox` pins
+// pre-amendment behavior: under the ADR-029 amendment of 2026-08-20 a present
+// `sandbox.enabled` raises `deprecated_sandbox_field` instead, at any value and in
+// any layer, because the field no longer has an effective value to ratchet. The
+// swap lands with the field removal
+// (<https://github.com/IliasAlmerekov/aegis-shellguard/issues/229>) rather than
+// ahead of it — dropping the ratchet warning first would leave a project able to
+// weaken a live flag silently.
 
 #[test]
 fn validate_warns_when_project_disables_globally_enabled_sandbox() {

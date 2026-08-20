@@ -4,6 +4,16 @@
 // auto_snapshot_*, sandbox.allow_network, sandbox.allow_write) are currently
 // last-wins, which lets a project config silently defeat a stricter global
 // base. These tests pin the expanded ratchet behavior.
+//
+// The two `sandbox.enabled` tests below pin behavior the ADR-029 amendment of
+// 2026-08-20 removes: `sandbox.enabled` and `sandbox.required` leave the 1.0
+// configuration contract entirely, so neither stays a ratcheted field. They hold
+// until the fields leave `SandboxSettings`
+// (<https://github.com/IliasAlmerekov/aegis-shellguard/issues/229>), and they go
+// with that removal rather than being loosened ahead of it: while the field still
+// constructs the layer as `enabled.then(|| SandboxConfig { .. })`, a project layer
+// that can weaken it is still the C3 bypass. Every other test in this file is
+// unaffected by the amendment.
 
 #[test]
 fn project_sandbox_enabled_cannot_weaken_global_enabled_true() {

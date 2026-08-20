@@ -142,6 +142,13 @@ fn prd_defines_the_mandatory_sandbox_contract() {
         // ADR-030: the ceiling bounds, derivation only subtracts.
         "Trusted ceiling",
         "Confinement degradation",
+        // ADR-029 amendment (2026-08-20): the `[sandbox]` migration contract.
+        // A released config keeps loading, both runtime flags are inert, and a
+        // malformed ceiling entry narrows instead of failing the load.
+        "deprecated_sandbox_field",
+        "trusted_ceiling_path_omitted",
+        "zero configured writable roots",
+        "never rewrites a config file",
     ] {
         assert!(
             prd.contains(needle),
@@ -157,6 +164,11 @@ fn prd_defines_the_mandatory_sandbox_contract() {
         "optional unconfined fallback",
         // ADR-030: the PRD must not fix an index or a per-session profile.
         "MultiMap",
+        // The §5.5 pending marker is spent: the `[sandbox]` migration contract
+        // is decided
+        // (<https://github.com/IliasAlmerekov/aegis-shellguard/issues/240>) and
+        // stated, so a normative section may not go provisional again.
+        "This section is not final",
     ] {
         assert!(
             !prd.contains(stale),
@@ -177,12 +189,13 @@ fn prd_defines_the_mandatory_sandbox_contract() {
 /// documents contradict it today.
 ///
 /// Rewriting them is
-/// <https://github.com/IliasAlmerekov/aegis-shellguard/issues/205>, which is in
-/// turn blocked by the `[sandbox]` migration contract
-/// (<https://github.com/IliasAlmerekov/aegis-shellguard/issues/240>) —
-/// `docs/config-schema.md` enumerates the config fields line by line and cannot
-/// stay silent on `enabled` the way a prose section can. When #205 lands, this
-/// test is rewritten into the derived-doc contract rather than deleted.
+/// <https://github.com/IliasAlmerekov/aegis-shellguard/issues/205>, now
+/// unblocked: the `[sandbox]` migration contract it waited on is decided
+/// (<https://github.com/IliasAlmerekov/aegis-shellguard/issues/240>) and stated
+/// in `PRD.md` §5.5, so `docs/config-schema.md` — which enumerates the config
+/// fields line by line and cannot stay silent on `enabled` the way a prose
+/// section can — has a contract to copy from. When #205 lands, this test is
+/// rewritten into the derived-doc contract rather than deleted.
 #[test]
 fn derived_sandbox_docs_remain_pinned_until_issue_205_rewrites_them() {
     let readme = fs::read_to_string(repo_path("README.md")).unwrap();
