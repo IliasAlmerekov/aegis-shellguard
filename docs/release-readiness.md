@@ -1,28 +1,47 @@
 # Aegis release readiness
 
-This document separates launch blockers from longer-term security hardening.
-It describes requirements to complete, not claims about work already validated.
+**This document is evidence, not a gate.** It records what release work has been
+verified and how — installer runs, checksum verification, tap and npm smoke tests,
+supply-chain output, live backend validation. A checked box here means somebody
+proved something and left the record; it never means the item is required.
+
+The 1.0 gate is the
+[`1.0` milestone](https://github.com/IliasAlmerekov/aegis-shellguard/milestone/1)
+and nothing else
+([ADR-027](adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)); the
+promises it measures against are in [`PRD.md`](../PRD.md) §5–§8. This document
+keeps no 1.0 checklist of its own, and the lists below are not one — they are the
+distribution and hardening tracks, kept because they are where the evidence
+attaches.
+
 Do not read any checklist item as done unless a release note or verification
 record says so.
 
 ## Why two checklists?
 
-Aegis has two different adoption thresholds:
+Aegis records verification against two different adoption thresholds:
 
-1. **Minimum Launch Checklist** — what must be true before treating the current
-   line as a shippable public MVP.
-2. **Security-Grade Checklist** — what should be added later for a stronger
-   trust posture and release supply-chain story.
+1. **Minimum Launch Checklist** — the distribution readiness of the current
+   public line: does a first-time user get a working, verifiable install?
+2. **Security-Grade Checklist** — the stronger trust posture and release
+   supply-chain story added over time.
 
-Keeping those lists separate avoids mixing launch blockers with worthwhile but
-non-blocking hardening work.
+Keeping the two separate keeps distribution evidence from being read as a
+supply-chain guarantee, and neither from being read as the release gate.
 
 ## Minimum Launch Checklist
 
-These items are launch blockers for the current public line:
+Distribution readiness of the current public line. These are the named
+distribution gates — they block treating the line as a shippable public install
+path, not the 1.0 release:
 
-- [x] `README.md`, `docs/*`, and release notes agree on Aegis being a
-      heuristic shell guardrail, not a sandbox or hard security boundary.
+- [x] `README.md`, `docs/*`, and release notes agree on what Aegis does and does
+      not guarantee: a heuristic command guardrail with an OS confinement layer
+      that is a write/network guardrail, **not a confidentiality boundary and not
+      a privilege boundary**. ADR-029 superseded ADR-003 and made that layer a
+      mandatory part of 1.0, so "Aegis is not a sandbox" is no longer the right
+      phrasing — the two surviving halves above are, and they are what the docs
+      contract test enforces.
 - [ ] CI exercises the `curl | sh` installer against a real GitHub Release artifact on every supported platform.
 - [ ] The convenience installer and troubleshooting paths are documented
       clearly enough for first-time users to complete installation.
@@ -119,8 +138,9 @@ tests) and `rtk cargo test --test homebrew_formula` (13 tests) passed.
 
 ## Security-Grade Checklist
 
-These items are not launch blockers, but they matter for a more security-grade
-posture later:
+These items block nothing — not the distribution gates and not 1.0. They are the
+hardening the project intends to add for a stronger trust posture later, listed
+here so the evidence has a place to attach when it arrives:
 
 - [ ] SBOM generation or equivalent supply-chain metadata.
 - [ ] Provenance or attestation support for release artifacts.
@@ -168,8 +188,17 @@ This means:
 - Users who need Starlark policy support must build from source with
   `cargo install --features starlark-policy`.
 
-This is an intentional product decision: the default supply-chain gate is clean,
+This was an intentional product decision: the default supply-chain gate is clean,
 and users who opt into the advisory-tainted dependency chain do so explicitly.
+
+**Withdrawn before 1.0.** The Starlark DSL is deleted from the tree rather than
+kept behind a feature
+([ADR-028](adr/adr-028-the-starlark-policy-dsl-is-removed-before-1-0.md),
+[#225](https://github.com/IliasAlmerekov/aegis-shellguard/issues/225)); the typed
+TOML DSL is the only rule-authoring path in 1.0. The fail-closed startup error on
+`~/.aegis/policy.star` is **kept permanently** — never a warning, never a silent
+ignore — so an upgraded installation cannot lose its rules quietly. The
+build-from-source escape hatch above disappears with the feature.
 
 ## Homebrew tap validation
 
@@ -436,6 +465,7 @@ aegis audit --verify-integrity
 
 ## References
 
+- `PRD.md` — the normative 1.0 promise this document records evidence against
 - `README.md`
 - `docs/config-schema.md`
 - `docs/ci.md`

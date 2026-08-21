@@ -2,10 +2,12 @@
 
 # Aegis
 
-**Make AI agents ask first. Undo them when they don't.**  
+**Make AI agents ask first. Keep a way back when they don't.**  
 Your AI agent is one `rm -rf` away from ruining your week. Aegis proxies its shell:
-safe commands run instantly, destructive ones need your approval — with a Snapshot
-taken first, so even a "yes" is recoverable.
+safe commands run instantly, destructive ones need your approval — and where a
+provider applies, a Snapshot captures the working state first, so a "yes" can be
+restored to what was captured. When no provider applies, Aegis says so instead of
+implying an undo it cannot perform.
 
 [![version](https://img.shields.io/badge/version-0.6.4-60A5FA?style=flat-square)](CHANGELOG.md)
 [![platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-22C55E?style=flat-square)](#how-to-install)
@@ -32,15 +34,31 @@ is risk-scored before it executes:
 | **Block** | Refused outright — no prompt |
 
 > [!NOTE]
-> Aegis is a heuristic guardrail, not a sandbox or privilege boundary.
+> Aegis decides by heuristics, not by understanding your command. It is not a
+> privilege boundary: it does not stop code that already runs as you.
 > See [`docs/threat-model.md`](docs/threat-model.md) for the full security model.
 
-The optional **Sandbox** is a best-effort write/network guardrail add-on and
-not a confidentiality boundary: it does not promise to hide readable files
-or secrets.
-If optional confinement is unavailable, Aegis records
+The **Sandbox** is a write/network guardrail.
+It is **not a confidentiality boundary** and **not a privilege boundary**:
+it does not promise to hide readable files or secrets, and it does not stop a
+command from doing anything your own user could do within the paths it is allowed
+to write.
+
+In Aegis 1.0 this layer is **mandatory** — confinement is attempted for every
+executed command, and failure to establish it blocks the command instead of
+running it unconfined
+([ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md), `PRD.md`
+§5.5). `sandbox.enabled` and `sandbox.required` leave the contract there: they
+stay accepted by exact name and ignored at any value, each reported as a
+`deprecated_sandbox_field`, and Aegis never rewrites your config to remove them.
+
+**Current pre-1.0 implementation (0.6.x):** the shipped binary still implements
+the optional model. If confinement is unavailable it records
 `sandbox_status = "unavailable"` and warns on the active Shell or Watch channel
-before running unconfined. Set `sandbox.required = true` to block instead.
+before running unconfined, and `sandbox.required = true` is what turns that into a
+block. Closing that gap is
+[#229](https://github.com/IliasAlmerekov/aegis-shellguard/issues/229) and
+[#230](https://github.com/IliasAlmerekov/aegis-shellguard/issues/230).
 
 Bounded **Effect-opaque execution** such as `sh ./cleanup.sh` stays on its normal
 `RiskLevel`, but Protect/Strict requires at least one configured Snapshot before
@@ -248,8 +266,16 @@ curl -fsSL https://raw.githubusercontent.com/IliasAlmerekov/aegis-shellguard/mai
 
 | Document | Description |
 |----------|-------------|
-| [Architecture decisions](docs/adr/README.md) | ADR-001 through ADR-015 |
+| [Product requirements](PRD.md) | The normative Aegis 1.0 promise |
+| [Architecture decisions](docs/adr/README.md) | The ADR index — every accepted decision |
 | [Threat model](docs/threat-model.md) | Security scope and assumptions |
 | [Config schema](docs/config-schema.md) | `aegis.toml` reference |
 | [Platform support](docs/platform-support.md) | Linux, macOS, WSL2 details |
-| [Release readiness](docs/release-readiness.md) | 1.0 gate status |
+| [Release readiness](docs/release-readiness.md) | Recorded release-verification evidence |
+| [Troubleshooting](docs/troubleshooting.md) | Install, hook, and integrity problems |
+| [CI](docs/ci.md) | What the pipeline gates on |
+| [Performance baseline](docs/performance-baseline.md) | Hot-path benchmark baselines |
+
+What still blocks 1.0 is the
+[`1.0` milestone](https://github.com/IliasAlmerekov/aegis-shellguard/milestone/1) —
+the only release gate.

@@ -256,11 +256,19 @@ user = ""
 
 ## Sandbox
 
-Optional effect-level confinement applied before a command executes (bwrap +
-Landlock on Linux, `sandbox-exec` on macOS). It is a best-effort
-write/network guardrail add-on and not a confidentiality boundary. It complements the string
-classifier, which matches how a command is *spelled* rather than what it *does*,
-and is off by default.
+Effect-level confinement applied before a command executes (bwrap + Landlock on
+Linux, `sandbox-exec` on macOS). It is a write/network guardrail and
+not a confidentiality boundary, and not a privilege boundary. It complements the
+string classifier, which matches how a command is *spelled* rather than what it
+*does*.
+
+This section documents **two states**, because they differ today: the 1.0 contract
+that `PRD.md` §5.5 promises, and what the shipped 0.6.x binary does. Where they
+disagree, the PRD is the promise and the code is the behaviour; the gap closes with
+[#229](https://github.com/IliasAlmerekov/aegis-shellguard/issues/229) and
+[#230](https://github.com/IliasAlmerekov/aegis-shellguard/issues/230).
+
+### Current pre-1.0 implementation (0.6.x)
 
 ```toml
 [sandbox]
@@ -287,6 +295,43 @@ allow_write = []
   at the project layer, never on; and project `allow_write` is intersected with
   the base list — a project `.aegis.toml` can never widen the sandbox.
 - These fields also appear in `aegis-schema.json` under `SandboxSettings`.
+
+### The 1.0 contract (ADR-029 and its 2026-08-20 amendment, ADR-030)
+
+- **The layer is mandatory.** Confinement is attempted for every executed command
+  outside `Mode::Audit`; when it cannot be established the command is blocked, and
+  the recorded `sandbox_status = "unavailable"` accompanies `Decision::Blocked` as
+  one event. There is no unconfined continuation to configure.
+- **`enabled` and `required` leave the contract.** Both are still accepted by
+  **exact name** and **ignored at any value**, each producing a typed
+  `deprecated_sandbox_field` diagnostic, for the whole support life of config
+  schema v1. `enabled = false` is not fail-open: the layer applies regardless.
+  Aegis **never rewrites a config file** to remove them.
+- **Both leave the ADR-013 ratcheted set** along with the contract — there is
+  nothing left to tighten once neither field affects behaviour.
+- **`allow_write` becomes an explicit override** of a computed `Trusted ceiling`
+  default rather than an addition to an empty base. A "full set" is unexpressible
+  because the workspace is resolved at runtime, so the default applies only when
+  the field is **absent**. An explicit `allow_write = []` is valid and means
+  zero configured writable roots — not an error, and it gets **no fallback**: a
+  fallback would be the one place Aegis grants authority the config never asked
+  for.
+- **Project tightening is a semantic tree intersection**, component-wise at merge
+  and canonical at enforcement, applied to **both** the trusted ceiling and the
+  effective roots. `..` is never folded lexically — `/workspace/link/../secret`
+  with `link -> /etc/subdir` does not resolve to `/workspace/secret`.
+- **A bad ceiling entry narrows instead of failing the load**, with its own typed
+  outcome `trusted_ceiling_path_omitted` and reason
+  `relative` / `parent_dir` / `not_found` / `outside_trusted_ceiling`. This is
+  deliberately **not** a `Confinement degradation`: that term means the profile
+  widened to the ceiling, this one means it narrowed. It does not promise "never
+  blocks" — a TOCTOU between canonicalisation and `bwrap --bind` remains.
+- **`allow_network` keeps its meaning** and stays project-tightenable to `false`
+  only.
+- Warnings for all of the above are typed diagnostics surfaced by
+  `aegis config validate` and `aegis status`, never a per-`$SHELL -c` log line.
+  Audit records the effective profile, not the causal diagnostics of how it was
+  built.
 - macOS permits `file-read*` in the generated Seatbelt profile; it restricts
   writes and network access but does not hide readable files or secrets. On
   Linux, bwrap exposes read-only system mounts plus explicitly bound writable

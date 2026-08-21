@@ -1,14 +1,23 @@
 # Aegis — Transformation Roadmap
 
-This document describes the path from Aegis's current state to a production-grade,
-architecturally strong security tool on par with the best-in-class agents in this
-space (e.g. OpenAI Codex). Each phase has a clear goal, concrete deliverables, and
-a definition of done. Phases are sequential: each one builds on the foundation laid
-by the previous.
+This document records **the path taken** — the phases the project moved through,
+their deliverables, and their definitions of done. It is not the 1.0 scope and it
+holds no release gate.
 
-The north star: Aegis intercepts every shell command, classifies it with zero false
-negatives, persists every human decision as a machine-readable rule, and can
-optionally sandbox execution at the OS level — all in under 2 ms on the hot path.
+- The normative 1.0 product promise is [`PRD.md`](PRD.md).
+- The live release gate is the
+  [`1.0` milestone](https://github.com/IliasAlmerekov/aegis-shellguard/milestone/1)
+  and nothing else
+  ([ADR-027](docs/adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)).
+- Where a phase below states a goal that a later decision changed, the PRD wins.
+  The phase text is kept as written, with the superseding decision named.
+
+The north star this roadmap was written against: Aegis intercepts every shell
+command, classifies it with zero false negatives, persists every human decision as
+a machine-readable rule, and confines execution at the OS level — all in under
+2 ms on the hot path. The confinement half was optional when the roadmap was
+written and is a mandatory 1.0 layer under
+[ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md); see Phase 6.
 
 ---
 
@@ -79,7 +88,9 @@ with `HOME` unset.
 > `README.md`). The Windows-CI portion of this item no longer applies; the MSRV
 > portion stands.
 
-- Add `rust-version = "1.80"` to `Cargo.toml` (minimum for `std::sync::LazyLock`).
+- Add `rust-version` to `Cargo.toml` (`1.80` was the minimum for
+  `std::sync::LazyLock`; the declared MSRV has since moved on — `Cargo.toml` is
+  the authority).
 - ~~Add a `windows-latest` job to `.github/workflows/ci.yml`~~ (dropped — no
   native Windows build).
 
@@ -332,12 +343,15 @@ aegis/                          (workspace root)
     aegis-snapshot/[DONE]       SnapshotPlugin trait + 6 backends — depends on aegis-types, aegis-config
     aegis-starlark/[DONE]       Starlark policy DSL loader (opt-in `starlark-policy`) — depends on aegis-types
     aegis-sandbox/ [DONE]       bwrap + Landlock (Linux) / sandbox-exec (macOS) execution confinement
+    aegis-language/[DONE]       Tree-sitter runtime + grammars, parse-only worker, per-language adapters (added by milestone L1)
   src/                          binary — thin wiring, depends on all crates above
 ```
 
-Status: 11 crates extracted (aegis-types, aegis-parser, aegis-scanner,
-aegis-policy, aegis-config, aegis-explanation, aegis-tui, aegis-snapshot,
-aegis-audit, plus aegis-starlark in Phase 5 and aegis-sandbox in Phase 6).
+Status: 12 crates extracted — the nine above plus `aegis-starlark` in Phase 5,
+`aegis-sandbox` in Phase 6, and `aegis-language` in milestone L1. `Cargo.toml` is
+the authority on the workspace member list. `aegis-starlark` leaves the tree with
+[#225](https://github.com/IliasAlmerekov/aegis-shellguard/issues/225)
+([ADR-028](docs/adr/adr-028-the-starlark-policy-dsl-is-removed-before-1-0.md)).
 
 Each `crates/X/Cargo.toml` must not depend on `aegis-binary` or any other
 application crate. Dependency arrows flow inward toward `aegis-types`.
@@ -428,11 +442,17 @@ Before committing to an implementation, benchmark three approaches against Aegis
 | Lua (mlua)      | Medium         | +1–2 MB            | < 0.5 ms     |
 | Typed TOML DSL  | Low–Medium     | Zero               | Zero         |
 
-Recommended starting point: **typed TOML DSL** (Phase 5.1), with Starlark/Lua as
-an opt-in power-user feature (Phase 5.2). The typed DSL covers 95% of real use
-cases without embedding an interpreter.
+Recommended starting point: **typed TOML DSL** (§5.2 below), with Starlark/Lua as
+an opt-in power-user feature (§5.3). The typed DSL covers 95% of real use cases
+without embedding an interpreter.
 
-### 5.2 Typed TOML policy DSL
+That opt-in tier is **withdrawn**: the Starlark DSL is deleted from the tree
+before 1.0, and the typed TOML DSL is the only way to declare a Policy rule
+([ADR-028](docs/adr/adr-028-the-starlark-policy-dsl-is-removed-before-1-0.md),
+[#225](https://github.com/IliasAlmerekov/aegis-shellguard/issues/225)).
+`PRD.md` §5.2 is the normative statement.
+
+### 5.2 Typed TOML policy DSL (Done)
 
 Extend `aegis.toml` with a richer rule type:
 
@@ -489,9 +509,35 @@ a human-readable error with line numbers; the hot path shows no regression on
 
 ## Phase 6 — Sandboxing Layer
 
-**Goal:** add an optional best-effort write/network guardrail around approved
-commands. This Sandbox is not a confidentiality boundary and does not replace
-Aegis' heuristic decision guardrail.
+**Goal as written:** add an optional best-effort write/network guardrail around
+approved commands. This Sandbox is not a confidentiality boundary and does not
+replace Aegis' heuristic decision guardrail.
+
+**Superseded on the "optional" half by
+[ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md).** The 1.0
+contract, stated normatively in `PRD.md` §5.5, is:
+
+- Confinement is a **mandatory 1.0 layer**. It is attempted for every executed
+  command outside `Mode::Audit`, and failure to establish it **blocks execution**
+  rather than downgrading to an unconfined run.
+- `sandbox.enabled` and `sandbox.required` leave the contract: they are accepted
+  by exact name and **ignored at any value**, with a typed
+  `deprecated_sandbox_field` diagnostic, for the whole support life of config
+  schema v1. Aegis never rewrites a config file to remove them.
+- Write and network authority is bounded by the `Trusted ceiling` and narrowed
+  further by whichever rules matched the command
+  ([ADR-030](docs/adr/adr-030-the-confinement-profile-is-derived-from-the-assessment.md)).
+- The surviving honesty claim is unchanged: the layer is a write/network
+  guardrail, **not a confidentiality boundary and not a privilege boundary**.
+
+**Current pre-1.0 implementation (0.6.x):** the shipped code still implements the
+optional model described in the subsections below — `sandbox.enabled` constructs
+the layer, unavailability warns and proceeds unconfined, and
+`sandbox.required = true` is what turns that into a block. The subsections are
+kept as the record of what was built. The gap closes with
+[#229](https://github.com/IliasAlmerekov/aegis-shellguard/issues/229) and
+[#230](https://github.com/IliasAlmerekov/aegis-shellguard/issues/230); until then
+no document may claim the layer is already mandatory.
 
 ### 6.1 Linux — bubblewrap + Landlock
 
@@ -502,6 +548,9 @@ Aegis' heuristic decision guardrail.
   Applied in addition to bwrap for defense in depth.
 
 ```toml
+# Current pre-1.0 implementation. `enabled` leaves the contract in 1.0 (ADR-029);
+# `allow_write` becomes an explicit override of a computed `Trusted ceiling`
+# default, and `allow_network` keeps its meaning. See `docs/config-schema.md`.
 [sandbox]
 enabled = true
 allow_write = [".", "/tmp"]
@@ -529,10 +578,16 @@ to a follow-up task.
 
 If Sandbox infrastructure cannot be applied (kernel version too old, missing
 capabilities, unsupported platform), Aegis records
-`sandbox_status = "unavailable"`, warns on the active Shell stderr or Watch NDJSON
-channel, and proceeds unconfined only when optional. The user can configure
-`sandbox.required = true` to turn unavailability into a hard block. Invalid
-profiles and unexpected setup errors fail closed rather than degrading.
+`sandbox_status = "unavailable"`. In the **current pre-1.0 implementation** it
+then warns on the active Shell stderr or Watch NDJSON channel and proceeds
+unconfined, unless the user configured `sandbox.required = true` to turn
+unavailability into a hard block. Invalid profiles and unexpected setup errors
+fail closed rather than degrading.
+
+Under the 1.0 contract there is no unconfined continuation to configure: the
+recorded `sandbox_status = "unavailable"` accompanies `Decision::Blocked` as one
+event, and the flag that used to select between the two is gone
+([ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md)).
 
 **Done when:** `cargo test --workspace` passes with sandbox enabled on
 `ubuntu-latest` and `macos-latest`; a command that attempts to write outside the
@@ -541,11 +596,20 @@ applied for every executed command.
 
 ---
 
-## Pre-1.0 Milestone L1 — Language-aware analysis
+## Milestone L1 — Language-aware analysis (1.x)
 
 **Goal:** add a bounded, production-qualified semantic slow path for source that
 agents pass to interpreters, without replacing the shell Scanner or regressing
 the no-source safe-command hot path.
+
+**This milestone is not in 1.0.** It was charted as pre-1.0 and moved out by
+[ADR-024](docs/adr/adr-024-language-aware-analysis-ships-opt-in-and-is-not-a-1-0-release-gate.md):
+it ships after 1.0 behind the `language-analysis` cargo feature, default off, and
+the Tree-sitter grammars are absent from the 1.0 release binaries. `PRD.md` §5.11
+states it as an explicit 1.0 Non-Goal. The grounds are scope, not schedule —
+finishing the qualification matrix early does not return it to 1.0. The gating
+work is [#212](https://github.com/IliasAlmerekov/aegis-shellguard/issues/212) and
+[#213](https://github.com/IliasAlmerekov/aegis-shellguard/issues/213).
 
 **`L1` is defined here and nowhere else.** It names this milestone — the language-aware
 analysis track — and carries no other meaning in the repository. In particular it is not
@@ -571,7 +635,10 @@ The test-first delivery sequence is in
 - [ ] Pinned Tree-sitter runtime and grammar manifest pass license,
       supply-chain, ABI, corpus, and all-target release qualification.
 
-### L1.2 Pre-1.0 adapters
+### L1.2 First adapters
+
+`Default-on` here means default-on **once the `language-analysis` feature is
+enabled**, not on by default in a 1.0 build — the feature itself is off (ADR-024).
 
 - [ ] Python is production-qualified and default-on.
 - [ ] JavaScript is production-qualified and default-on.
@@ -585,30 +652,35 @@ unsupported until it independently passes the same grammar, semantics, worker,
 privacy, fuzz, benchmark, audit, interface, and four-target release gates. There
 is no big-bang enablement and no runtime grammar download fallback.
 
-**Done when:** the shared foundation and all four pre-1.0 adapters pass the
+**Done when:** the shared foundation and all four first adapters pass the
 qualification matrix, official binaries contain the same pinned grammar set on
 both Linux musl and both macOS architectures, the no-source safe path remains
-under 2 ms without starting a worker, and the L1 section in
-`docs/release-readiness.md` is complete.
+under 2 ms without starting a worker, and the language-analysis re-entry
+conditions in `docs/release-readiness.md` are complete. Those conditions govern
+enabling it in a 1.x release; none of them blocks 1.0.
 
 ---
 
 ## Phase 7 — Release Readiness
 
-**Goal:** complete the launch checklist in `docs/release-readiness.md` and ship
-a 1.0 release.
+**Goal:** ship a 1.0 release.
 
-- [ ] README and docs accurately describe all features through Phase 4.
-- [ ] Convenience installer documented and tested (`curl | sh` or package manager).
-- [ ] Release workflow exercised on a real tag; artifacts include checksum sidecars.
-- [ ] Supported platforms (Linux x86_64/aarch64, macOS arm64/x86_64; Windows via WSL2 only — native Windows dropped by the decision to drop native Windows)
-      stated clearly with notes on sandboxing availability per platform.
-- [ ] CI includes ARM cross-compilation jobs (`aarch64-unknown-linux-musl`).
-- [ ] Threat model and known limitations visible on the project README.
-- [ ] Snapshot rollback integration tests run in CI against real Docker / SQLite daemons.
-- [ ] Fuzz corpus in CI at ≥ 100 000 iterations per target.
-- [ ] `cargo audit` and `cargo deny check` both pass with zero findings.
-- [ ] CHANGELOG.md updated for every release via `git-cliff` or equivalent.
+This phase carries **no checklist**. What must be true for 1.0 is promised
+normatively in [`PRD.md`](PRD.md) §5–§8, and what still blocks it is the
+[`1.0` milestone](https://github.com/IliasAlmerekov/aegis-shellguard/milestone/1) —
+the only gate
+([ADR-027](docs/adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)).
+The list that used to stand here was one of three mutually inconsistent 1.0 gates
+in this repository; that is exactly the drift a single gate removes.
+
+`docs/release-readiness.md` remains the place where **evidence** of completed
+release work is recorded — installer runs, checksum verification, tap and npm
+smoke tests, supply-chain gate output. Evidence is not a gate: a checked box there
+records that something was verified, never that it is required.
+
+Platform scope for the release is `docs/platform-support.md`: Linux
+x86_64/aarch64 and macOS arm64/x86_64, with Windows through WSL2 only — native
+Windows was dropped, and `PRD.md` §8 is the normative statement.
 
 ---
 
@@ -616,12 +688,12 @@ a 1.0 release.
 
 | Phase | Name                  | Key deliverable                                    |
 | ----- | --------------------- | -------------------------------------------------- |
-| 0     | Foundation Repair     | No silent failures; async correct; CI on Windows   |
+| 0     | Foundation Repair     | No silent failures; async correct; MSRV declared    |
 | 1     | Scanner Modernization | Token-prefix matching; `justification` in TUI      |
 | 2     | Decision Persistence  | "Always allow/block" writes rules to config        |
 | 3     | Module Architecture   | No file > 800 lines; typed `AuditEntry`; live docs |
-| 4     | Multi-Crate Workspace | 9 core crates (11 total w/ starlark+sandbox); DAG   |
-| 5     | Policy DSL            | Typed TOML rules + optional Starlark               |
-| 6     | Sandboxing Layer      | bwrap/Landlock/Seatbelt on approved commands       |
+| 4     | Multi-Crate Workspace | 9 core crates (12 total); enforced dependency DAG   |
+| 5     | Policy DSL            | Typed TOML rules (the only authoring path in 1.0)  |
+| 6     | Sandboxing Layer      | bwrap/Landlock/Seatbelt on executed commands       |
 | L1    | Language-aware analysis | Foundation + Python, JavaScript, TypeScript, Bash |
 | 7     | Release Readiness     | 1.0 ships                                          |

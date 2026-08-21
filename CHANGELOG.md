@@ -44,6 +44,21 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Changed
 
+- Derived documents no longer keep their own 1.0 checklist: `ROADMAP.md`,
+  `docs/release-readiness.md`, `PROJECT_STATE.md`, and `AGENTS.md` now point at
+  the `1.0` milestone, and `TASKS.md` became a historical registry of security
+  findings with no status, criteria, or ordering. (ADR-027, #205)
+
+- Sandbox documentation across `README.md`, `docs/config-schema.md`,
+  `docs/threat-model.md`, `ROADMAP.md`, `ARCHITECTURE.md`, `CONVENTION.md`, and
+  `CONTEXT.md` now states the mandatory-layer contract alongside a labelled
+  `Current pre-1.0 implementation` note, since the shipped code still implements
+  the optional model. (ADR-029, ADR-030, #205)
+
+- `README.md` no longer promises "Undo them when they don't"; a `Snapshot`
+  captures pre-execution state and a `Rollback` restores that capture.
+  (ADR-026, #205)
+
 - Retired milestone IDs from current release and CI documentation; historical
   release entries remain unchanged, and the v0.6.3 distribution plan now
   points to the current L1 and distribution-gate definitions. (#227)

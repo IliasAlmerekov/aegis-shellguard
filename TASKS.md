@@ -1,26 +1,28 @@
-# TASKS — Security findings blocking Aegis 1.0
+# TASKS — Historical registry of Aegis security findings
 
 > Sources: the 2026-06-23 reviewer security audit and the 2026-06-24 live
 > crash-test of `aegis 0.5.9`.
->
-> This file is the normalized backlog index. Each item contains only the
-> finding, acceptance criteria, current status, and traceability. Implementation
-> detail belongs in the linked file under `docs/plans/`; architectural decisions
-> belong in `docs/adr/`; completed history belongs in git and `CHANGELOG.md`.
 
-## Release verdict
+**This file is a registry, not a gate.** It records which findings those audits
+raised, what each one is, and where the work on it lives. It carries no status,
+no acceptance criteria, and no ordering — each of those now has exactly one home
+elsewhere:
 
-**Not ready for 1.0.** The original critical scanner bypasses are closed, but the
-ordered release backlog below still contains open containment, recovery,
-fail-closed, and product-contract findings. A checkbox may be closed only after
-the project Definition of Done in `~/.agents/ENGINEERING_GATES.md` is satisfied.
-
-## Status vocabulary
-
-- **Open** — confirmed finding with acceptance criteria not yet met.
-- **Partial** — a verified slice landed, but at least one acceptance criterion
-  remains open; the checkbox stays unchecked.
-- **Closed** — acceptance criteria are met and verification evidence is linked.
+- **What blocks 1.0** is the
+  [`1.0` milestone](https://github.com/IliasAlmerekov/aegis-shellguard/milestone/1)
+  and nothing else
+  ([ADR-027](docs/adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)).
+  A finding blocks 1.0 if and only if it falsifies something `PRD.md` promises,
+  so the severity prefix carries no release weight
+  ([#202](https://github.com/IliasAlmerekov/aegis-shellguard/issues/202)).
+- **Whether a finding is still open** — and what remains of it — is the state of
+  the issue linked from it. A finding with no issue was closed before the tracker
+  became the gate; its evidence is the traceability line, `CHANGELOG.md`, and git.
+- **Implementation order** is expressed as native blocked-by relationships
+  between the issues in the milestone, never as prose here.
+- **Acceptance criteria** live on the issue, and the architectural rationale in
+  `docs/adr/`. Where a finding predates its issue, the criteria it was closed
+  against are in git history and in the linked plan under `docs/plans/`.
 
 ## ID vocabulary
 
@@ -30,6 +32,9 @@ medium (P2), `P3-<n>` low/informational. A trailing letter splits one finding in
 independently closable parts (`H7a`/`H7b`); a trailing `.<n>` names an implementation
 slice of one finding (`M5.3` is the third slice of `M5`, not a separate finding).
 
+Severity is the reviewer's original judgement of impact, preserved as written. It
+is not a release verdict.
+
 Roadmap milestones use a disjoint namespace — `Phase <n>` and `L<n>` in `ROADMAP.md` —
 and never `C`/`H`/`M`/`P3`. See `CONVENTION.md` §11.
 
@@ -37,59 +42,39 @@ and never `C`/`H`/`M`/`P3`. See `CONVENTION.md` §11.
 
 ## P0 — Critical
 
-### [x] C1 — Uppercase bypasses built-in regex patterns
+### C1 — Uppercase bypasses built-in regex patterns
 
 - **Finding:** destructive commands written in uppercase bypassed regex
   verification after the case-insensitive quick pass.
-- **Acceptance criteria:** built-in regex matching is ASCII-case-insensitive;
-  uppercase and mixed-case destructive examples match; custom regex semantics
-  remain user-controlled.
-- **Status:** **Closed** — verified 2026-06-23.
 - **Traceability:** commits `60de12d`, `4d8d58b`; scanner mixed-case regression
   tests.
 
-### [x] C2 — Literal `$IFS` command obfuscation bypasses classification
+### C2 — Literal `$IFS` command obfuscation bypasses classification
 
 - **Finding:** unquoted literal `$IFS` / `${IFS}` can act as shell separators
   while remaining fused inside scanner tokens.
-- **Acceptance criteria:** literal unquoted markers split tokens across direct,
-  nested-shell, heredoc, and process-substitution paths; quoted, escaped, and
-  unrelated variables remain opaque.
-- **Status:** **Closed** — verified 2026-06-24.
 - **Traceability:** commit `a920370`; parser and scanner `$IFS` regressions.
 
-### [x] C3 — Project config can weaken trusted security settings
+### C3 — Project config can weaken trusted security settings
 
 - **Finding:** project-local `.aegis.toml` could weaken mode, recovery,
   confinement, provider targets, or policy outcomes inherited from trusted
   config.
-- **Acceptance criteria:** project config may only tighten security-critical
-  fields; weakening attempts are ignored and surfaced by `config validate`;
-  project `[[rules]] Allow` cannot silently auto-approve guarded commands.
-- **Status:** **Closed** — verified 2026-06-25.
 - **Traceability:** [ADR-013](docs/adr/adr-013-project-config-security-ratchet.md);
   commits `86f38ad`, `f4bd0a7`, `c834477`, `5e6ab59`; config ratchet tests.
 
-### [x] C3-residual — Project rules and audit integrity escaped the first ratchet
+### C3-residual — Project rules and audit integrity escaped the first ratchet
 
 - **Finding:** project `[[rules]] Allow` and `audit.integrity_mode = "Off"`
   remained last-wins after the initial C3 fix.
-- **Acceptance criteria:** untrusted effective `Allow` rules are dropped and
-  warned; project audit integrity can only tighten; merge and warning logic share
-  the same predicates.
-- **Status:** **Closed** — verified 2026-06-25.
 - **Traceability:** [ADR-013](docs/adr/adr-013-project-config-security-ratchet.md);
   commit `5e6ab59`; `c3_residual` and policy-planning regressions.
 
-### [x] C4 — Launcher and absolute-path prefixes bypass token-prefix rules
+### C4 — Launcher and absolute-path prefixes bypass token-prefix rules
 
 - **Finding:** token-prefix lookup used the literal first token, so absolute
   paths and launcher prefixes such as `rtk`, `sudo`, or `env` hid the effective
   program.
-- **Acceptance criteria:** detection resolves the `Effective program` per scan
-  target by basename-normalizing paths and stripping supported launcher prefixes;
-  compound commands expose each logical target.
-- **Status:** **Closed** — verified 2026-06-25.
 - **Traceability:** [ADR-014](docs/adr/adr-014-launcher-and-absolute-path-normalization-for-token-prefix-detection.md);
   commit `bdfbaf9`; prefix-normalization regressions.
 
@@ -97,100 +82,65 @@ and never `C`/`H`/`M`/`P3`. See `CONVENTION.md` §11.
 
 ## P1 — High
 
-### [x] H1 — Standalone `&` is not a command separator
+### H1 — Standalone `&` is not a command separator
 
 - **Finding:** background-separated commands could remain one scan target and
   hide a destructive effective program.
-- **Acceptance criteria:** standalone `&` splits logical segments without
-  splitting `&&`, `&>`, `>&`, `<&`, or file-descriptor duplication forms.
-- **Status:** **Closed** — verified 2026-06-25.
 - **Traceability:** commit `54743de`; parser and scanner ampersand regressions.
 
-### [x] H2 — Destructive SQL inside database CLI arguments is missed
+### H2 — Destructive SQL inside database CLI arguments is missed
 
 - **Finding:** destructive SQL delivered through `psql -c`, `mysql -e`, wrappers,
   or compound forms did not match first-token SQL rules.
-- **Acceptance criteria:** covered destructive SQL signatures match anywhere in
-  normalized scan targets without converting SQL handling into a full parser.
-- **Status:** **Closed** — verified 2026-06-30.
 - **Traceability:** [ADR-015](docs/adr/adr-015-destructive-sql-detected-by-regex-not-token-prefix.md);
   commit `106ac04`; destructive-SQL delivery regressions.
 
-### [x] H3 — High-impact destructive command families are missing
+### H3 — High-impact destructive command families are missing
 
 - **Finding:** destructive filesystem and cloud forms including `wipefs`,
   `unlink`, writes to `authorized_keys`, shell-rc clobbering, S3/gsutil deletion,
   and related sibling commands were unclassified.
-- **Acceptance criteria:** the scoped H3 and H3-follow-up command families have
-  positive and narrowness examples and pass the built-in rule validation harness.
-- **Status:** **Closed** — verified 2026-07-02.
 - **Traceability:** commits `e2ddd5d`, `796d4a0`; scanner `h3_gaps` and built-in
   example tests.
 
-### [x] H4 — Agent hooks can fail open when Aegis is unavailable
+### H4 — Agent hooks can fail open when Aegis is unavailable
 
 - **Finding:** a missing `aegis` binary could make a managed shell hook exit
   without a deny response.
-- **Acceptance criteria:** Claude and Codex hooks emit the agent-specific deny
-  shape for missing binary, invalid JSON, or invalid required input.
-- **Status:** **Closed** — verified 2026-07-07.
 - **Traceability:** [ADR-007](docs/adr/adr-007-shell-hooks-share-one-managed-helper-but-must-not-fail-open.md);
   commit `9667a02`; `tests/agent_hooks.rs`.
 
-### [x] H5 — Audit hash-chain claims exceed the integrity contract
+### H5 — Audit hash-chain claims exceed the integrity contract
 
 - **Finding:** an unkeyed, locally stored SHA-256 chain detects accidental
   corruption and some edits, but cannot prove adversarial tamper-evidence against
   an actor who can rewrite or truncate the whole log.
-- **Acceptance criteria:** public docs, CLI help, config comments, source docs,
-  and user-visible verification output consistently call this an **integrity
-  chain/check**; they state that it has no keyed or external anchor and do not
-  claim adversarial tamper-evidence. Cryptographic anchoring is out of the 1.0
-  product contract unless separately designed in a future ADR.
-- **Status:** **Closed** — verified locally and by all required PR CI checks on
-  2026-07-15.
 - **Traceability:** [plan](docs/plans/2026-07-14-h5-audit-integrity-contract.md);
   [ADR-004](docs/adr/adr-004-snapshots-are-best-effort-audit-is-append-only.md);
   [ADR-017](docs/adr/adr-017-audit-integrity-chain-has-no-external-anchor.md);
   commit `ad9c947` (PR #122).
 
-### [x] H6 — Snapshot paths are not proven contained in the snapshot store
+### H6 — Snapshot paths are not proven contained in the snapshot store
 
 - **Finding:** path validation rejects absolute paths and `..` but does not prove
   that a resolved artifact remains inside the configured snapshot root before
   overwrite or deletion.
-- **Acceptance criteria:** every filesystem snapshot rollback/delete path is
-  resolved beneath its trusted root; traversal, symlink escape, and sibling-prefix
-  cases fail closed; legitimate stored artifacts continue to round-trip.
-- **Status:** **Closed** — verified locally and by required PR CI checks on
-  2026-07-15.
 - **Traceability:** [plan](docs/plans/2026-07-14-h6-snapshot-path-containment.md);
   [ADR-018](docs/adr/adr-018-snapshot-path-containment.md); commit `e26c7e7`.
 
-### [x] H7a — Snapshot artifacts inherit overly broad permissions
+### H7a — Snapshot artifacts inherit overly broad permissions
 
 - **Finding:** database dumps and snapshot directories can be created with
   process-umask defaults that expose database contents or credentials to other
   local users.
-- **Acceptance criteria:** newly created snapshot directories are owner-only and
-  snapshot files are owner-readable/writable only on supported Unix platforms;
-  existing unsafe paths are rejected or tightened before sensitive writes;
-  non-Unix behavior is documented and tested without adding native-Windows scope.
-- **Status:** **Closed** — verified locally on 2026-07-15.
 - **Traceability:** [plan](docs/plans/2026-07-14-h7a-snapshot-artifact-permissions.md);
   [ADR-019](docs/adr/adr-019-owner-only-snapshot-artifact-permissions.md).
 
-### [x] H7b — Audit artifacts follow unsafe paths and inherit broad permissions
+### H7b — Audit artifacts follow unsafe paths and inherit broad permissions
 
 - **Finding:** audit log, rotation, and lock-file creation rely on ordinary
   `OpenOptions`/`create_dir_all`, allowing broad modes and symlink-following on
   security-artifact paths.
-- **Acceptance criteria:** Audit directories and Audit artifacts are owner-only
-  on supported Unix platforms; active log and rotation opens reject symlink
-  targets without weakening append-only or fail-closed audit behavior; platform
-  limits are explicit.
-- **Status:** **Closed** — verified locally on 2026-07-15 and by all required PR CI
-  contexts on 2026-08-03.
 - **Traceability:** [plan](docs/plans/2026-07-14-h7b-audit-file-hardening.md);
   [ADR-020](docs/adr/adr-020-owner-only-audit-artifacts-and-no-follow-opens.md);
   `crates/aegis-audit/src/secure_fs.rs` and logger regressions
@@ -204,32 +154,20 @@ and never `C`/`H`/`M`/`P3`. See `CONVENTION.md` §11.
   [required CI run](https://github.com/IliasAlmerekov/aegis-shellguard/actions/runs/30803123790)
   on [PR #153](https://github.com/IliasAlmerekov/aegis-shellguard/pull/153).
 
-### [x] H8 — Destructive Git forms lack token-prefix coverage
+### H8 — Destructive Git forms lack token-prefix coverage
 
 - **Finding:** force-push, forced branch deletion, and stash drop/clear could pass
   without the intended Git rule.
-- **Acceptance criteria:** `GIT-003`, `GIT-006`/`006B`/`006C`, and `GIT-008`
-  cover their destructive forms and survive launcher/path normalization.
-- **Status:** **Closed** — verified in the current scanner; backlog status synced
-  2026-07-09.
 - **Traceability:** commit `b1b64183`; C4 commit `bdfbaf9`; built-in Git rule
   examples and scanner edge-case tests.
 
-### [x] H9 — ADR-016 required recovery can degrade silently
+### H9 — ADR-016 required recovery can degrade silently
 
 - **Finding:** ADR-016 marks bounded `Effect-opaque execution` and requests a
   recovery backstop, but execution can still proceed when no required snapshot is
   created. This finding does **not** claim that Aegis can classify arbitrary
   dynamic evaluation, encoded payloads, interpreter library calls, or TOCTOU;
   those remain outside the heuristic scanner contract.
-- **Acceptance criteria:** for the bounded ADR-016 shapes already detected,
-  missing required recovery denies in non-interactive execution and presents the
-  missing-recovery reason in an interactive prompt; audit records the degradation
-  reason; threat-model/config/public docs match ADR-016. No new risk
-  level, script-file inspection, filesystem `stat()` on the hot path, or package
-  runner expansion is introduced.
-- **Status:** **Closed** — iterations 1–5 implemented and locally verified; all
-  required PR CI contexts passed on 2026-08-03.
 - **Traceability:** [plan](docs/plans/2026-07-09-h9-effect-opaque-recovery-backstop.md);
   [ADR-016](docs/adr/adr-016-effect-opaque-execution-uses-recovery-backstops.md);
   iterations 1–3 commit `8dd5392`; [Shell tests](tests/recovery_degradation.rs)
@@ -252,21 +190,11 @@ and never `C`/`H`/`M`/`P3`. See `CONVENTION.md` §11.
 
 ## P2 — Medium
 
-### [x] M1 — Optional Sandbox degradation is not reliably visible
+### M1 — Optional Sandbox degradation is not reliably visible
 
 - **Finding:** when optional execution confinement is configured but unavailable,
   Aegis may continue unconfined with only a tracing warning that the operator
   never sees.
-- **Acceptance criteria:** `SandboxStatus::Unavailable` is surfaced on the active
-  user/agent channel and recorded in audit; `required = true` still fails closed;
-  docs state that the optional `Sandbox` is a write/network guardrail add-on, not
-  a confidentiality boundary. Making confinement mandatory or narrowing all read
-  access is not required by the 1.0 product contract.
-- **Status:** **Closed** — implemented and locally verified; all required PR CI
-  contexts passed on 2026-08-03. `SandboxStatus::Unavailable` reaches the active
-  channel and audit (`audit:AutoApproved:Unavailable` plus `event:Warning`), and
-  `required = true` still fails closed (`audit:Blocked:Unavailable` plus
-  `event:RequiredBlocked`).
 - **Traceability:** [required CI run](https://github.com/IliasAlmerekov/aegis-shellguard/actions/runs/30803123790)
   on [PR #153](https://github.com/IliasAlmerekov/aegis-shellguard/pull/153);
   [plan](docs/plans/2026-07-14-m1-sandbox-degradation-contract.md);
@@ -278,31 +206,18 @@ and never `C`/`H`/`M`/`P3`. See `CONVENTION.md` §11.
   [package contract](tests/release_docs.rs);
   [docs contract](tests/contracts_docs.rs).
 
-### [ ] M2 — Untrusted custom regexes lack resource limits
+### M2 — Untrusted custom regexes lack resource limits
 
 - **Finding:** project/user regex compilation has no explicit pattern-length,
   automaton-size, or DFA-size budget.
-- **Acceptance criteria:** untrusted regexes use bounded builders and a documented
-  input-length cap; oversized patterns fail closed with actionable validation;
-  built-in scanner performance remains within the hot-path gate.
-- **Status:** **Open** — confirmed.
+- **Issue:** [#217](https://github.com/IliasAlmerekov/aegis-shellguard/issues/217)
 - **Traceability:** [plan](docs/plans/2026-07-14-m2-custom-regex-limits.md).
 
-### [x] M3a — Disabled Toggle state is operationally invisible
+### M3a — Disabled Toggle state is operationally invisible
 
 - **Finding:** the intentional global `Toggle` can leave Aegis in unguarded
   passthrough for multiple sessions without a visible indication on shell-wrapper
   and hook surfaces.
-- **Acceptance criteria:** `aegis off` remains an explicit operator control and is
-  audited when toggled; every newly started agent session receives a visible
-  disabled-state notice without corrupting hook/JSON protocols; `aegis status`
-  remains authoritative; disabled passthrough semantics remain explicit in docs.
-- **Status:** **Closed** — every criterion is met and pinned by a test. `aegis off`
-  and `aegis on` remain explicit operator controls and still append audit entries,
-  with an audit failure reported loudly without misstating the already-changed
-  Toggle. Claude Code and Codex sessions receive the effective state through their
-  own `SessionStart` envelopes, and `aegis status` stays authoritative: the notice
-  is required to agree with it, never to decide on its own.
 - **Traceability:** [plan](docs/plans/2026-07-14-m3a-disabled-toggle-visibility.md);
   [ADR-005](docs/adr/adr-005-global-toggle-at-command-boundaries.md),
   [ADR-006](docs/adr/adr-006-ci-detection-has-an-explicit-override-contract.md),
@@ -317,117 +232,93 @@ and never `C`/`H`/`M`/`P3`. See `CONVENTION.md` §11.
   `tests/agent_hooks_install.rs` covering the two install defects this closure
   found and fixed.
 
-### [x] M3b — Non-canonical `aegis` hook commands bypass wrapping
+### M3b — Non-canonical `aegis` hook commands bypass wrapping
 
 - **Finding:** a hook that treats any command beginning with `aegis` as already
   wrapped can be bypassed with a malformed or prefixed command.
-- **Acceptance criteria:** only canonical `aegis --command ...` input is passed
-  through; other commands beginning with the `aegis` word deny with an actionable
-  reason; ordinary commands are rewritten once.
-- **Status:** **Closed** — verified 2026-06-24.
 - **Traceability:** [ADR-011](docs/adr/adr-011-hooks-rewrite-transparently-in-rust-and-setup-shell-escapes.md);
   commit `091950c`; hook rewrite tests.
 
-### [x] M4 — Hook panics can produce no deny response
+### M4 — Hook panics can produce no deny response
 
 - **Finding:** an unwind across the hook entry point can leave the agent without
   a structured deny response.
-- **Acceptance criteria:** panics at the hook boundary are contained and converted
-  into the correct Claude/Codex deny shape; ordinary error handling and panic-free
-  paths remain unchanged.
-- **Status:** **Closed** — verified 2026-08-17. Two layers (ADR-023): in-process
-  `catch_unwind` + panic hook in `run_hook`; installed per-agent `Hook` scripts
-  survive the binary's death and deny on a non-zero exit. All ten #179 criteria
-  covered, including criterion 5 (zero-exit body forwarded unchanged, no
-  double-print) pinned by `assert_forwards_body`. Merged via #182, #184, #185.
+- **Issue:** [#177](https://github.com/IliasAlmerekov/aegis-shellguard/issues/177),
+  split into [#178](https://github.com/IliasAlmerekov/aegis-shellguard/issues/178),
+  [#179](https://github.com/IliasAlmerekov/aegis-shellguard/issues/179),
+  [#180](https://github.com/IliasAlmerekov/aegis-shellguard/issues/180),
+  [#181](https://github.com/IliasAlmerekov/aegis-shellguard/issues/181)
 - **Traceability:** [plan](docs/plans/2026-07-14-m4-hook-panic-fail-closed.md);
   [ADR-023](docs/adr/adr-023-hook-panic-fails-closed-in-two-layers.md);
   `src/install/hook.rs`; `tests/agent_hooks_m4.rs`.
 
-### [ ] M5 — Remaining point pattern gaps
+### M5 — Remaining point pattern gaps
 
 - **Finding:** scoped destructive forms remain uncovered: `chmod -R 000 /`,
   `TRUNCATE` without `TABLE`, `docker volume rm`, and `npm publish`.
-- **Acceptance criteria:** each accepted form has a rule with positive and
-  narrowness examples; the eval harness passes; SQL additions respect ADR-015
-  and program-led forms respect ADR-014.
-- **Status:** **Open** — separate from completed H3/H3-follow-ups.
+- **Issue:** [#188](https://github.com/IliasAlmerekov/aegis-shellguard/issues/188),
+  sliced into `M5.1` [#189](https://github.com/IliasAlmerekov/aegis-shellguard/issues/189),
+  `M5.2` [#190](https://github.com/IliasAlmerekov/aegis-shellguard/issues/190),
+  `M5.3` [#193](https://github.com/IliasAlmerekov/aegis-shellguard/issues/193),
+  `M5.4` [#191](https://github.com/IliasAlmerekov/aegis-shellguard/issues/191),
+  `M5.5` [#192](https://github.com/IliasAlmerekov/aegis-shellguard/issues/192),
+  `M5.6` [#194](https://github.com/IliasAlmerekov/aegis-shellguard/issues/194),
+  `M5.7` [#195](https://github.com/IliasAlmerekov/aegis-shellguard/issues/195)
 - **Traceability:** [plan](docs/plans/2026-07-14-m5-point-pattern-gaps.md);
   [ADR-014](docs/adr/adr-014-launcher-and-absolute-path-normalization-for-token-prefix-detection.md),
   [ADR-015](docs/adr/adr-015-destructive-sql-detected-by-regex-not-token-prefix.md).
 
-### [x] M6 — Project config can disable recovery
+### M6 — Project config can disable recovery
 
 - **Finding:** project config could set a weaker snapshot policy or disable
   required confinement inherited from trusted config.
-- **Acceptance criteria:** project recovery/confinement settings only tighten and
-  weakening attempts are ignored and warned.
-- **Status:** **Closed** — subsumed by C3 and verified 2026-06-25.
 - **Traceability:** [ADR-013](docs/adr/adr-013-project-config-security-ratchet.md);
   commits `86f38ad`, `f4bd0a7`, `c834477`.
 
-### [ ] M7 — Shell execution is not type-safe on audit readiness
+### M7 — Shell execution is not type-safe on audit readiness
 
 - **Finding:** an audit setup failure can be represented as a successful helper
   result, leaving the execute-after-audit invariant dependent on control-flow
   convention.
-- **Acceptance criteria:** only an explicit audit-ready state can reach command
-  execution; setup/write failures cannot collapse into success; shell-wrapper and
-  watch-mode behavior remain fail closed.
-- **Status:** **Open** — latent structural risk.
+- **Issue:** [#218](https://github.com/IliasAlmerekov/aegis-shellguard/issues/218)
 - **Traceability:** [plan](docs/plans/2026-07-14-m7-audit-readiness-state.md);
   `src/shell_flow.rs`.
 
-### [ ] M8 — Snapshot and Rollback wording implies post-effect recovery
+### M8 — Snapshot and Rollback wording implies post-effect recovery
 
 - **Finding:** Git snapshots preserve pre-execution working-tree state; they do
   not capture a later command's deletion of clean tracked files, and no snapshot
   plugin is universal. Wording that promises to undo the dangerous command
   exceeds the product contract.
-- **Acceptance criteria:** README, TUI/explanation copy, threat model, glossary,
-  and examples describe a `Snapshot` as a best-effort pre-execution capture and
-  `Rollback` as restoration of that captured state; surfaces disclose when no
-  plugin applies and do not claim full backup or universal undo. Implementing
-  targeted copies or a general backup system is out of scope.
   Widened by [ADR-026](docs/adr/adr-026-snapshot-rollback-contract-for-1-0.md):
-  `README.md:5` no longer says "Undo them when they don't"; when no provider
-  applies to a `Danger` command the confirmation dialog states in red that the
-  command cannot be rolled back and accepts only the full word `yes` (not `y`),
-  with the same text, uncoloured, on Shell stderr and in the audit entry.
-- **Status:** **Open** — reframed to the actual heuristic-guardrail and
-  best-effort snapshot contract; confirmed a 1.0 blocker in
-  [#201](https://github.com/IliasAlmerekov/aegis-shellguard/issues/201).
+  §5 replaces the wording across `README.md`, `CONTEXT.md`, the TUI/explanation
+  copy, the threat model, and the examples; §4 adds the disclosure behaviour when
+  no provider applies.
+- **Issue:** wording
+  [#205](https://github.com/IliasAlmerekov/aegis-shellguard/issues/205);
+  disclosure behaviour
+  [#251](https://github.com/IliasAlmerekov/aegis-shellguard/issues/251)
 - **Traceability:** [plan](docs/plans/2026-07-14-m8-snapshot-product-contract.md);
   [ADR-004](docs/adr/adr-004-snapshots-are-best-effort-audit-is-append-only.md);
   [ADR-026](docs/adr/adr-026-snapshot-rollback-contract-for-1-0.md).
 
-### [ ] M9 — Snapshot identifiers do not round-trip through the rollback CLI
+### M9 — Snapshot identifiers do not round-trip through the rollback CLI
 
 - **Finding:** composite tab-separated snapshot IDs render like columns and are
   not reliably copyable as the single `aegis rollback` argument.
-- **Acceptance criteria:** every listed snapshot exposes a ready-to-use rollback
-  path; Git and database IDs round-trip without reconstructing literal tabs;
-  legacy audit entries remain recoverable.
-  Fixed by [ADR-026](docs/adr/adr-026-snapshot-rollback-contract-for-1-0.md):
-  the separator becomes `:` at format version `v3`, `v2` tab-joined ids stay
-  parseable permanently, and `aegis snapshot list` prints a ready-to-use
+  Fixed by [ADR-026](docs/adr/adr-026-snapshot-rollback-contract-for-1-0.md): the
+  separator becomes `:` at format version `v3`, `v2` tab-joined ids stay parseable
+  permanently, and `aegis snapshot list` prints a ready-to-use
   `aegis rollback '<id>'` line per row.
-- **Status:** **Open** — live-confirmed for Git and MySQL; confirmed a 1.0
-  blocker in [#201](https://github.com/IliasAlmerekov/aegis-shellguard/issues/201).
+- **Issue:** [#215](https://github.com/IliasAlmerekov/aegis-shellguard/issues/215)
 - **Traceability:** [plan](docs/plans/2026-07-14-m9-rollback-id-round-trip.md);
   `src/rollback.rs` and snapshot plugin ID parsers;
   [ADR-026](docs/adr/adr-026-snapshot-rollback-contract-for-1-0.md).
 
-### [x] M10 — README shows a snapshot before approval
+### M10 — README shows a snapshot before approval
 
 - **Finding:** the Before/After example placed snapshot creation inside the
   confirmation dialog even though snapshots are created only after approval.
-- **Acceptance criteria:** the denial example contains no snapshot claim and the
-  command-flow summary follows the real sequence: dialog → approval → snapshot
-  attempt → execution.
-- **Status:** **Closed** — README examples are corrected; review/re-review
-  completed and all required CI checks passed before PR #120 merged on
-  2026-07-14.
 - **Traceability:** `README.md` Before/After and command-flow examples;
   `tests/snapshot_ordering.rs::test_denied_danger_command_records_no_snapshots`;
   [PR #120](https://github.com/IliasAlmerekov/aegis-shellguard/pull/120);
@@ -437,81 +328,75 @@ and never `C`/`H`/`M`/`P3`. See `CONVENTION.md` §11.
 
 ## P3 — Low / informational
 
-The following follow-ups remain outside the 1.0 release-blocker sequence unless
-an implementation review promotes them:
+The severity letter records the reviewer's original impact judgement and says
+nothing about release weight: `#202` retired the old "P3 does not block" rule, so
+some of the findings below are in the `1.0` milestone and some terminate in a
+stated non-goal. Which is which is the state of the linked issue.
 
-### [ ] P3-1 — SQLite snapshot creation has a TOCTOU window
+### P3-1 — SQLite snapshot creation has a TOCTOU window
 
 - **Finding:** existence checks and copy are separate instead of reserving the
   target atomically.
-- **Acceptance criteria:** target creation is atomic and collision behavior is
-  covered without overwriting existing artifacts.
-- **Status:** **Open**.
+- **Issue:** [#221](https://github.com/IliasAlmerekov/aegis-shellguard/issues/221)
 - **Traceability:** [consolidated plan](docs/plans/2026-07-14-p3-follow-ups.md#p3-1--sqlite-snapshot-creation-toctou).
 
-### [ ] P3-2 — Backslash-newline tokenization is underspecified
+### P3-2 — Backslash-newline tokenization is underspecified
 
 - **Finding:** shell line-continuation edge cases can diverge from scanner
   tokenization.
-- **Acceptance criteria:** supported behavior is explicitly scoped and regression
-  tested; unsupported shell evaluation remains an ADR-010 non-goal.
-- **Status:** **Open**.
+- **Disposition:** terminates in the ADR-010 non-goal — Aegis does not emulate a
+  shell ([#202](https://github.com/IliasAlmerekov/aegis-shellguard/issues/202)).
 - **Traceability:** [consolidated plan](docs/plans/2026-07-14-p3-follow-ups.md#p3-2--backslash-newline-tokenization).
 
-### [ ] P3-3 — Parameterized IFS expansion remains opaque
+### P3-3 — Parameterized IFS expansion remains opaque
 
 - **Finding:** C2 covers literal `$IFS` / `${IFS}`, not `${IFS:-x}`,
   `${IFS:+x}`, or runtime reassignment.
-- **Acceptance criteria:** make and document a bounded detection decision without
-  drifting into full shell evaluation.
-- **Status:** **Open**.
+- **Disposition:** terminates in the ADR-010 non-goal — Aegis does not emulate a
+  shell ([#202](https://github.com/IliasAlmerekov/aegis-shellguard/issues/202)).
 - **Traceability:** [consolidated plan](docs/plans/2026-07-14-p3-follow-ups.md#p3-3--parameterized-ifs-expansion).
 
-### [ ] P3-4 — Renderer fallback is future fail-open
+### P3-4 — Renderer fallback is future fail-open
 
 - **Finding:** the final wildcard renderer arm could auto-approve a future risk
   variant.
-- **Acceptance criteria:** new risk variants cannot compile or execute through an
-  implicit approve fallback.
-- **Status:** **Open**.
+- **Issue:** [#219](https://github.com/IliasAlmerekov/aegis-shellguard/issues/219)
 - **Traceability:** [consolidated plan](docs/plans/2026-07-14-p3-follow-ups.md#p3-4--renderer-fallback).
 
-### [ ] P3-5 — Sandbox status is vulnerable to check/use drift
+### P3-5 — Sandbox status is vulnerable to check/use drift
 
 - **Finding:** recorded availability can diverge from confinement actually
   applied at execution.
-- **Acceptance criteria:** the applied status is derived at the execution seam and
-  audit records the actual result.
-- **Status:** **Open**.
+- **Issue:** [#223](https://github.com/IliasAlmerekov/aegis-shellguard/issues/223)
 - **Traceability:** [consolidated plan](docs/plans/2026-07-14-p3-follow-ups.md#p3-5--sandbox-status-toctou).
 
-### [ ] P3-6 — Current-directory failure falls back to `.`
+### P3-6 — Current-directory failure falls back to `.`
 
 - **Finding:** snapshot planning can use `.` after `current_dir()` failure.
-- **Acceptance criteria:** an unresolved working directory fails explicitly and
-  cannot redirect snapshot work to an ambiguous path.
-- **Status:** **Open**.
+- **Issue:** [#220](https://github.com/IliasAlmerekov/aegis-shellguard/issues/220)
 - **Traceability:** [consolidated plan](docs/plans/2026-07-14-p3-follow-ups.md#p3-6--current-directory-fallback).
 
-### [ ] P3-7 — Optional Starlark dependencies carry unmaintained advisories
+### P3-7 — Optional Starlark dependencies carry unmaintained advisories
 
 - **Finding:** `cargo audit` reports allowed unmaintained crates only through the
   opt-in `starlark-policy` feature.
-- **Acceptance criteria:** keep the exception documented and bounded, or remove
-  the dependency chain when a supported replacement is viable.
-- **Status:** **Open** — no default-build CVE.
+- **Disposition:** eliminated rather than accepted — the DSL is deleted from the
+  tree, so the advisory chain leaves with it
+  ([#222](https://github.com/IliasAlmerekov/aegis-shellguard/issues/222),
+  [ADR-028](docs/adr/adr-028-the-starlark-policy-dsl-is-removed-before-1-0.md)).
+- **Issue:** [#225](https://github.com/IliasAlmerekov/aegis-shellguard/issues/225)
 - **Traceability:** [consolidated plan](docs/plans/2026-07-14-p3-follow-ups.md#p3-7--optional-starlark-advisories).
 
-### [ ] P3-8 — Destructive SQL has known coverage limits
+### P3-8 — Destructive SQL has known coverage limits
 
 - **Finding:** SQL comments as separators and additional destructive verbs/CLI
   programs remain outside current ADR-015 patterns.
-- **Acceptance criteria:** accepted additions preserve the bounded heuristic and
-  include narrowness examples; SQL parsing remains out of scope.
-- **Status:** **Open**.
+- **Disposition:** terminates in the ADR-010 non-goal — Aegis does not emulate a
+  shell, and SQL parsing stays out of scope
+  ([#202](https://github.com/IliasAlmerekov/aegis-shellguard/issues/202)).
 - **Traceability:** [consolidated plan](docs/plans/2026-07-14-p3-follow-ups.md#p3-8--destructive-sql-follow-ups).
 
-### [ ] P3-9 — Inline script bodies are regex-scanned twice
+### P3-9 — Inline script bodies are regex-scanned twice
 
 - **Finding:** `Scanner::assess` scans each recursive target, then rebuilds an
   effective target from the same tokens (`effective_token_slices` →
@@ -519,33 +404,15 @@ an implementation review promotes them:
   normalization, so a large inline body pays the full regex set twice. Cost is
   linear at ~118 µs/KB, bounded by `MAX_INLINE_SCRIPT_LEN`, which puts a
   just-under-cap body at ~1.9 ms — inside the `< 2 ms` budget with little margin.
-- **Acceptance criteria:** an effective target that differs from its source target
-  only by program normalization is not rescanned in full; detection results for
-  launcher-prefixed and path-qualified programs are unchanged (the `bdfbaf9`
-  regression tests still pass); `heredoc_worst_case` improves and its baseline is
-  ratcheted down in the same change.
-- **Status:** **Open** — quantified 2026-08-04 while rebaselining
-  `heredoc_worst_case`; not a correctness defect.
+- **Disposition:** in-budget performance, not a promise falsified — the worst case
+  stays inside the `< 2 ms` hot-path gate, so it does not block 1.0
+  ([#202](https://github.com/IliasAlmerekov/aegis-shellguard/issues/202)).
 - **Traceability:** [rebaseline evidence](docs/performance-baseline.md#heredoc_worst_case-rebaseline-2026-08-04);
   `crates/aegis-scanner/src/scanner/assessment.rs` effective-slice loop;
   [ADR-014](docs/adr/adr-014-launcher-and-absolute-path-normalization-for-token-prefix-detection.md);
   `perf/scanner_bench_baseline.toml`.
 
 ---
-
-## Current implementation order
-
-This is a dependency/risk order, not a calendar sprint:
-
-1. H6 → H7a → H7b — contain and protect security artifacts.
-2. H9 — finish ADR-016 missing-recovery behavior.
-3. M3a — make the disabled Toggle state visible. M3b is already closed.
-4. M4 → M7 — harden hook and audit fail-closed structure.
-5. M9 — make Rollback operationally usable.
-6. M1 — surface optional Sandbox degradation.
-7. M2 → M5 — bound untrusted regexes and close scoped pattern gaps.
-8. H5 → M8 — align integrity and snapshot promises with the product contract.
-9. P3 follow-ups — only after release blockers, unless promoted by new evidence.
 
 ## Confirmed strengths retained from the audit
 

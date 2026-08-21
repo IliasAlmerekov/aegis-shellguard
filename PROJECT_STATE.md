@@ -14,15 +14,46 @@ smoke gates open)
 
 ## Active branch
 
-`feat/m5-point-pattern-gaps`
+`docs/205-align-derived-docs`
 
 ## Last updated
 
-2026-08-20
+2026-08-21
 
 ---
 
-## Current session (2026-08-20) — documentation vocabulary sweep (#227)
+## Current session (2026-08-21) — derived documents aligned with the PRD (#205)
+
+- **`TASKS.md` is a historical registry, not a backlog.** Every status line,
+  acceptance-criteria block, checkbox, release verdict, and the whole "Current
+  implementation order" section are gone; each finding is now `id → finding →
+  issue`, with a `Disposition` line where a decision (`#202`, `#222`) closed the
+  question instead of an issue. The ID-namespace contract stays, because ADRs,
+  plans, and four test files point into it.
+- **Three documents stopped keeping their own 1.0 gate.** `ROADMAP.md` Phase 7 and
+  `docs/release-readiness.md` now point at the `1.0` milestone and describe
+  themselves as historical path and recorded evidence; `PROJECT_STATE.md`'s
+  Milestone-status table is deleted. `AGENTS.md` onboarding step 4 is the
+  milestone, and "flip `[ ]` to `[x]`" became "close the issue".
+- **The mandatory-Sandbox gap is stated rather than hidden.** README,
+  `docs/config-schema.md`, `docs/threat-model.md`, `ROADMAP.md`, `ARCHITECTURE.md`,
+  `CONVENTION.md`, and `CONTEXT.md` now carry the ADR-029/ADR-030 contract *and* a
+  labelled `Current pre-1.0 implementation (0.6.x)` paragraph, because the shipped
+  code has not caught up. `derived_sandbox_docs_remain_pinned_until_issue_205_…`
+  was split into three: the derived-doc contract, a temporary honesty test that
+  deletes with #229/#230, and the platform/seam invariants.
+- **ADR-026 §5 wording landed** — README's "Undo them when they don't" is gone.
+  Its §4 disclosure behaviour had no issue anywhere, which is now
+  [#251](https://github.com/IliasAlmerekov/aegis-shellguard/issues/251).
+- One dead `ALLOWED_CONTEXTS` entry pruned from
+  `tests/audit_integrity_wording.rs` (the H5 acceptance-criteria line it
+  whitelisted no longer exists); the second TASKS.md entry is still live in the
+  finding text.
+- **Verified:** `cargo test --workspace` (2148 passed, 110 suites).
+
+---
+
+## Prior session (2026-08-20) — documentation vocabulary sweep (#227)
 
 - Removed retired milestone IDs from current release, CI, roadmap, project-state,
   and test wording while preserving finding-sense IDs and historical session
@@ -2256,25 +2287,16 @@ Full history of prior sessions: `git log` and `CHANGELOG.md`.
 
 ---
 
-## Milestone status
+## Release status
 
-| Title | Status |
-|-------|--------|
-| Phase 0–4 — Foundation → Multi-crate workspace | ✅ Done |
-| Snapshot lifecycle & rollback UX | ✅ Done |
-| Audit log hardening | ✅ Done |
-| Distribution (installer, musl, brew, npm, releases) | ✅ Done |
-| Scope reduction (drop native Windows) | ✅ Done |
-| 800-LoC budget, fuzz CI, snapshot/rollback CI, supply-chain gates | ✅ Done |
-| 1.0 docs gate — README, threat model, docs accuracy | 🔲 Open (reopened 2026-07-09 checkup — ARCHITECTURE/CONVENTION/ROADMAP/CHANGELOG stale; see Open decisions) |
-| P0 security blockers (C1–C4) — Uppercase bypass, `$IFS` obfuscation, project-config weakening, token-prefix anchoring | ✅ Done |
-| P1 security findings (H1–H4, H8) — Segmentation, destructive SQL, H3 patterns, hooks, destructive Git forms | ✅ Done |
-| P1 security findings (H5, H6, H7a, H7b, H9) — Integrity wording, containment, artifact hardening, ADR-016 degradation | 🔲 Open (H5/H6/H7a closed; H7b/H9 remain) |
-| P2 security findings — M1/M3a/M3b/M4/M6/M10 closed; M2, M5, M7, M8, M9 open | 🔲 Open |
-| 1.0 perf gate — Hot path < 2 ms (p99) via criterion | 🔲 Open |
-| 1.0 test gate — Zero false-negatives on security bypass corpus | 🔲 Open |
-
-Full task breakdown: `TASKS.md`. Phase/milestone definitions: `ROADMAP.md`.
+This file records no release status. What still blocks 1.0 — and in what order —
+is the [`1.0` milestone](https://github.com/IliasAlmerekov/aegis-shellguard/milestone/1)
+on the issue tracker, which is the only gate
+([ADR-027](docs/adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)).
+`PRD.md` is the normative promise the gate measures against, `ROADMAP.md` records
+the historical path taken, and `TASKS.md` is the historical registry of security
+findings. A table here would be a second expression of the same set, and the one
+that used to stand here had drifted from every one of them.
 
 ---
 
@@ -2308,11 +2330,14 @@ adapter's parallel operation vocabulary into the shared `aegis_types` analysis
 vocabulary and composes it through the shared classifier + sink invariant
 (Iteration 6, `mapping.rs`).
 
-Eleven crates total. DAG boundaries for the first nine are enforced by
+Twelve crates total (`Cargo.toml` is the authority; `CONVENTION.md` §Workspace
+mirrors it). DAG boundaries for the first nine are enforced by
 `tests/architecture_boundaries.rs`; `aegis-sandbox` is covered separately by
-`tests/platform_scope.rs`, and `aegis-starlark` is not yet asserted in either
-(gap). Architectural rationale for the shape of this workspace lives in
-`docs/adr/` (ADR-001 through ADR-022; `ADR-009` is intentionally absent,
+`tests/platform_scope.rs`, `aegis-language` by `tests/aegis_language_boundary.rs`,
+and `aegis-starlark` is not asserted in any of them — a gap that closes when
+[#225](https://github.com/IliasAlmerekov/aegis-shellguard/issues/225) removes the
+crate. Architectural rationale for the shape of this workspace lives in
+`docs/adr/` (ADR-001 through ADR-031; `ADR-009` is intentionally absent,
 numbering preserved).
 
 As of the 2026-07-22 L1 Iteration 7 Slice 1 (TypeScript adapter) slice:
@@ -2347,11 +2372,6 @@ member calls, `ScriptFile`/`DirectExec` fs reads) and the live
   dependency fragment into a rename-only change without the required TASKS
   reference. Current runtime/package corrections are clean; changing that
   historical commit would require a separate explicitly approved rewrite.
-- **Current security order** (`TASKS.md`): H6 → H7a → H7b; H9; M3a; M4 → M7;
-  M9; M1; M2 → M5; H5 → M8; then P3. This is dependency/risk order, not a
-  calendar sprint. H6, H7a, H7b, H9, M1, and M3a are closed; **M4 → M7 is next**.
-- **H7b closure blocker:** implementation and local gates are clean; required
-  PR CI must pass before the `TASKS.md` checkbox is closed.
 - **The perf gate was never enforcing until this slice (2026-08-04):** the
   `Evaluate benchmark policy` step piped `aegis_benchcheck` into `tee` without
   `shell: bash`, and Actions' implicit Linux shell (`bash -e`, no `pipefail`)
@@ -2380,27 +2400,26 @@ member calls, `ScriptFile`/`DirectExec` fs reads) and the live
     (−7% to −31%), including the sub-microsecond
     `no_source_does_not_start_worker` at 1.371 µs against a 2.5 µs ceiling.
   Full CI sequence re-run locally after the change: all 8 rows PASS.
-- **P1 open contract:** H5 aligns public wording with an unkeyed local `Audit
-  integrity chain`; H6 proves snapshot path containment; H7a protects snapshot
-  artifact modes; H7b hardens audit modes and symlink opens; H9 finishes only
-  ADR-016 missing-required-recovery degradation. Arbitrary dynamic evaluation
-  and TOCTOU are not H9 closure criteria.
-- **P2 open contract:** M1 surfaces optional `Sandbox` degradation without making
-  confinement mandatory; M3a makes the intentional disabled `Toggle` visible;
-  M8 aligns Snapshot/Rollback wording with captured pre-execution state rather
-  than building a general backup system. M2, M5, M7, and M9 retain their
-  focused correctness findings. M3b, M4, M6, and M10 are closed.
-- **Docs accuracy regressions (2026-07-09 checkup):** ARCHITECTURE.md references
-  removed paths (`src/decision/engine.rs`, `src/interceptor/…`, `src/config/…`,
-  `src/snapshot/*.rs`), states a stale 1500/2000 LoC budget (actual 800), and
-  omits the sandbox layer; CONVENTION.md says "10 crates" (11) and cites
-  removed `src/audit/logger.rs`; ROADMAP.md still lists Windows work + "9
-  crates" against the M4 drop-Windows decision; CHANGELOG `[Unreleased]` misses
-  a few post-0.6.0 CI/docs commits; `docs/config-schema.md` omits the
-  `[sandbox]` section that exists in code and `aegis-schema.json`.
-- 1.0 perf gate: hot path p99 < 2 ms not yet confirmed by a criterion run on
-  the current workspace.
-- 1.0 test gate: zero-false-negative security bypass corpus not yet locked in.
+- **Docs accuracy regressions (2026-07-09 checkup), partly outstanding:**
+  ARCHITECTURE.md still references removed paths (`src/decision/engine.rs`,
+  `src/interceptor/…`, `src/config/…`, `src/snapshot/*.rs`) and states a stale
+  1500/2000 LoC budget (actual 800). The rest of that list is resolved:
+  CONVENTION.md now states twelve crates, `docs/config-schema.md` has its
+  `[sandbox]` section, and `ROADMAP.md`'s Windows and crate-count text was
+  corrected.
+- **The documentation gap the mandatory Sandbox opens:** `PRD.md` §2 and §5.5
+  promise a mandatory confinement layer (ADR-029), while the shipped 0.6.x code
+  still implements the optional model. Every derived document now states both,
+  and the gap closes with
+  [#229](https://github.com/IliasAlmerekov/aegis-shellguard/issues/229) and
+  [#230](https://github.com/IliasAlmerekov/aegis-shellguard/issues/230). Until
+  then, no document may say the layer is already mandatory.
+- **The two `PRD.md` §9 technical metrics are enforced, not open:** the
+  zero-false-negative bypass corpus is `tests/security_regression.rs` against
+  `tests/fixtures/security_bypass_corpus.toml` on every run, and the `< 2 ms`
+  p99 hot path is `aegis_benchcheck` in the `performance` job, which runs before
+  a change lands on `main` and on the weekly schedule. They were listed here as
+  open gates long after CI began proving them.
 - CI ARM cross-compilation (`aarch64-unknown-linux-musl`) pending.
 - Sandbox tests on `ubuntu-latest` / `macos-latest` with real Docker/SQLite
   pending.
@@ -2414,11 +2433,10 @@ member calls, `ScriptFile`/`DirectExec` fs reads) and the live
 
 ## Workflow cadence
 
-- Read this file, `TASKS.md`, and `CONVENTION.md` before starting non-trivial
-  work.
+- Read this file, the `1.0` milestone, and `CONVENTION.md` before starting
+  non-trivial work.
 - Load the `rust-best-practices` skill before writing or reviewing Rust code
-  (see `CLAUDE.md`; the root `AGENTS.md` was removed — Codex reads
-  `.codex/AGENTS.md`).
+  (see `CLAUDE.md`; the root `AGENTS.md` is the declared entry point).
 - Security-sensitive parser/scanner/policy changes go through red → green →
   review TDD (see `tdd` skill); close out with `cargo fmt --check`, `cargo
   clippy -- -D warnings`, full `cargo test --workspace`, and a benchmark run
@@ -2427,18 +2445,19 @@ member calls, `ScriptFile`/`DirectExec` fs reads) and the live
   not a note in this file.
 - Every feature/fix/breaking change gets one line under `## [Unreleased]` in
   `CHANGELOG.md` in the same change.
-- After a significant change: update "Last session", any changed `Milestone
-  status` rows, and `Open decisions / blockers` here — keep it terse.
+- After a significant change: update "Last session" and `Open decisions /
+  blockers` here, and close the issue on the tracker — keep it terse.
 
 ---
 
 ## How to continue
 
-1. Pick the next open item from `TASKS.md` (P1 H5–H8, then P2 M1–M9), or the
-   1.0 perf/test gates above.
+1. Take an unblocked issue from the
+   [`1.0` milestone](https://github.com/IliasAlmerekov/aegis-shellguard/milestone/1) —
+   its blocked-by relationships are the order.
 2. Confirm current baseline: `rtk cargo test --workspace`, `rtk cargo clippy
    -- -D warnings`, `rtk cargo fmt --check`.
-3. For the perf gate specifically: run `rtk cargo criterion` and record p99
-   hot-path numbers before claiming it closed.
-4. Follow the TDD cadence above; update `CHANGELOG.md`, `TASKS.md` (flip
-   `[ ]` → `[x]`), and this file's "Last session" section when done.
+3. If the hot path is touched: run `rtk cargo criterion` and compare against
+   `perf/scanner_bench_baseline.toml` before pushing.
+4. Follow the TDD cadence above; update `CHANGELOG.md` and this file's "Last
+   session" section, and close the issue when done.
