@@ -44,6 +44,10 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Changed
 
+- The three documentation audits from 2026-08-18 are now marked as historical
+  snapshots, preserved as written and excluded from ordinary current-document
+  sweeps rather than presenting their stale findings as a live backlog. (#254)
+
 - Derived documents no longer keep their own 1.0 checklist: `ROADMAP.md`,
   `docs/release-readiness.md`, `PROJECT_STATE.md`, and `AGENTS.md` now point at
   the `1.0` milestone, and `TASKS.md` became a historical registry of security

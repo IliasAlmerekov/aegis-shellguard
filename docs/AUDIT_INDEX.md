@@ -1,5 +1,14 @@
 # Documentation Audit Index
 
+> **Historical snapshot — 2026-08-18.** This point-in-time audit is preserved
+> as written; it is not maintained and is not a current backlog. Paths, line
+> counts, section references, assessments, and recommendations below may be
+> stale. For current agent instructions and contracts, use
+> [`AGENTS.md`](../AGENTS.md), [`CLAUDE.md`](../CLAUDE.md),
+> [`CONVENTION.md`](../CONVENTION.md), [`CONTEXT.md`](../CONTEXT.md), and
+> [`PRD.md`](../PRD.md). The live 1.0 release gate is the
+> [`1.0` milestone](https://github.com/IliasAlmerekov/aegis-shellguard/milestone/1).
+
 ## Two comprehensive audits using the writing-for-agents framework (2026-08-18)
 
 This directory contains two companion audit reports that comprehensively assess the Aegis documentation suite against the `/writing-for-agents` framework principles (progressive disclosure, single source of truth, sharpened completion criteria).

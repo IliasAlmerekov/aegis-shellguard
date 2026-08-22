@@ -18,7 +18,25 @@ smoke gates open)
 
 ## Last updated
 
-2026-08-21
+2026-08-22
+
+---
+
+## Current session (2026-08-22) — documentation audits archived (#254)
+
+- `docs/AUDIT_INDEX.md`, `docs/FULL_DOCUMENTATION_AUDIT.md`, and
+  `docs/WRITING_AUDIT.md` are now explicitly marked as historical snapshots
+  from 2026-08-18. Their point-in-time bodies stay intact rather than being
+  rewritten as the repository changes.
+- Each marker states that the snapshot is unmaintained and not a current
+  backlog, warns that its references and assessments may be stale, and points
+  readers to the active agent documents, `PRD.md`, and the live `1.0` milestone.
+  Ordinary documentation and path-integrity sweeps exclude the historical
+  bodies.
+- **Open blockers:** none for #254.
+- **Verified:** `cargo test --workspace` (2148 passed, 110 suites), `cargo
+  clippy -- -D warnings`, `cargo fmt --check`, `cargo audit` (six allowed
+  warnings), and `cargo deny check`.
 
 ---
 
