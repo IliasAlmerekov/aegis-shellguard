@@ -167,6 +167,14 @@ fn docker_patterns_flagged() {
 }
 
 #[test]
+fn package_outbound_patterns_flagged() {
+    // PKG-006/PKG-007 seed `npm` as a quick-scan keyword (issue #194).
+    let s = scanner();
+    assert!(s.quick_scan("npm publish"));
+    assert!(s.quick_scan("npm unpublish my-pkg"));
+}
+
+#[test]
 fn process_patterns_flagged() {
     let s = scanner();
     assert!(s.quick_scan("kill -9 1"));

@@ -13,6 +13,10 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Added
 
+- New `PKG-006` (`npm publish`, `Warn`) and `PKG-007` (`npm unpublish`, `Danger`)
+  rules detect outbound irreversible actions; `npm publish --dry-run` stays
+  `Safe` via the `suppressed_by` negative condition. (M5.6, ADR-032, #194)
+
 - New `FS-019` `Danger` rule detects recursive `chmod` over a literal system
   root, independent of the requested mode; `PS-005` keeps its audit/allowlist
   ID and matching behavior while moving to `Filesystem`. (M5.3, ADR-025, #193)

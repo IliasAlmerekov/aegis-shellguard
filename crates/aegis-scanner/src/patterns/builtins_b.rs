@@ -324,5 +324,48 @@ pub(super) fn rules() -> Vec<PrefixRule> {
             match_examples: &["pip install requests --trusted-host pypi.org"],
             not_match_examples: &["pip install requests"],
         },
+        // ── Outbound irreversible actions ────────────────────────────────────
+        // PKG-006/007 guard outbound irreversible actions: they destroy nothing
+        // locally but cannot be undone once directed outward. PKG-006 carries
+        // the negative condition --dry-run so the rehearsal an agent runs first
+        // stays Safe (issue #194, ADR-025's sibling for the outbound class).
+        PrefixRule {
+            id: Cow::Borrowed("PKG-006"),
+            category: Category::Package,
+            pattern: vec![s("npm"), s("publish")],
+            risk: RiskLevel::Warn,
+            description: Cow::Borrowed(
+                "npm publish — an outbound irreversible action: republishing a version is forbidden, so an unattended publish cannot be undone",
+            ),
+            safe_alt: Some(Cow::Borrowed(
+                "Run 'npm publish --dry-run' to rehearse; keep the package private and publish only with explicit human approval",
+            )),
+            justification: Some(Cow::Borrowed(
+                "Warn rather than Danger: publishing is a normal intended act that must not happen unattended, but it is not destruction. The negative condition --dry-run keeps the rehearsal silent — a rule that shouts at a dry run is disabled on day one.",
+            )),
+            source: PatternSource::Builtin,
+            suppressed_by: &["--dry-run"],
+            match_examples: &["npm publish", "npm publish --access public"],
+            not_match_examples: &["npm publish --dry-run"],
+        },
+        PrefixRule {
+            id: Cow::Borrowed("PKG-007"),
+            category: Category::Package,
+            pattern: vec![s("npm"), s("unpublish")],
+            risk: RiskLevel::Danger,
+            description: Cow::Borrowed(
+                "npm unpublish — an outbound irreversible action that breaks every consumer depending on the published version",
+            ),
+            safe_alt: Some(Cow::Borrowed(
+                "Deprecate the package ('npm deprecate') instead of unpublishing, and coordinate the removal with its consumers",
+            )),
+            justification: Some(Cow::Borrowed(
+                "Danger, deliberately above its publish sibling: unpublishing breaks consumers already depending on the version, which is strictly worse than publishing.",
+            )),
+            source: PatternSource::Builtin,
+            suppressed_by: &[],
+            match_examples: &["npm unpublish", "npm unpublish --force pkg"],
+            not_match_examples: &["npm publish"],
+        },
     ]
 }

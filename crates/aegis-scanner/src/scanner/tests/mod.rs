@@ -67,5 +67,6 @@ mod h3_followups;
 mod h3_gaps;
 mod m5_followups;
 mod m5_gaps;
+mod m5_npm;
 mod match_evidence;
 mod risk_levels;
