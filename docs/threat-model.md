@@ -113,8 +113,10 @@ visible in the assessed command text.
   persisted as an allowlist rule.
 - Audit records `no_snapshot_available` together with the final `Denied` or
   human `Approved` decision.
-- An optional Sandbox can add confinement, but is not the primary ADR-016
-  backstop and is not made mandatory by Required recovery.
+- The Sandbox adds confinement but is not the primary ADR-016 backstop. It is
+  mandatory in 1.0 on its own ground (ADR-029), not because Required recovery
+  demands it; the two obligations are independent, and satisfying one never
+  satisfies the other.
 
 **Trusted opt-outs:** `Mode::Audit` remains observe-only and
 `SnapshotPolicy::None` is the trusted global recovery opt-out. Neither is a
@@ -124,17 +126,30 @@ Recovery degradation.
 dynamic evaluation, encoded payload, interpreter library call, package runner,
 or TOCTOU change, and does not read referenced scripts during classification.
 
-### Optional Sandbox degradation and read exposure
+### Sandbox unavailability and read exposure
 
-**Threat:** An operator enables optional confinement but the platform cannot
-prepare it, or assumes confinement hides every readable file and secret.
+**Threat:** The platform cannot prepare confinement, or an operator assumes
+confinement hides every readable file and secret.
 
-**Mitigations:** The optional Sandbox is a best-effort write/network guardrail
-add-on, not a confidentiality boundary. Shell warns on stderr and Watch emits a
-protocol warning before an optional unconfined fallback; the same command Audit
-entry records `sandbox_status = "unavailable"`. Setting
-`sandbox.required = true` blocks when infrastructure is unavailable. Invalid
-profiles and unexpected setup errors fail closed rather than falling back.
+**Mitigations (1.0 contract, ADR-029):** The Sandbox is a write/network guardrail,
+not a confidentiality boundary and not a privilege boundary. The layer is
+mandatory: confinement is attempted for every executed command outside
+`Mode::Audit`, and when it cannot be established the command is **blocked** — the
+recorded `sandbox_status = "unavailable"` accompanies `Decision::Blocked` as one
+event rather than a warning followed by an unconfined run. Invalid profiles and
+unexpected setup errors fail closed. There is no flag that trades the block for an
+unconfined run: `sandbox.enabled` and `sandbox.required` are accepted by exact name
+and ignored at any value — each reported as a `deprecated_sandbox_field` — for the
+life of config schema v1.
+
+**Current pre-1.0 implementation (0.6.x):** the shipped code still implements the
+optional model. Shell warns on stderr and Watch emits a protocol warning before an
+unconfined fallback; the same command Audit entry records
+`sandbox_status = "unavailable"`, and `sandbox.required = true` is what turns
+unavailability into a block. Until
+[#229](https://github.com/IliasAlmerekov/aegis-shellguard/issues/229) and
+[#230](https://github.com/IliasAlmerekov/aegis-shellguard/issues/230) land, treat
+the mandatory-layer paragraph above as the promise and this one as the behaviour.
 
 **Residual risk:** macOS permits `file-read*`; Linux exposes read-only system
 mounts plus configured writable binds. A confined command may still read files

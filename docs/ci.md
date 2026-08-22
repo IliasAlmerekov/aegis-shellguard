@@ -61,7 +61,7 @@ shell startup files or agent config.
 - CI additionally verifies parser, scanner, heredoc, routing, language-protocol,
   and qualified-adapter fuzzing with bounded corpus-backed runs.
 - release artifacts are checksumed and uploaded by the pinned release workflow
-- CI exercises snapshot and rollback behavior against live Docker and SQLite backends in the dedicated M5.3 job.
+- CI exercises snapshot and rollback behavior against live Docker and SQLite backends in the dedicated live snapshot/rollback job.
 
 ## What CI Does Not Guarantee
 
@@ -101,7 +101,7 @@ The current release workflow is triggered by tags matching `v*` and:
 
 This is a deterministic workflow-input contract, not a formal reproducible-build guarantee.
 
-M3.5 live release validation is covered by the gated
+The release asset validation gate is covered by the gated
 `tests/release_assets_live.rs` integration test. It is disabled during default
 `rtk cargo test`; release operators run it with
 `rtk env AEGIS_TEST_LIVE_RELEASE=1 AEGIS_TEST_RELEASE_TAG=vX.Y.Z cargo test

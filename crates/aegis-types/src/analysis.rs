@@ -452,7 +452,7 @@ pub fn merge_analysis(
 }
 
 // Test modules live in `analysis/` (split out of this file to stay under the
-// 800-line file-size budget — M5.1 quality gate).
+// 800-line file-size budget).
 #[cfg(test)]
 mod merge_tests;
 #[cfg(test)]

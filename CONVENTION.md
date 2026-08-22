@@ -34,7 +34,10 @@ Its job is to:
 Aegis is:
 
 - a heuristic command guardrail
-- not a sandbox
+- a mandatory OS confinement layer in 1.0 — a write/network guardrail
+  ([ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md), which
+  supersedes ADR-003)
+- not a confidentiality boundary and not a privilege boundary
 - not a complete security boundary
 
 The project must not claim stronger guarantees than the implementation actually provides.

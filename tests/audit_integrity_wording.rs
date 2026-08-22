@@ -8,7 +8,7 @@ const BANNED_PHRASES: [&str; 4] = [
     concat!("tamper", " evidence"),
 ];
 
-const ALLOWED_CONTEXTS: [(&str, &str); 11] = [
+const ALLOWED_CONTEXTS: [(&str, &str); 10] = [
     (
         "CHANGELOG.md",
         concat!(
@@ -39,13 +39,6 @@ const ALLOWED_CONTEXTS: [(&str, &str); 11] = [
         concat!(
             "  corruption and some edits, but cannot prove adversarial tamper",
             "-evidence against"
-        ),
-    ),
-    (
-        "TASKS.md",
-        concat!(
-            "  claim adversarial tamper",
-            "-evidence. Cryptographic anchoring is out of the 1.0"
         ),
     ),
     (

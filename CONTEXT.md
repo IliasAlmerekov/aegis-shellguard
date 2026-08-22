@@ -426,9 +426,11 @@ fallback launch path was used, including fail-closed preparation errors.
 _Avoid_: sandbox state
 
 **Sandbox bypass**:
-Optional execution through the prepared unconfined fallback after Sandbox
-infrastructure was unavailable (`SandboxStatus::Unavailable`). Required
-unavailability blocks instead and is not a Sandbox bypass.
+Execution through the prepared unconfined fallback after Sandbox infrastructure
+was unavailable (`SandboxStatus::Unavailable`). A mandatory layer has no such
+path — under ADR-029 unavailability blocks, so this term describes only the
+**current pre-1.0 implementation** and retires with it. It never named a
+successful escape from an applied profile.
 _Avoid_: sandbox failure, escape
 
 ## Snapshot & Audit

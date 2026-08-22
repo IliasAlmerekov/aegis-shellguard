@@ -180,50 +180,161 @@ fn prd_defines_the_mandatory_sandbox_contract() {
     assert_no_confidentiality_overclaims(&prd, "PRD.md");
 }
 
-/// Pins the Sandbox wording of the documents that have **not** been rewritten
-/// yet, so it cannot drift by accident before its own ticket lands.
-///
-/// The literals below are the *pre-ADR-029* wording. They are a deliberate,
-/// named record of known debt — not normative truth. `PRD.md` is the normative
-/// source (see `prd_defines_the_mandatory_sandbox_contract`), and these three
-/// documents contradict it today.
-///
-/// Rewriting them is
-/// <https://github.com/IliasAlmerekov/aegis-shellguard/issues/205>, now
-/// unblocked: the `[sandbox]` migration contract it waited on is decided
-/// (<https://github.com/IliasAlmerekov/aegis-shellguard/issues/240>) and stated
-/// in `PRD.md` §5.5, so `docs/config-schema.md` — which enumerates the config
-/// fields line by line and cannot stay silent on `enabled` the way a prose
-/// section can — has a contract to copy from. When #205 lands, this test is
-/// rewritten into the derived-doc contract rather than deleted.
-#[test]
-fn derived_sandbox_docs_remain_pinned_until_issue_205_rewrites_them() {
-    let readme = fs::read_to_string(repo_path("README.md")).unwrap();
-    let config_schema = fs::read_to_string(repo_path("docs/config-schema.md")).unwrap();
-    let threat_model = fs::read_to_string(repo_path("docs/threat-model.md")).unwrap();
-    let roadmap = fs::read_to_string(repo_path("ROADMAP.md")).unwrap();
-    let architecture = fs::read_to_string(repo_path("ARCHITECTURE.md")).unwrap();
+/// The five documents derived from `PRD.md` §5.5. Each one describes the Sandbox
+/// to a different audience, and each must agree with the PRD about what 1.0
+/// promises.
+const DERIVED_SANDBOX_DOCS: [&str; 5] = [
+    "README.md",
+    "docs/config-schema.md",
+    "docs/threat-model.md",
+    "ROADMAP.md",
+    "ARCHITECTURE.md",
+];
 
-    for contents in [&readme, &config_schema, &threat_model] {
-        assert!(contents.contains("write/network guardrail"));
-        assert!(contents.contains("not a confidentiality boundary"));
+/// The marker a document must carry before it may describe the pre-ADR-029
+/// optional Sandbox. Matched case-insensitively so a sentence may open with it.
+///
+/// It exists because the shipped 0.6.x code still implements the optional model
+/// while `PRD.md` already promises the mandatory layer. A derived document is
+/// allowed to describe the old behaviour — that is honesty, not drift — but only
+/// where it is labelled as the current implementation rather than the contract.
+const PRE_1_0_SANDBOX_MARKER: &str = "current pre-1.0 implementation";
+
+/// Phrases that only make sense under the optional model ADR-029 replaced. They
+/// are not banned outright: a document that carries `PRE_1_0_SANDBOX_MARKER` may
+/// use them to describe what the shipped binary does today.
+const OPTIONAL_SANDBOX_PHRASES: [&str; 4] = [
+    "sandbox.required = true",
+    "optional unconfined fallback",
+    "off by default",
+    "optional Sandbox",
+];
+
+/// Every derived document states the ADR-029 contract: the layer is mandatory,
+/// unavailability blocks, the two runtime flags are inert, and the honesty claim
+/// keeps both of its halves.
+///
+/// `PRD.md` is the normative source (see
+/// `prd_defines_the_mandatory_sandbox_contract`); this test is the derived-doc
+/// contract that replaced the debt marker
+/// <https://github.com/IliasAlmerekov/aegis-shellguard/issues/205> carried.
+#[test]
+fn derived_docs_state_the_mandatory_sandbox_contract() {
+    for doc in DERIVED_SANDBOX_DOCS {
+        let contents = fs::read_to_string(repo_path(doc)).unwrap();
+        assert!(
+            contents.contains("mandatory"),
+            "{doc} must state that the 1.0 Sandbox layer is mandatory"
+        );
+        assert!(
+            contents.contains("ADR-029") || contents.contains("adr-029"),
+            "{doc} must cite ADR-029 for the mandatory-layer contract"
+        );
+        assert!(
+            contents.contains("not a privilege boundary"),
+            "{doc} must keep the privilege half of the ADR-029 honesty claim"
+        );
+        assert_no_confidentiality_overclaims(&contents, doc);
     }
-    for contents in [&config_schema, &roadmap, &architecture] {
-        assert!(contents.contains("sandbox_status = \"unavailable\""));
-        assert!(contents.contains("sandbox.required = true"));
+
+    // The user-facing surfaces that describe what the layer is for.
+    for doc in ["README.md", "docs/config-schema.md", "docs/threat-model.md"] {
+        let contents = fs::read_to_string(repo_path(doc)).unwrap();
+        assert!(
+            contents.contains("write/network guardrail"),
+            "{doc} must say what the layer actually confines"
+        );
+        assert!(
+            contents.contains("not a confidentiality boundary"),
+            "{doc} must keep the confidentiality half of the honesty claim"
+        );
     }
+
+    // The surfaces that name the migration contract of the two retired flags.
+    for doc in [
+        "README.md",
+        "docs/config-schema.md",
+        "docs/threat-model.md",
+        "ROADMAP.md",
+    ] {
+        let contents = fs::read_to_string(repo_path(doc)).unwrap();
+        assert!(
+            contents.contains("deprecated_sandbox_field"),
+            "{doc} must state that `enabled`/`required` are accepted and ignored"
+        );
+    }
+
+    // `docs/config-schema.md` enumerates the fields line by line, so it carries
+    // the per-field semantics the prose documents may summarize.
+    let config_schema = fs::read_to_string(repo_path("docs/config-schema.md")).unwrap();
+    for needle in [
+        "trusted_ceiling_path_omitted",
+        "zero configured writable roots",
+        "never rewrites a config file",
+        "Trusted ceiling",
+    ] {
+        assert!(
+            config_schema.contains(needle),
+            "docs/config-schema.md must state the `[sandbox]` migration term `{needle}`"
+        );
+    }
+}
+
+/// Wherever a derived document still describes the optional Sandbox, it says so
+/// explicitly — the old behaviour may be documented, but never as the contract.
+///
+/// **This test is temporary.** It exists only while the shipped code and the PRD
+/// disagree. When
+/// <https://github.com/IliasAlmerekov/aegis-shellguard/issues/229> and
+/// <https://github.com/IliasAlmerekov/aegis-shellguard/issues/230> make the layer
+/// mandatory in the code, delete this test and the paragraphs it guards: the
+/// optional model stops being current behaviour and becomes history, which
+/// belongs in `CHANGELOG.md`, not in a contract document.
+#[test]
+fn derived_docs_label_the_optional_sandbox_as_current_behaviour() {
+    for doc in DERIVED_SANDBOX_DOCS {
+        let contents = fs::read_to_string(repo_path(doc)).unwrap();
+        let marked = contents
+            .to_ascii_lowercase()
+            .contains(PRE_1_0_SANDBOX_MARKER);
+
+        for phrase in OPTIONAL_SANDBOX_PHRASES {
+            if contents.contains(phrase) {
+                assert!(
+                    marked,
+                    "{doc} uses `{phrase}`, which only holds under the pre-ADR-029 \
+                     optional model, without labelling it `{PRE_1_0_SANDBOX_MARKER}`"
+                );
+            }
+        }
+
+        assert!(
+            marked,
+            "{doc} must disclose that the shipped 0.6.x code has not caught up with \
+             the mandatory-layer contract yet (#229, #230)"
+        );
+    }
+}
+
+/// Platform reality and the execution seams, which no scope decision changes:
+/// what each OS mechanism does and does not confine, and the two preparation
+/// entry points the flow documents describe.
+#[test]
+fn sandbox_platform_seams_stay_documented() {
+    let config_schema = fs::read_to_string(repo_path("docs/config-schema.md")).unwrap();
     assert!(config_schema.contains("macOS permits `file-read*`"));
     assert!(config_schema.contains("read-only system mounts"));
-    assert!(architecture.contains("prepare_for_spawn"));
 
-    for (contents, doc) in [
-        (&readme, "README.md"),
-        (&config_schema, "docs/config-schema.md"),
-        (&threat_model, "docs/threat-model.md"),
-        (&roadmap, "ROADMAP.md"),
-        (&architecture, "ARCHITECTURE.md"),
-    ] {
-        assert_no_confidentiality_overclaims(contents, doc);
+    let architecture = fs::read_to_string(repo_path("ARCHITECTURE.md")).unwrap();
+    assert!(architecture.contains("prepare_for_spawn"));
+    assert!(architecture.contains("prepare_for_exec"));
+
+    for doc in ["README.md", "docs/config-schema.md", "ARCHITECTURE.md"] {
+        let contents = fs::read_to_string(repo_path(doc)).unwrap();
+        assert!(
+            contents.contains("sandbox_status = \"unavailable\""),
+            "{doc} must name the audited status for an unestablished layer"
+        );
     }
 }
 

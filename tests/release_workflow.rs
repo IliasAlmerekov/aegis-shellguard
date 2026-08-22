@@ -1,10 +1,9 @@
-//! Red tests for M3.2 — static musl release targets.
+//! Regression tests for static-musl release targets.
 //!
-//! These tests encode the release-workflow target matrix contract. The current
-//! `.github/workflows/release.yml` uses GNU targets and has no static-binary
-//! verification step, so the migration tests are expected to FAIL until the
-//! workflow is migrated to musl targets. The asset-name test is a preservation
-//! invariant (already green) and must stay green across the migration.
+//! These tests encode the release-workflow target matrix contract: both Linux
+//! musl targets build through `cross`, and static-binary verification runs
+//! before checksum generation. The asset-name test preserves the installer
+//! asset contract.
 
 use std::path::Path;
 
@@ -155,7 +154,7 @@ fn release_workflow_should_build_linux_musl_targets_via_cross() {
     }
 }
 
-/// The four installer-facing release assets M3.5 requires. Every supported
+/// The four installer-facing release assets required by the release-asset gate. Every supported
 /// target must produce a binary and a matching `.sha256` sidecar.
 fn expected_release_assets() -> [&'static str; 4] {
     [

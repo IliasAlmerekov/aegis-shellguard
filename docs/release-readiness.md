@@ -1,28 +1,47 @@
 # Aegis release readiness
 
-This document separates launch blockers from longer-term security hardening.
-It describes requirements to complete, not claims about work already validated.
+**This document is evidence, not a gate.** It records what release work has been
+verified and how — installer runs, checksum verification, tap and npm smoke tests,
+supply-chain output, live backend validation. A checked box here means somebody
+proved something and left the record; it never means the item is required.
+
+The 1.0 gate is the
+[`1.0` milestone](https://github.com/IliasAlmerekov/aegis-shellguard/milestone/1)
+and nothing else
+([ADR-027](adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)); the
+promises it measures against are in [`PRD.md`](../PRD.md) §5–§8. This document
+keeps no 1.0 checklist of its own, and the lists below are not one — they are the
+distribution and hardening tracks, kept because they are where the evidence
+attaches.
+
 Do not read any checklist item as done unless a release note or verification
 record says so.
 
 ## Why two checklists?
 
-Aegis has two different adoption thresholds:
+Aegis records verification against two different adoption thresholds:
 
-1. **Minimum Launch Checklist** — what must be true before treating the current
-   line as a shippable public MVP.
-2. **Security-Grade Checklist** — what should be added later for a stronger
-   trust posture and release supply-chain story.
+1. **Minimum Launch Checklist** — the distribution readiness of the current
+   public line: does a first-time user get a working, verifiable install?
+2. **Security-Grade Checklist** — the stronger trust posture and release
+   supply-chain story added over time.
 
-Keeping those lists separate avoids mixing launch blockers with worthwhile but
-non-blocking hardening work.
+Keeping the two separate keeps distribution evidence from being read as a
+supply-chain guarantee, and neither from being read as the release gate.
 
 ## Minimum Launch Checklist
 
-These items are launch blockers for the current public line:
+Distribution readiness of the current public line. These are the named
+distribution gates — they block treating the line as a shippable public install
+path, not the 1.0 release:
 
-- [x] `README.md`, `docs/*`, and release notes agree on Aegis being a
-      heuristic shell guardrail, not a sandbox or hard security boundary.
+- [x] `README.md`, `docs/*`, and release notes agree on what Aegis does and does
+      not guarantee: a heuristic command guardrail with an OS confinement layer
+      that is a write/network guardrail, **not a confidentiality boundary and not
+      a privilege boundary**. ADR-029 superseded ADR-003 and made that layer a
+      mandatory part of 1.0, so "Aegis is not a sandbox" is no longer the right
+      phrasing — the two surviving halves above are, and they are what the docs
+      contract test enforces.
 - [ ] CI exercises the `curl | sh` installer against a real GitHub Release artifact on every supported platform.
 - [ ] The convenience installer and troubleshooting paths are documented
       clearly enough for first-time users to complete installation.
@@ -36,10 +55,12 @@ These items are launch blockers for the current public line:
 - [x] Threat-model and limitation language is visible, honest, and easy to
       find.
 
-### Language-aware analysis 1.0 gate (ADR-022)
+## Language-aware analysis re-entry conditions (ADR-022)
 
+Language-aware analysis is an opt-in 1.x feature, not a 1.0 launch blocker.
 These items remain unchecked until runtime implementation and qualification are
-verified; the ADR and implementation plan alone do not satisfy the gate.
+verified; the ADR and implementation plan alone do not satisfy the conditions
+for enabling it by default in a later release.
 
 - [ ] The additive analysis foundation preserves existing Scanner results,
       starts no worker on the no-source safe path, and keeps that path under
@@ -91,7 +112,7 @@ the release artifacts on the two Linux musl and two macOS targets.
       or `shasum -a 256 -c`.
 
 The live release test is gated by `AEGIS_TEST_LIVE_RELEASE=1` so default
-`rtk cargo test` stays network-free. M3.5 is not complete until this live check
+`rtk cargo test` stays network-free. The release asset gate is not complete until this live check
 passes against the tag being used for installer, Homebrew, and npm checksum
 updates.
 
@@ -117,8 +138,9 @@ tests) and `rtk cargo test --test homebrew_formula` (13 tests) passed.
 
 ## Security-Grade Checklist
 
-These items are not launch blockers, but they matter for a more security-grade
-posture later:
+These items block nothing — not the distribution gates and not 1.0. They are the
+hardening the project intends to add for a stronger trust posture later, listed
+here so the evidence has a place to attach when it arrives:
 
 - [ ] SBOM generation or equivalent supply-chain metadata.
 - [ ] Provenance or attestation support for release artifacts.
@@ -135,7 +157,7 @@ The convenience installer is exercised end-to-end in CI on `ubuntu-latest` and `
 
 ## Snapshot/rollback live backend validation
 
-The `Live snapshot/rollback (Docker + SQLite)` CI job closes M5.3 by exercising snapshot and rollback against real backends on `ubuntu-latest`.
+The `Live snapshot/rollback (Docker + SQLite)` CI job closes the live snapshot/rollback gate by exercising snapshot and rollback against real backends on `ubuntu-latest`.
 
 - Docker coverage runs `tests/docker_integration.rs::snapshot_rollback_reverts_filesystem_change` with `AEGIS_DOCKER_TESTS=1` after pulling the `alpine` fixture image.
 - SQLite coverage runs `tests/snapshot_rollback_live.rs::sqlite_snapshot_rollback_restores_database_file_through_aegis_cli` with `AEGIS_SQLITE_SNAPSHOT_TESTS=1` after installing the real `sqlite3` CLI.
@@ -166,8 +188,17 @@ This means:
 - Users who need Starlark policy support must build from source with
   `cargo install --features starlark-policy`.
 
-This is an intentional product decision: the default supply-chain gate is clean,
+This was an intentional product decision: the default supply-chain gate is clean,
 and users who opt into the advisory-tainted dependency chain do so explicitly.
+
+**Withdrawn before 1.0.** The Starlark DSL is deleted from the tree rather than
+kept behind a feature
+([ADR-028](adr/adr-028-the-starlark-policy-dsl-is-removed-before-1-0.md),
+[#225](https://github.com/IliasAlmerekov/aegis-shellguard/issues/225)); the typed
+TOML DSL is the only rule-authoring path in 1.0. The fail-closed startup error on
+`~/.aegis/policy.star` is **kept permanently** — never a warning, never a silent
+ignore — so an upgraded installation cannot lose its rules quietly. The
+build-from-source escape hatch above disappears with the feature.
 
 ## Homebrew tap validation
 
@@ -202,9 +233,10 @@ IliasAlmerekov/aegis-shellguard/aegis` passed; and
 `/home/linuxbrew/.linuxbrew/opt/aegis/bin/aegis --version` printed
 `aegis 0.5.6`.
 
-macOS Homebrew smoke is still an operator follow-up. M3.3 is accepted as closed
-for this release pass based on the published formula, Linux clean-retap smoke,
-and the release asset/checksum contract that covers both macOS assets.
+For the v0.5.6 release pass, the available formula, Linux clean-retap smoke,
+and release asset/checksum contract were accepted as sufficient evidence. The
+missing macOS smoke remained an operator follow-up; the current Homebrew tap
+gate status is recorded with the v0.6.3 evidence below.
 
 ### Evidence recorded 2026-08-05 (release v0.6.3)
 
@@ -215,11 +247,11 @@ The identical formula was published to
 in commit `41adf056f387b57770ca4043c0cdc362547833ee`. This Linux host has no
 `brew` executable, so `brew audit`, install, test, version, and notice-delivery
 evidence remain open for Linux; the required real-macOS operator smoke is also
-open. These missing smokes keep the L1 gate unchecked.
+open. These missing smokes leave the Homebrew tap gate open.
 
 ## Homebrew tap publish runbook
 
-Operator runbook for closing M3.3 Task 6. Run every step on release; the
+Operator runbook for closing the Homebrew tap gate. Run every step on release; the
 formula is generated deterministically by `scripts/update-homebrew-formula.sh`
 so the source-of-truth file is `packaging/homebrew/Formula/aegis.rb`.
 
@@ -273,7 +305,7 @@ so the source-of-truth file is `packaging/homebrew/Formula/aegis.rb`.
    ```
 
 7. Record evidence for both platforms (macOS and Linux) in the release notes,
-   then proceed to the M3.3 completion checklist.
+   then proceed to the Homebrew tap completion checklist.
 
 ## npm wrapper validation
 
@@ -311,7 +343,7 @@ worked: `npm install -g --prefix /tmp/aegis-npm-registry
 `/tmp/aegis-npm-registry/bin/aegis --version` printed `aegis 0.5.6` on Linux
 x64.
 
-macOS npm smoke is still an operator follow-up. M3.4 is accepted as closed for
+macOS npm smoke is still an operator follow-up. The npm wrapper gate is accepted as closed for
 this release pass based on the public npm package, Linux registry install smoke,
 and the package checksum contract that covers both macOS assets.
 
@@ -342,7 +374,7 @@ registry install, `rtk npm install --prefix /tmp/aegis-v063-npm-smoke
 npm wrapper validation is currently a release-operator smoke test rather than a
 default CI job. Network-free contract tests live in `tests/npm_package.rs` and
 the gated live test (`AEGIS_TEST_LIVE_NPM=1`) lives in `tests/npm_live.rs`; both
-keep default `cargo test` network-free. Cargo support for M3.4 is the documented
+keep default `cargo test` network-free. Cargo support for the cargo-install gate is the documented
 `cargo install --git` source-build path; crates.io publication remains a
 separate human-controlled release checkpoint.
 
@@ -425,7 +457,7 @@ aegis audit --verify-integrity
 
 ## Fuzz CI validation
 
-- M5.2 is covered by `.github/workflows/ci.yml` job `fuzz`, which runs
+- The fuzz CI gate is covered by `.github/workflows/ci.yml` job `fuzz`, which runs
   `parser`, `scanner`, and `heredoc` fuzz targets with `-runs=100000`.
 - Corpora are committed under `fuzz/corpus/parser`, `fuzz/corpus/scanner`, and
   `fuzz/corpus/heredoc`.
@@ -433,6 +465,7 @@ aegis audit --verify-integrity
 
 ## References
 
+- `PRD.md` — the normative 1.0 promise this document records evidence against
 - `README.md`
 - `docs/config-schema.md`
 - `docs/ci.md`

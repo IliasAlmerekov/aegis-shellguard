@@ -276,7 +276,7 @@ pub(crate) fn exec_prepared_command(
 
     #[cfg(not(unix))]
     {
-        // Native Windows is unsupported (M4.1): Aegis runs on Windows only
+        // Native Windows is unsupported under the decision to drop native Windows: Aegis runs on Windows only
         // inside WSL2, where it takes the Unix path above. Refusing here keeps
         // the platform scope explicit instead of silently spawning the command
         // on a platform with no confinement backend.

@@ -44,6 +44,29 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ### Changed
 
+- The three documentation audits from 2026-08-18 are now marked as historical
+  snapshots, preserved as written and excluded from ordinary current-document
+  sweeps rather than presenting their stale findings as a live backlog. (#254)
+
+- Derived documents no longer keep their own 1.0 checklist: `ROADMAP.md`,
+  `docs/release-readiness.md`, `PROJECT_STATE.md`, and `AGENTS.md` now point at
+  the `1.0` milestone, and `TASKS.md` became a historical registry of security
+  findings with no status, criteria, or ordering. (ADR-027, #205)
+
+- Sandbox documentation across `README.md`, `docs/config-schema.md`,
+  `docs/threat-model.md`, `ROADMAP.md`, `ARCHITECTURE.md`, `CONVENTION.md`, and
+  `CONTEXT.md` now states the mandatory-layer contract alongside a labelled
+  `Current pre-1.0 implementation` note, since the shipped code still implements
+  the optional model. (ADR-029, ADR-030, #205)
+
+- `README.md` no longer promises "Undo them when they don't"; a `Snapshot`
+  captures pre-execution state and a `Rollback` restores that capture.
+  (ADR-026, #205)
+
+- Retired milestone IDs from current release and CI documentation; historical
+  release entries remain unchanged, and the v0.6.3 distribution plan now
+  points to the current L1 and distribution-gate definitions. (#227)
+
 - Prefix rules whose first token is not `Single`/`Alts` (a wildcard or a flag)
   are now rejected at load time instead of being silently dropped from the
   program index and never firing at runtime. (M5.1, #189)

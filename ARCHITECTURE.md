@@ -64,9 +64,12 @@ corruption and inconsistent edits.
 
 ### What Aegis is NOT
 
-- The command guardrail is not a confidentiality boundary. An optional Sandbox
-  write/network guardrail can constrain approved commands, but does not promise
-  to hide readable files or secrets.
+- The command guardrail is **not a confidentiality boundary** and
+  **not a privilege boundary**. The Sandbox write/network guardrail constrains executed commands, but
+  does not promise to hide readable files or secrets. In 1.0 that layer is
+  mandatory and unavailability blocks (`PRD.md` §5.5, ADR-029); the **current
+  pre-1.0 implementation** still treats it as optional — see the Sandbox lifecycle
+  note below.
 - Not a network service or resident control plane. There is no server and no
   long-lived daemon; integrations are direct local CLI invocations plus
   stdin/stdout protocols.
@@ -256,8 +259,12 @@ collect input and emit output:
   - Reads `InputFrame { cmd, cwd?, interactive?, source?, id? }` from stdin.
   - Writes `OutputFrame ∈ {Warning, Stdout, Stderr, Result, Error}` to stdout.
   - Sandbox `prepare_for_spawn` never applies Landlock to the persistent Watch
-    parent. Optional unavailability emits `sandbox_status = "unavailable"`
-    before child output; `sandbox.required = true` produces a blocked result.
+    parent. In the **current pre-1.0 implementation** unavailability emits
+    `sandbox_status = "unavailable"` before child output, and
+    `sandbox.required = true` is what makes it a blocked result. Under the 1.0
+    contract there is one outcome: unavailability blocks, and the recorded status
+    accompanies that block (ADR-029, `PRD.md` §5.5). The seam itself — Landlock
+    stays off the Watch parent — does not change.
   - Prompts are drawn on **TTY directly** (not stdout — stdout is the frame
     channel) via `ui::confirm::show_*_via_tty`.
   - `MAX_FRAME_BYTES = 1 MiB`, `CHANNEL_CAPACITY = 64`.
@@ -497,6 +504,13 @@ main ─▶ shell_compat::parse_invocation_mode
                                                  ├─▶ optional active-channel warning
                                                  └─▶ prepared exec  OR  exit 2/3/4
 ```
+
+Both flows show `Sandbox prepare_*` unconditionally on the execution path, which
+matches the 1.0 contract: the layer is mandatory outside `Mode::Audit`, so there is
+no "if enabled" branch to draw (ADR-029). In the **current pre-1.0
+implementation** the step still resolves to `SandboxStatus::NotConfigured` when
+`sandbox.enabled = false`; the seam is called either way, which is why the diagram
+was already drawn without a branch.
 
 ### 3.2 Watch mode — `aegis watch`
 

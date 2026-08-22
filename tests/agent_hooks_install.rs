@@ -1,5 +1,5 @@
 // Integration tests for install/uninstall flows, split from agent_hooks.rs to
-// keep both files within the 800-line budget (M5.1 quality gate, Task 1). The
+// keep both files within the 800-line budget. The
 // script runners and JSON probes are shared with agent_hooks.rs via
 // support::agent_hooks rather than duplicated here.
 

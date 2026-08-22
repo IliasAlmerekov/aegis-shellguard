@@ -1,7 +1,7 @@
 //! Monotonic merge tests for [`super::merge_analysis`] (plan Iteration 1 RED
 //! #3): risk cannot decrease, Matches cannot disappear, and degradation is
 //! carried without lowering risk. Split out of `analysis.rs` to stay under
-//! the 800-line file budget (M5.1 quality gate).
+//! the 800-line file budget.
 
 use std::borrow::Cow;
 use std::sync::Arc;

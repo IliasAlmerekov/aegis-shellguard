@@ -1,6 +1,19 @@
 # Language-aware analysis implementation plan
 
-**Status:** Planned; no runtime behavior in this document is implemented yet.
+**Status:** Iterations 1–10 are implemented; `crates/aegis-language` is a workspace
+member and the Python adapter is production-qualified. The plan is retained as the
+delivery record, not as a statement of pending work.
+
+**Not in 1.0.** This milestone was charted as pre-1.0 and moved out by
+[`ADR-024`](../adr/adr-024-language-aware-analysis-ships-opt-in-and-is-not-a-1-0-release-gate.md):
+it ships after 1.0 behind the `language-analysis` cargo feature, default off, with
+the Tree-sitter grammars absent from the 1.0 release binaries. `PRD.md` §5.11
+states it as an explicit 1.0 Non-Goal, and the grounds are scope rather than
+schedule — completing the iterations below does not return it to 1.0. Wherever
+this plan says "before 1.0", read "before the feature is enabled by default in a
+1.x release". The gating work is
+[#212](https://github.com/IliasAlmerekov/aegis-shellguard/issues/212) and
+[#213](https://github.com/IliasAlmerekov/aegis-shellguard/issues/213).
 
 **Architecture contract:**
 [`ADR-022`](../adr/adr-022-language-aware-analysis-is-an-additive-isolated-stage.md)

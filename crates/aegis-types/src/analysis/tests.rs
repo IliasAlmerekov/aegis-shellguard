@@ -1,6 +1,6 @@
 //! Serialization and ordering tests for the Language-aware analysis data
 //! model (plan Iteration 1 RED #1, #2). Split out of `analysis.rs` to stay
-//! under the 800-line file budget (M5.1 quality gate).
+//! under the 800-line file budget.
 
 use super::*;
 
