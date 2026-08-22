@@ -81,6 +81,14 @@ A single shell token that combines multiple one-letter CLI flags (for example `-
 models them; exact flag tokens remain the default for `Token-prefix rule`s.
 _Avoid_: combined flags, packed flags
 
+**Outbound irreversible action**:
+A command that destroys nothing locally but, once directed outward, cannot be undone —
+`npm publish` (republishing a version is forbidden) and `npm unpublish` (breaks consumers
+already depending on it). Distinct from `destructive` (destruction of local state). Sets
+the precedent for future candidates such as `gh release create` or `terraform apply`.
+_Avoid_: publish (too narrow — only package registries), deploy (not every deployment is
+irreversible), destructive (already means destruction of local state)
+
 ## Scanner
 
 **Assessment**:
