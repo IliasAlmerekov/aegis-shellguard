@@ -435,7 +435,9 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn static_default_profile_matches_dynamic_output() {
-        let static_profile = include_str!("../profiles/default.sbpl");
+        // `include_str!` observes the working-tree EOL convention; profiles are
+        // text files, so their semantic drift check must be EOL-independent.
+        let static_profile = include_str!("../profiles/default.sbpl").replace("\r\n", "\n");
         let dynamic = super::build_seatbelt_profile(&SandboxConfig::default())
             .expect("default config must build cleanly");
         assert_eq!(
@@ -448,7 +450,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn static_network_profile_matches_dynamic_output() {
-        let static_profile = include_str!("../profiles/network.sbpl");
+        let static_profile = include_str!("../profiles/network.sbpl").replace("\r\n", "\n");
         let dynamic = super::build_seatbelt_profile(&SandboxConfig {
             allow_network: true,
             ..Default::default()

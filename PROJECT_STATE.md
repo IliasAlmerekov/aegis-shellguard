@@ -30,6 +30,9 @@ smoke gates open)
 - Added a macOS-gated production-seam regression: when `/usr/bin/sandbox-exec`
   exists, `prepare_for_exec` must establish an Active Sandbox for `/usr/bin/true`
   and the prepared command must exit successfully.
+- Made static-profile drift checks independent of Git's working-tree line
+  endings after macOS checked out the SBPL files as CRLF while the generated
+  profile uses LF.
 - **Open blocker:** macOS CI and a fresh-release nested-Codex measurement remain
   required; Linux cannot execute the Seatbelt test.
 

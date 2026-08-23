@@ -15,7 +15,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 - macOS Seatbelt profiles no longer contain the invalid `signal*` filter, so
   Aegis can establish its Sandbox where `sandbox-exec` rejects that filter.
-  (#259)
+  Static-profile drift checks now normalize checkout line endings. (#259)
 
 ### Added
 
