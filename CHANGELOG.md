@@ -11,6 +11,12 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+### Fixed
+
+- macOS Seatbelt profiles no longer contain the invalid `signal*` filter, so
+  Aegis can establish its Sandbox where `sandbox-exec` rejects that filter.
+  (#259)
+
 ### Added
 
 - New `PKG-006` (`npm publish`, `Warn`) and `PKG-007` (`npm unpublish`, `Danger`)

@@ -90,15 +90,14 @@ fn prepare(
 /// if a path cannot be canonicalized (e.g. it does not exist).
 ///
 /// The profile always denies by default, allows file reads (needed for system
-/// libraries), process execution, and signals. Network access is allowed or
-/// denied based on `config.allow_network`. Each path in `config.allow_write`
-/// gets a `(allow file-write* (subpath "…"))` rule.
+/// libraries) and process execution. Network access is allowed or denied based
+/// on `config.allow_network`. Each path in `config.allow_write` gets a
+/// `(allow file-write* (subpath "…"))` rule.
 pub(crate) fn build_seatbelt_profile(config: &SandboxConfig) -> Result<String, SandboxError> {
     let mut profile = String::from("(version 1)\n");
     profile.push_str("(deny default)\n");
     profile.push_str("(allow file-read*)\n");
     profile.push_str("(allow process*)\n");
-    profile.push_str("(allow signal*)\n");
     if config.allow_network {
         profile.push_str("(allow network*)\n");
     } else {
@@ -162,8 +161,7 @@ fn exec_true_in_profile(profile: &str) -> bool {
 /// Run a minimal sandbox-exec probe to verify the Seatbelt policy engine
 /// is functional on this system.
 fn probe_seatbelt_works() -> bool {
-    const PROBE: &str =
-        "(version 1)\n(deny default)\n(allow process*)\n(allow file-read*)\n(allow signal*)\n";
+    const PROBE: &str = "(version 1)\n(deny default)\n(allow process*)\n(allow file-read*)\n";
     exec_true_in_profile(PROBE)
 }
 
@@ -176,7 +174,7 @@ mod tests {
     use crate::support::set_force_sandbox_unavailable;
     use crate::support::test_helpers::ForceUnavailableGuard;
     use crate::{
-        SandboxConfig, SandboxError, SandboxExecutor, SandboxProfile, SandboxResult,
+        SandboxConfig, SandboxError, SandboxExecutor, SandboxProfile, SandboxResult, SandboxStatus,
         sandbox_available_for,
     };
 
@@ -542,6 +540,41 @@ mod tests {
     // ── macOS: prepare_for_exec production-path tests ────────────────────────
     // These cover the actual shell flow path (prepare_for_exec → Command → exec).
     // In tests we spawn instead of exec() so the test process is not replaced.
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn prepare_for_exec_establishes_seatbelt_when_sandbox_exec_exists() {
+        use std::ffi::OsStr;
+
+        const KNOWN_GOOD_PROBE: &str =
+            "(version 1)\n(deny default)\n(allow process*)\n(allow file-read*)\n";
+        let seatbelt_available = std::process::Command::new("/usr/bin/sandbox-exec")
+            .args(["-p", KNOWN_GOOD_PROBE, "/usr/bin/true"])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if !seatbelt_available {
+            return;
+        }
+
+        let mut prepared =
+            super::prepare_for_exec(&SandboxConfig::default(), OsStr::new("/usr/bin/true"), &[])
+                .expect("prepare_for_exec must prepare a valid Seatbelt command");
+
+        assert_eq!(
+            prepared.status,
+            SandboxStatus::Active,
+            "a present sandbox-exec must establish the Sandbox rather than silently fall back"
+        );
+        let status = prepared
+            .command
+            .status()
+            .expect("prepared Seatbelt command must spawn");
+        assert!(
+            status.success(),
+            "sandboxed /usr/bin/true must exit successfully"
+        );
+    }
 
     #[cfg(target_os = "macos")]
     #[test]

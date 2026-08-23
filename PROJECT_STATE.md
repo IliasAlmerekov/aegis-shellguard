@@ -14,11 +14,24 @@ smoke gates open)
 
 ## Active branch
 
-`docs/205-align-derived-docs`
+`fix/259-seatbelt-profile`
 
 ## Last updated
 
-2026-08-22
+2026-08-23
+
+---
+
+## Current session (2026-08-23) — macOS Seatbelt profile compatibility (#259)
+
+- Removed the invalid `signal*` SBPL filter from Aegis' generated and static
+  macOS Seatbelt profiles and from the test probe. macOS rejected that filter
+  before the Sandbox could start, so Aegis treated the Sandbox as unavailable.
+- Added a macOS-gated production-seam regression: when `/usr/bin/sandbox-exec`
+  exists, `prepare_for_exec` must establish an Active Sandbox for `/usr/bin/true`
+  and the prepared command must exit successfully.
+- **Open blocker:** macOS CI and a fresh-release nested-Codex measurement remain
+  required; Linux cannot execute the Seatbelt test.
 
 ---
 
