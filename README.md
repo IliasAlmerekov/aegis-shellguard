@@ -9,7 +9,7 @@ provider applies, a Snapshot captures the working state first, so a "yes" can be
 restored to what was captured. When no provider applies, Aegis says so instead of
 implying an undo it cannot perform.
 
-[![version](https://img.shields.io/badge/version-0.6.4-60A5FA?style=flat-square)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.6.5-60A5FA?style=flat-square)](CHANGELOG.md)
 [![platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-22C55E?style=flat-square)](#how-to-install)
 [![license](https://img.shields.io/badge/license-MIT-A855F7?style=flat-square)](LICENSE)
 [![built with](https://img.shields.io/badge/built%20with-Rust-F59E0B?style=flat-square)](Cargo.toml)
@@ -166,7 +166,7 @@ Homebrew installs the binary only — like npm and Cargo, it does not run the gl
 ### Developer source install
 
 ```bash
-cargo install --git https://github.com/IliasAlmerekov/aegis-shellguard --tag v0.6.4 aegis
+cargo install --git https://github.com/IliasAlmerekov/aegis-shellguard --tag v0.6.5 aegis
 ```
 
 ---
