@@ -9,16 +9,27 @@
 
 ## Current version
 
-`0.6.4` — pre-1.0, targeting `1.0.0` (tag `v0.6.4` published; distribution
-smoke gates open)
+`0.6.5` — pre-1.0, targeting `1.0.0` (release preparation; tag pending;
+distribution smoke gates open)
 
 ## Active branch
 
-`fix/259-seatbelt-profile`
+`release/v0.6.5`
 
 ## Last updated
 
 2026-08-23
+
+---
+
+## Current session (2026-08-23) — v0.6.5 release preparation
+
+- Bumped every workspace crate, internal path dependency, npm package, release
+  documentation, Cargo install example, and landing install transcript to
+  `0.6.5` / `v0.6.5`. The tagged release is pending, so the version is not yet
+  a published distribution claim.
+- The `0.6.5` changelog section carries the merged macOS Seatbelt profile fix
+  (#259); publishing the `v0.6.5` tag remains pending.
 
 ---
 

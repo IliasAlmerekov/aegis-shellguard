@@ -11,6 +11,8 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+## [0.6.5] — 2026-08-23
+
 ### Fixed
 
 - macOS Seatbelt profiles no longer contain the invalid `signal*` filter, so
