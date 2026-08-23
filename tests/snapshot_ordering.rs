@@ -42,8 +42,7 @@ fn sandbox_backend_available() -> bool {
     }
     #[cfg(target_os = "macos")]
     {
-        const PROBE: &str =
-            "(version 1)\n(deny default)\n(allow process*)\n(allow file-read*)\n(allow signal*)\n";
+        const PROBE: &str = "(version 1)\n(deny default)\n(allow process*)\n(allow file-read*)\n";
         Command::new("/usr/bin/sandbox-exec")
             .args(["-p", PROBE, "/usr/bin/true"])
             .stdout(Stdio::null())
