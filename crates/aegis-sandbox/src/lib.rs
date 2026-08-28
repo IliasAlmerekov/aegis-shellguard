@@ -55,6 +55,14 @@ pub enum SandboxError {
     #[error("sandbox is required but unavailable on this system")]
     Required,
 
+    /// The sandbox was marked `required = true` but is unavailable because this
+    /// process is already confined by an active outer Seatbelt profile, which
+    /// refuses the nested `sandbox_apply` call Aegis needs to make (macOS only).
+    /// Kept distinct from [`Self::Required`] because, unlike a missing or broken
+    /// `sandbox-exec`, this cause has a practical remedy to name.
+    #[error("sandbox is required but nested under an active outer sandbox")]
+    RequiredNestedUnderOuterSandbox,
+
     /// bwrap failed to set up the sandbox (namespace, mount, or permissions error).
     #[error("sandbox setup failed: {0}")]
     SetupFailed(String),

@@ -74,6 +74,42 @@ fn required_unavailability_is_audited_as_blocked_and_never_executes() {
 }
 
 #[test]
+fn required_nested_unavailability_names_the_cause_and_never_executes() {
+    let events = RefCell::new(Vec::new());
+
+    let exit_code = complete_shell_execution(
+        Decision::Approved,
+        || {
+            Err::<((), SandboxStatus), _>(
+                aegis_sandbox::SandboxError::RequiredNestedUnderOuterSandbox,
+            )
+        },
+        |decision, status| {
+            events
+                .borrow_mut()
+                .push(format!("audit:{decision:?}:{status:?}"));
+            Ok::<_, String>(())
+        },
+        |message| events.borrow_mut().push(format!("warning:{message}")),
+        |_: ()| unreachable!("required preparation must not execute"),
+        |_: ()| unreachable!("required preparation must not wait"),
+        |message| events.borrow_mut().push(format!("error:{message}")),
+    );
+
+    assert_eq!(exit_code, EXIT_BLOCKED);
+    assert_eq!(
+        events.into_inner(),
+        vec![
+            "audit:Blocked:Unavailable".to_string(),
+            format!(
+                "error:{}",
+                aegis::runtime::SANDBOX_REQUIRED_NESTED_UNAVAILABLE_MESSAGE
+            ),
+        ]
+    );
+}
+
+#[test]
 fn setup_failure_is_audited_as_not_attempted_and_never_executes() {
     let events = RefCell::new(Vec::new());
 

@@ -418,6 +418,14 @@ where
             report_error(aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE);
             EXIT_BLOCKED
         }
+        Err(aegis_sandbox::SandboxError::RequiredNestedUnderOuterSandbox) => {
+            if let Err(err) = append_audit(Decision::Blocked, SandboxStatus::Unavailable) {
+                report_error(&format!("failed to write audit log: {err}"));
+                return EXIT_INTERNAL;
+            }
+            report_error(aegis::runtime::SANDBOX_REQUIRED_NESTED_UNAVAILABLE_MESSAGE);
+            EXIT_BLOCKED
+        }
         Err(err) => {
             if let Err(audit_err) = append_audit(Decision::Blocked, SandboxStatus::NotAttempted) {
                 report_error(&format!("failed to write audit log: {audit_err}"));

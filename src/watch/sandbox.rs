@@ -25,6 +25,7 @@ pub(super) struct WatchExecution<'a> {
 enum WatchSandboxEvent {
     Warning,
     RequiredBlocked,
+    RequiredBlockedNested,
     SetupFailed(String),
 }
 
@@ -55,6 +56,13 @@ async fn complete_watch_sandbox_lifecycle<C, AuditError, SpawnFuture>(
                 return;
             }
             emit_event(WatchSandboxEvent::RequiredBlocked);
+        }
+        Err(aegis_sandbox::SandboxError::RequiredNestedUnderOuterSandbox) => {
+            if let Err(err) = append_audit(Decision::Blocked, SandboxStatus::Unavailable) {
+                report_audit_error(&err);
+                return;
+            }
+            emit_event(WatchSandboxEvent::RequiredBlockedNested);
         }
         Err(err) => {
             if let Err(audit_err) = append_audit(Decision::Blocked, SandboxStatus::NotAttempted) {
@@ -108,6 +116,14 @@ fn emit_watch_sandbox_event(event: WatchSandboxEvent, id: &Option<String>) {
             code: crate::runtime::SANDBOX_REQUIRED_UNAVAILABLE_CODE,
             sandbox_status: SandboxStatus::Unavailable,
             message: crate::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
+        }),
+        WatchSandboxEvent::RequiredBlockedNested => emit_frame(&OutputFrame::SandboxResult {
+            id: id.clone(),
+            decision: OutputDecision::Blocked,
+            exit_code: 3,
+            code: crate::runtime::SANDBOX_REQUIRED_NESTED_UNAVAILABLE_CODE,
+            sandbox_status: SandboxStatus::Unavailable,
+            message: crate::runtime::SANDBOX_REQUIRED_NESTED_UNAVAILABLE_MESSAGE,
         }),
         WatchSandboxEvent::SetupFailed(err) => emit_frame(&OutputFrame::Error {
             id: id.clone(),
@@ -269,6 +285,35 @@ mod tests {
         assert_eq!(
             events.into_inner(),
             ["audit:Blocked:Unavailable", "event:RequiredBlocked"]
+        );
+    }
+
+    #[tokio::test]
+    async fn required_nested_unavailability_audits_block_and_never_spawns() {
+        let events = RefCell::new(Vec::new());
+
+        complete_watch_sandbox_lifecycle(
+            Decision::Approved,
+            Err::<((), SandboxStatus), _>(
+                aegis_sandbox::SandboxError::RequiredNestedUnderOuterSandbox,
+            ),
+            |decision, status| {
+                events
+                    .borrow_mut()
+                    .push(format!("audit:{decision:?}:{status:?}"));
+                Ok::<_, String>(())
+            },
+            |event| events.borrow_mut().push(format!("event:{event:?}")),
+            |()| async {
+                events.borrow_mut().push("spawn".to_string());
+            },
+            |err| events.borrow_mut().push(format!("audit-error:{err}")),
+        )
+        .await;
+
+        assert_eq!(
+            events.into_inner(),
+            ["audit:Blocked:Unavailable", "event:RequiredBlockedNested"]
         );
     }
 
