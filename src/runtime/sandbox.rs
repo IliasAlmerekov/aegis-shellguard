@@ -29,4 +29,11 @@ pub const SANDBOX_REQUIRED_NESTED_UNAVAILABLE_CODE: &str = "sandbox_required_nes
 /// Seatbelt refuses a nested `sandbox_apply`; see ADR-029 §8/amendment) —
 /// distinct from [`SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE`] because this cause
 /// has a practical remedy to name.
-pub const SANDBOX_REQUIRED_NESTED_UNAVAILABLE_MESSAGE: &str = "Required Sandbox unavailable: this process is already nested under an active outer sandbox, which refuses a second, nested confinement layer. If running under Claude Code, disable /sandbox and retry; command not executed.";
+///
+/// Names both known outer-agent cases (#262's measured asymmetry) rather than
+/// presenting the Claude Code remedy as universal: Claude Code ships with its
+/// own sandbox off by default, so a user who hits this can disable `/sandbox`
+/// and retry; Codex requires its own sandbox to launch at all on macOS, so
+/// every Codex-on-macOS session hits this unconditionally, with no bypass to
+/// name.
+pub const SANDBOX_REQUIRED_NESTED_UNAVAILABLE_MESSAGE: &str = "Required Sandbox unavailable: this process is already nested under an active outer sandbox, which refuses a second, nested confinement layer. Under Claude Code, disable /sandbox and retry. Under Codex, this is unconditional on macOS today and has no bypass. Command not executed.";

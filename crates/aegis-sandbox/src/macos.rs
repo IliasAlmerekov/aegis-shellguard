@@ -161,11 +161,18 @@ fn exec_true_in_profile(profile: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Minimal SBPL profile shared by [`probe_seatbelt_works`] and
+/// [`seatbelt_unavailable_is_nested_refusal`] — both must run the exact same
+/// profile, since the latter only re-probes to capture stderr from the
+/// former's failure. A single shared constant makes that identity structural
+/// rather than two literals that happen to agree.
+const MINIMAL_SEATBELT_PROBE_PROFILE: &str =
+    "(version 1)\n(deny default)\n(allow process*)\n(allow file-read*)\n";
+
 /// Run a minimal sandbox-exec probe to verify the Seatbelt policy engine
 /// is functional on this system.
 fn probe_seatbelt_works() -> bool {
-    const PROBE: &str = "(version 1)\n(deny default)\n(allow process*)\n(allow file-read*)\n";
-    exec_true_in_profile(PROBE)
+    exec_true_in_profile(MINIMAL_SEATBELT_PROBE_PROFILE)
 }
 
 /// Return `true` if the reason `sandbox-exec` is unavailable is that this
@@ -176,14 +183,17 @@ fn probe_seatbelt_works() -> bool {
 /// binary exists and the minimal probe failed — this re-runs that same probe
 /// capturing stderr, since a nested refusal has a distinct kernel-reported
 /// signature (`sandbox_apply: Operation not permitted`, measured on macOS
-/// 26.5.1 arm64 — see ADR-029 §8/amendment). A capture failure or unrecognized
-/// stderr conservatively reports `false` (the generic message), since this
-/// only ever selects which diagnostic text to show, never whether the sandbox
-/// blocks.
+/// 26.5.1 arm64 — see ADR-029 §8/amendment). It must use the same minimal
+/// profile as [`probe_seatbelt_works`]: the signature was measured only on
+/// profiles with no `file-write*` clause (#256's bare-Terminal control passed
+/// even where the nested outcome fired), so re-probing with the actual
+/// per-command profile would misattribute an ordinary profile rejection to
+/// nesting. A capture failure or unrecognized stderr conservatively reports
+/// `false` (the generic message), since this only ever selects which
+/// diagnostic text to show, never whether the sandbox blocks.
 fn seatbelt_unavailable_is_nested_refusal() -> bool {
-    const PROBE: &str = "(version 1)\n(deny default)\n(allow process*)\n(allow file-read*)\n";
     let Ok(output) = std::process::Command::new("/usr/bin/sandbox-exec")
-        .args(["-p", PROBE, "/usr/bin/true"])
+        .args(["-p", MINIMAL_SEATBELT_PROBE_PROFILE, "/usr/bin/true"])
         .output()
     else {
         return false;
