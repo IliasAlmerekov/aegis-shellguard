@@ -20,6 +20,13 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "Unicode-3.0",
     "Zlib",
+    # LGPL-2.0-or-later is the exception for the vendored bubblewrap C sources
+    # (ADR-029 §3–§4). Vendored C is not a cargo dependency, so cargo-deny never
+    # sees it in the resolved graph; this entry is a global policy declaration
+    # (cargo-deny's allow-list cannot scope to a non-cargo dependency). The
+    # actual scope — aegis-sandbox only — is enforced by the contract test in
+    # tests/l1_qualification_contracts.rs, not by cargo-deny.
+    "LGPL-2.0-or-later",
 ]
 # Confidence threshold for license detection
 confidence-threshold = 0.8

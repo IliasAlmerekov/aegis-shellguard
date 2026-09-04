@@ -1,13 +1,20 @@
-# Tree-sitter third-party notices
+# Aegis third-party notices
 
 ## Scope — read this first
 
-This file covers **only the Tree-sitter components**: the runtime (including the
-ICU subset it vendors), its `tree-sitter-language` ABI shim, and the four
-qualified grammar crates. They are
-the sole native-C build inputs admitted by the exception in
-[ADR-022 §8](https://github.com/IliasAlmerekov/aegis-shellguard/blob/main/docs/adr/adr-022-language-aware-analysis-is-an-additive-isolated-stage.md),
-which is why they are attributed by hand and pinned by a contract test.
+This file covers the two native-C build inputs Aegis admits by exception, each
+scoped to a single crate and attributed by hand because `cargo deny` cannot see
+vendored C:
+
+1. **Tree-sitter** — the runtime (including the ICU subset it vendors), its
+   `tree-sitter-language` ABI shim, and the four qualified grammar crates,
+   scoped to `aegis-language` by
+   [ADR-022 §8](https://github.com/IliasAlmerekov/aegis-shellguard/blob/main/docs/adr/adr-022-language-aware-analysis-is-an-additive-isolated-stage.md).
+2. **bubblewrap** — the vendored C sources compiled into the embedded `bwrap`
+   fallback, scoped to `aegis-sandbox` by
+   [ADR-029 §3–§4](https://github.com/IliasAlmerekov/aegis-shellguard/blob/main/docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md).
+
+Both are pinned by contract tests that read the vendored sources.
 
 It is **not** a complete notices set for the release binary. Aegis statically
 links roughly a hundred other Rust crates (`clap`, `regex`, `aho-corasick`,
@@ -59,6 +66,31 @@ pinned by the contract test.
 | `tree-sitter-typescript` | `0.23.2` | <https://github.com/tree-sitter/tree-sitter-typescript> | MIT | Copyright (c) 2017 Max Brunsfeld |
 | `tree-sitter-bash` | `0.25.1` | <https://github.com/tree-sitter/tree-sitter-bash> | MIT | Copyright (c) 2017 Max Brunsfeld |
 | `tree-sitter-language` | `0.1.7` | <https://github.com/tree-sitter/tree-sitter> | MIT | Copyright (c) 2018 Max Brunsfeld |
+
+## bubblewrap
+
+bubblewrap is the second sanctioned native-C build input (ADR-029 §3–§4), scoped
+to `aegis-sandbox`. Its C sources are vendored under
+`crates/aegis-sandbox/vendor/bubblewrap/` at a pinned version and compiled into
+the embedded `bwrap` fallback used when no usable `bwrap` is on `PATH`. It is
+`LGPL-2.0-or-later`, which `cargo deny` cannot see because vendored C is not a
+cargo dependency — so it is attributed here and pinned by a contract test that
+reads the vendored sources.
+
+| Component | Version | Upstream | SPDX license | Copyright notice |
+|---|---:|---|---|---|
+| bubblewrap | `0.11.2` | <https://github.com/containers/bubblewrap> | LGPL-2.0-or-later | Copyright (C) 2014-2026 Alexander Larsson and contributors |
+
+The version is asserted against the `VERSION` marker in the vendored tree by
+`tests/l1_qualification_contracts.rs`, which also flags a vendored source file
+that has no row here.
+
+## GNU Library General Public License v2.0 or later
+
+bubblewrap is licensed under the GNU Library General Public License, version
+2.0 or (at your option) any later version. The full license text is reproduced
+in `crates/aegis-sandbox/vendor/bubblewrap/COPYING` (the LGPL-2.0 text) and is
+available at <https://www.gnu.org/licenses/old-licenses/lgpl-2.0.html>.
 
 ## MIT License
 
