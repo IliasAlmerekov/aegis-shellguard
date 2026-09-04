@@ -115,6 +115,22 @@ agent directory does not exist yet.
 1. Export the real shell explicitly: `export AEGIS_REAL_SHELL=$(command -v bash)` (or `zsh`).
 2. Re-run installer with `AEGIS_REAL_SHELL` set.
 
+## Build: quick failure lookup
+
+### `failed to compile bubblewrap for Linux target: libcap not available via pkg-config`
+
+**Why:** Building the workspace on Linux requires the `libcap` headers: the
+`aegis-sandbox` build script compiles the vendored bubblewrap C sources and
+pkg-config-probes `libcap` (ADR-029 §3–§4). A host with only the runtime
+`libcap.so.2` (no `libcap-dev`, no `libcap.pc`) fails here by design — a
+missing capability library must not produce a silently weaker `bwrap`.
+
+**Fix:**
+
+1. Install the headers: `sudo apt-get install -y libcap-dev` (Debian/Ubuntu), or your distribution's equivalent.
+2. If you cannot install them, `AEGIS_SKIP_BWRAP_BUILD=1` skips the C build — but the resulting binary has no embedded `bwrap` fallback, so confinement then requires a usable system `bwrap` on `PATH`. Never use this in CI.
+3. To build against an alternative bubblewrap checkout instead of the vendored tree, set `AEGIS_BWRAP_SOURCE_DIR=<path>`.
+
 ## Agent hooks (Claude Code / Codex)
 
 ### `error: real shell path contains unsafe characters` after npm install

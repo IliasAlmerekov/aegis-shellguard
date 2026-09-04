@@ -30,15 +30,24 @@ fn optional_unavailability_is_audited_then_warned_before_execution() {
     );
 
     assert_eq!(exit_code, 0);
-    assert_eq!(
-        events.into_inner(),
-        vec![
-            "audit:AutoApproved:Unavailable".to_string(),
-            format!("warning:{}", aegis::runtime::SANDBOX_UNAVAILABLE_MESSAGE),
-            "spawn".to_string(),
-            "wait".to_string(),
-        ]
+    let events = events.into_inner();
+    assert_eq!(events.len(), 4);
+    assert_eq!(events[0], "audit:AutoApproved:Unavailable");
+    // The warning names the WSL1 cause on a WSL1 host and stays generic
+    // elsewhere, so the lifecycle contract is membership in the sanctioned
+    // pair, not a fixed message.
+    assert!(
+        events[1] == format!("warning:{}", aegis::runtime::SANDBOX_UNAVAILABLE_MESSAGE)
+            || events[1]
+                == format!(
+                    "warning:{}",
+                    aegis::runtime::SANDBOX_WSL1_UNAVAILABLE_MESSAGE
+                ),
+        "unexpected unavailable warning: {}",
+        events[1]
     );
+    assert_eq!(events[2], "spawn");
+    assert_eq!(events[3], "wait");
 }
 
 #[test]
@@ -237,6 +246,18 @@ fn unconfigured_sandbox_is_silent() {
     assert_eq!(
         events.into_inner(),
         vec!["spawn".to_string(), "wait".to_string()]
+    );
+}
+
+#[test]
+fn unavailable_warning_names_the_wsl1_cause_only_on_wsl1_hosts() {
+    assert_eq!(
+        sandbox_unavailable_warning_for(true),
+        aegis::runtime::SANDBOX_WSL1_UNAVAILABLE_MESSAGE
+    );
+    assert_eq!(
+        sandbox_unavailable_warning_for(false),
+        aegis::runtime::SANDBOX_UNAVAILABLE_MESSAGE
     );
 }
 

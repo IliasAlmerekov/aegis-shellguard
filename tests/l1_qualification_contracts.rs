@@ -82,6 +82,14 @@ const NOTICE_COMPONENTS: &[(&str, &str, &str, &str)] = &[
 /// when to extend it.
 const NOT_LINKED_TREE_SITTER_CRATES: &[&str] = &[];
 
+/// bubblewrap is the second sanctioned native-C build input (ADR-029 §3–§4),
+/// vendored under `crates/aegis-sandbox/vendor/bubblewrap/`. Unlike the
+/// Tree-sitter crates it is not a cargo dependency, so `Cargo.lock` cannot pin
+/// it; the version is asserted against the `VERSION` marker in the vendored
+/// tree, and the LGPL notice is asserted against the distributed notices.
+const BUBBLEWRAP_VERSION: &str = "0.11.2";
+const BUBBLEWRAP_VENDOR_DIR: &str = "crates/aegis-sandbox/vendor/bubblewrap";
+
 fn repo_path(relative: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative)
 }
@@ -91,6 +99,62 @@ fn read_repo_file(relative: &str) -> String {
     fs::read_to_string(&path).unwrap_or_else(|error| {
         panic!("{} must be readable: {error}", path.display());
     })
+}
+
+/// The component names from attribution-table rows in the notices: the first
+/// cell of every table row, skipping separator and header rows. Structured row
+/// parsing rather than a substring search, so a coincidental prose mention of
+/// a vendored name cannot satisfy the notice contract.
+fn attribution_row_components(notices: &str) -> Vec<String> {
+    notices
+        .lines()
+        .filter(|line| line.starts_with('|'))
+        .filter(|line| {
+            // Skip separator rows (`|---|---:|…`) and the header row, whose
+            // second cell is the literal column title.
+            let first = line.split('|').nth(1).unwrap_or_default().trim();
+            let second = line.split('|').nth(2).unwrap_or_default().trim();
+            !first.starts_with('-') && second != "Version"
+        })
+        .filter_map(|line| line.split('|').nth(1))
+        .map(|cell| cell.trim().to_string())
+        .filter(|name| !name.is_empty())
+        .collect()
+}
+
+/// Every vendored third-party source tree under `crates/*/vendor/`, as
+/// `(crate, tree_name, path)`. Scanned generically rather than from a hardcoded
+/// list so a newly vendored dependency is caught by the notice contract instead
+/// of silently shipping.
+fn vendored_trees() -> Vec<(String, String, PathBuf)> {
+    let crates_root = repo_path("crates");
+    let mut trees = Vec::new();
+    for crate_dir in fs::read_dir(&crates_root).expect("crates/ must be readable") {
+        let crate_dir = crate_dir.expect("crates/ entry must be readable").path();
+        let vendor_dir = crate_dir.join("vendor");
+        if !vendor_dir.is_dir() {
+            continue;
+        }
+        let crate_name = crate_dir
+            .file_name()
+            .expect("crate dir must have a name")
+            .to_string_lossy()
+            .into_owned();
+        for tree in fs::read_dir(&vendor_dir).expect("vendor/ must be readable") {
+            let tree = tree.expect("vendor/ entry must be readable").path();
+            if !tree.is_dir() {
+                continue;
+            }
+            let tree_name = tree
+                .file_name()
+                .expect("vendored tree must have a name")
+                .to_string_lossy()
+                .into_owned();
+            trees.push((crate_name.clone(), tree_name, tree));
+        }
+    }
+    trees.sort_unstable();
+    trees
 }
 
 /// Resolve the version `Cargo.lock` records for `package`.
@@ -365,7 +429,7 @@ fn production_qualification_record_covers_all_remaining_iteration_10_measurement
         "| Worker warm-session latency | Not applicable to the production orchestration | no reusable session | `orchestrate` deliberately spawns, closes, and reaps one ephemeral worker per queued target. The protocol can carry a bounded sequence, but production does not reuse a warm worker; a future reuse optimization needs its own benchmark and review. |",
         "| Peak worker RSS | five cold worker samples with `/usr/bin/time` | 4.1–4.3 MiB | The direct worker process stayed within this observed host range; it is evidence only, not a cross-platform memory promise. |",
         "| Aggregate-timeout boundary | `tests/analysis_orchestrate_runtime.rs::run_records_target_aggregate_and_total_time_budget_exhaustion` | enforced at the configured total deadline | The default is 100 ms. The regression asserts typed `LimitExceeded` while retaining prior target results; no timer-derived throughput claim is made. |",
-        "| Per-target release-binary size | native `target/release/aegis` | 9.5 MiB | Local native size is recorded for drift detection. Exact sizes for Linux musl x86_64/aarch64 and macOS x86_64/aarch64 must come from the required CI contexts; local cross-target sizes are not substituted for release artifacts. |",
+        "| Per-target release-binary size | native `target/release/aegis` | 9.7 MiB | Local native size is recorded for drift detection. Grew from 9.5 MiB when the embedded bubblewrap fallback (ADR-029 §3) was added; the embedded `bwrap` is ~116 KiB. Exact sizes for Linux musl x86_64/aarch64 and macOS x86_64/aarch64 must come from the required CI contexts; local cross-target sizes are not substituted for release artifacts. |",
     ] {
         assert!(
             performance.contains(row),
@@ -426,5 +490,265 @@ fn each_foundation_adapter_has_a_checked_in_qualification_record() {
     assert!(
         record.contains("30907622035"),
         "qualification record must link the all-four-target CI evidence"
+    );
+}
+
+#[test]
+fn bubblewrap_vendored_sources_and_lgpl_notice_are_pinned() {
+    // Line endings are normalized so the contract does not depend on the
+    // checkout's `core.autocrlf` setting (CI checks out LF; some local
+    // checkouts are CRLF).
+    let notices = read_repo_file("THIRD_PARTY_NOTICES.md").replace("\r\n", "\n");
+
+    // The version marker in the vendored tree is the source of truth; there is
+    // no `Cargo.lock` entry to assert against because vendored C is not a cargo
+    // dependency.
+    let version_marker = read_repo_file(&format!("{BUBBLEWRAP_VENDOR_DIR}/VERSION"));
+    assert!(
+        version_marker.contains(BUBBLEWRAP_VERSION),
+        "vendored bubblewrap VERSION must pin {BUBBLEWRAP_VERSION}, got: {version_marker}"
+    );
+
+    // Every file in the vendored tree must exist and be non-empty. Scanned
+    // generically rather than from a hardcoded list so a newly added source file
+    // is covered by the same contract.
+    let tree = repo_path(BUBBLEWRAP_VENDOR_DIR);
+    let mut empty: Vec<String> = Vec::new();
+    for entry in fs::read_dir(&tree).expect("vendored bubblewrap tree must be readable") {
+        let entry = entry
+            .expect("vendored bubblewrap entry must be readable")
+            .path();
+        if entry.is_dir() {
+            continue;
+        }
+        let content = fs::read_to_string(&entry).unwrap_or_else(|error| {
+            panic!("{} must be readable: {error}", entry.display());
+        });
+        if content.trim().is_empty() {
+            empty.push(
+                entry
+                    .file_name()
+                    .expect("vendored file must have a name")
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+        }
+    }
+    assert!(
+        empty.is_empty(),
+        "vendored bubblewrap source file(s) {empty:?} must be non-empty"
+    );
+
+    // The distributed notice must carry the bubblewrap row and the LGPL notice.
+    let row = format!(
+        "| bubblewrap | `{BUBBLEWRAP_VERSION}` | <https://github.com/containers/bubblewrap> | LGPL-2.0-or-later |"
+    );
+    assert!(
+        notices.contains(&row),
+        "third-party notices must attribute bubblewrap at {BUBBLEWRAP_VERSION}: expected row `{row}`"
+    );
+    // The copyright cell must restate the vendored sources' own header line,
+    // derived here from bubblewrap.c rather than restated by hand: the notices
+    // describe what this repo actually ships.
+    let bubblewrap_c = read_repo_file(&format!("{BUBBLEWRAP_VENDOR_DIR}/bubblewrap.c"));
+    let expected_copyright = bubblewrap_c
+        .lines()
+        .find(|line| line.contains("Copyright (C)"))
+        .expect("vendored bubblewrap.c must carry a Copyright (C) header line")
+        .trim()
+        .trim_start_matches("* ")
+        .trim()
+        .to_string();
+    assert!(
+        notices.contains(&format!(
+            "| bubblewrap | `{BUBBLEWRAP_VERSION}` | <https://github.com/containers/bubblewrap> | LGPL-2.0-or-later | {expected_copyright} |"
+        )),
+        "third-party notices must carry bubblewrap's own copyright line \
+         `{expected_copyright}` in the attribution row, not a restated range"
+    );
+    assert!(
+        notices.contains("GNU Library General Public License"),
+        "third-party notices must include the LGPL notice for bubblewrap"
+    );
+    assert!(
+        notices.contains("LGPL-2.0-or-later"),
+        "third-party notices must name the LGPL-2.0-or-later SPDX expression for bubblewrap"
+    );
+    // The LGPL obligation must be stated deliberately (issue #231): the
+    // recipient can replace the covered component, and the PATH preference is
+    // the mechanism that makes that real without relinking Aegis. The notices
+    // are hard-wrapped, so phrase assertions run against a newline-flattened
+    // copy; the verbatim COPYING assertion below stays on the raw text.
+    let unwrapped = notices.replace('\n', " ");
+    assert!(
+        unwrapped.contains("replace the covered component"),
+        "third-party notices must state the LGPL relink/replace obligation deliberately"
+    );
+    assert!(
+        unwrapped.contains("prefers any usable `bwrap` found on `PATH`"),
+        "third-party notices must frame the PATH preference as the LGPL replace mechanism"
+    );
+    // LGPL-2.0 §4: the licence text must accompany the binary. The notices are
+    // the distribution artifact (staged byte-identical into the npm package
+    // and the installed doc dir), so the full text is reproduced from the
+    // vendored COPYING rather than referenced by a repo path those channels
+    // do not carry.
+    let copying = read_repo_file(&format!("{BUBBLEWRAP_VENDOR_DIR}/COPYING")).replace("\r\n", "\n");
+    assert!(
+        notices.contains(&copying),
+        "third-party notices must reproduce the vendored LGPL-2.0 COPYING verbatim \
+         so every distribution channel carries the licence with the binary"
+    );
+}
+
+#[test]
+fn every_vendored_third_party_tree_has_a_notice_entry() {
+    let notices = read_repo_file("THIRD_PARTY_NOTICES.md");
+
+    // Each vendored third-party source tree must have a matching attribution
+    // ROW in THIRD_PARTY_NOTICES.md; an unlisted tree fails CI. The match is
+    // against parsed table rows, not a substring search, so a coincidental
+    // prose mention cannot pass. This is generic so a future third vendored
+    // dependency is caught rather than silently shipped.
+    let listed_components = attribution_row_components(&notices);
+    let mut unlisted: Vec<String> = vendored_trees()
+        .iter()
+        .filter(|(_, tree_name, _)| {
+            !listed_components
+                .iter()
+                .any(|component| component == tree_name)
+        })
+        .map(|(_, tree_name, _)| tree_name.clone())
+        .collect();
+    unlisted.sort_unstable();
+    unlisted.dedup();
+    assert!(
+        unlisted.is_empty(),
+        "vendored third-party source tree(s) {unlisted:?} have no attribution row in \
+         THIRD_PARTY_NOTICES.md; add a row and a notice section for each before merging"
+    );
+}
+
+#[test]
+fn attribution_row_components_ignores_separator_header_and_prose_mentions() {
+    let notices = "\
+# Notices
+
+Prose mentions bubblewrap without a row: bubblewrap is vendored, and this
+sentence alone must not satisfy the notice contract.
+
+| Component | Version | Upstream | SPDX license | Copyright notice |
+|---|---:|---|---|---|
+| bubblewrap | `0.11.2` | <https://github.com/containers/bubblewrap> | LGPL-2.0-or-later | Copyright (C) Example |
+";
+    let components = attribution_row_components(notices);
+    assert_eq!(
+        components,
+        ["bubblewrap"],
+        "only table-row first cells count; prose and header/separator rows do not"
+    );
+}
+
+#[test]
+fn deny_toml_keeps_the_cargo_graph_strict_and_declares_the_vendored_lgpl_exception() {
+    let deny = read_repo_file("deny.toml").replace("\r\n", "\n");
+
+    // The `[licenses]` allow list is the cargo-graph gate and must stay
+    // permissive-only (CONVENTION.md §6): LGPL-2.0-or-later enters this repo
+    // only as vendored C, which cargo-deny cannot see, so listing it here would
+    // silently admit a future LGPL *cargo* dependency instead of failing the
+    // check. The graph stays strict; the vendored exception is declared in the
+    // file's comments and enforced by the vendored-trees contract test.
+    // Anchor on the standalone `[licenses]` header line: the word also appears
+    // in the file's leading comment, so a bare substring split would grab the
+    // wrong section.
+    let licenses_section = deny
+        .split("\n[licenses]\n")
+        .nth(1)
+        .expect("deny.toml must define a [licenses] section");
+    let allow_list = licenses_section
+        .split("allow = [")
+        .nth(1)
+        .and_then(|rest| rest.split_once(']'))
+        .map(|(entries, _)| entries)
+        .expect("deny.toml [licenses] must define an allow list");
+    assert!(
+        !allow_list.contains("LGPL-2.0-or-later"),
+        "deny.toml [licenses] allow must stay permissive-only: cargo-deny cannot scope an \
+         exception to vendored C, so an allow entry would silently admit a future LGPL cargo \
+         dependency instead of triaging it"
+    );
+    assert!(
+        deny.contains("LGPL-2.0-or-later"),
+        "deny.toml must still declare the vendored bubblewrap LGPL-2.0-or-later exception \
+         (ADR-029 §3–§4) in its comments"
+    );
+}
+
+#[test]
+fn cross_musl_dockerfile_verifies_the_libcap_tarball_checksum() {
+    let dockerfile = read_repo_file("docker/cross-musl/Dockerfile");
+
+    // This image compiles libcap into every musl release binary, so the
+    // fetched tarball is a build input of shipped artifacts: it must be
+    // verified against a pinned SHA256 before the build uses it, not fetched
+    // blind (CONVENTION.md §6 supply-chain rule).
+    let verifying = dockerfile
+        .lines()
+        .find(|line| line.contains("sha256sum -c"))
+        .expect(
+            "the cross-musl Dockerfile must verify the libcap tarball against a \
+             pinned SHA256 before building with it",
+        );
+    assert!(
+        verifying
+            .split_whitespace()
+            .any(|token| { token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()) }),
+        "the libcap verification must pin a full 64-hex SHA256 digest, got: {verifying}"
+    );
+}
+
+#[test]
+fn convention_documents_lgpl_exception_and_sandbox_build_dependencies() {
+    let convention = read_repo_file("CONVENTION.md");
+
+    // §6 Dependency Rules must name bubblewrap as the second sanctioned native-C
+    // build input and record its LGPL-2.0-or-later exception.
+    assert!(
+        convention.contains("second sanctioned native-C build input"),
+        "CONVENTION.md §6 must name bubblewrap as the second sanctioned native-C build input"
+    );
+    assert!(
+        convention.contains("bubblewrap") && convention.contains("LGPL-2.0-or-later"),
+        "CONVENTION.md §6 must document bubblewrap's LGPL-2.0-or-later exception (ADR-029 §3–§4)"
+    );
+
+    // The `cc` and `pkg-config` build-dependencies are scoped to aegis-sandbox
+    // and must be recorded in the approved dependency list.
+    assert!(
+        convention.contains("`cc`") && convention.contains("`pkg-config`"),
+        "CONVENTION.md §6 must list `cc` and `pkg-config` as approved build-dependencies"
+    );
+    assert!(
+        convention.contains("aegis-sandbox"),
+        "CONVENTION.md §6 must scope the `cc`/`pkg-config` build-dependencies to aegis-sandbox"
+    );
+}
+
+#[test]
+fn claude_md_approves_the_sandbox_build_dependencies() {
+    let claude = read_repo_file("CLAUDE.md");
+
+    // The `cc` and `pkg-config` build-dependencies in aegis-sandbox's Cargo.toml
+    // must be recorded in the approved-dependencies table so the hard Standards
+    // violation (a build-dependency outside the approved set) is closed.
+    assert!(
+        claude.contains("`cc`") && claude.contains("`pkg-config`"),
+        "CLAUDE.md approved-dependencies table must list `cc` and `pkg-config` as \
+         build-dependencies for aegis-sandbox"
+    );
+    assert!(
+        claude.contains("aegis-sandbox"),
+        "CLAUDE.md must scope the `cc`/`pkg-config` build-dependencies to aegis-sandbox"
     );
 }

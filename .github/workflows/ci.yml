@@ -70,6 +70,11 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: rustfmt, clippy
 
+      # Vendored bubblewrap links libcap; the aegis-sandbox build script
+      # pkg-config-probes it and fails the build when it is absent, so every
+      # Linux compile needs the headers before cargo runs at all.
+      - uses: ./.github/actions/install-libcap
+
       - name: cargo fmt --check
         run: cargo fmt --check --all
 
@@ -173,6 +178,8 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           cache-key-prefix: release-
 
+      - uses: ./.github/actions/install-libcap
+
       - name: cargo build --release
         run: cargo build --release
 
@@ -256,6 +263,12 @@ jobs:
 
       - name: Cross build release binary (musl, qualified grammar presence)
         if: matrix.use_cross
+        env:
+          # The cross musl image installs a static musl libcap under
+          # /usr/local (see docker/cross-musl/Dockerfile); pkg-config must be
+          # told it is allowed to report a cross libcap.
+          PKG_CONFIG_ALLOW_CROSS: "1"
+          PKG_CONFIG_PATH: /usr/local/lib/pkgconfig
         run: cross build --release --target ${{ matrix.target }}
 
       - name: Native build release binary (macOS, qualified grammar presence)
@@ -278,6 +291,8 @@ jobs:
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           cache-key-prefix: perf-
+
+      - uses: ./.github/actions/install-libcap
 
       # The `perf-` cache restores `target/` (including `target/criterion`) from
       # a previous run, so a bench that stops executing — a deleted `run:` line, a
@@ -344,6 +359,8 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           cache-key-prefix: live-installer-
 
+      - uses: ./.github/actions/install-libcap
+
       - name: Run live installer test
         run: AEGIS_TEST_LIVE_INSTALL=1 cargo test --test installer_live_release test_installer_live_github_release_download
 
@@ -382,6 +399,8 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           cache-key-prefix: snapshot-rollback-
 
+      - uses: ./.github/actions/install-libcap
+
       - name: Install SQLite CLI
         run: |
           sudo apt-get update
@@ -417,6 +436,8 @@ jobs:
         with:
           toolchain: ${{ env.FUZZ_NIGHTLY_TOOLCHAIN }}
           cache-key-prefix: fuzz-
+
+      - uses: ./.github/actions/install-libcap
 
       - name: Cache cargo-fuzz binary
         uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0

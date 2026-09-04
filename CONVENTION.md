@@ -157,14 +157,25 @@ Approved dependency categories currently include:
 - `tracing`
 - `tracing-subscriber`
 - `criterion`
+- `cc` (build-dependency) — the C compiler driver for the vendored bubblewrap
+  build; **only** `aegis-sandbox` may depend on it (ADR-029 §3–§4).
+- `pkg-config` (build-dependency) — locates `libcap` for the vendored bubblewrap
+  build; **only** `aegis-sandbox` may depend on it (ADR-029 §3–§4).
 - `tree-sitter` (0.26.11) — Tree-sitter runtime; **only** `aegis-language` may
-  depend on it (ADR-022 §8). It is the sole sanctioned native-C build input.
+  depend on it (ADR-022 §8). It is the first sanctioned native-C build input.
 - `tree-sitter-python` (0.25.0), `tree-sitter-javascript` (0.25.0),
   `tree-sitter-typescript` (0.23.2), `tree-sitter-bash` (0.25.1) — the four
   L1-foundation production-qualified grammars; **only** `aegis-language` may
   depend on them. A grammar is added here only after independent qualification
   (license, maintainer, transitive deps, upstream corpus, fuzzing, all-target
   release builds — ADR-022 §5).
+- bubblewrap — the second sanctioned native-C build input, vendored under
+  `crates/aegis-sandbox/vendor/bubblewrap/` at a pinned version and compiled
+  into the embedded `bwrap` fallback; **only** `aegis-sandbox` may build it
+  (ADR-029 §3–§4). It is `LGPL-2.0-or-later`, which `cargo deny` cannot see
+  because vendored C is not a cargo dependency — so it is recorded in
+  `THIRD_PARTY_NOTICES.md` and enforced by the contract test that reads the
+  vendored sources, not by cargo-deny.
 
 Dependency rules:
 
@@ -173,8 +184,9 @@ Dependency rules:
 - `once_cell` is banned; use `std::sync::LazyLock`.
 - Avoid dependencies that add unnecessary portability or build complexity.
 - Native C build inputs are forbidden except for the pinned Tree-sitter runtime
-  and production-qualified generated grammars governed by ADR-022. Any other
-  native dependency requires a separate ADR and supported-target build evidence.
+  and production-qualified generated grammars governed by ADR-022, and the
+  vendored bubblewrap C sources governed by ADR-029 §3–§4. Any other native
+  dependency requires a separate ADR and supported-target build evidence.
 - Supply-chain health is part of project correctness, not an optional extra.
 
 ## 7. Configuration and Audit Contracts

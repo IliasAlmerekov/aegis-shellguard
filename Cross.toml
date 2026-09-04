@@ -1,0 +1,12 @@
+# Cross-compilation configuration for the musl release targets.
+#
+# The vendored bubblewrap (ADR-029 §3) links libcap, which the default cross
+# musl images lack in musl-static form. `docker/cross-musl/Dockerfile` builds a
+# static musl libcap from source and installs it where pkg-config can find it.
+# See that Dockerfile for the rationale.
+
+[target.x86_64-unknown-linux-musl]
+dockerfile = "docker/cross-musl/Dockerfile"
+
+[target.aarch64-unknown-linux-musl]
+dockerfile = "docker/cross-musl/Dockerfile"

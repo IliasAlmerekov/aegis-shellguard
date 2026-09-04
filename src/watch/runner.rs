@@ -29,6 +29,7 @@ use super::protocol::{
 use super::sandbox::{
     WatchExecution, append_watch_execution_audit, complete_watch_approved_execution,
     emit_watch_audit_error, prepare_watch_command, sandbox_status_before_preparation,
+    warn_if_sandbox_unavailable_at_startup,
 };
 
 /// mpsc channel capacity for the stdout/stderr pump tasks.
@@ -69,6 +70,10 @@ pub async fn run(prepared: &PreparedPlanner, ci_detected: bool) -> i32 {
         report_watch_setup_failure(plan);
         return 4;
     }
+
+    // ADR-029 §3: one startup warning before the first frame when a
+    // configured Sandbox cannot confine on this host (the WSL1 case).
+    warn_if_sandbox_unavailable_at_startup(runtime_context(prepared)).await;
 
     let mut reader = TokioBufReader::new(tokio::io::stdin());
 

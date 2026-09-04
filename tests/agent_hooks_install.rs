@@ -547,3 +547,43 @@ fn claude_install_coexists_with_a_foreign_pre_tool_use_entry_without_a_matcher()
         "the foreign entry must survive the install; settings=\n{json}"
     );
 }
+
+#[test]
+fn codex_session_start_hook_keeps_its_codex_identity_when_installed() {
+    let home = TempDir::new().unwrap();
+    prepare_agent_dirs(home.path(), false, true);
+
+    let install_output = run_script("agent-setup.sh", home.path(), &["--codex"], None);
+    assert!(
+        install_output.status.success(),
+        "codex install must succeed: stdout=\n{}\nstderr=\n{}",
+        String::from_utf8_lossy(&install_output.stdout),
+        String::from_utf8_lossy(&install_output.stderr)
+    );
+
+    // The hook ships into ~/.codex/hooks and must say so: the version marker
+    // dates hook vintages (docs/troubleshooting.md), and a Claude-flavored
+    // header in the Codex channel misdirects operators.
+    let session_hook = home
+        .path()
+        .join(".codex")
+        .join("hooks")
+        .join("aegis-session-start.sh");
+    let content = fs::read_to_string(&session_hook)
+        .expect("codex session-start hook must be materialized by install");
+
+    assert!(
+        content
+            .starts_with("#!/usr/bin/env bash\n# aegis-hook-version: 2\n# Codex SessionStart hook"),
+        "the codex session hook must keep its Codex identity header, got:\n{}",
+        content.lines().take(4).collect::<Vec<_>>().join("\n")
+    );
+    assert!(
+        content.contains("Installed to: ~/.codex/hooks/aegis-session-start.sh"),
+        "the codex session hook must document its real install path"
+    );
+    assert!(
+        !content.contains("~/.claude/"),
+        "the codex session hook must not carry the Claude hook's install path"
+    );
+}

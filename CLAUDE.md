@@ -64,6 +64,8 @@ Scope is optional. Subject line ≤ 72 characters. Body explains _why_, not _wha
 | Benchmarks              | `criterion 0.5`                  |
 | Language-aware parsing  | `tree-sitter 0.26.11` + pinned grammars (`aegis-language` only) |
 | OS confinement          | vendored `bubblewrap`, pinned version (`aegis-sandbox` only) |
+| C build driver (build-dep) | `cc` 1 (`aegis-sandbox` only) |
+| C library discovery (build-dep) | `pkg-config` 0.3 (`aegis-sandbox` only) |
 
 Do not add new dependencies without a clear justification. Prefer stdlib when sufficient.
 
@@ -83,6 +85,21 @@ single crate. No third one may be added without an ADR.
 
 Neither exception is permission for further native dependencies; the general
 prohibition below still stands.
+
+### Linux build prerequisite: libcap headers
+
+Compiling the workspace on Linux requires `libcap` headers (`libcap-dev` on
+Debian/Ubuntu): the `aegis-sandbox` build script compiles the vendored
+bubblewrap C sources and probes `libcap` via `pkg-config`, failing the build
+when it is absent (ADR-029 §3–§4). CI installs it on every Linux-compiling job
+via `.github/actions/install-libcap`. Two escape hatches exist, and neither may
+be used in CI — they exist for special local builds only:
+
+- `AEGIS_SKIP_BWRAP_BUILD=1` skips the C build entirely; the resulting binary
+  has **no embedded `bwrap` fallback**, so confinement then requires a usable
+  system `bwrap` on `PATH`.
+- `AEGIS_BWRAP_SOURCE_DIR=<path>` builds against an alternative bubblewrap
+  source checkout instead of `crates/aegis-sandbox/vendor/bubblewrap/`.
 
 **Explicitly prohibited dependencies:**
 

@@ -334,6 +334,23 @@ fn sandbox_status_before_preparation(
     }
 }
 
+/// The warning to emit when the sandbox is unavailable, naming the WSL1 cause
+/// when it applies so the user gets a practical remedy (use WSL2) rather than
+/// the generic message (ADR-029 §3).
+fn sandbox_unavailable_warning() -> &'static str {
+    sandbox_unavailable_warning_for(aegis_sandbox::wsl1_unavailable())
+}
+
+/// The unavailable-warning selection, split out so both branches are testable
+/// on any host: the WSL1 verdict comes from the caller, not from this host.
+fn sandbox_unavailable_warning_for(is_wsl1: bool) -> &'static str {
+    if is_wsl1 {
+        aegis::runtime::SANDBOX_WSL1_UNAVAILABLE_MESSAGE
+    } else {
+        aegis::runtime::SANDBOX_UNAVAILABLE_MESSAGE
+    }
+}
+
 fn complete_shell_execution<C, X, AuditError>(
     decision: Decision,
     prepare: impl FnOnce() -> Result<(C, SandboxStatus), aegis_sandbox::SandboxError>,
@@ -361,7 +378,7 @@ where
                     return EXIT_INTERNAL;
                 }
                 if prep_status == SandboxStatus::Unavailable {
-                    warn(aegis::runtime::SANDBOX_UNAVAILABLE_MESSAGE);
+                    warn(sandbox_unavailable_warning());
                 }
                 return match execute(command) {
                     Ok((child, _)) => wait(child),
@@ -392,7 +409,7 @@ where
                         return EXIT_INTERNAL;
                     }
                     if actual_status == SandboxStatus::Unavailable {
-                        warn(aegis::runtime::SANDBOX_UNAVAILABLE_MESSAGE);
+                        warn(sandbox_unavailable_warning());
                     }
                     wait(child)
                 }

@@ -21,6 +21,9 @@ use aegis_types::SandboxStatus;
 mod support;
 
 #[cfg(target_os = "linux")]
+mod bwrap;
+
+#[cfg(target_os = "linux")]
 mod landlock;
 
 #[cfg(target_os = "linux")]
@@ -332,6 +335,22 @@ fn read_status_from_fd(fd: i32) -> Result<SandboxStatus, SandboxError> {
 /// Windows and other unsupported targets always return `false`.
 pub fn sandbox_available_for(config: &SandboxConfig) -> bool {
     platform::sandbox_available_for(config)
+}
+
+/// Whether this host is WSL1, which cannot create the user namespaces the Linux
+/// sandbox needs. Only meaningful on Linux; other targets return `false`.
+///
+/// Callers use this to name the WSL1 cause in the startup warning instead of
+/// the generic unavailability message (ADR-029 §3).
+pub fn wsl1_unavailable() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        bwrap::wsl1_unavailable()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
 }
 
 // ── Implementation ────────────────────────────────────────────────────────────

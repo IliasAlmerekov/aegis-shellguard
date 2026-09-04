@@ -14,6 +14,13 @@
 [licenses]
 version = 2
 # Only allow permissive licenses actually used by the default-feature dependency graph.
+# LGPL-2.0-or-later never appears in that graph: it enters this repo only as the
+# vendored bubblewrap C sources (ADR-029 §3–§4), which cargo-deny cannot see — so
+# the allow list stays permissive-only and a future LGPL *cargo* dependency fails
+# `cargo deny check` rather than passing silently. The scope of the vendored
+# exception — aegis-sandbox only — is enforced by the contract test in
+# tests/l1_qualification_contracts.rs, which reads vendored sources rather than
+# the cargo graph.
 allow = [
     "MIT",
     "Apache-2.0",
