@@ -171,6 +171,47 @@ this amendment supersedes; `docs/config-schema.md`, `CONTEXT.md`, and
 [#205](https://github.com/IliasAlmerekov/aegis-shellguard/issues/205) and
 [#242](https://github.com/IliasAlmerekov/aegis-shellguard/issues/242).
 
+## Amendment — 2026-09-03: the bundled build is embedded, not a shipped resource
+
+Decided in [#230](https://github.com/IliasAlmerekov/aegis-shellguard/issues/230).
+
+Decision 3 says Linux confinement "follows the Codex pattern", and Codex ships
+its bundled `bwrap` as a *file resource*: a separate binary placed in
+`codex-resources/bwrap` next to the executable, sha256-verified against a
+compile-time digest and exec'd through `/proc/self/fd/<fd>` to avoid a
+path-swap TOCTOU on the resource.
+
+Aegis embeds the build instead. The `aegis-sandbox` build script links the
+vendored C into a standalone `bwrap` in `OUT_DIR`, its bytes are compiled into
+the `aegis` binary via `include_bytes!`, and at runtime the fallback is
+materialised into a `memfd` (`fchmod 0755`) exec'd as `/proc/self/fd/<fd>`: no
+file is ever written to disk, and no packaged resource exists to go stale or
+be swapped. Why the divergence is deliberate:
+
+- **Digest verification is unnecessary here.** Codex hashes its resource
+  because a separate on-disk binary can be swapped after packaging. The
+  embedded bytes live inside the `aegis` binary itself, so tampering with
+  them requires replacing the whole binary — already the trust boundary. The
+  fd-based exec is retained for the same TOCTOU reasons.
+- **No packaging channel can ship a stale or missing resource.** Codex's
+  pipeline must copy `bwrap` into `codex-resources/` per layout; Aegis' npm
+  and installer channels ship one binary and inherit the fallback for free.
+- **Cross builds stay target-architecture-correct.** Producing the executable
+  inside `OUT_DIR` (rather than via a sibling binary crate, as Codex does)
+  guarantees the embedded build is compiled for the *target* architecture,
+  which matters under `cross`.
+
+The trade-off accepted: a hardened kernel that forbids executing memfds
+(the `vm.memfd_noexec` class) loses the bundled fallback. Per decision 5 such
+a host is refused with the ordinary unavailability message rather than run
+unconfined, and a system `bwrap` on `PATH` remains the escape. The
+availability probe still runs the resolved program (system or embedded) in a
+minimal namespace, and a system `bwrap` candidate must additionally support
+every option the production argv builders construct — derived from the
+builders themselves, so the check cannot drift from usage — so an ancient
+`bwrap` is skipped in favour of the embedded build rather than failing at
+exec time with a confusing error.
+
 ## Consequences
 
 - **The 1.0 gate grows.** bwrap + Landlock on Linux and Seatbelt on macOS become

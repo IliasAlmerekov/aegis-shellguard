@@ -59,6 +59,12 @@ jobs:
 
       - name: Build (cross)
         if: matrix.use_cross
+        env:
+          # The cross musl image installs a static musl libcap under
+          # /usr/local (see docker/cross-musl/Dockerfile); pkg-config must be
+          # told it is allowed to report a cross libcap.
+          PKG_CONFIG_ALLOW_CROSS: "1"
+          PKG_CONFIG_PATH: /usr/local/lib/pkgconfig
         run: cross build --release --target ${{ matrix.target }}
 
       - name: Rename binary
@@ -200,6 +206,8 @@ jobs:
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           cache: "false"
+
+      - uses: ./.github/actions/install-libcap
 
       - name: Generate npm checksums from release assets
         env:

@@ -1,0 +1,15 @@
+name: Install libcap
+description: >-
+  Install the libcap headers every Linux compile of the workspace needs: the
+  aegis-sandbox build script compiles the vendored bubblewrap C sources and
+  probes libcap via pkg-config, failing the build when it is absent
+  (ADR-029 §3–§4). macOS jobs do not use this action — the build script is a
+  no-op there, because Seatbelt confinement ships with the OS.
+runs:
+  using: composite
+  steps:
+    - name: apt-get install libcap-dev
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcap-dev
