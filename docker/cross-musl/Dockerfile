@@ -15,10 +15,14 @@ ARG CROSS_BASE_IMAGE
 FROM $CROSS_BASE_IMAGE
 
 ARG LIBCAP_VERSION=2.69
+# libcap 2.69 tarball SHA256, from kernel.org. The tarball is a build input of
+# every musl release binary, so it is verified before use rather than fetched
+# blind; bump both together when LIBCAP_VERSION moves.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl ca-certificates make gcc \
     && curl -sL -o /tmp/libcap.tar.gz \
         "https://www.kernel.org/pub/linux/libs/security/linux-privs/libcap2/libcap-${LIBCAP_VERSION}.tar.gz" \
+    && echo 3a99ec26452e328e0ea408efd67096ef914f4ee4788fa8e8e21f214e2bd670b9  /tmp/libcap.tar.gz | sha256sum -c - \
     && tar -xzf /tmp/libcap.tar.gz -C /tmp \
     && cd /tmp/libcap-${LIBCAP_VERSION} \
     && MUSL_GCC="$(basename "$(ls /usr/local/bin/*-musl-gcc 2>/dev/null | head -1)")" \

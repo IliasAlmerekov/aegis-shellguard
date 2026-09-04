@@ -495,7 +495,10 @@ fn each_foundation_adapter_has_a_checked_in_qualification_record() {
 
 #[test]
 fn bubblewrap_vendored_sources_and_lgpl_notice_are_pinned() {
-    let notices = read_repo_file("THIRD_PARTY_NOTICES.md");
+    // Line endings are normalized so the contract does not depend on the
+    // checkout's `core.autocrlf` setting (CI checks out LF; some local
+    // checkouts are CRLF).
+    let notices = read_repo_file("THIRD_PARTY_NOTICES.md").replace("\r\n", "\n");
 
     // The version marker in the vendored tree is the source of truth; there is
     // no `Cargo.lock` entry to assert against because vendored C is not a cargo
@@ -544,6 +547,25 @@ fn bubblewrap_vendored_sources_and_lgpl_notice_are_pinned() {
         notices.contains(&row),
         "third-party notices must attribute bubblewrap at {BUBBLEWRAP_VERSION}: expected row `{row}`"
     );
+    // The copyright cell must restate the vendored sources' own header line,
+    // derived here from bubblewrap.c rather than restated by hand: the notices
+    // describe what this repo actually ships.
+    let bubblewrap_c = read_repo_file(&format!("{BUBBLEWRAP_VENDOR_DIR}/bubblewrap.c"));
+    let expected_copyright = bubblewrap_c
+        .lines()
+        .find(|line| line.contains("Copyright (C)"))
+        .expect("vendored bubblewrap.c must carry a Copyright (C) header line")
+        .trim()
+        .trim_start_matches("* ")
+        .trim()
+        .to_string();
+    assert!(
+        notices.contains(&format!(
+            "| bubblewrap | `{BUBBLEWRAP_VERSION}` | <https://github.com/containers/bubblewrap> | LGPL-2.0-or-later | {expected_copyright} |"
+        )),
+        "third-party notices must carry bubblewrap's own copyright line \
+         `{expected_copyright}` in the attribution row, not a restated range"
+    );
     assert!(
         notices.contains("GNU Library General Public License"),
         "third-party notices must include the LGPL notice for bubblewrap"
@@ -551,6 +573,31 @@ fn bubblewrap_vendored_sources_and_lgpl_notice_are_pinned() {
     assert!(
         notices.contains("LGPL-2.0-or-later"),
         "third-party notices must name the LGPL-2.0-or-later SPDX expression for bubblewrap"
+    );
+    // The LGPL obligation must be stated deliberately (issue #231): the
+    // recipient can replace the covered component, and the PATH preference is
+    // the mechanism that makes that real without relinking Aegis. The notices
+    // are hard-wrapped, so phrase assertions run against a newline-flattened
+    // copy; the verbatim COPYING assertion below stays on the raw text.
+    let unwrapped = notices.replace('\n', " ");
+    assert!(
+        unwrapped.contains("replace the covered component"),
+        "third-party notices must state the LGPL relink/replace obligation deliberately"
+    );
+    assert!(
+        unwrapped.contains("prefers any usable `bwrap` found on `PATH`"),
+        "third-party notices must frame the PATH preference as the LGPL replace mechanism"
+    );
+    // LGPL-2.0 §4: the licence text must accompany the binary. The notices are
+    // the distribution artifact (staged byte-identical into the npm package
+    // and the installed doc dir), so the full text is reproduced from the
+    // vendored COPYING rather than referenced by a repo path those channels
+    // do not carry.
+    let copying = read_repo_file(&format!("{BUBBLEWRAP_VENDOR_DIR}/COPYING")).replace("\r\n", "\n");
+    assert!(
+        notices.contains(&copying),
+        "third-party notices must reproduce the vendored LGPL-2.0 COPYING verbatim \
+         so every distribution channel carries the licence with the binary"
     );
 }
 
@@ -603,14 +650,15 @@ sentence alone must not satisfy the notice contract.
 }
 
 #[test]
-fn deny_toml_allows_lgpl_only_as_the_vendored_bubblewrap_exception() {
+fn deny_toml_keeps_the_cargo_graph_strict_and_declares_the_vendored_lgpl_exception() {
     let deny = read_repo_file("deny.toml").replace("\r\n", "\n");
 
-    // The `[licenses]` allow list is the cargo-deny policy surface. Vendored C
-    // is not a cargo dependency, so `LGPL-2.0-or-later` never appears in the
-    // resolved graph — but the exception must still be declared here so the
-    // policy is explicit, and a future cargo dependency under that license is
-    // triaged rather than silently allowed.
+    // The `[licenses]` allow list is the cargo-graph gate and must stay
+    // permissive-only (CONVENTION.md §6): LGPL-2.0-or-later enters this repo
+    // only as vendored C, which cargo-deny cannot see, so listing it here would
+    // silently admit a future LGPL *cargo* dependency instead of failing the
+    // check. The graph stays strict; the vendored exception is declared in the
+    // file's comments and enforced by the vendored-trees contract test.
     // Anchor on the standalone `[licenses]` header line: the word also appears
     // in the file's leading comment, so a bare substring split would grab the
     // wrong section.
@@ -618,14 +666,45 @@ fn deny_toml_allows_lgpl_only_as_the_vendored_bubblewrap_exception() {
         .split("\n[licenses]\n")
         .nth(1)
         .expect("deny.toml must define a [licenses] section");
-    let allow_block = licenses_section
-        .split_once("\n[bans]\n")
-        .map_or(licenses_section, |(allow, _)| allow);
+    let allow_list = licenses_section
+        .split("allow = [")
+        .nth(1)
+        .and_then(|rest| rest.split_once(']'))
+        .map(|(entries, _)| entries)
+        .expect("deny.toml [licenses] must define an allow list");
     assert!(
-        allow_block.contains("LGPL-2.0-or-later"),
-        "deny.toml [licenses] allow must list LGPL-2.0-or-later as the narrowly-scoped \
-         exception for vendored bubblewrap (ADR-029 §3–§4); enforcement for vendored C is \
-         the contract test, not cargo-deny"
+        !allow_list.contains("LGPL-2.0-or-later"),
+        "deny.toml [licenses] allow must stay permissive-only: cargo-deny cannot scope an \
+         exception to vendored C, so an allow entry would silently admit a future LGPL cargo \
+         dependency instead of triaging it"
+    );
+    assert!(
+        deny.contains("LGPL-2.0-or-later"),
+        "deny.toml must still declare the vendored bubblewrap LGPL-2.0-or-later exception \
+         (ADR-029 §3–§4) in its comments"
+    );
+}
+
+#[test]
+fn cross_musl_dockerfile_verifies_the_libcap_tarball_checksum() {
+    let dockerfile = read_repo_file("docker/cross-musl/Dockerfile");
+
+    // This image compiles libcap into every musl release binary, so the
+    // fetched tarball is a build input of shipped artifacts: it must be
+    // verified against a pinned SHA256 before the build uses it, not fetched
+    // blind (CONVENTION.md §6 supply-chain rule).
+    let verifying = dockerfile
+        .lines()
+        .find(|line| line.contains("sha256sum -c"))
+        .expect(
+            "the cross-musl Dockerfile must verify the libcap tarball against a \
+             pinned SHA256 before building with it",
+        );
+    assert!(
+        verifying
+            .split_whitespace()
+            .any(|token| { token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()) }),
+        "the libcap verification must pin a full 64-hex SHA256 digest, got: {verifying}"
     );
 }
 
