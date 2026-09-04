@@ -93,15 +93,30 @@ privilege boundary**. The six banned confidentiality overclaims pinned by
 `tests/contracts_docs.rs` stay banned, and no document may promise that file reads
 or secrets are hidden from a command.
 
-**8. macOS nesting remains unmeasured and is the one open sub-question.** Nested
-`sandbox-exec` under Codex and under Claude Code has not been tested; the operator
-script and its pass/fail verdicts are recorded on
-[#208](https://github.com/IliasAlmerekov/aegis-shellguard/issues/208). Codex
-cannot answer it, because Codex is always the outer sandbox and never nested.
-Until it is run, decisions 1–7 hold for Linux, and macOS follows the same failure
-policy. If the measurement shows that a nested inner profile can **widen**
-authority, this ADR is reopened — that would make an inner layer a
-privilege-escalation vector rather than a guardrail.
+**8. macOS nesting was measured and did not reopen this ADR.** *(Originally: "macOS
+nesting remains unmeasured and is the one open sub-question." Retired by the
+measurement below — recorded as tested-and-not-observed, not deleted, since the
+reopen trigger it names is still live for any future macOS Seatbelt change.)*
+Nested `sandbox-exec` under a live Codex session and under a live Claude Code
+session was measured on macOS 26.5.1 arm64
+([#256](https://github.com/IliasAlmerekov/aegis-shellguard/issues/256)): a nested
+`sandbox_apply` is refused — `sandbox_apply: Operation not permitted` — on the
+first nested call, in both agents, whenever the *outer* process is already under
+an active Seatbelt profile. No `INNER_WIDENS_EXIT=0` occurred anywhere, so the
+reopen trigger below did not fire and decisions 1–7 stand unchanged for macOS.
+The mechanism is ordinary macOS nesting refusal, not an agent-specific behaviour:
+Aegis makes exactly one `sandbox_apply` call per command, so it is refused only
+when that single call is itself already nested — i.e. only when the shell Aegis
+runs as is already confined before Aegis gets to run. Whether that is true is
+asymmetric across agents: Codex requires its own sandbox to launch at all, so
+every Codex-on-macOS session hits this unconditionally; Claude Code ships with
+its sandbox off by default and refuses only once a user opts in via `/sandbox`
+(confirmed empirically: toggling `/sandbox` off and on reproduces
+`NESTED_SEATBELT_EXIT` flipping 0↔71 with no other change). The consequence for
+1.0 shippability is decided in the amendment below. If a future measurement shows
+that a nested inner profile can **widen** authority, this ADR is still reopened —
+that would make an inner layer a privilege-escalation vector rather than a
+guardrail — but that is not what was observed.
 
 ## Amendment — 2026-08-20: the `[sandbox]` migration contract
 
@@ -170,6 +185,56 @@ this amendment supersedes; `docs/config-schema.md`, `CONTEXT.md`, and
 `aegis-schema.json` follow on
 [#205](https://github.com/IliasAlmerekov/aegis-shellguard/issues/205) and
 [#242](https://github.com/IliasAlmerekov/aegis-shellguard/issues/242).
+
+## Amendment — 2026-08-28: macOS nested-under-active-outer-sandbox ships as decision 5's ordinary consequence
+
+Decided in [#262](https://github.com/IliasAlmerekov/aegis-shellguard/issues/262),
+closing the sub-question decision 8 left open. The measurement
+([#256](https://github.com/IliasAlmerekov/aegis-shellguard/issues/256)) showed
+that on macOS, whenever the shell Aegis runs as is already confined by an active
+outer Seatbelt profile — always true under Codex, true under Claude Code only
+once a user enables `/sandbox` — Aegis' own single `sandbox_apply` call is itself
+a refused nested call, so the layer reports `Unavailable` and every command is
+blocked (`SandboxError::Required` → `Decision::Blocked`, `src/shell_flow.rs:414`).
+
+**F. This is shippable for 1.0 as-is; no macOS-specific carve-out is added.**
+Treating the outer agent's own confinement as satisfying Aegis' obligation was
+considered and rejected: decision 5 ("always attempt, never silently unconfined")
+and the positioning from Context above — the agent sandbox is a
+host-protection boundary with one static session-wide profile, Aegis confines
+each command against its own rule corpus — are exactly why the two layers are
+complementary rather than interchangeable. Silently accepting the outer profile
+as a substitute on this one platform would be the fail-open this ADR exists to
+forbid, applied selectively to whichever host makes it inconvenient. A hard block
+is the honest, already-decided consequence of a mandatory layer meeting a
+platform where it is provably unobtainable — not a new failure mode invented for
+macOS.
+
+**G. The diagnostic must name the cause.** `sandbox_available_for`
+(`crates/aegis-sandbox/src/macos.rs:10-24`) already probes by executing the real
+per-command profile, so the fact that failure means "already nested under an
+active outer Seatbelt profile" is known at the point of failure; today's message
+(`SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE`, `"Required Sandbox unavailable; command
+not executed."`) does not surface it and reads identically to "no `sandbox-exec`
+binary at all". The message must distinguish "nested under an already-active
+outer sandbox" from a generic missing/broken `sandbox-exec`, and name the
+practical remedy where one exists (e.g. disabling `/sandbox` under Claude Code).
+Execution is
+[#263](https://github.com/IliasAlmerekov/aegis-shellguard/issues/263).
+
+**H. No asymmetric treatment of Codex vs. Claude Code.** Codex hitting this on
+every macOS session while Claude Code hits it only when a user opts in via
+`/sandbox` is a fact about each agent's own defaults, not a reason to special-case
+either one in Aegis: the failure mechanism, the message, and decision F are the
+same regardless of which agent produced the pre-existing outer confinement.
+
+Also surfaced, not part of this decision: the non-required code path in
+`src/shell_flow.rs:363-365` still emits pre-mandatory-layer wording ("Sandbox
+unavailable; proceeding without confinement. Set sandbox.required = true to block
+execution.") — a message from before `sandbox.required` was removed
+([#240](https://github.com/IliasAlmerekov/aegis-shellguard/issues/240)) that no
+longer describes a reachable configuration. Filed as
+[#263](https://github.com/IliasAlmerekov/aegis-shellguard/issues/263) alongside G.
 
 ## Amendment — 2026-09-03: the bundled build is embedded, not a shipped resource
 

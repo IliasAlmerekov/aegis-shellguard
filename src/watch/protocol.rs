@@ -355,7 +355,7 @@ mod tests {
                 "id": "sandbox-1",
                 "code": "sandbox_unavailable",
                 "sandbox_status": "unavailable",
-                "message": "Sandbox unavailable; proceeding without confinement. Set sandbox.required = true to block execution."
+                "message": "Sandbox unavailable; proceeding without confinement."
             })
         );
     }
@@ -375,6 +375,25 @@ mod tests {
 
         assert_eq!(value["type"], "result");
         assert_eq!(value["code"], "sandbox_required_unavailable");
+        assert_eq!(value["sandbox_status"], "unavailable");
+        assert_eq!(value["exit_code"], 3);
+    }
+
+    #[test]
+    fn required_nested_sandbox_block_serializes_diagnostics_on_result() {
+        let frame = OutputFrame::SandboxResult {
+            id: Some("sandbox-3".to_string()),
+            decision: OutputDecision::Blocked,
+            exit_code: 3,
+            code: crate::runtime::SANDBOX_REQUIRED_NESTED_UNAVAILABLE_CODE,
+            sandbox_status: SandboxStatus::Unavailable,
+            message: crate::runtime::SANDBOX_REQUIRED_NESTED_UNAVAILABLE_MESSAGE,
+        };
+
+        let value = serde_json::to_value(frame).unwrap();
+
+        assert_eq!(value["type"], "result");
+        assert_eq!(value["code"], "sandbox_required_nested_unavailable");
         assert_eq!(value["sandbox_status"], "unavailable");
         assert_eq!(value["exit_code"], 3);
     }

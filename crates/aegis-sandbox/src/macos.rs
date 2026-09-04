@@ -65,6 +65,9 @@ fn prepare(
     let profile = build_seatbelt_profile(config)?;
     if is_forced_sandbox_unavailable() || !is_sandbox_exec_available() {
         if config.required {
+            if !is_forced_sandbox_unavailable() && seatbelt_unavailable_is_nested_refusal() {
+                return Err(SandboxError::RequiredNestedUnderOuterSandbox);
+            }
             return Err(SandboxError::Required);
         }
         let mut cmd = std::process::Command::new(program);
@@ -158,11 +161,54 @@ fn exec_true_in_profile(profile: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Minimal SBPL profile shared by [`probe_seatbelt_works`] and
+/// [`seatbelt_unavailable_is_nested_refusal`] — both must run the exact same
+/// profile, since the latter only re-probes to capture stderr from the
+/// former's failure. A single shared constant makes that identity structural
+/// rather than two literals that happen to agree.
+const MINIMAL_SEATBELT_PROBE_PROFILE: &str =
+    "(version 1)\n(deny default)\n(allow process*)\n(allow file-read*)\n";
+
 /// Run a minimal sandbox-exec probe to verify the Seatbelt policy engine
 /// is functional on this system.
 fn probe_seatbelt_works() -> bool {
-    const PROBE: &str = "(version 1)\n(deny default)\n(allow process*)\n(allow file-read*)\n";
-    exec_true_in_profile(PROBE)
+    exec_true_in_profile(MINIMAL_SEATBELT_PROBE_PROFILE)
+}
+
+/// Return `true` if the reason `sandbox-exec` is unavailable is that this
+/// process is already nested under an active outer Seatbelt profile, rather
+/// than a generic missing/broken installation.
+///
+/// Only called once [`is_sandbox_exec_available`] has already established the
+/// binary exists and the minimal probe failed — this re-runs that same probe
+/// capturing stderr, since a nested refusal has a distinct kernel-reported
+/// signature (`sandbox_apply: Operation not permitted`, measured on macOS
+/// 26.5.1 arm64 — see ADR-029 §8/amendment). It must use the same minimal
+/// profile as [`probe_seatbelt_works`]: the signature was measured only on
+/// profiles with no `file-write*` clause (#256's bare-Terminal control passed
+/// even where the nested outcome fired), so re-probing with the actual
+/// per-command profile would misattribute an ordinary profile rejection to
+/// nesting. A capture failure or unrecognized stderr conservatively reports
+/// `false` (the generic message), since this only ever selects which
+/// diagnostic text to show, never whether the sandbox blocks.
+fn seatbelt_unavailable_is_nested_refusal() -> bool {
+    let Ok(output) = std::process::Command::new("/usr/bin/sandbox-exec")
+        .args(["-p", MINIMAL_SEATBELT_PROBE_PROFILE, "/usr/bin/true"])
+        .output()
+    else {
+        return false;
+    };
+    if output.status.success() {
+        return false;
+    }
+    stderr_indicates_nested_refusal(&String::from_utf8_lossy(&output.stderr))
+}
+
+/// Pure predicate over `sandbox-exec` stderr text, split out from
+/// [`seatbelt_unavailable_is_nested_refusal`] so the recognition logic is
+/// testable without a live Seatbelt nesting scenario.
+fn stderr_indicates_nested_refusal(stderr: &str) -> bool {
+    stderr.contains("sandbox_apply") && stderr.contains("Operation not permitted")
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -648,6 +694,56 @@ mod tests {
             cmd.command.get_program(),
             OsStr::new("/usr/bin/sandbox-exec"),
             "must return direct command (not sandbox-exec) when forced unavailable"
+        );
+    }
+
+    // ── macOS: nested-refusal cause recognition ───────────────────────────────
+
+    #[test]
+    fn stderr_indicates_nested_refusal_matches_the_measured_kernel_message() {
+        assert!(super::stderr_indicates_nested_refusal(
+            "sandbox_apply: Operation not permitted\n"
+        ));
+    }
+
+    #[test]
+    fn stderr_indicates_nested_refusal_rejects_unrelated_failures() {
+        assert!(!super::stderr_indicates_nested_refusal(
+            "sandbox-exec: unknown profile syntax\n"
+        ));
+        assert!(!super::stderr_indicates_nested_refusal(""));
+        // Either phrase alone is not the measured signature — both must be present.
+        assert!(!super::stderr_indicates_nested_refusal(
+            "Operation not permitted"
+        ));
+        assert!(!super::stderr_indicates_nested_refusal(
+            "sandbox_apply: failed"
+        ));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_prepare_for_exec_macos_forced_unavailable_never_reports_nested_cause() {
+        use std::ffi::{OsStr, OsString};
+
+        set_force_sandbox_unavailable(true);
+        let _guard = ForceUnavailableGuard;
+
+        let cfg = SandboxConfig {
+            required: true,
+            ..Default::default()
+        };
+        let program = OsStr::new("echo");
+        let args: Vec<OsString> = vec![OsString::from("hello")];
+
+        // A test-forced unavailability is not a real nested-Seatbelt refusal,
+        // so it must still surface as the generic `Required` cause.
+        assert!(
+            matches!(
+                super::prepare_for_exec(&cfg, program, &args),
+                Err(SandboxError::Required)
+            ),
+            "forced-unavailable must report the generic cause, not a probed nested refusal"
         );
     }
 }
