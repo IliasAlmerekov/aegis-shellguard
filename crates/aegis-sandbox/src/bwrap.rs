@@ -203,7 +203,7 @@ fn extract_embedded_bwrap() -> Result<PathBuf, SandboxError> {
 /// creation works on this kernel.
 ///
 /// Binds `/` read-only (the same confinement the real sandbox applies via
-/// [`crate::linux::build_bwrap_args`]) so the probe's `-- true` resolves
+/// [`crate::platform::build_bwrap_args`]) so the probe's `-- true` resolves
 /// regardless of the caller's `PATH` — which matters when the embedded build is
 /// the fallback and `PATH` deliberately omits `bwrap`.
 fn probe_sandbox_works(program: &Path, allow_network: bool) -> bool {

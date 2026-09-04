@@ -73,7 +73,7 @@ pub async fn run(prepared: &PreparedPlanner, ci_detected: bool) -> i32 {
 
     // ADR-029 §3: one startup warning before the first frame when a
     // configured Sandbox cannot confine on this host (the WSL1 case).
-    warn_if_sandbox_unavailable_at_startup(runtime_context(prepared));
+    warn_if_sandbox_unavailable_at_startup(runtime_context(prepared)).await;
 
     let mut reader = TokioBufReader::new(tokio::io::stdin());
 

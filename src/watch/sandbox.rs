@@ -130,12 +130,25 @@ pub(super) fn startup_unavailability(
 /// bwrap path (ADR-029 §3: warn at startup, refuse per command). Emitted
 /// before the first input frame so the unavailability is visible even when
 /// the session's first commands never reach execution.
-pub(super) fn warn_if_sandbox_unavailable_at_startup(context: &RuntimeContext) {
-    let Some((code, message)) = startup_unavailability(
-        context.config().sandbox.as_ref(),
-        aegis_sandbox::wsl1_unavailable(),
-        aegis_sandbox::sandbox_available_for,
-    ) else {
+pub(super) async fn warn_if_sandbox_unavailable_at_startup(context: &RuntimeContext) {
+    let sandbox = context.config().sandbox.clone();
+    // The probe spawns and waits on a real bwrap child, which must not block
+    // the async runtime thread (CLAUDE.md); this module's prepare path
+    // already routes blocking sandbox work through spawn_blocking.
+    let unavailability = tokio::task::spawn_blocking(move || {
+        startup_unavailability(
+            sandbox.as_ref(),
+            aegis_sandbox::wsl1_unavailable(),
+            aegis_sandbox::sandbox_available_for,
+        )
+    })
+    .await
+    // A join failure means the probe never answered; the startup warning is
+    // advisory, so it fails open here — per-command refusal still gates
+    // execution.
+    .ok()
+    .flatten();
+    let Some((code, message)) = unavailability else {
         return;
     };
     if emit_frame(&OutputFrame::Warning {

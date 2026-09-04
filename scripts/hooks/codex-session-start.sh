@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# aegis-hook-version: 1
-# Claude Code SessionStart hook — reports Aegis' effective enforcement state.
-# Installed to: ~/.claude/hooks/aegis-session-start.sh
+# aegis-hook-version: 2
+# Codex SessionStart hook — reports Aegis' effective enforcement state.
+# Installed to: ~/.codex/hooks/aegis-session-start.sh
 
 set -u
 
