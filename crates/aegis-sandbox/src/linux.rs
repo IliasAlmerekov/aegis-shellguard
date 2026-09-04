@@ -2,19 +2,19 @@
 
 use std::ffi::{OsStr, OsString};
 
-use crate::support::{is_forced_sandbox_unavailable, run_unavailable_result};
+use crate::support::run_unavailable_result;
 use crate::{PreparedSandboxCommand, SandboxConfig, SandboxError, SandboxResult};
 
 // ── Public-to-crate entry points ──────────────────────────────────────────────
 
 pub(crate) fn sandbox_available_for(config: &SandboxConfig) -> bool {
-    !is_forced_sandbox_unavailable() && is_sandbox_available(config)
+    crate::bwrap::available_bwrap_program(config).is_some()
 }
 
 pub(crate) fn run(config: &SandboxConfig, cmd: &str) -> Result<SandboxResult, SandboxError> {
-    if is_forced_sandbox_unavailable() || !is_sandbox_available(config) {
+    let Some(program) = crate::bwrap::available_bwrap_program(config) else {
         return run_unavailable_result(config.required);
-    }
+    };
 
     // NOTE: Landlock is NOT applied here. This legacy subprocess path stays
     // bwrap-only; bwrap namespace isolation provides the confinement. The
@@ -29,7 +29,7 @@ pub(crate) fn run(config: &SandboxConfig, cmd: &str) -> Result<SandboxResult, Sa
         OsString::from(cmd),
     ]);
 
-    let output = std::process::Command::new("bwrap")
+    let output = std::process::Command::new(program)
         .args(&all_args)
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -73,14 +73,14 @@ fn prepare(
     apply_exec_restrictions: bool,
 ) -> Result<PreparedSandboxCommand, SandboxError> {
     let mut bwrap_args = build_bwrap_args(config)?;
-    if is_forced_sandbox_unavailable() || !is_sandbox_available(config) {
+    let Some(bwrap_program) = crate::bwrap::available_bwrap_program(config) else {
         if config.required {
             return Err(SandboxError::Required);
         }
         let mut cmd = std::process::Command::new(program);
         cmd.args(args);
         return Ok(PreparedSandboxCommand::unavailable(cmd));
-    }
+    };
 
     // The Shell exec path applies Landlock in the innermost re-exec'd wrapper
     // (inside bwrap's mount namespace) so the two layers compose. The Watch
@@ -88,7 +88,7 @@ fn prepare(
     // ADR-021. The wrapper also gates an empty `allow_write` profile: Shell
     // must obtain its actual status before the Audit entry is committed.
     let use_landlock_wrapper = apply_exec_restrictions;
-    let mut cmd = std::process::Command::new("bwrap");
+    let mut cmd = std::process::Command::new(bwrap_program);
 
     if use_landlock_wrapper {
         bwrap_args.extend(crate::landlock::build_landlock_wrapper_args(
@@ -113,69 +113,6 @@ fn prepare(
 
     cmd.args(&bwrap_args);
     Ok(PreparedSandboxCommand::active(cmd, use_landlock_wrapper))
-}
-
-// ── Sandbox availability probe ────────────────────────────────────────────────
-
-/// Probe whether the sandbox infrastructure is available and functional.
-///
-/// Uses `bwrap --version` as a quick first pass, then attempts to actually
-/// create a minimal sandbox to catch runtime issues (e.g. WSL2 network
-/// namespace restrictions). The probe matches the config's `allow_network`
-/// setting to avoid false negatives.
-fn is_sandbox_available(config: &SandboxConfig) -> bool {
-    // Fast check: binary must be present and executable.
-    let has_bwrap = std::process::Command::new("bwrap")
-        .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-    if !has_bwrap {
-        return false;
-    }
-
-    if !sysctl_userns_available() {
-        return false;
-    }
-
-    // Real probe: actually try to create a sandbox. This catches issues like
-    // WSL2 blocking NETLINK_ROUTE socket creation inside network namespaces.
-    probe_sandbox_works(config.allow_network)
-}
-
-/// Run a minimal bwrap probe matching `allow_network` to verify namespace
-/// creation works on this kernel.
-fn probe_sandbox_works(allow_network: bool) -> bool {
-    let mut probe_args: Vec<&str> = vec![
-        "--ro-bind",
-        "/usr",
-        "/usr",
-        "--ro-bind",
-        "/lib",
-        "/lib",
-        "--ro-bind",
-        "/lib64",
-        "/lib64",
-        "--proc",
-        "/proc",
-        "--dev",
-        "/dev",
-        "--unshare-all",
-    ];
-    if allow_network {
-        probe_args.push("--share-net");
-    }
-    probe_args.extend(["--", "true"]);
-
-    std::process::Command::new("bwrap")
-        .args(&probe_args)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
 }
 
 // ── bwrap argument builder ────────────────────────────────────────────────────
@@ -217,12 +154,6 @@ pub(crate) fn build_bwrap_args(config: &SandboxConfig) -> Result<Vec<OsString>, 
     Ok(args)
 }
 
-pub(crate) fn sysctl_userns_available() -> bool {
-    std::fs::read_to_string("/proc/sys/kernel/unprivileged_userns_clone")
-        .map(|v| v.trim() == "1")
-        .unwrap_or(true)
-}
-
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -236,7 +167,8 @@ mod tests {
         sandbox_available_for,
     };
 
-    use super::{build_bwrap_args, prepare_for_exec, sysctl_userns_available};
+    use super::{build_bwrap_args, prepare_for_exec};
+    use crate::bwrap::sysctl_userns_available;
 
     // ── Linux: forced-unavailable via thread-local ────────────────────────────
 
