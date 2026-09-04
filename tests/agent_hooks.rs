@@ -206,6 +206,86 @@ fn claude_session_start_reports_ci_override_when_disabled_flag_exists() {
 }
 
 #[test]
+fn session_start_wsl1_sandbox_warning_follows_the_proc_version_marker() {
+    let home = TempDir::new().unwrap();
+    let cases: &[(&str, bool)] = &[
+        // WSL1: the legacy `microsoft` marker without `microsoft-standard`,
+        // and the explicit wsl1 marker.
+        (
+            "Linux version 4.4.0-19041-Microsoft (Microsoft@Microsoft) ...",
+            true,
+        ),
+        ("Linux version 5.15.90.1-microsoft-standard-WSL1 ...", true),
+        // WSL2 and native Linux must not warn.
+        ("Linux version 5.15.90.1-microsoft-standard-WSL2 ...", false),
+        ("Linux version 6.6.87.2 (gcc ...) #1 SMP ...", false),
+    ];
+
+    for hook in [
+        "hooks/claude-session-start.sh",
+        "hooks/codex-session-start.sh",
+    ] {
+        for (proc_version, expect_warning) in cases {
+            let output = run_script_with_env(
+                hook,
+                home.path(),
+                &[],
+                None,
+                &[("AEGIS_SESSION_PROC_VERSION", proc_version)],
+            );
+            assert!(output.status.success(), "{hook} must complete successfully");
+            assert!(output.stderr.is_empty(), "{hook} must not write stderr");
+
+            let json: Value = serde_json::from_slice(&output.stdout)
+                .unwrap_or_else(|err| panic!("{hook} must emit one JSON response: {err}"));
+            let context = json["hookSpecificOutput"]["additionalContext"]
+                .as_str()
+                .unwrap();
+            assert!(
+                context.contains("All Bash tool commands must be routed through aegis."),
+                "{hook} must keep the enforcement preamble, got: {context}"
+            );
+            assert_eq!(
+                context.contains(
+                    "Aegis sandbox warning: WSL1 cannot create the user namespaces bubblewrap \
+                     needs, so sandboxed commands are refused rather than run unconfined. Use \
+                     WSL2 for sandboxed commands."
+                ),
+                *expect_warning,
+                "{hook} with /proc/version `{proc_version}`: warning expected {expect_warning}, got: {context}"
+            );
+        }
+    }
+}
+
+#[test]
+fn disabled_session_start_keeps_the_passthrough_text_even_on_wsl1() {
+    let home = TempDir::new().unwrap();
+    fs::create_dir_all(home.path().join(".aegis")).unwrap();
+    fs::write(home.path().join(".aegis/disabled"), "timestamp=x\npid=1\n").unwrap();
+
+    let output = run_script_with_env(
+        "hooks/claude-session-start.sh",
+        home.path(),
+        &[],
+        None,
+        &[(
+            "AEGIS_SESSION_PROC_VERSION",
+            "Linux version 4.4.0-19041-Microsoft ...",
+        )],
+    );
+    assert!(output.status.success());
+
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    // Disabled passthrough makes no confinement claim, so the WSL1 note must
+    // not be appended and the passthrough text stays exact.
+    assert_eq!(
+        json["hookSpecificOutput"]["additionalContext"],
+        "Aegis is disabled: commands run in unguarded passthrough. Run \"aegis on\" to re-enable enforcement; \"aegis status\" shows the effective state."
+    );
+}
+
+#[test]
 fn session_start_hooks_keep_json_protocol_when_toggle_helper_is_noisy() {
     let home = TempDir::new().unwrap();
     let helper_dir = home.path().join(".aegis/lib");

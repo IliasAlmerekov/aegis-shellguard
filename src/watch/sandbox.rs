@@ -93,14 +93,75 @@ pub(super) async fn complete_watch_approved_execution(
     .await;
 }
 
+/// The unavailable-warning frame fields, naming the WSL1 cause when it applies
+/// so the operator gets a practical remedy (use WSL2) rather than the generic
+/// message (ADR-029 §3). Split out so both branches are testable on any host.
+fn unavailable_warning_code_and_message(is_wsl1: bool) -> (&'static str, &'static str) {
+    if is_wsl1 {
+        (
+            crate::runtime::SANDBOX_WSL1_UNAVAILABLE_CODE,
+            crate::runtime::SANDBOX_WSL1_UNAVAILABLE_MESSAGE,
+        )
+    } else {
+        (
+            crate::runtime::SANDBOX_UNAVAILABLE_CODE,
+            crate::runtime::SANDBOX_UNAVAILABLE_MESSAGE,
+        )
+    }
+}
+
+/// The session-startup unavailability verdict (ADR-029 §3): `Some` warning
+/// fields when a configured Sandbox cannot confine on this host, `None` when
+/// confinement is not configured (nothing is expected) or the probe succeeds.
+/// Split from the emitter so the selection is testable on any host.
+pub(super) fn startup_unavailability(
+    sandbox: Option<&aegis_sandbox::SandboxConfig>,
+    is_wsl1: bool,
+    available: impl FnOnce(&aegis_sandbox::SandboxConfig) -> bool,
+) -> Option<(&'static str, &'static str)> {
+    let config = sandbox?;
+    if available(config) {
+        return None;
+    }
+    Some(unavailable_warning_code_and_message(is_wsl1))
+}
+
+/// Warn once at watch-session startup when a configured Sandbox has no usable
+/// bwrap path (ADR-029 §3: warn at startup, refuse per command). Emitted
+/// before the first input frame so the unavailability is visible even when
+/// the session's first commands never reach execution.
+pub(super) fn warn_if_sandbox_unavailable_at_startup(context: &RuntimeContext) {
+    let Some((code, message)) = startup_unavailability(
+        context.config().sandbox.as_ref(),
+        aegis_sandbox::wsl1_unavailable(),
+        aegis_sandbox::sandbox_available_for,
+    ) else {
+        return;
+    };
+    if emit_frame(&OutputFrame::Warning {
+        id: None,
+        code,
+        sandbox_status: SandboxStatus::Unavailable,
+        message,
+    })
+    .is_err()
+    {
+        std::process::exit(4);
+    }
+}
+
 fn emit_watch_sandbox_event(event: WatchSandboxEvent, id: &Option<String>) {
     let result = match event {
-        WatchSandboxEvent::Warning => emit_frame(&OutputFrame::Warning {
-            id: id.clone(),
-            code: crate::runtime::SANDBOX_UNAVAILABLE_CODE,
-            sandbox_status: SandboxStatus::Unavailable,
-            message: crate::runtime::SANDBOX_UNAVAILABLE_MESSAGE,
-        }),
+        WatchSandboxEvent::Warning => {
+            let (code, message) =
+                unavailable_warning_code_and_message(aegis_sandbox::wsl1_unavailable());
+            emit_frame(&OutputFrame::Warning {
+                id: id.clone(),
+                code,
+                sandbox_status: SandboxStatus::Unavailable,
+                message,
+            })
+        }
         WatchSandboxEvent::RequiredBlocked => emit_frame(&OutputFrame::SandboxResult {
             id: id.clone(),
             decision: OutputDecision::Blocked,
@@ -217,6 +278,46 @@ mod tests {
     use std::cell::RefCell;
 
     use super::*;
+
+    #[test]
+    fn unavailable_warning_selects_the_wsl1_code_and_message_on_wsl1() {
+        let (code, message) = unavailable_warning_code_and_message(true);
+        assert_eq!(code, crate::runtime::SANDBOX_WSL1_UNAVAILABLE_CODE);
+        assert_eq!(message, crate::runtime::SANDBOX_WSL1_UNAVAILABLE_MESSAGE);
+
+        let (code, message) = unavailable_warning_code_and_message(false);
+        assert_eq!(code, crate::runtime::SANDBOX_UNAVAILABLE_CODE);
+        assert_eq!(message, crate::runtime::SANDBOX_UNAVAILABLE_MESSAGE);
+    }
+
+    #[test]
+    fn startup_unavailability_is_none_when_sandbox_is_not_configured() {
+        assert!(startup_unavailability(None, false, |_| false).is_none());
+    }
+
+    #[test]
+    fn startup_unavailability_is_none_when_the_probe_succeeds() {
+        let config = aegis_sandbox::SandboxConfig::default();
+        assert!(startup_unavailability(Some(&config), false, |_| true).is_none());
+    }
+
+    #[test]
+    fn startup_unavailability_warns_generically_when_not_wsl1() {
+        let config = aegis_sandbox::SandboxConfig::default();
+        let (code, message) =
+            startup_unavailability(Some(&config), false, |_| false).expect("must warn");
+        assert_eq!(code, crate::runtime::SANDBOX_UNAVAILABLE_CODE);
+        assert_eq!(message, crate::runtime::SANDBOX_UNAVAILABLE_MESSAGE);
+    }
+
+    #[test]
+    fn startup_unavailability_names_wsl1_when_the_host_is_wsl1() {
+        let config = aegis_sandbox::SandboxConfig::default();
+        let (code, message) =
+            startup_unavailability(Some(&config), true, |_| false).expect("must warn");
+        assert_eq!(code, crate::runtime::SANDBOX_WSL1_UNAVAILABLE_CODE);
+        assert_eq!(message, crate::runtime::SANDBOX_WSL1_UNAVAILABLE_MESSAGE);
+    }
 
     #[tokio::test]
     async fn optional_unavailability_audits_then_warns_then_spawns() {
