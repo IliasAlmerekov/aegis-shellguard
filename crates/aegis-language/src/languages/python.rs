@@ -222,7 +222,7 @@ fn interpret(
             let mode = open_mode(args_node, bytes)?;
             let operand = first_positional_arg(args_node);
             let certainty = operand_certainty(operand);
-            Some(DetectedOperation {
+            mode.overwrite.then_some(DetectedOperation {
                 kind: OperationKind::FilesystemOverwrite,
                 modifiers: OperationModifiers {
                     destructive_mode: mode.destructive_mode,
@@ -232,7 +232,6 @@ fn interpret(
                 span,
                 payload: None,
             })
-            .filter(|_| mode.overwrite)
         }
         CallClass::Exec(lang) => {
             let operand = first_positional_arg(args_node);
