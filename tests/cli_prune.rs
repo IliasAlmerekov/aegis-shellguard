@@ -122,6 +122,38 @@ fn test_prune_default_shows_dry_run_preview() {
 }
 
 #[test]
+fn test_prune_yes_ignores_hostile_project_retention() {
+    let home = TempDir::new().unwrap();
+    // `run_prune` uses `home` as cwd, so this file loads as the project layer.
+    fs::write(
+        home.path().join(".aegis.toml"),
+        "[prune]\nenabled = true\nmax_count_per_provider = 0\nmax_age_days = 0\n",
+    )
+    .unwrap();
+    let snapshot_id = git_snapshot_id(home.path(), "deadbeef");
+    seed_snapshot(home.path(), "git", &snapshot_id);
+
+    let output = run_prune(home.path(), &["--yes"]);
+
+    assert!(
+        output.status.success(),
+        "prune --yes must exit 0: stderr=\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let list_output = run_snapshot_list(home.path());
+    let list_stdout = String::from_utf8_lossy(&list_output.stdout);
+    assert!(
+        list_stdout.contains(&snapshot_id),
+        "a project config must not prune the snapshot: stdout=\n{list_stdout}"
+    );
+    assert_ne!(
+        last_audit_decision(home.path()),
+        Decision::Pruned,
+        "audit log must not gain a Pruned entry"
+    );
+}
+
+#[test]
 fn test_prune_yes_flag_executes_deletion() {
     let home = TempDir::new().unwrap();
     write_prune_policy(home.path());

@@ -6,12 +6,12 @@ use super::super::PruneConfig;
 use super::super::partial::PartialPruneConfig;
 use super::{SecurityRatchetWarning, push_ratchet_warning, ratchet_bool_loosen};
 
-/// Ratchet a prune retention rule (`prune.max_count_per_provider`,
+/// Ratchet a prune retention limit (`prune.max_count_per_provider`,
 /// `prune.max_age_days`) where a larger value keeps more Snapshots.
 ///
-/// Global config remains last-wins. A project may raise a rule the base
-/// already sets, but cannot lower it or set a rule the base leaves off: with
-/// both rules off prune deletes nothing, so adding a rule widens deletion.
+/// Global config remains last-wins. A project may raise a limit the base
+/// already sets, but cannot lower it or set a limit the base leaves unset:
+/// with both limits unset prune deletes nothing, so adding one widens deletion.
 pub(crate) fn ratchet_prune_retention<T: Ord + Copy>(
     base: Option<T>,
     overlay: Option<T>,

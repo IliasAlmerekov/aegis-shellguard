@@ -31,7 +31,7 @@ same rule: a project may disable rotation, raise
 enable disabled rotation or lower either retention limit. Snapshot prune
 retention follows it too: a project may disable prune or raise
 `prune.max_count_per_provider` and `prune.max_age_days`, but it cannot enable
-disabled prune, lower either rule, or set a rule the base leaves unset. Global config remains
+disabled prune, lower either limit, or set a limit the base leaves unset. Global config remains
 the user's trusted policy layer. When a project config attempts to weaken one
 of these fields, Aegis keeps the more restrictive value and
 `aegis config validate` reports a warning.
@@ -44,9 +44,9 @@ network access), the Project layer keeps `base && requested`. For
 `audit.rotation_enabled`, where `true` causes old audit entries to be removed,
 the Project layer also keeps `base && requested`. For audit retention limits,
 where larger values retain more history, it keeps `max(base, requested)`.
-`prune.enabled` keeps `base && requested`. For prune retention rules it keeps
-`max(base, requested)` when the base sets the rule and leaves the rule unset
-otherwise, because with both rules unset prune deletes nothing. For
+`prune.enabled` keeps `base && requested`. For prune retention limits it keeps
+`max(base, requested)` when the base sets the limit and leaves the limit unset
+otherwise, because with both limits unset prune deletes nothing. For
 `sandbox.allow_write` (a `Vec<PathBuf>` where more entries is weaker), the
 Project layer keeps the trusted base set and ignores the project value
 entirely. Global always stays last-layer-wins for every field.
