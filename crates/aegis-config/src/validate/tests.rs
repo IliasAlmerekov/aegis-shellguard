@@ -373,6 +373,45 @@ fn validate_config_layers_reports_audit_rotation_ratchet_warnings() {
 }
 
 #[test]
+fn validate_config_layers_reports_prune_retention_ratchet_warnings() {
+    let workspace = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
+    fs::create_dir_all(&global_dir).unwrap();
+
+    fs::write(
+        global_dir.join(GLOBAL_CONFIG_FILE),
+        "[prune]\nenabled = false\nmax_count_per_provider = 5\n",
+    )
+    .unwrap();
+    fs::write(
+        workspace.path().join(PROJECT_CONFIG_FILE),
+        "[prune]\nenabled = true\nmax_count_per_provider = 1\nmax_age_days = 2\n",
+    )
+    .unwrap();
+
+    let report = validate_config_layers(workspace.path(), Some(home.path()));
+
+    assert!(report.valid);
+    for (field, kept, requested) in [
+        ("prune.enabled", "false", "true"),
+        ("prune.max_count_per_provider", "5", "1"),
+        ("prune.max_age_days", "unset", "2"),
+    ] {
+        assert!(
+            report.warnings.iter().any(|issue| {
+                issue.code == "project_security_ratchet"
+                    && issue.message.contains(field)
+                    && issue.message.contains(kept)
+                    && issue.message.contains(requested)
+            }),
+            "missing config validation warning for {field}: {:#?}",
+            report.warnings
+        );
+    }
+}
+
+#[test]
 fn validate_config_layers_does_not_warn_when_project_tightens_security() {
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();

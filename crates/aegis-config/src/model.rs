@@ -207,7 +207,7 @@ fn integrity_mode_rank(mode: AuditIntegrityMode) -> u8 {
 use ratchet::{
     is_untrusted_allow, provider_enabled_in_base, ratchet_audit_retention, ratchet_bool_loosen,
     ratchet_bool_tighten, ratchet_docker_scope, ratchet_mysql_snapshot, ratchet_postgres_snapshot,
-    ratchet_sqlite_path, ratchet_supabase_snapshot,
+    ratchet_prune_retention, ratchet_sqlite_path, ratchet_supabase_snapshot,
 };
 
 /// A resolved config file path together with the layer it represents.
@@ -668,12 +668,21 @@ impl AegisConfig {
             },
             sandbox: overlay.sandbox.merge_into(base.sandbox, allowlist_layer),
             prune: PruneConfig {
-                enabled: overlay.prune.enabled.unwrap_or(base.prune.enabled),
-                max_count_per_provider: overlay
-                    .prune
-                    .max_count_per_provider
-                    .or(base.prune.max_count_per_provider),
-                max_age_days: overlay.prune.max_age_days.or(base.prune.max_age_days),
+                enabled: ratchet_bool_loosen(
+                    base.prune.enabled,
+                    overlay.prune.enabled,
+                    allowlist_layer,
+                ),
+                max_count_per_provider: ratchet_prune_retention(
+                    base.prune.max_count_per_provider,
+                    overlay.prune.max_count_per_provider,
+                    allowlist_layer,
+                ),
+                max_age_days: ratchet_prune_retention(
+                    base.prune.max_age_days,
+                    overlay.prune.max_age_days,
+                    allowlist_layer,
+                ),
             },
             language_analysis: overlay
                 .language_analysis

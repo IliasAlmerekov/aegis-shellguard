@@ -23,9 +23,12 @@ use crate::error::ConfigError;
 use crate::snapshot::DockerScopeMode;
 
 mod audit;
+mod prune;
 
 use audit::push_audit_retention_warning;
 pub(super) use audit::ratchet_audit_retention;
+use prune::push_prune_ratchet_warnings;
+pub(super) use prune::ratchet_prune_retention;
 
 type Result<T> = std::result::Result<T, ConfigError>;
 
@@ -45,7 +48,7 @@ pub(super) fn ratchet_bool_tighten(
 }
 
 /// Ratchet a boolean where `true` is the weaker value (`sandbox.allow_network`,
-/// `audit.rotation_enabled`).
+/// `audit.rotation_enabled`, `prune.enabled`).
 /// Under the Project layer the stricter of base/requested wins
 /// (`base && requested`); Global stays last-layer-wins.
 pub(super) fn ratchet_bool_loosen(
@@ -454,6 +457,8 @@ impl super::AegisConfig {
             overlay.audit.retention_files,
             &location,
         );
+
+        push_prune_ratchet_warnings(&mut warnings, &base.prune, &overlay.prune, &location);
 
         if let Some(requested) = overlay.allowlist_override_level {
             let kept =

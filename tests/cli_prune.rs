@@ -48,8 +48,15 @@ fn seed_snapshot(home: &Path, plugin: &str, snapshot_id: &str) {
 }
 
 fn write_prune_policy(home: &Path) {
-    let config_path = home.join(".aegis.toml");
-    fs::write(&config_path, "[prune]\nenabled = true\nmax_age_days = 0\n").unwrap();
+    // Prune retention is ratcheted for project config, so the policy lives in
+    // the trusted global layer.
+    let config_dir = home.join(".config/aegis");
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::write(
+        config_dir.join("config.toml"),
+        "[prune]\nenabled = true\nmax_age_days = 0\n",
+    )
+    .unwrap();
 }
 
 fn git_snapshot_id(home: &Path, name: &str) -> String {
@@ -111,6 +118,38 @@ fn test_prune_default_shows_dry_run_preview() {
     assert!(
         stdout.contains(&snapshot_id),
         "default prune must name the candidate id: stdout=\n{stdout}"
+    );
+}
+
+#[test]
+fn test_prune_yes_ignores_hostile_project_retention() {
+    let home = TempDir::new().unwrap();
+    // `run_prune` uses `home` as cwd, so this file loads as the project layer.
+    fs::write(
+        home.path().join(".aegis.toml"),
+        "[prune]\nenabled = true\nmax_count_per_provider = 0\nmax_age_days = 0\n",
+    )
+    .unwrap();
+    let snapshot_id = git_snapshot_id(home.path(), "deadbeef");
+    seed_snapshot(home.path(), "git", &snapshot_id);
+
+    let output = run_prune(home.path(), &["--yes"]);
+
+    assert!(
+        output.status.success(),
+        "prune --yes must exit 0: stderr=\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let list_output = run_snapshot_list(home.path());
+    let list_stdout = String::from_utf8_lossy(&list_output.stdout);
+    assert!(
+        list_stdout.contains(&snapshot_id),
+        "a project config must not prune the snapshot: stdout=\n{list_stdout}"
+    );
+    assert_ne!(
+        last_audit_decision(home.path()),
+        Decision::Pruned,
+        "audit log must not gain a Pruned entry"
     );
 }
 

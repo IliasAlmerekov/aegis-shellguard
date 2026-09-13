@@ -22,6 +22,17 @@ distribution smoke gates open)
 
 ---
 
+## Current session (2026-09-13) — project snapshot prune retention (#268)
+
+- Project `.aegis.toml` can only make prune retention keep more Snapshots. It
+  can disable prune and raise a retention limit the global layer sets, but
+  cannot enable globally disabled prune, lower either limit, or add a limit the
+  global layer leaves unset. Dropped values produce `project_security_ratchet` warnings.
+- The prune CLI integration tests now write their retention policy to the
+  global config, since a project policy no longer takes effect. A new CLI test
+  runs `aegis snapshot prune --yes` under a hostile project config and checks
+  that the Snapshot survives.
+
 ## Current session (2026-09-13) — project audit rotation retention (#267)
 
 - Project `.aegis.toml` now keeps the global Audit rotation state unless it
