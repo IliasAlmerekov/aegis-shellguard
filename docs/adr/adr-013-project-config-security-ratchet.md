@@ -28,7 +28,10 @@ target config (`sqlite_snapshot_path`, `postgres_snapshot`/`mysql_snapshot`/
 project-layer `[[rules]]` `decision = "Allow"`. Audit rotation follows the
 same rule: a project may disable rotation, raise
 `audit.max_file_size_bytes`, or raise `audit.retention_files`, but it cannot
-enable disabled rotation or lower either retention limit. Global config remains
+enable disabled rotation or lower either retention limit. Snapshot prune
+retention follows it too: a project may disable prune or raise
+`prune.max_count_per_provider` and `prune.max_age_days`, but it cannot enable
+disabled prune, lower either rule, or set a rule the base leaves unset. Global config remains
 the user's trusted policy layer. When a project config attempts to weaken one
 of these fields, Aegis keeps the more restrictive value and
 `aegis config validate` reports a warning.
@@ -40,7 +43,10 @@ For `sandbox.allow_network`, where `true` is the weaker value (it grants
 network access), the Project layer keeps `base && requested`. For
 `audit.rotation_enabled`, where `true` causes old audit entries to be removed,
 the Project layer also keeps `base && requested`. For audit retention limits,
-where larger values retain more history, it keeps `max(base, requested)`. For
+where larger values retain more history, it keeps `max(base, requested)`.
+`prune.enabled` keeps `base && requested`. For prune retention rules it keeps
+`max(base, requested)` when the base sets the rule and leaves the rule unset
+otherwise, because with both rules unset prune deletes nothing. For
 `sandbox.allow_write` (a `Vec<PathBuf>` where more entries is weaker), the
 Project layer keeps the trusted base set and ignores the project value
 entirely. Global always stays last-layer-wins for every field.
@@ -82,6 +88,11 @@ de-safeguarding a `Warn`/`Danger` command:
 - **Audit rotation retention** is ratcheted so a project cannot shrink global
   audit history by forcing frequent rotation or fewer archives. A project can
   retain more history or disable rotation. (#267)
+- **Snapshot prune retention** is ratcheted so a project cannot set
+  `max_age_days = 0` and `max_count_per_provider = 0` and have the next
+  `aegis snapshot prune --yes` delete every Snapshot, including the recovery
+  material for that repository. A project can keep more Snapshots or disable
+  prune. (#268)
 
 ## Annotation — 2026-08-20: two ratcheted fields leave the set
 

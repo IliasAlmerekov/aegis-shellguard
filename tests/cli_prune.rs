@@ -48,8 +48,15 @@ fn seed_snapshot(home: &Path, plugin: &str, snapshot_id: &str) {
 }
 
 fn write_prune_policy(home: &Path) {
-    let config_path = home.join(".aegis.toml");
-    fs::write(&config_path, "[prune]\nenabled = true\nmax_age_days = 0\n").unwrap();
+    // Prune retention is ratcheted for project config, so the policy lives in
+    // the trusted global layer.
+    let config_dir = home.join(".config/aegis");
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::write(
+        config_dir.join("config.toml"),
+        "[prune]\nenabled = true\nmax_age_days = 0\n",
+    )
+    .unwrap();
 }
 
 fn git_snapshot_id(home: &Path, name: &str) -> String {

@@ -436,6 +436,25 @@ Guidance:
   validate` reports a `project_security_ratchet` warning when it drops a
   project value.
 
+## Snapshot prune retention
+
+```toml
+[prune]
+enabled = false
+max_count_per_provider = 10
+max_age_days = 30
+```
+
+`aegis snapshot prune` keeps a Snapshot if it is newer than `max_age_days` or
+among the newest `max_count_per_provider` for its provider. An unset rule keeps
+nothing on its own; with both rules unset, prune deletes nothing.
+
+Global config controls the retention floor. A project config may disable prune
+or raise a rule the global layer already sets. It cannot enable prune when the
+global layer disables it, lower either rule, or set a rule the global layer
+leaves unset. `aegis config validate` reports a `project_security_ratchet`
+warning for each dropped project value.
+
 ## JSON output contract
 
 `aegis --output json` currently emits schema version `1`.

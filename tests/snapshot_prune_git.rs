@@ -102,9 +102,10 @@ fn test_git_prune_retention_deletes_outside_window() {
     seed_snapshot_record(home.path(), &old_snapshot_id, "2024-01-01T00:00:00Z");
     seed_snapshot_record(home.path(), &new_snapshot_id, "2026-01-01T00:00:00Z");
 
-    let config_path = home.path().join(".aegis.toml");
+    let config_dir = home.path().join(".config/aegis");
+    fs::create_dir_all(&config_dir).unwrap();
     fs::write(
-        &config_path,
+        config_dir.join("config.toml"),
         "[prune]\nenabled = true\nmax_count_per_provider = 1\n",
     )
     .unwrap();
