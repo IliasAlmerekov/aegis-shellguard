@@ -205,9 +205,9 @@ fn integrity_mode_rank(mode: AuditIntegrityMode) -> u8 {
 // `partial` submodule both call them so the merge path and the warning
 // collector share one definition of the effective `kept` value.
 use ratchet::{
-    is_untrusted_allow, provider_enabled_in_base, ratchet_bool_tighten, ratchet_docker_scope,
-    ratchet_mysql_snapshot, ratchet_postgres_snapshot, ratchet_sqlite_path,
-    ratchet_supabase_snapshot,
+    is_untrusted_allow, provider_enabled_in_base, ratchet_audit_retention, ratchet_bool_loosen,
+    ratchet_bool_tighten, ratchet_docker_scope, ratchet_mysql_snapshot, ratchet_postgres_snapshot,
+    ratchet_sqlite_path, ratchet_supabase_snapshot,
 };
 
 /// A resolved config file path together with the layer it represents.
@@ -556,6 +556,21 @@ impl AegisConfig {
             allowlist_layer,
             docker_enabled,
         );
+        let audit_rotation_enabled = ratchet_bool_loosen(
+            base.audit.rotation_enabled,
+            overlay.audit.rotation_enabled,
+            allowlist_layer,
+        );
+        let audit_max_file_size_bytes = ratchet_audit_retention(
+            base.audit.max_file_size_bytes,
+            overlay.audit.max_file_size_bytes,
+            allowlist_layer,
+        );
+        let audit_retention_files = ratchet_audit_retention(
+            base.audit.retention_files,
+            overlay.audit.retention_files,
+            allowlist_layer,
+        );
 
         Self {
             config_version: overlay.config_version.unwrap_or(base.config_version),
@@ -566,12 +581,16 @@ impl AegisConfig {
             allowlist_layers,
             blocklist,
             blocklist_layers,
-            audit_max_file_size_bytes_source: if overlay.audit.max_file_size_bytes.is_some() {
+            audit_max_file_size_bytes_source: if overlay.audit.max_file_size_bytes
+                == Some(audit_max_file_size_bytes)
+            {
                 Some(allowlist_layer)
             } else {
                 base.audit_max_file_size_bytes_source
             },
-            audit_retention_files_source: if overlay.audit.retention_files.is_some() {
+            audit_retention_files_source: if overlay.audit.retention_files
+                == Some(audit_retention_files)
+            {
                 Some(allowlist_layer)
             } else {
                 base.audit_retention_files_source
@@ -634,18 +653,9 @@ impl AegisConfig {
                 r
             },
             audit: AuditConfig {
-                rotation_enabled: overlay
-                    .audit
-                    .rotation_enabled
-                    .unwrap_or(base.audit.rotation_enabled),
-                max_file_size_bytes: overlay
-                    .audit
-                    .max_file_size_bytes
-                    .unwrap_or(base.audit.max_file_size_bytes),
-                retention_files: overlay
-                    .audit
-                    .retention_files
-                    .unwrap_or(base.audit.retention_files),
+                rotation_enabled: audit_rotation_enabled,
+                max_file_size_bytes: audit_max_file_size_bytes,
+                retention_files: audit_retention_files,
                 compress_rotated: overlay
                     .audit
                     .compress_rotated

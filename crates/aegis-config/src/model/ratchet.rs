@@ -22,6 +22,11 @@ use crate::allowlist::ConfigSourceLayer;
 use crate::error::ConfigError;
 use crate::snapshot::DockerScopeMode;
 
+mod audit;
+
+use audit::push_audit_retention_warning;
+pub(super) use audit::ratchet_audit_retention;
+
 type Result<T> = std::result::Result<T, ConfigError>;
 
 /// Ratchet a boolean where `true` is the stricter value (`sandbox.enabled`,
@@ -39,7 +44,8 @@ pub(super) fn ratchet_bool_tighten(
     }
 }
 
-/// Ratchet a boolean where `true` is the weaker value (`sandbox.allow_network`).
+/// Ratchet a boolean where `true` is the weaker value (`sandbox.allow_network`,
+/// `audit.rotation_enabled`).
 /// Under the Project layer the stricter of base/requested wins
 /// (`base && requested`); Global stays last-layer-wins.
 pub(super) fn ratchet_bool_loosen(
@@ -418,6 +424,36 @@ impl super::AegisConfig {
                 &location,
             );
         }
+
+        if let Some(requested) = overlay.audit.rotation_enabled {
+            let kept = ratchet_bool_loosen(
+                base.audit.rotation_enabled,
+                Some(requested),
+                ConfigSourceLayer::Project,
+            );
+            push_ratchet_warning(
+                &mut warnings,
+                "audit.rotation_enabled",
+                requested.to_string(),
+                kept.to_string(),
+                &location,
+            );
+        }
+
+        push_audit_retention_warning(
+            &mut warnings,
+            "audit.max_file_size_bytes",
+            base.audit.max_file_size_bytes,
+            overlay.audit.max_file_size_bytes,
+            &location,
+        );
+        push_audit_retention_warning(
+            &mut warnings,
+            "audit.retention_files",
+            base.audit.retention_files,
+            overlay.audit.retention_files,
+            &location,
+        );
 
         if let Some(requested) = overlay.allowlist_override_level {
             let kept =

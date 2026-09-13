@@ -21,9 +21,11 @@ fn base_command(home: &Path) -> Command {
     command
 }
 
-fn write_rotation_config(workspace: &Path, max_file_size_bytes: u64) {
+fn write_rotation_config(home: &Path, max_file_size_bytes: u64) {
+    let config_dir = home.join(".config/aegis");
+    fs::create_dir_all(&config_dir).unwrap();
     fs::write(
-        workspace.join(".aegis.toml"),
+        config_dir.join("config.toml"),
         format!(
             r#"
 [audit]
@@ -38,12 +40,14 @@ compress_rotated = false
 }
 
 fn write_rotation_config_with_compression(
-    workspace: &Path,
+    home: &Path,
     max_file_size_bytes: u64,
     compress_rotated: bool,
 ) {
+    let config_dir = home.join(".config/aegis");
+    fs::create_dir_all(&config_dir).unwrap();
     fs::write(
-        workspace.join(".aegis.toml"),
+        config_dir.join("config.toml"),
         format!(
             r#"
 [audit]
@@ -148,7 +152,7 @@ fn concurrent_writers_do_not_corrupt_audit_log() {
 fn concurrent_writers_with_rotation_keep_audit_log_readable() {
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
-    write_rotation_config(workspace.path(), 350);
+    write_rotation_config(home.path(), 350);
 
     let writers = 32usize;
     let barrier = Arc::new(std::sync::Barrier::new(writers));
@@ -188,7 +192,7 @@ fn concurrent_writers_with_rotation_keep_audit_log_readable() {
 fn concurrent_reader_during_repeated_rotation_never_observes_broken_json() {
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
-    write_rotation_config(workspace.path(), 350);
+    write_rotation_config(home.path(), 350);
 
     let writer_done = Arc::new(AtomicBool::new(false));
 
@@ -279,7 +283,7 @@ fn concurrent_multi_process_bursts_do_not_lose_or_duplicate_entries() {
 fn concurrent_writers_with_compressed_rotation_keep_all_entries_readable() {
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
-    write_rotation_config_with_compression(workspace.path(), 350, true);
+    write_rotation_config_with_compression(home.path(), 350, true);
 
     let writers = 28usize;
     let barrier = Arc::new(std::sync::Barrier::new(writers));
@@ -324,7 +328,7 @@ fn concurrent_writers_with_compressed_rotation_keep_all_entries_readable() {
 fn concurrent_reader_during_compressed_rotation_never_observes_data_loss() {
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
-    write_rotation_config_with_compression(workspace.path(), 320, true);
+    write_rotation_config_with_compression(home.path(), 320, true);
 
     let writer_done = Arc::new(AtomicBool::new(false));
 

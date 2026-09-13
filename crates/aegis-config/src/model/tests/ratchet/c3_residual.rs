@@ -521,3 +521,92 @@ fn project_audit_integrity_mode_off_equal_to_off_base_no_warning() {
         warnings
     );
 }
+
+#[test]
+fn project_audit_rotation_truncation_attempt_is_dropped_and_warned() {
+    let workspace = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
+    fs::create_dir_all(&global_dir).unwrap();
+
+    fs::write(
+        global_dir.join(GLOBAL_CONFIG_FILE),
+        "[audit]\nrotation_enabled = true\nmax_file_size_bytes = 2048\nretention_files = 7\n",
+    )
+    .unwrap();
+    fs::write(
+        workspace.path().join(PROJECT_CONFIG_FILE),
+        "[audit]\nmax_file_size_bytes = 1\nretention_files = 1\n",
+    )
+    .unwrap();
+
+    let base = load_global_base(home.path());
+    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
+    let warnings = full_project_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
+
+    assert_eq!(config.audit.max_file_size_bytes, 2048);
+    assert_eq!(config.audit.retention_files, 7);
+    assert!(warnings.iter().any(|warning| {
+        warning.field == "audit.max_file_size_bytes"
+            && warning.requested == "1"
+            && warning.kept == "2048"
+    }));
+    assert!(warnings.iter().any(|warning| {
+        warning.field == "audit.retention_files"
+            && warning.requested == "1"
+            && warning.kept == "7"
+    }));
+}
+
+#[test]
+fn project_cannot_enable_audit_rotation_disabled_globally() {
+    let workspace = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
+    fs::create_dir_all(&global_dir).unwrap();
+
+    fs::write(
+        global_dir.join(GLOBAL_CONFIG_FILE),
+        "[audit]\nrotation_enabled = false\nmax_file_size_bytes = 2048\nretention_files = 7\n",
+    )
+    .unwrap();
+    fs::write(
+        workspace.path().join(PROJECT_CONFIG_FILE),
+        "[audit]\nrotation_enabled = true\nmax_file_size_bytes = 4096\nretention_files = 8\n",
+    )
+    .unwrap();
+
+    let base = load_global_base(home.path());
+    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
+    let warnings = full_project_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
+
+    assert!(!config.audit.rotation_enabled);
+    assert_eq!(config.audit.max_file_size_bytes, 4096);
+    assert_eq!(config.audit.retention_files, 8);
+    assert!(warnings.iter().any(|warning| {
+        warning.field == "audit.rotation_enabled"
+            && warning.requested == "true"
+            && warning.kept == "false"
+    }));
+}
+
+#[test]
+fn global_audit_rotation_settings_remain_last_wins() {
+    let workspace = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
+    fs::create_dir_all(&global_dir).unwrap();
+
+    fs::write(
+        global_dir.join(GLOBAL_CONFIG_FILE),
+        "[audit]\nrotation_enabled = true\nmax_file_size_bytes = 1\nretention_files = 1\ncompress_rotated = false\n",
+    )
+    .unwrap();
+
+    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
+
+    assert!(config.audit.rotation_enabled);
+    assert_eq!(config.audit.max_file_size_bytes, 1);
+    assert_eq!(config.audit.retention_files, 1);
+    assert!(!config.audit.compress_rotated);
+}

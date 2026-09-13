@@ -33,8 +33,10 @@ fn integrity_mode_chains_hashes_and_verify_succeeds_across_rotation() {
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
 
+    let global_dir = home.path().join(".config/aegis");
+    fs::create_dir_all(&global_dir).unwrap();
     fs::write(
-        workspace.path().join(".aegis.toml"),
+        global_dir.join("config.toml"),
         r#"
 [audit]
 rotation_enabled = true
@@ -173,8 +175,10 @@ fn verify_integrity_detects_tampered_archive_log() {
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
 
+    let global_dir = home.path().join(".config/aegis");
+    fs::create_dir_all(&global_dir).unwrap();
     fs::write(
-        workspace.path().join(".aegis.toml"),
+        global_dir.join("config.toml"),
         r#"
 [audit]
 rotation_enabled = true

@@ -79,8 +79,10 @@ fn audit_rotation_config_rotates_and_audit_command_reads_archives() {
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
 
+    let global_dir = home.path().join(".config/aegis");
+    fs::create_dir_all(&global_dir).unwrap();
     fs::write(
-        workspace.path().join(".aegis.toml"),
+        global_dir.join("config.toml"),
         r#"
 [audit]
 rotation_enabled = true

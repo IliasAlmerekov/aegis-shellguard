@@ -136,7 +136,7 @@ fn config_init_writes_truthful_mode_comments() {
 }
 
 #[test]
-fn config_validate_json_outputs_errors_and_warnings() {
+fn config_validate_json_reports_project_audit_reductions_as_warnings() {
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
     let config_path = workspace.path().join(".aegis.toml");
@@ -168,17 +168,20 @@ reason = "broad rule"
     let warnings = json.get("warnings").unwrap().as_array().unwrap();
 
     assert!(
-        errors.iter().any(|e| e["code"] == "audit_max_file_size"),
-        "missing audit_max_file_size error: {errors:?}"
+        errors.iter().any(|e| e["code"] == "missing_scope"),
+        "missing missing_scope error: {errors:?}"
     );
-    assert!(
-        errors.iter().any(|e| e["code"] == "audit_retention_files"),
-        "missing audit_retention_files error: {errors:?}"
-    );
-    assert!(
-        warnings.iter().any(|w| w["code"] == "missing_scope"),
-        "missing missing_scope warning: {warnings:?}"
-    );
+    for field in ["audit.max_file_size_bytes", "audit.retention_files"] {
+        assert!(
+            warnings.iter().any(|w| {
+                w["code"] == "project_security_ratchet"
+                    && w["message"]
+                        .as_str()
+                        .is_some_and(|message| message.contains(field))
+            }),
+            "missing project audit warning for {field}: {warnings:?}"
+        );
+    }
     let config_path = config_path.to_string_lossy();
     assert!(
         errors.iter().any(|e| {
@@ -199,7 +202,7 @@ reason = "broad rule"
 }
 
 #[test]
-fn config_validate_layered_scalar_errors_point_to_actual_source_files() {
+fn config_validate_layered_scalar_reductions_point_to_project_source() {
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
     let global_dir = home.path().join(".config/aegis");
@@ -211,7 +214,7 @@ fn config_validate_layered_scalar_errors_point_to_actual_source_files() {
         &global_path,
         r#"
 [audit]
-rotation_enabled = true
+rotation_enabled = false
 max_file_size_bytes = 1024
 "#,
     )
@@ -220,6 +223,7 @@ max_file_size_bytes = 1024
         &project_path,
         r#"
 [audit]
+rotation_enabled = true
 retention_files = 0
 "#,
     )
@@ -231,24 +235,32 @@ retention_files = 0
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(4));
+    assert!(output.status.success());
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
     let errors = json["errors"].as_array().unwrap();
+    let warnings = json["warnings"].as_array().unwrap();
 
-    let retention_error = errors
-        .iter()
-        .find(|e| e["code"] == "audit_retention_files")
-        .unwrap();
+    for field in ["audit.rotation_enabled", "audit.retention_files"] {
+        let warning = warnings
+            .iter()
+            .find(|w| {
+                w["code"] == "project_security_ratchet"
+                    && w["message"]
+                        .as_str()
+                        .is_some_and(|message| message.contains(field))
+            })
+            .unwrap_or_else(|| panic!("missing project warning for {field}: {warnings:?}"));
 
+        assert!(
+            warning["location"]
+                .as_str()
+                .is_some_and(|location| location.contains(project_path.to_string_lossy().as_ref())),
+            "{field} warning should reference project config path: {warning:?}"
+        );
+    }
     assert!(
-        retention_error["location"]
-            .as_str()
-            .is_some_and(|location| location.contains(project_path.to_string_lossy().as_ref())),
-        "retention_files location should reference project config path: {retention_error:?}"
-    );
-    assert!(
-        errors.iter().all(|e| e["code"] != "audit_max_file_size"),
-        "max_file_size error should not be present when global layer is valid: {errors:?}"
+        errors.is_empty(),
+        "project reductions must not create validation errors: {errors:?}"
     );
     assert!(
         errors.iter().all(|e| {
