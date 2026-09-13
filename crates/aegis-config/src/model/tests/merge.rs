@@ -354,7 +354,7 @@ compress_rotated = false
 
     assert!(config.audit.rotation_enabled);
     assert_eq!(config.audit.max_file_size_bytes, 2048);
-    assert_eq!(config.audit.retention_files, 2);
+    assert_eq!(config.audit.retention_files, 7);
     assert!(!config.audit.compress_rotated);
 }
 
@@ -362,7 +362,9 @@ compress_rotated = false
 fn invalid_audit_rotation_config_is_rejected() {
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
-    let config_path = workspace.path().join(PROJECT_CONFIG_FILE);
+    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
+    fs::create_dir_all(&global_dir).unwrap();
+    let config_path = global_dir.join(GLOBAL_CONFIG_FILE);
 
     fs::write(
         &config_path,

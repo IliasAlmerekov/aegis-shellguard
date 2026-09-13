@@ -25,9 +25,12 @@ them. The ratcheted set is: `mode`, `allowlist_override_level`, `ci_policy`,
 (`git`, `docker`, `postgres`, `mysql`, `supabase`, `sqlite`), the provider
 target config (`sqlite_snapshot_path`, `postgres_snapshot`/`mysql_snapshot`/
 `supabase_snapshot` `database`, `docker_scope`), `audit.integrity_mode`, and
-project-layer `[[rules]]` `decision = "Allow"`. Global config remains the
-user's trusted policy layer. When a project config attempts to weaken one of
-these fields, Aegis keeps the more restrictive value and
+project-layer `[[rules]]` `decision = "Allow"`. Audit rotation follows the
+same rule: a project may disable rotation, raise
+`audit.max_file_size_bytes`, or raise `audit.retention_files`, but it cannot
+enable disabled rotation or lower either retention limit. Global config remains
+the user's trusted policy layer. When a project config attempts to weaken one
+of these fields, Aegis keeps the more restrictive value and
 `aegis config validate` reports a warning.
 
 Directionality is field-specific. For booleans where `true` is the stricter
@@ -35,6 +38,9 @@ value (`sandbox.enabled`, `sandbox.required`, all `auto_snapshot_*`), the
 Project layer keeps `base || requested` (the stricter of base/requested wins).
 For `sandbox.allow_network`, where `true` is the weaker value (it grants
 network access), the Project layer keeps `base && requested`. For
+`audit.rotation_enabled`, where `true` causes old audit entries to be removed,
+the Project layer also keeps `base && requested`. For audit retention limits,
+where larger values retain more history, it keeps `max(base, requested)`. For
 `sandbox.allow_write` (a `Vec<PathBuf>` where more entries is weaker), the
 Project layer keeps the trusted base set and ignores the project value
 entirely. Global always stays last-layer-wins for every field.
@@ -73,6 +79,9 @@ de-safeguarding a `Warn`/`Danger` command:
   `Off`. (The chain is an integrity/corruption check, not adversarial
   tamper-evidence — see TASKS.md H5 — but silently disabling even that from an
   untrusted repo is the same weakening shape and is closed here.)
+- **Audit rotation retention** is ratcheted so a project cannot shrink global
+  audit history by forcing frequent rotation or fewer archives. A project can
+  retain more history or disable rotation. (#267)
 
 ## Annotation — 2026-08-20: two ratcheted fields leave the set
 

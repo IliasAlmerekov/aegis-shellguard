@@ -430,6 +430,11 @@ Guidance:
 - `ChainSha256` links audit entries and rotated segments to detect corruption
   and inconsistent edits; it is not a keyed or remote anchor.
 - verify the active and rotated logs with `aegis audit --verify-integrity`.
+- Global config controls the minimum audit retention. A project config may
+  disable rotation or raise `max_file_size_bytes` and `retention_files`, but it
+  cannot enable globally disabled rotation or lower either limit. `aegis config
+  validate` reports a `project_security_ratchet` warning when it drops a
+  project value.
 
 ## JSON output contract
 

@@ -18,9 +18,21 @@ distribution smoke gates open)
 
 ## Last updated
 
-2026-08-23
+2026-09-13
 
 ---
+
+## Current session (2026-09-13) — project audit rotation retention (#267)
+
+- Project `.aegis.toml` now keeps the global Audit rotation state unless it
+  tightens it: it can disable rotation and raise the file-size or archive-count
+  limits, but cannot enable disabled rotation or lower either limit. Dropped
+  values produce `project_security_ratchet` warnings in `aegis config validate`.
+- Focused `aegis-config` tests and its crate-level Clippy gate pass. Workspace
+  tests remain blocked because this host lacks `libcap.pc` for the vendored
+  bubblewrap build. Workspace Clippy also reports nine warnings in
+  `aegis-snapshot`; `cargo audit` passes with six allowed warnings, and
+  `cargo deny check` passes outside the sandbox.
 
 ## Current session (2026-08-23) — v0.6.5 release preparation
 

@@ -11,6 +11,8 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Fixed: Project config cannot reduce Audit log rotation retention or enable rotation when the global layer disables it. (#267)
+
 ## [0.6.5] — 2026-08-23
 
 ### Fixed

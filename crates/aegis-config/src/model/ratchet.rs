@@ -39,7 +39,8 @@ pub(super) fn ratchet_bool_tighten(
     }
 }
 
-/// Ratchet a boolean where `true` is the weaker value (`sandbox.allow_network`).
+/// Ratchet a boolean where `true` is the weaker value (`sandbox.allow_network`,
+/// `audit.rotation_enabled`).
 /// Under the Project layer the stricter of base/requested wins
 /// (`base && requested`); Global stays last-layer-wins.
 pub(super) fn ratchet_bool_loosen(
@@ -51,6 +52,21 @@ pub(super) fn ratchet_bool_loosen(
     match layer {
         ConfigSourceLayer::Global => requested,
         ConfigSourceLayer::Project => base && requested,
+    }
+}
+
+/// Ratchet an audit retention limit where a larger value keeps more history.
+/// Global config remains last-wins. A project may raise the limit but cannot
+/// lower the current value.
+pub(super) fn ratchet_audit_retention<T: Ord + Copy>(
+    base: T,
+    overlay: Option<T>,
+    layer: ConfigSourceLayer,
+) -> T {
+    let requested = overlay.unwrap_or(base);
+    match layer {
+        ConfigSourceLayer::Global => requested,
+        ConfigSourceLayer::Project => requested.max(base),
     }
 }
 
@@ -415,6 +431,51 @@ impl super::AegisConfig {
                 "audit.integrity_mode",
                 format!("{requested:?}"),
                 format!("{kept:?}"),
+                &location,
+            );
+        }
+
+        if let Some(requested) = overlay.audit.rotation_enabled {
+            let kept = ratchet_bool_loosen(
+                base.audit.rotation_enabled,
+                Some(requested),
+                ConfigSourceLayer::Project,
+            );
+            push_ratchet_warning(
+                &mut warnings,
+                "audit.rotation_enabled",
+                requested.to_string(),
+                kept.to_string(),
+                &location,
+            );
+        }
+
+        if let Some(requested) = overlay.audit.max_file_size_bytes {
+            let kept = ratchet_audit_retention(
+                base.audit.max_file_size_bytes,
+                Some(requested),
+                ConfigSourceLayer::Project,
+            );
+            push_ratchet_warning(
+                &mut warnings,
+                "audit.max_file_size_bytes",
+                requested.to_string(),
+                kept.to_string(),
+                &location,
+            );
+        }
+
+        if let Some(requested) = overlay.audit.retention_files {
+            let kept = ratchet_audit_retention(
+                base.audit.retention_files,
+                Some(requested),
+                ConfigSourceLayer::Project,
+            );
+            push_ratchet_warning(
+                &mut warnings,
+                "audit.retention_files",
+                requested.to_string(),
+                kept.to_string(),
                 &location,
             );
         }
