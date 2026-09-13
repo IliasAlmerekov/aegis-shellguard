@@ -22,6 +22,11 @@ use crate::allowlist::ConfigSourceLayer;
 use crate::error::ConfigError;
 use crate::snapshot::DockerScopeMode;
 
+mod audit;
+
+use audit::push_audit_retention_warning;
+pub(super) use audit::ratchet_audit_retention;
+
 type Result<T> = std::result::Result<T, ConfigError>;
 
 /// Ratchet a boolean where `true` is the stricter value (`sandbox.enabled`,
@@ -52,21 +57,6 @@ pub(super) fn ratchet_bool_loosen(
     match layer {
         ConfigSourceLayer::Global => requested,
         ConfigSourceLayer::Project => base && requested,
-    }
-}
-
-/// Ratchet an audit retention limit where a larger value keeps more history.
-/// Global config remains last-wins. A project may raise the limit but cannot
-/// lower the current value.
-pub(super) fn ratchet_audit_retention<T: Ord + Copy>(
-    base: T,
-    overlay: Option<T>,
-    layer: ConfigSourceLayer,
-) -> T {
-    let requested = overlay.unwrap_or(base);
-    match layer {
-        ConfigSourceLayer::Global => requested,
-        ConfigSourceLayer::Project => requested.max(base),
     }
 }
 
@@ -450,35 +440,20 @@ impl super::AegisConfig {
             );
         }
 
-        if let Some(requested) = overlay.audit.max_file_size_bytes {
-            let kept = ratchet_audit_retention(
-                base.audit.max_file_size_bytes,
-                Some(requested),
-                ConfigSourceLayer::Project,
-            );
-            push_ratchet_warning(
-                &mut warnings,
-                "audit.max_file_size_bytes",
-                requested.to_string(),
-                kept.to_string(),
-                &location,
-            );
-        }
-
-        if let Some(requested) = overlay.audit.retention_files {
-            let kept = ratchet_audit_retention(
-                base.audit.retention_files,
-                Some(requested),
-                ConfigSourceLayer::Project,
-            );
-            push_ratchet_warning(
-                &mut warnings,
-                "audit.retention_files",
-                requested.to_string(),
-                kept.to_string(),
-                &location,
-            );
-        }
+        push_audit_retention_warning(
+            &mut warnings,
+            "audit.max_file_size_bytes",
+            base.audit.max_file_size_bytes,
+            overlay.audit.max_file_size_bytes,
+            &location,
+        );
+        push_audit_retention_warning(
+            &mut warnings,
+            "audit.retention_files",
+            base.audit.retention_files,
+            overlay.audit.retention_files,
+            &location,
+        );
 
         if let Some(requested) = overlay.allowlist_override_level {
             let kept =

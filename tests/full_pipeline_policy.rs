@@ -268,9 +268,9 @@ description = "Conflicts with built-in pattern id"
     );
 }
 
-/// A well-formed but invalid `.aegis.toml` must also fail closed and name the file.
+/// Project audit reductions must not override the trusted global retention policy.
 #[test]
-fn invalid_project_config_validation_error_aborts_shell_wrapper_with_clear_error() {
+fn project_audit_reduction_does_not_abort_shell_wrapper() {
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
 
@@ -291,25 +291,13 @@ max_file_size_bytes = 0
         .output()
         .unwrap();
 
-    assert_eq!(output.status.code(), Some(4));
-    assert!(output.stdout.is_empty(), "command must not execute");
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"hello\n");
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("error: failed to load config"),
-        "stderr must explain the startup failure: {stderr}"
-    );
-    assert!(
-        stderr.contains(&config_path.display().to_string()),
-        "stderr must identify the invalid config file: {stderr}"
-    );
-    assert!(
-        stderr.contains("audit.max_file_size_bytes"),
-        "stderr must include the validation detail: {stderr}"
-    );
-    assert!(
-        stderr.contains("Fix or remove the invalid config file"),
-        "stderr must tell the user how to recover: {stderr}"
+        !stderr.contains("failed to load config"),
+        "project reduction must not cause a config-load failure: {stderr}"
     );
 }
 

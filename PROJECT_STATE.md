@@ -28,11 +28,12 @@ distribution smoke gates open)
   tightens it: it can disable rotation and raise the file-size or archive-count
   limits, but cannot enable disabled rotation or lower either limit. Dropped
   values produce `project_security_ratchet` warnings in `aegis config validate`.
-- Focused `aegis-config`, `aegis-snapshot`, and audit-concurrency tests pass.
-  Installing `libcap-dev` unblocked the vendored Bubblewrap build, and the
-  current Clippy gate passes after compatibility updates. A full workspace run
-  still intermittently fails the Unix-socket source-reader test while its
-  isolated crate run passes. `cargo audit` passes with six allowed warnings,
+- Focused `aegis-config`, audit-concurrency, audit-integrity, full-pipeline
+  audit/config/policy, and snapshot tests pass. Installing `libcap-dev`
+  unblocked the vendored Bubblewrap build, and the current Clippy gate passes
+  after compatibility updates. The full test run remains blocked locally:
+  the Unix-socket source-reader test cannot bind an `AF_UNIX` socket because
+  the host returns `EPERM`. `cargo audit` passes with six allowed warnings,
   and `cargo deny check` passes outside the sandbox.
 
 ## Current session (2026-08-23) — v0.6.5 release preparation
