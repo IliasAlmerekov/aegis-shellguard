@@ -87,7 +87,7 @@ impl RetentionPolicy {
                     .push(record);
             }
             for group in by_provider.values_mut() {
-                group.sort_by(|a, b| b.recorded_at.cmp(&a.recorded_at));
+                group.sort_by_key(|record| std::cmp::Reverse(record.recorded_at));
                 for record in group.iter().take(count) {
                     kept.insert((record.plugin.clone(), record.snapshot_id.clone()));
                 }
@@ -191,7 +191,7 @@ pub(crate) fn resolve_prunable_records_from_default_audit_log() -> Result<Vec<Pr
             recorded_at,
         })
         .collect();
-    records.sort_by(|a, b| b.recorded_at.cmp(&a.recorded_at));
+    records.sort_by_key(|record| std::cmp::Reverse(record.recorded_at));
     Ok(records)
 }
 

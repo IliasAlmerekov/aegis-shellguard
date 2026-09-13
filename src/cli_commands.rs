@@ -305,7 +305,7 @@ pub(crate) fn format_snapshot_listing(entries: &[AuditEntry]) -> String {
             (*order_idx, *id, *provider, recorded.as_str())
         })
         .collect();
-    rows.sort_by(|a, b| b.0.cmp(&a.0));
+    rows.sort_by_key(|row| std::cmp::Reverse(row.0));
 
     let mut out = String::from("Recorded snapshots (newest first):\n");
     for (_, id, provider, recorded) in &rows {

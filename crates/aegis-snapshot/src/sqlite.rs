@@ -70,7 +70,7 @@ impl SqlitePlugin {
         }
 
         let mut bytes = Vec::with_capacity(encoded.len() / 2);
-        for pair in encoded.as_bytes().chunks_exact(2) {
+        for pair in encoded.as_bytes().as_chunks::<2>().0 {
             let hex = std::str::from_utf8(pair).map_err(|_| {
                 SnapshotError::Snapshot(format!(
                     "malformed snapshot_id: invalid {label} encoding {encoded:?}"
