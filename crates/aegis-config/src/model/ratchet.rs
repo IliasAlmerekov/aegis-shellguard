@@ -24,6 +24,7 @@ use crate::snapshot::DockerScopeMode;
 mod audit;
 mod prune;
 mod supabase;
+mod targets;
 
 use audit::push_audit_retention_warning;
 pub(super) use audit::ratchet_audit_retention;
@@ -31,6 +32,7 @@ use prune::push_prune_ratchet_warnings;
 pub(super) use prune::ratchet_prune_retention;
 pub(super) use supabase::merge_supabase_snapshot;
 use supabase::push_supabase_ratchet_warnings;
+use targets::{push_mysql_target_field_warnings, push_postgres_target_field_warnings};
 
 type Result<T> = std::result::Result<T, ConfigError>;
 
@@ -364,99 +366,6 @@ fn push_ratchet_warning(
             kept,
             location: location.to_string(),
         });
-    }
-}
-
-/// Report each PostgreSQL target field a project layer requested but the
-/// ratchet dropped, comparing `requested` (the raw overlay) against `kept`
-/// (the value `ratchet_postgres_snapshot` actually merged) field-by-field so
-/// the reported diffs match the merge exactly.
-fn push_postgres_target_field_warnings(
-    warnings: &mut Vec<SecurityRatchetWarning>,
-    requested: &PostgresSnapshotConfig,
-    kept: &PostgresSnapshotConfig,
-    location: &str,
-) {
-    if requested.database != kept.database {
-        push_ratchet_warning(
-            warnings,
-            "postgres_snapshot.database",
-            requested.database.clone(),
-            kept.database.clone(),
-            location,
-        );
-    }
-    if requested.host != kept.host {
-        push_ratchet_warning(
-            warnings,
-            "postgres_snapshot.host",
-            requested.host.clone(),
-            kept.host.clone(),
-            location,
-        );
-    }
-    if requested.port != kept.port {
-        push_ratchet_warning(
-            warnings,
-            "postgres_snapshot.port",
-            requested.port.to_string(),
-            kept.port.to_string(),
-            location,
-        );
-    }
-    if requested.user != kept.user {
-        push_ratchet_warning(
-            warnings,
-            "postgres_snapshot.user",
-            requested.user.clone(),
-            kept.user.clone(),
-            location,
-        );
-    }
-}
-
-/// MySQL counterpart of [`push_postgres_target_field_warnings`].
-fn push_mysql_target_field_warnings(
-    warnings: &mut Vec<SecurityRatchetWarning>,
-    requested: &MysqlSnapshotConfig,
-    kept: &MysqlSnapshotConfig,
-    location: &str,
-) {
-    if requested.database != kept.database {
-        push_ratchet_warning(
-            warnings,
-            "mysql_snapshot.database",
-            requested.database.clone(),
-            kept.database.clone(),
-            location,
-        );
-    }
-    if requested.host != kept.host {
-        push_ratchet_warning(
-            warnings,
-            "mysql_snapshot.host",
-            requested.host.clone(),
-            kept.host.clone(),
-            location,
-        );
-    }
-    if requested.port != kept.port {
-        push_ratchet_warning(
-            warnings,
-            "mysql_snapshot.port",
-            requested.port.to_string(),
-            kept.port.to_string(),
-            location,
-        );
-    }
-    if requested.user != kept.user {
-        push_ratchet_warning(
-            warnings,
-            "mysql_snapshot.user",
-            requested.user.clone(),
-            kept.user.clone(),
-            location,
-        );
     }
 }
 
