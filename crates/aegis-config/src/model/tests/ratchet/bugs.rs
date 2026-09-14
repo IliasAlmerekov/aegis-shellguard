@@ -391,11 +391,11 @@ fn project_sandbox_allow_write_reordered_subset_no_warning() {
 // bugs-02 fixes cannot regress them.
 
 #[test]
-fn project_mysql_snapshot_can_repoint_database_when_enabled() {
-    // tests-01 GREEN-BY-DESIGN: global `auto_snapshot_mysql = true` +
-    // `[mysql_snapshot] database = "mydb"`; project repoints to "otherdb".
-    // Repointing an enabled provider to another non-empty target is permitted
-    // — keep project value, NO warning. Current code already allows this.
+fn project_mysql_snapshot_cannot_repoint_database_when_enabled() {
+    // #269: global `auto_snapshot_mysql = true` + `[mysql_snapshot] database
+    // = "mydb"`; a project that repoints to "otherdb" is a decoy-database
+    // attempt — Rollback must still restore into the trusted target, so the
+    // base database is kept and a `mysql_snapshot.database` warning fires.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -417,20 +417,50 @@ fn project_mysql_snapshot_can_repoint_database_when_enabled() {
     let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
 
     assert_eq!(
-        config.mysql_snapshot.database, "otherdb",
-        "project must be able to repoint mysql to another non-empty database; got {:?}",
+        config.mysql_snapshot.database, "mydb",
+        "project must not repoint an enabled mysql target to a decoy database; got {:?}",
         config.mysql_snapshot.database
     );
-    assert_no_warning_for(&warnings, "mysql_snapshot", "tests-01 mysql repoint");
+    assert_has_warning_for(&warnings, "mysql_snapshot.database", "#269 mysql repoint");
 }
 
 #[test]
-fn project_supabase_snapshot_can_repoint_db_when_enabled() {
-    // tests-01 GREEN-BY-DESIGN: global `auto_snapshot_supabase = true` +
-    // `[supabase_snapshot.db] database = "supadb"`; project repoints
-    // `db.database` to "otherdb". Repointing an enabled provider to another
-    // non-empty target is permitted — keep project value, NO warning. Current
-    // code already allows this.
+fn project_mysql_snapshot_cannot_repoint_host_or_user_when_enabled() {
+    // #269: host/user are Snapshot-target fields too — a project that leaves
+    // `database` alone but repoints `host`/`user` still aims Rollback at a
+    // different server, so each field is protected and warned individually.
+    let workspace = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
+    fs::create_dir_all(&global_dir).unwrap();
+
+    fs::write(
+        global_dir.join(GLOBAL_CONFIG_FILE),
+        "auto_snapshot_mysql = true\n[mysql_snapshot]\ndatabase = \"mydb\"\nhost = \"trusted.internal\"\nuser = \"trusted_user\"\n",
+    )
+    .unwrap();
+    fs::write(
+        workspace.path().join(PROJECT_CONFIG_FILE),
+        "[mysql_snapshot]\ndatabase = \"mydb\"\nhost = \"decoy.example\"\nuser = \"decoy_user\"\n",
+    )
+    .unwrap();
+
+    let base = load_global_base(home.path());
+    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
+    let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
+
+    assert_eq!(config.mysql_snapshot.host, "trusted.internal");
+    assert_eq!(config.mysql_snapshot.user, "trusted_user");
+    assert_has_warning_for(&warnings, "mysql_snapshot.host", "#269 mysql host repoint");
+    assert_has_warning_for(&warnings, "mysql_snapshot.user", "#269 mysql user repoint");
+}
+
+#[test]
+fn project_supabase_snapshot_cannot_repoint_db_when_enabled() {
+    // #269: global `auto_snapshot_supabase = true` + `[supabase_snapshot.db]
+    // database = "supadb"`; a project that repoints `db.database` is exactly
+    // the decoy-database bypass this ticket closes — keep the base database
+    // and warn on the dotted field name.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -452,13 +482,126 @@ fn project_supabase_snapshot_can_repoint_db_when_enabled() {
     let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
 
     assert_eq!(
-        config.supabase_snapshot.db.database, "otherdb",
-        "project must be able to repoint supabase db.database to another non-empty database; got {:?}",
+        config.supabase_snapshot.db.database, "supadb",
+        "project must not repoint an enabled supabase target to a decoy database; got {:?}",
         config.supabase_snapshot.db.database
     );
-    assert_no_warning_for(
+    assert_has_warning_for(
         &warnings,
-        "supabase_snapshot",
-        "tests-01 supabase repoint",
+        "supabase_snapshot.db.database",
+        "#269 supabase repoint",
+    );
+}
+
+#[test]
+fn project_supabase_snapshot_cannot_repoint_project_ref_or_host_when_enabled() {
+    // #269: `project_ref` and `db.host` are Snapshot-target fields too.
+    let workspace = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
+    fs::create_dir_all(&global_dir).unwrap();
+
+    fs::write(
+        global_dir.join(GLOBAL_CONFIG_FILE),
+        "auto_snapshot_supabase = true\n[supabase_snapshot]\nproject_ref = \"trusted_ref\"\n[supabase_snapshot.db]\ndatabase = \"supadb\"\nhost = \"trusted.supabase.co\"\n",
+    )
+    .unwrap();
+    fs::write(
+        workspace.path().join(PROJECT_CONFIG_FILE),
+        "[supabase_snapshot]\nproject_ref = \"decoy_ref\"\n[supabase_snapshot.db]\nhost = \"decoy.supabase.co\"\n",
+    )
+    .unwrap();
+
+    let base = load_global_base(home.path());
+    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
+    let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
+
+    assert_eq!(config.supabase_snapshot.project_ref, "trusted_ref");
+    assert_eq!(config.supabase_snapshot.db.host, "trusted.supabase.co");
+    assert_has_warning_for(
+        &warnings,
+        "supabase_snapshot.project_ref",
+        "#269 supabase project_ref repoint",
+    );
+    assert_has_warning_for(
+        &warnings,
+        "supabase_snapshot.db.host",
+        "#269 supabase host repoint",
+    );
+}
+
+#[test]
+fn project_cannot_disable_supabase_rollback_target_match_when_provider_enabled_in_base() {
+    // #269 / the issue's core scenario: global enables Supabase with the
+    // target-match check on; a hostile project turns the check off AND
+    // repoints the target. Both must be rejected.
+    let workspace = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
+    fs::create_dir_all(&global_dir).unwrap();
+
+    fs::write(
+        global_dir.join(GLOBAL_CONFIG_FILE),
+        "auto_snapshot_supabase = true\n[supabase_snapshot]\nrequire_config_target_match_on_rollback = true\n[supabase_snapshot.db]\ndatabase = \"supadb\"\n",
+    )
+    .unwrap();
+    fs::write(
+        workspace.path().join(PROJECT_CONFIG_FILE),
+        "[supabase_snapshot]\nrequire_config_target_match_on_rollback = false\nproject_ref = \"decoy_ref\"\n",
+    )
+    .unwrap();
+
+    let base = load_global_base(home.path());
+    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
+    let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
+
+    assert!(config.supabase_snapshot.require_config_target_match_on_rollback);
+    assert_eq!(config.supabase_snapshot.project_ref, "");
+    assert_has_warning_for(
+        &warnings,
+        "supabase_snapshot.require_config_target_match_on_rollback",
+        "#269 rollback target-match cannot be disabled",
+    );
+    assert_has_warning_for(
+        &warnings,
+        "supabase_snapshot.project_ref",
+        "#269 rollback target-match project_ref repoint",
+    );
+}
+
+#[test]
+fn project_can_disable_supabase_rollback_target_match_when_provider_not_enabled_in_base() {
+    // #269 counter-case: base leaves the provider off, so the project is free
+    // to enable its OWN Supabase target — but even then it may not disable
+    // `require_config_target_match_on_rollback`, because that flag protects
+    // whichever target ends up configured, including a project-chosen one.
+    let workspace = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
+    fs::create_dir_all(&global_dir).unwrap();
+
+    fs::write(
+        global_dir.join(GLOBAL_CONFIG_FILE),
+        "auto_snapshot_supabase = false\n",
+    )
+    .unwrap();
+    fs::write(
+        workspace.path().join(PROJECT_CONFIG_FILE),
+        "auto_snapshot_supabase = true\n[supabase_snapshot]\nrequire_config_target_match_on_rollback = false\n[supabase_snapshot.db]\ndatabase = \"projdb\"\n",
+    )
+    .unwrap();
+
+    let base = load_global_base(home.path());
+    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
+    let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
+
+    // The project's own database target is honored (base never enabled a target)...
+    assert_eq!(config.supabase_snapshot.db.database, "projdb");
+    // ...but the target-match check stays on regardless.
+    assert!(config.supabase_snapshot.require_config_target_match_on_rollback);
+    assert_has_warning_for(
+        &warnings,
+        "supabase_snapshot.require_config_target_match_on_rollback",
+        "#269 rollback target-match unconditional",
     );
 }

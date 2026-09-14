@@ -22,10 +22,15 @@ Project-local config may only tighten security-critical fields, never loosen
 them. The ratcheted set is: `mode`, `allowlist_override_level`, `ci_policy`,
 `snapshot_policy`, `sandbox.enabled`, `sandbox.required`,
 `sandbox.allow_network`, `sandbox.allow_write`, the `auto_snapshot_*` flags
-(`git`, `docker`, `postgres`, `mysql`, `supabase`, `sqlite`), the provider
-target config (`sqlite_snapshot_path`, `postgres_snapshot`/`mysql_snapshot`/
-`supabase_snapshot` `database`, `docker_scope`), `audit.integrity_mode`, and
-project-layer `[[rules]]` `decision = "Allow"`. Audit rotation follows the
+(`git`, `docker`, `postgres`, `mysql`, `supabase`, `sqlite`), the Snapshot
+target of each database provider — `sqlite_snapshot_path`; `postgres_snapshot`
+and `mysql_snapshot`'s `database`, `host`, `port`, and `user`; and
+`supabase_snapshot`'s `project_ref` and `db.database`/`db.host`/`db.port`/
+`db.user` — plus `docker_scope`, `audit.integrity_mode`, and project-layer
+`[[rules]]` `decision = "Allow"`. `supabase_snapshot.require_config_target_match_on_rollback`
+is ratcheted too, but on its own axis: it always tightens (never loosens), even
+for a Supabase target the project is otherwise free to configure (#269).
+Audit rotation follows the
 same rule: a project may disable rotation, raise
 `audit.max_file_size_bytes`, or raise `audit.retention_files`, but it cannot
 enable disabled rotation or lower either retention limit. Snapshot prune
@@ -50,6 +55,21 @@ otherwise, because with both limits unset prune deletes nothing. For
 `sandbox.allow_write` (a `Vec<PathBuf>` where more entries is weaker), the
 Project layer keeps the trusted base set and ignores the project value
 entirely. Global always stays last-layer-wins for every field.
+
+For a database provider's Snapshot target, directionality is a single
+all-or-nothing rule rather than per-field tightening: once the trusted base
+enables the provider (its `auto_snapshot_*` flag, or `snapshot_policy = "Full"`)
+with a non-empty target, the Project layer keeps every target field exactly as
+the base set it and ignores every field the project requested for that target,
+because a project that could repoint even one field (say, only `host`) could
+still redirect a later Rollback at a database it controls. When the base
+leaves the provider off or its target empty, there is nothing to protect and
+the project may enable and configure its own target in full (#269).
+`supabase_snapshot.require_config_target_match_on_rollback` is the one
+exception to "nothing to protect": it keeps `base || requested` regardless of
+whether the target itself is protected, because the check exists to catch a
+target drifting out from under a Snapshot after the fact, not only a target
+the base itself locked down.
 
 `auto_snapshot_*` and `sandbox.enabled` close the bypass where a project could
 otherwise disable snapshots or the sandbox despite a stricter `snapshot_policy`
@@ -93,6 +113,14 @@ de-safeguarding a `Warn`/`Danger` command:
   `aegis snapshot prune --yes` delete every Snapshot, including the recovery
   material for that repository. A project can keep more Snapshots or disable
   prune. (#268)
+- **A database provider's Snapshot target is ratcheted once the base enables
+  it**, and `supabase_snapshot.require_config_target_match_on_rollback`
+  ratchets unconditionally. Before this, a project could repoint an already-
+  enabled Postgres, MySQL, or Supabase target at a database it controls, or
+  switch off the Supabase rollback target-match check, and later have
+  Rollback restore into that decoy — silently producing a Snapshot that looks
+  successful but recovers nothing real. A project can still configure a
+  target the base never enabled. (#269)
 
 ## Annotation — 2026-08-20: two ratcheted fields leave the set
 
