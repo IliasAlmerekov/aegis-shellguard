@@ -167,7 +167,7 @@ Consequences section got in, and how a repository could still widen every
 other field the Decision text doesn't name). `merge_layer` now destructures
 `AegisConfig` and every nested config struct exhaustively, so a field with no
 direction is a compile error, and a test diffs the ratcheted field set against
-the config's JSON schema so an omission fails a build even where the compiler
+the config's JSON schema so an omission fails that test even where the compiler
 can't catch it (a `Custom` group's internal leaves).
 
 Five directions cover every field (CONTEXT.md "Ratchet direction"):
@@ -209,7 +209,7 @@ additionally clamps to a hard ceiling at every layer including Global
 | `sqlite_snapshot_path` | Custom | All-or-nothing once the base path is non-empty (#269). |
 | `docker_scope.{mode,label,name_patterns}` | Custom | Once the docker provider is enabled and the base scope isn't a no-op, only a keep-or-broaden move is honored (`All` broadest; same-label `Labeled`; superset `Names`). |
 | `ci_policy` | Tighten | Stricter of `Allow` < `Block`. |
-| `audit.rotation_enabled` | Tighten | `false` is stricter (`base && requested`). Disabling rotation is available only globally. |
+| `audit.rotation_enabled` | Tighten | `false` is stricter (`base && requested`). A project may disable rotation; only a global config can enable it. |
 | `audit.max_file_size_bytes` | Tighten | Larger retains more history (`max(base, requested)`). |
 | `audit.retention_files` | Tighten | Larger retains more history (`max(base, requested)`). |
 | `audit.compress_rotated` | Unratcheted | Storage format, not audit coverage. |
@@ -217,7 +217,7 @@ additionally clamps to a hard ceiling at every layer including Global
 | `rules` (`[[rules]]`) | Custom | Every field tightens (`Prompt`/`Block`); a project-layer entry whose `decision` or `when.then` is `Allow` is dropped and warned about, not honored. |
 | `sandbox.enabled` | Tighten | `true` is stricter (current behaviour; [#229](https://github.com/IliasAlmerekov/aegis-shellguard/issues/229) tracks folding the Sandbox's mandatory posture in here directly). |
 | `sandbox.required` | Tighten | `true` is stricter (same #229 note). |
-| `sandbox.allow_write` | Custom | Project keeps the intersection of its requested set with the trusted base (narrow-only): see the 2026-08-20 annotation above. The annotation's tree-intersection semantics remain the target; this implementation is still the literal-set filter it describes as the interim state, pending [#229](https://github.com/IliasAlmerekov/aegis-shellguard/issues/229). |
+| `sandbox.allow_write` | Custom | Project keeps the intersection of its requested set with the trusted base (narrow-only): see the 2026-08-20 annotation above. That annotation calls for a tree intersection over path prefixes; the implementation intersects on literal path equality instead, and closing the gap is tracked in [#229](https://github.com/IliasAlmerekov/aegis-shellguard/issues/229). |
 | `sandbox.allow_network` | Tighten | `false` is stricter (`base && requested`). Network access is available only globally. |
 | `prune.enabled` | Tighten | `false` is stricter (`base && requested`). |
 | `prune.max_count_per_provider` | Custom | Larger retains more Snapshots when the base already sets a limit; an unset base limit stays unset rather than adopting the project's. |
@@ -234,8 +234,9 @@ additionally clamps to a hard ceiling at every layer including Global
 `sandbox.allow_write` is the one field where this table and the current
 implementation still disagree with the 2026-08-20 annotation's stated target.
 That annotation calls for a tree intersection over path prefixes: this
-implementation still filters on literal path equality, the same "keep the
-trusted base set" behavior in effect since before that annotation. Both are
-narrow-only, so nothing here weakens the field; closing the gap between
+implementation still filters on literal path equality. The annotation does not
+describe that filter as a stage on the way there. It is simply where the code
+stands today.
+Both are narrow-only, so nothing here weakens the field; closing the gap between
 literal filter and tree intersection is tracked in
 [#229](https://github.com/IliasAlmerekov/aegis-shellguard/issues/229).
