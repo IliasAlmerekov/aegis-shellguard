@@ -321,7 +321,16 @@ warns (ADR-013). "Tighten" and "weaken" are the canonical directions, and the st
 direction is field-specific — more confinement, more Snapshot coverage, fewer
 write paths, and a `Snapshot target` left where trusted config put it are all
 tightenings regardless of the underlying boolean.
-_Avoid_: override, downgrade, merge (reserve "override" for `Override level`)
+_Avoid_: override, downgrade, merge (reserve "override" for `Override level`), loosen
+
+**Ratchet direction**:
+How a project layer may change one config field. Every field has exactly one:
+**Tighten** (keep the stricter of trusted and requested), **Global-only** (the project
+value is ignored), **Append** (project entries are added after trusted ones),
+**Unratcheted** (the last layer wins, by recorded decision), or a named **Custom**
+rule when "stricter" needs its own definition, such as a Snapshot target that stays
+pinned once trusted config enables it.
+_Avoid_: ratchet mode, merge strategy
 
 **Policy rule**:
 A typed `[[rules]]` entry in config whose outcome is a `PolicyRuleDecision` — `Allow`,
