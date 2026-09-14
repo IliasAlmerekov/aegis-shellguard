@@ -35,7 +35,9 @@ pub(crate) trait Ratchet<T> {
 /// the Global layer the requested value always wins (Global is trusted).
 /// `ceiling`, when set, clamps the requested value before comparison — used
 /// by the language-analysis budgets, which cap at every layer including
-/// Global (ADR-022 §6).
+/// Global (ADR-022 §6). The clamp applies to the value kept, never to what
+/// the warning reports: a project sees the number it actually wrote in its
+/// file, not the capped one.
 pub(crate) struct Tighten<T> {
     stricter: fn(T, T) -> T,
     format: fn(&T) -> String,
@@ -78,13 +80,13 @@ impl<T: Clone> Ratchet<T> for Tighten<T> {
         let Some(requested) = overlay else {
             return base;
         };
-        let requested = match self.ceiling {
-            Some(clamp) => clamp(requested),
-            None => requested,
+        let clamped = match self.ceiling {
+            Some(clamp) => clamp(requested.clone()),
+            None => requested.clone(),
         };
         let kept = match layer {
-            ConfigSourceLayer::Global => requested.clone(),
-            ConfigSourceLayer::Project => (self.stricter)(base.clone(), requested.clone()),
+            ConfigSourceLayer::Global => clamped,
+            ConfigSourceLayer::Project => (self.stricter)(base.clone(), clamped),
         };
         if is_project(layer) {
             sink.warn(

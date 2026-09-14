@@ -41,3 +41,21 @@ pub(super) fn assert_has_warning_for(fields: &[String], expected: &str, msg: &st
         "{msg}: expected a `{expected}` warning but got {fields:?}"
     );
 }
+
+/// The `(requested, kept)` strings the project layer's warning for `field`
+/// carries, or `None` when that field did not warn.
+pub(super) fn project_ratchet_warning_strings(
+    base: &AegisConfig,
+    project_path: &Path,
+    field: &str,
+) -> Option<(String, String)> {
+    let layer = ConfigLayerPath {
+        source_layer: ConfigSourceLayer::Project,
+        path: project_path.to_path_buf(),
+    };
+    AegisConfig::project_security_ratchet_warnings(base, &layer)
+        .ok()?
+        .into_iter()
+        .find(|w| w.field == field)
+        .map(|w| (w.requested, w.kept))
+}
