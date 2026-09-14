@@ -143,8 +143,10 @@ pub fn validate_config_layers(current_dir: &Path, home_dir: Option<&Path>) -> Va
     }
 
     for layer in layer_paths {
-        match AegisConfig::project_security_ratchet_warnings(&merged, &layer) {
-            Ok(warnings) => {
+        // One merge produces both the next config and the project-layer
+        // weakening warnings (empty for Global) — no separate re-parse.
+        match AegisConfig::merge_layer_path_with_warnings(merged, &layer) {
+            Ok((next, warnings)) => {
                 for warning in warnings {
                     push_unique_issue(
                         &mut report.warnings,
@@ -158,23 +160,7 @@ pub fn validate_config_layers(current_dir: &Path, home_dir: Option<&Path>) -> Va
                         },
                     );
                 }
-            }
-            Err(err) => {
-                push_unique_issue(
-                    &mut report.errors,
-                    ValidationIssue {
-                        code: config_load_error_code(&err),
-                        message: err.to_string(),
-                        location: layer.path.to_string_lossy().into_owned(),
-                    },
-                );
-                report.valid = false;
-                return report;
-            }
-        }
 
-        match AegisConfig::merge_layer_path_unvalidated(merged, &layer) {
-            Ok(next) => {
                 merged = next;
                 let source_map =
                     ConfigSourceMap::for_config_with_paths(&merged, Some(current_dir), home_dir);

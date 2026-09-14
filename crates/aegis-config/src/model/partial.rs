@@ -6,15 +6,11 @@ use serde::Deserialize;
 use crate::error::ConfigError;
 
 use super::migration::migrate_deprecated_allowlist_in_file;
-use super::ratchet::{
-    ratchet_allow_write, ratchet_bool_loosen, ratchet_bool_tighten, ratchet_language_budget,
-    ratchet_script_file_limit_bytes, ratchet_trusted_aliases,
-};
 use super::serde_helpers::{deserialize_allowlist_rules, deserialize_optional_config_version};
 use super::{
-    AllowlistOverrideLevel, AllowlistRule, AuditIntegrityMode, BlockRule, CiPolicy,
-    ConfigSourceLayer, DockerScope, LanguageAnalysisConfig, Mode, MysqlSnapshotConfig, PolicyRule,
-    PostgresSnapshotConfig, SandboxSettings, SnapshotPolicy, TrustedAlias, UserPattern,
+    AllowlistOverrideLevel, AllowlistRule, AuditIntegrityMode, BlockRule, CiPolicy, DockerScope,
+    Mode, MysqlSnapshotConfig, PolicyRule, PostgresSnapshotConfig, SnapshotPolicy, TrustedAlias,
+    UserPattern,
 };
 
 type Result<T> = std::result::Result<T, ConfigError>;
@@ -65,145 +61,28 @@ pub(super) struct PartialSupabaseSnapshotConfig {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct PartialSandboxSettings {
-    enabled: Option<bool>,
-    required: Option<bool>,
-    allow_write: Option<Vec<PathBuf>>,
-    allow_network: Option<bool>,
-}
-
-impl PartialSandboxSettings {
-    pub(super) fn merge_into(
-        self,
-        base: SandboxSettings,
-        source_layer: ConfigSourceLayer,
-    ) -> SandboxSettings {
-        SandboxSettings {
-            enabled: ratchet_bool_tighten(base.enabled, self.enabled, source_layer),
-            required: ratchet_bool_tighten(base.required, self.required, source_layer),
-            allow_write: ratchet_allow_write(
-                &base.allow_write,
-                self.allow_write.as_ref(),
-                source_layer,
-            ),
-            allow_network: ratchet_bool_loosen(
-                base.allow_network,
-                self.allow_network,
-                source_layer,
-            ),
-        }
-    }
-
-    pub(super) fn required(&self) -> Option<bool> {
-        self.required
-    }
-
-    pub(super) fn enabled(&self) -> Option<bool> {
-        self.enabled
-    }
-
-    pub(super) fn allow_network(&self) -> Option<bool> {
-        self.allow_network
-    }
-
-    pub(super) fn allow_write(&self) -> Option<Vec<PathBuf>> {
-        self.allow_write.clone()
-    }
+    pub(super) enabled: Option<bool>,
+    pub(super) required: Option<bool>,
+    pub(super) allow_write: Option<Vec<PathBuf>>,
+    pub(super) allow_network: Option<bool>,
 }
 
 /// Partial view of [`LanguageAnalysisConfig`] used during layered config merge.
+///
+/// Merged by `ratchet::merge_language_analysis`, which destructures this
+/// struct field-by-field — each budget is its own typed `Ratchet` call, not a
+/// string-keyed dispatch.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct PartialLanguageAnalysisConfig {
-    inline_source_limit_bytes: Option<u64>,
-    script_file_limit_bytes: Option<u64>,
-    max_script_files: Option<u64>,
-    max_depth: Option<u64>,
-    max_targets: Option<u64>,
-    max_aggregate_bytes: Option<u64>,
-    timeout_ms: Option<u64>,
-    trusted_aliases: Option<Vec<TrustedAlias>>,
-}
-
-impl PartialLanguageAnalysisConfig {
-    pub(super) fn merge_into(
-        self,
-        base: LanguageAnalysisConfig,
-        source_layer: ConfigSourceLayer,
-    ) -> LanguageAnalysisConfig {
-        LanguageAnalysisConfig {
-            inline_source_limit_bytes: ratchet_language_budget(
-                base.inline_source_limit_bytes,
-                self.inline_source_limit_bytes,
-                super::rules::LANGUAGE_ANALYSIS_INLINE_SOURCE_MAX_BYTES,
-                source_layer,
-            ),
-            script_file_limit_bytes: ratchet_script_file_limit_bytes(
-                base.script_file_limit_bytes,
-                self.script_file_limit_bytes,
-                source_layer,
-            ),
-            max_script_files: ratchet_language_budget(
-                base.max_script_files,
-                self.max_script_files,
-                super::rules::LANGUAGE_ANALYSIS_MAX_SCRIPT_FILES,
-                source_layer,
-            ),
-            max_depth: ratchet_language_budget(
-                base.max_depth,
-                self.max_depth,
-                super::rules::LANGUAGE_ANALYSIS_MAX_DEPTH,
-                source_layer,
-            ),
-            max_targets: ratchet_language_budget(
-                base.max_targets,
-                self.max_targets,
-                super::rules::LANGUAGE_ANALYSIS_MAX_TARGETS,
-                source_layer,
-            ),
-            max_aggregate_bytes: ratchet_language_budget(
-                base.max_aggregate_bytes,
-                self.max_aggregate_bytes,
-                super::rules::LANGUAGE_ANALYSIS_MAX_AGGREGATE_BYTES,
-                source_layer,
-            ),
-            timeout_ms: ratchet_language_budget(
-                base.timeout_ms,
-                self.timeout_ms,
-                super::rules::LANGUAGE_ANALYSIS_TIMEOUT_MS,
-                source_layer,
-            ),
-            trusted_aliases: ratchet_trusted_aliases(
-                &base.trusted_aliases,
-                self.trusted_aliases.as_ref(),
-                source_layer,
-            ),
-        }
-    }
-
-    pub(super) fn script_file_limit_bytes(&self) -> Option<u64> {
-        self.script_file_limit_bytes
-    }
-
-    pub(super) fn trusted_aliases(&self) -> Option<Vec<TrustedAlias>> {
-        self.trusted_aliases.clone()
-    }
-
-    pub(super) fn budget_fields(&self) -> [(&'static str, Option<u64>); 6] {
-        [
-            (
-                "language_analysis.inline_source_limit_bytes",
-                self.inline_source_limit_bytes,
-            ),
-            ("language_analysis.max_script_files", self.max_script_files),
-            ("language_analysis.max_depth", self.max_depth),
-            ("language_analysis.max_targets", self.max_targets),
-            (
-                "language_analysis.max_aggregate_bytes",
-                self.max_aggregate_bytes,
-            ),
-            ("language_analysis.timeout_ms", self.timeout_ms),
-        ]
-    }
+    pub(super) inline_source_limit_bytes: Option<u64>,
+    pub(super) script_file_limit_bytes: Option<u64>,
+    pub(super) max_script_files: Option<u64>,
+    pub(super) max_depth: Option<u64>,
+    pub(super) max_targets: Option<u64>,
+    pub(super) max_aggregate_bytes: Option<u64>,
+    pub(super) timeout_ms: Option<u64>,
+    pub(super) trusted_aliases: Option<Vec<TrustedAlias>>,
 }
 
 /// Partial config used for layered merging.
@@ -271,33 +150,5 @@ impl PartialConfig {
         }
 
         Ok(config)
-    }
-
-    pub(super) fn sandbox_required(&self) -> Option<bool> {
-        self.sandbox.required()
-    }
-
-    pub(super) fn sandbox_enabled(&self) -> Option<bool> {
-        self.sandbox.enabled()
-    }
-
-    pub(super) fn sandbox_allow_network(&self) -> Option<bool> {
-        self.sandbox.allow_network()
-    }
-
-    pub(super) fn sandbox_allow_write(&self) -> Option<Vec<PathBuf>> {
-        self.sandbox.allow_write()
-    }
-
-    pub(super) fn language_analysis_script_file_limit_bytes(&self) -> Option<u64> {
-        self.language_analysis.script_file_limit_bytes()
-    }
-
-    pub(super) fn language_analysis_trusted_aliases(&self) -> Option<Vec<TrustedAlias>> {
-        self.language_analysis.trusted_aliases()
-    }
-
-    pub(super) fn language_analysis_budget_fields(&self) -> [(&'static str, Option<u64>); 6] {
-        self.language_analysis.budget_fields()
     }
 }

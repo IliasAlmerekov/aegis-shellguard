@@ -10,7 +10,7 @@
 // configuration contract entirely, so neither stays a ratcheted field. They hold
 // until the fields leave `SandboxSettings`
 // (<https://github.com/IliasAlmerekov/aegis-shellguard/issues/229>), and they go
-// with that removal rather than being loosened ahead of it: while the field still
+// with that removal rather than being weakened ahead of it: while the field still
 // constructs the layer as `enabled.then(|| SandboxConfig { .. })`, a project layer
 // that can weaken it is still the C3 bypass. Every other test in this file is
 // unaffected by the amendment.

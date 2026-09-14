@@ -333,7 +333,8 @@ fn supabase_snapshot_fields_merge_by_replacement_and_scalar_override() {
         ..PartialConfig::default()
     };
 
-    let merged = AegisConfig::merge_layer(base, overlay, ConfigSourceLayer::Project);
+    let (merged, _warnings) =
+        AegisConfig::merge_layer(base, overlay, ConfigSourceLayer::Project, "test.aegis.toml");
 
     // Base left `auto_snapshot_supabase` off, so the database-target fields
     // are still free to be set by the project layer (#269 only protects a
@@ -383,7 +384,8 @@ fn partial_supabase_snapshot_overlay_sets_only_the_fields_it_names() {
         ..PartialConfig::default()
     };
 
-    let merged = AegisConfig::merge_layer(base, overlay, ConfigSourceLayer::Project);
+    let (merged, _warnings) =
+        AegisConfig::merge_layer(base, overlay, ConfigSourceLayer::Project, "test.aegis.toml");
 
     assert_eq!(merged.supabase_snapshot.project_ref, "overlay_proj");
     assert!(
@@ -444,7 +446,8 @@ fn db_snapshot_fields_merge_by_replacement_and_scalar_override() {
         ..PartialConfig::default()
     };
 
-    let merged = AegisConfig::merge_layer(base, overlay, ConfigSourceLayer::Project);
+    let (merged, _warnings) =
+        AegisConfig::merge_layer(base, overlay, ConfigSourceLayer::Project, "test.aegis.toml");
 
     assert!(merged.auto_snapshot_postgres);
     assert_eq!(merged.postgres_snapshot.database, "overlay_pg");

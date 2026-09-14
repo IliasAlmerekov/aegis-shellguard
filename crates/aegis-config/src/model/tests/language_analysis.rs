@@ -1,7 +1,8 @@
 use std::fs;
 
 use super::ratchet_helpers::{
-    assert_has_warning_for, assert_no_warning_for, load_global_base, project_ratchet_warnings,
+    assert_has_warning_for, assert_no_warning_for, load_global_base,
+    project_ratchet_warning_strings, project_ratchet_warnings,
 };
 use super::*;
 
@@ -197,6 +198,73 @@ fn project_layer_raising_the_script_file_limit_surfaces_a_ratchet_warning() {
         &warnings,
         "language_analysis.script_file_limit_bytes",
         "raising the script-file limit above the trusted global value",
+    );
+}
+
+#[test]
+fn project_layer_raising_the_script_file_limit_above_the_ceiling_surfaces_a_ratchet_warning() {
+    let home = TempDir::new().unwrap();
+    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
+    fs::create_dir_all(&global_dir).unwrap();
+    fs::write(
+        global_dir.join(GLOBAL_CONFIG_FILE),
+        format!(
+            "[language_analysis]\nscript_file_limit_bytes = {LANGUAGE_ANALYSIS_SCRIPT_FILE_HARD_CEILING_BYTES}\n"
+        ),
+    )
+    .unwrap();
+    let base = load_global_base(home.path());
+
+    let project = TempDir::new().unwrap();
+    let project_path = project.path().join(PROJECT_CONFIG_FILE);
+    fs::write(
+        &project_path,
+        "[language_analysis]\nscript_file_limit_bytes = 5000000\n",
+    )
+    .unwrap();
+
+    let warnings = project_ratchet_warnings(&base, &project_path);
+    assert_has_warning_for(
+        &warnings,
+        "language_analysis.script_file_limit_bytes",
+        "a project request above the hard ceiling is not honored and must warn",
+    );
+}
+
+#[test]
+fn the_ratchet_warning_reports_the_number_the_project_file_actually_wrote() {
+    let home = TempDir::new().unwrap();
+    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
+    fs::create_dir_all(&global_dir).unwrap();
+    fs::write(
+        global_dir.join(GLOBAL_CONFIG_FILE),
+        "[language_analysis]\nscript_file_limit_bytes = 65536\n",
+    )
+    .unwrap();
+    let base = load_global_base(home.path());
+
+    let project = TempDir::new().unwrap();
+    let project_path = project.path().join(PROJECT_CONFIG_FILE);
+    fs::write(
+        &project_path,
+        "[language_analysis]\nscript_file_limit_bytes = 5000000\n",
+    )
+    .unwrap();
+
+    let (requested, kept) = project_ratchet_warning_strings(
+        &base,
+        &project_path,
+        "language_analysis.script_file_limit_bytes",
+    )
+    .expect("a request above both the global value and the ceiling must warn");
+
+    assert_eq!(
+        requested, "5000000",
+        "the warning must echo the project file's own number, not the ceiling-clamped one"
+    );
+    assert_eq!(
+        kept, "65536",
+        "the trusted global value is what stays in force"
     );
 }
 

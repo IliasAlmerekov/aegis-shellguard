@@ -13,6 +13,8 @@ mod deser;
 mod language_analysis;
 mod merge;
 mod migration;
+mod provenance;
 mod prune;
 mod ratchet;
+mod ratchet_coverage;
 mod ratchet_helpers;
