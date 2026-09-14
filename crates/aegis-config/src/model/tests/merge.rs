@@ -70,7 +70,8 @@ fn db_snapshot_nested_tables_do_not_inherit_base_values_on_overlay_replacement()
         ..PartialConfig::default()
     };
 
-    let merged = AegisConfig::merge_layer(base, overlay, ConfigSourceLayer::Project);
+    let (merged, _warnings) =
+        AegisConfig::merge_layer(base, overlay, ConfigSourceLayer::Project, "test.aegis.toml");
 
     assert_eq!(merged.postgres_snapshot.database, "overlay_pg");
     assert_eq!(merged.postgres_snapshot.host, "localhost");

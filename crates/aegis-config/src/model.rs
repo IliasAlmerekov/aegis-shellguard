@@ -28,6 +28,7 @@ pub(crate) fn validate_custom_patterns(patterns: &[UserPattern]) -> Result<()> {
 }
 
 mod enums;
+mod merge;
 mod migration;
 mod partial;
 mod ratchet;
@@ -60,14 +61,6 @@ pub const CURRENT_CONFIG_VERSION: u32 = 1;
 
 type Result<T> = std::result::Result<T, ConfigError>;
 
-fn merge_project_mode(base: Mode, overlay: Option<Mode>, layer: ConfigSourceLayer) -> Mode {
-    let requested = overlay.unwrap_or(base);
-    match layer {
-        ConfigSourceLayer::Global => requested,
-        ConfigSourceLayer::Project => most_restrictive_mode(base, requested),
-    }
-}
-
 fn most_restrictive_mode(left: Mode, right: Mode) -> Mode {
     if mode_rank(right) >= mode_rank(left) {
         right
@@ -81,18 +74,6 @@ fn mode_rank(mode: Mode) -> u8 {
         Mode::Audit => 0,
         Mode::Protect => 1,
         Mode::Strict => 2,
-    }
-}
-
-fn merge_project_allowlist_override_level(
-    base: AllowlistOverrideLevel,
-    overlay: Option<AllowlistOverrideLevel>,
-    layer: ConfigSourceLayer,
-) -> AllowlistOverrideLevel {
-    let requested = overlay.unwrap_or(base);
-    match layer {
-        ConfigSourceLayer::Global => requested,
-        ConfigSourceLayer::Project => most_restrictive_allowlist_override_level(base, requested),
     }
 }
 
@@ -115,18 +96,6 @@ fn allowlist_override_level_rank(level: AllowlistOverrideLevel) -> u8 {
     }
 }
 
-fn merge_project_ci_policy(
-    base: CiPolicy,
-    overlay: Option<CiPolicy>,
-    layer: ConfigSourceLayer,
-) -> CiPolicy {
-    let requested = overlay.unwrap_or(base);
-    match layer {
-        ConfigSourceLayer::Global => requested,
-        ConfigSourceLayer::Project => most_restrictive_ci_policy(base, requested),
-    }
-}
-
 fn most_restrictive_ci_policy(left: CiPolicy, right: CiPolicy) -> CiPolicy {
     if ci_policy_rank(right) >= ci_policy_rank(left) {
         right
@@ -139,18 +108,6 @@ fn ci_policy_rank(policy: CiPolicy) -> u8 {
     match policy {
         CiPolicy::Allow => 0,
         CiPolicy::Block => 1,
-    }
-}
-
-fn merge_project_snapshot_policy(
-    base: SnapshotPolicy,
-    overlay: Option<SnapshotPolicy>,
-    layer: ConfigSourceLayer,
-) -> SnapshotPolicy {
-    let requested = overlay.unwrap_or(base);
-    match layer {
-        ConfigSourceLayer::Global => requested,
-        ConfigSourceLayer::Project => most_restrictive_snapshot_policy(base, requested),
     }
 }
 
@@ -170,22 +127,11 @@ fn snapshot_policy_rank(policy: SnapshotPolicy) -> u8 {
     }
 }
 
-fn merge_project_integrity_mode(
-    base: AuditIntegrityMode,
-    overlay: Option<AuditIntegrityMode>,
-    layer: ConfigSourceLayer,
-) -> AuditIntegrityMode {
-    let requested = overlay.unwrap_or(base);
-    match layer {
-        ConfigSourceLayer::Global => requested,
-        ConfigSourceLayer::Project => most_restrictive_integrity_mode(base, requested),
-    }
-}
-
 /// Stricter of two `AuditIntegrityMode` values (`ChainSha256` wins over `Off`).
-/// Shared by the merge path and the warning collector so the reported `kept`
-/// value always matches the effective merged value.
-fn most_restrictive_integrity_mode(
+/// Used as the `stricter` comparator for the `Tighten` direction on
+/// `audit.integrity_mode` (`ratchet::audit`), so the merge path and the
+/// warning it produces always agree on the effective `kept` value.
+pub(super) fn most_restrictive_integrity_mode(
     left: AuditIntegrityMode,
     right: AuditIntegrityMode,
 ) -> AuditIntegrityMode {
@@ -203,14 +149,12 @@ fn integrity_mode_rank(mode: AuditIntegrityMode) -> u8 {
     }
 }
 
-// The ratchet helpers live in `model::ratchet`; `merge_layer` below and the
-// `partial` submodule both call them so the merge path and the warning
-// collector share one definition of the effective `kept` value.
-use ratchet::{
-    is_untrusted_allow, merge_supabase_snapshot, provider_enabled_in_base, ratchet_audit_retention,
-    ratchet_bool_loosen, ratchet_bool_tighten, ratchet_docker_scope, ratchet_mysql_snapshot,
-    ratchet_postgres_snapshot, ratchet_prune_retention, ratchet_sqlite_path,
-};
+// Every field's Ratchet direction lives in `model::ratchet` (ADR-013,
+// CONTEXT.md "Ratchet direction"). `merge_layer` below destructures
+// `AegisConfig` and every nested config struct exhaustively and routes each
+// field through its declared direction in one pass, producing the merged
+// config AND the project-layer weakening warnings together.
+use ratchet::SecurityRatchetWarning;
 
 /// A resolved config file path together with the layer it represents.
 #[derive(Debug, Clone)]
@@ -454,10 +398,20 @@ impl AegisConfig {
         layers
     }
 
-    /// Merge a single config layer file into `base` without runtime validation.
-    pub fn merge_layer_path_unvalidated(base: Self, layer: &ConfigLayerPath) -> Result<Self> {
+    /// Merge a single config layer file into `base` without runtime
+    /// validation, returning the project-layer weakening warnings from the
+    /// SAME pass (empty for the Global layer, which is trusted).
+    pub(crate) fn merge_layer_path_unvalidated(
+        base: Self,
+        layer: &ConfigLayerPath,
+    ) -> Result<(Self, Vec<SecurityRatchetWarning>)> {
         let overlay = PartialConfig::from_path(&layer.path)?;
-        Ok(Self::merge_layer(base, overlay, layer.source_layer))
+        Ok(Self::merge_layer(
+            base,
+            overlay,
+            layer.source_layer,
+            &layer.path.to_string_lossy(),
+        ))
     }
 
     fn load_for_internal(
@@ -472,7 +426,12 @@ impl AegisConfig {
 
         if let Some(path) = global_path.as_deref().filter(|p| p.is_file()) {
             let global = PartialConfig::from_path(path)?;
-            merged = Self::merge_layer(merged, global, ConfigSourceLayer::Global);
+            (merged, _) = Self::merge_layer(
+                merged,
+                global,
+                ConfigSourceLayer::Global,
+                &path.to_string_lossy(),
+            );
             if validate_runtime_requirements {
                 merged.validate_runtime_requirements_for_path(path)?;
             }
@@ -480,216 +439,18 @@ impl AegisConfig {
 
         if project_path.is_file() {
             let project = PartialConfig::from_path(&project_path)?;
-            merged = Self::merge_layer(merged, project, ConfigSourceLayer::Project);
+            (merged, _) = Self::merge_layer(
+                merged,
+                project,
+                ConfigSourceLayer::Project,
+                &project_path.to_string_lossy(),
+            );
             if validate_runtime_requirements {
                 merged.validate_runtime_requirements_for_path(&project_path)?;
             }
         }
 
         Ok(merged)
-    }
-
-    fn merge_layer(base: Self, overlay: PartialConfig, allowlist_layer: ConfigSourceLayer) -> Self {
-        let ratchet_tighten =
-            |base_val, overlay_val| ratchet_bool_tighten(base_val, overlay_val, allowlist_layer);
-
-        // C3-01: provider target config ratchet. Compute the per-provider
-        // `provider_enabled_in_base` predicates BEFORE any field moves out of
-        // `base`, and route them through the SAME helper the warning collector
-        // uses so the merge and warning stay in lock-step (notably under
-        // `SnapshotPolicy::None`, where no provider is ever materialized and the
-        // ratchet must not fire).
-        let postgres_enabled = provider_enabled_in_base(&base, base.auto_snapshot_postgres);
-        let mysql_enabled = provider_enabled_in_base(&base, base.auto_snapshot_mysql);
-        let supabase_enabled = provider_enabled_in_base(&base, base.auto_snapshot_supabase);
-        let sqlite_enabled = provider_enabled_in_base(&base, base.auto_snapshot_sqlite);
-        let docker_enabled = provider_enabled_in_base(&base, base.auto_snapshot_docker);
-
-        let mut custom_patterns = base.custom_patterns;
-        let custom_pattern_count = overlay.custom_patterns.len();
-        custom_patterns.extend(overlay.custom_patterns);
-
-        let mut custom_pattern_layers = base.custom_pattern_layers;
-        custom_pattern_layers.extend(std::iter::repeat_n(allowlist_layer, custom_pattern_count));
-
-        let mut allowlist = base.allowlist;
-        let allowlist_count = overlay.allowlist.len();
-        allowlist.extend(overlay.allowlist);
-
-        let mut allowlist_layers = base.allowlist_layers;
-        allowlist_layers.extend(std::iter::repeat_n(allowlist_layer, allowlist_count));
-
-        let mut blocklist = base.blocklist;
-        let blocklist_count = overlay.blocklist.len();
-        blocklist.extend(overlay.blocklist);
-
-        let mut blocklist_layers = base.blocklist_layers;
-        blocklist_layers.extend(std::iter::repeat_n(allowlist_layer, blocklist_count));
-
-        // C3-01: provider target config ratchet. The `*_enabled` predicates
-        // above were computed before any field moved out of `base`.
-        let postgres_snapshot = ratchet_postgres_snapshot(
-            &base.postgres_snapshot,
-            overlay.postgres_snapshot.as_ref(),
-            allowlist_layer,
-            postgres_enabled,
-        );
-        let mysql_snapshot = ratchet_mysql_snapshot(
-            &base.mysql_snapshot,
-            overlay.mysql_snapshot.as_ref(),
-            allowlist_layer,
-            mysql_enabled,
-        );
-        let supabase_snapshot = merge_supabase_snapshot(
-            &base.supabase_snapshot,
-            &overlay.supabase_snapshot,
-            allowlist_layer,
-            supabase_enabled,
-        );
-        let sqlite_snapshot_path = ratchet_sqlite_path(
-            &base.sqlite_snapshot_path,
-            overlay.sqlite_snapshot_path.as_ref(),
-            allowlist_layer,
-            sqlite_enabled,
-        );
-        let docker_scope = ratchet_docker_scope(
-            &base.docker_scope,
-            overlay.docker_scope.as_ref(),
-            allowlist_layer,
-            docker_enabled,
-        );
-        let audit_rotation_enabled = ratchet_bool_loosen(
-            base.audit.rotation_enabled,
-            overlay.audit.rotation_enabled,
-            allowlist_layer,
-        );
-        let audit_max_file_size_bytes = ratchet_audit_retention(
-            base.audit.max_file_size_bytes,
-            overlay.audit.max_file_size_bytes,
-            allowlist_layer,
-        );
-        let audit_retention_files = ratchet_audit_retention(
-            base.audit.retention_files,
-            overlay.audit.retention_files,
-            allowlist_layer,
-        );
-
-        Self {
-            config_version: overlay.config_version.unwrap_or(base.config_version),
-            mode: merge_project_mode(base.mode, overlay.mode, allowlist_layer),
-            custom_patterns,
-            custom_pattern_layers,
-            allowlist,
-            allowlist_layers,
-            blocklist,
-            blocklist_layers,
-            audit_max_file_size_bytes_source: if overlay.audit.max_file_size_bytes
-                == Some(audit_max_file_size_bytes)
-            {
-                Some(allowlist_layer)
-            } else {
-                base.audit_max_file_size_bytes_source
-            },
-            audit_retention_files_source: if overlay.audit.retention_files
-                == Some(audit_retention_files)
-            {
-                Some(allowlist_layer)
-            } else {
-                base.audit_retention_files_source
-            },
-            allowlist_override_level: merge_project_allowlist_override_level(
-                base.allowlist_override_level,
-                overlay.allowlist_override_level,
-                allowlist_layer,
-            ),
-            snapshot_policy: merge_project_snapshot_policy(
-                base.snapshot_policy,
-                overlay.snapshot_policy,
-                allowlist_layer,
-            ),
-            auto_snapshot_git: ratchet_tighten(base.auto_snapshot_git, overlay.auto_snapshot_git),
-            auto_snapshot_docker: ratchet_tighten(
-                base.auto_snapshot_docker,
-                overlay.auto_snapshot_docker,
-            ),
-            auto_snapshot_postgres: ratchet_tighten(
-                base.auto_snapshot_postgres,
-                overlay.auto_snapshot_postgres,
-            ),
-            postgres_snapshot,
-            auto_snapshot_mysql: ratchet_tighten(
-                base.auto_snapshot_mysql,
-                overlay.auto_snapshot_mysql,
-            ),
-            mysql_snapshot,
-            auto_snapshot_supabase: ratchet_tighten(
-                base.auto_snapshot_supabase,
-                overlay.auto_snapshot_supabase,
-            ),
-            supabase_snapshot,
-            auto_snapshot_sqlite: ratchet_tighten(
-                base.auto_snapshot_sqlite,
-                overlay.auto_snapshot_sqlite,
-            ),
-            sqlite_snapshot_path,
-            docker_scope,
-            ci_policy: merge_project_ci_policy(base.ci_policy, overlay.ci_policy, allowlist_layer),
-            rules: {
-                // C3-residual Fix-1: a project layer may not auto-approve via
-                // `[[rules]] decision = "Allow"` (project may only tighten via
-                // Prompt/Block). Drop project-layer Allow entries at merge and
-                // surface them via the ratchet warning collector (which uses the
-                // SAME `is_untrusted_allow` predicate). Global is trusted — all
-                // overlay rules are extended (last-wins, including Allow).
-                let mut r = base.rules;
-                if allowlist_layer == ConfigSourceLayer::Project {
-                    r.extend(
-                        overlay
-                            .rules
-                            .into_iter()
-                            .filter(|rule| !is_untrusted_allow(rule)),
-                    );
-                } else {
-                    r.extend(overlay.rules);
-                }
-                r
-            },
-            audit: AuditConfig {
-                rotation_enabled: audit_rotation_enabled,
-                max_file_size_bytes: audit_max_file_size_bytes,
-                retention_files: audit_retention_files,
-                compress_rotated: overlay
-                    .audit
-                    .compress_rotated
-                    .unwrap_or(base.audit.compress_rotated),
-                integrity_mode: merge_project_integrity_mode(
-                    base.audit.integrity_mode,
-                    overlay.audit.integrity_mode,
-                    allowlist_layer,
-                ),
-            },
-            sandbox: overlay.sandbox.merge_into(base.sandbox, allowlist_layer),
-            prune: PruneConfig {
-                enabled: ratchet_bool_loosen(
-                    base.prune.enabled,
-                    overlay.prune.enabled,
-                    allowlist_layer,
-                ),
-                max_count_per_provider: ratchet_prune_retention(
-                    base.prune.max_count_per_provider,
-                    overlay.prune.max_count_per_provider,
-                    allowlist_layer,
-                ),
-                max_age_days: ratchet_prune_retention(
-                    base.prune.max_age_days,
-                    overlay.prune.max_age_days,
-                    allowlist_layer,
-                ),
-            },
-            language_analysis: overlay
-                .language_analysis
-                .merge_into(base.language_analysis, allowlist_layer),
-        }
     }
 
     fn validate(&self) -> Result<()> {

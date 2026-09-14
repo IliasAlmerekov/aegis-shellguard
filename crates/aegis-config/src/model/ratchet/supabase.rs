@@ -1,199 +1,159 @@
-//! Supabase Snapshot-target ratchet: merge and per-field warnings.
+//! `Custom` direction for the Supabase Snapshot target.
 //!
-//! Lives here rather than in `partial.rs` to match the other three provider
-//! ratchets (`ratchet_postgres_snapshot`, `ratchet_mysql_snapshot`,
-//! `ratchet_sqlite_path`), which all live in the `ratchet` module.
 //! `PartialSupabaseSnapshotConfig` needs field-level `Option`s, unlike
-//! Postgres/MySQL, because `require_config_target_match_on_rollback` must
-//! ratchet independently of the database-target fields: a project must never
-//! disable the rollback target-match check, even for a Supabase target it is
-//! otherwise free to configure itself (#269).
-//!
-//! `push_supabase_ratchet_warnings` derives `kept` by calling
-//! [`merge_supabase_snapshot`] — the SAME function `model::merge_layer` calls
-//! — so the reported `kept` value always matches what the merge actually
-//! produced, the same guarantee the Postgres/MySQL warning helpers give.
+//! Postgres/MySQL, which stay whole structs, because
+//! `require_config_target_match_on_rollback` must ratchet independently of
+//! the database-target fields: a project must never disable the rollback
+//! target-match check, even for a Supabase target it is otherwise free to
+//! configure itself (#269).
 
 use crate::allowlist::ConfigSourceLayer;
 
 use super::super::partial::PartialSupabaseSnapshotConfig;
 use super::super::{PostgresSnapshotConfig, SupabaseSnapshotConfig};
-use super::{SecurityRatchetWarning, push_ratchet_warning, ratchet_bool_tighten};
+use super::direction::bool_true_is_stricter;
+use super::warning::{RatchetSink, is_project};
 
 /// Whether a Project-layer overlay must keep every Supabase database-target
-/// field pinned to `base`. Shared by [`merge_supabase_snapshot`] and
-/// [`push_supabase_ratchet_warnings`] so both agree on exactly the same
-/// condition (#269).
-pub(super) fn supabase_target_protected(
+/// field pinned to `base`.
+fn target_protected(
     base: &SupabaseSnapshotConfig,
-    source_layer: ConfigSourceLayer,
+    layer: ConfigSourceLayer,
     provider_enabled_in_base: bool,
 ) -> bool {
-    source_layer == ConfigSourceLayer::Project
-        && provider_enabled_in_base
-        && !base.db.database.is_empty()
+    is_project(layer) && provider_enabled_in_base && !base.db.database.is_empty()
 }
 
-/// Merge a project/global Supabase overlay into the trusted `base`.
+/// Merge a project/global Supabase overlay into the trusted `base`, and
+/// record every per-field weakening attempt. Under the Project layer, once
+/// `provider_enabled_in_base` is true AND the base already has a non-empty
+/// `db.database`, the database-target fields (`project_ref`, `db.database`,
+/// `db.host`, `db.port`, `db.user`) stay pinned to `base` regardless of what
+/// the overlay requests. `require_config_target_match_on_rollback` ratchets
+/// on its own axis, unconditionally: it is protected even when the project is
+/// free to configure its own target. Global stays last-wins for every field.
 ///
-/// Under the Project layer, once `provider_enabled_in_base` is true AND the
-/// base already has a non-empty `db.database`, the database-target fields
-/// (`project_ref`, `db.database`, `db.host`, `db.port`, `db.user`) stay
-/// pinned to `base` regardless of what the overlay requests — a project can
-/// no longer repoint an enabled Supabase target at a decoy database.
-/// `require_config_target_match_on_rollback` ratchets on its own via
-/// `ratchet_bool_tighten`, unconditionally: it is protected even when the
-/// project is free to configure its own target. Global stays last-wins for
-/// every field.
-pub(crate) fn merge_supabase_snapshot(
-    base: &SupabaseSnapshotConfig,
-    overlay: &PartialSupabaseSnapshotConfig,
-    source_layer: ConfigSourceLayer,
+/// The destructure of `overlay.db` is an exhaustive tripwire — a new leaf
+/// field on `PostgresSnapshotConfig` breaks this until it is added here.
+pub(crate) fn custom_supabase_snapshot(
+    base: SupabaseSnapshotConfig,
+    overlay: PartialSupabaseSnapshotConfig,
+    layer: ConfigSourceLayer,
+    location: &str,
     provider_enabled_in_base: bool,
+    sink: &mut RatchetSink,
 ) -> SupabaseSnapshotConfig {
-    let target_protected = supabase_target_protected(base, source_layer, provider_enabled_in_base);
+    sink.touch("supabase_snapshot");
+    let protected = target_protected(&base, layer, provider_enabled_in_base);
+    let PartialSupabaseSnapshotConfig {
+        project_ref: req_project_ref,
+        require_config_target_match_on_rollback: req_match_on_rollback,
+        db: req_db,
+    } = overlay;
+    let super::super::partial::PartialSupabaseDb {
+        database: req_database,
+        host: req_host,
+        port: req_port,
+        user: req_user,
+    } = req_db;
 
-    let project_ref = if target_protected {
+    let project_ref = if protected {
         base.project_ref.clone()
     } else {
-        overlay
-            .project_ref
+        req_project_ref
             .clone()
             .unwrap_or_else(|| base.project_ref.clone())
     };
     let db = PostgresSnapshotConfig {
-        database: if target_protected {
+        database: if protected {
             base.db.database.clone()
         } else {
-            overlay
-                .db
-                .database
+            req_database
                 .clone()
                 .unwrap_or_else(|| base.db.database.clone())
         },
-        host: if target_protected {
+        host: if protected {
             base.db.host.clone()
         } else {
-            overlay
-                .db
-                .host
-                .clone()
-                .unwrap_or_else(|| base.db.host.clone())
+            req_host.clone().unwrap_or_else(|| base.db.host.clone())
         },
-        port: if target_protected {
+        port: if protected {
             base.db.port
         } else {
-            overlay.db.port.unwrap_or(base.db.port)
+            req_port.unwrap_or(base.db.port)
         },
-        user: if target_protected {
+        user: if protected {
             base.db.user.clone()
         } else {
-            overlay
-                .db
-                .user
-                .clone()
-                .unwrap_or_else(|| base.db.user.clone())
+            req_user.clone().unwrap_or_else(|| base.db.user.clone())
         },
     };
-
-    SupabaseSnapshotConfig {
-        project_ref,
-        require_config_target_match_on_rollback: ratchet_bool_tighten(
+    let require_config_target_match_on_rollback = match layer {
+        ConfigSourceLayer::Global => {
+            req_match_on_rollback.unwrap_or(base.require_config_target_match_on_rollback)
+        }
+        ConfigSourceLayer::Project => bool_true_is_stricter(
             base.require_config_target_match_on_rollback,
-            overlay.require_config_target_match_on_rollback,
-            source_layer,
+            req_match_on_rollback.unwrap_or(base.require_config_target_match_on_rollback),
         ),
+    };
+
+    let kept = SupabaseSnapshotConfig {
+        project_ref,
+        require_config_target_match_on_rollback,
         db,
-    }
-}
+    };
 
-/// Report every `[supabase_snapshot]` value a project layer requested but the
-/// ratchet dropped. `kept` is the SAME [`merge_supabase_snapshot`] result the
-/// merge path produces, compared field-by-field against what the overlay
-/// requested, so a reported diff always matches the effective merged value.
-pub(super) fn push_supabase_ratchet_warnings(
-    warnings: &mut Vec<SecurityRatchetWarning>,
-    base: &SupabaseSnapshotConfig,
-    overlay: &PartialSupabaseSnapshotConfig,
-    provider_enabled_in_base: bool,
-    location: &str,
-) {
-    let kept = merge_supabase_snapshot(
-        base,
-        overlay,
-        ConfigSourceLayer::Project,
-        provider_enabled_in_base,
-    );
-
-    push_string_field_warning(
-        warnings,
-        "supabase_snapshot.project_ref",
-        overlay.project_ref.as_deref(),
-        &kept.project_ref,
-        location,
-    );
-    push_string_field_warning(
-        warnings,
-        "supabase_snapshot.db.database",
-        overlay.db.database.as_deref(),
-        &kept.db.database,
-        location,
-    );
-    push_string_field_warning(
-        warnings,
-        "supabase_snapshot.db.host",
-        overlay.db.host.as_deref(),
-        &kept.db.host,
-        location,
-    );
-    if let Some(requested) = overlay.db.port
-        && requested != kept.db.port
-    {
-        push_ratchet_warning(
-            warnings,
-            "supabase_snapshot.db.port",
-            requested.to_string(),
-            kept.db.port.to_string(),
-            location,
-        );
+    if is_project(layer) {
+        if let Some(requested) = req_project_ref {
+            sink.warn(
+                "supabase_snapshot.project_ref",
+                requested,
+                kept.project_ref.clone(),
+                location,
+            );
+        }
+        if let Some(requested) = req_database {
+            sink.warn(
+                "supabase_snapshot.db.database",
+                requested,
+                kept.db.database.clone(),
+                location,
+            );
+        }
+        if let Some(requested) = req_host {
+            sink.warn(
+                "supabase_snapshot.db.host",
+                requested,
+                kept.db.host.clone(),
+                location,
+            );
+        }
+        if let Some(requested) = req_port {
+            sink.warn(
+                "supabase_snapshot.db.port",
+                requested.to_string(),
+                kept.db.port.to_string(),
+                location,
+            );
+        }
+        if let Some(requested) = req_user {
+            sink.warn(
+                "supabase_snapshot.db.user",
+                requested,
+                kept.db.user.clone(),
+                location,
+            );
+        }
+        if let Some(requested) = req_match_on_rollback {
+            sink.warn(
+                "supabase_snapshot.require_config_target_match_on_rollback",
+                requested.to_string(),
+                kept.require_config_target_match_on_rollback.to_string(),
+                location,
+            );
+        }
     }
-    push_string_field_warning(
-        warnings,
-        "supabase_snapshot.db.user",
-        overlay.db.user.as_deref(),
-        &kept.db.user,
-        location,
-    );
 
-    if let Some(requested) = overlay.require_config_target_match_on_rollback
-        && requested != kept.require_config_target_match_on_rollback
-    {
-        push_ratchet_warning(
-            warnings,
-            "supabase_snapshot.require_config_target_match_on_rollback",
-            requested.to_string(),
-            kept.require_config_target_match_on_rollback.to_string(),
-            location,
-        );
-    }
-}
-
-fn push_string_field_warning(
-    warnings: &mut Vec<SecurityRatchetWarning>,
-    field: &'static str,
-    requested: Option<&str>,
-    kept: &str,
-    location: &str,
-) {
-    if let Some(requested) = requested
-        && requested != kept
-    {
-        push_ratchet_warning(
-            warnings,
-            field,
-            requested.to_string(),
-            kept.to_string(),
-            location,
-        );
-    }
+    kept
 }
