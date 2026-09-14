@@ -46,6 +46,8 @@ pub use rules::{
 // from `model::tests` (which does `pub use super::*`) and from the merge logic
 // below. These stay private aliases — visibility is unchanged.
 use partial::PartialConfig;
+#[cfg(test)]
+use partial::{PartialSupabaseDb, PartialSupabaseSnapshotConfig};
 use serde_helpers::{
     default_config_version, deserialize_allowlist_rules, deserialize_config_version,
 };
@@ -205,9 +207,9 @@ fn integrity_mode_rank(mode: AuditIntegrityMode) -> u8 {
 // `partial` submodule both call them so the merge path and the warning
 // collector share one definition of the effective `kept` value.
 use ratchet::{
-    is_untrusted_allow, provider_enabled_in_base, ratchet_audit_retention, ratchet_bool_loosen,
-    ratchet_bool_tighten, ratchet_docker_scope, ratchet_mysql_snapshot, ratchet_postgres_snapshot,
-    ratchet_prune_retention, ratchet_sqlite_path, ratchet_supabase_snapshot,
+    is_untrusted_allow, merge_supabase_snapshot, provider_enabled_in_base, ratchet_audit_retention,
+    ratchet_bool_loosen, ratchet_bool_tighten, ratchet_docker_scope, ratchet_mysql_snapshot,
+    ratchet_postgres_snapshot, ratchet_prune_retention, ratchet_sqlite_path,
 };
 
 /// A resolved config file path together with the layer it represents.
@@ -538,9 +540,9 @@ impl AegisConfig {
             allowlist_layer,
             mysql_enabled,
         );
-        let supabase_snapshot = ratchet_supabase_snapshot(
+        let supabase_snapshot = merge_supabase_snapshot(
             &base.supabase_snapshot,
-            overlay.supabase_snapshot.as_ref(),
+            &overlay.supabase_snapshot,
             allowlist_layer,
             supabase_enabled,
         );

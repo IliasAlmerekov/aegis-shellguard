@@ -11,6 +11,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Fixed: Project config cannot disable the Supabase rollback target-match check, and cannot repoint a PostgreSQL, MySQL, Supabase, or SQLite Snapshot target the global layer already enabled. (#269)
 - Fixed: Project config cannot enable Snapshot prune, lower `prune.max_count_per_provider` or `prune.max_age_days`, or add a prune retention limit the global layer leaves unset. (#268)
 - Fixed: Project config cannot reduce Audit log rotation retention or enable rotation when the global layer disables it. (#267)
 

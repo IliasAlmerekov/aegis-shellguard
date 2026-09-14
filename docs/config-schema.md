@@ -201,6 +201,12 @@ user = ""
 - `postgres_snapshot.host` and `postgres_snapshot.port` select the database endpoint
 - `postgres_snapshot.user` may be left empty to use `PGUSER` or the current OS user
 - credentials must come from `PGPASSWORD` or `~/.pgpass`; never store passwords in config
+- Project-layer ratchet (ADR-013): once the global layer enables PostgreSQL with
+  a non-empty `database`, a project config cannot change `database`, `host`,
+  `port`, or `user` — every field stays at the global value and `aegis config
+  validate` reports a `project_security_ratchet` warning per changed field. A
+  project may still enable and configure its own target when the global layer
+  leaves PostgreSQL off. (#269)
 
 ### MySQL/MariaDB snapshots
 
@@ -219,6 +225,9 @@ user = ""
 - `mysql_snapshot.host` and `mysql_snapshot.port` select the database endpoint
 - `mysql_snapshot.user` may be left empty to use `MYSQL_USER` or `~/.my.cnf`
 - credentials must come from `MYSQL_PWD` or `~/.my.cnf`; never store passwords in config
+- Project-layer ratchet (ADR-013): the same rule as PostgreSQL — once the
+  global layer enables MySQL with a non-empty `database`, a project config
+  cannot change `database`, `host`, `port`, or `user`. (#269)
 
 ### SQLite snapshots
 
@@ -230,6 +239,9 @@ sqlite_snapshot_path = ""
 - `auto_snapshot_sqlite` enables SQLite when a command's Snapshot plan requests it
 - `sqlite_snapshot_path` must point to the `.db` file, either relative to the current working directory or absolute
 - SQLite snapshots do not use a username/password block; the database file path is the only required setting
+- Project-layer ratchet (ADR-013): once the global layer enables SQLite with a
+  non-empty path, a project config cannot repoint `sqlite_snapshot_path` to a
+  different path. (#269)
 
 ### Supabase snapshots
 
@@ -253,6 +265,17 @@ user = ""
 - `require_config_target_match_on_rollback` fail-closes rollback if current config disagrees with the manifest target
 - `supabase_snapshot.db` configures the direct PostgreSQL transport used by Phase 1
 - credentials must come from `PGPASSWORD` or `~/.pgpass`; never store passwords in config
+- Project-layer ratchet (ADR-013): once the global layer enables Supabase with
+  a non-empty `db.database`, a project config cannot change `project_ref`,
+  `db.database`, `db.host`, `db.port`, or `db.user` — a project that could
+  repoint any of them could aim Rollback at a database it controls. A project
+  may still enable and configure its own target when the global layer leaves
+  Supabase off. `require_config_target_match_on_rollback` ratchets on its own,
+  unconditionally: a project layer can never turn it off, even for a target it
+  is otherwise free to configure, because the check exists to catch a target
+  that has drifted since the Snapshot was taken. A `false` set in global
+  config is trusted and stays in effect — the ratchet only restricts the
+  project layer. (#269)
 
 ## Sandbox
 

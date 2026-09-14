@@ -40,9 +40,9 @@ fn project_sqlite_snapshot_path_cannot_empty_global_enabled() {
 }
 
 #[test]
-fn project_sqlite_snapshot_path_can_repoint_to_nonempty() {
-    // C3-01: repointing an enabled provider to another non-empty target is
-    // permitted (not a bypass) — keep project value, NO warning.
+fn project_sqlite_snapshot_path_cannot_repoint_to_another_nonempty_path() {
+    // #269: repointing an enabled Snapshot target is a decoy-path bypass, not
+    // an allowed tightening — keep the base path and warn.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -64,11 +64,11 @@ fn project_sqlite_snapshot_path_can_repoint_to_nonempty() {
     let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
 
     assert_eq!(
-        config.sqlite_snapshot_path, "/other/db.sqlite",
-        "project must be able to repoint sqlite to another non-empty path; got {:?}",
+        config.sqlite_snapshot_path, "/opt/db.sqlite",
+        "project must not repoint an enabled sqlite target to a decoy path; got {:?}",
         config.sqlite_snapshot_path
     );
-    assert_no_warning_for(&warnings, "sqlite_snapshot_path", "C3-01 sqlite repoint");
+    assert_has_warning_for(&warnings, "sqlite_snapshot_path", "#269 sqlite repoint");
 }
 
 #[test]
@@ -100,13 +100,13 @@ fn project_postgres_snapshot_cannot_empty_database_when_enabled() {
         "project must not empty a globally-enabled postgres database; got {:?}",
         config.postgres_snapshot.database
     );
-    assert_has_warning_for(&warnings, "postgres_snapshot", "C3-01 postgres empty");
+    assert_has_warning_for(&warnings, "postgres_snapshot.database", "C3-01 postgres empty");
 }
 
 #[test]
-fn project_postgres_snapshot_can_repoint_database_when_enabled() {
-    // C3-01: repointing an enabled postgres provider to another non-empty
-    // database is permitted — keep project value, NO warning.
+fn project_postgres_snapshot_cannot_repoint_database_when_enabled() {
+    // #269: repointing an enabled postgres target to another non-empty
+    // database is the decoy-database bypass — keep base + warn.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -128,11 +128,39 @@ fn project_postgres_snapshot_can_repoint_database_when_enabled() {
     let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
 
     assert_eq!(
-        config.postgres_snapshot.database, "otherdb",
-        "project must be able to repoint postgres to another non-empty database; got {:?}",
+        config.postgres_snapshot.database, "mydb",
+        "project must not repoint an enabled postgres target to a decoy database; got {:?}",
         config.postgres_snapshot.database
     );
-    assert_no_warning_for(&warnings, "postgres_snapshot", "C3-01 postgres repoint");
+    assert_has_warning_for(&warnings, "postgres_snapshot.database", "#269 postgres repoint");
+}
+
+#[test]
+fn project_postgres_snapshot_cannot_repoint_port_when_enabled() {
+    // #269: `port` is a Snapshot-target field too — repointing it alone still
+    // aims Rollback at a different server.
+    let workspace = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
+    fs::create_dir_all(&global_dir).unwrap();
+
+    fs::write(
+        global_dir.join(GLOBAL_CONFIG_FILE),
+        "auto_snapshot_postgres = true\n[postgres_snapshot]\ndatabase = \"mydb\"\nport = 5432\n",
+    )
+    .unwrap();
+    fs::write(
+        workspace.path().join(PROJECT_CONFIG_FILE),
+        "[postgres_snapshot]\ndatabase = \"mydb\"\nport = 15432\n",
+    )
+    .unwrap();
+
+    let base = load_global_base(home.path());
+    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
+    let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
+
+    assert_eq!(config.postgres_snapshot.port, 5432);
+    assert_has_warning_for(&warnings, "postgres_snapshot.port", "#269 postgres port repoint");
 }
 
 #[test]
@@ -164,7 +192,7 @@ fn project_mysql_snapshot_cannot_empty_database_when_enabled() {
         "project must not empty a globally-enabled mysql database; got {:?}",
         config.mysql_snapshot.database
     );
-    assert_has_warning_for(&warnings, "mysql_snapshot", "C3-01 mysql empty");
+    assert_has_warning_for(&warnings, "mysql_snapshot.database", "C3-01 mysql empty");
 }
 
 #[test]
@@ -196,7 +224,7 @@ fn project_supabase_snapshot_cannot_empty_db_when_enabled() {
         "project must not empty a globally-enabled supabase db.database; got {:?}",
         config.supabase_snapshot.db.database
     );
-    assert_has_warning_for(&warnings, "supabase_snapshot", "C3-01 supabase empty");
+    assert_has_warning_for(&warnings, "supabase_snapshot.db.database", "C3-01 supabase empty");
 }
 
 #[test]

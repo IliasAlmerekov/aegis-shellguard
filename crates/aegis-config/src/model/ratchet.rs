@@ -14,9 +14,8 @@ use super::partial::PartialConfig;
 use super::{
     ConfigLayerPath, DockerScope, LANGUAGE_ANALYSIS_SCRIPT_FILE_HARD_CEILING_BYTES,
     MysqlSnapshotConfig, PolicyRule, PolicyRuleDecision, PostgresSnapshotConfig, SnapshotPolicy,
-    SupabaseSnapshotConfig, TrustedAlias, most_restrictive_allowlist_override_level,
-    most_restrictive_ci_policy, most_restrictive_integrity_mode, most_restrictive_mode,
-    most_restrictive_snapshot_policy,
+    TrustedAlias, most_restrictive_allowlist_override_level, most_restrictive_ci_policy,
+    most_restrictive_integrity_mode, most_restrictive_mode, most_restrictive_snapshot_policy,
 };
 use crate::allowlist::ConfigSourceLayer;
 use crate::error::ConfigError;
@@ -24,11 +23,16 @@ use crate::snapshot::DockerScopeMode;
 
 mod audit;
 mod prune;
+mod supabase;
+mod targets;
 
 use audit::push_audit_retention_warning;
 pub(super) use audit::ratchet_audit_retention;
 use prune::push_prune_ratchet_warnings;
 pub(super) use prune::ratchet_prune_retention;
+pub(super) use supabase::merge_supabase_snapshot;
+use supabase::push_supabase_ratchet_warnings;
+use targets::{push_mysql_target_field_warnings, push_postgres_target_field_warnings};
 
 type Result<T> = std::result::Result<T, ConfigError>;
 
@@ -139,21 +143,24 @@ pub(super) fn ratchet_trusted_aliases(
 }
 
 /// Core ratchet for a provider's target config (`sqlite_snapshot_path`,
-/// `postgres_snapshot`, `mysql_snapshot`, `supabase_snapshot`). Under the
-/// Project layer, when the provider is ENABLED in the trusted base AND the
-/// base target itself is enabled (non-no-op), a project overlay that would
-/// disable/empty the target is rejected (keep base). Repointing to another
-/// enabled (non-empty) target is permitted. Global stays last-wins.
+/// `postgres_snapshot`, `mysql_snapshot`). Under the Project layer, once the
+/// provider is ENABLED in the trusted base AND the base target itself is
+/// enabled (non-no-op), the project may not change ANY target field — host,
+/// port, user, database, or path all stay pinned to the trusted base, because
+/// a project that could repoint an enabled target could aim a later Rollback
+/// at a decoy database (#269). A project overlay is only honored when the
+/// base left the provider off or the base target itself is a no-op — then the
+/// project is free to enable and configure its own target. Global stays
+/// last-wins.
 ///
-/// `base_target_enabled` / `overlay_target_enabled` encode the per-provider
-/// "target is a no-op" predicate (empty database / empty path).
+/// `base_target_enabled` encodes the per-provider "target is a no-op"
+/// predicate (empty database / empty path).
 fn ratchet_provider_target<T: Clone>(
     base: &T,
     overlay: Option<&T>,
     layer: ConfigSourceLayer,
     provider_enabled_in_base: bool,
     base_target_enabled: bool,
-    overlay_target_enabled: impl Fn(&T) -> bool,
 ) -> T {
     match layer {
         ConfigSourceLayer::Global => overlay.cloned().unwrap_or_else(|| base.clone()),
@@ -163,12 +170,9 @@ fn ratchet_provider_target<T: Clone>(
             // If the base target is itself a no-op there is equally nothing
             // to protect.
             if !provider_enabled_in_base || !base_target_enabled {
-                return overlay.cloned().unwrap_or_else(|| base.clone());
-            }
-            match overlay {
-                None => base.clone(),
-                Some(o) if !overlay_target_enabled(o) => base.clone(),
-                Some(o) => o.clone(),
+                overlay.cloned().unwrap_or_else(|| base.clone())
+            } else {
+                base.clone()
             }
         }
     }
@@ -187,7 +191,6 @@ pub(super) fn ratchet_sqlite_path(
         layer,
         provider_enabled_in_base,
         !base.is_empty(),
-        |o| !o.is_empty(),
     )
 }
 
@@ -205,7 +208,6 @@ pub(super) fn ratchet_postgres_snapshot(
         layer,
         provider_enabled_in_base,
         !base.database.is_empty(),
-        |o| !o.database.is_empty(),
     )
 }
 
@@ -222,25 +224,6 @@ pub(super) fn ratchet_mysql_snapshot(
         layer,
         provider_enabled_in_base,
         !base.database.is_empty(),
-        |o| !o.database.is_empty(),
-    )
-}
-
-/// Ratchet the Supabase snapshot config. Target enabled = non-empty
-/// `db.database`.
-pub(super) fn ratchet_supabase_snapshot(
-    base: &SupabaseSnapshotConfig,
-    overlay: Option<&SupabaseSnapshotConfig>,
-    layer: ConfigSourceLayer,
-    provider_enabled_in_base: bool,
-) -> SupabaseSnapshotConfig {
-    ratchet_provider_target(
-        base,
-        overlay,
-        layer,
-        provider_enabled_in_base,
-        !base.db.database.is_empty(),
-        |o| !o.db.database.is_empty(),
     )
 }
 
@@ -710,13 +693,7 @@ impl super::AegisConfig {
                 ConfigSourceLayer::Project,
                 enabled,
             );
-            push_ratchet_warning(
-                &mut warnings,
-                "postgres_snapshot",
-                format!("{requested:?}"),
-                format!("{kept:?}"),
-                &location,
-            );
+            push_postgres_target_field_warnings(&mut warnings, requested, &kept, &location);
         }
 
         if let Some(requested) = overlay.mysql_snapshot.as_ref() {
@@ -727,31 +704,17 @@ impl super::AegisConfig {
                 ConfigSourceLayer::Project,
                 enabled,
             );
-            push_ratchet_warning(
-                &mut warnings,
-                "mysql_snapshot",
-                format!("{requested:?}"),
-                format!("{kept:?}"),
-                &location,
-            );
+            push_mysql_target_field_warnings(&mut warnings, requested, &kept, &location);
         }
 
-        if let Some(requested) = overlay.supabase_snapshot.as_ref() {
-            let enabled = provider_enabled_in_base(base, base.auto_snapshot_supabase);
-            let kept = ratchet_supabase_snapshot(
-                &base.supabase_snapshot,
-                Some(requested),
-                ConfigSourceLayer::Project,
-                enabled,
-            );
-            push_ratchet_warning(
-                &mut warnings,
-                "supabase_snapshot",
-                format!("{requested:?}"),
-                format!("{kept:?}"),
-                &location,
-            );
-        }
+        let supabase_enabled = provider_enabled_in_base(base, base.auto_snapshot_supabase);
+        push_supabase_ratchet_warnings(
+            &mut warnings,
+            &base.supabase_snapshot,
+            &overlay.supabase_snapshot,
+            supabase_enabled,
+            &location,
+        );
 
         if let Some(requested) = overlay.docker_scope.as_ref() {
             let enabled = provider_enabled_in_base(base, base.auto_snapshot_docker);

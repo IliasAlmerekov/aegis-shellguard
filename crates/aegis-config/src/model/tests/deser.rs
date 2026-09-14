@@ -320,36 +320,47 @@ fn supabase_snapshot_fields_merge_by_replacement_and_scalar_override() {
 
     let overlay = PartialConfig {
         auto_snapshot_supabase: Some(true),
-        supabase_snapshot: Some(SupabaseSnapshotConfig {
-            project_ref: "overlay_proj".to_string(),
-            require_config_target_match_on_rollback: false,
-            db: PostgresSnapshotConfig {
-                database: "overlay_db".to_string(),
-                host: "overlay.supabase.co".to_string(),
-                port: 6543,
-                user: "overlay_user".to_string(),
+        supabase_snapshot: PartialSupabaseSnapshotConfig {
+            project_ref: Some("overlay_proj".to_string()),
+            require_config_target_match_on_rollback: Some(false),
+            db: PartialSupabaseDb {
+                database: Some("overlay_db".to_string()),
+                host: Some("overlay.supabase.co".to_string()),
+                port: Some(6543),
+                user: Some("overlay_user".to_string()),
             },
-        }),
+        },
         ..PartialConfig::default()
     };
 
     let merged = AegisConfig::merge_layer(base, overlay, ConfigSourceLayer::Project);
 
+    // Base left `auto_snapshot_supabase` off, so the database-target fields
+    // are still free to be set by the project layer (#269 only protects a
+    // target the trusted base already enabled).
     assert!(merged.auto_snapshot_supabase);
     assert_eq!(merged.supabase_snapshot.project_ref, "overlay_proj");
-    assert!(
-        !merged
-            .supabase_snapshot
-            .require_config_target_match_on_rollback
-    );
     assert_eq!(merged.supabase_snapshot.db.database, "overlay_db");
     assert_eq!(merged.supabase_snapshot.db.host, "overlay.supabase.co");
     assert_eq!(merged.supabase_snapshot.db.port, 6543);
     assert_eq!(merged.supabase_snapshot.db.user, "overlay_user");
+    // #269: `require_config_target_match_on_rollback` ratchets unconditionally
+    // — the project cannot switch it off even for a target it is otherwise
+    // free to configure.
+    assert!(
+        merged
+            .supabase_snapshot
+            .require_config_target_match_on_rollback
+    );
 }
 
 #[test]
-fn partial_supabase_snapshot_overlay_replaces_entire_bundle() {
+fn partial_supabase_snapshot_overlay_sets_only_the_fields_it_names() {
+    // Base leaves `auto_snapshot_supabase` at its default `false`, so the
+    // target fields are unprotected and the project may set `project_ref`
+    // alone; every field the overlay leaves unset stays at `base`, not at
+    // `SupabaseSnapshotConfig::default()` — Partial fields are `Option`, so
+    // "unset" and "explicitly default" are distinct (#269).
     let base = AegisConfig {
         supabase_snapshot: SupabaseSnapshotConfig {
             project_ref: "base_proj".to_string(),
@@ -365,10 +376,10 @@ fn partial_supabase_snapshot_overlay_replaces_entire_bundle() {
     };
 
     let overlay = PartialConfig {
-        supabase_snapshot: Some(SupabaseSnapshotConfig {
-            project_ref: "overlay_proj".to_string(),
-            ..SupabaseSnapshotConfig::default()
-        }),
+        supabase_snapshot: PartialSupabaseSnapshotConfig {
+            project_ref: Some("overlay_proj".to_string()),
+            ..PartialSupabaseSnapshotConfig::default()
+        },
         ..PartialConfig::default()
     };
 
@@ -376,13 +387,18 @@ fn partial_supabase_snapshot_overlay_replaces_entire_bundle() {
 
     assert_eq!(merged.supabase_snapshot.project_ref, "overlay_proj");
     assert!(
-        merged
+        !merged
             .supabase_snapshot
             .require_config_target_match_on_rollback
     );
     assert_eq!(
         merged.supabase_snapshot.db,
-        PostgresSnapshotConfig::default()
+        PostgresSnapshotConfig {
+            database: "base_db".to_string(),
+            host: "base.supabase.co".to_string(),
+            port: 6001,
+            user: "base_user".to_string(),
+        }
     );
 }
 

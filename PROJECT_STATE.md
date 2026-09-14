@@ -18,9 +18,28 @@ distribution smoke gates open)
 
 ## Last updated
 
-2026-09-13
+2026-09-14
 
 ---
+
+## Current session (2026-09-14) — project config cannot repoint a Snapshot target (#269)
+
+- A project `.aegis.toml` can no longer repoint a database provider's
+  Snapshot target once the global layer has enabled it: PostgreSQL and MySQL
+  keep `database`/`host`/`port`/`user` pinned to the global value; Supabase
+  keeps `project_ref` and `db.database`/`db.host`/`db.port`/`db.user` pinned
+  the same way; SQLite keeps `sqlite_snapshot_path` pinned. A project may
+  still enable and configure its own target when the global layer leaves a
+  provider off.
+- `supabase_snapshot.require_config_target_match_on_rollback` now ratchets
+  unconditionally (`base || requested`) instead of last-wins, so a project can
+  never turn off the Supabase rollback target-match check — the specific
+  bypass the issue reported.
+- Each dropped field produces its own `project_security_ratchet` warning
+  (`postgres_snapshot.port`, `supabase_snapshot.db.host`, and so on) instead
+  of one warning for the whole provider struct.
+- See ADR-013 for the updated ratcheted-field list and directionality, and
+  `docs/config-schema.md` for the per-provider ratchet notes.
 
 ## Current session (2026-09-13) — project snapshot prune retention (#268)
 

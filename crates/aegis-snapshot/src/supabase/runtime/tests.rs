@@ -10,6 +10,8 @@ use super::manifest_io::write_manifest_atomically;
 use super::*;
 use tempfile::TempDir;
 
+mod hostile_overlay;
+
 fn stub_bin(dir: &TempDir, name: &str, body: &str) -> PathBuf {
     let path = dir.path().join(name);
     fs::write(&path, format!("#!/bin/sh\nset -eu\n{body}\n")).unwrap();

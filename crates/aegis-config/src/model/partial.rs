@@ -14,8 +14,7 @@ use super::serde_helpers::{deserialize_allowlist_rules, deserialize_optional_con
 use super::{
     AllowlistOverrideLevel, AllowlistRule, AuditIntegrityMode, BlockRule, CiPolicy,
     ConfigSourceLayer, DockerScope, LanguageAnalysisConfig, Mode, MysqlSnapshotConfig, PolicyRule,
-    PostgresSnapshotConfig, SandboxSettings, SnapshotPolicy, SupabaseSnapshotConfig, TrustedAlias,
-    UserPattern,
+    PostgresSnapshotConfig, SandboxSettings, SnapshotPolicy, TrustedAlias, UserPattern,
 };
 
 type Result<T> = std::result::Result<T, ConfigError>;
@@ -27,6 +26,36 @@ pub(super) struct PartialPruneConfig {
     pub(super) enabled: Option<bool>,
     pub(super) max_count_per_provider: Option<usize>,
     pub(super) max_age_days: Option<u32>,
+}
+
+/// Partial view of `SupabaseSnapshotConfig::db` used during layered config
+/// merge.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub(super) struct PartialSupabaseDb {
+    pub(super) database: Option<String>,
+    pub(super) host: Option<String>,
+    pub(super) port: Option<u16>,
+    pub(super) user: Option<String>,
+}
+
+/// Partial view of `SupabaseSnapshotConfig` used during layered config
+/// merge. Every field is individually `Option` — unlike Postgres/MySQL, which
+/// stay whole structs — because `require_config_target_match_on_rollback`
+/// must ratchet independently of the database-target fields: a project must
+/// never disable the rollback target-match check, even for a Supabase target
+/// it is otherwise free to configure itself (#269).
+///
+/// The merge and ratchet-warning logic for this type lives in
+/// `ratchet::supabase` (alongside `ratchet_postgres_snapshot`,
+/// `ratchet_mysql_snapshot`, and `ratchet_sqlite_path`), not here — this
+/// struct is just the deserialization shape.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub(super) struct PartialSupabaseSnapshotConfig {
+    pub(super) project_ref: Option<String>,
+    pub(super) require_config_target_match_on_rollback: Option<bool>,
+    pub(super) db: PartialSupabaseDb,
 }
 
 /// Partial view of [`SandboxSettings`] used during layered config merge.
@@ -206,7 +235,7 @@ pub(super) struct PartialConfig {
     pub(super) auto_snapshot_mysql: Option<bool>,
     pub(super) mysql_snapshot: Option<MysqlSnapshotConfig>,
     pub(super) auto_snapshot_supabase: Option<bool>,
-    pub(super) supabase_snapshot: Option<SupabaseSnapshotConfig>,
+    pub(super) supabase_snapshot: PartialSupabaseSnapshotConfig,
     pub(super) auto_snapshot_sqlite: Option<bool>,
     pub(super) sqlite_snapshot_path: Option<String>,
     pub(super) docker_scope: Option<DockerScope>,

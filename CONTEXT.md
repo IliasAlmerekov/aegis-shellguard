@@ -318,8 +318,9 @@ The rule that a project-local `.aegis.toml` may only **tighten** a security-crit
 field, never **weaken** it. Global config stays the user's trusted layer; a project
 layer that asks for a weaker value keeps the more restrictive one and `config validate`
 warns (ADR-013). "Tighten" and "weaken" are the canonical directions, and the stricter
-direction is field-specific — more confinement, more Snapshot coverage, and fewer
-write paths are all tightenings regardless of the underlying boolean.
+direction is field-specific — more confinement, more Snapshot coverage, fewer
+write paths, and a `Snapshot target` left where trusted config put it are all
+tightenings regardless of the underlying boolean.
 _Avoid_: override, downgrade, merge (reserve "override" for `Override level`)
 
 **Policy rule**:
@@ -455,6 +456,14 @@ A per-backend snapshotter (`git`, `docker`, `postgres`, `mysql`, `supabase`, `sq
 that knows how to capture and restore state for its domain. Each successful run yields a
 `SnapshotRecord` (`plugin` + opaque `snapshot_id`).
 _Avoid_: snapshotter, driver, backend
+
+**Snapshot target**:
+The state a database `Snapshot plugin` captures and a Rollback restores into: a
+database with its host, port, and user, or a SQLite file path. The manifest
+records it when the Snapshot is taken, and Rollback restores into that recorded
+target. Once trusted config enables a target, the ratchet keeps a project layer
+from repointing it (ADR-013).
+_Avoid_: destination, connection, decoy
 
 **Snapshot store**:
 The trusted directory a `Snapshot plugin` owns for reading and writing its
