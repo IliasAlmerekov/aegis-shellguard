@@ -271,9 +271,11 @@ user = ""
   repoint any of them could aim Rollback at a database it controls. A project
   may still enable and configure its own target when the global layer leaves
   Supabase off. `require_config_target_match_on_rollback` ratchets on its own,
-  unconditionally: a project can never set it to `false`, even for a target it
+  unconditionally: a project layer can never turn it off, even for a target it
   is otherwise free to configure, because the check exists to catch a target
-  that has drifted since the Snapshot was taken. (#269)
+  that has drifted since the Snapshot was taken. A `false` set in global
+  config is trusted and stays in effect — the ratchet only restricts the
+  project layer. (#269)
 
 ## Sandbox
 

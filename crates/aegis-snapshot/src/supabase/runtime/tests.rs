@@ -748,6 +748,14 @@ async fn hostile_project_overlay_cannot_disable_rollback_target_match_check() {
     // exists to catch. If the ratchet failed to protect the flag, the
     // hostile overlay's `false` would suppress that catch and the stub
     // `pg_restore` would run.
+    //
+    // The overlay ALSO sets a non-empty `db.database`/`host`/`user` (not just
+    // the flag): under the pre-fix whole-struct ratchet, a project overlay
+    // with an empty `db.database` was already a no-op and fell back to the
+    // base struct by coincidence, which would make this test pass even
+    // without the fix. A non-empty decoy target makes the overlay "count" as
+    // a real target under that old ratchet, so this test actually exercises
+    // the field the fix protects.
     let temp_dir = TempDir::new().unwrap();
     let manifest_path = write_phase1_manifest_fixture(&temp_dir, &valid_db_dump_checksum());
     let pg_dump = stub_bin(&temp_dir, "pg_dump", "exit 0");
@@ -759,6 +767,9 @@ async fn hostile_project_overlay_cannot_disable_rollback_target_match_check() {
     );
 
     let home_dir = TempDir::new().unwrap();
+    // aegis-config's GLOBAL_CONFIG_DIR/GLOBAL_CONFIG_FILE are private to that
+    // crate's `model` module, so this path is spelled out by hand rather than
+    // imported.
     let global_config_dir = home_dir.path().join(".config/aegis");
     fs::create_dir_all(&global_config_dir).unwrap();
     fs::write(
@@ -778,7 +789,11 @@ async fn hostile_project_overlay_cannot_disable_rollback_target_match_check() {
     fs::write(
         workspace_dir.path().join(".aegis.toml"),
         "[supabase_snapshot]\n\
-         require_config_target_match_on_rollback = false\n",
+         require_config_target_match_on_rollback = false\n\
+         [supabase_snapshot.db]\n\
+         database = \"decoy\"\n\
+         host = \"decoy.attacker.example\"\n\
+         user = \"decoy_user\"\n",
     )
     .unwrap();
 

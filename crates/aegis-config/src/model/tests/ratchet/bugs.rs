@@ -570,7 +570,7 @@ fn project_cannot_disable_supabase_rollback_target_match_when_provider_enabled_i
 }
 
 #[test]
-fn project_can_disable_supabase_rollback_target_match_when_provider_not_enabled_in_base() {
+fn project_cannot_disable_supabase_rollback_target_match_even_when_provider_not_enabled_in_base() {
     // #269 counter-case: base leaves the provider off, so the project is free
     // to enable its OWN Supabase target — but even then it may not disable
     // `require_config_target_match_on_rollback`, because that flag protects
@@ -604,4 +604,37 @@ fn project_can_disable_supabase_rollback_target_match_when_provider_not_enabled_
         "supabase_snapshot.require_config_target_match_on_rollback",
         "#269 rollback target-match unconditional",
     );
+}
+
+#[test]
+fn global_layer_can_disable_supabase_rollback_target_match_and_repoint_target() {
+    // #269 counterpart: the ratchet restricts only the PROJECT layer. The
+    // global layer is trusted and stays last-wins for every Supabase field,
+    // including `require_config_target_match_on_rollback` and the database
+    // target itself — an operator can turn the check off or repoint the
+    // target from their own global config.
+    let workspace = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
+    fs::create_dir_all(&global_dir).unwrap();
+
+    fs::write(
+        global_dir.join(GLOBAL_CONFIG_FILE),
+        "auto_snapshot_supabase = true\n\
+         [supabase_snapshot]\n\
+         require_config_target_match_on_rollback = false\n\
+         project_ref = \"global_ref\"\n\
+         [supabase_snapshot.db]\n\
+         database = \"globaldb\"\n\
+         host = \"global.supabase.co\"\n",
+    )
+    .unwrap();
+    // No project `.aegis.toml` at all — this exercises defaults -> global only.
+
+    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
+
+    assert!(!config.supabase_snapshot.require_config_target_match_on_rollback);
+    assert_eq!(config.supabase_snapshot.project_ref, "global_ref");
+    assert_eq!(config.supabase_snapshot.db.database, "globaldb");
+    assert_eq!(config.supabase_snapshot.db.host, "global.supabase.co");
 }

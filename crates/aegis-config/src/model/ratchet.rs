@@ -29,6 +29,7 @@ use audit::push_audit_retention_warning;
 pub(super) use audit::ratchet_audit_retention;
 use prune::push_prune_ratchet_warnings;
 pub(super) use prune::ratchet_prune_retention;
+pub(super) use supabase::merge_supabase_snapshot;
 use supabase::push_supabase_ratchet_warnings;
 
 type Result<T> = std::result::Result<T, ConfigError>;
@@ -797,16 +798,14 @@ impl super::AegisConfig {
             push_mysql_target_field_warnings(&mut warnings, requested, &kept, &location);
         }
 
-        {
-            let enabled = provider_enabled_in_base(base, base.auto_snapshot_supabase);
-            push_supabase_ratchet_warnings(
-                &mut warnings,
-                &base.supabase_snapshot,
-                &overlay.supabase_snapshot,
-                enabled,
-                &location,
-            );
-        }
+        let supabase_enabled = provider_enabled_in_base(base, base.auto_snapshot_supabase);
+        push_supabase_ratchet_warnings(
+            &mut warnings,
+            &base.supabase_snapshot,
+            &overlay.supabase_snapshot,
+            supabase_enabled,
+            &location,
+        );
 
         if let Some(requested) = overlay.docker_scope.as_ref() {
             let enabled = provider_enabled_in_base(base, base.auto_snapshot_docker);

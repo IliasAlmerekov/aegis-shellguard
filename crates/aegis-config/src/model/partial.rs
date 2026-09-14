@@ -14,8 +14,7 @@ use super::serde_helpers::{deserialize_allowlist_rules, deserialize_optional_con
 use super::{
     AllowlistOverrideLevel, AllowlistRule, AuditIntegrityMode, BlockRule, CiPolicy,
     ConfigSourceLayer, DockerScope, LanguageAnalysisConfig, Mode, MysqlSnapshotConfig, PolicyRule,
-    PostgresSnapshotConfig, SandboxSettings, SnapshotPolicy, SupabaseSnapshotConfig, TrustedAlias,
-    UserPattern,
+    PostgresSnapshotConfig, SandboxSettings, SnapshotPolicy, TrustedAlias, UserPattern,
 };
 
 type Result<T> = std::result::Result<T, ConfigError>;
@@ -29,8 +28,8 @@ pub(super) struct PartialPruneConfig {
     pub(super) max_age_days: Option<u32>,
 }
 
-/// Partial view of [`SupabaseSnapshotConfig::db`](SupabaseSnapshotConfig)
-/// used during layered config merge.
+/// Partial view of `SupabaseSnapshotConfig::db` used during layered config
+/// merge.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct PartialSupabaseDb {
@@ -40,93 +39,23 @@ pub(super) struct PartialSupabaseDb {
     pub(super) user: Option<String>,
 }
 
-/// Partial view of [`SupabaseSnapshotConfig`] used during layered config
+/// Partial view of `SupabaseSnapshotConfig` used during layered config
 /// merge. Every field is individually `Option` — unlike Postgres/MySQL, which
 /// stay whole structs — because `require_config_target_match_on_rollback`
 /// must ratchet independently of the database-target fields: a project must
 /// never disable the rollback target-match check, even for a Supabase target
 /// it is otherwise free to configure itself (#269).
+///
+/// The merge and ratchet-warning logic for this type lives in
+/// `ratchet::supabase` (alongside `ratchet_postgres_snapshot`,
+/// `ratchet_mysql_snapshot`, and `ratchet_sqlite_path`), not here — this
+/// struct is just the deserialization shape.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct PartialSupabaseSnapshotConfig {
     pub(super) project_ref: Option<String>,
     pub(super) require_config_target_match_on_rollback: Option<bool>,
     pub(super) db: PartialSupabaseDb,
-}
-
-/// Whether a Project-layer overlay must keep every Supabase database-target
-/// field pinned to `base`. Shared by [`PartialSupabaseSnapshotConfig::merge_into`]
-/// and the `ratchet::supabase` warning collector so both agree on exactly the
-/// same condition (#269).
-pub(super) fn supabase_target_protected(
-    base: &SupabaseSnapshotConfig,
-    source_layer: ConfigSourceLayer,
-    provider_enabled_in_base: bool,
-) -> bool {
-    source_layer == ConfigSourceLayer::Project
-        && provider_enabled_in_base
-        && !base.db.database.is_empty()
-}
-
-impl PartialSupabaseSnapshotConfig {
-    /// Merge a project/global overlay into the trusted `base`.
-    ///
-    /// Under the Project layer, once `provider_enabled_in_base` is true AND
-    /// the base already has a non-empty `db.database`, the database-target
-    /// fields (`project_ref`, `db.database`, `db.host`, `db.port`, `db.user`)
-    /// stay pinned to `base` regardless of what the overlay requests — a
-    /// project can no longer repoint an enabled Supabase target at a decoy
-    /// database. `require_config_target_match_on_rollback` ratchets on its
-    /// own via `ratchet_bool_tighten`, unconditionally: it is protected even
-    /// when the project is free to configure its own target. Global stays
-    /// last-wins for every field.
-    pub(super) fn merge_into(
-        self,
-        base: SupabaseSnapshotConfig,
-        source_layer: ConfigSourceLayer,
-        provider_enabled_in_base: bool,
-    ) -> SupabaseSnapshotConfig {
-        let target_protected =
-            supabase_target_protected(&base, source_layer, provider_enabled_in_base);
-
-        let project_ref = if target_protected {
-            base.project_ref.clone()
-        } else {
-            self.project_ref.unwrap_or(base.project_ref.clone())
-        };
-        let db = PostgresSnapshotConfig {
-            database: if target_protected {
-                base.db.database.clone()
-            } else {
-                self.db.database.unwrap_or_else(|| base.db.database.clone())
-            },
-            host: if target_protected {
-                base.db.host.clone()
-            } else {
-                self.db.host.unwrap_or_else(|| base.db.host.clone())
-            },
-            port: if target_protected {
-                base.db.port
-            } else {
-                self.db.port.unwrap_or(base.db.port)
-            },
-            user: if target_protected {
-                base.db.user.clone()
-            } else {
-                self.db.user.unwrap_or_else(|| base.db.user.clone())
-            },
-        };
-
-        SupabaseSnapshotConfig {
-            project_ref,
-            require_config_target_match_on_rollback: ratchet_bool_tighten(
-                base.require_config_target_match_on_rollback,
-                self.require_config_target_match_on_rollback,
-                source_layer,
-            ),
-            db,
-        }
-    }
 }
 
 /// Partial view of [`SandboxSettings`] used during layered config merge.
