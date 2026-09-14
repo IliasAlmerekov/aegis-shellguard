@@ -3,6 +3,7 @@
 ## Status
 
 Accepted. Annotated 2026-08-20 — see [Annotation](#annotation--2026-08-20-two-ratcheted-fields-leave-the-set).
+Annotated 2026-09-14 — see [Annotation](#annotation--2026-09-14-a-normative-direction-table-for-every-field).
 
 ## Context
 
@@ -18,7 +19,7 @@ sibling fields stayed last-wins: a project could disable `sandbox.enabled`, set
 
 ## Decision
 
-Project-local config may only tighten security-critical fields, never loosen
+Project-local config may only tighten security-critical fields, never weaken
 them. The ratcheted set is: `mode`, `allowlist_override_level`, `ci_policy`,
 `snapshot_policy`, `sandbox.enabled`, `sandbox.required`,
 `sandbox.allow_network`, `sandbox.allow_write`, the `auto_snapshot_*` flags
@@ -28,7 +29,7 @@ and `mysql_snapshot`'s `database`, `host`, `port`, and `user`; and
 `supabase_snapshot`'s `project_ref` and `db.database`/`db.host`/`db.port`/
 `db.user` — plus `docker_scope`, `audit.integrity_mode`, and project-layer
 `[[rules]]` `decision = "Allow"`. `supabase_snapshot.require_config_target_match_on_rollback`
-is ratcheted too, but on its own axis: it always tightens (never loosens), even
+is ratcheted too, but on its own axis: it always tightens (never weakens), even
 for a Supabase target the project is otherwise free to configure (#269).
 Audit rotation follows the
 same rule: a project may disable rotation, raise
@@ -154,3 +155,87 @@ what changes is which fields it covers and how one of them merges.
   blocking, audit integrity — is unchanged.
 
 `PRD.md` §5.5 is the normative statement of the resulting `[sandbox]` semantics.
+
+## Annotation — 2026-09-14: a normative direction table for every field
+
+Decided in [#270](https://github.com/IliasAlmerekov/aegis-shellguard/issues/270).
+The ratchet stands unchanged; what changes is how it's expressed and enforced.
+Before this, the ratchet lived as thirteen `ratchet_*` helper functions and
+about thirty call sites, with no mechanism stopping a new field from bypassing
+all of it (which is how the audit and prune gaps in this ADR's own
+Consequences section got in, and how a repository could still widen every
+other field the Decision text doesn't name). `merge_layer` now destructures
+`AegisConfig` and every nested config struct exhaustively, so a field with no
+direction is a compile error, and a test diffs the ratcheted field set against
+the config's JSON schema so an omission fails a build even where the compiler
+can't catch it (a `Custom` group's internal leaves).
+
+Five directions cover every field (CONTEXT.md "Ratchet direction"):
+
+- **Tighten**: the Project layer keeps the stricter of the trusted base and
+  the requested value. Global always wins outright.
+- **Global-only**: the project value is ignored regardless of layer content.
+- **Append**: project entries are added after trusted ones. Nothing to
+  ratchet, since concatenation can't remove a trusted entry.
+- **Unratcheted**: the last layer wins, by recorded decision rather than
+  oversight.
+- **Custom**: a named rule for the handful of fields where "stricter" needs
+  its own definition.
+
+The table below supersedes the prose enumerations earlier in this ADR. Where
+they conflict, the table is authoritative. "Tighten (ceiling)" means the value
+additionally clamps to a hard ceiling at every layer including Global
+(ADR-022 §6).
+
+| Field | Direction | Rule |
+| --- | --- | --- |
+| `config_version` | Unratcheted | Schema version, not a security posture. |
+| `mode` | Tighten | Stricter of `Audit` < `Protect` < `Strict`. |
+| `custom_patterns` | Append | Concatenated, global first. |
+| `allow` | Append | Concatenated, global first; capped elsewhere by `allowlist_override_level`. |
+| `block` | Append | Concatenated, global first; blocklist always wins over allowlist. |
+| `allowlist_override_level` | Tighten | Stricter of `Danger` < `Warn` < `Never`. |
+| `snapshot_policy` | Tighten | Stricter of `None` < `Selective` < `Full`. |
+| `auto_snapshot_git` | Tighten | `true` is stricter (`base \|\| requested`). |
+| `auto_snapshot_docker` | Tighten | `true` is stricter. |
+| `auto_snapshot_postgres` | Tighten | `true` is stricter. |
+| `postgres_snapshot.{database,host,port,user}` | Custom | All-or-nothing: once the base enables Postgres with a non-empty `database`, every field stays pinned to the base; a project can still configure a target the base left off (#269). |
+| `auto_snapshot_mysql` | Tighten | `true` is stricter. |
+| `mysql_snapshot.{database,host,port,user}` | Custom | Same all-or-nothing rule as `postgres_snapshot` (#269). |
+| `auto_snapshot_supabase` | Tighten | `true` is stricter. |
+| `supabase_snapshot.{project_ref,db.database,db.host,db.port,db.user}` | Custom | Same all-or-nothing rule, once `db.database` is non-empty (#269). |
+| `supabase_snapshot.require_config_target_match_on_rollback` | Tighten | `true` is stricter, on its own axis: ratcheted even when the target itself isn't protected. |
+| `auto_snapshot_sqlite` | Tighten | `true` is stricter. |
+| `sqlite_snapshot_path` | Custom | All-or-nothing once the base path is non-empty (#269). |
+| `docker_scope.{mode,label,name_patterns}` | Custom | Once the docker provider is enabled and the base scope isn't a no-op, only a keep-or-broaden move is honored (`All` broadest; same-label `Labeled`; superset `Names`). |
+| `ci_policy` | Tighten | Stricter of `Allow` < `Block`. |
+| `audit.rotation_enabled` | Tighten | `false` is stricter (`base && requested`). Disabling rotation is available only globally. |
+| `audit.max_file_size_bytes` | Tighten | Larger retains more history (`max(base, requested)`). |
+| `audit.retention_files` | Tighten | Larger retains more history (`max(base, requested)`). |
+| `audit.compress_rotated` | Unratcheted | Storage format, not audit coverage. |
+| `audit.integrity_mode` | Tighten | `ChainSha256` is stricter than `Off`. |
+| `rules` (`[[rules]]`) | Custom | Every field tightens (`Prompt`/`Block`); a project-layer entry whose `decision` or `when.then` is `Allow` is dropped and warned about, not honored. |
+| `sandbox.enabled` | Tighten | `true` is stricter (current behaviour; [#229](https://github.com/IliasAlmerekov/aegis-shellguard/issues/229) tracks folding the Sandbox's mandatory posture in here directly). |
+| `sandbox.required` | Tighten | `true` is stricter (same #229 note). |
+| `sandbox.allow_write` | Custom | Project keeps the intersection of its requested set with the trusted base (narrow-only): see the 2026-08-20 annotation above. The annotation's tree-intersection semantics remain the target; this implementation is still the literal-set filter it describes as the interim state, pending [#229](https://github.com/IliasAlmerekov/aegis-shellguard/issues/229). |
+| `sandbox.allow_network` | Tighten | `false` is stricter (`base && requested`). Network access is available only globally. |
+| `prune.enabled` | Tighten | `false` is stricter (`base && requested`). |
+| `prune.max_count_per_provider` | Custom | Larger retains more Snapshots when the base already sets a limit; an unset base limit stays unset rather than adopting the project's. |
+| `prune.max_age_days` | Custom | Same rule as `prune.max_count_per_provider`. |
+| `language_analysis.inline_source_limit_bytes` | Tighten (ceiling) | Smaller is stricter; ceiling `LANGUAGE_ANALYSIS_INLINE_SOURCE_MAX_BYTES`. |
+| `language_analysis.script_file_limit_bytes` | Tighten (ceiling) | Smaller is stricter; ceiling `LANGUAGE_ANALYSIS_SCRIPT_FILE_HARD_CEILING_BYTES` (ADR-022 §6). |
+| `language_analysis.max_script_files` | Tighten (ceiling) | Smaller is stricter; ceiling `LANGUAGE_ANALYSIS_MAX_SCRIPT_FILES`. |
+| `language_analysis.max_depth` | Tighten (ceiling) | Smaller is stricter; ceiling `LANGUAGE_ANALYSIS_MAX_DEPTH`. |
+| `language_analysis.max_targets` | Tighten (ceiling) | Smaller is stricter; ceiling `LANGUAGE_ANALYSIS_MAX_TARGETS`. |
+| `language_analysis.max_aggregate_bytes` | Tighten (ceiling) | Smaller is stricter; ceiling `LANGUAGE_ANALYSIS_MAX_AGGREGATE_BYTES`. |
+| `language_analysis.timeout_ms` | Tighten (ceiling) | Smaller is stricter; ceiling `LANGUAGE_ANALYSIS_TIMEOUT_MS`. |
+| `language_analysis.trusted_aliases` | Global-only | "Trusted global aliases only" (ADR-022 §6). A project-layer entry is dropped, not merged. |
+
+`sandbox.allow_write` is the one field where this table and the current
+implementation still disagree with the 2026-08-20 annotation's stated target.
+That annotation calls for a tree intersection over path prefixes: this
+implementation still filters on literal path equality, the same "keep the
+trusted base set" behavior in effect since before that annotation. Both are
+narrow-only, so nothing here weakens the field; closing the gap between
+literal filter and tree intersection is tracked in
+[#229](https://github.com/IliasAlmerekov/aegis-shellguard/issues/229).

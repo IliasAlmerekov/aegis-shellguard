@@ -194,12 +194,9 @@ pub struct PruneConfig {
 /// Top-level Aegis runtime configuration.
 ///
 /// Loaded in order: built-in defaults → `~/.config/aegis/config.toml` (user-global)
-/// → `.aegis.toml` (project). Later layers override ordinary scalar fields.
-/// Project-local security-critical fields are ratcheted so they can only tighten,
-/// never loosen: `mode`, `allowlist_override_level`, `ci_policy`,
-/// `snapshot_policy`, `sandbox.enabled`/`required`/`allow_network`/`allow_write`,
-/// and the `auto_snapshot_*` flags. `allow`/`block` rules are concatenated. See
-/// ADR-013 for the full ordering.
+/// → `.aegis.toml` (project). Every field's Ratchet direction — how far the
+/// project layer may change it, if at all — is declared in `model::merge_layer`
+/// and listed field-by-field in ADR-013's normative table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct AegisConfig {
