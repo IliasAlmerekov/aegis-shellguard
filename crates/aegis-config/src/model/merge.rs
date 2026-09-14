@@ -26,6 +26,32 @@ impl AegisConfig {
         layer: ConfigSourceLayer,
         location: &str,
     ) -> (Self, Vec<SecurityRatchetWarning>) {
+        let (config, sink) = Self::merge_layer_with_sink(base, overlay, layer, location);
+        (config, sink.into_warnings())
+    }
+
+    /// Same merge as [`Self::merge_layer`], but returns the raw
+    /// [`RatchetSink`] instead of only its warnings. Test-only: the
+    /// schema-coverage test (`model::tests::ratchet_coverage`) reads
+    /// `RatchetSink::touched` — every field path a `Ratchet` direction ran
+    /// for, whether or not it warned — and diffs it against the config's
+    /// JSON schema leaves.
+    #[cfg(test)]
+    pub(super) fn merge_layer_for_coverage_test(
+        base: Self,
+        overlay: PartialConfig,
+        layer: ConfigSourceLayer,
+        location: &str,
+    ) -> (Self, RatchetSink) {
+        Self::merge_layer_with_sink(base, overlay, layer, location)
+    }
+
+    fn merge_layer_with_sink(
+        base: Self,
+        overlay: PartialConfig,
+        layer: ConfigSourceLayer,
+        location: &str,
+    ) -> (Self, RatchetSink) {
         let mut sink = RatchetSink::default();
         // Provider-target `Custom` rules need to know whether the base
         // already enabled each provider, computed BEFORE any field below
@@ -101,14 +127,22 @@ impl AegisConfig {
         let allowlist_count = req_allowlist.len();
         let blocklist_count = req_blocklist.len();
 
+        // Append direction: trusted entries first, project entries after.
+        // Concatenation cannot remove a trusted entry, so there is nothing to
+        // ratchet — `touch` still records the path for the schema-coverage
+        // test. Path names follow the TOML/schema names (`allow`/`block`),
+        // not the Rust field names (`allowlist`/`blocklist`).
+        sink.touch("custom_patterns");
         let custom_patterns = ratchet::append(base_custom_patterns, req_custom_patterns);
         let mut custom_pattern_layers = base_custom_pattern_layers;
         custom_pattern_layers.extend(std::iter::repeat_n(layer, custom_pattern_count));
 
+        sink.touch("allow");
         let allowlist = ratchet::append(base_allowlist, req_allowlist);
         let mut allowlist_layers = base_allowlist_layers;
         allowlist_layers.extend(std::iter::repeat_n(layer, allowlist_count));
 
+        sink.touch("block");
         let blocklist = ratchet::append(base_blocklist, req_blocklist);
         let mut blocklist_layers = base_blocklist_layers;
         blocklist_layers.extend(std::iter::repeat_n(layer, blocklist_count));
@@ -309,6 +343,6 @@ impl AegisConfig {
             language_analysis,
         };
 
-        (config, sink.into_warnings())
+        (config, sink)
     }
 }

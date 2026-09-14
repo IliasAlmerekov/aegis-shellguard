@@ -15,4 +15,5 @@ mod merge;
 mod migration;
 mod prune;
 mod ratchet;
+mod ratchet_coverage;
 mod ratchet_helpers;
