@@ -6,7 +6,10 @@
 //! `model::merge_layer` destructures `AegisConfig` and every nested struct
 //! exhaustively and routes each field through its declared direction, so
 //! adding a field without picking one is a compile error, not a silent
-//! last-wins default.
+//! last-wins default. The one exception is the `#[serde(skip)]` bookkeeping
+//! fields, which a project file cannot write: they carry no direction and
+//! stay out of ADR-013's table, but they still pass through the destructure
+//! behind the `Provenance` marker in `provenance`.
 //!
 //! Both the merge itself and the warnings a project layer's weakening
 //! attempts produce come out of that ONE pass — there is no separate
@@ -25,6 +28,7 @@ mod direction;
 mod docker;
 mod language;
 mod policy;
+mod provenance;
 mod prune;
 mod sandbox;
 mod supabase;
@@ -70,3 +74,4 @@ impl AegisConfig {
 pub(super) use direction::{
     Ratchet, Tighten, Unratcheted, append, bool_true_is_stricter, format_debug, format_display,
 };
+pub(super) use provenance::Provenance;

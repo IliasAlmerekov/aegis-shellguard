@@ -19,7 +19,9 @@ impl AegisConfig {
     /// without routing it through a `Ratchet` direction is a compile error,
     /// not a silent last-wins default. Each field's direction is declared at
     /// its call site here or in the `ratchet::merge_*`/`ratchet::custom_*`
-    /// function it delegates to for a whole nested struct.
+    /// function it delegates to for a whole nested struct. The `#[serde(skip)]`
+    /// bookkeeping fields are the exception: a project file cannot write them,
+    /// so they carry the `ratchet::Provenance` marker instead of a direction.
     pub(super) fn merge_layer(
         base: Self,
         overlay: PartialConfig,
@@ -134,18 +136,18 @@ impl AegisConfig {
         // not the Rust field names (`allowlist`/`blocklist`).
         sink.touch("custom_patterns");
         let custom_patterns = ratchet::append(base_custom_patterns, req_custom_patterns);
-        let mut custom_pattern_layers = base_custom_pattern_layers;
-        custom_pattern_layers.extend(std::iter::repeat_n(layer, custom_pattern_count));
+        let custom_pattern_layers =
+            ratchet::Provenance::appended(base_custom_pattern_layers, layer, custom_pattern_count);
 
         sink.touch("allow");
         let allowlist = ratchet::append(base_allowlist, req_allowlist);
-        let mut allowlist_layers = base_allowlist_layers;
-        allowlist_layers.extend(std::iter::repeat_n(layer, allowlist_count));
+        let allowlist_layers =
+            ratchet::Provenance::appended(base_allowlist_layers, layer, allowlist_count);
 
         sink.touch("block");
         let blocklist = ratchet::append(base_blocklist, req_blocklist);
-        let mut blocklist_layers = base_blocklist_layers;
-        blocklist_layers.extend(std::iter::repeat_n(layer, blocklist_count));
+        let blocklist_layers =
+            ratchet::Provenance::appended(base_blocklist_layers, layer, blocklist_count);
 
         let mode = ratchet::Tighten::new(most_restrictive_mode, ratchet::format_debug)
             .merge("mode", base_mode, req_mode, layer, location, &mut sink);
@@ -279,17 +281,18 @@ impl AegisConfig {
         let rules = ratchet::custom_rules(base_rules, req_rules, layer, location, &mut sink);
 
         let audit = ratchet::merge_audit(base_audit, req_audit, layer, location, &mut sink);
-        let audit_max_file_size_bytes_source =
-            if req_max_file_size_bytes == Some(audit.max_file_size_bytes) {
-                Some(layer)
-            } else {
-                base_audit_max_file_size_bytes_source
-            };
-        let audit_retention_files_source = if req_retention_files == Some(audit.retention_files) {
-            Some(layer)
-        } else {
-            base_audit_retention_files_source
-        };
+        let audit_max_file_size_bytes_source = ratchet::Provenance::scalar_source(
+            base_audit_max_file_size_bytes_source,
+            req_max_file_size_bytes,
+            audit.max_file_size_bytes,
+            layer,
+        );
+        let audit_retention_files_source = ratchet::Provenance::scalar_source(
+            base_audit_retention_files_source,
+            req_retention_files,
+            audit.retention_files,
+            layer,
+        );
 
         let sandbox = ratchet::merge_sandbox(base_sandbox, req_sandbox, layer, location, &mut sink);
         let prune = ratchet::merge_prune(base_prune, req_prune, layer, location, &mut sink);

@@ -182,6 +182,15 @@ Five directions cover every field (CONTEXT.md "Ratchet direction"):
 - **Custom**: a named rule for the handful of fields where "stricter" needs
   its own definition.
 
+The internal bookkeeping fields carry no direction and are absent from the
+table by decision. `custom_pattern_layers`, `allowlist_layers`,
+`blocklist_layers`, `audit_max_file_size_bytes_source` and
+`audit_retention_files_source` are `#[serde(skip)]`: no config file can write
+them, so there is no request for the ratchet to keep or refuse. They record
+which layer each effective value came from, and they pass through the same
+exhaustive destructure behind a separate `Provenance` marker, so a new
+bookkeeping field is still a compile error rather than an unmaintained record.
+
 The table below supersedes the prose enumerations earlier in this ADR. Where
 they conflict, the table is authoritative. "Tighten (ceiling)" means the value
 additionally clamps to a hard ceiling at every layer including Global
