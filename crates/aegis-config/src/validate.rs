@@ -145,7 +145,7 @@ pub fn validate_config_layers(current_dir: &Path, home_dir: Option<&Path>) -> Va
     for layer in layer_paths {
         // One merge produces both the next config and the project-layer
         // weakening warnings (empty for Global) — no separate re-parse.
-        match AegisConfig::merge_layer_path_unvalidated(merged, &layer) {
+        match AegisConfig::merge_layer_path_with_warnings(merged, &layer) {
             Ok((next, warnings)) => {
                 for warning in warnings {
                     push_unique_issue(

@@ -396,9 +396,15 @@ impl AegisConfig {
     }
 
     /// Merge a single config layer file into `base` without runtime
+    /// validation.
+    pub fn merge_layer_path_unvalidated(base: Self, layer: &ConfigLayerPath) -> Result<Self> {
+        Self::merge_layer_path_with_warnings(base, layer).map(|(config, _)| config)
+    }
+
+    /// Merge a single config layer file into `base` without runtime
     /// validation, returning the project-layer weakening warnings from the
     /// SAME pass (empty for the Global layer, which is trusted).
-    pub(crate) fn merge_layer_path_unvalidated(
+    pub(crate) fn merge_layer_path_with_warnings(
         base: Self,
         layer: &ConfigLayerPath,
     ) -> Result<(Self, Vec<SecurityRatchetWarning>)> {

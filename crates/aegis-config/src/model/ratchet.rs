@@ -45,14 +45,14 @@ pub(super) use targets::{custom_mysql_snapshot, custom_postgres_snapshot, custom
 pub(super) use warning::RatchetSink;
 
 // Only test call sites use this directly today (production code gets
-// warnings from `merge_layer_path_unvalidated`'s single pass) — see
+// warnings from `merge_layer_path_with_warnings`'s single pass) — see
 // `model::tests::ratchet_helpers::project_ratchet_warnings` and the C3 suites.
 #[cfg(test)]
 impl AegisConfig {
     /// Compare a project layer's requested values against the current base
     /// config and report any security-critical weakening attempts that the
     /// ratchet will ignore during merge. Thin wrapper over
-    /// [`AegisConfig::merge_layer_path_unvalidated`] — same merge, warnings only.
+    /// [`AegisConfig::merge_layer_path_with_warnings`] — same merge, warnings only.
     pub(crate) fn project_security_ratchet_warnings(
         base: &Self,
         layer: &ConfigLayerPath,
@@ -60,7 +60,7 @@ impl AegisConfig {
         if layer.source_layer != ConfigSourceLayer::Project {
             return Ok(Vec::new());
         }
-        let (_, warnings) = Self::merge_layer_path_unvalidated(base.clone(), layer)?;
+        let (_, warnings) = Self::merge_layer_path_with_warnings(base.clone(), layer)?;
         Ok(warnings)
     }
 }
