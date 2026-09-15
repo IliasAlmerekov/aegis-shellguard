@@ -66,28 +66,53 @@ pub fn setup_failure_from_runtime_error(
 ) -> SetupFailurePlan {
     let _ = (command, transport);
 
-    let (kind, user_message) = match err {
-        AegisError::Config(_) => (
+    let is_config_fault = err.is_config_fault();
+
+    let (kind, user_message) = if is_config_fault {
+        (
             SetupFailureKind::InvalidConfig,
             format!("error: failed to load config: {err}"),
-        ),
-        _ => (
+        )
+    } else if let AegisError::Audit(aegis_audit::error::AuditError::Parse { path, line, .. }) = err
+    {
+        (
+            SetupFailureKind::CorruptAuditLog,
+            match line {
+                Some(number) => {
+                    format!("error: audit log '{path}' is corrupted at line {number}: {err}")
+                }
+                None => format!("error: audit log '{path}' is corrupted: {err}"),
+            },
+        )
+    } else {
+        (
             SetupFailureKind::OtherFailClosed,
             format!("error: failed to initialize runtime: {err}"),
-        ),
+        )
     };
 
-    SetupFailurePlan::new(kind, FailClosedAction::InternalError, user_message, None)
+    SetupFailurePlan::new(
+        kind,
+        FailClosedAction::InternalError,
+        user_message,
+        None,
+        is_config_fault,
+    )
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::config::error::ConfigError;
     use crate::error::AegisError;
+
+    fn bad_config_error() -> AegisError {
+        AegisError::Config(ConfigError::Config("bad config".to_string()))
+    }
 
     #[test]
     fn config_errors_become_setup_failure_plans() {
         let plan = super::setup_failure_from_runtime_error(
-            &AegisError::Config("bad config".to_string()),
+            &bad_config_error(),
             "echo hi",
             crate::decision::ExecutionTransport::Shell,
         );
@@ -101,13 +126,35 @@ mod tests {
             crate::planning::FailClosedAction::InternalError
         );
         assert!(plan.user_message().contains("failed to load config"));
+        assert!(plan.is_config_fault());
+    }
+
+    #[test]
+    fn corrupted_audit_log_becomes_a_distinct_setup_failure_kind() {
+        let source = serde_json::from_str::<serde_json::Value>("not json").unwrap_err();
+        let err = AegisError::Audit(aegis_audit::error::AuditError::Parse {
+            path: "/home/user/.aegis/audit.jsonl".to_string(),
+            line: Some(7),
+            source,
+        });
+        let plan = super::setup_failure_from_runtime_error(
+            &err,
+            "echo hi",
+            crate::decision::ExecutionTransport::Shell,
+        );
+
+        assert_eq!(
+            plan.kind(),
+            crate::planning::SetupFailureKind::CorruptAuditLog
+        );
+        assert!(!plan.is_config_fault());
     }
 
     #[test]
     fn prepared_setup_failure_replays_same_planning_outcome_for_every_request() {
         let prepared =
             super::PreparedPlanner::SetupFailure(super::setup_failure_from_runtime_error(
-                &AegisError::Config("bad config".to_string()),
+                &bad_config_error(),
                 "echo hi",
                 crate::decision::ExecutionTransport::Shell,
             ));

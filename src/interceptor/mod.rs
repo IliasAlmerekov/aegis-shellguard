@@ -10,6 +10,8 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 pub use aegis_types::RiskLevel;
 
+use aegis_scanner::ScannerError;
+
 use crate::config::UserPattern;
 use crate::error::AegisError;
 
@@ -64,21 +66,25 @@ pub fn scanner_for(custom_patterns: &[UserPattern]) -> Result<Arc<scanner::Scann
 fn builtin_scanner() -> Result<Arc<scanner::Scanner>, AegisError> {
     match &*BUILTIN_SCANNER {
         Ok(scanner) => Ok(Arc::clone(scanner)),
-        Err(message) => Err(AegisError::Config(message.clone())),
+        Err(message) => Err(AegisError::Scanner(ScannerError::Build(message.clone()))),
     }
 }
 
 fn get_cached_custom_scanner(key: &str) -> Result<Option<Arc<scanner::Scanner>>, AegisError> {
     let cache = CUSTOM_SCANNER_CACHE
         .lock()
-        .map_err(|_| AegisError::Config("custom scanner cache lock poisoned".to_string()))?;
+        .map_err(|_| AegisError::Internal {
+            detail: "custom scanner cache lock poisoned".to_string(),
+        })?;
     Ok(cache.get(key).cloned())
 }
 
 fn cache_custom_scanner(key: String, scanner: Arc<scanner::Scanner>) -> Result<(), AegisError> {
     let mut cache = CUSTOM_SCANNER_CACHE
         .lock()
-        .map_err(|_| AegisError::Config("custom scanner cache lock poisoned".to_string()))?;
+        .map_err(|_| AegisError::Internal {
+            detail: "custom scanner cache lock poisoned".to_string(),
+        })?;
     cache.insert(key, scanner);
     Ok(())
 }
@@ -113,10 +119,10 @@ impl CacheKey {
             ];
             for field in fields {
                 if field.contains(Self::FIELD_SEP) || field.contains(Self::RECORD_SEP) {
-                    return Err(AegisError::Config(format!(
+                    return Err(AegisError::Scanner(ScannerError::Build(format!(
                         "custom pattern field contains reserved separator character \
                          (U+001E or U+001F) which would corrupt the scanner cache key: {field:?}"
-                    )));
+                    ))));
                 }
                 key.push_str(field);
                 key.push(Self::FIELD_SEP);

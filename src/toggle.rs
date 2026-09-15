@@ -102,8 +102,8 @@ fn resolve_disabled_flag_path(home_dir: PathBuf) -> PathBuf {
 }
 
 fn home_dir() -> Result<PathBuf> {
-    home_dir_optional().ok_or_else(|| {
-        AegisError::Config("HOME is not set; cannot resolve ~/.aegis/disabled".to_string())
+    home_dir_optional().ok_or_else(|| AegisError::Internal {
+        detail: "HOME is not set; cannot resolve ~/.aegis/disabled".to_string(),
     })
 }
 
@@ -145,10 +145,9 @@ fn disable_at(path: &Path) -> Result<bool> {
     let was_present = match fs::metadata(path) {
         Ok(metadata) => {
             if !metadata.is_file() {
-                return Err(AegisError::Config(format!(
-                    "toggle path {} exists but is not a file",
-                    path.display()
-                )));
+                return Err(AegisError::Internal {
+                    detail: format!("toggle path {} exists but is not a file", path.display()),
+                });
             }
             true
         }
@@ -169,10 +168,9 @@ fn enable_at(path: &Path) -> Result<bool> {
     match fs::metadata(path) {
         Ok(metadata) => {
             if !metadata.is_file() {
-                return Err(AegisError::Config(format!(
-                    "toggle path {} exists but is not a file",
-                    path.display()
-                )));
+                return Err(AegisError::Internal {
+                    detail: format!("toggle path {} exists but is not a file", path.display()),
+                });
             }
 
             fs::remove_file(path)?;
@@ -184,9 +182,12 @@ fn enable_at(path: &Path) -> Result<bool> {
 }
 
 fn disabled_flag_contents() -> Result<String> {
-    let timestamp = OffsetDateTime::now_utc()
-        .format(&Rfc3339)
-        .map_err(|err| AegisError::Config(format!("failed to format toggle timestamp: {err}")))?;
+    let timestamp =
+        OffsetDateTime::now_utc()
+            .format(&Rfc3339)
+            .map_err(|err| AegisError::Internal {
+                detail: format!("failed to format toggle timestamp: {err}"),
+            })?;
     let pid = process::id();
 
     Ok(format!("timestamp={timestamp}\npid={pid}\n"))

@@ -197,7 +197,7 @@ pub(crate) fn handle_rollback_command(
             );
             0
         }
-        Err(err) if matches!(err, AegisError::Config(_)) => report_config_load_error(&err),
+        Err(err) if err.is_config_fault() => report_config_load_error(&err),
         Err(err) => {
             eprintln!("error: rollback failed: {err}");
             EXIT_INTERNAL
@@ -408,7 +408,7 @@ pub(crate) fn format_validation_report_text(report: &ValidationReport) -> String
 pub(crate) fn config_load_error_lines(err: &AegisError) -> Vec<String> {
     let mut lines = vec![format!("error: failed to load config: {err}")];
 
-    if matches!(err, AegisError::Config(_)) {
+    if err.is_config_fault() {
         lines.push("error: Fix or remove the invalid config file and try again.".to_string());
     }
 

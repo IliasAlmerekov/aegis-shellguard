@@ -109,6 +109,7 @@ pub struct SetupFailurePlan {
     fail_closed_action: FailClosedAction,
     user_message: String,
     audit_facts: Option<AuditFacts>,
+    is_config_fault: bool,
 }
 
 impl SetupFailurePlan {
@@ -118,18 +119,28 @@ impl SetupFailurePlan {
         fail_closed_action: FailClosedAction,
         user_message: String,
         audit_facts: Option<AuditFacts>,
+        is_config_fault: bool,
     ) -> Self {
         Self {
             kind,
             fail_closed_action,
             user_message,
             audit_facts,
+            is_config_fault,
         }
     }
 
     /// Return the setup failure classification.
     pub fn kind(&self) -> SetupFailureKind {
         self.kind
+    }
+
+    /// Whether the underlying failure stems from invalid user configuration.
+    ///
+    /// Mirrors [`crate::error::AegisError::is_config_fault`], computed once
+    /// when the plan was built from the originating error.
+    pub fn is_config_fault(&self) -> bool {
+        self.is_config_fault
     }
 
     /// Return the fail-closed action surfaces must apply.
@@ -267,6 +278,8 @@ pub enum FailClosedAction {
 pub enum SetupFailureKind {
     /// The runtime config could not be prepared safely.
     InvalidConfig,
+    /// The Audit log is corrupted and could not be read.
+    CorruptAuditLog,
     /// The scanner could not be prepared safely.
     ScannerUnavailable,
     /// Cwd was required for the policy path but unavailable.
