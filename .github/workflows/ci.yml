@@ -323,6 +323,14 @@ jobs:
       - name: cargo bench --bench parse_latency_bench -p aegis-language
         run: cargo bench --bench parse_latency_bench -p aegis-language
 
+      # ADR-034: the Startup cost budget covers one process invocation from
+      # process start to decision, the part scanner_bench's warm-loop shape
+      # cannot see (it builds the Scanner outside the measured loop). This
+      # belongs on the perf wall because construction, not classification, is
+      # what actually dominates an agent's per-command latency.
+      - name: cargo bench --bench startup_bench
+        run: cargo bench --bench startup_bench
+
       - name: Evaluate benchmark policy
         # `shell: bash` is load-bearing: Actions' implicit Linux shell is
         # `bash -e {0}` *without* `pipefail`, so the pipe into `tee` would report

@@ -352,6 +352,7 @@ fn ci_keeps_safe_and_slow_path_qualification_benches_on_the_performance_gate() {
         "cargo bench --bench scanner_bench",
         "cargo bench --bench no_source_bench -p aegis-language",
         "cargo bench --bench parse_latency_bench -p aegis-language",
+        "cargo bench --bench startup_bench",
     ] {
         assert!(
             workflow.contains(&format!("run: {command}\n")),
@@ -404,12 +405,34 @@ fn ci_keeps_safe_and_slow_path_qualification_benches_on_the_performance_gate() {
         "parse_latency_per_grammar/parse/javascript",
         "parse_latency_per_grammar/parse/typescript",
         "parse_latency_per_grammar/parse/bash",
+        "safe_command_assess",
+        "scanner_construction",
+        "runtime_context_construction",
+        "startup_safe_command",
     ] {
         assert!(
             baseline.contains(&format!("name = \"{benchmark}\"")),
             "benchmark policy must fail slow-path latency regressions for `{benchmark}`"
         );
     }
+    assert!(
+        !baseline.contains("1000_safe_commands"),
+        "the retired batch row must not survive in the benchmark policy"
+    );
+
+    // A `budget_ns` line pins an absolute ceiling independent of the delta
+    // check (ADR-034); count occurrences so deleting one row's budget cannot
+    // silently drop back to a delta-only gate.
+    assert_eq!(
+        baseline.matches("budget_ns = 2_000_000").count(),
+        2,
+        "safe_command_assess and heredoc_worst_case must each carry the 2 ms assessment budget"
+    );
+    assert_eq!(
+        baseline.matches("budget_ns = 30_000_000").count(),
+        1,
+        "startup_safe_command must carry the 30 ms startup budget"
+    );
 }
 
 #[test]
