@@ -48,9 +48,9 @@ fn find_snapshot_target(logger: &AuditLogger, snapshot_id: &str) -> Result<Rollb
     }
 
     if pruned_ids.contains(snapshot_id) {
-        return Err(AegisError::Snapshot(format!(
-            "snapshot id {snapshot_id:?} has been pruned and is no longer recoverable."
-        )));
+        return Err(AegisError::SnapshotPruned {
+            snapshot_id: snapshot_id.to_string(),
+        });
     }
 
     entries
@@ -63,12 +63,8 @@ fn find_snapshot_target(logger: &AuditLogger, snapshot_id: &str) -> Result<Rollb
             plugin: snapshot.plugin.clone(),
             snapshot_id: snapshot.snapshot_id.clone(),
         })
-        .ok_or_else(|| {
-            AegisError::Snapshot(format!(
-                "snapshot id {snapshot_id:?} was not found in the audit log.\n\
-                 Hint: run `aegis audit --format json` or `aegis audit --last 20` \
-                 to find a recorded snapshot id, then retry `aegis rollback <snapshot-id>`."
-            ))
+        .ok_or_else(|| AegisError::SnapshotIdNotFound {
+            snapshot_id: snapshot_id.to_string(),
         })
 }
 

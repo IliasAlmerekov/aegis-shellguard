@@ -280,7 +280,9 @@ fn exit_codes_do_not_overlap_with_success() {
 
 #[test]
 fn config_load_error_lines_include_fix_hint_only_for_config_errors() {
-    let lines = config_load_error_lines(&AegisError::Config("bad config".to_string()));
+    let lines = config_load_error_lines(&AegisError::Config(
+        aegis::config::error::ConfigError::Config("bad config".to_string()),
+    ));
     assert_eq!(lines.len(), 2);
     assert!(lines[0].contains("failed to load config"));
     assert!(lines[1].contains("Fix or remove the invalid config file"));

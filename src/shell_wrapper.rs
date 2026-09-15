@@ -6,8 +6,8 @@ use aegis::config::AllowlistMatch;
 use aegis::decision::ExecutionTransport;
 use aegis::interceptor::scanner::{Assessment, DecisionSource};
 use aegis::planning::{
-    CwdState, InterceptionPlan, PlanningOutcome, PreparedPlanner, SetupFailureKind,
-    SetupFailurePlan, prepare_and_plan, prepare_planner,
+    CwdState, InterceptionPlan, PlanningOutcome, PreparedPlanner, SetupFailurePlan,
+    prepare_and_plan, prepare_planner,
 };
 use aegis::runtime_gate::is_ci_environment;
 use aegis::toggle;
@@ -81,7 +81,7 @@ pub(crate) fn run_shell_wrapper(
 
 fn report_setup_failure(plan: &SetupFailurePlan) -> i32 {
     eprintln!("{}", plan.user_message());
-    if matches!(plan.kind(), SetupFailureKind::InvalidConfig) {
+    if plan.is_config_fault() {
         eprintln!("error: Fix or remove the invalid config file and try again.");
     }
     EXIT_INTERNAL

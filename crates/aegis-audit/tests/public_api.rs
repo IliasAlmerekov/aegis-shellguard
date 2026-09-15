@@ -24,11 +24,44 @@ fn test_audit_error_io_variant_is_public() {
 
 #[test]
 fn test_audit_error_parse_variant_is_public() {
-    let err: AuditError = AuditError::Parse("unexpected token".to_string());
+    let source = serde_json::from_str::<AuditEntry>("not json").unwrap_err();
+    let err: AuditError = AuditError::Parse {
+        path: "/home/user/.aegis/audit.jsonl".to_string(),
+        line: Some(42),
+        source,
+    };
     let msg = err.to_string();
     assert!(
-        msg.contains("unexpected token"),
-        "AuditError::Parse message should contain the inner text; got: {msg}"
+        msg.contains("/home/user/.aegis/audit.jsonl"),
+        "AuditError::Parse message should name the audit log path; got: {msg}"
+    );
+    assert!(
+        msg.contains("line 42"),
+        "AuditError::Parse message should name the line number; got: {msg}"
+    );
+}
+
+#[test]
+fn test_audit_error_parse_variant_source_is_the_json_error() {
+    let source = serde_json::from_str::<AuditEntry>("not json").unwrap_err();
+    let err: AuditError = AuditError::Parse {
+        path: "/home/user/.aegis/audit.jsonl".to_string(),
+        line: None,
+        source,
+    };
+    assert!(
+        std::error::Error::source(&err).is_some(),
+        "AuditError::Parse must expose the underlying serde_json::Error as source()"
+    );
+}
+
+#[test]
+fn test_audit_error_serialize_variant_is_public() {
+    let source = serde_json::from_str::<AuditEntry>("not json").unwrap_err();
+    let err: AuditError = AuditError::Serialize { source };
+    assert!(
+        std::error::Error::source(&err).is_some(),
+        "AuditError::Serialize must expose the underlying serde_json::Error as source()"
     );
 }
 

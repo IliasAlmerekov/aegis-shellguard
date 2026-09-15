@@ -451,6 +451,14 @@ path — under ADR-029 unavailability blocks, so this term describes only the
 successful escape from an applied profile.
 _Avoid_: sandbox failure, escape
 
+**Config fault**:
+An error caused by invalid or unreadable user configuration, something a user
+fixes by editing `aegis.toml`, not a fault in Aegis itself. Distinguishes, for
+example, a bad policy rule from a corrupted Audit log or an unreachable Docker
+daemon, so the two never share a hint telling the user to fix a config file
+that was never the problem.
+_Avoid_: config error, invalid config
+
 ## Snapshot & Audit
 
 **Snapshot**:

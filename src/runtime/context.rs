@@ -175,16 +175,21 @@ impl RuntimeContext {
         let policy_rules = config.rules.clone();
         #[cfg(feature = "starlark-policy")]
         if let Some(star_path) = explicit_policy_path.filter(|p| p.exists()) {
-            let star_rules = load_starlark_policy(star_path)
-                .map_err(|e| AegisError::Config(format!("policy.star: {e}")))?;
+            let star_rules = load_starlark_policy(star_path).map_err(|e| {
+                AegisError::Config(crate::config::error::ConfigError::Config(format!(
+                    "policy.star: {e}"
+                )))
+            })?;
             policy_rules.extend(star_rules);
         }
         #[cfg(not(feature = "starlark-policy"))]
         if let Some(star_path) = explicit_policy_path.filter(|p| p.exists()) {
-            return Err(AegisError::Config(format!(
-                "policy.star exists at {} but this Aegis build was compiled without the starlark-policy feature",
-                star_path.display()
-            )));
+            return Err(AegisError::Internal {
+                detail: format!(
+                    "policy.star exists at {} but this Aegis build was compiled without the starlark-policy feature",
+                    star_path.display()
+                ),
+            });
         }
 
         Ok(Self {

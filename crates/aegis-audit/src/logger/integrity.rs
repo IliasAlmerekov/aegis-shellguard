@@ -135,11 +135,8 @@ pub(super) fn compute_entry_hash(entry: &AuditEntry, prev_hash: Option<&str>) ->
         analysis: base.analysis.as_ref(),
     };
 
-    let canonical = serde_json::to_vec(&payload).map_err(|err| {
-        AuditError::Parse(format!(
-            "failed to serialize audit integrity payload: {err}"
-        ))
-    })?;
+    let canonical =
+        serde_json::to_vec(&payload).map_err(|source| AuditError::Serialize { source })?;
     let digest = Sha256::digest(canonical);
     Ok(hex_encode(&digest))
 }
