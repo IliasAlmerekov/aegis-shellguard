@@ -102,7 +102,13 @@ fn resolve_disabled_flag_path(home_dir: PathBuf) -> PathBuf {
 }
 
 fn home_dir() -> Result<PathBuf> {
-    home_dir_optional().ok_or_else(|| AegisError::Internal {
+    home_dir_or_internal_error(home_dir_optional())
+}
+
+/// Split from [`home_dir`] so the missing-`HOME` arm is reachable from a test
+/// without mutating process-wide environment state.
+fn home_dir_or_internal_error(resolved: Option<PathBuf>) -> Result<PathBuf> {
+    resolved.ok_or_else(|| AegisError::Internal {
         detail: "HOME is not set; cannot resolve ~/.aegis/disabled".to_string(),
     })
 }
@@ -300,30 +306,12 @@ mod tests {
 
     #[test]
     fn missing_home_is_an_internal_error_not_a_config_error() {
-        // `home_dir()` reads real process environment state, which is unsafe
-        // to mutate from a parallel test run; pin the exact site text
-        // directly instead, matching `src/toggle.rs`'s `home_dir` body.
-        let err = AegisError::Internal {
-            detail: "HOME is not set; cannot resolve ~/.aegis/disabled".to_string(),
-        };
+        let err = home_dir_or_internal_error(None)
+            .expect_err("an unresolvable home directory must be rejected");
+
         assert_eq!(
             err.to_string(),
             "internal error: HOME is not set; cannot resolve ~/.aegis/disabled"
-        );
-        assert!(!err.is_config_fault());
-    }
-
-    #[test]
-    fn timestamp_format_failure_is_an_internal_error_not_a_config_error() {
-        // `OffsetDateTime::now_utc().format(&Rfc3339)` has no reachable
-        // failure path for the current clock; pin the exact site text
-        // directly instead, matching `disabled_flag_contents`'s error arm.
-        let err = AegisError::Internal {
-            detail: "failed to format toggle timestamp: the component range is invalid".to_string(),
-        };
-        assert_eq!(
-            err.to_string(),
-            "internal error: failed to format toggle timestamp: the component range is invalid"
         );
         assert!(!err.is_config_fault());
     }
