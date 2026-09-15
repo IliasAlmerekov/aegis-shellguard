@@ -36,7 +36,7 @@ fn test_audit_error_parse_variant_is_public() {
         "AuditError::Parse message should name the audit log path; got: {msg}"
     );
     assert!(
-        msg.contains('4') && msg.contains('2'),
+        msg.contains("line 42"),
         "AuditError::Parse message should name the line number; got: {msg}"
     );
 }
