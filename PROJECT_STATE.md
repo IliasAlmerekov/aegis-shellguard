@@ -300,7 +300,8 @@ distribution smoke gates open)
   --all-targets -- -D warnings` clean, `fmt --check` clean, `cargo audit` (only
   the 6 pre-existing allowed warnings from the opt-in `aegis-starlark` feature),
   `cargo deny check` all ok. Scanner bench: `1000_safe_commands` ≈ 1.9 ms
-  (≈1.9 µs each, within the ADR-002 < 2 ms budget); the rule's keyword
+  (≈1.9 µs each, within the 2 ms Assessment budget — ADR-034, not ADR-002,
+  which carries no number); the rule's keyword
   `truncate` is already in the quick-scan set from `DB-004`, so the safe-path
   hot path is untouched. **Note:** the workspace `rust_source_files_should_stay_under_800_lines`
   budget test is currently red because the parallel uncommitted `DK-007`
@@ -2345,8 +2346,10 @@ distribution smoke gates open)
   stdin (`sh -s`), and pipe-to-shell; inline `-c`/`-e` bodies, package runners,
   and flag-only interpreters are negative forms. Detection runs before the
   safe-path early return; an allocation-free `split_whitespace` +
-  `eq_ignore_ascii_case` pre-filter keeps `1000_safe_commands` at 1.96 ms (< 2 ms
-  budget). Iter 3 (policy + snapshot flow): `snapshots_required` now fires for
+  `eq_ignore_ascii_case` pre-filter keeps `1000_safe_commands` at 1.96 ms for
+  the batch of 1,000, that is ≈2 µs per command against the 2 ms Assessment
+  budget. The batch figure was compared against the budget directly here at the
+  time; see ADR-034. Iter 3 (policy + snapshot flow): `snapshots_required` now fires for
   `effect_opaque` under `SnapshotPolicy::{Selective, Full}` with an applicable
   plugin (no risk raise, no extra prompt); the planning-core plugin-resolution
   guard (`recovery_backstop_applies`) resolves plugins for effect-opaque
@@ -2379,9 +2382,10 @@ distribution smoke gates open)
   (gated by the allocation-free `has_potential_shape` pre-filter, which is
   false for all 10 safe bench templates), so the safe hot path is unchanged;
   the scanner bench on this WSL2 host read 2.4 ms under load (criterion warned
-  it could not hit its sample target), not a code regression — the < 2 ms
-  budget was established at 1.96 ms for the pre-filter, which this change does
-  not modify.
+  it could not hit its sample target), not a code regression — the reference
+  point was the 1.96 ms batch figure recorded for the pre-filter, which this
+  change does not modify. Both numbers are batch figures for 1,000 commands,
+  not per-command figures against the 2 ms Assessment budget (ADR-034).
 ## Last session (2026-07-07)
 
 - **H4 closed via TDD.** Shell hooks (`claude-code.sh`, `codex-pre-tool-use.sh`) now fail
