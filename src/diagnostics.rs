@@ -22,6 +22,9 @@ use tracing_subscriber::fmt::format::Writer;
 use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields};
 use tracing_subscriber::registry::LookupSpan;
 
+use crate::shell_compat::InvocationMode;
+use crate::{Commands, OutputVerbosity};
+
 /// The environment variable that overrides the base level derived from the
 /// CLI verbosity flags. The name and its override semantics are contractual;
 /// see `docs/troubleshooting.md`.
@@ -35,7 +38,7 @@ const FIELD_TRUNCATION_LIMIT: usize = 512;
 /// The base level implied by the CLI's `--verbosity` / `--quiet` / `-v`
 /// flags, before an `AEGIS_LOG` override is applied.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BaseLevel {
+enum BaseLevel {
     /// `--quiet` / `--verbosity quiet`
     Error,
     /// the default
@@ -55,6 +58,41 @@ impl BaseLevel {
 }
 
 /// Install the process-wide `tracing` subscriber that writes the Diagnostic
+/// stream to stderr, deriving its settings from the parsed invocation.
+///
+/// Call this after the pre-clap short-circuits (the language worker and the
+/// inner Landlock wrapper never pay for it) and before the Tokio runtime is
+/// built: those two minimal processes exit before this point and must never
+/// carry the cost of a subscriber they don't use.
+pub fn init(invocation: &InvocationMode) {
+    let (base_level, silent_unless_requested) = derive_settings(invocation);
+    install(base_level, silent_unless_requested);
+}
+
+/// The base level implied by the CLI's `--verbosity` / `--quiet` / `-v`
+/// flags, and whether the stream stays off by default on this invocation.
+/// `hook` mode stays silent by default: nothing reads its stderr except
+/// byte-pinned tests (ADR-023). A non-CLI invocation (the shell-compat
+/// launch path) gets the default level and is never silenced.
+fn derive_settings(invocation: &InvocationMode) -> (BaseLevel, bool) {
+    let base_level = match invocation {
+        InvocationMode::Cli(cli) => {
+            match OutputVerbosity::from_cli(cli.verbosity, cli.quiet, cli.verbose) {
+                OutputVerbosity::Quiet => BaseLevel::Error,
+                OutputVerbosity::Standard => BaseLevel::Warn,
+                OutputVerbosity::Verbose => BaseLevel::Info,
+            }
+        }
+        _ => BaseLevel::Warn,
+    };
+    let silent_unless_requested = matches!(
+        invocation,
+        InvocationMode::Cli(cli) if matches!(cli.subcommand, Some(Commands::Hook))
+    );
+    (base_level, silent_unless_requested)
+}
+
+/// Install the process-wide `tracing` subscriber that writes the Diagnostic
 /// stream to stderr.
 ///
 /// `base_level` is the level implied by the resolved CLI verbosity flags.
@@ -67,7 +105,7 @@ impl BaseLevel {
 /// whose stderr is byte-pinned by tests and never read by a human (the
 /// internal language-worker mode, and the `hook` subcommand). Setting
 /// `AEGIS_LOG` turns it on there too.
-pub fn init(base_level: BaseLevel, silent_unless_requested: bool) {
+fn install(base_level: BaseLevel, silent_unless_requested: bool) {
     let aegis_log_is_set = std::env::var_os(AEGIS_LOG_ENV_VAR).is_some();
 
     if silent_unless_requested && !aegis_log_is_set {
@@ -201,6 +239,7 @@ fn truncate_field(value: &str) -> std::borrow::Cow<'_, str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Cli, CommandOutputFormat};
 
     #[test]
     fn truncate_field_leaves_short_values_untouched() {
@@ -229,5 +268,52 @@ mod tests {
         assert_eq!(BaseLevel::Error.as_filter_str(), "error");
         assert_eq!(BaseLevel::Warn.as_filter_str(), "warn");
         assert_eq!(BaseLevel::Info.as_filter_str(), "info");
+    }
+
+    fn cli(verbosity: OutputVerbosity, subcommand: Option<Commands>) -> Cli {
+        Cli {
+            command: None,
+            output: CommandOutputFormat::Text,
+            verbosity,
+            quiet: false,
+            verbose: false,
+            subcommand,
+        }
+    }
+
+    #[test]
+    fn quiet_verbosity_derives_error_level() {
+        let invocation = InvocationMode::Cli(cli(OutputVerbosity::Quiet, None));
+        assert_eq!(derive_settings(&invocation).0, BaseLevel::Error);
+    }
+
+    #[test]
+    fn standard_verbosity_derives_warn_level() {
+        let invocation = InvocationMode::Cli(cli(OutputVerbosity::Standard, None));
+        assert_eq!(derive_settings(&invocation).0, BaseLevel::Warn);
+    }
+
+    #[test]
+    fn verbose_verbosity_derives_info_level() {
+        let invocation = InvocationMode::Cli(cli(OutputVerbosity::Verbose, None));
+        assert_eq!(derive_settings(&invocation).0, BaseLevel::Info);
+    }
+
+    #[test]
+    fn hook_subcommand_is_silent_by_default() {
+        let invocation = InvocationMode::Cli(cli(OutputVerbosity::Standard, Some(Commands::Hook)));
+        assert!(derive_settings(&invocation).1);
+    }
+
+    #[test]
+    fn other_subcommands_are_not_silent_by_default() {
+        let invocation = InvocationMode::Cli(cli(OutputVerbosity::Standard, Some(Commands::On)));
+        assert!(!derive_settings(&invocation).1);
+    }
+
+    #[test]
+    fn no_subcommand_is_not_silent_by_default() {
+        let invocation = InvocationMode::Cli(cli(OutputVerbosity::Standard, None));
+        assert!(!derive_settings(&invocation).1);
     }
 }

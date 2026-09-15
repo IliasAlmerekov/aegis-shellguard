@@ -310,21 +310,7 @@ fn main() {
     // (so the language worker and the inner Landlock wrapper never pay for
     // it) and before the Tokio runtime is built. `hook` mode stays silent by
     // default: nothing reads its stderr except byte-pinned tests (ADR-023).
-    let diagnostics_base_level = match &invocation {
-        shell_compat::InvocationMode::Cli(cli) => {
-            match OutputVerbosity::from_cli(cli.verbosity, cli.quiet, cli.verbose) {
-                OutputVerbosity::Quiet => diagnostics::BaseLevel::Error,
-                OutputVerbosity::Standard => diagnostics::BaseLevel::Warn,
-                OutputVerbosity::Verbose => diagnostics::BaseLevel::Info,
-            }
-        }
-        _ => diagnostics::BaseLevel::Warn,
-    };
-    let diagnostics_silent_by_default = matches!(
-        &invocation,
-        shell_compat::InvocationMode::Cli(cli) if matches!(cli.subcommand, Some(Commands::Hook))
-    );
-    diagnostics::init(diagnostics_base_level, diagnostics_silent_by_default);
+    diagnostics::init(&invocation);
 
     // Build one Tokio runtime for the entire process lifetime.
     let rt = match tokio::runtime::Builder::new_multi_thread()
