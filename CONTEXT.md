@@ -124,9 +124,22 @@ sensitive path) stays a regex `Pattern` (ADR-014/015).
 _Avoid_: prefix pattern, first-token rule
 
 **Quick scan**:
-The fast first pass — an Aho-Corasick multi-pattern scan with no allocations, on the
-< 2ms hot path. Never uses regex.
+The fast first pass — an Aho-Corasick multi-pattern scan with no allocations, inside
+the `Assessment budget`. Never uses regex.
 _Avoid_: prefilter, fast match
+
+**Assessment budget**:
+The upper bound on what one `assess` call may cost, on any input including the worst
+one. It bounds classification only, not the process that performs it (ADR-034). The
+number lives in `PRD.md` and is enforced per row in `perf/scanner_bench_baseline.toml`.
+_Avoid_: hot-path budget, scan budget
+
+**Startup cost**:
+What one process invocation costs from process start to the decision, before exec.
+Because Aegis is a `$SHELL` proxy, an agent pays it on every command; there is no warm
+variant of it. It is dominated by construction — the `Scanner`, the runtime context,
+the async runtime — rather than by classification (ADR-034).
+_Avoid_: cold start, warm start, init time
 
 **Full scan**:
 The verification pass that runs regex `Pattern`s and token-prefix rules after the
