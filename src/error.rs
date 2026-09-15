@@ -6,13 +6,13 @@ use crate::config::error::ConfigError;
 
 /// Typed error hierarchy for all Aegis operations.
 ///
-/// Each library crate already carries a precise, typed error (a Path
-/// containment violation, a corrupted Audit log, a missing Docker daemon,
-/// …). This type wraps those lower errors transparently instead of mirroring
-/// their variants or flattening them into strings, so a Path containment
-/// violation stays matchable by variant all the way to the CLI — the binary
-/// never has to parse message text to recover information a lower crate
-/// already had.
+/// Each library crate already carries a precise, typed error, for example a
+/// Path containment violation, a corrupted Audit log, or a missing Docker
+/// daemon. This type wraps those lower errors transparently instead of
+/// mirroring their variants or flattening them into strings, so a Path
+/// containment violation stays matchable by variant all the way to the CLI.
+/// The binary never has to parse message text to recover information a
+/// lower crate already had.
 #[derive(thiserror::Error, Debug)]
 #[non_exhaustive]
 pub enum AegisError {
@@ -64,7 +64,7 @@ pub enum AegisError {
         failed: String,
     },
 
-    /// A fault in the binary's own orchestration logic — not something a user
+    /// A fault in the binary's own orchestration logic, not something a user
     /// fixes by editing `aegis.toml`.
     #[error("internal error: {detail}")]
     Internal {
@@ -81,10 +81,12 @@ impl AegisError {
     /// Whether this error stems from invalid or unreadable user configuration
     /// rather than a fault in Aegis itself.
     ///
-    /// `true` for `Config` and for `Scanner(ScannerError::InvalidPattern)` — a
-    /// custom pattern the user wrote in their config. `false` for everything
-    /// else, including `Scanner(ScannerError::Build)`, `Internal`, and a
-    /// corrupted Audit log: none of those are fixed by editing `aegis.toml`.
+    /// `true` for `Config` and for `Scanner(ScannerError::InvalidPattern)`,
+    /// a custom pattern the user wrote in their config. `false` for
+    /// everything else, including `Scanner(ScannerError::Build)`,
+    /// `Internal`, a corrupted Audit log, and `Snapshot(SnapshotError::Config)`
+    /// (an unset `HOME`). None of those are fixed by editing `aegis.toml`;
+    /// an unset environment variable, for instance, is not a config problem.
     pub fn is_config_fault(&self) -> bool {
         matches!(
             self,
@@ -220,6 +222,40 @@ mod tests {
             detail: "custom scanner cache lock poisoned".to_string(),
         };
         assert!(!err.is_config_fault());
+    }
+
+    #[test]
+    fn snapshot_config_missing_home_message_has_the_snapshot_config_error_prefix() {
+        let err = AegisError::Snapshot(SnapshotError::Config(
+            "HOME is not set; cannot determine snapshot storage directory".to_string(),
+        ));
+        assert_eq!(
+            err.to_string(),
+            "snapshot config error: HOME is not set; cannot determine snapshot storage directory"
+        );
+    }
+
+    #[test]
+    fn snapshot_config_missing_home_is_not_a_config_fault() {
+        let err = AegisError::Snapshot(SnapshotError::Config(
+            "HOME is not set; cannot determine snapshot storage directory".to_string(),
+        ));
+        assert!(
+            !err.is_config_fault(),
+            "an unset environment variable is not fixed by editing aegis.toml"
+        );
+    }
+
+    #[test]
+    fn insecure_audit_artifact_message_has_no_io_error_prefix() {
+        let err = AegisError::Audit(AuditError::InsecureAuditArtifact {
+            path: "/home/user/.aegis/audit.jsonl".to_string(),
+            detail: "mode 0644, expected 0600".to_string(),
+        });
+        assert_eq!(
+            err.to_string(),
+            "audit artifact '/home/user/.aegis/audit.jsonl' is insecure: mode 0644, expected 0600"
+        );
     }
 
     #[test]
