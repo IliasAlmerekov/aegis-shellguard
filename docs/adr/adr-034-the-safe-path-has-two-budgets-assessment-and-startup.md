@@ -61,7 +61,7 @@ say so.
 The startup budget is not a 1.0 release gate. Bringing 22 ms down requires
 reworking how the scanner and the runtime context are built; gating the release
 on a number that is missed today would only postpone the release. The cost of
-`Scanner::try_new`, 4.8 ms per invocation, is filed as its own issue.
+`Scanner::try_new`, 4.8 ms per invocation, is filed separately as issue #319.
 
 ## Alternatives rejected
 
