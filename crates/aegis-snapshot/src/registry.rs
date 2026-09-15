@@ -250,7 +250,12 @@ impl SnapshotRegistry {
                     snapshot_id,
                 }),
                 Err(e) => {
-                    tracing::warn!(plugin = plugin.name(), error = %e, "snapshot failed, continuing");
+                    tracing::warn!(
+                        plugin = plugin.name(),
+                        error = %e,
+                        "{}",
+                        crate::SNAPSHOT_FAILED_CONTINUING
+                    );
                 }
             }
         }
@@ -322,5 +327,145 @@ impl SnapshotRegistry {
         &self,
     ) -> std::result::Result<Vec<PrunableRecord>, SnapshotError> {
         resolve_prunable_records_from_default_audit_log()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+    use std::sync::{Arc, Mutex};
+
+    use async_trait::async_trait;
+    use tracing::field::{Field, Visit};
+    use tracing::span;
+
+    use super::*;
+
+    /// A plugin that is always applicable and always fails to snapshot, so
+    /// `snapshot_all` reaches its warn arm deterministically.
+    struct AlwaysFailingPlugin;
+
+    #[async_trait]
+    impl SnapshotPlugin for AlwaysFailingPlugin {
+        fn name(&self) -> &'static str {
+            "mock-failing"
+        }
+
+        async fn is_applicable(&self, _cwd: &Path) -> bool {
+            true
+        }
+
+        async fn snapshot(
+            &self,
+            _cwd: &Path,
+            _cmd: &str,
+        ) -> std::result::Result<String, SnapshotError> {
+            Err(SnapshotError::Snapshot("mock plugin failure".to_string()))
+        }
+
+        async fn rollback(&self, _snapshot_id: &str) -> std::result::Result<(), SnapshotError> {
+            Ok(())
+        }
+
+        async fn delete(&self, _snapshot_id: &str) -> std::result::Result<(), SnapshotError> {
+            Ok(())
+        }
+    }
+
+    /// The fields captured off the single `tracing` event the test expects.
+    #[derive(Default)]
+    struct CapturedFields {
+        message: Option<String>,
+        plugin: Option<String>,
+        error: Option<String>,
+    }
+
+    #[derive(Default)]
+    struct FieldVisitor(CapturedFields);
+
+    impl Visit for FieldVisitor {
+        fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+            let rendered = format!("{value:?}");
+            match field.name() {
+                "message" => self.0.message = Some(rendered),
+                "plugin" => self.0.plugin = Some(rendered),
+                "error" => self.0.error = Some(rendered),
+                _ => {}
+            }
+        }
+
+        fn record_str(&mut self, field: &Field, value: &str) {
+            match field.name() {
+                "message" => self.0.message = Some(value.to_string()),
+                "plugin" => self.0.plugin = Some(value.to_string()),
+                "error" => self.0.error = Some(value.to_string()),
+                _ => {}
+            }
+        }
+    }
+
+    /// A minimal `tracing::Subscriber` that records the fields of the one
+    /// event it expects to see, without pulling in `tracing-subscriber` as a
+    /// dependency just for this test.
+    struct CollectingSubscriber(Arc<Mutex<Option<CapturedFields>>>);
+
+    impl tracing::Subscriber for CollectingSubscriber {
+        fn enabled(&self, _metadata: &tracing::Metadata<'_>) -> bool {
+            true
+        }
+
+        fn new_span(&self, _span: &span::Attributes<'_>) -> span::Id {
+            span::Id::from_u64(1)
+        }
+
+        fn record(&self, _span: &span::Id, _values: &span::Record<'_>) {}
+
+        fn record_follows_from(&self, _span: &span::Id, _follows: &span::Id) {}
+
+        fn event(&self, event: &tracing::Event<'_>) {
+            let mut visitor = FieldVisitor::default();
+            event.record(&mut visitor);
+            *self.0.lock().unwrap() = Some(visitor.0);
+        }
+
+        fn enter(&self, _span: &span::Id) {}
+
+        fn exit(&self, _span: &span::Id) {}
+    }
+
+    #[test]
+    fn snapshot_all_warns_with_plugin_and_error_fields_on_plugin_failure() {
+        let registry = SnapshotRegistry::new_with_plugins(vec![Box::new(AlwaysFailingPlugin)]);
+        let captured: Arc<Mutex<Option<CapturedFields>>> = Arc::new(Mutex::new(None));
+        let subscriber = CollectingSubscriber(Arc::clone(&captured));
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let records = tracing::subscriber::with_default(subscriber, || {
+            runtime.block_on(registry.snapshot_all(Path::new("/nonexistent-cwd"), "rm -rf /"))
+        });
+
+        assert!(
+            records.is_empty(),
+            "a failing plugin must not produce a snapshot record"
+        );
+
+        let captured =
+            captured.lock().unwrap().take().expect(
+                "snapshot_all must emit exactly one tracing event when the only plugin fails",
+            );
+        assert_eq!(
+            captured.message.as_deref(),
+            Some(crate::SNAPSHOT_FAILED_CONTINUING)
+        );
+        assert_eq!(captured.plugin.as_deref(), Some("mock-failing"));
+        let error = captured.error.expect("error field must be recorded");
+        assert!(
+            error.contains("mock plugin failure"),
+            "error field must carry the plugin's failure detail, got {error:?}"
+        );
+        // The command string itself must never appear in the tracing fields
+        // (CONVENTION.md §2 — no raw command string in the Diagnostic stream).
+        assert!(!error.contains("rm -rf /"));
+        assert_ne!(captured.message.as_deref(), Some("rm -rf /"));
     }
 }
