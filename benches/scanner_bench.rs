@@ -7,37 +7,21 @@ fn make_scanner() -> Scanner {
     Scanner::try_new(patterns).expect("built-in patterns compile")
 }
 
-// ── Benchmark 1: 1,000 safe commands (target: > 500k ops/sec) ────────────────
+// ── Benchmark 1: one safe command against the assessment budget ──────────────
 //
 // A safe command never triggers a regex scan — only the Aho-Corasick quick pass.
-// We generate 1,000 entries by cycling through 10 distinct safe templates so the
-// CPU branch-predictor does not collapse all iterations into a single path.
+// This is the per-command shape the `Assessment budget` in ADR-034 actually
+// bounds; the removed `bench_safe_commands` timed a 1,000-command batch, whose
+// mean cannot be compared against a per-command budget.
 
-fn bench_safe_commands(c: &mut Criterion) {
+// First of the ten templates the removed `bench_safe_commands` cycled through.
+const SAFE_COMMAND: &str = "ls -la /home/user";
+
+fn bench_safe_command_assess(c: &mut Criterion) {
     let scanner = make_scanner();
 
-    let base: &[&str] = &[
-        "ls -la /home/user",
-        "echo hello world",
-        "cat /etc/hostname",
-        "cargo build --release",
-        "grep -r TODO src/",
-        "git status",
-        "git log --oneline -20",
-        "docker ps -a",
-        "kubectl get pods -n production",
-        "npm run test",
-    ];
-
-    // Build 1,000 commands by repeating the base 100×.
-    let cmds: Vec<&str> = base.iter().copied().cycle().take(1_000).collect();
-
-    c.bench_function("1000_safe_commands", |b| {
-        b.iter(|| {
-            for cmd in &cmds {
-                black_box(scanner.assess(black_box(cmd)));
-            }
-        })
+    c.bench_function("safe_command_assess", |b| {
+        b.iter(|| black_box(scanner.assess(black_box(SAFE_COMMAND))))
     });
 }
 
@@ -144,6 +128,6 @@ fn bench_heredoc_worst_case(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default().measurement_time(Duration::from_secs(8));
-    targets = bench_safe_commands, bench_dangerous_commands, bench_heredoc_worst_case
+    targets = bench_safe_command_assess, bench_dangerous_commands, bench_heredoc_worst_case
 }
 criterion_main!(benches);
