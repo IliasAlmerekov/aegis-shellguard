@@ -263,6 +263,72 @@ mod tests {
     }
 
     #[test]
+    fn disable_at_a_non_file_toggle_path_is_an_internal_error_not_a_config_error() {
+        let home = TempDir::new().unwrap();
+        let path = home.path().join("disabled");
+        fs::create_dir(&path).unwrap();
+
+        let err = disable_at(&path).expect_err("a directory at the toggle path must be rejected");
+
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "internal error: toggle path {} exists but is not a file",
+                path.display()
+            )
+        );
+        assert!(!err.is_config_fault());
+    }
+
+    #[test]
+    fn enable_at_a_non_file_toggle_path_is_an_internal_error_not_a_config_error() {
+        let home = TempDir::new().unwrap();
+        let path = home.path().join("disabled");
+        fs::create_dir(&path).unwrap();
+
+        let err = enable_at(&path).expect_err("a directory at the toggle path must be rejected");
+
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "internal error: toggle path {} exists but is not a file",
+                path.display()
+            )
+        );
+        assert!(!err.is_config_fault());
+    }
+
+    #[test]
+    fn missing_home_is_an_internal_error_not_a_config_error() {
+        // `home_dir()` reads real process environment state, which is unsafe
+        // to mutate from a parallel test run; pin the exact site text
+        // directly instead, matching `src/toggle.rs`'s `home_dir` body.
+        let err = AegisError::Internal {
+            detail: "HOME is not set; cannot resolve ~/.aegis/disabled".to_string(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "internal error: HOME is not set; cannot resolve ~/.aegis/disabled"
+        );
+        assert!(!err.is_config_fault());
+    }
+
+    #[test]
+    fn timestamp_format_failure_is_an_internal_error_not_a_config_error() {
+        // `OffsetDateTime::now_utc().format(&Rfc3339)` has no reachable
+        // failure path for the current clock; pin the exact site text
+        // directly instead, matching `disabled_flag_contents`'s error arm.
+        let err = AegisError::Internal {
+            detail: "failed to format toggle timestamp: the component range is invalid".to_string(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "internal error: failed to format toggle timestamp: the component range is invalid"
+        );
+        assert!(!err.is_config_fault());
+    }
+
+    #[test]
     fn config_status_prefers_project_over_global() {
         let global = ConfigLayerPath {
             source_layer: ConfigSourceLayer::Global,
