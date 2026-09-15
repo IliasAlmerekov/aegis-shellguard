@@ -585,6 +585,14 @@ One JSONL line in the audit log — the structured record of a single intercepte
 its `Decision`, and its `Sandbox status`.
 _Avoid_: log line, event
 
+**Diagnostic stream**:
+The ephemeral `tracing` output the binary writes to stderr for the operator, covering
+plugin failures, degraded paths, and migration notices. It is not persisted, not
+machine-readable, and not a contract. Its events, levels, and wording may change at any
+time. Only the `AEGIS_LOG` switch and a few named message constants are contractual.
+It never substitutes for the `Audit log`, which is persisted and _is_ a public contract.
+_Avoid_: log, logging, debug log, telemetry
+
 ## Surfaces
 
 **Wrapper / `$SHELL` proxy**:
