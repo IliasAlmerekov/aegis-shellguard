@@ -162,6 +162,36 @@ fn assert_absent(source: &str, needle: &str, file: &str, rule: &str) {
     );
 }
 
+// ── §2 Diagnostic stream — no raw command or env value in a tracing field ────
+
+/// CONVENTION.md §2: a `tracing` field must never carry a raw command string
+/// or an environment variable value. Source-grep floor, not a proof
+/// (ADR-033) — it cannot see a path that arrives through `Display` on an
+/// error type such as `SnapshotError`.
+#[test]
+fn tracing_fields_never_carry_raw_command_or_env_value() {
+    let mut files = rs_files_under("src");
+    files.extend(rs_files_under("crates"));
+
+    for path in files {
+        let src = strip_test_code(&fs::read_to_string(&path).unwrap());
+        let rel = path
+            .strip_prefix(repo_root())
+            .unwrap()
+            .display()
+            .to_string();
+        for forbidden in ["%cmd", "%command", "%raw_command", "%env_value", "%env_var"] {
+            assert_absent(
+                &src,
+                forbidden,
+                &rel,
+                "CONVENTION.md §2: tracing fields must never carry a raw command \
+                 string or an environment variable value",
+            );
+        }
+    }
+}
+
 // ── §4 Forbidden edges — Policy engine is pure ────────────────────────────────
 
 /// I1 + §4: `decision.rs` is a pure function. No I/O, no process spawning,

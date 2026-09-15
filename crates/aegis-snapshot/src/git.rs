@@ -145,9 +145,8 @@ impl SnapshotPlugin for GitPlugin {
 
             tracing::error!(
                 stash_ref = %stash_ref,
-                cwd = %cwd_str,
                 details = %details,
-                "git stash apply conflicted — stash entry is preserved for manual recovery"
+                "git stash apply conflicted, stash entry is preserved for manual recovery"
             );
 
             return Err(SnapshotError::RollbackConflict {

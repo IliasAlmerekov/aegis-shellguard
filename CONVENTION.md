@@ -58,6 +58,17 @@ These rules are non-negotiable.
 - Snapshot behavior must be described honestly as best-effort unless fidelity is proven.
 - Any change that weakens command interception, confirmation, allowlist safety, CI safety,
   snapshot guarantees, or audit integrity is a security-sensitive change.
+- A `tracing` field must never carry a raw command string or an environment variable value.
+  The Diagnostic stream is operator-facing stderr, not the append-only Audit log, and it must
+  not become a second place secrets or command text leak to. Guarded by a source-grep test
+  modeled on `decision_engine_is_pure_no_io` (`tests/architecture_boundaries.rs`); the guard
+  cannot see a path that arrives through a `Display` impl on an error type such as
+  `SnapshotError`, so it is a floor, not a proof.
+- A `tracing` event's level follows one rule, not a fixed list: it is `warn` (or higher) if,
+  after it fires, an operator who believes Snapshot coverage is complete would be wrong.
+  Normal progress (a snapshot was created, a plugin was not applicable, no container was
+  found) stays `info`. Do not mechanically promote every `info` inside an `Err` branch: a
+  plugin correctly deciding it has nothing to do is not a coverage degradation.
 
 ## 3. Architecture Rules
 

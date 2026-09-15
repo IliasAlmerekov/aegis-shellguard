@@ -96,6 +96,7 @@ the core classification / approval pipeline when enforcement is active.
 | ADR-030 | The confinement profile is derived from the Assessment (extends ADR-029) | [`adr-030-the-confinement-profile-is-derived-from-the-assessment.md`](adr-030-the-confinement-profile-is-derived-from-the-assessment.md) |
 | ADR-031 | Unattended destructive execution requires Recovery (partially supersedes ADR-004) | [`adr-031-unattended-destructive-execution-requires-recovery.md`](adr-031-unattended-destructive-execution-requires-recovery.md) |
 | ADR-032 | Outbound irreversible actions are a named threat class | [`adr-032-outbound-irreversible-actions-are-detected.md`](adr-032-outbound-irreversible-actions-are-detected.md) |
+| ADR-033 | The Diagnostic stream goes to stderr and is not a contract (partially supersedes ADR-023) | [`adr-033-the-diagnostic-stream-goes-to-stderr-and-is-not-a-contract.md`](adr-033-the-diagnostic-stream-goes-to-stderr-and-is-not-a-contract.md) |
 
 `ADR-009` is intentionally absent from the active set; numbering is preserved
 as-is so historical references do not drift.

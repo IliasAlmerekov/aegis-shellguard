@@ -61,6 +61,14 @@ pub use retention::{PrunableRecord, RetentionPolicy};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
+/// The message logged when one plugin's snapshot attempt fails inside
+/// [`SnapshotRegistry::snapshot_all`] and the registry moves on to the next
+/// plugin. Named so the emission site and its tests reference the same
+/// literal rather than depending on it by accident: the Diagnostic stream as
+/// a whole carries no compatibility promise (see the glossary entry in
+/// `CONTEXT.md`), but this string is deliberately pinned.
+pub const SNAPSHOT_FAILED_CONTINUING: &str = "snapshot failed, continuing";
+
 /// A plugin that knows how to snapshot and roll back one kind of state.
 #[async_trait]
 pub trait SnapshotPlugin: Send + Sync {

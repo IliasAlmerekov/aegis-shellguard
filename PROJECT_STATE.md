@@ -18,9 +18,32 @@ distribution smoke gates open)
 
 ## Last updated
 
-2026-09-14
+2026-09-15
 
 ---
+
+## Current session (2026-09-15) — the Diagnostic stream now reaches stderr (#271)
+
+- `src/diagnostics.rs` installs a `tracing-subscriber` `fmt` layer, so the 46
+  `tracing::` events in `aegis-snapshot` (and library events elsewhere) reach
+  stderr instead of being discarded. Called from `main` after the language-worker
+  and Landlock pre-clap short-circuits, before the Tokio runtime is built.
+- Default level is `warn`; `--verbosity` / `--quiet` / `-v` set the base level,
+  `AEGIS_LOG` overrides it (parsed as an `EnvFilter`; `RUST_LOG` is never read).
+  `hook` mode stays silent unless `AEGIS_LOG` is set, since its stderr is
+  byte-pinned by tests. The internal language-worker mode exits before the
+  stream is installed at all, so it has no Diagnostic stream under any
+  setting, including `AEGIS_LOG`.
+- Field values are truncated at 512 bytes on a UTF-8 boundary; the `cwd` field
+  was removed from the git-rollback-conflict error (git.rs).
+- Named the "snapshot failed, continuing" message as
+  `aegis_snapshot::SNAPSHOT_FAILED_CONTINUING`, referenced by the emission
+  site and its tests.
+- CONVENTION.md §2 gained two rules (no raw command/env value in a `tracing`
+  field, guarded by a new architecture-boundary test; the `warn`-vs-`info`
+  level rule). Demoted the two Docker `is_applicable` failure logs from
+  `warn` to `info` per that rule.
+- See ADR-033 for the full decision record and its partial supersession of ADR-023.
 
 ## Current session (2026-09-14) — project config cannot repoint a Snapshot target (#269)
 

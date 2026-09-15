@@ -309,6 +309,33 @@ For these cases:
 2. Do not rerun destructive commands blindly after rollback denial.
 3. In conflict cases, inspect repository state (`git status`, open files, git logs) before manual recovery.
 
+### A snapshot plugin failed silently, or the Diagnostic stream is too quiet or too noisy
+
+**Why:** Library warnings (a plugin failing, a rollback conflict, a degraded
+analysis path) write to the Diagnostic stream on stderr, not to the Audit log.
+By default the stream shows `warn` and above. Two surfaces are silent for
+different reasons: the `hook` subcommand installs the stream but keeps it off
+by default because nothing reads its stderr except byte-pinned tests, while
+the internal language-worker mode exits before the stream is ever installed
+and has no Diagnostic stream under any setting, because it is a parse-only
+process whose stdout is a framed protocol that stray output would corrupt.
+
+**Fix:**
+
+1. Set `AEGIS_LOG=info` (or `debug`, `trace`) to see more, or `AEGIS_LOG=error`
+   to see less. This overrides the level implied by `--verbosity` /
+   `--quiet` / `-v` and works in `hook` mode too (it has no effect on the
+   internal language-worker mode). `AEGIS_LOG` follows the same
+   directive syntax as `tracing-subscriber`'s `EnvFilter`
+   (for example `AEGIS_LOG=aegis_snapshot=debug` scopes the level to one crate).
+2. `RUST_LOG` is never read: Aegis runs inside other projects' environments
+   where it is usually set for something unrelated. Use `AEGIS_LOG`.
+3. The stream is not a contract: which events appear, their level, and their
+   wording may change between releases. The `Audit log`
+   (`~/.aegis/audit.jsonl`) is the persisted, versioned record; check it, not
+   the Diagnostic stream, for anything you need to keep or automate against.
+   See [ADR-033](adr/adr-033-the-diagnostic-stream-goes-to-stderr-and-is-not-a-contract.md).
+
 ## References
 
 - `docs/platform-support.md`
