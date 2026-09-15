@@ -275,6 +275,64 @@ user = "postgres"
     );
 }
 
+/// A non-interactive script-file execution (`Effect-opaque execution`) with
+/// no TTY is denied before it runs, the same as
+/// `noninteractive_required_recovery_degradation_denies_before_child_execution`
+/// in `tests/recovery_degradation.rs` — except the workspace here is a git
+/// repository with no commits yet. `GitPlugin::is_applicable` still passes
+/// (`git rev-parse --git-dir` succeeds), `git status --porcelain` reports the
+/// untracked script as dirty, and `GitPlugin::snapshot` reaches `git stash
+/// push --include-untracked`, which fails with "You do not have the initial
+/// commit yet". `SnapshotRegistry::snapshot_all` logs that failure and
+/// produces zero snapshot records, so Required recovery is Degraded.
+///
+/// This is the proof that a `tracing` subscriber is actually installed on
+/// the shell-wrapper path (issue #271): the failure reaches stderr instead of
+/// being discarded.
+#[test]
+fn snapshot_failure_reaches_diagnostic_stream_and_denies_on_recovery_degradation() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let marker = workspace.path().join("executed");
+    fs::write(workspace.path().join("run.sh"), "printf ran > executed\n").unwrap();
+
+    Command::new("git")
+        .arg("init")
+        .current_dir(workspace.path())
+        .output()
+        .unwrap();
+    // No initial commit: `git stash push` on this repo fails with "You do not
+    // have the initial commit yet", which is the failure this test drives.
+
+    let output = base_command(home.path())
+        .current_dir(workspace.path())
+        .stdin(Stdio::null())
+        .args(["-c", "zsh ./run.sh"])
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "a failed snapshot attempt must trip Required-recovery degradation and deny \
+         execution; stderr:\n{stderr}",
+    );
+    assert!(!marker.exists(), "degraded command must not execute");
+    assert!(
+        stderr.contains(aegis_snapshot::SNAPSHOT_FAILED_CONTINUING),
+        "stderr must carry the named snapshot-failure message; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("No required Snapshot was created"),
+        "zero snapshot records must also trip the required-Snapshot degradation; stderr:\n{stderr}"
+    );
+
+    let entries = read_audit_entries(home.path());
+    assert_eq!(entries[0]["decision"], "Denied");
+    assert_eq!(entries[0]["snapshots"], serde_json::json!([]));
+}
+
 /// Strict mode with allowlist_override_level = Danger and an allowlisted
 /// Danger command must auto-approve and create a git snapshot.
 #[test]
