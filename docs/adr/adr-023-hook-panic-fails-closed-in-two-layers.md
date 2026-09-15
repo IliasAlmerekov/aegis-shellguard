@@ -2,7 +2,12 @@
 
 ## Status
 
-Accepted
+Accepted. Partially superseded by
+[ADR-033](adr-033-the-diagnostic-stream-goes-to-stderr-and-is-not-a-contract.md)
+for the claim below that the binary installs no `tracing` subscriber: a
+subscriber now exists, but it stays off in `Hook` mode unless `AEGIS_LOG` is
+set. The two-layer panic containment described here remains in force
+unchanged.
 
 ## Context
 
@@ -45,7 +50,9 @@ The `Hook` exit code stays 0 for allow, noop, ordinary deny, and contained panic
 alike — with these agent clients only exit 0 gets the JSON decision parsed, so a
 non-zero exit would demote a deny into a non-blocking hook error. No audit entry
 is written for a contained panic (there is no assessment at that point), and no
-`tracing` event is emitted (the binary initializes no subscriber).
+`tracing` event is emitted: `Hook` mode keeps the Diagnostic stream off by
+default (ADR-033), and a contained panic in any case never reaches a
+`tracing` call site.
 
 **Layer 2 — inside the installed per-agent `Hook` scripts.** Both per-agent
 `PreToolUse` scripts stop `exec`-ing the Aegis binary. They capture its stdout
@@ -84,6 +91,8 @@ which already rewrites on content mismatch.
   already fails closed structurally (a panic there exits non-zero and the
   wrapped command never executes); the `watch` NDJSON path has a different
   streaming contract and needs its own analysis.
-- No audit entry, no new decision kind, no change to the deny response shape,
-  and no `tracing` subscriber are introduced. Panics remain something Aegis
+- No audit entry, no new decision kind, and no change to the deny response
+  shape are introduced. A `tracing` subscriber now exists elsewhere in the
+  binary (ADR-033), but `Hook` mode keeps it off by default, so a contained
+  panic still produces no `tracing` output. Panics remain something Aegis
   never uses for expected error handling.
