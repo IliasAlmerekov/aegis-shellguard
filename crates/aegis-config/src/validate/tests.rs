@@ -136,6 +136,30 @@ fn validation_load_error_returns_structured_generic_code() {
 }
 
 #[test]
+fn validate_config_layers_pins_the_config_error_prefix_for_a_malformed_layer() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let config_path = workspace.path().join(".aegis.toml");
+    fs::write(&config_path, "this is not valid toml [[[").unwrap();
+
+    let report = validate_config_layers(workspace.path(), Some(home.path()));
+
+    // The TOML parser's own text is a fact about the `toml` crate, not about
+    // this refactor; only the "config error: " prefix belongs to it.
+    let expected_message = format!(
+        "config error: failed to parse {}: TOML parse error at line 1, column 6\n  |\n1 | this is not valid toml [[[\n  |      ^\nexpected `.`, `=`\n",
+        config_path.display()
+    );
+
+    assert_eq!(report.errors.len(), 1);
+    assert_eq!(report.errors[0].message, expected_message);
+    assert_eq!(
+        report.errors[0].code, "config_parse_error",
+        "the machine-readable code must stay stable even though the message text changed"
+    );
+}
+
+#[test]
 fn validate_scanner_path_runs_when_no_custom_patterns() {
     let config = AegisConfig::defaults();
     let report = validate_config(&config, &ConfigSourceMap::for_config(&config));
