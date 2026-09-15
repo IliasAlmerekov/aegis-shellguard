@@ -6,6 +6,7 @@
 /// TOML, user config, …); these variants describe *what* is wrong, not the
 /// source. The orchestration layer maps them onto its own error type.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ScannerError {
     /// A pattern or prefix rule failed validation (missing field, duplicate id,
     /// id conflict, …).
