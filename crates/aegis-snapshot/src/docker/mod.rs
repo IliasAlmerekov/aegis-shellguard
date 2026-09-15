@@ -259,11 +259,14 @@ impl SnapshotPlugin for DockerPlugin {
                 !String::from_utf8_lossy(&out.stdout).trim().is_empty()
             }
             Ok(_) => {
-                tracing::warn!("docker ps failed — Docker may not be running");
+                // The plugin is simply not applicable here (no Docker daemon
+                // to snapshot), the same as any other provider finding
+                // nothing to do — not a coverage degradation.
+                tracing::info!("docker ps failed, Docker may not be running: plugin skipped");
                 false
             }
             Err(e) => {
-                tracing::warn!(error = %e, "docker CLI not found — skipping Docker plugin");
+                tracing::info!(error = %e, "docker CLI not found, skipping Docker plugin");
                 false
             }
         }
