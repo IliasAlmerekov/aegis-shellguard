@@ -14,9 +14,11 @@ import {
 } from '../../lib/scene/config'
 import { createWatcher, nextTier } from '../../lib/scene/ladder'
 import {
+  budgetedDpr,
   freezeFromSearch,
   initialTier,
   tierFromSearch,
+  type Viewport,
 } from '../../lib/scene/quality'
 import { CameraRig } from './CameraRig'
 import { PostProcessing } from './PostProcessing'
@@ -178,6 +180,69 @@ export function HeroScene({ className, progress, onReady }: Props) {
   const settings = TIER_SETTINGS[tier]
 
   /**
+   * The viewport, as the drawing ratio needs to see it.
+   *
+   * Measured during the first render rather than in an effect afterwards. The
+   * module is loaded dynamically and on the client only (`ssr: false` in
+   * `Hero.tsx`), so `window` exists here, and the difference is not stylistic:
+   * a ratio corrected after mount is a ratio the canvas was created with and
+   * then resized away from, which reallocates the composer's buffers on the
+   * first frame of every visit.
+   */
+  const measureViewport = (): Viewport => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+    devicePixelRatio: window.devicePixelRatio,
+  })
+
+  const [viewport, setViewport] = useState<Viewport>(measureViewport)
+
+  useEffect(() => {
+    const measure = () =>
+      setViewport((previous) => {
+        const next = measureViewport()
+        /* A resize fires on every frame of a window drag, and `setState` with
+           a fresh object each time would re-render the whole scene subtree
+           sixty times a second. Returning the previous object unchanged is
+           what makes React skip the render. */
+        return previous.width === next.width &&
+          previous.height === next.height &&
+          previous.devicePixelRatio === next.devicePixelRatio
+          ? previous
+          : next
+      })
+
+    /**
+     * Dragging a window between a laptop screen and an external monitor
+     * changes `devicePixelRatio` without changing the window's size, so no
+     * resize event is fired. A media query built against the current ratio is
+     * the documented way to hear about it: it stops matching the moment the
+     * ratio moves, whichever way it moves. It is rebuilt on every change,
+     * because the one that just fired is now permanently false.
+     */
+    let query: MediaQueryList | null = null
+    const watchDensity = () => {
+      query?.removeEventListener('change', onDensity)
+      query = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+      query.addEventListener('change', onDensity)
+    }
+    function onDensity() {
+      measure()
+      watchDensity()
+    }
+
+    measure()
+    watchDensity()
+    window.addEventListener('resize', measure)
+    return () => {
+      window.removeEventListener('resize', measure)
+      query?.removeEventListener('change', onDensity)
+    }
+  }, [])
+
+  const dpr = budgetedDpr(viewport, settings)
+
+  /**
    * Under `prefers-reduced-motion` the scene renders on demand rather than on
    * a clock.
    *
@@ -193,7 +258,10 @@ export function HeroScene({ className, progress, onReady }: Props) {
       ref={canvasRef}
       className={className}
       frameloop={frameloop}
-      dpr={[1, settings.maxDpr]}
+      // A single number, not a range. A range hands the choice to R3F, which
+      // clamps `devicePixelRatio` into it — and that is the one input that
+      // cannot see how large the viewport is. See `budgetedDpr`.
+      dpr={dpr}
       gl={{
         // A deliberate lie. Antialiasing is the composer's job — the scene is
         // drawn into its buffer, not into the default one, and MSAA ordered
