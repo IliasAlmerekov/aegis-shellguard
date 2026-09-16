@@ -12,6 +12,7 @@ use crate::planning::{
     CwdState, PlanningOutcome, PlanningRequest, PreparedPlanner, prepare_and_plan_async,
 };
 use crate::runtime::RuntimeContext;
+use crate::snapshot::{GitPlugin, SnapshotRegistry};
 use crate::ui::confirm::{PromptDecision, RecoveryPromptDecision};
 use crate::watch::protocol::InputFrame;
 
@@ -30,6 +31,10 @@ fn watch_execution_cwd_returns_dot_when_unavailable() {
     assert_eq!(watch_execution_cwd(&cwd_state), PathBuf::from("."));
 }
 
+/// Build a [`PreparedPlanner`] whose snapshot registry is pinned to `GitPlugin`
+/// only, so it cannot pick up a `docker`-applicable state from whatever
+/// containers happen to be running on the host (see
+/// `set_snapshot_registry_for_tests`).
 fn prepared_with_audit_path(audit_path: PathBuf) -> PreparedPlanner {
     let context = RuntimeContext::new_with_audit_path(
         AegisConfig::default(),
@@ -37,6 +42,9 @@ fn prepared_with_audit_path(audit_path: PathBuf) -> PreparedPlanner {
         audit_path,
     )
     .unwrap();
+    context.set_snapshot_registry_for_tests(SnapshotRegistry::new_with_plugins(vec![Box::new(
+        GitPlugin,
+    )]));
     PreparedPlanner::Ready(Box::new(context))
 }
 

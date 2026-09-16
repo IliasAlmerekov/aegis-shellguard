@@ -153,6 +153,27 @@ impl RuntimeContext {
         Ok(context)
     }
 
+    /// Pin the snapshot registry to an explicit plugin set, bypassing
+    /// `SnapshotRegistry::from_runtime_config`.
+    ///
+    /// Test-only. Some snapshot plugins (`docker`, in particular) probe shared
+    /// host state rather than `cwd` — a real `DockerPlugin` can flip
+    /// `Recovery::Ready` on a test host that happens to be running an
+    /// unrelated, opted-in container. Tests asserting a *no applicable
+    /// plugin* degradation need a registry that cannot pick up such state.
+    /// Panics if the registry was already materialized (e.g. a prior call
+    /// already invoked `create_snapshots`).
+    #[cfg(test)]
+    pub(crate) fn set_snapshot_registry_for_tests(
+        &self,
+        registry: crate::snapshot::SnapshotRegistry,
+    ) {
+        self.snapshot_registry
+            .set(registry)
+            .map_err(|_| ())
+            .expect("snapshot registry already initialized");
+    }
+
     /// Build a runtime context with an explicit policy path override.
     ///
     /// Prefer [`RuntimeContext::new`] for production use. This variant exists
