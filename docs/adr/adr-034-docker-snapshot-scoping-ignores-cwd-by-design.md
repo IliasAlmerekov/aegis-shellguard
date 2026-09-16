@@ -114,3 +114,45 @@ host state rather than test fixtures.
 `prepared_with_audit_path`. Both `RuntimeContext` builders in
 `src/watch/runner/tests.rs` follow the pattern from item 2; no other helper in
 that file constructs a `RuntimeContext` without it.
+
+## Addendum (2026-09-16): `GitPlugin`-only pinning wasn't the end of it — a fail-open check reopened the gap
+
+A separate report against
+`watch_recovery_deny_records_enabled_sandbox_as_not_attempted` (the same test
+the first addendum pinned to `GitPlugin`) surfaced after
+`GitPlugin::is_applicable` changed to fail open on spawn failure: when
+`Command::status()` for `git rev-parse --git-dir` returns `Err` (no signal
+either way, e.g. process/FD pressure from many concurrent test binaries under
+a full workspace `cargo test`), the plugin now reports itself applicable
+instead of not. The report reproduced twice via `.githooks/pre-push`'s real
+`git push` but not in isolated single-test runs, and hypothesized that this
+newly fail-open check was what flipped the test's outcome under load.
+
+Two things were checked before touching the test:
+
+- Five consecutive full-workspace `cargo test` runs with
+  `RUST_LOG=aegis_snapshot=error` never failed and never logged the
+  "failed to spawn git while checking applicability" line — the spawn-failure
+  branch did not fire in this environment.
+- Tracing the plugin's actual code path: fail-open in `is_applicable` only
+  changes whether `GitPlugin::snapshot` gets *attempted*. On a bare `TempDir`
+  with no `.git`, that attempt's own `git status --porcelain` call still
+  fails (real non-repo directory), so `SnapshotRegistry::snapshot_all` logs
+  `SNAPSHOT_FAILED_CONTINUING` and records nothing — the same empty result as
+  before the fail-open change. A spawn failure at the applicability check,
+  by itself, cannot turn an empty snapshot list into a populated one, and the
+  test's `sandbox_status` assertion only diverges from `not_attempted` when a
+  snapshot *is* recorded. So the fail-open branch was not confirmed as a
+  standalone cause of the reported failure; whatever produced it (if the
+  report reproduces again) is a distinct, so-far-unidentified path.
+
+Regardless of that open question, `prepared_with_optional_sandbox` had no
+reason to depend on `GitPlugin` in the first place: the test asserts what
+`sandbox_status` gets audited on a Recovery-Deny path, not anything about the
+Git plugin. Pinning it to `SnapshotRegistry::new_with_plugins(vec![])` removes
+every `git` spawn from the test — including the one that fails open — so it
+can no longer inherit *any* race in `GitPlugin::is_applicable`, confirmed or
+not. `prepared_with_audit_path` keeps its `GitPlugin`-only registry, since the
+two tests built from it assert the `no_snapshot_available` degradation
+specifically because no plugin applies — an empty registry would make that
+assertion trivially true instead of testing anything.
