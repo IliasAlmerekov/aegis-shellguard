@@ -38,7 +38,15 @@ impl SnapshotPlugin for GitPlugin {
             .await
         {
             // git ran and told us definitively whether `cwd` is a repo.
-            Ok(status) => status.success(),
+            Ok(status) => {
+                let applicable = status.success();
+                tracing::debug!(
+                    applicable,
+                    cwd = %cwd.display(),
+                    "git rev-parse --git-dir answered applicability check"
+                );
+                applicable
+            }
             // We could not even spawn git, so we have no signal either way.
             // Fail open rather than silently reporting "not a repo": the
             // caller still attempts `snapshot()`, and if that also cannot

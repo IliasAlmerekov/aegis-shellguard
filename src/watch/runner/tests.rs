@@ -48,15 +48,19 @@ fn prepared_with_audit_path(audit_path: PathBuf) -> PreparedPlanner {
     PreparedPlanner::Ready(Box::new(context))
 }
 
+/// Pinned to an empty registry, not `GitPlugin`-only: this test asserts what
+/// `sandbox_status` gets recorded on a Recovery-Deny path, not anything about
+/// `GitPlugin` itself, so it has no reason to spawn `git` at all. See the
+/// ADR-034 addendum for why a `GitPlugin`-only registry was suspected (but not
+/// confirmed) to still race under process/FD pressure via
+/// `GitPlugin::is_applicable`'s fail-open branch.
 fn prepared_with_optional_sandbox(audit_path: PathBuf) -> PreparedPlanner {
     let mut config = AegisConfig::default();
     config.sandbox.enabled = true;
     let context =
         RuntimeContext::new_with_audit_path(config, tokio::runtime::Handle::current(), audit_path)
             .unwrap();
-    context.set_snapshot_registry_for_tests(SnapshotRegistry::new_with_plugins(vec![Box::new(
-        GitPlugin,
-    )]));
+    context.set_snapshot_registry_for_tests(SnapshotRegistry::new_with_plugins(vec![]));
     PreparedPlanner::Ready(Box::new(context))
 }
 
