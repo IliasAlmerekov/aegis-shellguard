@@ -379,7 +379,8 @@ mod tests {
                 tracing::span::Id::from_u64(1)
             }
             fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {}
-            fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {}
+            fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {
+            }
             fn event(&self, event: &tracing::Event<'_>) {
                 let mut visitor = FieldVisitor::default();
                 event.record(&mut visitor);
@@ -410,7 +411,10 @@ mod tests {
             captured.message.as_deref(),
             Some("failed to spawn git while checking applicability, assuming applicable")
         );
-        assert_eq!(captured.cwd.as_deref(), Some(missing_cwd.display().to_string()).as_deref());
+        assert_eq!(
+            captured.cwd.as_deref(),
+            Some(missing_cwd.display().to_string()).as_deref()
+        );
     }
 
     #[tokio::test]
