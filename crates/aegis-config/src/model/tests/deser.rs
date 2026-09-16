@@ -163,6 +163,38 @@ fn scoped_allowlist_rule_with_user_is_valid_for_runtime() {
 }
 
 #[test]
+fn validate_custom_patterns_is_ok_for_empty_slice_without_building_a_scanner() {
+    // Issue #319: an empty slice must short-circuit before touching the
+    // scanner at all. There is nothing for a scanner build to validate that
+    // an empty custom-pattern set could fail on, so this must always be Ok.
+    assert!(validate_custom_patterns(&[]).is_ok());
+}
+
+#[test]
+fn validate_custom_patterns_still_rejects_a_bad_regex_when_non_empty() {
+    let patterns = vec![UserPattern {
+        id: "CUSTOM-BAD".to_string(),
+        category: Category::Process,
+        risk: RiskLevel::Danger,
+        pattern: "(unterminated".to_string(),
+        description: "malformed regex".to_string(),
+        safe_alt: None,
+        justification: None,
+    }];
+
+    let err = validate_custom_patterns(&patterns).unwrap_err();
+    assert!(err.to_string().contains("invalid pattern"));
+}
+
+#[test]
+fn validate_builtin_scanner_passes_on_the_shipped_pattern_set() {
+    // The diagnostics-only check (issue #319 change 2): the built-in TOML
+    // must still compile into a working scanner on its own, with no custom
+    // patterns in play.
+    assert!(validate_builtin_scanner().is_ok());
+}
+
+#[test]
 fn load_minimal_project_config_without_errors() {
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
