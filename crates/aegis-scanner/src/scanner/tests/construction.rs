@@ -1,9 +1,9 @@
-//! Issue #319: `Scanner` construction and keyword-driven candidate selection.
+//! Issue #319: `Scanner` construction.
 //!
 //! These tests use `PatternSet::from_sources` with a hand-built `Pattern` to
 //! reach cases the shipped `patterns.toml` doesn't exercise: a built-in-sourced
-//! pattern with a regex that fails to compile, a pattern with no extractable
-//! keyword, and two patterns whose keywords overlap at the same byte range.
+//! pattern with a regex that fails to compile, and a pattern with no
+//! extractable keyword.
 
 use super::*;
 
@@ -69,50 +69,38 @@ fn pattern_with_no_extractable_keyword_is_always_a_full_scan_candidate() {
     );
 }
 
-/// `full_scan`'s keyword pass must be overlapping. A non-overlapping pass over
-/// keywords `"she"` and `"he"` against `"she is evil"` reports only `"she"`
-/// (0..3) and then continues past it, skipping `"he"` at 1..3 even though it
-/// is also present — dropping the pattern that owns it. That is exactly the
-/// forbidden false negative.
+/// Regression for the false negative introduced by `ddc65ba` and reverted here:
+/// `find_embedded_literal` walking the `sh` branch of `EXEC-006`'s
+/// alternation (`^sh\s+(?:--[a-z-]+\s+)*-[a-zA-Z]*c\b`) discards the
+/// two-character literal `"sh"` against its three-character floor, keeps
+/// scanning past the optional group's regex syntax, and picks up `":"`,
+/// `"-"`, `"-"` as though the command had to contain that text — a keyword no
+/// matching command actually contains. `ddc65ba` used that keyword to decide
+/// which regexes `full_scan` runs at all, so `EXEC-006` was silently skipped.
+/// `full_scan` no longer narrows by keyword, so `sh -c id` must be caught
+/// through the real, shipped `patterns.toml`, not a hand-built pattern.
 #[test]
-fn overlapping_keyword_search_finds_both_nested_patterns() {
-    let outer = Pattern {
-        id: "TEST-OVERLAP-SHE".into(),
-        category: Category::Process,
-        risk: RiskLevel::Warn,
-        pattern: r"she\s+is\s+evil".into(),
-        description: "outer keyword ('she')".into(),
-        safe_alt: None,
-        justification: None,
-        source: PatternSource::Custom,
-    };
-    let inner = Pattern {
-        id: "TEST-OVERLAP-HE".into(),
-        category: Category::Process,
-        risk: RiskLevel::Warn,
-        pattern: r"he\s+is\s+evil".into(),
-        description: "keyword ('he') nested inside the outer pattern's keyword".into(),
-        safe_alt: None,
-        justification: None,
-        source: PatternSource::Custom,
-    };
+fn sh_dash_c_is_flagged_by_exec_006() {
+    let scanner = Scanner::try_new(PatternSet::load().expect("patterns.toml must load"))
+        .expect("built-in patterns compile");
 
-    let patterns = PatternSet::from_sources(&[outer, inner]).expect("field validation passes");
-    let scanner = Scanner::try_new(patterns).expect("both regexes compile");
+    let assessment = scanner.assess("sh -c id");
 
-    let assessment = scanner.assess("she is evil");
-    let ids: Vec<&str> = assessment
-        .matched
-        .iter()
-        .map(|m| m.pattern.id.as_ref())
-        .collect();
-
-    assert!(
-        ids.contains(&"TEST-OVERLAP-SHE"),
-        "outer keyword pattern must match: {ids:?}"
+    assert_eq!(
+        assessment.risk,
+        RiskLevel::Warn,
+        "`sh -c id` must be Warn, not Safe"
     );
     assert!(
-        ids.contains(&"TEST-OVERLAP-HE"),
-        "nested keyword must not be dropped by a non-overlapping keyword pass: {ids:?}"
+        assessment
+            .matched
+            .iter()
+            .any(|m| m.pattern.id.as_ref() == "EXEC-006"),
+        "EXEC-006 (shell indirection) must be among the matched patterns: {:?}",
+        assessment
+            .matched
+            .iter()
+            .map(|m| m.pattern.id.as_ref())
+            .collect::<Vec<_>>()
     );
 }

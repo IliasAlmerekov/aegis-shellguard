@@ -168,9 +168,9 @@ ceilings already use (see the table under "Language-aware slow path" below):
 the same way from repeated local runs (max observed 11.045 ms) to
 `22_000_000`, alongside the description fix below.
 
-#### Discarded scanner builds removed; lazy built-in compile tried and reverted (issue #319, 2026-09-16)
+#### Discarded scanner builds removed; lazy compile and keyword narrowing tried and reverted (issue #319, 2026-09-16)
 
-Two real problems and one tried-and-rejected idea:
+One real problem, fixed, and two tried-and-rejected ideas:
 
 **Fixed: `validate_custom_patterns` no longer builds a scanner it throws away.**
 Both `AegisConfig::validate_runtime_requirements` (called once by every
@@ -216,14 +216,45 @@ A compound command touching several pattern categories at once is ordinary
 shell syntax, not a contrived edge case, and ADR-034's Assessment budget
 covers "one `assess()` call on any input." Regex compilation therefore stays
 part of the (30 ms-budgeted) Startup cost, where it already had comfortable
-headroom, rather than moving into the 2 ms Assessment budget. `full_scan`
-still narrows its candidate set to patterns whose extracted keyword appeared
-in the command (a second, overlapping Aho-Corasick pass, since a
-non-overlapping pass can drop a keyword nested inside another) instead of
-running every `universal` pattern on every scan — that part of the change
-stands; only the *timing* of compilation reverted to eager. Net effect:
+headroom, rather than moving into the 2 ms Assessment budget. Net effect:
 `scanner_construction`'s cost is unchanged by this issue (still dominated by
 eager regex compilation), which is why its baseline stays at `16_500_000`.
+
+**Also tried and reverted: narrowing `full_scan` to keyword-matched patterns.**
+Alongside the lazy-compile attempt, `full_scan` was changed to run a second,
+overlapping Aho-Corasick pass over the command and only evaluate the regexes
+whose extracted keyword actually showed up, instead of evaluating every
+pattern in the applicable `universal`/`by_program` bucket unconditionally.
+This landed (commit `ddc65ba`) and initially looked safe: fewer regex
+evaluations per `full_scan`, no visible test failures.
+
+It shipped a false negative. `extract_keywords`'s `find_embedded_literal`
+walks `EXEC-006`'s `sh` alternative
+(`^sh\s+(?:--[a-z-]+\s+)*-[a-zA-Z]*c\b`), discards the two-character literal
+`"sh"` against its three-character floor, then keeps scanning *through the
+regex syntax* of the optional group and accumulates `":"`, `"-"`, `"-"` as
+the pattern's "keyword" — text no command matching `EXEC-006` is required to
+contain. Reproducer: on the commit with the narrowing, both
+`Scanner::assess("sh -c id")` and `full_scan("sh -c id", Some("sh"))` report
+zero matches; on `main`, the same calls report `Warn` with `EXEC-006`. The
+extractor's flaw predates this change and is harmless everywhere else,
+because keywords only ever fed `quick_scan`'s gate before, where a wrong
+"required" literal costs an unnecessary regex pass, never a skipped one.
+Using the same keyword set to decide *which* regexes `full_scan` runs turned
+a cosmetic extractor bug into a silently skipped `Danger`/`Warn` pattern —
+exactly what this module's own doc comment (`mod.rs:38`) says a keyword
+check must never do.
+
+The narrowing was removed rather than repaired: fixing `find_embedded_literal`
+and proving the keyword-to-pattern mapping sound is real work belonging to
+its own issue, not a condition on finishing #319, whose ask was construction
+cost on the safe path, not `full_scan`'s regex count on the flagged path.
+`full_scan` now evaluates every pattern in the applicable bucket
+unconditionally again. `scanner_construction` is unaffected either way — the
+narrowing changed `full_scan`, not `try_new` — so its baseline is unchanged
+at `16_500_000`, and `runtime_context_construction` stays at `2_200_000`,
+since that rebaseline came from the `validate_custom_patterns` fix above, not
+from the narrowing.
 
 **One-off split (issue's ask): how much of `Scanner::try_new` is Aho-Corasick
 construction vs. regex compilation, and how much of the latter is Unicode

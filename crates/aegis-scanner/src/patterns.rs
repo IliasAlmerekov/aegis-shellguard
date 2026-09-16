@@ -322,11 +322,11 @@ mod tests {
     use regex::RegexBuilder;
     use std::collections::HashSet;
 
-    /// Issue #319 change 2: with lazy built-in regex compilation, a broken
-    /// built-in pattern would otherwise only surface the first time a
-    /// command's keyword happens to reach it — at scan time, in someone's
-    /// shell. Compile every one of them here, eagerly, so a bad regex fails
-    /// the build instead.
+    /// Issue #319 tried deferring built-in regex compilation to first scan;
+    /// that path was reverted before merging (see docs/performance-baseline.md,
+    /// "Lazy built-in regex compilation reverted") and compilation stayed
+    /// eager in `Scanner::try_new`. Compile every built-in pattern here too, so
+    /// a bad regex fails the build instead of surfacing later, mid-scan.
     #[test]
     fn every_builtin_pattern_regex_compiles() {
         let set = PatternSet::load().expect("patterns.toml must load");

@@ -8,7 +8,7 @@ mod pipeline_semantics;
 mod prefix_rule;
 mod recursive;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use aho_corasick::AhoCorasick;
@@ -42,18 +42,15 @@ const MAX_INLINE_SCRIPT_LEN: usize = 16 * 1024;
 /// Compiled pattern scanner with Aho-Corasick quick pass + regex full scan.
 pub struct Scanner {
     /// Automaton over every extracted keyword (regex-pattern keywords and
-    /// prefix-rule keywords). `quick_scan` runs it non-overlapping (one hit is
-    /// enough to gate); `full_scan` re-runs it overlapping on the smaller
-    /// target string to recover *which* keywords hit, so it can narrow the
-    /// candidate set instead of running every `universal` pattern.
+    /// prefix-rule keywords). Used only by `quick_scan`, non-overlapping —
+    /// one hit is enough to gate the full regex pass.
     ac: AhoCorasick,
     /// `true` when ≥ 1 pattern yielded no extractable keyword.
     /// In that case `quick_scan` always returns `true` so we never miss a match.
     has_uncovered: bool,
-    /// Every regex-bearing pattern, flat, in construction order. `by_program`,
-    /// `universal`, `uncovered_indices`, and `keyword_index` all reference
-    /// positions into this `Vec` (and the parallel `regexes`) rather than
-    /// cloning `Arc<Pattern>` into each routing bucket.
+    /// Every regex-bearing pattern, flat, in construction order. `by_program`
+    /// and `universal` reference positions into this `Vec` (and the parallel
+    /// `regexes`) rather than cloning `Arc<Pattern>` into each routing bucket.
     ///
     /// Compilation itself stays eager for every pattern regardless of source
     /// (see the "Lazy compilation" note on `try_new` for why deferring
@@ -77,15 +74,6 @@ pub struct Scanner {
     /// a string, including inside quoted arguments to an unrelated command. They must
     /// be evaluated for every target regardless of the detected program name.
     universal: Vec<usize>,
-    /// Pattern indices whose keyword extraction found nothing (see `has_uncovered`).
-    /// `full_scan` cannot use AC coverage to gate these — they are always
-    /// candidates, same as before this pattern contributed to `has_uncovered`.
-    uncovered_indices: Vec<usize>,
-    /// Maps an AC pattern id (position in the deduped keyword list fed to
-    /// `ac`) to the pattern indices whose regex extraction produced that
-    /// keyword. A keyword contributed only by a prefix rule maps to an empty
-    /// `Vec` here — prefix rules are matched separately via `prefix_scan`.
-    keyword_index: Vec<Vec<usize>>,
     /// Token-prefix rules indexed by first-token program name (lowercase).
     ///
     /// Stored as a `Vec` so lookup can be case-insensitive without allocating a
@@ -137,18 +125,12 @@ impl Scanner {
     pub fn try_new(patterns: PatternSet) -> Result<Self, ScannerError> {
         let effective_patterns = patterns.patterns();
 
-        // `keyword_owners` remembers, for every keyword a regex pattern
-        // contributes, which pattern index owns it — the raw string survives
-        // here because the final AC pattern id (assigned after sort+dedup
-        // below) isn't known yet. Prefix-rule-only keywords are collected
-        // separately: they widen `quick_scan` coverage but have no owning
-        // regex pattern, so they never appear in `keyword_index`.
-        let mut keyword_owners: Vec<(String, usize)> = Vec::new();
-        let mut prefix_only_keywords: Vec<String> = Vec::new();
+        // Flat keyword list fed to the `quick_scan` automaton. Prefix-rule-only
+        // keywords widen `quick_scan` coverage but have no owning regex pattern.
+        let mut keywords: Vec<String> = Vec::new();
         let mut has_uncovered = false;
         let mut by_program: HashMap<String, Vec<usize>> = HashMap::new();
         let mut universal: Vec<usize> = Vec::new();
-        let mut uncovered_indices: Vec<usize> = Vec::new();
         let mut flat_patterns: Vec<Arc<Pattern>> = Vec::with_capacity(effective_patterns.len());
         let mut regexes: Vec<Regex> = Vec::with_capacity(effective_patterns.len());
 
@@ -172,11 +154,8 @@ impl Scanner {
             let kws = keywords::extract_keywords(&p.pattern);
             if kws.is_empty() {
                 has_uncovered = true;
-                uncovered_indices.push(idx);
             } else {
-                for kw in kws {
-                    keyword_owners.push((kw, idx));
-                }
+                keywords.extend(kws);
             }
 
             // Route to the right index bucket.
@@ -199,10 +178,10 @@ impl Scanner {
         // prefix-rule keyword appears later in the command (e.g. compound commands).
         for rule in patterns.prefix_rules() {
             match rule.pattern.first() {
-                Some(PatternToken::Single(s)) => prefix_only_keywords.push(s.as_ref().to_string()),
+                Some(PatternToken::Single(s)) => keywords.push(s.as_ref().to_string()),
                 Some(PatternToken::Alts(alts)) => {
                     for s in alts {
-                        prefix_only_keywords.push(s.as_ref().to_string());
+                        keywords.push(s.as_ref().to_string());
                     }
                 }
                 // A first token that does not name a program (a wildcard or a
@@ -215,28 +194,8 @@ impl Scanner {
             }
         }
 
-        // Deduped keyword list the automaton is built from. Position in this
-        // `Vec` is the AC pattern id `full_scan` gets back from an
-        // overlapping match, so `keyword_index` is built against these same
-        // (sorted, deduped) positions right after.
-        let mut keywords: Vec<String> = keyword_owners
-            .iter()
-            .map(|(kw, _)| kw.clone())
-            .chain(prefix_only_keywords)
-            .collect();
         keywords.sort_unstable();
         keywords.dedup();
-
-        let mut keyword_index: Vec<Vec<usize>> = vec![Vec::new(); keywords.len()];
-        for (kw, idx) in &keyword_owners {
-            // `kw` was pushed into `keywords` above, so this must succeed.
-            if let Ok(pos) = keywords.binary_search(kw) {
-                let bucket = &mut keyword_index[pos];
-                if !bucket.contains(idx) {
-                    bucket.push(*idx);
-                }
-            }
-        }
 
         let ac = AhoCorasick::builder()
             .ascii_case_insensitive(true)
@@ -275,8 +234,6 @@ impl Scanner {
             regexes,
             by_program,
             universal,
-            uncovered_indices,
-            keyword_index,
             prefix_by_program,
         })
     }
@@ -303,22 +260,18 @@ impl Scanner {
 
     /// Slow path: run compiled regexes against `cmd` and return all matching patterns.
     ///
-    /// Only evaluates patterns whose extracted keyword actually appeared in `cmd`
-    /// (found via a second, overlapping automaton pass — non-overlapping `is_match`
-    /// stops at the first hit and can hide a keyword nested inside another) plus
-    /// any pattern with no extractable keyword at all, which must always run. This
-    /// is restricted to the routing-appropriate buckets: `universal` (non-`^`-anchored
-    /// patterns) always, plus `program`'s indexed `^`-anchored patterns when given.
+    /// Evaluates `universal` (non-`^`-anchored patterns) always, plus `program`'s
+    /// indexed `^`-anchored patterns when given. Every pattern in the applicable
+    /// buckets runs its regex unconditionally — a keyword-derived candidate set
+    /// (built from the same fallible literal extraction `quick_scan`'s gate uses)
+    /// was tried here for issue #319 and reverted: `extract_keywords` can pick up
+    /// regex syntax debris as a fake "required" literal (e.g. the `sh -c` branch
+    /// of `EXEC-006`), and a candidate set built on top of that silently drops a
+    /// pattern no keyword check should ever be allowed to drop. See
+    /// docs/performance-baseline.md for the `sh -c id` reproducer.
     ///
     /// Called only after `quick_scan` returns `true`.
     pub fn full_scan(&self, cmd: &str, program: Option<&str>) -> Vec<MatchResult> {
-        let mut candidates: HashSet<usize> = self.uncovered_indices.iter().copied().collect();
-        for m in self.ac.find_overlapping_iter(cmd) {
-            for &idx in &self.keyword_index[m.pattern().as_usize()] {
-                candidates.insert(idx);
-            }
-        }
-
         let program_patterns: &[usize] = program
             .and_then(|prog| self.by_program.get(&prog.to_ascii_lowercase()))
             .map(Vec::as_slice)
@@ -327,7 +280,6 @@ impl Scanner {
         self.universal
             .iter()
             .chain(program_patterns.iter())
-            .filter(|idx| candidates.contains(idx))
             .filter_map(|&idx| self.match_one(cmd, idx))
             .collect()
     }
