@@ -245,16 +245,10 @@ impl AuditLogger {
         serde_json::from_slice::<AuditEntry>(line)
             .map(AuditEntry::normalize_legacy_fields)
             .map(Some)
-            .map_err(|err| match line_number {
-                Some(index) => AuditError::Parse(format!(
-                    "failed to parse audit log line {} in {}: {err}",
-                    index,
-                    source.display()
-                )),
-                None => AuditError::Parse(format!(
-                    "failed to parse audit log while scanning tail of {}: {err}",
-                    source.display()
-                )),
+            .map_err(|err| AuditError::Parse {
+                path: source.display().to_string(),
+                line: line_number.map(|index| index as u64),
+                source: err,
             })
     }
 

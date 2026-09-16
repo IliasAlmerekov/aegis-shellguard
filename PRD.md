@@ -84,7 +84,8 @@ the README.
 Priorities for this audience:
 
 - one-command install that works out of the box (zero-config by default),
-- no friction on the safe hot path (< 2 ms),
+- no friction on the safe hot path (assessment under 2 ms, startup around 22 ms
+  per command — see §6),
 - clear prompts and learnability (repeated decisions are not re-asked).
 
 **Secondary (post-1.0, considered architecturally but out of release scope).**
@@ -430,8 +431,19 @@ contents anywhere in §5, §9, or §10. That silence is correct and must not be
 
 ## 6. Non-Functional Requirements
 
-- **Performance:** safe hot path < 2 ms (p99). Any change to `scanner`/`parser`
-  is benchmarked with `cargo criterion`; regressions are not allowed.
+- **Performance:** two budgets, both stated as means because the benchmark gate
+  compares means and Criterion records no percentiles (ADR-034).
+  - _Assessment budget:_ one `assess` call stays under 2 ms on any input,
+    including the worst inline-script body. A typical safe command measures
+    about 2.6 µs.
+  - _Startup cost:_ one process invocation from process start to decision stays
+    under 30 ms. That ceiling records what Aegis costs today (22 ms measured,
+    of which construction is roughly 20 ms and classification 0.02 ms); it is
+    not a promise that the cost is acceptable, and lowering it is tracked
+    separately.
+
+  Any change to `scanner`/`parser` is benchmarked with `cargo criterion`;
+  regressions beyond the checked-in thresholds are not allowed.
 - **Parsing correctness:** the parser is a security-critical input; fuzzing is
   mandatory (parser, scanner, heredoc unwrapping).
 - **Dependency security:** `cargo audit` and `cargo deny check` pass with zero
@@ -510,7 +522,9 @@ Officially supported 1.0 channels:
 - **Zero false negatives** on the bypass corpus
   (`tests/fixtures/security_bypass_corpus.toml`): no dangerous command from the
   corpus is classified as `Safe`.
-- **Hot path < 2 ms (p99)** on safe commands, confirmed by `cargo criterion`.
+- **Assessment under 2 ms (mean)** on any input, confirmed by `cargo criterion`.
+  Startup cost is measured and gated too, but it is not a 1.0 release gate
+  (ADR-034).
 - **0 CVEs** in dependencies (`cargo audit`) and a clean `cargo deny check`.
 - **Green CI on all supported platforms:** Linux (x86_64/aarch64) and macOS
   (arm64/x86_64). Windows is covered transitively via the Linux target (WSL2).

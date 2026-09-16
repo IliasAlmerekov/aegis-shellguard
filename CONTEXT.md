@@ -124,9 +124,22 @@ sensitive path) stays a regex `Pattern` (ADR-014/015).
 _Avoid_: prefix pattern, first-token rule
 
 **Quick scan**:
-The fast first pass — an Aho-Corasick multi-pattern scan with no allocations, on the
-< 2ms hot path. Never uses regex.
+The fast first pass — an Aho-Corasick multi-pattern scan with no allocations, inside
+the `Assessment budget`. Never uses regex.
 _Avoid_: prefilter, fast match
+
+**Assessment budget**:
+The upper bound on what one `assess` call may cost, on any input including the worst
+one. It bounds classification only, not the process that performs it (ADR-034). The
+number lives in `PRD.md` and is enforced per row in `perf/scanner_bench_baseline.toml`.
+_Avoid_: hot-path budget, scan budget
+
+**Startup cost**:
+What one process invocation costs from process start to the decision, before exec.
+Because Aegis is a `$SHELL` proxy, an agent pays it on every command; there is no warm
+variant of it. It is dominated by construction — the `Scanner`, the runtime context,
+the async runtime — rather than by classification (ADR-034).
+_Avoid_: cold start, warm start, init time
 
 **Full scan**:
 The verification pass that runs regex `Pattern`s and token-prefix rules after the
@@ -321,7 +334,16 @@ warns (ADR-013). "Tighten" and "weaken" are the canonical directions, and the st
 direction is field-specific — more confinement, more Snapshot coverage, fewer
 write paths, and a `Snapshot target` left where trusted config put it are all
 tightenings regardless of the underlying boolean.
-_Avoid_: override, downgrade, merge (reserve "override" for `Override level`)
+_Avoid_: override, downgrade, merge (reserve "override" for `Override level`), loosen
+
+**Ratchet direction**:
+How a project layer may change one config field. Every field has exactly one:
+**Tighten** (keep the stricter of trusted and requested), **Global-only** (the project
+value is ignored), **Append** (project entries are added after trusted ones),
+**Unratcheted** (the last layer wins, by recorded decision), or a named **Custom**
+rule when "stricter" needs its own definition, such as a Snapshot target that stays
+pinned once trusted config enables it.
+_Avoid_: ratchet mode, merge strategy
 
 **Policy rule**:
 A typed `[[rules]]` entry in config whose outcome is a `PolicyRuleDecision` — `Allow`,
@@ -441,6 +463,14 @@ path — under ADR-029 unavailability blocks, so this term describes only the
 **current pre-1.0 implementation** and retires with it. It never named a
 successful escape from an applied profile.
 _Avoid_: sandbox failure, escape
+
+**Config fault**:
+An error caused by invalid or unreadable user configuration, something a user
+fixes by editing `aegis.toml`, not a fault in Aegis itself. Distinguishes, for
+example, a bad policy rule from a corrupted Audit log or an unreachable Docker
+daemon, so the two never share a hint telling the user to fix a config file
+that was never the problem.
+_Avoid_: config error, invalid config
 
 ## Snapshot & Audit
 

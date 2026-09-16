@@ -2,6 +2,7 @@
 
 /// Typed error for snapshot creation and rollback operations.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum SnapshotError {
     /// Snapshot creation or rollback operation failed.
     Snapshot(String),

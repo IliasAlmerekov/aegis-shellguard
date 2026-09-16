@@ -13,7 +13,7 @@ use crate::decision::{BlockReason, ExecutionTransport};
 use crate::interceptor::parser::{extract_prefix, split_tokens};
 use crate::planning::{
     CwdState, ExecutionDisposition, InterceptionPlan, PlanningOutcome, PreparedPlanner,
-    SetupFailureKind, SetupFailurePlan, prepare_and_plan_async,
+    SetupFailurePlan, prepare_and_plan_async,
 };
 use crate::runtime::{RecoveryStatus, RuntimeContext, WatchAuditContext, recovery_status};
 use crate::ui::confirm::{
@@ -644,7 +644,7 @@ async fn create_watch_snapshots(
 
 fn report_watch_setup_failure(plan: &SetupFailurePlan) {
     eprintln!("{}", plan.user_message());
-    if matches!(plan.kind(), SetupFailureKind::InvalidConfig) {
+    if plan.is_config_fault() {
         eprintln!("error: Fix or remove the invalid config file and try again.");
     }
 }

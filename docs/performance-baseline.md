@@ -3,6 +3,33 @@
 This document defines the repeatable benchmark strategy for Aegis scanner
 performance checks.
 
+## The two budgets
+
+Aegis publishes two performance budgets, and confusing them is easy enough that
+it already happened in this repository. `ADR-034` defines them and records the
+measurement they came from; `PRD.md` §6 carries the numbers.
+
+- **Assessment budget** — what one `assess` call may cost on any input,
+  including the worst one. 2 ms. A typical safe command costs about 2.6 µs; the
+  worst inline-script body under `MAX_INLINE_SCRIPT_LEN` costs about 1.9 ms, so
+  the budget binds at the worst case and nowhere near the typical one.
+- **Startup cost** — what one process invocation costs from process start to
+  the decision, before exec. Measured at 22 ms, with a recorded ceiling of
+  30 ms. Roughly 20 ms of it is construction: the `Scanner`, the runtime
+  context, the async runtime. Classification inside it is 0.02 ms.
+
+Two rules follow from this, and both matter when reading any number below.
+
+A batch figure is not a per-command figure. A row that times N commands in one
+Criterion iteration reports the cost of the batch, and comparing that directly
+against a per-command budget is off by a factor of N. The removed
+`1000_safe_commands` row was compared that way in project documents.
+
+Every budget here is a **mean**, not a percentile. Criterion writes `mean`,
+`median`, `std_dev` and `MAD` into `estimates.json` and no percentiles at all,
+and `aegis_benchcheck` reads the mean. Earlier wording in `PRD.md` said "p99",
+which no tool in this repository could check.
+
 ## What is checked
 
 The CI performance job runs:
@@ -109,10 +136,13 @@ same command shape at increasing body sizes:
 
 The collapse past 26 KB is `MAX_INLINE_SCRIPT_LEN` (16 KiB) returning `SCAN-002`
 before the scan, so the worst case is a body just under that cap: about 1.9 ms
-locally. That is inside the `< 2 ms` product budget but with little margin on a
-slower runner — a second reason P3-9 matters. The budget itself is documented for
-the *safe* hot path, which this row is not: `1000_safe_commands` measured 2.602 ms
-for 1,000 commands (2.6 µs each) and is **faster** than its baseline.
+locally. That is inside the 2 ms `Assessment budget` but with little margin on a
+slower runner — a second reason P3-9 matters. This row is the one that makes the
+budget bind: the budget covers any input, and this is the worst input the caps
+allow. The batch row beside it, `1000_safe_commands`, measured 2.602 ms for
+1,000 commands (2.6 µs each). That 2.602 ms was read as a per-command figure and
+compared against the 2 ms budget more than once, which is why the row is being
+retired in favour of a per-command one.
 
 ### Language-aware slow path, since Iteration 10 (the two `aegis-language` benches)
 

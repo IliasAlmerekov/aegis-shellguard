@@ -102,8 +102,14 @@ fn resolve_disabled_flag_path(home_dir: PathBuf) -> PathBuf {
 }
 
 fn home_dir() -> Result<PathBuf> {
-    home_dir_optional().ok_or_else(|| {
-        AegisError::Config("HOME is not set; cannot resolve ~/.aegis/disabled".to_string())
+    home_dir_or_internal_error(home_dir_optional())
+}
+
+/// Split from [`home_dir`] so the missing-`HOME` arm is reachable from a test
+/// without mutating process-wide environment state.
+fn home_dir_or_internal_error(resolved: Option<PathBuf>) -> Result<PathBuf> {
+    resolved.ok_or_else(|| AegisError::Internal {
+        detail: "HOME is not set; cannot resolve ~/.aegis/disabled".to_string(),
     })
 }
 
@@ -145,10 +151,9 @@ fn disable_at(path: &Path) -> Result<bool> {
     let was_present = match fs::metadata(path) {
         Ok(metadata) => {
             if !metadata.is_file() {
-                return Err(AegisError::Config(format!(
-                    "toggle path {} exists but is not a file",
-                    path.display()
-                )));
+                return Err(AegisError::Internal {
+                    detail: format!("toggle path {} exists but is not a file", path.display()),
+                });
             }
             true
         }
@@ -169,10 +174,9 @@ fn enable_at(path: &Path) -> Result<bool> {
     match fs::metadata(path) {
         Ok(metadata) => {
             if !metadata.is_file() {
-                return Err(AegisError::Config(format!(
-                    "toggle path {} exists but is not a file",
-                    path.display()
-                )));
+                return Err(AegisError::Internal {
+                    detail: format!("toggle path {} exists but is not a file", path.display()),
+                });
             }
 
             fs::remove_file(path)?;
@@ -184,9 +188,12 @@ fn enable_at(path: &Path) -> Result<bool> {
 }
 
 fn disabled_flag_contents() -> Result<String> {
-    let timestamp = OffsetDateTime::now_utc()
-        .format(&Rfc3339)
-        .map_err(|err| AegisError::Config(format!("failed to format toggle timestamp: {err}")))?;
+    let timestamp =
+        OffsetDateTime::now_utc()
+            .format(&Rfc3339)
+            .map_err(|err| AegisError::Internal {
+                detail: format!("failed to format toggle timestamp: {err}"),
+            })?;
     let pid = process::id();
 
     Ok(format!("timestamp={timestamp}\npid={pid}\n"))
@@ -259,6 +266,54 @@ mod tests {
         let path = parent.join("disabled");
 
         assert!(!is_disabled_at(&path).unwrap());
+    }
+
+    #[test]
+    fn disable_at_a_non_file_toggle_path_is_an_internal_error_not_a_config_error() {
+        let home = TempDir::new().unwrap();
+        let path = home.path().join("disabled");
+        fs::create_dir(&path).unwrap();
+
+        let err = disable_at(&path).expect_err("a directory at the toggle path must be rejected");
+
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "internal error: toggle path {} exists but is not a file",
+                path.display()
+            )
+        );
+        assert!(!err.is_config_fault());
+    }
+
+    #[test]
+    fn enable_at_a_non_file_toggle_path_is_an_internal_error_not_a_config_error() {
+        let home = TempDir::new().unwrap();
+        let path = home.path().join("disabled");
+        fs::create_dir(&path).unwrap();
+
+        let err = enable_at(&path).expect_err("a directory at the toggle path must be rejected");
+
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "internal error: toggle path {} exists but is not a file",
+                path.display()
+            )
+        );
+        assert!(!err.is_config_fault());
+    }
+
+    #[test]
+    fn missing_home_is_an_internal_error_not_a_config_error() {
+        let err = home_dir_or_internal_error(None)
+            .expect_err("an unresolvable home directory must be rejected");
+
+        assert_eq!(
+            err.to_string(),
+            "internal error: HOME is not set; cannot resolve ~/.aegis/disabled"
+        );
+        assert!(!err.is_config_fault());
     }
 
     #[test]
