@@ -29,15 +29,30 @@ impl SnapshotPlugin for GitPlugin {
     }
 
     async fn is_applicable(&self, cwd: &Path) -> bool {
-        Command::new("git")
+        match Command::new("git")
             .args(["rev-parse", "--git-dir"])
             .current_dir(cwd)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
             .await
-            .map(|s| s.success())
-            .unwrap_or(false)
+        {
+            // git ran and told us definitively whether `cwd` is a repo.
+            Ok(status) => status.success(),
+            // We could not even spawn git, so we have no signal either way.
+            // Fail open rather than silently reporting "not a repo": the
+            // caller still attempts `snapshot()`, and if that also cannot
+            // spawn git, the failure surfaces through the existing
+            // `SNAPSHOT_FAILED_CONTINUING` warning instead of vanishing here.
+            Err(error) => {
+                tracing::error!(
+                    %error,
+                    cwd = %cwd.display(),
+                    "failed to spawn git while checking applicability, assuming applicable"
+                );
+                true
+            }
+        }
     }
 
     async fn snapshot(&self, cwd: &Path, _cmd: &str) -> Result<String> {
@@ -313,6 +328,89 @@ mod tests {
     async fn is_applicable_outside_repo() {
         let dir = TempDir::new().unwrap();
         assert!(!GitPlugin.is_applicable(dir.path()).await);
+    }
+
+    /// A `cwd` that does not exist makes `git`'s own `chdir` fail before exec,
+    /// so `Command::status()` returns `Err` rather than an exit status. This
+    /// is the spawn-failure branch, distinct from "ran and said not a repo".
+    #[tokio::test]
+    async fn is_applicable_assumes_applicable_when_git_cannot_be_spawned() {
+        let parent = TempDir::new().unwrap();
+        let missing_cwd = parent.path().join("does-not-exist");
+
+        assert!(GitPlugin.is_applicable(&missing_cwd).await);
+    }
+
+    #[test]
+    fn is_applicable_logs_spawn_failure_via_tracing() {
+        use std::sync::{Arc, Mutex};
+        use tracing::field::{Field, Visit};
+
+        #[derive(Default)]
+        struct CapturedFields {
+            message: Option<String>,
+            cwd: Option<String>,
+        }
+
+        #[derive(Default)]
+        struct FieldVisitor(CapturedFields);
+
+        impl Visit for FieldVisitor {
+            fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+                self.record_str(field, &format!("{value:?}"));
+            }
+
+            fn record_str(&mut self, field: &Field, value: &str) {
+                match field.name() {
+                    "message" => self.0.message = Some(value.trim_matches('"').to_string()),
+                    "cwd" => self.0.cwd = Some(value.trim_matches('"').to_string()),
+                    _ => {}
+                }
+            }
+        }
+
+        struct CollectingSubscriber(Arc<Mutex<Option<CapturedFields>>>);
+
+        impl tracing::Subscriber for CollectingSubscriber {
+            fn enabled(&self, _metadata: &tracing::Metadata<'_>) -> bool {
+                true
+            }
+            fn new_span(&self, _span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+                tracing::span::Id::from_u64(1)
+            }
+            fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {}
+            fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {}
+            fn event(&self, event: &tracing::Event<'_>) {
+                let mut visitor = FieldVisitor::default();
+                event.record(&mut visitor);
+                *self.0.lock().unwrap() = Some(visitor.0);
+            }
+            fn enter(&self, _span: &tracing::span::Id) {}
+            fn exit(&self, _span: &tracing::span::Id) {}
+        }
+
+        let parent = TempDir::new().unwrap();
+        let missing_cwd = parent.path().join("does-not-exist");
+
+        let captured: Arc<Mutex<Option<CapturedFields>>> = Arc::new(Mutex::new(None));
+        let subscriber = CollectingSubscriber(Arc::clone(&captured));
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let applicable = tracing::subscriber::with_default(subscriber, || {
+            runtime.block_on(GitPlugin.is_applicable(&missing_cwd))
+        });
+        assert!(applicable);
+
+        let captured = captured
+            .lock()
+            .unwrap()
+            .take()
+            .expect("a spawn failure must emit a tracing event");
+        assert_eq!(
+            captured.message.as_deref(),
+            Some("failed to spawn git while checking applicability, assuming applicable")
+        );
+        assert_eq!(captured.cwd.as_deref(), Some(missing_cwd.display().to_string()).as_deref());
     }
 
     #[tokio::test]
