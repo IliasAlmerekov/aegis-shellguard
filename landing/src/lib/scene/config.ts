@@ -377,6 +377,26 @@ export const POST = {
     smoothing: 0.28,
     /** How widely the halo spreads. Larger is softer and more expensive. */
     radius: 0.72,
+
+    /**
+     * The fraction of the resolution the luminance pass is computed at.
+     *
+     * `mipmapBlur` builds its own halving chain, so the blur itself is already
+     * cheap. What it does not cover is the pass that feeds it: `BloomEffect`
+     * constructs its `LuminancePass` with no resolution options, and the
+     * library's default is the full size of the composer's buffer. That is one
+     * fullscreen pass per frame spent deciding which pixels are bright enough
+     * to bloom.
+     *
+     * Half resolution is safe here because of what the result is used for. The
+     * luminance texture is not shown; it is the input to a blur with a radius
+     * of 0.72, which is wide enough that a half-resolution source is
+     * indistinguishable from a full one in the output. The knob has to be set
+     * through a ref rather than a prop: the effect's own `resolutionScale` is
+     * deprecated and, with `mipmapBlur` on, reaches a render target that is
+     * never used. See `PostProcessing.tsx`.
+     */
+    luminanceScale: 0.5,
   },
   vignette: {
     offset: 0.28,
@@ -620,6 +640,32 @@ export const SCROLL = {
   focusAway: 12,
 
   /**
+   * When the defocus and aberration passes join the chain.
+   *
+   * They are only ever seen over `exit`, the last six percent, but they used
+   * to be mounted for the whole visit on the grounds that mounting a pass
+   * mid-flight recompiles the composer's shader at the moment the picture is
+   * meant to drift. The reasoning was right and the price was higher than it
+   * looked: `DepthOfFieldEffect.update` has no early-out, so at `bokehScale`
+   * zero it still issues all seven of its renders, and
+   * `ChromaticAberrationEffect` carries the convolution attribute, which earns
+   * it a fullscreen pass of its own. Both ran on the resting hero, where the
+   * visitor spends the longest and where the quality ladder takes its
+   * measurement.
+   *
+   * So the passes are armed early instead of permanently. Two percent of the
+   * pin is the one window in the whole choreography where a recompile can
+   * land: the approach does not begin until 0.1, so nothing in the scene has
+   * started to move, and the only thing animating is the scrim, which is a CSS
+   * opacity tween and does not share the frame with a shader compile.
+   *
+   * Arming is one-way. Scrolling back to the top does not release the passes,
+   * because the recompile would then run once per pass over the threshold
+   * instead of once per visit.
+   */
+  opticsArm: 0.02,
+
+  /**
    * Chromatic aberration — a tenth of the usual. On a sharp frame it reads as
    * a defect, on a defocused one as optics, and the fade to darkness comes to
    * look like a lens rather than a CSS filter.
@@ -688,11 +734,45 @@ export const STONE = {
   aoIntensity: 1.0,
 } as const
 
+/**
+ * How the drawing resolution is chosen.
+ *
+ * A ceiling on `devicePixelRatio` is not enough, and on the widest screens it
+ * does nothing at all. `devicePixelRatio` reports pixel density, and the cost
+ * of a frame is set by their count. The two come apart exactly where the cost
+ * is highest: a 4K monitor at 100% scaling reports a ratio of 1, so a ceiling
+ * of 1.5 never engages and the scene draws all 8.3 million pixels. A 14-inch
+ * laptop reports 2, gets clamped to 1.5, and draws 3.3 million. The machine
+ * with the weaker GPU is asked for two and a half times the work.
+ *
+ * So the ratio is derived from the area instead: `sqrt(budget / area)`, capped
+ * by the tier ceiling and by the display's own density. Below the ceiling on
+ * every screen the ceiling already handled, below one where the viewport is
+ * larger than the budget.
+ *
+ * `floor` stops the descent. Below roughly two thirds the cube's silhouette
+ * softens visibly even with the composer's antialiasing, and the frame starts
+ * to read as a scaled image rather than a rendered one.
+ *
+ * `step` quantises the result. Without it a window dragged across a screen
+ * edge would produce a new ratio every pixel, and each one reallocates the
+ * composer's buffers.
+ */
+export const DPR = {
+  floor: 0.65,
+  step: 0.05,
+} as const
+
 export type TierSettings = {
   /** Quads per face along one axis. */
   subdivision: number
   /** Upper bound on devicePixelRatio. */
   maxDpr: number
+  /**
+   * Upper bound on the drawing buffer, in pixels. The real ceiling on the
+   * frame's cost, of which `maxDpr` is only the half that density can express.
+   */
+  pixelBudget: number
   bloom: boolean
   /** Defocus and aberration at the end of the pin. */
   finalOptics: boolean
@@ -722,7 +802,16 @@ export type TierSettings = {
    * anisotropy to do work here, while it is paid for everywhere.
    */
   anisotropy: number
-  /** The fraction of the resolution the defocus is computed at. */
+  /**
+   * The fraction of the resolution the defocus is computed at.
+   *
+   * It buys less than its name suggests, and the number was read out of the
+   * library rather than assumed. `DepthOfFieldEffect.setSize` applies the
+   * scale to three of its nine render targets; the circle-of-confusion pass,
+   * the blur pass and the mask pass all stay at full size. So this knob moves
+   * roughly a third of the defocus cost, and the rest is moved by not running
+   * the pass at all outside the exit. See `SCROLL.opticsArm`.
+   */
   dofResolution: number
 }
 
@@ -734,15 +823,27 @@ export type TierSettings = {
  * edges, and a chip only reads as a facet with a normal of its own. Duplicated
  * vertices along face boundaries cost on the order of a percent in return.
  *
- * `maxDpr` is the second strongest knob after MSAA, and it is quadratic:
+ * Resolution is the second strongest knob after MSAA, and it is quadratic:
  * 2.0 → 1.5 removes 44% of all fragments at once, across every pass. On a
  * retina display 1.5 reads sharp, because the antialiasing is done by the
  * composer anyway, not by pixel density.
+ *
+ * It takes two numbers rather than one. `maxDpr` caps the density, which is
+ * what a retina laptop oversupplies; `pixelBudget` caps the count, which is
+ * what a large desktop panel oversupplies at a density of one. Either alone
+ * leaves one of the two cases untouched. See `DPR`.
+ *
+ * The budget for `full` is 4.0 megapixels, and the number is chosen so that
+ * nothing below 4K changes behaviour: a 1440p desktop and a 14-inch retina
+ * laptop both land on exactly the ratio they had before. What it does move is
+ * a 5K iMac, from 8.3 megapixels to 3.7, and a 4K panel at 100% scaling, from
+ * 8.3 to 3.5.
  */
 export const TIER_SETTINGS: Record<Tier, TierSettings> = {
   full: {
     subdivision: 64,
     maxDpr: 1.5,
+    pixelBudget: 4_000_000,
     bloom: true,
     finalOptics: true,
     multisampling: 4,
@@ -752,6 +853,7 @@ export const TIER_SETTINGS: Record<Tier, TierSettings> = {
   reduced: {
     subdivision: 48,
     maxDpr: 1.25,
+    pixelBudget: 2_600_000,
     bloom: true,
     finalOptics: false,
     multisampling: 2,
@@ -761,6 +863,7 @@ export const TIER_SETTINGS: Record<Tier, TierSettings> = {
   low: {
     subdivision: 32,
     maxDpr: 1,
+    pixelBudget: 1_800_000,
     bloom: true,
     finalOptics: false,
     multisampling: 2,
@@ -776,6 +879,7 @@ export const TIER_SETTINGS: Record<Tier, TierSettings> = {
   still: {
     subdivision: 32,
     maxDpr: 1,
+    pixelBudget: 1_800_000,
     bloom: false,
     finalOptics: false,
     multisampling: 0,
