@@ -153,6 +153,21 @@ against a per-command budget (ADR-034). The row is removed rather than fixed in
 place, and `safe_command_assess` replaces it with one `assess()` call per
 iteration, timed directly against the budget it was always meant to check.
 
+#### `safe_command_assess` and `scanner_construction` rebaseline (2026-09-16)
+
+Both rows shipped with `baseline_ns` set within 5% of a single local capture,
+which left no room for run-to-run variance: three repeated local runs of
+`safe_command_assess` spread from 568.7 ns to 725 ns — a 27.5% swing against a
+25% threshold — and `scanner_construction` spread from 7.05 ms to 8.34 ms
+against a baseline that put the gate at 9.5 ms. Both would flap on a runner no
+slower than the one that captured them. The two rows now carry roughly the
+same ~2x margin over the observed maximum that the Iteration 10 slow-path
+ceilings already use (see the table under "Language-aware slow path" below):
+`safe_command_assess` moved from `700` to `1_500`, `scanner_construction` from
+`7_600_000` to `16_500_000`. `runtime_context_construction` was rebaselined
+the same way from repeated local runs (max observed 11.045 ms) to
+`22_000_000`, alongside the description fix below.
+
 ### Startup cost (`benches/startup_bench.rs`)
 
 Three rows split the `Startup cost` from the `Assessment budget` (ADR-034):
@@ -169,7 +184,12 @@ a gate on `assess()` alone never saw most of what an agent actually pays.
   already-warm `BUILTIN_SCANNER` static instead of building a scanner of its
   own — this row and `scanner_construction` measure disjoint work and can be
   added together. Config discovery from disk is deliberately excluded here;
-  only `startup_safe_command` below covers it.
+  only `startup_safe_command` below covers it. This row also spawns and waits
+  on an `id -un` child process — `detect_effective_user()` in
+  `src/runtime/user.rs` walks `PATH` for an `id` binary and shells out to it —
+  so part of what looks like in-process construction cost is actually process
+  spawn, measured locally at roughly 1 ms of the row's several-millisecond
+  total.
 - `startup_safe_command` — one full `aegis -c "ls -la" --output json` process
   invocation, `HOME` pointed at a fresh `TempDir` so no repository
   `.aegis.toml` is discovered and the number does not depend on where `cargo
@@ -255,8 +275,10 @@ If a benchmark exceeds its threshold, `aegis_benchcheck` exits non-zero and
 prints a line like:
 
 ```text
-FAIL safe_command_assess observed 3.500 ms baseline 2.800 ms delta +25.0% threshold +25.0%
+FAIL safe_command_assess observed 2.200 µs baseline 1.500 µs delta +46.7% threshold +25.0% budget 2.000 ms
 ```
+
+The `budget` tail only appears for rows that carry a `budget_ns` — `safe_command_assess`, `heredoc_worst_case`, and `startup_safe_command` today.
 
 That output is the primary interpretation surface in CI logs.
 
