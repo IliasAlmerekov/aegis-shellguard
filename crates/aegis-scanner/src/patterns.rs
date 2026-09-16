@@ -319,7 +319,26 @@ fn builtin_prefix_rules() -> Vec<PrefixRule> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use regex::RegexBuilder;
     use std::collections::HashSet;
+
+    /// Issue #319 change 2: with lazy built-in regex compilation, a broken
+    /// built-in pattern would otherwise only surface the first time a
+    /// command's keyword happens to reach it — at scan time, in someone's
+    /// shell. Compile every one of them here, eagerly, so a bad regex fails
+    /// the build instead.
+    #[test]
+    fn every_builtin_pattern_regex_compiles() {
+        let set = PatternSet::load().expect("patterns.toml must load");
+        for pattern in set.patterns() {
+            RegexBuilder::new(pattern.pattern.as_ref())
+                .case_insensitive(true)
+                .build()
+                .unwrap_or_else(|e| {
+                    panic!("built-in pattern {} has an invalid regex: {e}", pattern.id)
+                });
+        }
+    }
 
     #[test]
     fn prefix_rule_rejects_a_blank_suppressing_token() {
