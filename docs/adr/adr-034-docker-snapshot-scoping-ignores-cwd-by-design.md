@@ -94,3 +94,23 @@ state instead of asserting "no snapshot plugin applies to this cwd".
   becomes a real ask (e.g. "only snapshot containers started by *this*
   `docker-compose.yml`"), that's a new `DockerScopeMode` variant, filed
   separately — not a fix to `is_applicable`'s current contract.
+
+## Addendum (2026-09-16): item 2 covered two tests, missed a third helper
+
+Item 2 pinned the registry for `prepared_with_audit_path`, the helper shared by
+`watch_recovery_prompt_deny_prevents_execution_and_audits_degradation` and
+`watch_recovery_prompt_run_once_executes_and_audits_degradation`. A third test,
+`watch_recovery_deny_records_enabled_sandbox_as_not_attempted`, builds its
+`RuntimeContext` through a separate helper, `prepared_with_optional_sandbox`,
+which was never updated to call `set_snapshot_registry_for_tests`. On a
+machine where a real Docker daemon reports itself reachable, that helper's
+default registry lets `DockerPlugin` — not `GitPlugin` — decide applicability,
+so `recovery_status` can resolve to `Ready` instead of the
+`Degraded(NoSnapshotAvailable)` the test expects, and the sandbox-status and
+prompt assertions built on top of it fail nondeterministically depending on
+host state rather than test fixtures.
+
+`prepared_with_optional_sandbox` now pins the same `GitPlugin`-only registry as
+`prepared_with_audit_path`. Both `RuntimeContext` builders in
+`src/watch/runner/tests.rs` follow the pattern from item 2; no other helper in
+that file constructs a `RuntimeContext` without it.
