@@ -168,6 +168,130 @@ ceilings already use (see the table under "Language-aware slow path" below):
 the same way from repeated local runs (max observed 11.045 ms) to
 `22_000_000`, alongside the description fix below.
 
+#### Discarded scanner builds removed; lazy compile and keyword narrowing tried and reverted (issue #319, 2026-09-16)
+
+One real problem, fixed, and two tried-and-rejected ideas:
+
+**Fixed: `validate_custom_patterns` no longer builds a scanner it throws away.**
+Both `AegisConfig::validate_runtime_requirements` (called once by every
+`RuntimeContext::new_with_policy_path`) and `AegisConfig::load_for_internal`
+(called once per config layer found on disk) used to call it unconditionally,
+and it built a full `Scanner` — merging in the built-ins and compiling every
+regex — purely to discover that there was nothing to validate whenever the
+custom-pattern slice was empty, which is the common case. It now returns
+`Ok(())` immediately on an empty slice. `load_for_internal` also now skips the
+per-layer scanner rebuild for a layer that added no new custom patterns (the
+cumulative set was already checked by whichever layer did add them); the
+layer's own general validation — audit, allowlist, blocklist — still always
+runs, so a misconfiguration introduced by a patternless layer is still caught
+and attributed to that layer's file.
+
+This is what `runtime_context_construction` mostly paid for beyond its
+`id -un` spawn: repeated local captures after the fix land at 873 µs–1.13 ms,
+down from a baseline of 22 ms. Rebaselined to `2_200_000` (~2x the observed
+maximum, same margin methodology as the 2026-09-16 rebaseline above).
+`scanner_construction`'s baseline is unchanged (`16_500_000`) — see below for
+why.
+
+**Tried and reverted: lazy built-in regex compilation.** The issue's premise
+was that `Scanner::try_new` compiles every built-in pattern's regex eagerly,
+whether or not the process ever sees a command that needs it, and that a
+`$SHELL` proxy rebuilding the scanner once per invocation pays that cost on
+every command regardless of outcome. Deferring built-in compilation to the
+first time `full_scan` reached a given pattern (custom patterns stayed
+eager, since a malformed one must remain a typed construction-time error)
+was implemented, then reverted before merging: a one-off local measurement
+of realistic cold `assess()` calls (fresh `Scanner` per call, matching a
+`$SHELL` proxy's fresh-process-per-command shape — no warm cache carries
+over between commands) showed built-in-compile-on-demand pushing ordinary
+inputs past the 2 ms Assessment budget:
+
+| Input | Cold `assess()` cost (fresh scanner, release) |
+| --- | ---: |
+| Single command, e.g. `rm -rf /home/user/old-project` | mean 0.5–0.8 ms, p95 up to ~1.6 ms, occasional noise spikes to 4–5 ms |
+| 8-clause `;`-chained compound command (a plausible cleanup/deploy script) | mean 2.22 ms, p95 3.68 ms |
+| 41-clause `;`-chained command spanning every built-in category (adversarial but syntactically ordinary) | mean 5.0 ms, max 10.2 ms, 29 of 41 patterns compiled in one call |
+
+A compound command touching several pattern categories at once is ordinary
+shell syntax, not a contrived edge case, and ADR-034's Assessment budget
+covers "one `assess()` call on any input." Regex compilation therefore stays
+part of the (30 ms-budgeted) Startup cost, where it already had comfortable
+headroom, rather than moving into the 2 ms Assessment budget. Net effect:
+`scanner_construction`'s cost is unchanged by this issue (still dominated by
+eager regex compilation), which is why its baseline stays at `16_500_000`.
+
+**Also tried and reverted: narrowing `full_scan` to keyword-matched patterns.**
+Alongside the lazy-compile attempt, `full_scan` was changed to run a second,
+overlapping Aho-Corasick pass over the command and only evaluate the regexes
+whose extracted keyword actually showed up, instead of evaluating every
+pattern in the applicable `universal`/`by_program` bucket unconditionally.
+This landed (commit `ddc65ba`) and initially looked safe: fewer regex
+evaluations per `full_scan`, no visible test failures.
+
+It shipped a false negative. `extract_keywords`'s `find_embedded_literal`
+walks `EXEC-006`'s `sh` alternative
+(`^sh\s+(?:--[a-z-]+\s+)*-[a-zA-Z]*c\b`), discards the two-character literal
+`"sh"` against its three-character floor, then keeps scanning *through the
+regex syntax* of the optional group and accumulates `":"`, `"-"`, `"-"` as
+the pattern's "keyword" — text no command matching `EXEC-006` is required to
+contain. Reproducer: on the commit with the narrowing, both
+`Scanner::assess("sh -c id")` and `full_scan("sh -c id", Some("sh"))` report
+zero matches; on `main`, the same calls report `Warn` with `EXEC-006`. The
+extractor's flaw predates this change and is harmless everywhere else,
+because keywords only ever fed `quick_scan`'s gate before, where a wrong
+"required" literal costs an unnecessary regex pass, never a skipped one.
+Using the same keyword set to decide *which* regexes `full_scan` runs turned
+a cosmetic extractor bug into a silently skipped `Danger`/`Warn` pattern —
+exactly what this module's own doc comment (`mod.rs:38`) says a keyword
+check must never do.
+
+The narrowing was removed rather than repaired: fixing `find_embedded_literal`
+and proving the keyword-to-pattern mapping sound is real work belonging to
+its own issue, not a condition on finishing #319, whose ask was construction
+cost on the safe path, not `full_scan`'s regex count on the flagged path.
+`full_scan` now evaluates every pattern in the applicable bucket
+unconditionally again. `scanner_construction` is unaffected either way — the
+narrowing changed `full_scan`, not `try_new` — so its baseline is unchanged
+at `16_500_000`, and `runtime_context_construction` stays at `2_200_000`,
+since that rebaseline came from the `validate_custom_patterns` fix above, not
+from the narrowing.
+
+**One-off split (issue's ask): how much of `Scanner::try_new` is Aho-Corasick
+construction vs. regex compilation, and how much of the latter is Unicode
+case-folding.** Not perf-gate rows — they would freeze `try_new`'s internals.
+
+| Component | Time (2,000 iterations, release) |
+| --- | ---: |
+| Aho-Corasick construction + keyword-index bookkeeping | ~490 µs |
+| Compiling all 41 built-in regexes, case-insensitive (current behavior) | ~4.79 ms |
+| ...of which: same regexes compiled case-*sensitive* (no case folding at all) | ~2.49 ms |
+| ...of which: Unicode case-folding overhead alone (case-insensitive minus case-sensitive) | ~2.16 ms (~46% of compile time) |
+
+Regex compilation is ~90% of `scanner_construction`'s cost, and Unicode case
+folding is close to half of *that* — a real lever, investigated as a follow-up
+to the reverted lazy-compile attempt: if `RegexBuilder::unicode(false)`
+(ASCII-only case folding, matching what the Aho-Corasick gate already does)
+could replace `case_insensitive(true)` for built-ins, eager compilation would
+get cheap enough that the lazy-compile Assessment-budget problem above might
+not need lazy compilation to begin with. It was not adopted: `unicode(false)`
+also turns `.`, `\s`, `\d`, and `\w` into byte-oriented, ASCII-only matchers,
+and 13 of the 41 built-in patterns — every one built around `.`/`.+` for a
+pipeline body (`PKG-001`, `PKG-002`, `PKG-004`, `EXEC-001`, the fork-bomb
+pattern `PS-004`, and others) — fail to *compile* under it at all ("pattern
+can match invalid UTF-8"), because byte-oriented `.` could split a multi-byte
+UTF-8 sequence. Making it safe would mean rewriting close to a third of the
+built-in pattern bodies with explicit byte-safe constructs (e.g. scoping
+`(?-u)` to just the literal keyword and re-verifying every affected pattern
+against non-ASCII input), which is a correctness-sensitive change to the
+pattern definitions themselves, not a construction-cost change — out of scope
+for this issue. Recorded here as "cannot be removed without a separate,
+riskier change; here is why," per the issue's own accepted outcome for this
+measurement.
+
+Same ~2x-margin methodology as the 2026-09-16 `safe_command_assess` rebaseline
+above: these are construction-heavy rows with real run-to-run spread, not a
+value pinned within a few percent of one capture.
+
 ### Startup cost (`benches/startup_bench.rs`)
 
 Three rows split the `Startup cost` from the `Assessment budget` (ADR-034):

@@ -17,13 +17,39 @@ use crate::error::ConfigError;
 /// Converts config-layer [`UserPattern`]s into the neutral `Pattern` shape and
 /// builds an [`aegis_scanner::Scanner`] to surface regex/ID errors. This is the
 /// config/scanner boundary — the scanner never sees config types.
+///
+/// An empty slice returns `Ok(())` without building anything: there is no
+/// custom pattern for a `Scanner` build to validate that the (separately
+/// tested) built-in set would not already catch, and building one anyway
+/// costs the full built-in compile on every call site — this ran on every
+/// process start and every config layer before the fix (issue #319).
 pub(crate) fn validate_custom_patterns(patterns: &[UserPattern]) -> Result<()> {
+    if patterns.is_empty() {
+        return Ok(());
+    }
     let converted: Vec<aegis_scanner::Pattern> = patterns.iter().cloned().map(Into::into).collect();
     aegis_scanner::PatternSet::from_sources(&converted)
         .and_then(aegis_scanner::Scanner::try_new)
         .map(|_| ())
         // Fold into `Config` (not a distinct variant) so the per-file path
         // wrapping in `validate_runtime_requirements_for_path` still applies.
+        .map_err(|err| ConfigError::Config(err.to_string()))
+}
+
+/// Validate that the built-in pattern set alone compiles into a working
+/// scanner, with no custom patterns involved.
+///
+/// Diagnostics-only: call this from `aegis config validate`'s reporting path,
+/// never from [`AegisConfig::validate_runtime_requirements`]. A broken
+/// built-in regex is a bug in the binary, not a per-invocation risk — paying
+/// a full scanner build on every command to catch it would defeat the point
+/// of skipping the build in [`validate_custom_patterns`] above. `patterns.rs`
+/// also compiles every built-in regex in its own test, so a broken binary
+/// fails CI before it ships.
+pub(crate) fn validate_builtin_scanner() -> Result<()> {
+    aegis_scanner::PatternSet::from_sources(&[])
+        .and_then(aegis_scanner::Scanner::try_new)
+        .map(|_| ())
         .map_err(|err| ConfigError::Config(err.to_string()))
 }
 
@@ -362,6 +388,24 @@ impl AegisConfig {
         Ok(())
     }
 
+    /// Same checks as [`Self::validate_runtime_requirements`], but skips the
+    /// custom-pattern scanner rebuild when `check_patterns` is `false`.
+    ///
+    /// Used by [`Self::validate_runtime_requirements_for_path`] for a config
+    /// layer that contributed no new custom patterns: the cumulative pattern
+    /// set was already validated (or will be) by the layer that actually
+    /// added them, so redoing it here is pure waste — a full scanner rebuild
+    /// per layer with no new patterns (issue #319).
+    fn validate_runtime_requirements_selective(&self, check_patterns: bool) -> Result<()> {
+        self.validate()?;
+        if check_patterns {
+            validate_custom_patterns(&self.custom_patterns)?;
+        }
+        Allowlist::from_layered_rules(&self.layered_allowlist_rules()).map(|_| ())?;
+        Blocklist::from_layered_rules(&self.layered_blocklist_rules()).map(|_| ())?;
+        Ok(())
+    }
+
     /// Load and validate config for a specific working directory and home dir.
     pub fn load_for(current_dir: &Path, home_dir: Option<&Path>) -> Result<Self> {
         Self::load_for_internal(current_dir, home_dir, true)
@@ -429,6 +473,7 @@ impl AegisConfig {
 
         if let Some(path) = global_path.as_deref().filter(|p| p.is_file()) {
             let global = PartialConfig::from_path(path)?;
+            let layer_added_patterns = !global.custom_patterns.is_empty();
             (merged, _) = Self::merge_layer(
                 merged,
                 global,
@@ -436,12 +481,13 @@ impl AegisConfig {
                 &path.to_string_lossy(),
             );
             if validate_runtime_requirements {
-                merged.validate_runtime_requirements_for_path(path)?;
+                merged.validate_runtime_requirements_for_path(path, layer_added_patterns)?;
             }
         }
 
         if project_path.is_file() {
             let project = PartialConfig::from_path(&project_path)?;
+            let layer_added_patterns = !project.custom_patterns.is_empty();
             (merged, _) = Self::merge_layer(
                 merged,
                 project,
@@ -449,7 +495,8 @@ impl AegisConfig {
                 &project_path.to_string_lossy(),
             );
             if validate_runtime_requirements {
-                merged.validate_runtime_requirements_for_path(&project_path)?;
+                merged
+                    .validate_runtime_requirements_for_path(&project_path, layer_added_patterns)?;
             }
         }
 
@@ -502,8 +549,12 @@ impl AegisConfig {
         Ok(())
     }
 
-    fn validate_runtime_requirements_for_path(&self, path: &Path) -> Result<()> {
-        self.validate_runtime_requirements()
+    fn validate_runtime_requirements_for_path(
+        &self,
+        path: &Path,
+        check_patterns: bool,
+    ) -> Result<()> {
+        self.validate_runtime_requirements_selective(check_patterns)
             .map_err(|err| match err {
                 ConfigError::Config(message) => {
                     ConfigError::Config(format!("invalid config {}: {message}", path.display()))

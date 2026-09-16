@@ -73,9 +73,15 @@ description = "Bash representative inline-source parsing is a bounded slow path.
 # no custom_patterns, so runtime context construction reuses the already-warm
 # BUILTIN_SCANNER static instead of building a scanner of its own.
 #
-# Rebaselined 2026-09-16 (see docs/performance-baseline.md for the observed
-# runs): both rows were within 5% of a single capture, with no margin for the
-# run-to-run spread a construction-heavy row actually has.
+# Rebaselined 2026-09-16 (issue #319 — see "Discarded scanner builds removed;
+# lazy built-in compile tried and reverted" in docs/performance-baseline.md).
+# Only runtime_context_construction moved: `validate_custom_patterns` no
+# longer builds a scanner it discards for an empty custom-pattern slice, which
+# is what this row mostly paid for beyond its `id -un` spawn. Lazy built-in
+# regex compilation (which would have also lowered scanner_construction) was
+# implemented and then reverted — it pushed ordinary cold `assess()` calls
+# past the 2 ms Assessment budget — so scanner_construction is unchanged: it
+# is still dominated by eager regex compilation, same as before this issue.
 
 [[benchmarks]]
 name = "scanner_construction"
@@ -85,9 +91,9 @@ description = "PatternSet::load() plus Scanner::try_new(), the one-per-process s
 
 [[benchmarks]]
 name = "runtime_context_construction"
-baseline_ns = 22_000_000
+baseline_ns = 2_200_000
 regression_pct = 25.0
-description = "RuntimeContext::new() from a default config, reusing the warm BUILTIN_SCANNER static; includes one id -un process spawn."
+description = "RuntimeContext::new() from a default config, reusing the warm BUILTIN_SCANNER static; includes one id -un process spawn. No longer pays a discarded custom-pattern scanner build (issue #319)."
 
 # Placeholder: this must be replaced with the real number from the CI runner
 # after the PR's `performance` job runs. Do not merge with this value.

@@ -294,15 +294,20 @@ fn custom_pattern_validation_issue(
     config: &AegisConfig,
     source_map: &ConfigSourceMap,
 ) -> Option<ValidationIssue> {
-    if let Err(err) = super::model::validate_custom_patterns(&config.custom_patterns) {
-        if config.custom_patterns.is_empty() {
-            return Some(ValidationIssue {
+    if config.custom_patterns.is_empty() {
+        // `validate_custom_patterns` is a no-op on an empty slice (issue
+        // #319), so the built-in-only build has to be checked here instead —
+        // this diagnostics path is the only caller of `validate_builtin_scanner`.
+        return super::model::validate_builtin_scanner()
+            .err()
+            .map(|err| ValidationIssue {
                 code: "scanner_init_error",
                 message: err.to_string(),
                 location: "builtin_scanner".to_string(),
             });
-        }
-    } else {
+    }
+
+    if super::model::validate_custom_patterns(&config.custom_patterns).is_ok() {
         return None;
     }
 

@@ -390,6 +390,52 @@ retention_files = 0
 }
 
 #[test]
+fn layer_with_no_new_custom_patterns_still_gets_its_own_validation() {
+    // Issue #319 change 3: the per-layer custom-pattern scanner rebuild is
+    // skipped for a layer that adds no new patterns, but that must not skip
+    // the layer's own general validation (audit, allowlist, ...) — only the
+    // now-redundant pattern rebuild.
+    let workspace = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
+    fs::create_dir_all(&global_dir).unwrap();
+
+    fs::write(
+        global_dir.join(GLOBAL_CONFIG_FILE),
+        r#"
+[[custom_patterns]]
+id = "CUSTOM-001"
+category = "Filesystem"
+risk = "Warn"
+pattern = "rm -rf /custom/global"
+description = "global custom pattern"
+"#,
+    )
+    .unwrap();
+
+    let project_path = workspace.path().join(PROJECT_CONFIG_FILE);
+    fs::write(
+        &project_path,
+        r#"
+[[allow]]
+pattern = "terraform destroy *"
+reason = "unscoped rule contributed by a layer with no custom patterns"
+"#,
+    )
+    .unwrap();
+
+    let err = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap_err();
+    let message = err.to_string();
+
+    assert!(
+        message.contains(&project_path.display().to_string()),
+        "the project layer contributed no custom patterns, but its own unscoped \
+         allowlist rule must still be caught and attributed to it: {message}"
+    );
+    assert!(message.contains("must declare cwd or user scope"));
+}
+
+#[test]
 fn invalid_custom_pattern_config_is_rejected_with_source_path() {
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
