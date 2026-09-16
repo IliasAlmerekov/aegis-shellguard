@@ -22,8 +22,9 @@ Two rules follow from this, and both matter when reading any number below.
 
 A batch figure is not a per-command figure. A row that times N commands in one
 Criterion iteration reports the cost of the batch, and comparing that directly
-against a per-command budget is off by a factor of N. The removed
-`1000_safe_commands` row was compared that way in project documents.
+against a per-command budget is off by a factor of N. The removed row that
+timed 1,000 safe commands per iteration was compared that way in project
+documents.
 
 Every budget here is a **mean**, not a percentile. Criterion writes `mean`,
 `median`, `std_dev` and `MAD` into `estimates.json` and no percentiles at all,
@@ -38,10 +39,11 @@ The CI performance job runs:
 cargo bench --bench scanner_bench
 cargo bench --bench no_source_bench -p aegis-language
 cargo bench --bench parse_latency_bench -p aegis-language
+cargo bench --bench startup_bench
 cargo run --bin aegis_benchcheck -- --baseline perf/scanner_bench_baseline.toml --criterion-root target/criterion
 ```
 
-All three `cargo bench` invocations write into the shared workspace
+All four `cargo bench` invocations write into the shared workspace
 `target/criterion` root, so a single `aegis_benchcheck` run evaluates every
 policy row. A policy row whose Criterion result is missing fails the job, so
 dropping a bench invocation from CI cannot silently drop its gate.
@@ -70,11 +72,11 @@ The machine-readable policy lives at:
 
 - `perf/scanner_bench_baseline.toml`
 
-It covers two surfaces.
+It covers three surfaces.
 
 ### Scanner hot path (`benches/scanner_bench.rs`)
 
-- `1000_safe_commands`
+- `safe_command_assess`
 - `100_dangerous_commands`
 - `heredoc_worst_case`
 
@@ -139,10 +141,61 @@ before the scan, so the worst case is a body just under that cap: about 1.9 ms
 locally. That is inside the 2 ms `Assessment budget` but with little margin on a
 slower runner — a second reason P3-9 matters. This row is the one that makes the
 budget bind: the budget covers any input, and this is the worst input the caps
-allow. The batch row beside it, `1000_safe_commands`, measured 2.602 ms for
-1,000 commands (2.6 µs each). That 2.602 ms was read as a per-command figure and
-compared against the 2 ms budget more than once, which is why the row is being
-retired in favour of a per-command one.
+allow.
+
+#### Batch safe-command row removed (2026-09-15)
+
+The row beside it used to measure 1,000 cycled safe commands per iteration,
+last recorded at 2.602 ms — 2.6 µs per command. That figure was read as a
+per-command number and compared against the 2 ms `Assessment budget` more than
+once in project documents, which it never was: a batch mean cannot be compared
+against a per-command budget (ADR-034). The row is removed rather than fixed in
+place, and `safe_command_assess` replaces it with one `assess()` call per
+iteration, timed directly against the budget it was always meant to check.
+
+#### `safe_command_assess` and `scanner_construction` rebaseline (2026-09-16)
+
+Both rows shipped with `baseline_ns` set within 5% of a single local capture,
+which left no room for run-to-run variance: three repeated local runs of
+`safe_command_assess` spread from 568.7 ns to 725 ns — a 27.5% swing against a
+25% threshold — and `scanner_construction` spread from 7.05 ms to 8.34 ms
+against a baseline that put the gate at 9.5 ms. Both would flap on a runner no
+slower than the one that captured them. The two rows now carry roughly the
+same ~2x margin over the observed maximum that the Iteration 10 slow-path
+ceilings already use (see the table under "Language-aware slow path" below):
+`safe_command_assess` moved from `700` to `1_500`, `scanner_construction` from
+`7_600_000` to `16_500_000`. `runtime_context_construction` was rebaselined
+the same way from repeated local runs (max observed 11.045 ms) to
+`22_000_000`, alongside the description fix below.
+
+### Startup cost (`benches/startup_bench.rs`)
+
+Three rows split the `Startup cost` from the `Assessment budget` (ADR-034):
+one process invocation is dominated by construction, not by classification, so
+a gate on `assess()` alone never saw most of what an agent actually pays.
+
+- `scanner_construction` — `PatternSet::load()` plus `Scanner::try_new()`,
+  timed on every iteration since the process-wide `BUILTIN_SCANNER` static
+  cannot be re-initialised in a loop. Models the one-per-process cost of
+  building the scanner, which is exactly what a `$SHELL` proxy pays once per
+  command.
+- `runtime_context_construction` — `RuntimeContext::new()` from a default
+  config. A default config has no `custom_patterns`, so this path reuses the
+  already-warm `BUILTIN_SCANNER` static instead of building a scanner of its
+  own — this row and `scanner_construction` measure disjoint work and can be
+  added together. Config discovery from disk is deliberately excluded here;
+  only `startup_safe_command` below covers it. This row also spawns and waits
+  on an `id -un` child process — `detect_effective_user()` in
+  `src/runtime/user.rs` walks `PATH` for an `id` binary and shells out to it —
+  so part of what looks like in-process construction cost is actually process
+  spawn, measured locally at roughly 1 ms of the row's several-millisecond
+  total.
+- `startup_safe_command` — one full `aegis -c "ls -la" --output json` process
+  invocation, `HOME` pointed at a fresh `TempDir` so no repository
+  `.aegis.toml` is discovered and the number does not depend on where `cargo
+  bench` was launched, `AEGIS_CI=0` forced so the non-CI branch is what gets
+  measured, evaluation mode only (the path to the decision, no exec, no audit
+  write). This is the only row that includes config discovery from disk.
 
 ### Language-aware slow path, since Iteration 10 (the two `aegis-language` benches)
 
@@ -210,6 +263,9 @@ rebaselining — see the update rules below.
 - default allowed regression: **+25%**
 - `heredoc_worst_case`: **+30%**
 - the Iteration 10 slow-path rows: **+25%** on top of an already padded ceiling
+- `startup_safe_command`: **+50%**, wider than the other rows because it times
+  a whole process invocation rather than in-process work, and a shared CI
+  runner's process-spawn variance is larger than its own compute variance.
 
 This is intentionally conservative for the first CI-integrated version. The goal
 is to catch meaningful slowdowns without creating noisy failures from normal
@@ -219,10 +275,41 @@ If a benchmark exceeds its threshold, `aegis_benchcheck` exits non-zero and
 prints a line like:
 
 ```text
-FAIL 1000_safe_commands observed 3.500 ms baseline 2.800 ms delta +25.0% threshold +25.0%
+FAIL safe_command_assess observed 2.200 µs baseline 1.500 µs delta +46.7% threshold +25.0% budget 2.000 ms
 ```
 
+The `budget` tail only appears for rows that carry a `budget_ns` — `safe_command_assess`, `heredoc_worst_case`, and `startup_safe_command` today.
+
 That output is the primary interpretation surface in CI logs.
+
+### `startup_safe_command` threshold revision rule
+
+The 50% threshold is wide because there is no CI-runner history yet. After ten
+consecutive green runs of the `performance` job on `main`, the repository
+owner pulls the observed `startup_safe_command` mean from each run's
+`benchmark-report.txt` artifact and computes the spread across those ten
+values. If the maximum is within 20% of the median, the threshold drops to
+25%. The criterion is the spread between runs, not any single figure — one
+fast or one slow run says nothing about runner variance on its own.
+
+## Budget ceiling (`budget_ns`)
+
+A policy row may also carry `budget_ns`: an absolute ceiling checked
+independently of the delta threshold above. The two checks can disagree — a
+regression inside the allowed delta can still land above the budget, and
+`aegis_benchcheck` fails the row either way. Only three rows carry one today:
+`safe_command_assess` and `heredoc_worst_case` against the 2 ms `Assessment
+budget`, and `startup_safe_command` against the 30 ms `Startup cost` ceiling
+(ADR-034). The other rows have no per-command or per-invocation promise to
+check against, so there is nothing for a budget to bind to.
+
+None of the three budgets binds today — the delta threshold fires first on
+every one of them. `heredoc_worst_case`, for example, gates at 1.3 ms
+(baseline plus its 30% threshold) against a 2 ms budget, so a regression trips
+the delta check well before it could reach the ceiling. A budget only becomes
+the binding limit once a rebaseline raises `baseline_ns` closer to it — which
+is the reason the field exists: a rebaseline can silently erode the actual
+promise unless something still checks it independently of the delta.
 
 ## Scheduled job
 
@@ -318,12 +405,15 @@ degradation), which lands in Iteration 3. Recording a number now would measure
 the throwaway in-process helper, not the production worker. Deferred to
 Iteration 3.
 
-### 5. Startup cost — deferred
+### 5. Worker start cost — deferred
 
-"Startup cost" in ADR-022 is the cost of starting the ephemeral worker process
-(fork + protocol handshake). There is no worker process in Iteration 0 —
-`worker::analyze` is an in-process helper — so there is no startup cost to
-measure. Deferred to Iteration 3, where the bounded worker process exists.
+"Worker start cost" in ADR-022 is the cost of starting the ephemeral worker
+process (fork + protocol handshake). There is no worker process in
+Iteration 0 — `worker::analyze` is an in-process helper — so there is no
+worker start cost to measure. Deferred to Iteration 3, where the bounded
+worker process exists. This is not the `Startup cost` defined in
+`CONTEXT.md` (ADR-034), which covers the whole process invocation and is
+tracked in the "Startup cost" section above.
 
 ### 6. All-target build parity — exercised
 

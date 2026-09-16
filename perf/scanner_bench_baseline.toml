@@ -1,10 +1,19 @@
 default_regression_pct = 25.0
 
+# Per-command Assessment budget (ADR-034). Replaces the retired batch row that
+# timed 1,000 commands per iteration: a batch mean cannot be compared against
+# a per-command budget, and it had been compared that way in project documents.
+#
+# Rebaselined 2026-09-16 from 700: the original value was within 5% of a
+# single capture, and three repeated local runs spread 568.7-725 ns, a 27.5%
+# swing against the 25% threshold. See "safe_command_assess and
+# scanner_construction rebaseline" in docs/performance-baseline.md.
 [[benchmarks]]
-name = "1000_safe_commands"
-baseline_ns = 2_800_000
+name = "safe_command_assess"
+baseline_ns = 1_500
 regression_pct = 25.0
-description = "1,000 safe commands should remain close to the hot-path latency budget on CI runners."
+budget_ns = 2_000_000
+description = "One assess() call on a typical safe command, against the 2 ms Assessment budget."
 
 [[benchmarks]]
 name = "100_dangerous_commands"
@@ -21,6 +30,7 @@ description = "100 dangerous commands exercise the full regex verification path 
 name = "heredoc_worst_case"
 baseline_ns = 1_000_000
 regression_pct = 30.0
+budget_ns = 2_000_000
 description = "Worst-case inline-script/heredoc scanning should stay bounded on shared CI hardware."
 
 # Iteration 10 language-aware slow-path rows. These are padded ceilings (~2x the
@@ -57,3 +67,33 @@ name = "parse_latency_per_grammar/parse/bash"
 baseline_ns = 25_000
 regression_pct = 25.0
 description = "Bash representative inline-source parsing is a bounded slow path."
+
+# Startup cost rows (ADR-034), benches/startup_bench.rs. scanner_construction
+# and runtime_context_construction measure disjoint work: a default config has
+# no custom_patterns, so runtime context construction reuses the already-warm
+# BUILTIN_SCANNER static instead of building a scanner of its own.
+#
+# Rebaselined 2026-09-16 (see docs/performance-baseline.md for the observed
+# runs): both rows were within 5% of a single capture, with no margin for the
+# run-to-run spread a construction-heavy row actually has.
+
+[[benchmarks]]
+name = "scanner_construction"
+baseline_ns = 16_500_000
+regression_pct = 25.0
+description = "PatternSet::load() plus Scanner::try_new(), the one-per-process scanner build."
+
+[[benchmarks]]
+name = "runtime_context_construction"
+baseline_ns = 22_000_000
+regression_pct = 25.0
+description = "RuntimeContext::new() from a default config, reusing the warm BUILTIN_SCANNER static; includes one id -un process spawn."
+
+# Placeholder: this must be replaced with the real number from the CI runner
+# after the PR's `performance` job runs. Do not merge with this value.
+[[benchmarks]]
+name = "startup_safe_command"
+baseline_ns = 200_000_000
+regression_pct = 50.0
+budget_ns = 30_000_000
+description = "One full aegis process invocation, from process start to decision, on an evaluated safe command."

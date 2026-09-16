@@ -46,11 +46,11 @@ fn benchcheck_accepts_results_within_threshold() {
 default_regression_pct = 15.0
 
 [[benchmarks]]
-name = "1000_safe_commands"
+name = "sample_bench"
 baseline_ns = 2_000_000
 "#,
     );
-    write_estimate(&criterion_root, "1000_safe_commands", 2_150_000.0);
+    write_estimate(&criterion_root, "sample_bench", 2_150_000.0);
 
     let output = Command::new(benchcheck_bin())
         .args([
@@ -81,12 +81,12 @@ fn benchcheck_rejects_regression_over_threshold_with_interpretable_output() {
 default_regression_pct = 10.0
 
 [[benchmarks]]
-name = "1000_safe_commands"
+name = "sample_bench"
 baseline_ns = 2_000_000
 description = "Safe-path benchmark"
 "#,
     );
-    write_estimate(&criterion_root, "1000_safe_commands", 2_500_000.0);
+    write_estimate(&criterion_root, "sample_bench", 2_500_000.0);
 
     let output = Command::new(benchcheck_bin())
         .args([
@@ -105,7 +105,7 @@ description = "Safe-path benchmark"
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("1000_safe_commands"),
+        stdout.contains("sample_bench"),
         "report must mention the benchmark name; stdout:\n{stdout}"
     );
     assert!(
@@ -154,5 +154,165 @@ baseline_ns = 8_000_000
     assert!(
         stderr.contains("missing criterion result"),
         "failure must explain the missing benchmark result; stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn benchcheck_without_budget_behaves_as_before() {
+    let temp = TempDir::new().expect("tempdir should exist");
+    let criterion_root = temp.path().join("criterion");
+    fs::create_dir_all(&criterion_root).expect("criterion root should exist");
+
+    let policy_path = write_policy(
+        temp.path(),
+        r#"
+default_regression_pct = 15.0
+
+[[benchmarks]]
+name = "sample_bench"
+baseline_ns = 2_000_000
+"#,
+    );
+    write_estimate(&criterion_root, "sample_bench", 2_150_000.0);
+
+    let output = Command::new(benchcheck_bin())
+        .args([
+            "--baseline",
+            &policy_path,
+            "--criterion-root",
+            &criterion_root.display().to_string(),
+        ])
+        .output()
+        .expect("benchcheck should run");
+
+    assert!(
+        output.status.success(),
+        "a row without a budget must behave exactly as before; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("budget"),
+        "a row without a budget must not mention one; stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn benchcheck_passes_when_observed_is_below_budget_and_inside_threshold() {
+    let temp = TempDir::new().expect("tempdir should exist");
+    let criterion_root = temp.path().join("criterion");
+    fs::create_dir_all(&criterion_root).expect("criterion root should exist");
+
+    let policy_path = write_policy(
+        temp.path(),
+        r#"
+default_regression_pct = 50.0
+
+[[benchmarks]]
+name = "sample_bench"
+baseline_ns = 20_000_000
+budget_ns = 30_000_000
+"#,
+    );
+    write_estimate(&criterion_root, "sample_bench", 22_000_000.0);
+
+    let output = Command::new(benchcheck_bin())
+        .args([
+            "--baseline",
+            &policy_path,
+            "--criterion-root",
+            &criterion_root.display().to_string(),
+        ])
+        .output()
+        .expect("benchcheck should run");
+
+    assert!(
+        output.status.success(),
+        "observed below budget and inside threshold must pass; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn benchcheck_fails_when_observed_is_inside_threshold_but_above_budget() {
+    let temp = TempDir::new().expect("tempdir should exist");
+    let criterion_root = temp.path().join("criterion");
+    fs::create_dir_all(&criterion_root).expect("criterion root should exist");
+
+    let policy_path = write_policy(
+        temp.path(),
+        r#"
+default_regression_pct = 50.0
+
+[[benchmarks]]
+name = "sample_bench"
+baseline_ns = 20_000_000
+budget_ns = 30_000_000
+"#,
+    );
+    write_estimate(&criterion_root, "sample_bench", 32_000_000.0);
+
+    let output = Command::new(benchcheck_bin())
+        .args([
+            "--baseline",
+            &policy_path,
+            "--criterion-root",
+            &criterion_root.display().to_string(),
+        ])
+        .output()
+        .expect("benchcheck should run");
+
+    assert!(
+        !output.status.success(),
+        "observed above budget must fail even inside the regression threshold"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("budget"),
+        "report must mention the budget; stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn benchcheck_fails_with_both_reasons_when_observed_exceeds_threshold_and_budget() {
+    let temp = TempDir::new().expect("tempdir should exist");
+    let criterion_root = temp.path().join("criterion");
+    fs::create_dir_all(&criterion_root).expect("criterion root should exist");
+
+    let policy_path = write_policy(
+        temp.path(),
+        r#"
+default_regression_pct = 50.0
+
+[[benchmarks]]
+name = "sample_bench"
+baseline_ns = 27_777_777.78
+budget_ns = 30_000_000
+"#,
+    );
+    write_estimate(&criterion_root, "sample_bench", 45_000_000.0);
+
+    let output = Command::new(benchcheck_bin())
+        .args([
+            "--baseline",
+            &policy_path,
+            "--criterion-root",
+            &criterion_root.display().to_string(),
+        ])
+        .output()
+        .expect("benchcheck should run");
+
+    assert!(
+        !output.status.success(),
+        "observed above both threshold and budget must fail"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("regressed by +62.0% (threshold +50.0%)"),
+        "failure must state the regression reason; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("exceeded its budget: observed 45.000 ms budget 30.000 ms"),
+        "failure must state the budget reason; stderr:\n{stderr}"
     );
 }

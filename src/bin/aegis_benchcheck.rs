@@ -31,6 +31,7 @@ struct BenchmarkPolicy {
     name: String,
     baseline_ns: f64,
     regression_pct: Option<f64>,
+    budget_ns: Option<f64>,
     description: Option<String>,
 }
 
@@ -51,6 +52,7 @@ struct BenchmarkReport {
     observed_ns: Option<f64>,
     delta_pct: Option<f64>,
     threshold_pct: f64,
+    budget_ns: Option<f64>,
     description: Option<String>,
     failure_reason: Option<String>,
 }
@@ -123,12 +125,29 @@ fn evaluate_policy(
         match load_point_estimate(&estimate_path) {
             Ok(observed_ns) => {
                 let delta_pct = percent_delta(benchmark.baseline_ns, observed_ns);
-                let failure_reason = (delta_pct > threshold_pct).then(|| {
+                let regression_reason = (delta_pct > threshold_pct).then(|| {
                     format!(
                         "benchmark {} regressed by +{delta_pct:.1}% (threshold +{threshold_pct:.1}%)",
                         benchmark.name
                     )
                 });
+                let budget_reason = benchmark
+                    .budget_ns
+                    .filter(|budget_ns| observed_ns > *budget_ns)
+                    .map(|budget_ns| {
+                        format!(
+                            "benchmark {} exceeded its budget: observed {} budget {}",
+                            benchmark.name,
+                            format_ns(observed_ns),
+                            format_ns(budget_ns)
+                        )
+                    });
+                let failure_reason = match (regression_reason, budget_reason) {
+                    (Some(regression), Some(budget)) => Some(format!("{regression}; {budget}")),
+                    (Some(regression), None) => Some(regression),
+                    (None, Some(budget)) => Some(budget),
+                    (None, None) => None,
+                };
 
                 reports.push(BenchmarkReport {
                     name: benchmark.name.clone(),
@@ -136,6 +155,7 @@ fn evaluate_policy(
                     observed_ns: Some(observed_ns),
                     delta_pct: Some(delta_pct),
                     threshold_pct,
+                    budget_ns: benchmark.budget_ns,
                     description: benchmark.description.clone(),
                     failure_reason,
                 });
@@ -147,6 +167,7 @@ fn evaluate_policy(
                     observed_ns: None,
                     delta_pct: None,
                     threshold_pct,
+                    budget_ns: benchmark.budget_ns,
                     description: benchmark.description.clone(),
                     failure_reason: Some(format!(
                         "missing criterion result for {} at {}",
@@ -206,6 +227,11 @@ impl BenchmarkReport {
                 self.threshold_pct,
             ),
         };
+
+        if let Some(budget_ns) = self.budget_ns {
+            line.push_str(" budget ");
+            line.push_str(&format_ns(budget_ns));
+        }
 
         if let Some(description) = &self.description {
             line.push_str(" — ");
