@@ -178,17 +178,22 @@ fn hook_response_value(input: &str) -> HookOutcome {
 
     // A command already in canonical wrapper form must pass through untouched —
     // re-wrapping would double-intercept. A command that merely begins with the
-    // `aegis` word but is NOT a canonical wrapper is rejected: it could be a
-    // half-formed or evasive wrapper, and wrapping it again would hide the
-    // malformation. Fail closed with a clear reason instead of guessing.
+    // `aegis` word but is NOT a canonical wrapper is rejected unless it only
+    // reads state: it could be a half-formed or evasive wrapper, or a command
+    // that changes Aegis itself. Fail closed with a clear reason instead of
+    // guessing.
     if is_canonical_aegis_wrapper(command) {
         return HookOutcome::Noop;
     }
-    if starts_with_aegis_word(command) {
-        return HookOutcome::Deny(hook_deny_output(
+    if starts_with_aegis_word(command) && !is_read_only_aegis_invocation(command) {
+        let reason = if is_wrapper_attempt(command) {
             "invalid aegis wrapper syntax; issue the command unwrapped and aegis will rewrite it"
-                .to_string(),
-        ));
+        } else {
+            "aegis commands that change Aegis itself are reserved for the human operator; \
+             only read-only aegis commands (help, --version, status, audit, snapshot list, \
+             config show, config validate) run through the hook"
+        };
+        return HookOutcome::Deny(hook_deny_output(reason.to_string()));
     }
 
     let mut updated_input = tool_input.clone();
@@ -233,6 +238,41 @@ fn starts_with_aegis_word(command: &str) -> bool {
     command
         .strip_prefix("aegis")
         .is_some_and(|rest| rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
+}
+
+/// True when `command` is one plain `aegis` invocation that only reads state:
+/// help and version output, `status`, `audit`, `snapshot list`, `config show`
+/// and `config validate`. These are wrapped like any other command (#333).
+/// Anything outside this set stays denied, because commands such as `aegis off`
+/// or `aegis rollback` change Aegis itself and no scanner pattern covers
+/// them. Shell metacharacters are rejected up front so a read-only prefix
+/// cannot carry a second command (`aegis status && aegis off`).
+fn is_read_only_aegis_invocation(command: &str) -> bool {
+    let has_no_shell_metacharacters = command
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || " \t-_=.,:/+@".contains(c));
+    if !has_no_shell_metacharacters {
+        return false;
+    }
+
+    let args: Vec<&str> = command.split_whitespace().skip(1).collect();
+    let is_help_flag = |arg: &str| arg == "--help" || arg == "-h";
+    match args.as_slice() {
+        ["--version" | "-V"] | ["status"] | ["snapshot", "list"] => true,
+        ["config", "show" | "validate", ..] | ["audit", ..] | ["help", ..] => true,
+        [words @ .., last] if is_help_flag(last) => words.iter().all(|word| !word.starts_with('-')),
+        _ => false,
+    }
+}
+
+/// True when any `aegis` argument carries the wrapper flag (`--command`, `-c`,
+/// or `-c` bundled with other short flags), so a denial is about malformed
+/// wrapper syntax rather than a self-management command.
+fn is_wrapper_attempt(command: &str) -> bool {
+    command.split_whitespace().skip(1).any(|arg| {
+        arg.starts_with("--command")
+            || (arg.starts_with('-') && !arg.starts_with("--") && arg.contains('c'))
+    })
 }
 
 /// True only when `command` is exactly `aegis --command <arg>` where `<arg>` is
@@ -371,11 +411,91 @@ mod tests {
     }
 
     #[test]
+    fn hook_names_wrapper_syntax_when_the_wrapper_flag_is_not_first() {
+        for command in [
+            "aegis -c ls",
+            "aegis -cls",
+            "aegis -v -c ls",
+            "aegis --output json --command ls",
+        ] {
+            match hook_outcome_for(command) {
+                HookOutcome::Deny(output) => assert!(
+                    output["reason"]
+                        .as_str()
+                        .unwrap()
+                        .contains("invalid aegis wrapper syntax"),
+                    "{command:?} must be denied as a malformed wrapper: {output}"
+                ),
+                other => panic!("expected {command:?} to be denied, got {other:?}"),
+            }
+        }
+    }
+
+    fn hook_outcome_for(command: &str) -> HookOutcome {
+        let input = serde_json::json!({ "tool_input": { "command": command } }).to_string();
+        hook_response_value(&input)
+    }
+
+    #[test]
+    fn hook_wraps_read_only_aegis_invocations() {
+        for command in [
+            "aegis --help",
+            "aegis -h",
+            "aegis --version",
+            "aegis -V",
+            "aegis help",
+            "aegis help snapshot",
+            "aegis off --help",
+            "aegis snapshot prune -h",
+            "aegis status",
+            "aegis audit",
+            "aegis audit --last 20 --format json",
+            "aegis snapshot list",
+            "aegis config show",
+            "aegis config validate --output json",
+        ] {
+            match hook_outcome_for(command) {
+                HookOutcome::Allow(output) => assert_eq!(
+                    output["hookSpecificOutput"]["updatedInput"]["command"],
+                    format!("aegis --command {}", shell_quote(command)),
+                    "{command:?} must be rewritten through the wrapper"
+                ),
+                other => panic!("expected {command:?} to be wrapped, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
     fn hook_denies_bare_aegis_subcommand_that_is_not_canonical() {
-        assert!(matches!(
-            hook_response_value(r#"{"tool_input":{"command":"aegis audit"}}"#),
-            HookOutcome::Deny(_)
-        ));
+        for command in [
+            "aegis",
+            "aegis off",
+            "aegis on",
+            "aegis rollback snap-1",
+            "aegis snapshot prune --yes",
+            "aegis config init",
+            "aegis install-hooks --all",
+            "aegis setup-shell --remove",
+            "aegis hook",
+            "aegis watch",
+            "aegis -- off --help",
+            "aegis status && aegis off",
+            "aegis status; aegis off",
+            "aegis audit | sh",
+            "aegis audit $(aegis off)",
+            "aegis audit\naegis off",
+        ] {
+            match hook_outcome_for(command) {
+                HookOutcome::Deny(output) => assert!(
+                    output["hookSpecificOutput"]["permissionDecisionReason"]
+                        .as_str()
+                        .unwrap()
+                        .contains("reserved for the human operator"),
+                    "{command:?} must be denied as a self-management command: {output}"
+                ),
+                other => panic!("expected {command:?} to be denied, got {other:?}"),
+            }
+        }
     }
 
     #[test]

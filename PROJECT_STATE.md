@@ -14,11 +14,26 @@ distribution smoke gates open)
 
 ## Active branch
 
-`release/v0.6.6`
+`fix/hook-read-only-aegis-333`
 
 ## Last updated
 
 2026-09-17
+
+---
+
+## Current session (2026-09-17): read-only aegis commands pass the hook (#333)
+
+- `src/install/hook.rs` wraps a plain read-only `aegis` invocation (help,
+  `--version`, `status`, `audit`, `snapshot list`, `config show`,
+  `config validate`) instead of denying it. Other `aegis …` commands stay
+  denied; self-management commands such as `aegis off` now get their own reason.
+  ADR-011 carries the amendment.
+- `tests/agent_hooks.rs` sits at the 800-line budget, so the new integration
+  test lives in `tests/agent_hook_aegis_commands.rs`.
+- Open: `cargo clippy --workspace --all-targets -D warnings` fails under rustc
+  1.98.1 on files this change does not touch (`tests/file_size_budget.rs`,
+  `aegis-snapshot` tests and `sqlite.rs`).
 
 ---
 

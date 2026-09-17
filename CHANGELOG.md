@@ -11,6 +11,8 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Fixed: The agent hook now runs read-only `aegis` commands (`--help`, `--version`, `help`, `status`, `audit`, `snapshot list`, `config show`, `config validate`) as `aegis --command` rewrites instead of denying them as invalid wrapper syntax. Commands that change Aegis itself, such as `aegis off`, stay denied with a reason that names them. (#333, ADR-011)
+
 ## [0.6.6] — 2026-09-17
 
 - Fixed: The git Snapshot plugin clears `GIT_DIR` and the other repository-local git variables before it runs `git`. A command run from a hook in a linked worktree no longer makes Aegis stash the files of an unrelated directory into another repository. (#317)

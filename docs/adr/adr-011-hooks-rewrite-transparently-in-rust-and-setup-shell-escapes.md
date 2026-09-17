@@ -76,3 +76,16 @@ layer after a package-manager install:
 - Trade-off: Claude's hook still depends on `aegis` being on PATH at hook-exec
   time. Aegis is not a universal background daemon; it intercepts through the
   `$SHELL` proxy, supported agent hooks, and explicit `aegis --command`.
+
+## Amendment — 2026-09-17: read-only `aegis` commands pass the hook
+
+Decided in [#333](https://github.com/IliasAlmerekov/aegis-shellguard/issues/333).
+Denying every non-canonical command that starts with `aegis` also denied
+`aegis --help` and `aegis status`, which an agent needs and which change
+nothing. A plain, read-only `aegis` invocation (help, `--version`, `status`,
+`audit`, `snapshot list`, `config show`, `config validate`, with no shell
+metacharacters) is now rewritten through `aegis --command` like any other
+command. Every other command that starts with `aegis` is still denied. A
+malformed wrapper keeps the wrapper-syntax reason; a command that changes Aegis
+itself, such as `aegis off`, gets a reason saying it is reserved for the human
+operator, because no scanner pattern covers those commands.
