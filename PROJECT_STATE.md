@@ -9,16 +9,28 @@
 
 ## Current version
 
-`0.6.5` — pre-1.0, targeting `1.0.0` (release preparation; tag pending;
+`0.6.6` — pre-1.0, targeting `1.0.0` (release preparation; tag pending;
 distribution smoke gates open)
 
 ## Active branch
 
-`release/v0.6.5`
+`release/v0.6.6`
 
 ## Last updated
 
-2026-09-15
+2026-09-17
+
+---
+
+## Current session (2026-09-17): v0.6.6 release preparation
+
+- Bumped every workspace crate, `Cargo.lock`, the npm package, README badge and
+  install tag, release-line docs, and the landing install transcript to
+  `0.6.6` / `v0.6.6`. The tag is pending until the release branch merges.
+- The `0.6.6` changelog section collects the fixes merged since `v0.6.5`,
+  including the git Snapshot plugin's isolation from an ambient `GIT_DIR`
+  (#317), the vendored bubblewrap on Linux (#230, #231), typed errors (#272),
+  typed ratchet directions (#270) and the startup cost work (#319).
 
 ---
 

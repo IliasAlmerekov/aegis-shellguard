@@ -11,6 +11,15 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+## [0.6.6] — 2026-09-17
+
+- Fixed: The git Snapshot plugin clears `GIT_DIR` and the other repository-local git variables before it runs `git`. A command run from a hook in a linked worktree no longer makes Aegis stash the files of an unrelated directory into another repository. (#317)
+- Added: Linux builds embed bubblewrap 0.11.2, built from vendored sources, and use it when no usable `bwrap` is on `PATH`. On WSL1 Aegis names the cause in its warning and refuses commands instead of running them unconfined. (#230, #231, ADR-029)
+- Fixed: On macOS, the Required-Sandbox diagnostic names an outer Seatbelt profile as the cause when Aegis runs nested inside one. The non-required warning no longer tells users to set the removed `sandbox.required`. (#263)
+- Fixed: When `git` cannot be spawned, the git Snapshot plugin logs an error and still attempts the Snapshot instead of silently skipping it. (#321)
+- Changed: Snapshot, Audit log, scanner and config errors keep their own types up to the CLI. Thirteen error messages change their prefix, and a corrupted Audit log no longer tells the user to fix `aegis.toml`. (#272)
+- Changed: Every config field has a typed ratchet direction. A project value above a field's hard ceiling now produces a weakening warning that quotes the requested value. (#270, ADR-013)
+- Changed: Each intercepted command builds less at startup. Config validation no longer builds a throwaway scanner, and the full scan checks only the patterns whose keywords matched. (#319)
 - Added: A `tracing` subscriber now writes library warnings (snapshot plugin failures, rollback conflicts, degraded paths) to stderr, controlled by `AEGIS_LOG`. Previously all 49 `tracing::` events were discarded. (#271, ADR-033)
 - Fixed: Project config cannot disable the Supabase rollback target-match check, and cannot repoint a PostgreSQL, MySQL, Supabase, or SQLite Snapshot target the global layer already enabled. (#269)
 - Fixed: Project config cannot enable Snapshot prune, lower `prune.max_count_per_provider` or `prune.max_age_days`, or add a prune retention limit the global layer leaves unset. (#268)
