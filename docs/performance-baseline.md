@@ -225,8 +225,9 @@ Alongside the lazy-compile attempt, `full_scan` was changed to run a second,
 overlapping Aho-Corasick pass over the command and only evaluate the regexes
 whose extracted keyword actually showed up, instead of evaluating every
 pattern in the applicable `universal`/`by_program` bucket unconditionally.
-This landed (commit `ddc65ba`) and initially looked safe: fewer regex
-evaluations per `full_scan`, no visible test failures.
+It was committed on the #319 branch, and it looked safe at first: fewer regex
+evaluations per `full_scan`, and no test failed. The commit and its revert
+were squashed before merging, so neither is in `main`.
 
 It shipped a false negative. `extract_keywords`'s `find_embedded_literal`
 walks `EXEC-006`'s `sh` alternative
@@ -236,14 +237,17 @@ regex syntax* of the optional group and accumulates `":"`, `"-"`, `"-"` as
 the pattern's "keyword" — text no command matching `EXEC-006` is required to
 contain. Reproducer: on the commit with the narrowing, both
 `Scanner::assess("sh -c id")` and `full_scan("sh -c id", Some("sh"))` report
-zero matches; on `main`, the same calls report `Warn` with `EXEC-006`. The
-extractor's flaw predates this change and is harmless everywhere else,
-because keywords only ever fed `quick_scan`'s gate before, where a wrong
-"required" literal costs an unnecessary regex pass, never a skipped one.
-Using the same keyword set to decide *which* regexes `full_scan` runs turned
-a cosmetic extractor bug into a silently skipped `Danger`/`Warn` pattern —
-exactly what this module's own doc comment (`mod.rs:38`) says a keyword
-check must never do.
+zero matches; on `main`, the same calls report `Warn` with `EXEC-006`.
+
+The extractor's flaw predates this change, and it is not harmless in
+`quick_scan` either. `quick_scan` returns `false` when no keyword matches, so
+a keyword the command is not required to contain can turn a matching command
+into `Safe`. That is the false negative `mod.rs:38` forbids. Today
+`quick_scan` still passes `bash`, `sh`, `dash`, `zsh`, `ksh`, and `fish` with
+`-c` (checked 2026-09-17), but only because another keyword in the automaton
+matches those commands, not because `":--"` does. The extractor fix is
+tracked separately. The narrowing made the same flaw skip the regex itself,
+which is why it was removed.
 
 The narrowing was removed rather than repaired: fixing `find_embedded_literal`
 and proving the keyword-to-pattern mapping sound is real work belonging to
