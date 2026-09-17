@@ -1,0 +1,53 @@
+name: Install a pinned cargo tool
+description: >-
+  Install one cargo subcommand at a pinned version, reusing a cache so that a
+  repeat run does not rebuild it. Each tool gets its own root under
+  ~/.cargo-tools/<tool> and its own cache entry, so bumping one tool does not
+  invalidate the others. The tool's bin directory is added to $GITHUB_PATH, so
+  later steps in the calling job can invoke it directly.
+
+inputs:
+  tool:
+    description: "Crate name to install, e.g. cargo-audit"
+    required: true
+  version:
+    description: "Exact version to install. Comes from .github/versions.env."
+    required: true
+  locked:
+    description: >-
+      Pass --locked to cargo install. Set to "false" only for a crate whose
+      published Cargo.lock does not build on the toolchain in use, and say why
+      at the call site.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Cache ${{ inputs.tool }}
+      uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0
+      with:
+        path: ~/.cargo-tools/${{ inputs.tool }}
+        key: ${{ runner.os }}-cargo-tool-${{ inputs.tool }}-${{ inputs.version }}
+
+    - name: Add ${{ inputs.tool }} to PATH
+      shell: bash
+      run: echo "$HOME/.cargo-tools/${{ inputs.tool }}/bin" >> "$GITHUB_PATH"
+
+    - name: Install ${{ inputs.tool }} if the cache missed
+      shell: bash
+      env:
+        TOOL: ${{ inputs.tool }}
+        VERSION: ${{ inputs.version }}
+        LOCKED: ${{ inputs.locked }}
+      run: |
+        set -euo pipefail
+        if command -v "$TOOL" >/dev/null 2>&1; then
+          echo "$TOOL is already on PATH: $("$TOOL" --version 2>/dev/null || true)"
+          exit 0
+        fi
+        args=(install "$TOOL" --root "$HOME/.cargo-tools/$TOOL" --version "$VERSION")
+        if [ "$LOCKED" = "true" ]; then
+          args+=(--locked)
+        fi
+        cargo "${args[@]}"

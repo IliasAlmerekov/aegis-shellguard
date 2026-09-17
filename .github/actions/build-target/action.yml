@@ -1,0 +1,46 @@
+name: Build the release binary for one target
+description: >-
+  Build `--release` for one entry of the release target matrix, using `cross`
+  for the musl targets and the host `cargo` for the macOS targets. `ci.yml`
+  (cross-matrix) and `release.yml` (build) both call this, so the binary CI
+  compiles and the binary a release ships come out of the same steps. The
+  caller must run actions/checkout and setup-rust with this target first.
+
+inputs:
+  target:
+    description: "Rust target triple to build"
+    required: true
+  use-cross:
+    description: >-
+      "true" to build through `cross` in its Docker image, "false" to build
+      natively with cargo. Comes from `use_cross` in build-targets.json.
+    required: true
+  cross-version:
+    description: "Pinned cross version. Comes from .github/versions.env."
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install cross
+      if: inputs.use-cross == 'true'
+      uses: ./.github/actions/install-cargo-tool
+      with:
+        tool: cross
+        version: ${{ inputs.cross-version }}
+
+    - name: Build with cross
+      if: inputs.use-cross == 'true'
+      shell: bash
+      env:
+        # The cross musl image installs a static musl libcap under /usr/local
+        # (see docker/cross-musl/Dockerfile); pkg-config must be told it is
+        # allowed to report a cross libcap.
+        PKG_CONFIG_ALLOW_CROSS: "1"
+        PKG_CONFIG_PATH: /usr/local/lib/pkgconfig
+      run: cross build --release --target ${{ inputs.target }}
+
+    - name: Build natively
+      if: inputs.use-cross != 'true'
+      shell: bash
+      run: cargo build --release --target ${{ inputs.target }}
