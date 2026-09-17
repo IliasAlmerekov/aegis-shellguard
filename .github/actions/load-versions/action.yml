@@ -60,6 +60,9 @@ runs:
         set -euo pipefail
 
         while IFS= read -r line || [ -n "$line" ]; do
+          # A CRLF checkout would otherwise carry the \r into every value and
+          # hand `cargo install --version "1.94.0\r"` to a job.
+          line="${line%$'\r'}"
           case "$line" in
             '' | '#'*) continue ;;
           esac
