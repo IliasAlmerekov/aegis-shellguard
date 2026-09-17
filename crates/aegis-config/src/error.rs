@@ -11,6 +11,21 @@ pub enum ConfigError {
     #[error("config error: {0}")]
     Config(String),
 
+    /// A config file's TOML failed to parse. Kept distinct from [`Self::Config`]
+    /// so a report code can be derived from the variant instead of sniffing
+    /// the message for a `"failed to parse "` prefix.
+    #[error("config error: failed to parse {path}: {source}")]
+    ParseFailed {
+        /// The config file that failed to parse.
+        path: String,
+        /// The underlying TOML parse error. Boxed so this variant does not
+        /// bloat `ConfigError`'s size for every other, far more common,
+        /// error path (`toml::de::Error` carries a full parsed-document
+        /// span).
+        #[source]
+        source: Box<toml::de::Error>,
+    },
+
     /// An I/O error while reading or writing a config file.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),

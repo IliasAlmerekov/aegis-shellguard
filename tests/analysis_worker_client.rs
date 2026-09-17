@@ -519,7 +519,9 @@ async fn analyze_surfaces_a_flush_failure_as_io_not_timeout() {
     .await;
     assert_eq!(results.len(), 1);
     match &results[0] {
-        TargetResult::Failed(WorkerError::Io(_)) => {}
+        TargetResult::Failed(WorkerError::Io { kind, .. }) => {
+            assert_eq!(*kind, io::ErrorKind::BrokenPipe);
+        }
         other => panic!(
             "expected Failed(Io) from the flush error, got {other:?} \
              (Timeout would mean the flush error was dropped again)"
