@@ -156,3 +156,58 @@ not. `prepared_with_audit_path` keeps its `GitPlugin`-only registry, since the
 two tests built from it assert the `no_snapshot_available` degradation
 specifically because no plugin applies — an empty registry would make that
 assertion trivially true instead of testing anything.
+
+## Addendum (2026-09-17): the "distinct, so-far-unidentified path" from the second addendum was ambient `GIT_DIR` leaking into `GitPlugin`, fixed by issue #317
+
+The second addendum left one question open: a `.githooks/pre-push` run had
+twice populated a developer's real stash with `aegis-snap-*` entries it had
+no business creating, and tracing `GitPlugin::is_applicable`'s fail-open
+branch ruled that branch out as the cause without identifying the actual one.
+Issue #317 found it.
+
+Every `git` spawn in `crates/aegis-snapshot/src/git.rs` (since split into
+`git/mod.rs` and `git/tests.rs`) set `current_dir(cwd)`
+but inherited the rest of the process environment. Git 2.43 exports an
+absolute `GIT_DIR` (pointing at `.../.git/worktrees/<name>`) to hooks running
+in a linked worktree — a plain checkout's `pre-push` hook gets none, which is
+why the report never reproduced from a normal clone. `current_dir` only
+changes where a relative path resolves from; it does not unset `GIT_DIR`, and
+git prefers an explicit `GIT_DIR` over the directory it was started in. So
+inside a linked worktree's `pre-push` hook, every `git` call `GitPlugin` made
+— including the `git status --porcelain` and `git stash push
+--include-untracked` behind `snapshot()` — silently operated on the
+worktree's linked repository instead of whatever `cwd` a test had asked for.
+A `cargo test` run that pointed `GitPlugin` at a `TempDir` outside any
+repository got `true` from `is_applicable`, because `git rev-parse --git-dir`
+found the developer's repository through `GIT_DIR`. `snapshot()` then ran
+`git stash push --include-untracked` with that repository's index against the
+`TempDir` as its work tree. The fixture's files moved into the developer's
+stash under an `aegis-snap-*` message, and the repository's tracked files were
+written into the `TempDir`. The watch tests saw a recorded snapshot where they
+expected none, so `Recovery status` came out `Ready` instead of `Degraded`.
+
+Fixed by isolating every `git` spawn from the ambient git-location
+environment: a private `git_command(cwd)` helper now backs all nine
+`Command::new("git")` call sites in `GitPlugin` and clears `GIT_DIR` and the
+other fourteen variables `git rev-parse --local-env-vars` reports (the exact
+list git itself clears when it enters another repository) before setting
+`current_dir`. `postgres`, `mysql`, `supabase`, `docker`, and `sqlite` were
+left untouched: they inherit the environment on purpose, for credentials
+(`PGPASSWORD`, `MYSQL_PWD`) and daemon selection (item 1 above), and none of
+them reads a git-location variable.
+
+A code review of the first fix caught that it only covered `GitPlugin`
+itself: the plugin's own test module (then inside `git.rs`) spawned `git` directly in `init_repo`,
+`commit_file`, and a handful of one-off setup and assertion calls, all still
+reading the ambient environment. Under a linked worktree's `pre-push` hook
+those test spawns wrote `git config`, `git commit --allow-empty`, and
+`git worktree add` into the developer's real repository, and a stash-list
+assertion read that repository's stash instead of the tempdir fixture's. All
+of them now go through `git_command` too, so every `git` spawn in the plugin's
+module, production and test, is isolated. Test code elsewhere in the workspace still
+spawns `git` with the inherited environment; fixing that is out of scope for
+#317. As a second line of defense, `.githooks/pre-push` now runs
+`unset $(git rev-parse --local-env-vars)` before any other step, so a
+`pre-push` run itself never has an ambient `GIT_DIR` to leak into those other
+tests. A shell that exports `GIT_DIR` by hand before invoking `cargo test`
+directly — bypassing the hook — is still a risk for that remaining test code.

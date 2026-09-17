@@ -1,6 +1,11 @@
 #!/bin/sh
 set -eu
 
+# Git exports GIT_DIR and related variables to hooks in a linked worktree.
+# Tests spawn git in temporary directories, and those variables would point
+# every such spawn at this repository instead (#317).
+unset $(git rev-parse --local-env-vars)
+
 echo "pre-push: running cargo fmt --check"
 cargo fmt --check
 
