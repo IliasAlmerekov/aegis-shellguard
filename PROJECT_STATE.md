@@ -22,7 +22,29 @@ distribution smoke gates open)
 
 ---
 
-## Current session (2026-09-17): partial Snapshot coverage degrades Required recovery (#312)
+## Current session (2026-09-17): the git Snapshot stops emptying the working tree (#356)
+
+- `GitPlugin::snapshot` (`crates/aegis-snapshot/src/git/mod.rs`) applies the
+  stash entry it just created (`git stash apply --index <hash>`), so a Snapshot
+  is invisible in the working tree. `git status --porcelain` is byte-identical
+  before and after. The entry stays in the stash list for rollback.
+- `GitPlugin::rollback` parks a dirty tree in an `aegis-pre-rollback-<ts>` stash
+  entry before it applies the snapshot entry, because the work being rolled back
+  is now still on disk and `git stash apply` refuses to overwrite it.
+- New `SnapshotError::SnapshotNotRestored` names the stash hash and the command
+  that recovers it, for the case where the post-stash apply fails.
+- ADR-037 records the decision; `CONTEXT.md` gains the "a Snapshot is invisible
+  in the captured state" clause.
+- Coverage: `snapshot_leaves_working_tree_unchanged`,
+  `rollback_restores_state_after_a_command_deleted_files` and
+  `rollback_parks_current_work_before_restoring` in
+  `crates/aegis-snapshot/src/git/tests.rs`; the ordering tests in
+  `tests/snapshot_ordering.rs` now prove ordering through the stash ref and
+  assert the untracked file survived.
+
+---
+
+## Previous session (2026-09-17): partial Snapshot coverage degrades Required recovery (#312)
 
 - `recovery_status` (`src/runtime/recovery.rs`) now resolves `Ready` only when
   every applicable Snapshot plugin produced a record. A pass where one plugin
@@ -2261,6 +2283,8 @@ distribution smoke gates open)
   before the trigger was traced via `~/.aegis/audit.jsonl`. Recover with
   `git stash apply stash@{0}`; avoid the trigger by using only `cargo`/`git`/
   `grep`/Read/Write/Edit for ad-hoc checks. Recorded in agent memory.
+  Fixed on 2026-09-17 by #356 (ADR-037): the plugin now re-applies the entry it
+  creates, so the trigger is safe to hit.
 
 ## Last session (2026-07-16)
 

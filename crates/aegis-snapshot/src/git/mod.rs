@@ -59,6 +59,105 @@ fn git_command(cwd: impl AsRef<Path>) -> Command {
     cmd
 }
 
+/// Message prefix of the stash entry `rollback` creates for the state it
+/// replaces. Tests and recovery instructions both look for it.
+const PRE_ROLLBACK_PREFIX: &str = "aegis-pre-rollback-";
+
+/// Seconds since the Unix epoch, used to label stash entries.
+fn unix_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Report whether `cwd`'s working tree holds anything a stash would capture:
+/// staged changes, unstaged changes, or untracked files.
+async fn working_tree_is_dirty(cwd: impl AsRef<Path>) -> Result<bool> {
+    let status_out = git_command(cwd)
+        .args(["status", "--porcelain"])
+        .output()
+        .await
+        .map_err(|e| SnapshotError::Snapshot(format!("failed to run git status: {e}")))?;
+
+    if !status_out.status.success() {
+        return Err(SnapshotError::Snapshot(
+            "git status --porcelain failed".to_string(),
+        ));
+    }
+
+    Ok(!status_out.stdout.iter().all(|b| b.is_ascii_whitespace()))
+}
+
+/// Find the positional `stash@{N}` reference of the entry whose commit is
+/// `hash`, or `None` when the entry is gone.
+async fn find_stash_ref(cwd: impl AsRef<Path>, hash: &str) -> Result<Option<String>> {
+    let list_out = git_command(cwd)
+        .args(["stash", "list", "--format=%H %gd"])
+        .output()
+        .await
+        .map_err(|e| SnapshotError::Snapshot(format!("git stash list failed: {e}")))?;
+
+    if !list_out.status.success() {
+        return Err(SnapshotError::Snapshot("git stash list failed".to_string()));
+    }
+
+    let list_stdout = String::from_utf8_lossy(&list_out.stdout);
+    Ok(list_stdout.lines().find_map(|line| {
+        let (h, r) = line.split_once(' ')?;
+        (h == hash).then(|| r.to_string())
+    }))
+}
+
+/// Move the current working-tree state into a stash entry of its own, so the
+/// tree is back at HEAD and a snapshot entry can be applied onto it. Returns
+/// the entry's commit hash, or `None` when the tree was already clean.
+async fn park_current_work(cwd: &str) -> Result<Option<String>> {
+    if !working_tree_is_dirty(cwd).await? {
+        tracing::debug!(
+            cwd,
+            "working tree is clean before rollback, nothing to park"
+        );
+        return Ok(None);
+    }
+
+    let message = format!("{PRE_ROLLBACK_PREFIX}{}", unix_timestamp());
+
+    let push_out = git_command(cwd)
+        .args(["stash", "push", "--include-untracked", "-m", &message])
+        .output()
+        .await
+        .map_err(|e| SnapshotError::Snapshot(format!("failed to run git stash push: {e}")))?;
+
+    if !push_out.status.success() {
+        let stderr = String::from_utf8_lossy(&push_out.stderr);
+        return Err(SnapshotError::Snapshot(format!(
+            "could not park the current working tree before rollback: {stderr}"
+        )));
+    }
+
+    let rev_out = git_command(cwd)
+        .args(["rev-parse", "stash@{0}"])
+        .output()
+        .await
+        .map_err(|e| SnapshotError::Snapshot(format!("git rev-parse failed: {e}")))?;
+
+    if !rev_out.status.success() {
+        return Err(SnapshotError::Snapshot(
+            "could not resolve the stash entry that parked the working tree".to_string(),
+        ));
+    }
+
+    let hash = String::from_utf8_lossy(&rev_out.stdout).trim().to_string();
+    tracing::info!(
+        cwd,
+        %message,
+        stash_hash = %hash,
+        "parked the current working tree in a stash entry before rollback"
+    );
+    Ok(Some(hash))
+}
+
 /// Built-in Git snapshot provider (creates stashes before dangerous commands).
 pub struct GitPlugin;
 
@@ -103,25 +202,9 @@ impl SnapshotPlugin for GitPlugin {
     }
 
     async fn snapshot(&self, cwd: &Path, _cmd: &str) -> Result<String> {
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let message = format!("aegis-snap-{timestamp}");
+        let message = format!("aegis-snap-{}", unix_timestamp());
 
-        let status_out = git_command(cwd)
-            .args(["status", "--porcelain"])
-            .output()
-            .await
-            .map_err(|e| SnapshotError::Snapshot(format!("failed to run git status: {e}")))?;
-
-        if !status_out.status.success() {
-            return Err(SnapshotError::Snapshot(
-                "git status --porcelain failed".to_string(),
-            ));
-        }
-
-        if status_out.stdout.iter().all(|b| b.is_ascii_whitespace()) {
+        if !working_tree_is_dirty(cwd).await? {
             tracing::info!("git working tree is clean, nothing to stash");
             return Ok(CLEAN_SENTINEL.to_string());
         }
@@ -153,6 +236,35 @@ impl SnapshotPlugin for GitPlugin {
 
         let hash = String::from_utf8_lossy(&rev_out.stdout).trim().to_string();
 
+        // `git stash push` writes the entry *and* resets the working tree to
+        // HEAD. Put the captured work straight back: a snapshot records state,
+        // it must never be observable in the tree (issue #356). The tree is at
+        // HEAD here, so this apply has nothing to merge against and the entry
+        // stays in the stash list for a later rollback.
+        let apply_out = git_command(cwd)
+            .args(["stash", "apply", "--index", &hash])
+            .output()
+            .await
+            .map_err(|e| SnapshotError::Snapshot(format!("failed to run git stash apply: {e}")))?;
+
+        if !apply_out.status.success() {
+            let stdout = String::from_utf8_lossy(&apply_out.stdout);
+            let stderr = String::from_utf8_lossy(&apply_out.stderr);
+            let details = format!("{stdout}{stderr}").trim().to_string();
+
+            tracing::error!(
+                stash_hash = %hash,
+                details = %details,
+                "working tree could not be restored after the snapshot stash"
+            );
+
+            return Err(SnapshotError::SnapshotNotRestored {
+                stash_hash: hash,
+                cwd: cwd.display().to_string(),
+                details,
+            });
+        }
+
         let snapshot_id = format!("{}{SEP}{hash}", cwd.display());
         tracing::info!(%snapshot_id, "git snapshot created");
         Ok(snapshot_id)
@@ -168,26 +280,20 @@ impl SnapshotPlugin for GitPlugin {
             SnapshotError::Snapshot(format!("malformed snapshot_id: {snapshot_id:?}"))
         })?;
 
-        let list_out = git_command(cwd_str)
-            .args(["stash", "list", "--format=%H %gd"])
-            .output()
-            .await
-            .map_err(|e| SnapshotError::Snapshot(format!("git stash list failed: {e}")))?;
+        // Resolve the entry before anything is written: a rollback that cannot
+        // find its snapshot must fail without touching the working tree.
+        let stash_ref = find_stash_ref(cwd_str, hash).await?.ok_or_else(|| {
+            SnapshotError::Snapshot(format!("stash entry not found for hash {hash}"))
+        })?;
 
-        if !list_out.status.success() {
-            return Err(SnapshotError::Snapshot("git stash list failed".to_string()));
-        }
+        // The snapshot left the working tree as it found it, so whatever is on
+        // disk now would make `git stash apply` refuse to overwrite it. Park
+        // that state in its own stash entry first: a rollback replaces the
+        // current state with the captured one, it never destroys it.
+        park_current_work(cwd_str).await?;
 
-        let list_stdout = String::from_utf8_lossy(&list_out.stdout);
-        let stash_ref = list_stdout
-            .lines()
-            .find_map(|line| {
-                let (h, r) = line.split_once(' ')?;
-                (h == hash).then(|| r.to_string())
-            })
-            .ok_or_else(|| {
-                SnapshotError::Snapshot(format!("stash entry not found for hash {hash}"))
-            })?;
+        // Parking shifts every `stash@{N}`, so resolve the positional ref again.
+        let stash_ref = find_stash_ref(cwd_str, hash).await?.unwrap_or(stash_ref);
 
         let apply_out = git_command(cwd_str)
             .args(["stash", "apply", "--index", hash])

@@ -526,10 +526,14 @@ reason = "rollback test allowlist"
         intercept_output.status.code(),
         String::from_utf8_lossy(&intercept_output.stderr),
     );
+    // Taking the snapshot must not be observable in the working tree (#356).
     assert_eq!(
         fs::read_to_string(workspace.path().join("tracked.txt")).unwrap(),
-        "original\n"
+        "needs rollback\n"
     );
+
+    // Stand in for damage done by the command that ran after the snapshot.
+    fs::write(workspace.path().join("tracked.txt"), "clobbered\n").unwrap();
 
     let entries = read_audit_entries(home.path());
     let snapshot_id = entries[0]["snapshots"][0]["snapshot_id"]

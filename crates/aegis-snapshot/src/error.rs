@@ -24,6 +24,20 @@ pub enum SnapshotError {
         details: String,
     },
 
+    /// The git snapshot stash was written, but the working tree it emptied
+    /// could not be restored.
+    ///
+    /// The captured work is intact in the stash entry; the message carries the
+    /// command that puts it back.
+    SnapshotNotRestored {
+        /// Commit hash of the stash entry holding the captured work.
+        stash_hash: String,
+        /// Working directory where the snapshot was taken.
+        cwd: String,
+        /// Underlying error details.
+        details: String,
+    },
+
     /// The dump file that was recorded at snapshot time no longer exists.
     RollbackDumpNotFound {
         /// Expected path of the missing dump file.
@@ -90,6 +104,17 @@ impl std::fmt::Display for SnapshotError {
                    1. Resolve conflicts:  cd '{cwd}' && git diff\n  \
                    2. Stage resolutions:  git add <files>\n  \
                    3. Drop the stash:     git stash drop {stash_ref}\n\
+                 Details: {details}"
+            ),
+            Self::SnapshotNotRestored {
+                stash_hash,
+                cwd,
+                details,
+            } => write!(
+                f,
+                "snapshot taken in '{cwd}', but the working tree could not be restored afterwards.\n\
+                 Your uncommitted work is safe in stash entry {stash_hash}. To put it back:\n  \
+                   cd '{cwd}' && git stash apply --index {stash_hash}\n\
                  Details: {details}"
             ),
             Self::RollbackDumpNotFound { path } => write!(

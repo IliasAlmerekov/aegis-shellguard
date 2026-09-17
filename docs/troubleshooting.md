@@ -309,6 +309,15 @@ For these cases:
 2. Do not rerun destructive commands blindly after rollback denial.
 3. In conflict cases, inspect repository state (`git status`, open files, git logs) before manual recovery.
 
+### A git rollback left an `aegis-pre-rollback-*` stash entry
+
+A rollback restores the state the git Snapshot captured. When the working tree
+holds uncommitted work at that moment, Aegis parks it in a stash entry named
+`aegis-pre-rollback-<timestamp>` before restoring, rather than overwriting it
+(ADR-037). That entry is the only copy of what the rollback replaced, and Aegis
+never drops it. List it with `git stash list` and recover it with
+`git stash apply <ref>`, or drop it once you are sure you do not want it back.
+
 ### A snapshot plugin failed silently, or the Diagnostic stream is too quiet or too noisy
 
 **Why:** Library warnings (a plugin failing, a rollback conflict, a degraded

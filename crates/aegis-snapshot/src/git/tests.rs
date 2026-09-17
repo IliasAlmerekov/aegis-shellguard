@@ -2,6 +2,9 @@ use super::*;
 use std::fs;
 use tempfile::TempDir;
 
+/// Stand-in for the guarded command. `snapshot()` never reads it.
+const DANGEROUS_CMD: &str = "rm -rf .";
+
 /// Initialise a bare git repo with an empty initial commit so stash works.
 async fn init_repo(dir: &std::path::Path) {
     git_command(dir).args(["init"]).output().await.unwrap();
@@ -9,6 +12,10 @@ async fn init_repo(dir: &std::path::Path) {
     for (key, val) in [
         ("user.email", "test@aegis.dev"),
         ("user.name", "Aegis Test"),
+        // A host with core.autocrlf=true would rewrite line endings whenever
+        // git touches a file, so byte-exact content assertions would depend on
+        // the developer's global git config.
+        ("core.autocrlf", "false"),
     ] {
         git_command(dir)
             .args(["config", key, val])
@@ -173,13 +180,16 @@ async fn snapshot_and_rollback_restores_changes() {
     let snapshot_id = GitPlugin.snapshot(dir.path(), "rm -rf .").await.unwrap();
     assert_ne!(snapshot_id, CLEAN_SENTINEL, "expected a real stash");
 
-    // File should be back to the committed version.
+    // The snapshot is not observable in the working tree.
     assert_eq!(
         fs::read_to_string(dir.path().join("hello.txt"))
             .unwrap()
             .trim(),
-        "original"
+        "modified"
     );
+
+    // The guarded command overwrites the file.
+    fs::write(dir.path().join("hello.txt"), "clobbered\n").unwrap();
 
     GitPlugin.rollback(&snapshot_id).await.unwrap();
     assert_eq!(
@@ -210,8 +220,11 @@ async fn snapshot_includes_untracked_files() {
     let snapshot_id = GitPlugin.snapshot(dir.path(), "rm -rf .").await.unwrap();
     assert_ne!(snapshot_id, CLEAN_SENTINEL);
 
-    // File should have been swept into the stash.
-    assert!(!new_file.exists(), "untracked file should be stashed");
+    // The file is captured in the stash and still on disk.
+    assert_eq!(fs::read_to_string(&new_file).unwrap().trim(), "brand new");
+
+    // The guarded command deletes it.
+    fs::remove_file(&new_file).unwrap();
 
     GitPlugin.rollback(&snapshot_id).await.unwrap();
     assert_eq!(fs::read_to_string(&new_file).unwrap().trim(), "brand new");
@@ -240,19 +253,23 @@ async fn snapshot_and_rollback_preserves_index() {
     let snapshot_id = GitPlugin.snapshot(dir.path(), "rm -rf .").await.unwrap();
     assert_ne!(snapshot_id, CLEAN_SENTINEL);
 
-    // Both files are back to committed state after the stash.
+    // Both files keep their uncommitted content after the stash.
     assert_eq!(
         fs::read_to_string(dir.path().join("staged.txt"))
             .unwrap()
             .trim(),
-        "base"
+        "staged-change"
     );
     assert_eq!(
         fs::read_to_string(dir.path().join("unstaged.txt"))
             .unwrap()
             .trim(),
-        "base"
+        "unstaged-change"
     );
+
+    // The guarded command deletes both files.
+    fs::remove_file(dir.path().join("staged.txt")).unwrap();
+    fs::remove_file(dir.path().join("unstaged.txt")).unwrap();
 
     GitPlugin.rollback(&snapshot_id).await.unwrap();
 
@@ -304,8 +321,11 @@ async fn snapshot_and_rollback_from_subdirectory() {
         fs::read_to_string(dir.path().join("file.txt"))
             .unwrap()
             .trim(),
-        "original"
+        "modified"
     );
+
+    // The guarded command deletes the file.
+    fs::remove_file(dir.path().join("file.txt")).unwrap();
 
     GitPlugin.rollback(&snapshot_id).await.unwrap();
     assert_eq!(
@@ -377,8 +397,11 @@ async fn snapshot_and_rollback_in_worktree() {
         fs::read_to_string(wt_dir.path().join("file.txt"))
             .unwrap()
             .trim(),
-        "original"
+        "modified"
     );
+
+    // The guarded command deletes the file.
+    fs::remove_file(wt_dir.path().join("file.txt")).unwrap();
 
     GitPlugin.rollback(&snapshot_id).await.unwrap();
     assert_eq!(
@@ -402,8 +425,11 @@ async fn rollback_returns_conflict_error_with_recovery_hint() {
     let snapshot_id = GitPlugin.snapshot(dir.path(), "rm -rf .").await.unwrap();
     assert_ne!(snapshot_id, CLEAN_SENTINEL);
 
-    // Introduce a conflicting change so stash pop cannot auto-merge.
+    // Commit a different version of the same file. The stash entry now carries
+    // a change against a parent that no longer matches HEAD, so applying it
+    // cannot auto-merge.
     fs::write(dir.path().join("file.txt"), "conflicting-content\n").unwrap();
+    commit_file(dir.path(), "file.txt", "conflicting-content\n").await;
 
     let err = GitPlugin
         .rollback(&snapshot_id)
@@ -632,4 +658,133 @@ async fn rollback_errors_when_stash_entry_not_found() {
         SnapshotError::Snapshot(msg) => assert!(msg.contains("stash entry not found")),
         other => panic!("expected snapshot error, got {other:?}"),
     }
+}
+
+// ── the snapshot is not observable in the working tree (issue #356) ───────
+
+/// Read `git status --porcelain` for `dir`.
+async fn porcelain_status(dir: &std::path::Path) -> String {
+    let out = git_command(dir)
+        .args(["status", "--porcelain"])
+        .output()
+        .await
+        .unwrap();
+    String::from_utf8(out.stdout).unwrap()
+}
+
+/// Report whether `hash` is still listed as a stash entry in `dir`.
+async fn stash_list_contains(dir: &std::path::Path, hash: &str) -> bool {
+    let out = git_command(dir)
+        .args(["stash", "list", "--format=%H"])
+        .output()
+        .await
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .any(|line| line == hash)
+}
+
+#[tokio::test]
+async fn snapshot_leaves_working_tree_unchanged() {
+    let dir = TempDir::new().unwrap();
+    init_repo(dir.path()).await;
+    commit_file(dir.path(), "tracked.txt", "base\n").await;
+    commit_file(dir.path(), "staged.txt", "base\n").await;
+
+    fs::write(dir.path().join("tracked.txt"), "modified\n").unwrap();
+    fs::write(dir.path().join("staged.txt"), "staged-change\n").unwrap();
+    git_command(dir.path())
+        .args(["add", "staged.txt"])
+        .output()
+        .await
+        .unwrap();
+    fs::write(dir.path().join("untracked.txt"), "scratch\n").unwrap();
+
+    let before = porcelain_status(dir.path()).await;
+
+    let snapshot_id = GitPlugin.snapshot(dir.path(), DANGEROUS_CMD).await.unwrap();
+    assert_ne!(snapshot_id, CLEAN_SENTINEL, "expected a real stash");
+
+    assert_eq!(
+        porcelain_status(dir.path()).await,
+        before,
+        "git status must be byte-identical before and after a snapshot"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("tracked.txt")).unwrap(),
+        "modified\n"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("staged.txt")).unwrap(),
+        "staged-change\n"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("untracked.txt")).unwrap(),
+        "scratch\n"
+    );
+
+    let (_, hash) = snapshot_id.split_once(SEP).unwrap();
+    assert!(
+        stash_list_contains(dir.path(), hash).await,
+        "the stash entry must stay available for rollback"
+    );
+}
+
+#[tokio::test]
+async fn rollback_restores_state_after_a_command_deleted_files() {
+    let dir = TempDir::new().unwrap();
+    init_repo(dir.path()).await;
+    commit_file(dir.path(), "tracked.txt", "base\n").await;
+
+    fs::write(dir.path().join("tracked.txt"), "modified\n").unwrap();
+    fs::write(dir.path().join("untracked.txt"), "scratch\n").unwrap();
+
+    let snapshot_id = GitPlugin.snapshot(dir.path(), DANGEROUS_CMD).await.unwrap();
+
+    // The dangerous command runs and deletes both files.
+    fs::remove_file(dir.path().join("tracked.txt")).unwrap();
+    fs::remove_file(dir.path().join("untracked.txt")).unwrap();
+
+    GitPlugin.rollback(&snapshot_id).await.unwrap();
+
+    assert_eq!(
+        fs::read_to_string(dir.path().join("tracked.txt")).unwrap(),
+        "modified\n"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("untracked.txt")).unwrap(),
+        "scratch\n"
+    );
+}
+
+#[tokio::test]
+async fn rollback_parks_current_work_before_restoring() {
+    let dir = TempDir::new().unwrap();
+    init_repo(dir.path()).await;
+    commit_file(dir.path(), "file.txt", "original\n").await;
+
+    fs::write(dir.path().join("file.txt"), "snapshotted\n").unwrap();
+    let snapshot_id = GitPlugin.snapshot(dir.path(), DANGEROUS_CMD).await.unwrap();
+
+    // Work done after the snapshot, on top of the snapshotted content.
+    fs::write(dir.path().join("file.txt"), "later-edit\n").unwrap();
+
+    GitPlugin.rollback(&snapshot_id).await.unwrap();
+
+    assert_eq!(
+        fs::read_to_string(dir.path().join("file.txt")).unwrap(),
+        "snapshotted\n",
+        "rollback must restore the snapshotted content"
+    );
+
+    let list = git_command(dir.path())
+        .args(["stash", "list", "--format=%gs"])
+        .output()
+        .await
+        .unwrap();
+    let list = String::from_utf8_lossy(&list.stdout);
+    assert!(
+        list.contains(PRE_ROLLBACK_PREFIX),
+        "the work rollback replaced must be parked in a stash entry: {list}"
+    );
 }

@@ -489,7 +489,8 @@ _Avoid_: config error, invalid config
 A best-effort pre-execution capture (e.g. `git stash`) produced by an applicable
 `Snapshot plugin`. It preserves only the state that plugin captures at that
 moment; it is not a complete backup and does not promise to reverse every later
-command effect.
+command effect. Taking one is invisible in the captured state: the git plugin
+leaves the working tree exactly as it found it (ADR-037).
 _Avoid_: backup, checkpoint
 
 **Snapshot plugin**:
