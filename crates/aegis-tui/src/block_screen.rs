@@ -95,6 +95,9 @@ pub(super) fn render_noninteractive_denial<W: Write>(
             "  Reason: {}\n",
             confirmation_reason_text(explanation)
         )),
+        Print(
+            "  Hint: rerun interactively to approve this occurrence once, without persisting a rule.\n"
+        ),
         Print("  Hint: add the command to the allowlist for CI use.\n"),
         Print("  Hint: rerun with --output json for machine-readable policy details.\n"),
     );
