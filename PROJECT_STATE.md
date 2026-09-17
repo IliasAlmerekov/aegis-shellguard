@@ -41,6 +41,16 @@ distribution smoke gates open)
   `crates/aegis-snapshot/src/git/tests.rs`; the ordering tests in
   `tests/snapshot_ordering.rs` now prove ordering through the stash ref and
   assert the untracked file survived.
+- Follow-up review raised the stash list growing without bound on the success
+  path (issue #356's own text). Investigated three options: default
+  `[prune] enabled = true` (rejected — a cross-provider default-security-posture
+  change, not a git-specific bug fix, and the ratchet already treats
+  `enabled = false` as the deliberately stricter default); a git-plugin-local
+  cap on `aegis-snap-*` entries (rejected — ADR-037 §3 already assigns this job
+  to `[prune]`, a competing bound would contradict the ADR this same branch
+  added); documenting the existing `[prune]` opt-in (done —
+  `docs/troubleshooting.md`, "`git stash list` keeps growing"). Flipping the
+  default is a product decision, not left undone by oversight.
 
 ---
 
