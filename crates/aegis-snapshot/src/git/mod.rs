@@ -46,18 +46,12 @@ const GIT_ENV_VARS_TO_CLEAR: &[&str] = &[
     "GIT_COMMON_DIR",
 ];
 
-/// Name of the `git` binary this module spawns. Routed through a constant,
-/// rather than spelled out at each call site, so that every spawn in this
-/// file — production and test alike — goes through [`git_command`] instead
-/// of constructing its own unisolated command.
-const GIT_BIN: &str = "git";
-
 /// Build a `git` command scoped to `cwd`, isolated from ambient git-location
-/// environment variables. Every git spawn in this file, production and test,
-/// goes through this instead of spawning `git` directly — see
+/// environment variables. Every git spawn in this module and its tests goes
+/// through this instead of spawning `git` directly. See
 /// `GIT_ENV_VARS_TO_CLEAR`.
 fn git_command(cwd: impl AsRef<Path>) -> Command {
-    let mut cmd = Command::new(GIT_BIN);
+    let mut cmd = Command::new("git");
     cmd.current_dir(cwd);
     for var in GIT_ENV_VARS_TO_CLEAR {
         cmd.env_remove(var);
