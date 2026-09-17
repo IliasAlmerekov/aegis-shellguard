@@ -46,12 +46,18 @@ const GIT_ENV_VARS_TO_CLEAR: &[&str] = &[
     "GIT_COMMON_DIR",
 ];
 
+/// Name of the `git` binary this module spawns. Routed through a constant,
+/// rather than spelled out at each call site, so that every spawn in this
+/// file — production and test alike — goes through [`git_command`] instead
+/// of constructing its own unisolated command.
+const GIT_BIN: &str = "git";
+
 /// Build a `git` command scoped to `cwd`, isolated from ambient git-location
-/// environment variables. All nine `git` spawns in `GitPlugin` must go
-/// through this instead of `Command::new("git")` directly — see
+/// environment variables. Every git spawn in this file, production and test,
+/// goes through this instead of spawning `git` directly — see
 /// `GIT_ENV_VARS_TO_CLEAR`.
 fn git_command(cwd: impl AsRef<Path>) -> Command {
-    let mut cmd = Command::new("git");
+    let mut cmd = Command::new(GIT_BIN);
     cmd.current_dir(cwd);
     for var in GIT_ENV_VARS_TO_CLEAR {
         cmd.env_remove(var);
@@ -311,28 +317,21 @@ mod tests {
 
     /// Initialise a bare git repo with an empty initial commit so stash works.
     async fn init_repo(dir: &std::path::Path) {
-        Command::new("git")
-            .args(["init"])
-            .current_dir(dir)
-            .output()
-            .await
-            .unwrap();
+        git_command(dir).args(["init"]).output().await.unwrap();
         // Set local identity so stash commits don't depend on global git config.
         for (key, val) in [
             ("user.email", "test@aegis.dev"),
             ("user.name", "Aegis Test"),
         ] {
-            Command::new("git")
+            git_command(dir)
                 .args(["config", key, val])
-                .current_dir(dir)
                 .output()
                 .await
                 .unwrap();
         }
         // Stash requires at least one commit; create an empty one.
-        Command::new("git")
+        git_command(dir)
             .args(["commit", "--allow-empty", "-m", "init"])
-            .current_dir(dir)
             .output()
             .await
             .unwrap();
@@ -341,13 +340,8 @@ mod tests {
     /// Write `content` to `name`, stage it, and commit it.
     async fn commit_file(dir: &std::path::Path, name: &str, content: &str) {
         fs::write(dir.join(name), content).unwrap();
-        Command::new("git")
-            .args(["add", name])
-            .current_dir(dir)
-            .output()
-            .await
-            .unwrap();
-        Command::new("git")
+        git_command(dir).args(["add", name]).output().await.unwrap();
+        git_command(dir)
             .args([
                 "-c",
                 "user.email=test@aegis.dev",
@@ -357,7 +351,6 @@ mod tests {
                 "-m",
                 &format!("add {name}"),
             ])
-            .current_dir(dir)
             .output()
             .await
             .unwrap();
@@ -549,9 +542,8 @@ mod tests {
 
         // Stage a change to staged.txt.
         fs::write(dir.path().join("staged.txt"), "staged-change\n").unwrap();
-        Command::new("git")
+        git_command(dir.path())
             .args(["add", "staged.txt"])
-            .current_dir(dir.path())
             .output()
             .await
             .unwrap();
@@ -593,9 +585,8 @@ mod tests {
         );
 
         // staged.txt should be in the index after rollback (--index flag).
-        let status = Command::new("git")
+        let status = git_command(dir.path())
             .args(["diff", "--cached", "--name-only"])
-            .current_dir(dir.path())
             .output()
             .await
             .unwrap();
@@ -647,7 +638,7 @@ mod tests {
         init_repo(main_dir.path()).await;
         // A worktree needs a branch name; HEAD is fine for detection.
         let wt_dir = TempDir::new().unwrap();
-        let out = Command::new("git")
+        let out = git_command(main_dir.path())
             .args([
                 "worktree",
                 "add",
@@ -655,7 +646,6 @@ mod tests {
                 "HEAD",
                 "--detach",
             ])
-            .current_dir(main_dir.path())
             .output()
             .await
             .unwrap();
@@ -676,7 +666,7 @@ mod tests {
         commit_file(main_dir.path(), "file.txt", "original\n").await;
 
         let wt_dir = TempDir::new().unwrap();
-        let out = Command::new("git")
+        let out = git_command(main_dir.path())
             .args([
                 "worktree",
                 "add",
@@ -684,7 +674,6 @@ mod tests {
                 "HEAD",
                 "--detach",
             ])
-            .current_dir(main_dir.path())
             .output()
             .await
             .unwrap();
@@ -795,47 +784,90 @@ mod tests {
         }
     }
 
-    /// Re-executes this test binary as a child process with a marker env var
-    /// so the child branch runs under a foreign `GIT_DIR` while the parent
-    /// branch observes the outcome through the child's exit code. This is the
-    /// only way to test env isolation honestly: setting `GIT_DIR` via
-    /// `std::env::set_var` in the test process itself would leak into every
-    /// other test running in the same process (tests share one address
-    /// space and `cargo test` runs them concurrently by default).
+    /// Exit code a child test process uses to report "checked, isolation
+    /// held": the child ran its check and the ambient `GIT_DIR` did not leak
+    /// in. Not `0`, so a renamed target (which makes `--exact` match nothing
+    /// and libtest exit `0` having run no test) cannot be mistaken for this.
+    const CHILD_ISOLATION_HELD: i32 = 42;
+
+    /// Exit code a child test process uses to report "checked, isolation
+    /// failed": the child ran its check and the ambient `GIT_DIR` leaked in.
+    const CHILD_ISOLATION_FAILED: i32 = 43;
+
+    /// Re-executes this test binary as a child process running only the
+    /// single test named `fn_name`, with a marker env var and a foreign
+    /// `GIT_DIR` set only on the child `Command` — never via
+    /// `std::env::set_var` in this process, which would leak into every
+    /// other test sharing this address space (tests run concurrently by
+    /// default). `fn_name` must be a `#[tokio::test]` in this module whose
+    /// body checks `AEGIS_GIT_ENV_CHILD` and exits with
+    /// [`CHILD_ISOLATION_HELD`] or [`CHILD_ISOLATION_FAILED`].
+    ///
+    /// The `--exact` filter is built from `module_path!()` (this module's
+    /// own path, so a module rename or move breaks the build or the filter
+    /// automatically) plus `fn_name`. A function rename isn't caught at
+    /// compile time — stable Rust has no way to ask "what is my own name" —
+    /// but is still caught here: a stale `fn_name` makes `--exact` match no
+    /// test, libtest exits `0` having run nothing, and that `0` is treated
+    /// as failure below rather than silently accepted as success.
+    async fn assert_child_reports_isolation_held(fn_name: &str, env: &[(&str, &std::ffi::OsStr)]) {
+        let module_path = module_path!()
+            .split_once("::")
+            .map_or(module_path!(), |(_crate_name, rest)| rest);
+        let test_name = format!("{module_path}::{fn_name}");
+
+        let exe = std::env::current_exe().unwrap();
+        let mut child = std::process::Command::new(exe);
+        child.args(["--exact", &test_name, "--nocapture"]);
+        child.env("AEGIS_GIT_ENV_CHILD", "1");
+        for (key, value) in env {
+            child.env(key, value);
+        }
+        let status = child.status().expect("failed to re-exec test binary");
+
+        match status.code() {
+            Some(code) if code == CHILD_ISOLATION_HELD => {}
+            Some(0) => panic!(
+                "child ran no test for --exact {test_name:?}; libtest exits 0 when a \
+                 filter matches nothing, so this would silently pass if not checked — \
+                 the test this filter targets was likely renamed or moved"
+            ),
+            Some(code) if code == CHILD_ISOLATION_FAILED => {
+                panic!("child at {test_name} reported isolation failed: ambient GIT_DIR leaked in")
+            }
+            other => panic!(
+                "child process for {test_name} exited abnormally (code {other:?}); \
+                 treating as a crash, not a test result"
+            ),
+        }
+    }
+
     #[tokio::test]
     async fn is_applicable_ignores_ambient_git_dir_pointing_elsewhere() {
         if std::env::var_os("AEGIS_GIT_ENV_CHILD").is_some() {
             let non_repo_cwd =
                 std::env::var("AEGIS_TEST_CWD").expect("parent must pass AEGIS_TEST_CWD");
             let applicable = GitPlugin.is_applicable(Path::new(&non_repo_cwd)).await;
-            std::process::exit(if applicable { 1 } else { 0 });
+            std::process::exit(if applicable {
+                CHILD_ISOLATION_FAILED
+            } else {
+                CHILD_ISOLATION_HELD
+            });
         }
 
         let foreign_repo = TempDir::new().unwrap();
         init_repo(foreign_repo.path()).await;
         let foreign_git_dir = foreign_repo.path().join(".git");
-
         let non_repo_cwd = TempDir::new().unwrap();
 
-        let exe = std::env::current_exe().unwrap();
-        let status = std::process::Command::new(exe)
-            .args([
-                "--exact",
-                "git::tests::is_applicable_ignores_ambient_git_dir_pointing_elsewhere",
-                "--nocapture",
-            ])
-            .env("AEGIS_GIT_ENV_CHILD", "1")
-            .env("AEGIS_TEST_CWD", non_repo_cwd.path())
-            .env("GIT_DIR", &foreign_git_dir)
-            .status()
-            .expect("failed to re-exec test binary");
-
-        assert!(
-            status.success(),
-            "GitPlugin::is_applicable reported applicable=true for a non-repo cwd \
-             under a foreign GIT_DIR (child exit code {:?}); ambient GIT_DIR leaked in",
-            status.code()
-        );
+        assert_child_reports_isolation_held(
+            "is_applicable_ignores_ambient_git_dir_pointing_elsewhere",
+            &[
+                ("AEGIS_TEST_CWD", non_repo_cwd.path().as_os_str()),
+                ("GIT_DIR", foreign_git_dir.as_os_str()),
+            ],
+        )
+        .await;
     }
 
     /// Same re-exec pattern as the `is_applicable` test above: the child runs
@@ -854,7 +886,11 @@ mod tests {
             // is the file getting swept away into the foreign repo's stash.
             let _ = GitPlugin.snapshot(cwd, "rm -rf .").await;
             let file_survived = cwd.join("untracked.txt").exists();
-            std::process::exit(if file_survived { 0 } else { 1 });
+            std::process::exit(if file_survived {
+                CHILD_ISOLATION_HELD
+            } else {
+                CHILD_ISOLATION_FAILED
+            });
         }
 
         let foreign_repo = TempDir::new().unwrap();
@@ -868,31 +904,19 @@ mod tests {
         )
         .unwrap();
 
-        let exe = std::env::current_exe().unwrap();
-        let status = std::process::Command::new(exe)
-            .args([
-                "--exact",
-                "git::tests::snapshot_does_not_stash_into_ambient_git_dir",
-                "--nocapture",
-            ])
-            .env("AEGIS_GIT_ENV_CHILD", "1")
-            .env("AEGIS_TEST_CWD", non_repo_cwd.path())
-            .env("GIT_DIR", &foreign_git_dir)
-            .status()
-            .expect("failed to re-exec test binary");
-
-        assert!(
-            status.success(),
-            "GitPlugin::snapshot stashed the tempdir's file into a foreign GIT_DIR \
-             instead of leaving it alone (child exit code {:?})",
-            status.code()
-        );
+        assert_child_reports_isolation_held(
+            "snapshot_does_not_stash_into_ambient_git_dir",
+            &[
+                ("AEGIS_TEST_CWD", non_repo_cwd.path().as_os_str()),
+                ("GIT_DIR", foreign_git_dir.as_os_str()),
+            ],
+        )
+        .await;
 
         // The foreign repo's stash must still be empty: nothing was swept
         // into it on the child's behalf.
-        let stash_list = Command::new("git")
+        let stash_list = git_command(foreign_repo.path())
             .args(["stash", "list"])
-            .current_dir(foreign_repo.path())
             .output()
             .await
             .unwrap();
