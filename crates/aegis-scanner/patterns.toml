@@ -2,7 +2,7 @@
 # Each [[patterns]] entry is compiled into the binary at build time.
 # Fields:
 #   id            — unique identifier, e.g. "FS-001"
-#   category      — Filesystem | Git | Database | Cloud | Docker | Process | Package
+#   category      — Filesystem | Git | Database | Cloud | Docker | Process | Package | Aegis
 #   risk          — Safe | Warn | Danger | Block
 #   pattern       — regex matched against the full command string
 #   description   — human-readable explanation shown in the TUI dialog

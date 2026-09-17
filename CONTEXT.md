@@ -148,7 +148,18 @@ _Avoid_: deep scan, second pass
 
 **Category**:
 The domain a detection rule belongs to: `Filesystem`, `Git`, `Database`, `Cloud`,
-`Docker`, `Process`, `Package`.
+`Docker`, `Process`, `Package`, `Aegis`. The `Aegis` category holds `Self-management
+command` rules and is the only category whose subject is Aegis itself.
+
+**Self-management command**:
+An `aegis` invocation that changes Aegis' own `Effective enforcement state`, recovery
+artifacts, or installed integration points: `off`, `rollback`, `snapshot prune --yes`,
+`config init`, `install-hooks`, `setup-shell`. The scanner classifies these under
+`Category::Aegis` so every spelling is covered, including an absolute path, a launcher
+prefix, and any position inside a compound command (ADR-035). An `aegis` command that
+only reads state or only tightens enforcement (`on`, `status`, `audit`,
+`snapshot list`, `config show`, `config validate`) is not one.
+_Avoid_: self-modify, aegis meta command, kill-switch command
 
 **Match**:
 One pattern hit (`MatchResult`) — the `Pattern` that fired, matched text, and the

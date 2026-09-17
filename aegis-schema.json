@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "AegisConfig",
-  "description": "Top-level Aegis runtime configuration.\n\nLoaded in order: built-in defaults → `~/.config/aegis/config.toml` (user-global)\n→ `.aegis.toml` (project). Later layers override ordinary scalar fields.\nProject-local security-critical fields are ratcheted so they can only tighten,\nnever loosen: `mode`, `allowlist_override_level`, `ci_policy`,\n`snapshot_policy`, `sandbox.enabled`/`required`/`allow_network`/`allow_write`,\nand the `auto_snapshot_*` flags. `allow`/`block` rules are concatenated. See\nADR-013 for the full ordering.",
+  "description": "Top-level Aegis runtime configuration.\n\nLoaded in order: built-in defaults → `~/.config/aegis/config.toml` (user-global)\n→ `.aegis.toml` (project). Every field's Ratchet direction — how far the\nproject layer may change it, if at all — is declared in `model::merge_layer`\nand listed field-by-field in ADR-013's normative table.",
   "type": "object",
   "properties": {
     "allow": {
@@ -376,6 +376,11 @@
           "description": "Package manager operations.",
           "type": "string",
           "const": "Package"
+        },
+        {
+          "description": "Aegis' own enforcement state and installed integration points.",
+          "type": "string",
+          "const": "Aegis"
         }
       ]
     },

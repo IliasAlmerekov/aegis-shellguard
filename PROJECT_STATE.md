@@ -22,6 +22,23 @@ distribution smoke gates open)
 
 ---
 
+## Current session (2026-09-17): the scanner classifies Aegis self-management (#334)
+
+- New `Category::Aegis` and six token-prefix rules in
+  `crates/aegis-scanner/src/patterns/builtins_b.rs`: `AEG-001` (`off`),
+  `AEG-002` (`rollback`), `AEG-003` (`snapshot prune --yes`) at `Danger`;
+  `AEG-004` (`config init`), `AEG-005` (`install-hooks`), `AEG-006`
+  (`setup-shell`) at `Warn`. ADR-035 records the decision.
+- Launcher and absolute-path normalization (ADR-014) now covers `aegis off`
+  behind `/usr/bin/`, `env`, `command`, `sudo`, and after `&&`. The hook's
+  first-word deny stays as the fast path.
+- `aegis-schema.json` was regenerated; it also picks up an unrelated
+  `AegisConfig` description that had drifted from the source since #270.
+- Coverage: `tests/scanner_aegis_self_management.rs` plus two end-to-end cases
+  in `tests/fixtures/security_bypass_corpus.toml`.
+
+---
+
 ## Current session (2026-09-17): read-only aegis commands pass the hook (#333)
 
 - `src/install/hook.rs` wraps a plain read-only `aegis` invocation (help,

@@ -98,6 +98,7 @@ the core classification / approval pipeline when enforcement is active.
 | ADR-032 | Outbound irreversible actions are a named threat class | [`adr-032-outbound-irreversible-actions-are-detected.md`](adr-032-outbound-irreversible-actions-are-detected.md) |
 | ADR-033 | The Diagnostic stream goes to stderr and is not a contract (partially supersedes ADR-023) | [`adr-033-the-diagnostic-stream-goes-to-stderr-and-is-not-a-contract.md`](adr-033-the-diagnostic-stream-goes-to-stderr-and-is-not-a-contract.md) |
 | ADR-034 | Docker snapshot scoping ignores `cwd` by design; the flake it looked like is a test-isolation gap | [`adr-034-docker-snapshot-scoping-ignores-cwd-by-design.md`](adr-034-docker-snapshot-scoping-ignores-cwd-by-design.md) |
+| ADR-035 | Aegis self-management is classified by the scanner, not the hook | [`adr-035-aegis-self-management-is-classified-by-the-scanner.md`](adr-035-aegis-self-management-is-classified-by-the-scanner.md) |
 
 `ADR-009` is intentionally absent from the active set; numbering is preserved
 as-is so historical references do not drift.
