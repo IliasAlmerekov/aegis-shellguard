@@ -277,7 +277,7 @@ async fn run_watch_plan(
                 show_confirmation_via_tty_with_decision(assessment, explanation, &[])
             })
         },
-        || tokio::task::block_in_place(show_recovery_override_via_tty),
+        |degradation| tokio::task::block_in_place(|| show_recovery_override_via_tty(degradation)),
     )
     .await;
 }
@@ -294,7 +294,7 @@ async fn run_watch_plan_with_prompts<C, R>(
         &crate::interceptor::scanner::Assessment,
         &aegis_explanation::CommandExplanation,
     ) -> PromptDecision,
-    R: FnOnce() -> RecoveryPromptDecision,
+    R: FnOnce(aegis_types::RecoveryDegradation) -> RecoveryPromptDecision,
 {
     let id = frame.id.clone();
     let context = runtime_context(prepared);
@@ -391,13 +391,14 @@ async fn run_watch_plan_with_prompts<C, R>(
     // audit entries with an empty snapshot list.
     match runtime_decision {
         Decision::Approved | Decision::AutoApproved => {
-            let snapshots = create_watch_snapshots(context, &plan, cwd.as_path()).await;
+            let coverage = create_watch_snapshots(context, &plan, cwd.as_path()).await;
+            let snapshots = coverage.records.as_slice();
             if let Some(RecoveryStatus::Degraded(degradation)) = recovery_status(
                 plan.assessment().effect_opaque,
                 plan.policy_decision().snapshots_required,
-                &snapshots,
+                &coverage,
             ) {
-                let recovery_decision = recovery_prompt();
+                let recovery_decision = recovery_prompt(degradation);
                 match recovery_decision {
                     RecoveryPromptDecision::RunOnceWithoutRecovery => {
                         complete_watch_approved_execution(
@@ -407,7 +408,7 @@ async fn run_watch_plan_with_prompts<C, R>(
                                 plan: &plan,
                                 ci_detected,
                                 cwd: &cwd,
-                                snapshots: &snapshots,
+                                snapshots,
                                 recovery_degradation: Some(degradation),
                             },
                             Decision::Approved,
@@ -422,7 +423,7 @@ async fn run_watch_plan_with_prompts<C, R>(
                             plan: &plan,
                             ci_detected,
                             cwd: &cwd,
-                            snapshots: &snapshots,
+                            snapshots,
                             recovery_degradation: Some(degradation),
                         };
                         if let Err(err) = append_watch_execution_audit(
@@ -453,7 +454,7 @@ async fn run_watch_plan_with_prompts<C, R>(
                     plan: &plan,
                     ci_detected,
                     cwd: &cwd,
-                    snapshots: &snapshots,
+                    snapshots,
                     recovery_degradation: None,
                 },
                 runtime_decision,
@@ -629,12 +630,12 @@ async fn create_watch_snapshots(
     context: &RuntimeContext,
     plan: &InterceptionPlan,
     cwd: &std::path::Path,
-) -> Vec<crate::snapshot::SnapshotRecord> {
+) -> crate::snapshot::SnapshotCoverage {
     if matches!(
         plan.snapshot_plan(),
         crate::planning::SnapshotPlan::NotRequired
     ) {
-        return Vec::new();
+        return crate::snapshot::SnapshotCoverage::default();
     }
 
     context

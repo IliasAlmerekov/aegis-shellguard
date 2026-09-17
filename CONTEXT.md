@@ -572,19 +572,29 @@ config cannot introduce either, and both are visible in the `Audit log`.
 _Avoid_: recovery disabled, snapshot off, degraded recovery
 
 **Recovery degradation**:
-The state where `Required recovery` applies but no attempt reached `Ready`. It is
-distinct from a `Recovery opt-out` and must never silently become permission to
-execute. It is never recorded while `Recovery status` is `Ready` — a partial
-failure alongside a usable `Snapshot` is a per-attempt fact, not a degradation of
-the obligation.
+The state where `Required recovery` applies and the snapshot pass did not cover
+every applicable `Snapshot plugin`. It has two reasons: no attempt reached
+`Ready` at all, or some attempts did while others failed. It is distinct from a
+`Recovery opt-out` and must never silently become permission to execute. It is
+never recorded while `Recovery status` is `Ready`; a plugin that reported itself
+inapplicable is not a failure and never produces one (ADR-036).
 _Avoid_: snapshot warning, best-effort failure
 
 **Recovery status**:
-The post-attempt state of `Required recovery`: `Ready` when at least one attempt
-reached `Snapshot attempt readiness::Ready`, or `Degraded` when none did.
+The post-attempt state of `Required recovery`: `Ready` when every applicable
+`Snapshot plugin` reached `Snapshot attempt readiness::Ready`, or `Degraded`
+when any of them did not. Both counts come from the same snapshot pass.
 Execution surfaces derive their deny or `Recovery override` behavior from this
 shared fact.
 _Avoid_: snapshot result, recovery verdict
+
+**Snapshot coverage**:
+What one snapshot pass produced (`SnapshotCoverage`): the `SnapshotRecord`s
+created, and how many `Snapshot plugin`s reported themselves applicable during
+that same pass. Fewer records than applicable plugins means partial coverage.
+Both numbers must come from one pass — a second applicability sample can
+disagree with the first, and `Recovery status` must not rest on two samples.
+_Avoid_: snapshot results, plugin coverage
 
 **Recovery override**:
 A one-time human approval to execute despite a visible `Recovery degradation`.

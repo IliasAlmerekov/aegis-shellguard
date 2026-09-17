@@ -64,6 +64,85 @@ fn prepared_with_optional_sandbox(audit_path: PathBuf) -> PreparedPlanner {
     PreparedPlanner::Ready(Box::new(context))
 }
 
+/// A snapshot plugin that always applies and always succeeds.
+struct SucceedingPlugin;
+
+#[async_trait::async_trait]
+impl crate::snapshot::SnapshotPlugin for SucceedingPlugin {
+    fn name(&self) -> &'static str {
+        "mock-succeeding"
+    }
+
+    async fn is_applicable(&self, _cwd: &std::path::Path) -> bool {
+        true
+    }
+
+    async fn snapshot(
+        &self,
+        _cwd: &std::path::Path,
+        _cmd: &str,
+    ) -> Result<String, crate::snapshot::SnapshotError> {
+        Ok("mock-snapshot-id".to_string())
+    }
+
+    async fn rollback(&self, _snapshot_id: &str) -> Result<(), crate::snapshot::SnapshotError> {
+        Ok(())
+    }
+
+    async fn delete(&self, _snapshot_id: &str) -> Result<(), crate::snapshot::SnapshotError> {
+        Ok(())
+    }
+}
+
+/// A snapshot plugin that always applies and always fails.
+struct FailingPlugin;
+
+#[async_trait::async_trait]
+impl crate::snapshot::SnapshotPlugin for FailingPlugin {
+    fn name(&self) -> &'static str {
+        "mock-failing"
+    }
+
+    async fn is_applicable(&self, _cwd: &std::path::Path) -> bool {
+        true
+    }
+
+    async fn snapshot(
+        &self,
+        _cwd: &std::path::Path,
+        _cmd: &str,
+    ) -> Result<String, crate::snapshot::SnapshotError> {
+        Err(crate::snapshot::SnapshotError::Snapshot(
+            "mock plugin failure".to_string(),
+        ))
+    }
+
+    async fn rollback(&self, _snapshot_id: &str) -> Result<(), crate::snapshot::SnapshotError> {
+        Ok(())
+    }
+
+    async fn delete(&self, _snapshot_id: &str) -> Result<(), crate::snapshot::SnapshotError> {
+        Ok(())
+    }
+}
+
+/// Pin the registry to one plugin that succeeds and one that fails, so the
+/// snapshot pass produces exactly the partial coverage of issue #312: a usable
+/// snapshot record next to an applicable plugin that never produced one.
+fn prepared_with_partial_coverage(audit_path: PathBuf) -> PreparedPlanner {
+    let context = RuntimeContext::new_with_audit_path(
+        AegisConfig::default(),
+        tokio::runtime::Handle::current(),
+        audit_path,
+    )
+    .unwrap();
+    context.set_snapshot_registry_for_tests(SnapshotRegistry::new_with_plugins(vec![
+        Box::new(SucceedingPlugin),
+        Box::new(FailingPlugin),
+    ]));
+    PreparedPlanner::Ready(Box::new(context))
+}
+
 async fn effect_opaque_plan(
     prepared: &PreparedPlanner,
     workspace: &TempDir,
@@ -108,7 +187,7 @@ async fn watch_recovery_prompt_deny_prevents_execution_and_audits_degradation() 
     fs::write(workspace.path().join("run.sh"), "printf ran > executed\n").unwrap();
     let prepared = prepared_with_audit_path(audit_path.clone());
     let (frame, plan) = effect_opaque_plan(&prepared, &workspace).await;
-    let prompted = Cell::new(false);
+    let prompted: Cell<Option<aegis_types::RecoveryDegradation>> = Cell::new(None);
 
     run_watch_plan_with_prompts(
         frame,
@@ -116,14 +195,17 @@ async fn watch_recovery_prompt_deny_prevents_execution_and_audits_degradation() 
         plan,
         false,
         |_, _| PromptDecision::Approve,
-        || {
-            prompted.set(true);
+        |degradation| {
+            prompted.set(Some(degradation));
             RecoveryPromptDecision::Deny
         },
     )
     .await;
 
-    assert!(prompted.get());
+    assert_eq!(
+        prompted.get(),
+        Some(aegis_types::RecoveryDegradation::NoSnapshotAvailable)
+    );
     assert!(!workspace.path().join("executed").exists());
     let entry = read_audit_entry(&audit_path);
     assert_eq!(entry["decision"], "Denied");
@@ -138,7 +220,7 @@ async fn watch_recovery_prompt_run_once_executes_and_audits_degradation() {
     fs::write(workspace.path().join("run.sh"), "printf ran > executed\n").unwrap();
     let prepared = prepared_with_audit_path(audit_path.clone());
     let (frame, plan) = effect_opaque_plan(&prepared, &workspace).await;
-    let prompted = Cell::new(false);
+    let prompted: Cell<Option<aegis_types::RecoveryDegradation>> = Cell::new(None);
 
     run_watch_plan_with_prompts(
         frame,
@@ -146,18 +228,55 @@ async fn watch_recovery_prompt_run_once_executes_and_audits_degradation() {
         plan,
         false,
         |_, _| PromptDecision::Approve,
-        || {
-            prompted.set(true);
+        |degradation| {
+            prompted.set(Some(degradation));
             RecoveryPromptDecision::RunOnceWithoutRecovery
         },
     )
     .await;
 
-    assert!(prompted.get());
+    assert_eq!(
+        prompted.get(),
+        Some(aegis_types::RecoveryDegradation::NoSnapshotAvailable)
+    );
     assert!(workspace.path().join("executed").exists());
     let entry = read_audit_entry(&audit_path);
     assert_eq!(entry["decision"], "Approved");
     assert_eq!(entry["recovery_degradation"], "no_snapshot_available");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_partial_snapshot_coverage_prompts_and_audits_its_own_reason() {
+    let workspace = TempDir::new().unwrap();
+    let audit_dir = TempDir::new().unwrap();
+    let audit_path = audit_dir.path().join("audit.jsonl");
+    fs::write(workspace.path().join("run.sh"), "printf ran > executed\n").unwrap();
+    let prepared = prepared_with_partial_coverage(audit_path.clone());
+    let (frame, plan) = effect_opaque_plan(&prepared, &workspace).await;
+    let prompted: Cell<Option<aegis_types::RecoveryDegradation>> = Cell::new(None);
+
+    run_watch_plan_with_prompts(
+        frame,
+        &prepared,
+        plan,
+        false,
+        |_, _| PromptDecision::Approve,
+        |degradation| {
+            prompted.set(Some(degradation));
+            RecoveryPromptDecision::Deny
+        },
+    )
+    .await;
+
+    assert_eq!(
+        prompted.get(),
+        Some(aegis_types::RecoveryDegradation::PartialSnapshotCoverage)
+    );
+    assert!(!workspace.path().join("executed").exists());
+    let entry = read_audit_entry(&audit_path);
+    assert_eq!(entry["decision"], "Denied");
+    assert_eq!(entry["recovery_degradation"], "partial_snapshot_coverage");
+    assert_eq!(entry["snapshots"][0]["plugin"], "mock-succeeding");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -175,7 +294,7 @@ async fn watch_recovery_deny_records_enabled_sandbox_as_not_attempted() {
         plan,
         false,
         |_, _| PromptDecision::Approve,
-        || RecoveryPromptDecision::Deny,
+        |_| RecoveryPromptDecision::Deny,
     )
     .await;
 

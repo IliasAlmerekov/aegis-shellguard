@@ -106,6 +106,7 @@ fn config_is_shared_across_runtime_dependencies() {
     assert!(
         context
             .create_snapshots(Path::new("."), "rm -rf /tmp/runtime-context-test", false)
+            .records
             .is_empty()
     );
     assert_eq!(context.config().ci_policy, CiPolicy::Allow);
@@ -334,7 +335,7 @@ fn runtime_context_uses_external_handle_for_snapshots() {
 
     // With both snapshot plugins disabled, result is empty — but the call
     // must succeed without panicking (proving the external handle works).
-    assert!(snapshots.is_empty());
+    assert!(snapshots.records.is_empty());
 }
 
 #[test]

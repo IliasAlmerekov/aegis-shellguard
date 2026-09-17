@@ -173,7 +173,8 @@ degradation.
   identifier exists but the artifact is missing or unreadable, or the attempt
   produced no `SnapshotRecord` at all).
 - **Per obligation** — `RecoveryStatus`: `Ready` when at least one attempt is
-  `Ready`, else `Degraded`. Unchanged.
+  `Ready`, else `Degraded`. (ADR-036 tightens this: `Ready` requires every
+  applicable plugin to have produced a record.)
 - **Per degradation reason** — `RecoveryDegradation` gains
   `SnapshotArtifactUnavailable` and `SnapshotArtifactInvalid` beside
   `NoSnapshotAvailable`, so the reason stays queryable; the enum is
@@ -181,6 +182,12 @@ degradation.
   absent obligation is not a degradation.
 
 **9. `recovery_degradation` is never set while the obligation is met.**
+(Superseded in part by
+[ADR-036](adr-036-partial-snapshot-coverage-degrades-required-recovery.md): an
+applicable plugin that produces no `SnapshotRecord` at all now degrades the
+obligation and records `PartialSnapshotCoverage`, so the `recovery_status:
+Ready` column below no longer describes that case. The priority rule for
+picking one main reason is unaffected.)
 `recovery_status: Ready` with `recovery_degradation: SnapshotArtifactInvalid`
 would be a self-contradictory line. A partial failure lives only in the new
 per-attempt array:

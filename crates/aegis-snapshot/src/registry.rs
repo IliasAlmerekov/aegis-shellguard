@@ -81,6 +81,45 @@ pub struct SnapshotRegistry {
     plugins: Vec<Box<dyn SnapshotPlugin>>,
 }
 
+/// What one [`SnapshotRegistry::snapshot_all`] pass produced and how much of
+/// the applicable provider set it covers.
+///
+/// `records` holds the snapshots that were created. `applicable` counts the
+/// plugins that reported themselves applicable during the same pass, whether
+/// or not their attempt succeeded. `records.len() < applicable` means at least
+/// one applicable plugin failed and the coverage is partial. Both numbers come
+/// from one pass on purpose: sampling applicability again after the attempts
+/// can return a different set, and a recovery decision must not rest on two
+/// disagreeing samples.
+#[derive(Debug, Default, Clone)]
+pub struct SnapshotCoverage {
+    /// The snapshots that were created, one per successful plugin attempt.
+    pub records: Vec<SnapshotRecord>,
+    /// How many plugins reported themselves applicable during the pass.
+    pub applicable: usize,
+}
+
+impl SnapshotCoverage {
+    /// Build a coverage result from records alone, treating every record as a
+    /// successful attempt by an applicable plugin.
+    ///
+    /// For callers that never ran a registry pass, such as a code path that
+    /// short-circuits before snapshot creation.
+    #[must_use]
+    pub fn complete(records: Vec<SnapshotRecord>) -> Self {
+        Self {
+            applicable: records.len(),
+            records,
+        }
+    }
+
+    /// Returns `true` when an applicable plugin failed while another succeeded.
+    #[must_use]
+    pub fn is_partial(&self) -> bool {
+        !self.records.is_empty() && self.records.len() < self.applicable
+    }
+}
+
 /// Eager runtime snapshot config used to materialize a [`SnapshotRegistry`].
 ///
 /// This captures the config boundary between "which built-in providers are
@@ -238,14 +277,20 @@ impl SnapshotRegistry {
     ///
     /// Plugins that are not applicable for `cwd` are skipped silently.
     /// Plugin failures are logged as warnings and do not abort the loop.
-    pub async fn snapshot_all(&self, cwd: &Path, cmd: &str) -> Vec<SnapshotRecord> {
-        let mut records = Vec::new();
+    ///
+    /// The returned [`SnapshotCoverage`] carries the applicable-plugin count
+    /// from this same pass, so a caller can tell a complete attempt from a
+    /// partial one without asking every plugin for applicability a second
+    /// time and risking a different answer.
+    pub async fn snapshot_all(&self, cwd: &Path, cmd: &str) -> SnapshotCoverage {
+        let mut coverage = SnapshotCoverage::default();
         for plugin in &self.plugins {
             if !plugin.is_applicable(cwd).await {
                 continue;
             }
+            coverage.applicable += 1;
             match plugin.snapshot(cwd, cmd).await {
-                Ok(snapshot_id) => records.push(SnapshotRecord {
+                Ok(snapshot_id) => coverage.records.push(SnapshotRecord {
                     plugin: plugin.name(),
                     snapshot_id,
                 }),
@@ -259,7 +304,7 @@ impl SnapshotRegistry {
                 }
             }
         }
-        records
+        coverage
     }
 
     /// Return the subset of configured providers that are applicable to `cwd`.
@@ -433,6 +478,100 @@ mod tests {
         fn exit(&self, _span: &span::Id) {}
     }
 
+    /// A plugin that is always applicable and always succeeds.
+    struct AlwaysSucceedingPlugin;
+
+    #[async_trait]
+    impl SnapshotPlugin for AlwaysSucceedingPlugin {
+        fn name(&self) -> &'static str {
+            "mock-succeeding"
+        }
+
+        async fn is_applicable(&self, _cwd: &Path) -> bool {
+            true
+        }
+
+        async fn snapshot(
+            &self,
+            _cwd: &Path,
+            _cmd: &str,
+        ) -> std::result::Result<String, SnapshotError> {
+            Ok("mock-snapshot-id".to_string())
+        }
+
+        async fn rollback(&self, _snapshot_id: &str) -> std::result::Result<(), SnapshotError> {
+            Ok(())
+        }
+
+        async fn delete(&self, _snapshot_id: &str) -> std::result::Result<(), SnapshotError> {
+            Ok(())
+        }
+    }
+
+    /// A plugin that never applies, so it must not enter the applicable count.
+    struct NeverApplicablePlugin;
+
+    #[async_trait]
+    impl SnapshotPlugin for NeverApplicablePlugin {
+        fn name(&self) -> &'static str {
+            "mock-inapplicable"
+        }
+
+        async fn is_applicable(&self, _cwd: &Path) -> bool {
+            false
+        }
+
+        async fn snapshot(
+            &self,
+            _cwd: &Path,
+            _cmd: &str,
+        ) -> std::result::Result<String, SnapshotError> {
+            panic!("an inapplicable plugin must never be asked for a snapshot")
+        }
+
+        async fn rollback(&self, _snapshot_id: &str) -> std::result::Result<(), SnapshotError> {
+            Ok(())
+        }
+
+        async fn delete(&self, _snapshot_id: &str) -> std::result::Result<(), SnapshotError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn snapshot_all_counts_a_failed_applicable_plugin_as_partial_coverage() {
+        let registry = SnapshotRegistry::new_with_plugins(vec![
+            Box::new(AlwaysSucceedingPlugin),
+            Box::new(AlwaysFailingPlugin),
+        ]);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        let coverage =
+            runtime.block_on(registry.snapshot_all(Path::new("/nonexistent-cwd"), "rm -rf /"));
+
+        assert_eq!(coverage.records.len(), 1);
+        assert_eq!(coverage.applicable, 2);
+        assert!(coverage.is_partial());
+    }
+
+    #[test]
+    fn snapshot_all_leaves_inapplicable_plugins_out_of_the_applicable_count() {
+        let registry = SnapshotRegistry::new_with_plugins(vec![
+            Box::new(AlwaysSucceedingPlugin),
+            Box::new(NeverApplicablePlugin),
+        ]);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        let coverage =
+            runtime.block_on(registry.snapshot_all(Path::new("/nonexistent-cwd"), "rm -rf /"));
+
+        assert_eq!(coverage.applicable, 1);
+        assert!(
+            !coverage.is_partial(),
+            "a plugin that has nothing to do here must not read as missing coverage"
+        );
+    }
+
     #[test]
     fn snapshot_all_warns_with_plugin_and_error_fields_on_plugin_failure() {
         let registry = SnapshotRegistry::new_with_plugins(vec![Box::new(AlwaysFailingPlugin)]);
@@ -445,7 +584,7 @@ mod tests {
         });
 
         assert!(
-            records.is_empty(),
+            records.records.is_empty(),
             "a failing plugin must not produce a snapshot record"
         );
 
