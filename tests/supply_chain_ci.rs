@@ -118,22 +118,32 @@ fn both_workflows_read_the_versions_from_the_one_file() {
 #[test]
 fn no_workflow_hardcodes_a_pinned_version() {
     for (key, value) in pinned_versions() {
-        // A bare number (a Node major, an iteration count) collides with
-        // unrelated digits inside a pinned action SHA, so only the dotted and
-        // dated version strings are searched for.
-        if !value.contains('.') && !value.contains('-') {
-            continue;
-        }
+        // A dotted or dated version string is distinctive enough to search for
+        // on its own. A bare number (a Node major, an iteration count) would
+        // collide with unrelated digits inside a pinned action SHA, so it is
+        // searched for in the shapes a workflow would actually spell it:
+        // `node-version: 22`, `-runs=100000`.
+        let spellings: Vec<String> = if value.contains('.') || value.contains('-') {
+            vec![value.clone()]
+        } else {
+            vec![
+                format!("={value}"),
+                format!(": {value}"),
+                format!(": \"{value}\""),
+            ]
+        };
 
         for (name, workflow) in [
             ("ci.yml", ci_workflow()),
             ("release.yml", release_workflow()),
         ] {
-            assert!(
-                !workflow.contains(&value),
-                "{name} writes {key}={value} a second time; read it from \
-                 .github/versions.env instead"
-            );
+            for spelling in &spellings {
+                assert!(
+                    !workflow.contains(spelling),
+                    "{name} writes {key}={value} a second time (as `{spelling}`); \
+                     read it from .github/versions.env instead"
+                );
+            }
         }
     }
 }
@@ -182,5 +192,64 @@ fn docs_ci_documents_every_release_target() {
     assert!(
         found_any,
         "build-targets.json should define at least one release target"
+    );
+}
+
+/// Every `actions/checkout` step in a workflow, as the block of YAML from the
+/// `uses:` line up to the next step in the same job.
+fn checkout_steps(workflow: &str) -> Vec<String> {
+    workflow
+        .split("actions/checkout@")
+        .skip(1)
+        .map(|rest| {
+            let end = rest.find("\n      - ").unwrap_or(rest.len());
+            rest[..end].to_string()
+        })
+        .collect()
+}
+
+/// `actions/checkout` writes the workflow token into `.git/config` by default,
+/// where any later step, build script, or dependency can read it. No job here
+/// pushes with it: the release notes are published by `action-gh-release` with
+/// its own token, and the tag admission check talks to the compare API through
+/// `GH_TOKEN`.
+#[test]
+fn no_checkout_leaves_the_workflow_token_in_the_checkout() {
+    for (name, workflow) in [
+        ("ci.yml", ci_workflow()),
+        ("release.yml", release_workflow()),
+    ] {
+        let steps = checkout_steps(&workflow);
+        assert!(
+            !steps.is_empty(),
+            "{name} should check the repository out at least once"
+        );
+
+        for (index, step) in steps.iter().enumerate() {
+            assert!(
+                step.contains("persist-credentials: false"),
+                "{name} checkout #{} keeps the workflow token in .git/config; \
+                 set persist-credentials: false",
+                index + 1
+            );
+        }
+    }
+}
+
+/// An empty `targets` array is valid JSON and would sail through: the build
+/// matrix would expand to nothing, and the Release would publish with only
+/// `THIRD_PARTY_NOTICES.md` attached. Both readers must count the targets.
+#[test]
+fn an_empty_target_table_stops_the_build_and_the_release() {
+    let loader = fs::read_to_string(repo_path(".github/actions/load-versions/action.yml"))
+        .expect("load-versions action should be readable");
+    assert!(
+        loader.contains("jq '.targets | length'"),
+        "load-versions must reject a build-targets.json with no targets"
+    );
+
+    assert!(
+        release_workflow().contains("jq '.targets | length'"),
+        "the release asset list must reject a build-targets.json with no targets"
     );
 }

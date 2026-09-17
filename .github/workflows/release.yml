@@ -7,6 +7,12 @@ on:
 
 # Least privilege by default, like ci.yml. The `release` job raises this to
 # `contents: write` for itself, and it is the only job that needs to.
+#
+# Every checkout below sets `persist-credentials: false` for the same reason:
+# nothing here pushes with the workflow token, so leaving it in `.git/config`
+# would only expose it to a build script or a dependency. The jobs that talk to
+# GitHub pass a token explicitly instead, through `GH_TOKEN` or the
+# `action-gh-release` input.
 permissions:
   contents: read
 
@@ -43,6 +49,8 @@ jobs:
       build_targets: ${{ steps.versions.outputs.build_targets }}
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/load-versions
         id: versions
@@ -66,6 +74,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       - name: Tagged commit is reachable from main
         shell: bash
@@ -125,6 +135,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/quality-gate
         with:
@@ -144,6 +156,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/security-gate
         with:
@@ -167,6 +181,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/setup-rust
         with:
@@ -239,6 +255,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       - name: Download all artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -285,6 +303,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # `fail_on_unmatched_files` catches a file that is named but missing.
+          # It cannot catch a list that names nothing, which is what an empty
+          # `targets` array would produce: a Release with only the notices file.
+          count="$(jq '.targets | length' .github/build-targets.json)"
+          if [ "$count" -lt 1 ]; then
+            echo "build-targets.json defines no release targets" >&2
+            exit 1
+          fi
           {
             echo "files<<ASSET_LIST_EOF"
             jq -r '.targets[] | "artifacts/\(.asset_name)", "artifacts/\(.asset_name).sha256"' \
@@ -292,6 +318,7 @@ jobs:
             echo "THIRD_PARTY_NOTICES.md"
             echo "ASSET_LIST_EOF"
           } >> "$GITHUB_OUTPUT"
+          echo "resolved $count target(s) into the release asset list"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
@@ -318,6 +345,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/setup-rust
         with:
