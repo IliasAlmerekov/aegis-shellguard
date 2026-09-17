@@ -575,6 +575,12 @@ fn noninteractive_output_explains_denial() {
         text.contains("allowlist"),
         "non-interactive denial must mention 'allowlist' as the escape hatch; got:\n{text}"
     );
+    assert!(
+        text.contains("rerun interactively"),
+        "non-interactive denial must also name a one-time interactive approval, \
+         not just the allowlist, since allowlisting is a permanent rule change \
+         for what may be a one-off command; got:\n{text}"
+    );
 }
 
 #[test]
