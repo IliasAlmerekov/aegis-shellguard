@@ -34,7 +34,9 @@ If a required snapshot cannot be created, Aegis must degrade loudly: non-interac
 execution fails closed, and interactive execution must present the missing-recovery
 reason instead of silently running unprotected. Interactive execution may proceed only
 through an explicit one-time Recovery override; that override is not an allowlist rule and
-cannot be persisted. Audit records `NoSnapshotAvailable` alongside the final decision: a
+cannot be persisted. ADR-036 extends "cannot be created" to cover a partial pass, where an
+applicable plugin fails beside one that succeeded; that case records
+`PartialSnapshotCoverage`. Audit records `NoSnapshotAvailable` alongside the final decision: a
 rejected degradation is `Denied`, while a human override that executes is `Approved`, not
 `AutoApproved`. `SnapshotPolicy::None` is a trusted global opt-out only; project config
 cannot weaken recovery because the project security ratchet applies. `Mode::Audit` remains

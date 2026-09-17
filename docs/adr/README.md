@@ -99,6 +99,7 @@ the core classification / approval pipeline when enforcement is active.
 | ADR-033 | The Diagnostic stream goes to stderr and is not a contract (partially supersedes ADR-023) | [`adr-033-the-diagnostic-stream-goes-to-stderr-and-is-not-a-contract.md`](adr-033-the-diagnostic-stream-goes-to-stderr-and-is-not-a-contract.md) |
 | ADR-034 | Docker snapshot scoping ignores `cwd` by design; the flake it looked like is a test-isolation gap | [`adr-034-docker-snapshot-scoping-ignores-cwd-by-design.md`](adr-034-docker-snapshot-scoping-ignores-cwd-by-design.md) |
 | ADR-035 | Aegis self-management is classified by the scanner, not the hook | [`adr-035-aegis-self-management-is-classified-by-the-scanner.md`](adr-035-aegis-self-management-is-classified-by-the-scanner.md) |
+| ADR-036 | Partial Snapshot coverage degrades Required recovery (extends ADR-016, ADR-031) | [`adr-036-partial-snapshot-coverage-degrades-required-recovery.md`](adr-036-partial-snapshot-coverage-degrades-required-recovery.md) |
 
 `ADR-009` is intentionally absent from the active set; numbering is preserved
 as-is so historical references do not drift.

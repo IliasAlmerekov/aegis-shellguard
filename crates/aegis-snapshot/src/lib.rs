@@ -53,9 +53,11 @@ pub mod testing;
 
 /// Re-export of [`clock::Clock`], [`clock::SystemClock`], [`clock::FixedClock`].
 pub use clock::{Clock, FixedClock, SystemClock};
-/// Re-export of [`registry::SnapshotRegistry`], [`registry::SnapshotRegistryConfig`],
-/// [`registry::available_provider_names`].
-pub use registry::{SnapshotRegistry, SnapshotRegistryConfig, available_provider_names};
+/// Re-export of [`registry::SnapshotCoverage`], [`registry::SnapshotRegistry`],
+/// [`registry::SnapshotRegistryConfig`], [`registry::available_provider_names`].
+pub use registry::{
+    SnapshotCoverage, SnapshotRegistry, SnapshotRegistryConfig, available_provider_names,
+};
 /// Re-export of [`retention::PrunableRecord`], [`retention::RetentionPolicy`].
 pub use retention::{PrunableRecord, RetentionPolicy};
 

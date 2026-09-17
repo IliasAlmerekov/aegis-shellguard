@@ -1,8 +1,9 @@
 //! Re-export shim — all snapshot logic lives in the `aegis-snapshot` crate.
 pub use aegis_snapshot::{
     Clock, DockerPlugin, FixedClock, GitPlugin, MysqlPlugin, PostgresPlugin, PrunableRecord,
-    RetentionPolicy, SnapshotError, SnapshotPlugin, SnapshotRecord, SnapshotRegistry,
-    SnapshotRegistryConfig, SqlitePlugin, SupabasePlugin, SystemClock, available_provider_names,
+    RetentionPolicy, SnapshotCoverage, SnapshotError, SnapshotPlugin, SnapshotRecord,
+    SnapshotRegistry, SnapshotRegistryConfig, SqlitePlugin, SupabasePlugin, SystemClock,
+    available_provider_names,
 };
 
 #[cfg(test)]

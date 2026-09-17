@@ -20,4 +20,10 @@ pub enum RecoveryDegradation {
     /// execution. Non-interactive execution fails closed; interactive execution
     /// must surface this reason.
     NoSnapshotAvailable,
+    /// A Snapshot was required for bounded effect-opaque execution, at least
+    /// one applicable `Snapshot plugin` produced a record, and fewer records
+    /// came back than there were applicable plugins: an applicable plugin
+    /// failed. Coverage is incomplete, and Aegis cannot tell whether the
+    /// plugin that failed covered state the command will touch.
+    PartialSnapshotCoverage,
 }

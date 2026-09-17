@@ -8,7 +8,7 @@ use aegis::decision::BlockReason;
 use aegis::interceptor::parser::{extract_prefix, split_tokens};
 use aegis::planning::{CwdState, ExecutionDisposition, InterceptionPlan, PreparedPlanner};
 use aegis::runtime::{AuditWriteOptions, RecoveryStatus, recovery_status};
-use aegis::snapshot::SnapshotRecord;
+use aegis::snapshot::{SnapshotCoverage, SnapshotRecord};
 use aegis::ui::confirm::{
     PromptDecision, RecoveryPromptDecision, show_confirmation, show_confirmation_decision,
     show_policy_block, show_recovery_override_decision,
@@ -156,13 +156,14 @@ fn execute_with_snapshots(
     decision: Decision,
     sandbox_config: Option<&aegis_sandbox::SandboxConfig>,
 ) -> i32 {
-    let snapshots = create_snapshots_for_plan(prepared, plan, verbose);
+    let coverage = create_snapshots_for_plan(prepared, plan, verbose);
+    let snapshots = coverage.records.as_slice();
     if let Some(RecoveryStatus::Degraded(degradation)) = recovery_status(
         plan.assessment().effect_opaque,
         plan.policy_decision().snapshots_required,
-        &snapshots,
+        &coverage,
     ) {
-        return match show_recovery_override_decision() {
+        return match show_recovery_override_decision(degradation) {
             RecoveryPromptDecision::RunOnceWithoutRecovery => complete_approved_shell_execution(
                 ShellExecution {
                     cmd,
@@ -170,7 +171,7 @@ fn execute_with_snapshots(
                     sandbox_config,
                     prepared,
                     plan,
-                    snapshots: &snapshots,
+                    snapshots,
                     recovery_degradation: Some(degradation),
                 },
                 Decision::Approved,
@@ -180,7 +181,7 @@ fn execute_with_snapshots(
                     prepared,
                     plan,
                     Decision::Denied,
-                    &snapshots,
+                    snapshots,
                     sandbox_status_before_preparation(sandbox_config),
                     degradation,
                 ) {
@@ -199,7 +200,7 @@ fn execute_with_snapshots(
             sandbox_config,
             prepared,
             plan,
-            snapshots: &snapshots,
+            snapshots,
             recovery_degradation: None,
         },
         decision,
@@ -278,12 +279,12 @@ fn create_snapshots_for_plan(
     prepared: &PreparedPlanner,
     plan: &InterceptionPlan,
     verbose: bool,
-) -> Vec<SnapshotRecord> {
+) -> SnapshotCoverage {
     if matches!(
         plan.snapshot_plan(),
         aegis::planning::SnapshotPlan::NotRequired
     ) {
-        return Vec::new();
+        return SnapshotCoverage::default();
     }
 
     match prepared {
@@ -295,7 +296,7 @@ fn create_snapshots_for_plan(
                 context.create_snapshots(Path::new("."), &plan.assessment().command.raw, verbose)
             }
         },
-        PreparedPlanner::SetupFailure(_) => Vec::new(),
+        PreparedPlanner::SetupFailure(_) => SnapshotCoverage::default(),
     }
 }
 

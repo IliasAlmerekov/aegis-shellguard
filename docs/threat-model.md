@@ -105,14 +105,16 @@ visible in the assessed command text.
 - Aegis marks only the bounded ADR-016 shapes; it does not inspect the referenced
   script file or raise `RiskLevel` solely because the shape is effect-opaque.
 - In Protect and Strict with `SnapshotPolicy::Selective` or
-  `SnapshotPolicy::Full`, **Required recovery** means at least one Snapshot must
-  be created before execution, independently of plugin applicability.
-- If no Snapshot is created, non-interactive execution denies. Interactive
-  execution explains the missing recovery and can proceed only through a
-  one-time Recovery override (`Run once without recovery`), which cannot be
-  persisted as an allowlist rule.
-- Audit records `no_snapshot_available` together with the final `Denied` or
-  human `Approved` decision.
+  `SnapshotPolicy::Full`, **Required recovery** means every applicable Snapshot
+  plugin must create its Snapshot before execution, independently of how many
+  plugins apply (ADR-036).
+- If no Snapshot is created, or an applicable plugin fails while another
+  succeeds, non-interactive execution denies. Interactive execution explains
+  which of the two happened and can proceed only through a one-time Recovery
+  override (`Run once without recovery`), which cannot be persisted as an
+  allowlist rule.
+- Audit records `no_snapshot_available` or `partial_snapshot_coverage` together
+  with the final `Denied` or human `Approved` decision.
 - The Sandbox adds confinement but is not the primary ADR-016 backstop. It is
   mandatory in 1.0 on its own ground (ADR-029), not because Required recovery
   demands it; the two obligations are independent, and satisfying one never

@@ -71,7 +71,9 @@ pub(super) fn execute_policy_decision(
     match policy_decision.decision {
         PolicyAction::AutoApprove => {
             let snapshots = if policy_decision.snapshots_required {
-                context.create_snapshots(cwd, &assessment.command.raw, verbose)
+                context
+                    .create_snapshots(cwd, &assessment.command.raw, verbose)
+                    .records
             } else {
                 Vec::new()
             };
@@ -93,7 +95,9 @@ pub(super) fn execute_policy_decision(
                 Decision::Denied
             };
             let snapshots = if approved && policy_decision.snapshots_required {
-                context.create_snapshots(cwd, &assessment.command.raw, verbose)
+                context
+                    .create_snapshots(cwd, &assessment.command.raw, verbose)
+                    .records
             } else {
                 Vec::new()
             };

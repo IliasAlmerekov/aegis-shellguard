@@ -14,7 +14,7 @@ distribution smoke gates open)
 
 ## Active branch
 
-`fix/hook-read-only-aegis-333`
+`fix/partial-snapshot-coverage-312`
 
 ## Last updated
 
@@ -22,7 +22,32 @@ distribution smoke gates open)
 
 ---
 
-## Current session (2026-09-17): the scanner classifies Aegis self-management (#334)
+## Current session (2026-09-17): partial Snapshot coverage degrades Required recovery (#312)
+
+- `recovery_status` (`src/runtime/recovery.rs`) now resolves `Ready` only when
+  every applicable Snapshot plugin produced a record. A pass where one plugin
+  succeeds and another applicable one fails reports
+  `Degraded(PartialSnapshotCoverage)`; an empty record set still reports
+  `NoSnapshotAvailable` and still fails closed.
+- `SnapshotRegistry::snapshot_all` returns `SnapshotCoverage { records,
+  applicable }`. Both numbers come from one pass, so the barrier never fires on
+  a disagreement between two applicability samples. `RuntimeContext::create_snapshots`
+  and `create_snapshots_async` return it too.
+- The Recovery override prompt takes the `RecoveryDegradation` it is asking
+  about, so a partial pass is no longer described as "No required Snapshot was
+  created".
+- ADR-036 records the decision and what it supersedes in ADR-031 §8 and §9.
+  `CONTEXT.md` gains `Snapshot coverage` and rewrites `Recovery degradation`
+  and `Recovery status`.
+- Coverage: unit tests in `src/runtime/recovery.rs`, registry counting tests in
+  `crates/aegis-snapshot/src/registry.rs`, a prompt-wording test in
+  `crates/aegis-tui`, and an end-to-end watch test
+  (`watch_partial_snapshot_coverage_prompts_and_audits_its_own_reason`) that
+  drives a real partial pass through two pinned plugins.
+
+---
+
+## Previous session (2026-09-17): the scanner classifies Aegis self-management (#334)
 
 - New `Category::Aegis` and six token-prefix rules in
   `crates/aegis-scanner/src/patterns/builtins_b.rs`: `AEG-001` (`off`),

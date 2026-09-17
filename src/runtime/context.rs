@@ -17,7 +17,7 @@ use crate::explanation::CommandExplanation;
 use crate::explanation::formatter::{CommandExplanationExt, build_outcome_explanation};
 use crate::interceptor;
 use crate::interceptor::scanner::{Assessment, Scanner};
-use crate::snapshot::{SnapshotRecord, SnapshotRegistry, SnapshotRegistryConfig};
+use crate::snapshot::{SnapshotCoverage, SnapshotRecord, SnapshotRegistry, SnapshotRegistryConfig};
 #[cfg(feature = "starlark-policy")]
 use aegis_starlark::load_starlark_policy;
 use aegis_types::{RecoveryDegradation, SandboxStatus};
@@ -355,7 +355,7 @@ impl RuntimeContext {
 
     /// Create best-effort snapshots using the context-bound registry and the
     /// persistent async handle.
-    pub fn create_snapshots(&self, cwd: &Path, cmd: &str, _verbose: bool) -> Vec<SnapshotRecord> {
+    pub fn create_snapshots(&self, cwd: &Path, cmd: &str, _verbose: bool) -> SnapshotCoverage {
         self.async_handle
             .block_on(self.snapshot_registry().snapshot_all(cwd, cmd))
     }
@@ -386,7 +386,7 @@ impl RuntimeContext {
         &self,
         cwd: &std::path::Path,
         cmd: &str,
-    ) -> Vec<crate::snapshot::SnapshotRecord> {
+    ) -> SnapshotCoverage {
         self.snapshot_registry().snapshot_all(cwd, cmd).await
     }
 

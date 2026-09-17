@@ -11,6 +11,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Security: Required recovery is `Ready` only when every applicable Snapshot plugin created its Snapshot. A pass where git succeeds and a configured database provider fails now stops at the Recovery prompt and records `partial_snapshot_coverage`, instead of reading as full coverage and running unprompted. Total failure still records `no_snapshot_available` and still fails closed. The prompt names which of the two happened. (#312, ADR-036)
 - Security: The scanner classifies Aegis' own state-changing commands under the new `Aegis` category, so `aegis off` reaches `Danger` however it is spelled — behind an absolute path, behind `env`, `command` or `sudo`, or after `&&` in a compound command. New rules `AEG-001` (`off`), `AEG-002` (`rollback`) and `AEG-003` (`snapshot prune --yes`) are `Danger`; `AEG-004` (`config init`), `AEG-005` (`install-hooks`) and `AEG-006` (`setup-shell`) are `Warn`. Previously only a first-word check in the agent hook covered these, and every other spelling was auto-approved as `Safe`. (#334, ADR-035)
 - Fixed: The agent hook now runs read-only `aegis` commands (`--help`, `--version`, `help`, `status`, `audit`, `snapshot list`, `config show`, `config validate`) as `aegis --command` rewrites instead of denying them as invalid wrapper syntax. Commands that change Aegis itself, such as `aegis off`, stay denied with a reason that names them. (#333, ADR-011)
 
