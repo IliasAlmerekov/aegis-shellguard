@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 
 const SNAPSHOT_PLUGINS: &[(&str, &str)] = &[
-    ("crates/aegis-snapshot/src/git.rs", "GitPlugin"),
+    ("crates/aegis-snapshot/src/git/mod.rs", "GitPlugin"),
     ("crates/aegis-snapshot/src/docker/mod.rs", "DockerPlugin"),
     (
         "crates/aegis-snapshot/src/postgres/mod.rs",
