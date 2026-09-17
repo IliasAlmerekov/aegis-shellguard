@@ -17,6 +17,14 @@ attaches.
 Do not read any checklist item as done unless a release note or verification
 record says so.
 
+One automatic condition does block a release, and its rules are not in this
+document: the Tag admission check refuses to build or publish anything for a
+`v*` tag unless the tagged commit is reachable from `main`, passes `cargo fmt`,
+`cargo clippy`, `cargo test --workspace`, `cargo audit` and `cargo deny check`,
+and has a `CHANGELOG.md` section. It is specified in
+[CI and Release Guarantees](ci.md#tag-admission-check); this document records
+evidence about it, never its rules.
+
 ## Why two checklists?
 
 Aegis records verification against two different adoption thresholds:

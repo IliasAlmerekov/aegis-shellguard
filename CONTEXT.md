@@ -667,3 +667,16 @@ at the `Hook` boundary (fixed, detail-free deny reason) and the installed per-ag
 status. External SIGKILL, an OOM-kill of the agent process itself, and a corrupted
 `Hook` script are not covered (ADR-023).
 _Avoid_: crash handling, panic recovery (reserve "recovery" for snapshot rollback)
+
+## Release automation
+
+**Tag admission check**:
+The set of conditions a commit must already satisfy before a pushed `v*` tag is
+allowed to produce any release artifact: the commit is reachable from `main`,
+the workspace passes formatting, lint, tests, the CVE audit and the dependency
+policy check, and `CHANGELOG.md` carries a non-empty section for the version.
+It answers "may this commit be published at all", and is evaluated afresh at
+tag time rather than inherited from the commit's earlier history. It is not the
+1.0 release gate, which is milestone membership and lives in the issue tracker
+(ADR-027).
+_Avoid_: release gate, quality gate, publish gate, CI gate

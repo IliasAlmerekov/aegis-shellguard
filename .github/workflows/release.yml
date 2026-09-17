@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
 
+# Least privilege by default, like ci.yml. The `release` job raises this to
+# `contents: write` for itself, and it is the only job that needs to.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -12,8 +17,111 @@ env:
   CROSS_VERSION: 0.2.5
 
 jobs:
+  # Tag admission check, part 1 of 3. Pushing a `v*` tag used to start the
+  # build matrix immediately: ci.yml does not trigger on tags, so a tag on a
+  # commit that never went through CI shipped binaries to the GitHub Release,
+  # npm, and the Homebrew tap. Nothing downstream runs until all three
+  # admission jobs are green.
+  #
+  # This part is the cheap one and gates the two expensive ones. A tag that is
+  # not reachable from `main` skipped code review and the nine required status
+  # checks on that branch, and no amount of re-running fmt or clippy on it
+  # would show that. Asking the compare API costs one request and needs no
+  # git history, so the release checkout keeps its default shallow fetch.
+  admission-ancestry:
+    name: Tag admission (commit on main, CHANGELOG section)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Tagged commit is reachable from main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Comparing base=main against head=<tagged commit> reports `behind`
+          # when the tag is an ancestor of main and `identical` when the tag
+          # is main's head. `ahead` and `diverged` both mean the commit is not
+          # on main.
+          status="$(gh api "repos/$REPO/compare/main...$SHA" --jq .status)"
+          case "$status" in
+            identical | behind)
+              echo "OK: $SHA is reachable from main (compare status: $status)"
+              ;;
+            *)
+              echo "tagged commit $SHA is not reachable from main (compare status: $status)" >&2
+              echo "Only a commit that merged into main has passed review and the required checks." >&2
+              exit 1
+              ;;
+          esac
+
+      # The `release` job below extracts this same section for the Release
+      # body. Checking it exists here as well means a tag with no CHANGELOG
+      # entry fails in under a minute instead of after the four-target build
+      # matrix has run.
+      - name: CHANGELOG has a non-empty section for this tag
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          awk -v version="$version" '
+            index($0, "## [" version "]") == 1 { capture = 1; next }
+            capture && index($0, "## [") == 1 { exit }
+            capture { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "CHANGELOG.md has no non-empty '## [$version]' section for tag $TAG" >&2
+            exit 1
+          fi
+          echo "OK: CHANGELOG.md has a '## [$version]' section"
+
+  # Tag admission check, part 2 of 3. Same composite action the CI `Quality
+  # (fmt, clippy, test)` job runs, so the tagged commit is held to the
+  # identical standard rather than a copy that can drift.
+  admission-quality:
+    name: Tag admission (fmt, clippy, test)
+    needs: admission-ancestry
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - uses: ./.github/actions/quality-gate
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+  # Tag admission check, part 3 of 3. This one can fail on a commit that was
+  # green when it merged: the advisory database moves, so a CVE published
+  # after the merge turns up here. That is the intended outcome — Aegis does
+  # not publish a binary with a known CVE in its dependency chain. Update the
+  # dependency, merge, and re-tag.
+  admission-security:
+    name: Tag admission (audit, deny)
+    needs: admission-ancestry
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - uses: ./.github/actions/security-gate
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
   build:
     name: Build ${{ matrix.target }}
+    needs: [admission-quality, admission-security]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

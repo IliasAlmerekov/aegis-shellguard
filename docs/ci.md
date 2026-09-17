@@ -24,6 +24,12 @@ Current GitHub Actions workflows run these jobs:
   parser, scanner, heredoc, router, language-protocol, Python, JavaScript,
   TypeScript, and Bash fuzz targets with bounded `-runs`, on the pinned
   `FUZZ_NIGHTLY_TOOLCHAIN` nightly rather than a floating one
+- `Release / Tag admission (commit on main, CHANGELOG section)`,
+  `Release / Tag admission (fmt, clippy, test)`,
+  `Release / Tag admission (audit, deny)`: the Tag admission check, described
+  under [Release Workflow Contract](#release-workflow-contract). The two Rust
+  jobs run the same `quality-gate` and `security-gate` composite actions as
+  `Quality (fmt, clippy, test)` and `Security (audit, deny)` above.
 - `Release / build`: tagged release binaries for:
   - `x86_64-unknown-linux-musl`
   - `aarch64-unknown-linux-musl`
@@ -57,7 +63,8 @@ shell startup files or agent config.
 ## What CI Guarantees
 
 - the workflow definitions do not depend on floating toolchain, tool, or action refs
-- CI runs formatting, linting, tests, dependency audit, deny policy checks, release builds, and benchmark policy checks exactly as defined in the pinned workflows
+- `ci.yml` runs formatting, linting, tests, dependency audit, deny policy checks, release builds, and benchmark policy checks exactly as defined in the pinned workflows
+- `release.yml` re-runs formatting, linting, tests, dependency audit, and deny policy checks against the tagged commit before it builds anything, using the same composite actions `ci.yml` uses (see the Tag admission check below)
 - CI additionally verifies parser, scanner, heredoc, routing, language-protocol,
   and qualified-adapter fuzzing with bounded corpus-backed runs.
 - release artifacts are checksumed and uploaded by the pinned release workflow
@@ -88,6 +95,7 @@ Current runtime behavior is documented in `docs/config-schema.md`, but at a high
 
 The current release workflow is triggered by tags matching `v*` and:
 
+- runs the Tag admission check before any other job
 - installs Rust `1.94.0`
 - uses `cross 0.2.5` for both Linux musl targets (`x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`) so the release matrix does not depend on runner-specific musl linker setup
 - builds the current four-target release matrix
@@ -98,6 +106,50 @@ The current release workflow is triggered by tags matching `v*` and:
 - generates SHA-256 checksum sidecar files
 - uploads artifacts from the build job
 - publishes a GitHub Release with generated release notes and the built artifacts
+
+### Tag admission check
+
+`ci.yml` does not trigger on tags. Before this check existed, pushing a `v*`
+tag went straight to the build matrix, so a tag on a commit that never went
+through CI shipped binaries to the GitHub Release, npm, and the Homebrew tap.
+
+The Tag admission check is the set of conditions the tagged commit must satisfy
+before `release.yml` builds anything. Three jobs run it:
+
+1. `Tag admission (commit on main, CHANGELOG section)` asks the GitHub compare
+   API whether the tagged commit is reachable from `main`, accepting only the
+   `identical` and `behind` statuses, and asserts `CHANGELOG.md` has a
+   non-empty `## [<version>]` section for the tag. Reachability is what proves
+   the commit passed review and the required status checks on `main`; no
+   re-run of fmt or clippy can show that.
+2. `Tag admission (fmt, clippy, test)` runs the `quality-gate` composite
+   action: `cargo fmt --check --all`, `cargo clippy --workspace -- -D
+   warnings`, `cargo test --workspace`.
+3. `Tag admission (audit, deny)` runs the `security-gate` composite action:
+   `cargo audit` and `cargo deny check`.
+
+Jobs 2 and 3 need job 1 and run in parallel. The build matrix needs both of
+them, so a failing condition stops the release before any artifact exists, and
+therefore before any publish step.
+
+Both Rust jobs call the same composite actions as the `Quality (fmt, clippy,
+test)` and `Security (audit, deny)` jobs in `ci.yml`, so the tagged commit is
+held to the identical standard rather than to a copy that can drift. The
+actions are composite rather than reusable `workflow_call` workflows because a
+called workflow renames its jobs' check runs, which would break the required
+status contexts configured on `main`.
+
+The check applies to prerelease tags (`-rc`, `-beta`, `-alpha`) in full. Those
+binaries reach a public GitHub Release and get installed by hand.
+
+`cargo audit` reads a moving advisory database, so job 3 can fail on a commit
+that was green when it merged. That is intended: Aegis does not publish a
+binary with a known CVE in its dependency chain. The way out is to update the
+dependency, merge, and re-tag.
+
+The Tag admission check is not the 1.0 release gate. That one is milestone
+membership and lives in the issue tracker
+([ADR-027](adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)).
 
 This is a deterministic workflow-input contract, not a formal reproducible-build guarantee.
 
