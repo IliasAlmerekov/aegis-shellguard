@@ -11,6 +11,8 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Fixed: The release-workflow test asserts the Node.js 24 publication actions by the major version in their pinned tag comment instead of by an exact commit SHA. A Dependabot patch bump of `softprops/action-gh-release` or `actions/download-artifact` no longer fails the Quality job, while a downgrade across the major boundary still does. (#348)
+- Fixed: Dependabot holds React and React DOM at 19.2 in `landing`. `@react-three/fiber` 9.7.0 is the newest release and still declares `peer react ">=19 <19.3"`, so React 19.3 fails `npm ci` with ERESOLVE and took the whole grouped landing update down with it. (#353)
 - Changed: Every pinned CI version lives in `.github/versions.env` and the release target matrix with its runner labels in `.github/build-targets.json`. `ci.yml` and `release.yml` load both through the new `load-versions` action, so a toolchain, tool, or runner bump is one edit instead of four. New `build-target` and `install-cargo-tool` composite actions remove the duplicated cross/native build steps and the three copies of the cached-tool install. The nine fuzz steps collapse into one loop, the two live-installer jobs into one matrix, and the GitHub Release asset list is derived from the target matrix rather than written out again.
 - Added: `.github/dependabot.yml` opens weekly update pull requests for the SHA-pinned GitHub Actions, the cargo workspace, and the landing npm workspace. The action SHAs had no update path before.
 - Added: The fuzz job uploads `fuzz/artifacts` when a target crashes, so the reproducing input survives the runner.
