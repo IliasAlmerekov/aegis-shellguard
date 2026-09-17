@@ -192,3 +192,19 @@ list git itself clears when it enters another repository) before setting
 left untouched: they inherit the environment on purpose, for credentials
 (`PGPASSWORD`, `MYSQL_PWD`) and daemon selection (item 1 above), and none of
 them reads a git-location variable.
+
+A code review of the first fix caught that it only covered `GitPlugin`
+itself: `git.rs`'s own test module spawned `git` directly in `init_repo`,
+`commit_file`, and a handful of one-off setup and assertion calls, all still
+reading the ambient environment. Under a linked worktree's `pre-push` hook
+those test spawns wrote `git config`, `git commit --allow-empty`, and
+`git worktree add` into the developer's real repository, and a stash-list
+assertion read that repository's stash instead of the tempdir fixture's. All
+of them now go through `git_command` too, so every `git` spawn in this file —
+production and test — is isolated. Test code elsewhere in the workspace still
+spawns `git` with the inherited environment; fixing that is out of scope for
+#317. As a second line of defense, `.githooks/pre-push` now runs
+`unset $(git rev-parse --local-env-vars)` before any other step, so a
+`pre-push` run itself never has an ambient `GIT_DIR` to leak into those other
+tests. A shell that exports `GIT_DIR` by hand before invoking `cargo test`
+directly — bypassing the hook — is still a risk for that remaining test code.
