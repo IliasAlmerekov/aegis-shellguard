@@ -156,3 +156,39 @@ not. `prepared_with_audit_path` keeps its `GitPlugin`-only registry, since the
 two tests built from it assert the `no_snapshot_available` degradation
 specifically because no plugin applies — an empty registry would make that
 assertion trivially true instead of testing anything.
+
+## Addendum (2026-09-17): the "distinct, so-far-unidentified path" from the second addendum was ambient `GIT_DIR` leaking into `GitPlugin`, fixed by issue #317
+
+The second addendum left one question open: a `.githooks/pre-push` run had
+twice populated a developer's real stash with `aegis-snap-*` entries it had
+no business creating, and tracing `GitPlugin::is_applicable`'s fail-open
+branch ruled that branch out as the cause without identifying the actual one.
+Issue #317 found it.
+
+Every `git` spawn in `crates/aegis-snapshot/src/git.rs` set `current_dir(cwd)`
+but inherited the rest of the process environment. Git 2.43 exports an
+absolute `GIT_DIR` (pointing at `.../.git/worktrees/<name>`) to hooks running
+in a linked worktree — a plain checkout's `pre-push` hook gets none, which is
+why the report never reproduced from a normal clone. `current_dir` only
+changes where a relative path resolves from; it does not unset `GIT_DIR`, and
+git prefers an explicit `GIT_DIR` over the directory it was started in. So
+inside a linked worktree's `pre-push` hook, every `git` call `GitPlugin` made
+— including the `git status --porcelain` and `git stash push
+--include-untracked` behind `snapshot()` — silently operated on the
+worktree's linked repository instead of whatever `cwd` a test had asked for.
+A `cargo test` run that pointed `GitPlugin` at a bare `TempDir` outside any
+repository would see that repository's clean status, stash nothing, and
+report success — except the ambient `GIT_DIR` meant the plugin was never
+looking at the `TempDir` at all; it was looking at the developer's own repo,
+by way of the worktree, and stashing whatever untracked debris a concurrent
+test had dropped into it under an `aegis-snap-*` message.
+
+Fixed by isolating every `git` spawn from the ambient git-location
+environment: a private `git_command(cwd)` helper now backs all nine
+`Command::new("git")` call sites in `GitPlugin` and clears `GIT_DIR` and the
+other fourteen variables `git rev-parse --local-env-vars` reports (the exact
+list git itself clears when it enters another repository) before setting
+`current_dir`. `postgres`, `mysql`, `supabase`, `docker`, and `sqlite` were
+left untouched: they inherit the environment on purpose, for credentials
+(`PGPASSWORD`, `MYSQL_PWD`) and daemon selection (item 1 above), and none of
+them reads a git-location variable.

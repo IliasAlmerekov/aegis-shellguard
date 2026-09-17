@@ -19,6 +19,46 @@ const CLEAN_SENTINEL: &str = "clean";
 /// as an unambiguous delimiter.
 const SEP: char = '\t';
 
+/// Environment variables git reads to locate a repository instead of walking
+/// up from `cwd`. This is the exact output of `git rev-parse --local-env-vars`
+/// (git 2.43) — the list git itself clears when it enters another repository
+/// (for example via `-C` or a submodule), so clearing it here on every spawn
+/// gives `GitPlugin` the same isolation git already relies on internally.
+///
+/// A caller's ambient `GIT_DIR` (set, for instance, by git in a `pre-push`
+/// hook running in a linked worktree) would otherwise override `current_dir`
+/// and point every spawn at the wrong repository (issue #317).
+const GIT_ENV_VARS_TO_CLEAR: &[&str] = &[
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CONFIG",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_GRAFT_FILE",
+    "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_PREFIX",
+    "GIT_SHALLOW_FILE",
+    "GIT_COMMON_DIR",
+];
+
+/// Build a `git` command scoped to `cwd`, isolated from ambient git-location
+/// environment variables. All nine `git` spawns in `GitPlugin` must go
+/// through this instead of `Command::new("git")` directly — see
+/// `GIT_ENV_VARS_TO_CLEAR`.
+fn git_command(cwd: impl AsRef<Path>) -> Command {
+    let mut cmd = Command::new("git");
+    cmd.current_dir(cwd);
+    for var in GIT_ENV_VARS_TO_CLEAR {
+        cmd.env_remove(var);
+    }
+    cmd
+}
+
 /// Built-in Git snapshot provider (creates stashes before dangerous commands).
 pub struct GitPlugin;
 
@@ -29,9 +69,8 @@ impl SnapshotPlugin for GitPlugin {
     }
 
     async fn is_applicable(&self, cwd: &Path) -> bool {
-        match Command::new("git")
+        match git_command(cwd)
             .args(["rev-parse", "--git-dir"])
-            .current_dir(cwd)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
@@ -70,9 +109,8 @@ impl SnapshotPlugin for GitPlugin {
             .unwrap_or(0);
         let message = format!("aegis-snap-{timestamp}");
 
-        let status_out = Command::new("git")
+        let status_out = git_command(cwd)
             .args(["status", "--porcelain"])
-            .current_dir(cwd)
             .output()
             .await
             .map_err(|e| SnapshotError::Snapshot(format!("failed to run git status: {e}")))?;
@@ -88,9 +126,8 @@ impl SnapshotPlugin for GitPlugin {
             return Ok(CLEAN_SENTINEL.to_string());
         }
 
-        let stash_out = Command::new("git")
+        let stash_out = git_command(cwd)
             .args(["stash", "push", "--include-untracked", "-m", &message])
-            .current_dir(cwd)
             .output()
             .await
             .map_err(|e| SnapshotError::Snapshot(format!("failed to run git stash: {e}")))?;
@@ -102,9 +139,8 @@ impl SnapshotPlugin for GitPlugin {
             )));
         }
 
-        let rev_out = Command::new("git")
+        let rev_out = git_command(cwd)
             .args(["rev-parse", "stash@{0}"])
-            .current_dir(cwd)
             .output()
             .await
             .map_err(|e| SnapshotError::Snapshot(format!("git rev-parse failed: {e}")))?;
@@ -132,9 +168,8 @@ impl SnapshotPlugin for GitPlugin {
             SnapshotError::Snapshot(format!("malformed snapshot_id: {snapshot_id:?}"))
         })?;
 
-        let list_out = Command::new("git")
+        let list_out = git_command(cwd_str)
             .args(["stash", "list", "--format=%H %gd"])
-            .current_dir(cwd_str)
             .output()
             .await
             .map_err(|e| SnapshotError::Snapshot(format!("git stash list failed: {e}")))?;
@@ -154,9 +189,8 @@ impl SnapshotPlugin for GitPlugin {
                 SnapshotError::Snapshot(format!("stash entry not found for hash {hash}"))
             })?;
 
-        let apply_out = Command::new("git")
+        let apply_out = git_command(cwd_str)
             .args(["stash", "apply", "--index", hash])
-            .current_dir(cwd_str)
             .output()
             .await
             .map_err(|e| SnapshotError::Snapshot(format!("git stash apply failed: {e}")))?;
@@ -179,9 +213,8 @@ impl SnapshotPlugin for GitPlugin {
             });
         }
 
-        let drop_out = Command::new("git")
+        let drop_out = git_command(cwd_str)
             .args(["stash", "drop", &stash_ref])
-            .current_dir(cwd_str)
             .output()
             .await;
         if !drop_out.map(|o| o.status.success()).unwrap_or(false) {
@@ -208,9 +241,8 @@ impl SnapshotPlugin for GitPlugin {
             return Ok(());
         }
 
-        let list_out = Command::new("git")
+        let list_out = git_command(cwd_path)
             .args(["stash", "list", "--format=%H %gd"])
-            .current_dir(cwd_path)
             .output()
             .await
             .map_err(|e| SnapshotError::Snapshot(format!("git stash list failed: {e}")))?;
@@ -237,9 +269,8 @@ impl SnapshotPlugin for GitPlugin {
             return Ok(());
         };
 
-        let drop_out = Command::new("git")
+        let drop_out = git_command(cwd_path)
             .args(["stash", "drop", &stash_ref])
-            .current_dir(cwd_path)
             .output()
             .await;
 
@@ -743,6 +774,134 @@ mod tests {
             SnapshotError::Snapshot(msg) => assert!(msg.contains("malformed snapshot_id")),
             other => panic!("expected snapshot error, got {other:?}"),
         }
+    }
+
+    // ── environment isolation (issue #317) ───────────────────────────────────
+
+    #[test]
+    fn git_command_removes_every_ambient_git_env_var() {
+        let dir = TempDir::new().unwrap();
+        let cmd = git_command(dir.path());
+        let std_cmd = cmd.as_std();
+        for var in GIT_ENV_VARS_TO_CLEAR {
+            let entry = std_cmd
+                .get_envs()
+                .find(|(k, _)| *k == std::ffi::OsStr::new(var));
+            assert_eq!(
+                entry.map(|(_, v)| v),
+                Some(None),
+                "{var} should be marked removed on the spawned git command"
+            );
+        }
+    }
+
+    /// Re-executes this test binary as a child process with a marker env var
+    /// so the child branch runs under a foreign `GIT_DIR` while the parent
+    /// branch observes the outcome through the child's exit code. This is the
+    /// only way to test env isolation honestly: setting `GIT_DIR` via
+    /// `std::env::set_var` in the test process itself would leak into every
+    /// other test running in the same process (tests share one address
+    /// space and `cargo test` runs them concurrently by default).
+    #[tokio::test]
+    async fn is_applicable_ignores_ambient_git_dir_pointing_elsewhere() {
+        if std::env::var_os("AEGIS_GIT_ENV_CHILD").is_some() {
+            let non_repo_cwd =
+                std::env::var("AEGIS_TEST_CWD").expect("parent must pass AEGIS_TEST_CWD");
+            let applicable = GitPlugin.is_applicable(Path::new(&non_repo_cwd)).await;
+            std::process::exit(if applicable { 1 } else { 0 });
+        }
+
+        let foreign_repo = TempDir::new().unwrap();
+        init_repo(foreign_repo.path()).await;
+        let foreign_git_dir = foreign_repo.path().join(".git");
+
+        let non_repo_cwd = TempDir::new().unwrap();
+
+        let exe = std::env::current_exe().unwrap();
+        let status = std::process::Command::new(exe)
+            .args([
+                "--exact",
+                "git::tests::is_applicable_ignores_ambient_git_dir_pointing_elsewhere",
+                "--nocapture",
+            ])
+            .env("AEGIS_GIT_ENV_CHILD", "1")
+            .env("AEGIS_TEST_CWD", non_repo_cwd.path())
+            .env("GIT_DIR", &foreign_git_dir)
+            .status()
+            .expect("failed to re-exec test binary");
+
+        assert!(
+            status.success(),
+            "GitPlugin::is_applicable reported applicable=true for a non-repo cwd \
+             under a foreign GIT_DIR (child exit code {:?}); ambient GIT_DIR leaked in",
+            status.code()
+        );
+    }
+
+    /// Same re-exec pattern as the `is_applicable` test above: the child runs
+    /// `snapshot()` on a non-repo tempdir under a foreign `GIT_DIR` and
+    /// reports what happened through its exit code, so the parent never has
+    /// to touch process-global environment state itself.
+    #[tokio::test]
+    async fn snapshot_does_not_stash_into_ambient_git_dir() {
+        if std::env::var_os("AEGIS_GIT_ENV_CHILD").is_some() {
+            let non_repo_cwd =
+                std::env::var("AEGIS_TEST_CWD").expect("parent must pass AEGIS_TEST_CWD");
+            let cwd = Path::new(&non_repo_cwd);
+            // Isolated from the foreign GIT_DIR, `cwd` is not a real
+            // repository, so `snapshot()` is expected to error out on its
+            // own `git status` call — that is fine. What must never happen
+            // is the file getting swept away into the foreign repo's stash.
+            let _ = GitPlugin.snapshot(cwd, "rm -rf .").await;
+            let file_survived = cwd.join("untracked.txt").exists();
+            std::process::exit(if file_survived { 0 } else { 1 });
+        }
+
+        let foreign_repo = TempDir::new().unwrap();
+        init_repo(foreign_repo.path()).await;
+        let foreign_git_dir = foreign_repo.path().join(".git");
+
+        let non_repo_cwd = TempDir::new().unwrap();
+        fs::write(
+            non_repo_cwd.path().join("untracked.txt"),
+            "do not steal me\n",
+        )
+        .unwrap();
+
+        let exe = std::env::current_exe().unwrap();
+        let status = std::process::Command::new(exe)
+            .args([
+                "--exact",
+                "git::tests::snapshot_does_not_stash_into_ambient_git_dir",
+                "--nocapture",
+            ])
+            .env("AEGIS_GIT_ENV_CHILD", "1")
+            .env("AEGIS_TEST_CWD", non_repo_cwd.path())
+            .env("GIT_DIR", &foreign_git_dir)
+            .status()
+            .expect("failed to re-exec test binary");
+
+        assert!(
+            status.success(),
+            "GitPlugin::snapshot stashed the tempdir's file into a foreign GIT_DIR \
+             instead of leaving it alone (child exit code {:?})",
+            status.code()
+        );
+
+        // The foreign repo's stash must still be empty: nothing was swept
+        // into it on the child's behalf.
+        let stash_list = Command::new("git")
+            .args(["stash", "list"])
+            .current_dir(foreign_repo.path())
+            .output()
+            .await
+            .unwrap();
+        assert!(
+            String::from_utf8_lossy(&stash_list.stdout)
+                .trim()
+                .is_empty(),
+            "foreign repo's stash should still be empty"
+        );
     }
 
     #[tokio::test]
