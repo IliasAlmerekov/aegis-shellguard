@@ -140,8 +140,9 @@ pub(super) struct PartialAuditConfig {
 impl PartialConfig {
     pub(super) fn from_path(path: &Path) -> Result<Self> {
         let contents = fs::read_to_string(path)?;
-        let config: Self = toml::from_str(&contents).map_err(|error| {
-            ConfigError::Config(format!("failed to parse {}: {error}", path.display()))
+        let config: Self = toml::from_str(&contents).map_err(|error| ConfigError::ParseFailed {
+            path: path.display().to_string(),
+            source: Box::new(error),
         })?;
 
         let deprecated = contents.contains("[[allowlist]]") || contents.contains("allowlist = [");

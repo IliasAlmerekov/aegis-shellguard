@@ -33,9 +33,15 @@ pub(crate) fn run(config: &SandboxConfig, cmd: &str) -> Result<SandboxResult, Sa
         .args(&all_args)
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .map_err(|e| SandboxError::Execution(e.to_string()))?
+        .map_err(|source| SandboxError::Spawn {
+            operation: "spawn",
+            source,
+        })?
         .wait_with_output()
-        .map_err(|e| SandboxError::Execution(e.to_string()))?;
+        .map_err(|source| SandboxError::Spawn {
+            operation: "wait for",
+            source,
+        })?;
 
     let exit_code = output.status.code().unwrap_or(-1);
 
@@ -143,9 +149,7 @@ pub(crate) fn build_bwrap_args(config: &SandboxConfig) -> Result<Vec<OsString>, 
     }
 
     for path in &config.allow_write {
-        let canonical = path.canonicalize().map_err(|e| {
-            SandboxError::Execution(format!("allow_write path {}: {e}", path.display()))
-        })?;
+        let canonical = crate::support::canonicalize_allow_write_path(path)?;
         args.push("--bind".into());
         args.push(canonical.as_os_str().to_owned());
         args.push(canonical.as_os_str().to_owned());
@@ -533,6 +537,6 @@ mod tests {
 
         let result = prepare_for_exec(&cfg, OsStr::new("/usr/bin/true"), &[]);
 
-        assert!(matches!(result, Err(SandboxError::Execution(_))));
+        assert!(matches!(result, Err(SandboxError::AllowWritePath { .. })));
     }
 }

@@ -108,10 +108,36 @@ pub enum WorkerError {
         /// The reaped exit code, or `None` if terminated by a signal.
         code: Option<i32>,
     },
-    /// A read from the worker pipe failed. Carries the error message (the
-    /// underlying `io::Error` is not `Clone`, so the string is kept instead).
-    #[error("worker i/o error: {0}")]
-    Io(String),
+    /// A read from or write to the worker pipe failed.
+    ///
+    /// `WorkerError` must be `Clone` — it is copied into every pending
+    /// `TargetResult` when a session-ending failure is fanned out to the
+    /// targets still awaiting a response — but `std::io::Error` is not
+    /// `Clone`. Holding `Arc<std::io::Error>` would preserve the value
+    /// exactly, but a fail-closed branch here only ever needs to distinguish
+    /// *kinds* of I/O failure (a closed pipe vs. a permission fault vs.
+    /// something else), never the original error's platform-specific detail
+    /// or backtrace. `ErrorKind` is `Copy`, so keeping it alongside the
+    /// rendered message is the cheaper of the two `Clone`-compatible shapes
+    /// and loses nothing this type's callers read.
+    #[error("worker i/o error: {message}")]
+    Io {
+        /// The underlying error's kind, e.g. `BrokenPipe` or
+        /// `PermissionDenied`.
+        kind: std::io::ErrorKind,
+        /// The rendered `io::Error` message.
+        message: String,
+    },
+}
+
+impl WorkerError {
+    /// Build a [`Self::Io`] from an [`std::io::Error`], keeping its kind.
+    fn from_io(error: std::io::Error) -> Self {
+        WorkerError::Io {
+            kind: error.kind(),
+            message: error.to_string(),
+        }
+    }
 }
 
 impl From<WorkerError> for DegradationReason {
@@ -218,14 +244,8 @@ where
     if out.is_empty() {
         return Ok(());
     }
-    writer
-        .write_all(&out)
-        .await
-        .map_err(|e| WorkerError::Io(e.to_string()))?;
-    writer
-        .flush()
-        .await
-        .map_err(|e| WorkerError::Io(e.to_string()))?;
+    writer.write_all(&out).await.map_err(WorkerError::from_io)?;
+    writer.flush().await.map_err(WorkerError::from_io)?;
     Ok(())
 }
 
@@ -262,7 +282,7 @@ where
                 Ok(None) => match reader.read(&mut chunk).await {
                     Ok(0) => return Err(WorkerError::Closed),
                     Ok(k) => buf.extend_from_slice(&chunk[..k]),
-                    Err(e) => return Err(WorkerError::Io(e.to_string())),
+                    Err(e) => return Err(WorkerError::from_io(e)),
                 },
                 Err(e) => return Err(WorkerError::ProtocolNoise(e)),
             }

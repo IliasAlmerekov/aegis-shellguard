@@ -4,6 +4,8 @@
 //! "sandbox unavailable" code paths through [`run_unavailable_result`] and
 //! [`run_unavailable_result`] so typed behavior stays consistent across targets.
 
+use std::path::{Path, PathBuf};
+
 use crate::{SandboxError, SandboxResult};
 
 // ── Test injection ────────────────────────────────────────────────────────────
@@ -40,6 +42,17 @@ pub(crate) fn run_unavailable_result(required: bool) -> Result<SandboxResult, Sa
     } else {
         Ok(SandboxResult::Unavailable)
     }
+}
+
+/// Canonicalize a configured `allow_write` path, shared by the Linux bwrap
+/// and macOS Seatbelt profile builders (both bind/allow the resolved path,
+/// not the configured one, to avoid symlink confusion).
+pub(crate) fn canonicalize_allow_write_path(path: &Path) -> Result<PathBuf, SandboxError> {
+    path.canonicalize()
+        .map_err(|source| SandboxError::AllowWritePath {
+            path: path.display().to_string(),
+            source,
+        })
 }
 
 // ── Shared test helpers ────────────────────────────────────────────────────────

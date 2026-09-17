@@ -374,10 +374,7 @@ fn push_unique_issue(issues: &mut Vec<ValidationIssue>, issue: ValidationIssue) 
 
 fn config_load_error_code(err: &ConfigError) -> &'static str {
     match err {
-        ConfigError::Config(message) if message.starts_with("failed to parse ") => {
-            "config_parse_error"
-        }
-        ConfigError::Config(_) => "config_load_error",
+        ConfigError::ParseFailed { .. } => "config_parse_error",
         _ => "config_load_error",
     }
 }

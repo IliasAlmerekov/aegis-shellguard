@@ -70,9 +70,38 @@ pub enum SandboxError {
     #[error("sandbox setup failed: {0}")]
     SetupFailed(String),
 
-    /// A sandbox execution error occurred (e.g. failed to spawn bwrap).
+    /// A sandbox execution error occurred (e.g. a malformed confinement
+    /// argument). Carries no `io::Error`; see [`Self::Spawn`] for the I/O
+    /// failure case.
     #[error("sandbox execution error: {0}")]
     Execution(String),
+
+    /// The confined subprocess could not be spawned, awaited, or run to
+    /// completion. `operation` names the step as data (`"spawn"`, `"wait
+    /// for"`, `"run"`) so a fail-closed branch can match on the variant
+    /// instead of parsing prose, and `source` keeps the original
+    /// `io::Error` — including its `ErrorKind` — instead of collapsing it
+    /// to a string.
+    #[error("failed to {operation} sandboxed command: {source}")]
+    Spawn {
+        /// The subprocess step that failed.
+        operation: &'static str,
+        /// The underlying I/O error.
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// A configured `allow_write` path could not be canonicalized (e.g. it
+    /// does not exist). Keeps the `io::Error` as `source` — and `path` as
+    /// plain data — instead of folding both into an `Execution(String)`.
+    #[error("allow_write path {path}: {source}")]
+    AllowWritePath {
+        /// The configured path that failed to canonicalize.
+        path: String,
+        /// The underlying I/O error.
+        #[source]
+        source: std::io::Error,
+    },
 
     /// Wrapped I/O error.
     #[error("sandbox I/O error: {0}")]
@@ -512,5 +541,23 @@ mod tests {
             // (it may error or succeed depending on environment, which is fine).
             let _ = prepare_for_exec(&config, program, args);
         }
+    }
+
+    #[test]
+    fn spawn_error_keeps_the_io_error_kind_as_source() {
+        use std::error::Error;
+
+        let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        let err = SandboxError::Spawn {
+            operation: "spawn",
+            source: io_err,
+        };
+
+        let source = err.source().expect("Spawn must carry an io::Error source");
+        let io_source = source
+            .downcast_ref::<std::io::Error>()
+            .expect("source must be the original io::Error, not a stringified message");
+        assert_eq!(io_source.kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(err.to_string(), "failed to spawn sandboxed command: denied");
     }
 }

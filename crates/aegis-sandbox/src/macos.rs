@@ -36,7 +36,10 @@ pub(crate) fn run(config: &SandboxConfig, cmd: &str) -> Result<SandboxResult, Sa
     let status = std::process::Command::new("/usr/bin/sandbox-exec")
         .args(["-p", &profile, "sh", "-c", cmd])
         .status()
-        .map_err(|e| SandboxError::Execution(e.to_string()))?;
+        .map_err(|source| SandboxError::Spawn {
+            operation: "run",
+            source,
+        })?;
     let exit_code = status.code().unwrap_or(-1);
     Ok(SandboxResult::Success(exit_code))
 }
@@ -107,9 +110,7 @@ pub(crate) fn build_seatbelt_profile(config: &SandboxConfig) -> Result<String, S
         profile.push_str("(deny network*)\n");
     }
     for path in &config.allow_write {
-        let canonical = path.canonicalize().map_err(|e| {
-            SandboxError::Execution(format!("allow_write path {}: {e}", path.display()))
-        })?;
+        let canonical = crate::support::canonicalize_allow_write_path(path)?;
         let escaped = escape_sbpl_path(&canonical)?;
         profile.push_str(&format!("(allow file-write* (subpath \"{escaped}\"))\n"));
     }
@@ -272,6 +273,19 @@ mod tests {
             "seatbelt profile must contain write-allow rule for {}, got: {profile}",
             canonical_tmp.display()
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_build_seatbelt_profile_reports_allow_write_path_for_nonexistent_path() {
+        let cfg = SandboxConfig {
+            allow_write: vec![PathBuf::from("/nonexistent_aegis_test_path_xyz")],
+            ..Default::default()
+        };
+
+        let result = super::build_seatbelt_profile(&cfg);
+
+        assert!(matches!(result, Err(SandboxError::AllowWritePath { .. })));
     }
 
     #[cfg(target_os = "macos")]
