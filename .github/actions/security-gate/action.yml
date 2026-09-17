@@ -1,0 +1,75 @@
+name: Security gate
+description: >-
+  Run the supply-chain gate: cargo-audit for known CVEs and cargo-deny for the
+  license, duplicate, and ban policy. The caller must run actions/checkout
+  first.
+
+# Why a composite action rather than a reusable `on: workflow_call` workflow:
+# a called workflow's jobs report as "<caller job> / <called job>", so
+# extracting the CI `security` job that way would rename its check run. The
+# `main` branch protection requires the bare context "Security (audit, deny)",
+# and a renamed check never reports it — every pull request would wait forever
+# on a context that no longer exists. A composite action shares the steps
+# without touching any job name.
+
+inputs:
+  toolchain:
+    description: "Rust toolchain version to install (e.g. 1.94.0)"
+    required: true
+  cargo-audit-version:
+    description: >-
+      Pinned cargo-audit version. The pin lives here, next to the install step,
+      so every caller gets the same tool without repeating the version in its
+      own workflow env.
+    required: false
+    default: "0.22.1"
+  cargo-deny-version:
+    description: "Pinned cargo-deny version. See cargo-audit-version."
+    required: false
+    default: "0.19.0"
+  cache-key-prefix:
+    description: >-
+      Prefix passed through to the setup-rust cargo cache key. The default
+      keeps every security-gate caller on one shared cache.
+    required: false
+    default: "security-"
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup-rust
+      with:
+        toolchain: ${{ inputs.toolchain }}
+        cache-key-prefix: ${{ inputs.cache-key-prefix }}
+
+    - name: Cache cargo security tools
+      uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0
+      with:
+        path: ~/.cargo-tools
+        key: ${{ runner.os }}-cargo-tools-${{ inputs.cargo-audit-version }}-${{ inputs.cargo-deny-version }}
+
+    - name: Add cached cargo tools to PATH
+      shell: bash
+      run: echo "$HOME/.cargo-tools/bin" >> "$GITHUB_PATH"
+
+    - name: Install cargo-audit if needed
+      shell: bash
+      run: |
+        if ! command -v cargo-audit >/dev/null 2>&1; then
+          cargo install cargo-audit --root ~/.cargo-tools --version ${{ inputs.cargo-audit-version }} --locked
+        fi
+
+    - name: cargo audit
+      shell: bash
+      run: cargo audit
+
+    - name: Install cargo-deny if needed
+      shell: bash
+      run: |
+        if ! command -v cargo-deny >/dev/null 2>&1; then
+          cargo install cargo-deny --root ~/.cargo-tools --version ${{ inputs.cargo-deny-version }} --locked
+        fi
+
+    - name: cargo deny check
+      shell: bash
+      run: cargo deny check

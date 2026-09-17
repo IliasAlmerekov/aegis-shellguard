@@ -1,0 +1,58 @@
+name: Quality gate
+description: >-
+  Run the workspace quality checks: rustfmt, clippy, and the full test suite.
+  Linux only, because the test suite needs zsh and the action installs it with
+  apt-get. The caller must run actions/checkout first, and must run on a Linux
+  runner.
+
+# Why a composite action rather than a reusable `on: workflow_call` workflow:
+# a called workflow's jobs report as "<caller job> / <called job>", so
+# extracting the CI `quality` job that way would rename its check run. The
+# `main` branch protection requires the bare context "Quality (fmt, clippy,
+# test)", and a renamed check never reports it — every pull request would wait
+# forever on a context that no longer exists. A composite action shares the
+# steps without touching any job name.
+
+inputs:
+  toolchain:
+    description: "Rust toolchain version to install (e.g. 1.94.0)"
+    required: true
+  cache-key-prefix:
+    description: >-
+      Prefix passed through to the setup-rust cargo cache key. Leave empty to
+      share the default cache with other quality-gate callers.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup-rust
+      with:
+        toolchain: ${{ inputs.toolchain }}
+        components: rustfmt, clippy
+        cache-key-prefix: ${{ inputs.cache-key-prefix }}
+
+    # Vendored bubblewrap links libcap; the aegis-sandbox build script
+    # pkg-config-probes it and fails the build when it is absent, so every
+    # Linux compile needs the headers before cargo runs at all.
+    - uses: ./.github/actions/install-libcap
+
+    - name: cargo fmt --check
+      shell: bash
+      run: cargo fmt --check --all
+
+    - name: cargo clippy
+      shell: bash
+      run: cargo clippy --workspace -- -D warnings
+
+    - name: Install zsh
+      shell: bash
+      run: |
+        if ! command -v zsh >/dev/null 2>&1; then
+          sudo apt-get update && sudo apt-get install -y zsh
+        fi
+
+    - name: cargo test --workspace (includes architecture_boundaries)
+      shell: bash
+      run: cargo test --workspace

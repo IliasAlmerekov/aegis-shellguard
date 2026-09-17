@@ -25,8 +25,6 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   RUST_TOOLCHAIN: 1.94.0
-  CARGO_AUDIT_VERSION: 0.22.1
-  CARGO_DENY_VERSION: 0.19.0
   CROSS_VERSION: 0.2.5
   CARGO_FUZZ_VERSION: 0.13.1
   # Pinned, not "nightly": a floating nightly caught an upstream codegen ICE
@@ -65,30 +63,12 @@ jobs:
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
-      - uses: ./.github/actions/setup-rust
+      # The steps live in a composite action so release.yml can run the
+      # identical checks on a tagged commit. Keep this job's name unchanged:
+      # it is a required status check on main.
+      - uses: ./.github/actions/quality-gate
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
-          components: rustfmt, clippy
-
-      # Vendored bubblewrap links libcap; the aegis-sandbox build script
-      # pkg-config-probes it and fails the build when it is absent, so every
-      # Linux compile needs the headers before cargo runs at all.
-      - uses: ./.github/actions/install-libcap
-
-      - name: cargo fmt --check
-        run: cargo fmt --check --all
-
-      - name: cargo clippy
-        run: cargo clippy --workspace -- -D warnings
-
-      - name: Install zsh
-        run: |
-          if ! command -v zsh >/dev/null 2>&1; then
-            sudo apt-get update && sudo apt-get install -y zsh
-          fi
-
-      - name: cargo test --workspace (includes architecture_boundaries)
-        run: cargo test --workspace
 
   # The landing page is a separate npm workspace with its own test suite and
   # its own build. It shipped for a while with neither running in CI, so a
@@ -134,37 +114,13 @@ jobs:
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
-      - uses: ./.github/actions/setup-rust
+      # Shared with release.yml through a composite action, like the quality
+      # job above. Keep this job's name unchanged: it is a required status
+      # check on main. The cargo-audit and cargo-deny version pins live in the
+      # action's input defaults.
+      - uses: ./.github/actions/security-gate
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
-          cache-key-prefix: security-
-
-      - name: Cache cargo security tools
-        uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0
-        with:
-          path: ~/.cargo-tools
-          key: ${{ runner.os }}-cargo-tools-${{ env.CARGO_AUDIT_VERSION }}-${{ env.CARGO_DENY_VERSION }}
-
-      - name: Add cached cargo tools to PATH
-        run: echo "$HOME/.cargo-tools/bin" >> "$GITHUB_PATH"
-
-      - name: Install cargo-audit if needed
-        run: |
-          if ! command -v cargo-audit >/dev/null 2>&1; then
-            cargo install cargo-audit --root ~/.cargo-tools --version ${{ env.CARGO_AUDIT_VERSION }} --locked
-          fi
-
-      - name: cargo audit
-        run: cargo audit
-
-      - name: Install cargo-deny if needed
-        run: |
-          if ! command -v cargo-deny >/dev/null 2>&1; then
-            cargo install cargo-deny --root ~/.cargo-tools --version ${{ env.CARGO_DENY_VERSION }} --locked
-          fi
-
-      - name: cargo deny check
-        run: cargo deny check
 
   build:
     name: Release build (ubuntu-latest)
