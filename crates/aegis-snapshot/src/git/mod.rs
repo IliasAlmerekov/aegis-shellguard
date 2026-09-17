@@ -109,6 +109,25 @@ async fn find_stash_ref(cwd: impl AsRef<Path>, hash: &str) -> Result<Option<Stri
     }))
 }
 
+/// Apply the stash entry `hash` onto `cwd`, index included. Returns `None`
+/// when git restored the state, or the joined git output when it refused, so
+/// each caller can wrap the same failure in the error its own path needs.
+async fn apply_stash(cwd: impl AsRef<Path>, hash: &str) -> Result<Option<String>> {
+    let apply_out = git_command(cwd)
+        .args(["stash", "apply", "--index", hash])
+        .output()
+        .await
+        .map_err(|e| SnapshotError::Snapshot(format!("git stash apply failed: {e}")))?;
+
+    if apply_out.status.success() {
+        return Ok(None);
+    }
+
+    let stdout = String::from_utf8_lossy(&apply_out.stdout);
+    let stderr = String::from_utf8_lossy(&apply_out.stderr);
+    Ok(Some(format!("{stdout}{stderr}").trim().to_string()))
+}
+
 /// Move the current working-tree state into a stash entry of its own, so the
 /// tree is back at HEAD and a snapshot entry can be applied onto it. Returns
 /// the entry's commit hash, or `None` when the tree was already clean.
@@ -241,17 +260,7 @@ impl SnapshotPlugin for GitPlugin {
         // it must never be observable in the tree (issue #356). The tree is at
         // HEAD here, so this apply has nothing to merge against and the entry
         // stays in the stash list for a later rollback.
-        let apply_out = git_command(cwd)
-            .args(["stash", "apply", "--index", &hash])
-            .output()
-            .await
-            .map_err(|e| SnapshotError::Snapshot(format!("failed to run git stash apply: {e}")))?;
-
-        if !apply_out.status.success() {
-            let stdout = String::from_utf8_lossy(&apply_out.stdout);
-            let stderr = String::from_utf8_lossy(&apply_out.stderr);
-            let details = format!("{stdout}{stderr}").trim().to_string();
-
+        if let Some(details) = apply_stash(cwd, &hash).await? {
             tracing::error!(
                 stash_hash = %hash,
                 details = %details,
@@ -295,17 +304,7 @@ impl SnapshotPlugin for GitPlugin {
         // Parking shifts every `stash@{N}`, so resolve the positional ref again.
         let stash_ref = find_stash_ref(cwd_str, hash).await?.unwrap_or(stash_ref);
 
-        let apply_out = git_command(cwd_str)
-            .args(["stash", "apply", "--index", hash])
-            .output()
-            .await
-            .map_err(|e| SnapshotError::Snapshot(format!("git stash apply failed: {e}")))?;
-
-        if !apply_out.status.success() {
-            let stderr = String::from_utf8_lossy(&apply_out.stderr);
-            let stdout = String::from_utf8_lossy(&apply_out.stdout);
-            let details = format!("{stdout}{stderr}").trim().to_string();
-
+        if let Some(details) = apply_stash(cwd_str, hash).await? {
             tracing::error!(
                 stash_ref = %stash_ref,
                 details = %details,
