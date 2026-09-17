@@ -48,6 +48,22 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
+name = "aegis_self_disable_after_compound_operator"
+command = "echo hi && aegis off"
+expected_risk = "danger"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "strict_policy"
+
+[[cases]]
+name = "aegis_self_disable_behind_absolute_path"
+command = "/usr/bin/aegis off"
+expected_risk = "danger"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "strict_policy"
+
+[[cases]]
 name = "environment_prefixed_nested_shell_block"
 command = "MY_VAR=secret bash -c 'rm -rf /'"
 expected_risk = "block"

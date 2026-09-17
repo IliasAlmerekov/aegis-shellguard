@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use aegis_types::RiskLevel;
 
-use super::{Category, PatternSource, PatternToken, PrefixRule, s};
+use super::{Category, PatternSource, PatternToken, PrefixRule, a, any_star, s};
 pub(super) fn rules() -> Vec<PrefixRule> {
     vec![
         // ── Docker ────────────────────────────────────────────────────────────
@@ -366,6 +366,137 @@ pub(super) fn rules() -> Vec<PrefixRule> {
             suppressed_by: &[],
             match_examples: &["npm unpublish", "npm unpublish --force pkg"],
             not_match_examples: &["npm publish"],
+        },
+        // ── Aegis self-management (ADR-035) ───────────────────────────────────
+        //
+        // The agent hook denies a command whose first word is literally
+        // `aegis`, which leaves `/usr/bin/aegis off`, `env aegis off` and
+        // `echo hi && aegis off` to the scanner. These rules classify the
+        // command itself, so launcher and absolute-path normalization
+        // (ADR-014) covers every spelling in every position.
+        //
+        // Commands that only tighten enforcement (`aegis on`) or only read
+        // state (`status`, `audit`, `snapshot list`, `config show`,
+        // `config validate`) carry no rule and stay Safe.
+        PrefixRule {
+            id: Cow::Borrowed("AEG-001"),
+            category: Category::Aegis,
+            pattern: vec![s("aegis"), s("off")],
+            risk: RiskLevel::Danger,
+            description: Cow::Borrowed(
+                "aegis off — turns off the guardrail, so every later command runs unchecked",
+            ),
+            safe_alt: Some(Cow::Borrowed(
+                "Leave the toggle on and approve the one command you need, or run 'aegis off' yourself in a terminal Aegis does not proxy",
+            )),
+            justification: Some(Cow::Borrowed(
+                "Turning the toggle off removes classification, confirmation, and snapshots from every command that follows. Whether Aegis guards this machine is the operator's decision, not the agent's.",
+            )),
+            source: PatternSource::Builtin,
+            suppressed_by: &[],
+            match_examples: &["aegis off"],
+            not_match_examples: &["aegis on", "aegis status"],
+        },
+        PrefixRule {
+            id: Cow::Borrowed("AEG-002"),
+            category: Category::Aegis,
+            pattern: vec![s("aegis"), s("rollback")],
+            risk: RiskLevel::Danger,
+            description: Cow::Borrowed(
+                "aegis rollback — restores a recorded snapshot over the current working tree",
+            ),
+            safe_alt: Some(Cow::Borrowed(
+                "Inspect the snapshot first with 'aegis snapshot list' and commit or stash current work before restoring",
+            )),
+            justification: Some(Cow::Borrowed(
+                "Restoring a snapshot overwrites the files it covers. Uncommitted work made after the snapshot was taken is lost.",
+            )),
+            source: PatternSource::Builtin,
+            suppressed_by: &[],
+            match_examples: &["aegis rollback snap-123"],
+            not_match_examples: &["aegis snapshot list"],
+        },
+        PrefixRule {
+            id: Cow::Borrowed("AEG-003"),
+            category: Category::Aegis,
+            pattern: vec![
+                s("aegis"),
+                s("snapshot"),
+                s("prune"),
+                any_star(),
+                s("--yes"),
+            ],
+            risk: RiskLevel::Danger,
+            description: Cow::Borrowed(
+                "aegis snapshot prune --yes — deletes snapshot artifacts, removing the recovery path for earlier commands",
+            ),
+            safe_alt: Some(Cow::Borrowed(
+                "Preview the deletion first: 'aegis snapshot prune --dry-run'",
+            )),
+            justification: Some(Cow::Borrowed(
+                "Pruned snapshot artifacts cannot be restored. Without them 'aegis rollback' has nothing to roll back to.",
+            )),
+            source: PatternSource::Builtin,
+            suppressed_by: &[],
+            match_examples: &["aegis snapshot prune --yes"],
+            not_match_examples: &["aegis snapshot prune --dry-run", "aegis snapshot prune"],
+        },
+        PrefixRule {
+            id: Cow::Borrowed("AEG-004"),
+            category: Category::Aegis,
+            pattern: vec![s("aegis"), s("config"), s("init")],
+            risk: RiskLevel::Warn,
+            description: Cow::Borrowed(
+                "aegis config init — writes a project-local .aegis.toml that changes how commands in this directory are judged",
+            ),
+            safe_alt: Some(Cow::Borrowed(
+                "Read the active configuration first: 'aegis config show'",
+            )),
+            justification: Some(Cow::Borrowed(
+                "A project config overwrites an existing .aegis.toml and then takes part in every later assessment. The project layer can only tighten security fields (ADR-013), so this is Warn rather than Danger.",
+            )),
+            source: PatternSource::Builtin,
+            suppressed_by: &[],
+            match_examples: &["aegis config init"],
+            not_match_examples: &["aegis config show", "aegis config validate"],
+        },
+        PrefixRule {
+            id: Cow::Borrowed("AEG-005"),
+            category: Category::Aegis,
+            pattern: vec![s("aegis"), a(&["install-hooks", "install"])],
+            risk: RiskLevel::Warn,
+            description: Cow::Borrowed(
+                "aegis install-hooks — rewrites the agent settings file that decides which commands reach Aegis",
+            ),
+            safe_alt: Some(Cow::Borrowed(
+                "Install the hooks yourself in a terminal Aegis does not proxy, then let the agent confirm with 'aegis status'",
+            )),
+            justification: Some(Cow::Borrowed(
+                "The hook entry in the agent's settings file is where interception starts. Rewriting it changes which commands Aegis ever sees.",
+            )),
+            source: PatternSource::Builtin,
+            suppressed_by: &[],
+            match_examples: &["aegis install-hooks --all", "aegis install --claude-code"],
+            not_match_examples: &["aegis status"],
+        },
+        PrefixRule {
+            id: Cow::Borrowed("AEG-006"),
+            category: Category::Aegis,
+            pattern: vec![s("aegis"), s("setup-shell")],
+            risk: RiskLevel::Warn,
+            description: Cow::Borrowed(
+                "aegis setup-shell — edits a shell startup file and the SHELL it points at for new terminal sessions",
+            ),
+            safe_alt: Some(Cow::Borrowed(
+                "Edit the startup file yourself so you can review the managed block before it takes effect",
+            )),
+            justification: Some(Cow::Borrowed(
+                "This writes to ~/.zshrc or ~/.bashrc and decides whether new sessions run through Aegis. '--remove' takes the proxy away entirely.",
+            )),
+            source: PatternSource::Builtin,
+            suppressed_by: &[],
+            match_examples: &["aegis setup-shell --remove", "aegis setup-shell"],
+            not_match_examples: &["aegis status"],
         },
     ]
 }

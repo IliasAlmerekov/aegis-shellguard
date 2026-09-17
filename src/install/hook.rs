@@ -244,8 +244,12 @@ fn starts_with_aegis_word(command: &str) -> bool {
 /// help and version output, `status`, `audit`, `snapshot list`, `config show`
 /// and `config validate`. These are wrapped like any other command (#333).
 /// Anything outside this set stays denied, because commands such as `aegis off`
-/// or `aegis rollback` change Aegis itself and no scanner pattern covers
-/// them. Shell metacharacters are rejected up front so a read-only prefix
+/// or `aegis rollback` change Aegis itself. The scanner also classifies those
+/// under `Category::Aegis` (ADR-035), which covers the spellings this
+/// first-word check cannot see — an absolute path, a launcher prefix, or a
+/// second command after `&&`. This deny is the fast path in front of it, and
+/// the only layer that refuses without a prompt in a non-interactive agent
+/// session. Shell metacharacters are rejected up front so a read-only prefix
 /// cannot carry a second command (`aegis status && aegis off`).
 fn is_read_only_aegis_invocation(command: &str) -> bool {
     let has_no_shell_metacharacters = command

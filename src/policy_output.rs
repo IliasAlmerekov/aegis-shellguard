@@ -193,6 +193,7 @@ fn category_string(category: aegis::interceptor::patterns::Category) -> &'static
         aegis::interceptor::patterns::Category::Docker => "docker",
         aegis::interceptor::patterns::Category::Process => "process",
         aegis::interceptor::patterns::Category::Package => "package",
+        aegis::interceptor::patterns::Category::Aegis => "aegis",
     }
 }
 

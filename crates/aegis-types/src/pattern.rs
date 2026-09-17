@@ -34,6 +34,8 @@ pub enum Category {
     Process,
     /// Package manager operations.
     Package,
+    /// Aegis' own enforcement state and installed integration points.
+    Aegis,
 }
 
 /// A sequence of pattern tokens to match against command tokens.
