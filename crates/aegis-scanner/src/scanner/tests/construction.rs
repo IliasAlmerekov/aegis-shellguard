@@ -69,13 +69,14 @@ fn pattern_with_no_extractable_keyword_is_always_a_full_scan_candidate() {
     );
 }
 
-/// Regression for the false negative introduced by `ddc65ba` and reverted here:
+/// Regression for a false negative that keyword narrowing in `full_scan`
+/// introduced on the #319 branch (removed before merge):
 /// `find_embedded_literal` walking the `sh` branch of `EXEC-006`'s
 /// alternation (`^sh\s+(?:--[a-z-]+\s+)*-[a-zA-Z]*c\b`) discards the
 /// two-character literal `"sh"` against its three-character floor, keeps
 /// scanning past the optional group's regex syntax, and picks up `":"`,
 /// `"-"`, `"-"` as though the command had to contain that text — a keyword no
-/// matching command actually contains. `ddc65ba` used that keyword to decide
+/// matching command actually contains. The narrowing used that keyword to decide
 /// which regexes `full_scan` runs at all, so `EXEC-006` was silently skipped.
 /// `full_scan` no longer narrows by keyword, so `sh -c id` must be caught
 /// through the real, shipped `patterns.toml`, not a hand-built pattern.
