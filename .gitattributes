@@ -1,2 +1,7 @@
 *.sh text eol=lf
 .githooks/* text eol=lf
+
+# CI reads these line by line in bash; a CRLF checkout would carry \r into
+# every value.
+.github/versions.env text eol=lf
+.github/build-targets.json text eol=lf

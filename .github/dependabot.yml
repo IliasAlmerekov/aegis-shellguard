@@ -1,0 +1,57 @@
+version: 2
+
+updates:
+  # Every third-party action is pinned by commit SHA, which is what makes a
+  # compromised tag unable to reach this repository. The cost of that pin is
+  # that nothing updates it: without this block, a security fix in
+  # actions/checkout or actions/cache sits unnoticed. Dependabot understands
+  # the `# v5.0.1` comment next to the SHA and rewrites both together.
+  #
+  # `.github/actions/*` are local composite actions, and Dependabot only scans
+  # the `.github/workflows` directory for the `github-actions` ecosystem unless
+  # each action directory is listed separately.
+  - package-ecosystem: github-actions
+    directories:
+      - "/"
+      - "/.github/actions/build-target"
+      - "/.github/actions/install-cargo-tool"
+      - "/.github/actions/quality-gate"
+      - "/.github/actions/security-gate"
+      - "/.github/actions/setup-rust"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+
+  # Cargo updates land as one grouped pull request per week rather than one per
+  # crate: the workspace has a single Cargo.lock, so separate pull requests all
+  # conflict with each other and only the first to merge applies cleanly.
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "deps"
+
+  - package-ecosystem: npm
+    directory: "/landing"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    groups:
+      landing-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "deps"

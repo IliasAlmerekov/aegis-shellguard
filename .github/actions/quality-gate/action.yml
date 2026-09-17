@@ -15,7 +15,7 @@ description: >-
 
 inputs:
   toolchain:
-    description: "Rust toolchain version to install (e.g. 1.94.0)"
+    description: "Rust toolchain version to install. Comes from .github/versions.env."
     required: true
   cache-key-prefix:
     description: >-

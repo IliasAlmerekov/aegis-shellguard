@@ -263,7 +263,7 @@ fn release_workflow_should_publish_npm_after_github_release_assets_exist() {
         "release workflow must include an npm publish job"
     );
     assert!(
-        workflow.contains("needs: release"),
+        workflow.contains("needs: [config, release]"),
         "npm publish must wait for the GitHub Release job so checksum sidecars exist"
     );
     assert!(

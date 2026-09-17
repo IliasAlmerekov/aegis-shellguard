@@ -21,31 +21,56 @@ concurrency:
   # branches, PRs).
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# Every pinned version this workflow uses lives in `.github/versions.env`, and
+# every runner label in `.github/build-targets.json`. The `gate` job below
+# loads both and re-exports them as job outputs, because `runs-on:` cannot read
+# a workflow `env:` value. Nothing else here may hard-code a version.
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  RUST_TOOLCHAIN: 1.94.0
-  CROSS_VERSION: 0.2.5
-  CARGO_FUZZ_VERSION: 0.13.1
-  # Pinned, not "nightly": a floating nightly caught an upstream codegen ICE
-  # building tokio under ASan/sancov (rustc bug, not ours). Bump this date
-  # forward only after confirming the fuzz job is green on the new nightly.
-  FUZZ_NIGHTLY_TOOLCHAIN: nightly-2026-06-15
+  # Incremental artifacts are per-machine scratch: no CI job ever rebuilds on
+  # the same runner, so they only inflate the cached `target/`.
+  CARGO_INCREMENTAL: 0
 
 jobs:
-  # Single source of truth for the "is this worth a slow/expensive job"
-  # gate, used by every heavy job below (macOS runners, fuzzing, live
-  # network/Docker/SQLite integration tests, benchmark baselines). A
-  # regression in any of them only needs to be caught before it lands on
-  # main (via a PR targeting main), on the weekly schedule, or on a manual
-  # run — not on every push to a feature branch.
+  # Two jobs in one, so that every other job takes a single cheap dependency.
+  #
+  # 1. The pinned versions and runner labels, read from `.github/versions.env`
+  #    and `.github/build-targets.json` and re-exported as job outputs.
+  # 2. The "is this worth a slow/expensive job" gate, used by every heavy job
+  #    below (macOS runners, fuzzing, live network/Docker/SQLite integration
+  #    tests, benchmark baselines). A regression in any of them only needs to
+  #    be caught before it lands on main (via a PR targeting main), on the
+  #    weekly schedule, or on a manual run, not on every push to a feature
+  #    branch.
+  #
+  # Keep this job's `name:` unchanged; it is reported as a check run.
   gate:
     name: Determine heavy-job gate
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       heavy: ${{ steps.compute.outputs.heavy }}
+      rust_toolchain: ${{ steps.versions.outputs.rust_toolchain }}
+      fuzz_nightly_toolchain: ${{ steps.versions.outputs.fuzz_nightly_toolchain }}
+      cargo_audit_version: ${{ steps.versions.outputs.cargo_audit_version }}
+      cargo_deny_version: ${{ steps.versions.outputs.cargo_deny_version }}
+      cargo_fuzz_version: ${{ steps.versions.outputs.cargo_fuzz_version }}
+      cross_version: ${{ steps.versions.outputs.cross_version }}
+      node_version: ${{ steps.versions.outputs.node_version }}
+      fuzz_runs: ${{ steps.versions.outputs.fuzz_runs }}
+      fuzz_max_len: ${{ steps.versions.outputs.fuzz_max_len }}
+      build_targets: ${{ steps.versions.outputs.build_targets }}
+      linux_runner: ${{ steps.versions.outputs.linux_runner }}
+      macos_runner: ${{ steps.versions.outputs.macos_runner }}
     steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/load-versions
+        id: versions
+
       - name: Compute heavy-job gate
         id: compute
         shell: bash
@@ -60,15 +85,18 @@ jobs:
     name: Quality (fmt, clippy, test)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: gate
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       # The steps live in a composite action so release.yml can run the
       # identical checks on a tagged commit. Keep this job's name unchanged:
       # it is a required status check on main.
       - uses: ./.github/actions/quality-gate
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: ${{ needs.gate.outputs.rust_toolchain }}
 
   # The landing page is a separate npm workspace with its own test suite and
   # its own build. It shipped for a while with neither running in CI, so a
@@ -80,16 +108,18 @@ jobs:
     name: Landing (test, build)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: gate
     defaults:
       run:
         working-directory: landing
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          # Matches `engines.node` in landing/package.json.
-          node-version: "22"
+          node-version: ${{ needs.gate.outputs.node_version }}
           cache: npm
           cache-dependency-path: landing/package-lock.json
 
@@ -111,27 +141,34 @@ jobs:
     name: Security (audit, deny)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: gate
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       # Shared with release.yml through a composite action, like the quality
       # job above. Keep this job's name unchanged: it is a required status
-      # check on main. The cargo-audit and cargo-deny version pins live in the
-      # action's input defaults.
+      # check on main.
       - uses: ./.github/actions/security-gate
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: ${{ needs.gate.outputs.rust_toolchain }}
+          cargo-audit-version: ${{ needs.gate.outputs.cargo_audit_version }}
+          cargo-deny-version: ${{ needs.gate.outputs.cargo_deny_version }}
 
   build:
     name: Release build (ubuntu-latest)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: gate
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/setup-rust
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: ${{ needs.gate.outputs.rust_toolchain }}
           cache-key-prefix: release-
 
       - uses: ./.github/actions/install-libcap
@@ -149,20 +186,18 @@ jobs:
   # gate.
   build-macos:
     name: Release build (macos-26)
-    # Pinned rather than macos-latest (which migrated to macOS 26 on
-    # 2026-06-15, see actions/runner-images#14167) so an OS bump never
-    # silently lands under us — release.yml pins the same way for the
-    # binaries it actually ships. Bump both together when moving on.
-    runs-on: macos-26
+    runs-on: ${{ needs.gate.outputs.macos_runner }}
     timeout-minutes: 20
     needs: gate
     if: needs.gate.outputs.heavy == 'true'
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/setup-rust
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: ${{ needs.gate.outputs.rust_toolchain }}
           cache-key-prefix: release-
 
       - name: cargo build --release
@@ -177,9 +212,12 @@ jobs:
   # itself rather than aegis-language test artifacts. Host grammar smoke tests
   # in the quality job prove runtime parse presence. Same heavy-job gate as
   # build-macos: macOS runners and cross toolchains are expensive, so this only
-  # runs on PRs targeting main, the weekly schedule, and manual runs. The cross
-  # approach mirrors release.yml (`cross` for musl, native `cargo build` on
-  # Intel/ARM macOS).
+  # runs on PRs targeting main, the weekly schedule, and manual runs.
+  #
+  # The matrix and the build steps are shared with release.yml: the matrix
+  # through `build_targets` (from `.github/build-targets.json`), the steps
+  # through the `build-target` composite action. CI therefore compiles what a
+  # release ships, not a copy of it that can drift.
   cross-matrix:
     name: Cross build (${{ matrix.target }})
     needs: gate
@@ -189,47 +227,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-            use_cross: true
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest
-            use_cross: true
-          # Pinned rather than macos-latest so a runner-image bump never
-          # silently changes what a release is built on (see release.yml).
-          - target: x86_64-apple-darwin
-            os: macos-26-intel
-            use_cross: false
-          - target: aarch64-apple-darwin
-            os: macos-26
-            use_cross: false
+        include: ${{ fromJSON(needs.gate.outputs.build_targets) }}
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/setup-rust
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: ${{ needs.gate.outputs.rust_toolchain }}
           targets: ${{ matrix.target }}
           cache-key-prefix: cross-${{ matrix.target }}-
 
-      - name: Install cross
-        if: matrix.use_cross
-        run: cargo install cross --version ${{ env.CROSS_VERSION }} --locked
-
-      - name: Cross build release binary (musl, qualified grammar presence)
-        if: matrix.use_cross
-        env:
-          # The cross musl image installs a static musl libcap under
-          # /usr/local (see docker/cross-musl/Dockerfile); pkg-config must be
-          # told it is allowed to report a cross libcap.
-          PKG_CONFIG_ALLOW_CROSS: "1"
-          PKG_CONFIG_PATH: /usr/local/lib/pkgconfig
-        run: cross build --release --target ${{ matrix.target }}
-
-      - name: Native build release binary (macOS, qualified grammar presence)
-        if: "!matrix.use_cross"
-        run: cargo build --release --target ${{ matrix.target }}
+      - name: Build release binary (qualified grammar presence)
+        uses: ./.github/actions/build-target
+        with:
+          target: ${{ matrix.target }}
+          use-cross: ${{ matrix.use_cross }}
+          cross-version: ${{ needs.gate.outputs.cross_version }}
 
   # Heavy/slow job (bench + criterion). Full-fidelity run is only needed
   # before it lands on main or on the weekly schedule — same gate as
@@ -242,10 +257,12 @@ jobs:
     if: needs.gate.outputs.heavy == 'true'
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/setup-rust
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: ${{ needs.gate.outputs.rust_toolchain }}
           cache-key-prefix: perf-
 
       - uses: ./.github/actions/install-libcap
@@ -309,40 +326,35 @@ jobs:
 
   # Hits the real GitHub Releases API — only worth the network flakiness
   # risk and runtime before it lands on main or on the weekly schedule.
+  # One job per platform, because the installer resolves a different release
+  # asset on each; the steps are identical apart from the libcap headers,
+  # which only a Linux compile needs.
   live-installer:
-    name: Live installer validation (ubuntu-latest)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: gate
-    if: needs.gate.outputs.heavy == 'true'
-    steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
-
-      - uses: ./.github/actions/setup-rust
-        with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
-          cache-key-prefix: live-installer-
-
-      - uses: ./.github/actions/install-libcap
-
-      - name: Run live installer test
-        run: AEGIS_TEST_LIVE_INSTALL=1 cargo test --test installer_live_release test_installer_live_github_release_download
-
-  # Same cost/coverage tradeoff as build-macos above.
-  live-installer-macos:
-    name: Live installer validation (macos-26)
-    # Pinned rather than macos-latest — see build-macos above.
-    runs-on: macos-26
+    name: Live installer validation (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     needs: gate
     if: needs.gate.outputs.heavy == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ${{ needs.gate.outputs.linux_runner }}
+            needs_libcap: true
+          - os: ${{ needs.gate.outputs.macos_runner }}
+            needs_libcap: false
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/setup-rust
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: ${{ needs.gate.outputs.rust_toolchain }}
           cache-key-prefix: live-installer-
+
+      - uses: ./.github/actions/install-libcap
+        if: matrix.needs_libcap
 
       - name: Run live installer test
         run: AEGIS_TEST_LIVE_INSTALL=1 cargo test --test installer_live_release test_installer_live_github_release_download
@@ -357,10 +369,12 @@ jobs:
     if: needs.gate.outputs.heavy == 'true'
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/setup-rust
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: ${{ needs.gate.outputs.rust_toolchain }}
           cache-key-prefix: snapshot-rollback-
 
       - uses: ./.github/actions/install-libcap
@@ -395,55 +409,57 @@ jobs:
     if: needs.gate.outputs.heavy == 'true'
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
       - uses: ./.github/actions/setup-rust
         with:
-          toolchain: ${{ env.FUZZ_NIGHTLY_TOOLCHAIN }}
+          toolchain: ${{ needs.gate.outputs.fuzz_nightly_toolchain }}
           cache-key-prefix: fuzz-
 
       - uses: ./.github/actions/install-libcap
 
-      - name: Cache cargo-fuzz binary
-        uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0
+      - uses: ./.github/actions/install-cargo-tool
         with:
-          path: ~/.cargo-tools
-          key: ${{ runner.os }}-cargo-tools-cargo-fuzz-${{ env.CARGO_FUZZ_VERSION }}
+          tool: cargo-fuzz
+          version: ${{ needs.gate.outputs.cargo_fuzz_version }}
+          # cargo-fuzz's published Cargo.lock pins rustix 0.36.5, which fails to
+          # build on current nightly (rustc_attrs got stricter). Letting cargo
+          # re-resolve deps picks up a compatible rustix instead.
+          locked: "false"
 
-      - name: Add cached cargo tools to PATH
-        run: echo "$HOME/.cargo-tools/bin" >> "$GITHUB_PATH"
-
-      - name: Install cargo-fuzz if needed
+      # One step per target would be nine near-identical copies of the same
+      # command line. The loop keeps the target list readable and makes adding
+      # a target a one-line change; `::group::` keeps each target's output
+      # foldable in the log, and the failing target name is echoed before the
+      # run, so a crash is still attributable from the log alone.
+      - name: Run fuzz targets
+        shell: bash
+        env:
+          # libFuzzer's leak detector reports leaks in the grammar allocations
+          # the adapters keep alive for the process lifetime.
+          LSAN_OPTIONS: detect_leaks=0
+          TOOLCHAIN: ${{ needs.gate.outputs.fuzz_nightly_toolchain }}
+          RUNS: ${{ needs.gate.outputs.fuzz_runs }}
+          MAX_LEN: ${{ needs.gate.outputs.fuzz_max_len }}
         run: |
-          if ! command -v cargo-fuzz >/dev/null 2>&1; then
-            # No --locked: cargo-fuzz's published Cargo.lock pins rustix 0.36.5,
-            # which fails to build on current nightly (rustc_attrs got stricter).
-            # Letting cargo re-resolve deps picks up a compatible rustix instead.
-            cargo install cargo-fuzz --root ~/.cargo-tools --version ${{ env.CARGO_FUZZ_VERSION }}
-          fi
+          set -euo pipefail
+          for target in parser scanner heredoc language_protocol router \
+                        language_python language_javascript language_typescript \
+                        language_bash; do
+            echo "::group::cargo fuzz run $target"
+            cargo "+$TOOLCHAIN" fuzz run "$target" "fuzz/corpus/$target" \
+              -- "-runs=$RUNS" "-max_len=$MAX_LEN"
+            echo "::endgroup::"
+          done
 
-      - name: Run parser fuzz
-        run: LSAN_OPTIONS=detect_leaks=0 cargo +${{ env.FUZZ_NIGHTLY_TOOLCHAIN }} fuzz run parser fuzz/corpus/parser -- -runs=100000 -max_len=65536
-
-      - name: Run scanner fuzz
-        run: LSAN_OPTIONS=detect_leaks=0 cargo +${{ env.FUZZ_NIGHTLY_TOOLCHAIN }} fuzz run scanner fuzz/corpus/scanner -- -runs=100000 -max_len=65536
-
-      - name: Run heredoc fuzz
-        run: LSAN_OPTIONS=detect_leaks=0 cargo +${{ env.FUZZ_NIGHTLY_TOOLCHAIN }} fuzz run heredoc fuzz/corpus/heredoc -- -runs=100000 -max_len=65536
-
-      - name: Run language_protocol fuzz
-        run: LSAN_OPTIONS=detect_leaks=0 cargo +${{ env.FUZZ_NIGHTLY_TOOLCHAIN }} fuzz run language_protocol fuzz/corpus/language_protocol -- -runs=100000 -max_len=65536
-
-      - name: Run router fuzz
-        run: LSAN_OPTIONS=detect_leaks=0 cargo +${{ env.FUZZ_NIGHTLY_TOOLCHAIN }} fuzz run router fuzz/corpus/router -- -runs=100000 -max_len=65536
-
-      - name: Run language_python fuzz
-        run: LSAN_OPTIONS=detect_leaks=0 cargo +${{ env.FUZZ_NIGHTLY_TOOLCHAIN }} fuzz run language_python fuzz/corpus/language_python -- -runs=100000 -max_len=65536
-
-      - name: Run language_javascript fuzz
-        run: LSAN_OPTIONS=detect_leaks=0 cargo +${{ env.FUZZ_NIGHTLY_TOOLCHAIN }} fuzz run language_javascript fuzz/corpus/language_javascript -- -runs=100000 -max_len=65536
-
-      - name: Run language_typescript fuzz
-        run: LSAN_OPTIONS=detect_leaks=0 cargo +${{ env.FUZZ_NIGHTLY_TOOLCHAIN }} fuzz run language_typescript fuzz/corpus/language_typescript -- -runs=100000 -max_len=65536
-
-      - name: Run language_bash fuzz
-        run: LSAN_OPTIONS=detect_leaks=0 cargo +${{ env.FUZZ_NIGHTLY_TOOLCHAIN }} fuzz run language_bash fuzz/corpus/language_bash -- -runs=100000 -max_len=65536
+      # A crash leaves its reproducer in fuzz/artifacts/<target>/. Without this
+      # the input that broke the parser only exists on a runner that is about
+      # to be destroyed, and the failure is not reproducible off the log.
+      - name: Upload fuzz crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: fuzz-crash-artifacts
+          path: fuzz/artifacts
+          if-no-files-found: ignore
