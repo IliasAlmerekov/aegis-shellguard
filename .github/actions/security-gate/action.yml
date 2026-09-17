@@ -14,19 +14,14 @@ description: >-
 
 inputs:
   toolchain:
-    description: "Rust toolchain version to install (e.g. 1.94.0)"
+    description: "Rust toolchain version to install. Comes from .github/versions.env."
     required: true
   cargo-audit-version:
-    description: >-
-      Pinned cargo-audit version. The pin lives here, next to the install step,
-      so every caller gets the same tool without repeating the version in its
-      own workflow env.
-    required: false
-    default: "0.22.1"
+    description: "Pinned cargo-audit version. Comes from .github/versions.env."
+    required: true
   cargo-deny-version:
-    description: "Pinned cargo-deny version. See cargo-audit-version."
-    required: false
-    default: "0.19.0"
+    description: "Pinned cargo-deny version. Comes from .github/versions.env."
+    required: true
   cache-key-prefix:
     description: >-
       Prefix passed through to the setup-rust cargo cache key. The default
@@ -42,33 +37,19 @@ runs:
         toolchain: ${{ inputs.toolchain }}
         cache-key-prefix: ${{ inputs.cache-key-prefix }}
 
-    - name: Cache cargo security tools
-      uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0
+    - uses: ./.github/actions/install-cargo-tool
       with:
-        path: ~/.cargo-tools
-        key: ${{ runner.os }}-cargo-tools-${{ inputs.cargo-audit-version }}-${{ inputs.cargo-deny-version }}
-
-    - name: Add cached cargo tools to PATH
-      shell: bash
-      run: echo "$HOME/.cargo-tools/bin" >> "$GITHUB_PATH"
-
-    - name: Install cargo-audit if needed
-      shell: bash
-      run: |
-        if ! command -v cargo-audit >/dev/null 2>&1; then
-          cargo install cargo-audit --root ~/.cargo-tools --version ${{ inputs.cargo-audit-version }} --locked
-        fi
+        tool: cargo-audit
+        version: ${{ inputs.cargo-audit-version }}
 
     - name: cargo audit
       shell: bash
       run: cargo audit
 
-    - name: Install cargo-deny if needed
-      shell: bash
-      run: |
-        if ! command -v cargo-deny >/dev/null 2>&1; then
-          cargo install cargo-deny --root ~/.cargo-tools --version ${{ inputs.cargo-deny-version }} --locked
-        fi
+    - uses: ./.github/actions/install-cargo-tool
+      with:
+        tool: cargo-deny
+        version: ${{ inputs.cargo-deny-version }}
 
     - name: cargo deny check
       shell: bash

@@ -2,11 +2,22 @@
 
 ## Pinned Inputs
 
+Every version below is written once, in `.github/versions.env`. Both workflows
+read that file through the `.github/actions/load-versions` composite action and
+re-export it as job outputs, so a bump is a one-line change that reaches every
+job in both workflows. `tests/supply_chain_ci.rs` fails when a workflow writes
+a version a second time, and when this list disagrees with the file.
+
 - Rust toolchain: `1.94.0`
 - `cargo-audit`: `0.22.1`
 - `cargo-deny`: `0.19.0`
 - `cross`: `0.2.5`
-- GitHub Actions used by `.github/workflows/ci.yml` and `.github/workflows/release.yml` are pinned by full commit SHA with readable release comments.
+- The release target matrix and every runner label live in
+  `.github/build-targets.json`. `ci.yml` (`Cross build`) and `release.yml`
+  (`build`) both expand it into `strategy.matrix.include`, and the macOS jobs
+  that name a runner outside the matrix read their label from the same file, so
+  a runner-image bump is also a one-line change.
+- GitHub Actions used by `.github/workflows/ci.yml` and `.github/workflows/release.yml` are pinned by full commit SHA with readable release comments. `.github/dependabot.yml` opens the weekly pull request that moves those SHAs forward, along with the cargo and npm dependency updates.
 
 ## Current CI Jobs
 

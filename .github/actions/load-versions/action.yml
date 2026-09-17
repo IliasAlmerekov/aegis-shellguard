@@ -1,0 +1,115 @@
+name: Load pinned versions
+description: >-
+  Read .github/versions.env and .github/build-targets.json and expose every
+  pinned version, runner label, and release target as a step output. The
+  calling job must run actions/checkout first, and re-export the outputs it
+  needs as job outputs so that other jobs can read them with `needs.` (only a
+  job output can reach `runs-on:`). Every key is also written to $GITHUB_ENV,
+  so later steps in the same job can read it as `env.<KEY>`.
+
+outputs:
+  rust_toolchain:
+    description: "Stable Rust toolchain version"
+    value: ${{ steps.load.outputs.rust_toolchain }}
+  fuzz_nightly_toolchain:
+    description: "Pinned nightly toolchain the fuzz job builds with"
+    value: ${{ steps.load.outputs.fuzz_nightly_toolchain }}
+  cargo_audit_version:
+    description: "Pinned cargo-audit version"
+    value: ${{ steps.load.outputs.cargo_audit_version }}
+  cargo_deny_version:
+    description: "Pinned cargo-deny version"
+    value: ${{ steps.load.outputs.cargo_deny_version }}
+  cargo_fuzz_version:
+    description: "Pinned cargo-fuzz version"
+    value: ${{ steps.load.outputs.cargo_fuzz_version }}
+  cross_version:
+    description: "Pinned cross version used for the musl targets"
+    value: ${{ steps.load.outputs.cross_version }}
+  node_version:
+    description: "Node major version the landing workspace builds with"
+    value: ${{ steps.load.outputs.node_version }}
+  fuzz_runs:
+    description: "Iterations per fuzz target"
+    value: ${{ steps.load.outputs.fuzz_runs }}
+  fuzz_max_len:
+    description: "Maximum input length per fuzz target"
+    value: ${{ steps.load.outputs.fuzz_max_len }}
+  build_targets:
+    description: >-
+      The release target matrix as compact JSON, ready for
+      `fromJSON(...)` in `strategy.matrix.include`.
+    value: ${{ steps.targets.outputs.build_targets }}
+  linux_runner:
+    description: "Runner label the Linux targets build on"
+    value: ${{ steps.targets.outputs.linux_runner }}
+  macos_runner:
+    description: "Runner label for Apple Silicon macOS jobs"
+    value: ${{ steps.targets.outputs.macos_runner }}
+  macos_intel_runner:
+    description: "Runner label for Intel macOS jobs"
+    value: ${{ steps.targets.outputs.macos_intel_runner }}
+
+runs:
+  using: composite
+  steps:
+    - name: Load .github/versions.env
+      id: load
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        while IFS= read -r line || [ -n "$line" ]; do
+          case "$line" in
+            '' | '#'*) continue ;;
+          esac
+          key="${line%%=*}"
+          value="${line#*=}"
+          if [ "$key" = "$line" ]; then
+            echo "versions.env line is not KEY=value: $line" >&2
+            exit 1
+          fi
+          printf '%s=%s\n' "$key" "$value" >> "$GITHUB_ENV"
+          printf '%s=%s\n' "$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]')" "$value" >> "$GITHUB_OUTPUT"
+          echo "$key=$value"
+        done < .github/versions.env
+
+        # Fail loudly on a missing key. Without this, a typo would hand an
+        # empty string to `dtolnay/rust-toolchain` or to `cargo install
+        # --version`, and the job would install something unpinned instead of
+        # stopping.
+        for required in RUST_TOOLCHAIN FUZZ_NIGHTLY_TOOLCHAIN CARGO_AUDIT_VERSION \
+                        CARGO_DENY_VERSION CARGO_FUZZ_VERSION CROSS_VERSION \
+                        NODE_VERSION FUZZ_RUNS FUZZ_MAX_LEN; do
+          if ! grep -q "^${required}=..*$" .github/versions.env; then
+            echo "versions.env is missing a non-empty $required" >&2
+            exit 1
+          fi
+        done
+
+    - name: Load .github/build-targets.json
+      id: targets
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        targets="$(jq -c '.targets' .github/build-targets.json)"
+        printf 'build_targets=%s\n' "$targets" >> "$GITHUB_OUTPUT"
+        echo "build_targets=$targets"
+
+        # The jobs that name a runner outside the matrix read their label from
+        # the same table, so `macos-26` is written once in the whole repository.
+        emit_runner() {
+          local output_name="$1" target="$2" label
+          label="$(jq -r --arg t "$target" '.targets[] | select(.target == $t) | .os' .github/build-targets.json)"
+          if [ -z "$label" ] || [ "$label" = "null" ]; then
+            echo "build-targets.json has no runner label for $target" >&2
+            exit 1
+          fi
+          printf '%s=%s\n' "$output_name" "$label" >> "$GITHUB_OUTPUT"
+          echo "$output_name=$label"
+        }
+
+        emit_runner linux_runner x86_64-unknown-linux-musl
+        emit_runner macos_runner aarch64-apple-darwin
+        emit_runner macos_intel_runner x86_64-apple-darwin

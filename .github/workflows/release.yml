@@ -10,13 +10,43 @@ on:
 permissions:
   contents: read
 
+# A tag is pushed once and its artifacts are immutable, so a second run for the
+# same tag is a re-run, never a supersede. Cancelling one mid-publish could
+# leave a Release with a partial asset set, so queue instead of cancel.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+# Every pinned version this workflow uses lives in `.github/versions.env`, and
+# the target matrix with its runner labels in `.github/build-targets.json`.
+# The `config` job loads both and re-exports them as job outputs, because
+# `runs-on:` cannot read a workflow `env:` value. Nothing else here may
+# hard-code a version.
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  RUST_TOOLCHAIN: 1.94.0
-  CROSS_VERSION: 0.2.5
+  CARGO_INCREMENTAL: 0
 
 jobs:
+  # The pinned versions, runner labels, and the release target matrix, read
+  # from the two files ci.yml reads. A release therefore builds the same four
+  # targets, on the same runner images, with the same toolchain that CI used.
+  config:
+    name: Load pinned versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      rust_toolchain: ${{ steps.versions.outputs.rust_toolchain }}
+      cargo_audit_version: ${{ steps.versions.outputs.cargo_audit_version }}
+      cargo_deny_version: ${{ steps.versions.outputs.cargo_deny_version }}
+      cross_version: ${{ steps.versions.outputs.cross_version }}
+      build_targets: ${{ steps.versions.outputs.build_targets }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - uses: ./.github/actions/load-versions
+        id: versions
+
   # Tag admission check, part 1 of 3. Pushing a `v*` tag used to start the
   # build matrix immediately: ci.yml does not trigger on tags, so a tag on a
   # commit that never went through CI shipped binaries to the GitHub Release,
@@ -88,7 +118,7 @@ jobs:
   # identical standard rather than a copy that can drift.
   admission-quality:
     name: Tag admission (fmt, clippy, test)
-    needs: admission-ancestry
+    needs: [config, admission-ancestry]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -98,7 +128,7 @@ jobs:
 
       - uses: ./.github/actions/quality-gate
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: ${{ needs.config.outputs.rust_toolchain }}
 
   # Tag admission check, part 3 of 3. This one can fail on a commit that was
   # green when it merged: the advisory database moves, so a CVE published
@@ -107,7 +137,7 @@ jobs:
   # dependency, merge, and re-tag.
   admission-security:
     name: Tag admission (audit, deny)
-    needs: admission-ancestry
+    needs: [config, admission-ancestry]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -117,63 +147,39 @@ jobs:
 
       - uses: ./.github/actions/security-gate
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: ${{ needs.config.outputs.rust_toolchain }}
+          cargo-audit-version: ${{ needs.config.outputs.cargo_audit_version }}
+          cargo-deny-version: ${{ needs.config.outputs.cargo_deny_version }}
 
+  # The matrix comes from `.github/build-targets.json` and the build steps from
+  # the `build-target` composite action, both shared with the `cross-matrix`
+  # job in ci.yml. A target added there is built by CI and shipped by this job
+  # without a second edit, and neither list can drift from the other.
   build:
     name: Build ${{ matrix.target }}
-    needs: [admission-quality, admission-security]
+    needs: [config, admission-quality, admission-security]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-            asset_name: aegis-linux-x86_64
-            use_cross: true
-
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest
-            asset_name: aegis-linux-aarch64
-            use_cross: true
-
-          # Pinned rather than macos-latest (which migrated to macOS 26 on
-          # 2026-06-15, see actions/runner-images#14167) so a runner-image
-          # bump never silently changes what a release is built on.
-          - target: x86_64-apple-darwin
-            os: macos-26-intel
-            asset_name: aegis-macos-x86_64
-
-          - target: aarch64-apple-darwin
-            os: macos-26
-            asset_name: aegis-macos-aarch64
+        include: ${{ fromJSON(needs.config.outputs.build_targets) }}
 
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
       - uses: ./.github/actions/setup-rust
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: ${{ needs.config.outputs.rust_toolchain }}
           targets: ${{ matrix.target }}
           cache-key-prefix: ${{ matrix.target }}-
 
-      - name: Install cross
-        if: matrix.use_cross
-        run: cargo install cross --version ${{ env.CROSS_VERSION }} --locked
-
-      - name: Build (native)
-        if: "!matrix.use_cross"
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Build (cross)
-        if: matrix.use_cross
-        env:
-          # The cross musl image installs a static musl libcap under
-          # /usr/local (see docker/cross-musl/Dockerfile); pkg-config must be
-          # told it is allowed to report a cross libcap.
-          PKG_CONFIG_ALLOW_CROSS: "1"
-          PKG_CONFIG_PATH: /usr/local/lib/pkgconfig
-        run: cross build --release --target ${{ matrix.target }}
+      - name: Build release binary
+        uses: ./.github/actions/build-target
+        with:
+          target: ${{ matrix.target }}
+          use-cross: ${{ matrix.use_cross }}
+          cross-version: ${{ needs.config.outputs.cross_version }}
 
       - name: Rename binary
         shell: bash
@@ -227,6 +233,7 @@ jobs:
     name: Publish GitHub Release
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
 
@@ -268,6 +275,24 @@ jobs:
           fi
           cat release-notes.md
 
+      # The asset list is derived from `.github/build-targets.json` rather than
+      # written out again here, so adding a target cannot produce a Release
+      # that is missing its binary. `THIRD_PARTY_NOTICES.md` is repo-relative
+      # rather than `artifacts/`-prefixed: it is checked in and comes from this
+      # job's own `actions/checkout` above, not from the build matrix.
+      - name: Resolve the release asset list
+        id: assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "files<<ASSET_LIST_EOF"
+            jq -r '.targets[] | "artifacts/\(.asset_name)", "artifacts/\(.asset_name).sha256"' \
+              .github/build-targets.json
+            echo "THIRD_PARTY_NOTICES.md"
+            echo "ASSET_LIST_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
@@ -280,29 +305,13 @@ jobs:
           # release missing a binary — or the MIT attribution for the statically
           # linked Tree-sitter components — must not publish with a warning.
           fail_on_unmatched_files: true
-          # `files` is a literal block scalar: every line below is a glob pattern
-          # and `#` is content, not a comment — a commented line would be treated
-          # as an unmatched pattern and, with the fail-closed flag above, abort
-          # the release. Keep this block to bare paths only.
-          #
-          # `THIRD_PARTY_NOTICES.md` is repo-relative rather than `artifacts/`-
-          # prefixed: it is checked in and comes from this job's own
-          # `actions/checkout` above, not from the build matrix.
-          files: |
-            artifacts/aegis-linux-x86_64
-            artifacts/aegis-linux-x86_64.sha256
-            artifacts/aegis-linux-aarch64
-            artifacts/aegis-linux-aarch64.sha256
-            artifacts/aegis-macos-x86_64
-            artifacts/aegis-macos-x86_64.sha256
-            artifacts/aegis-macos-aarch64
-            artifacts/aegis-macos-aarch64.sha256
-            THIRD_PARTY_NOTICES.md
+          files: ${{ steps.assets.outputs.files }}
 
   publish-npm:
     name: Publish npm package
-    needs: release
+    needs: [config, release]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: ${{ !contains(github.ref_name, '-rc') && !contains(github.ref_name, '-beta') && !contains(github.ref_name, '-alpha') }}
     permissions:
       contents: read
@@ -312,7 +321,7 @@ jobs:
 
       - uses: ./.github/actions/setup-rust
         with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          toolchain: ${{ needs.config.outputs.rust_toolchain }}
           cache: "false"
 
       - uses: ./.github/actions/install-libcap

@@ -12,62 +12,81 @@ fn release_workflow() -> String {
     std::fs::read_to_string(&path).expect("release workflow should be readable")
 }
 
-/// Extracts the single matrix `include:` entry for `target` from the workflow
-/// text. The entry spans from its `- target: <triple>` marker up to the next
-/// `- target: ` marker (or end of file), so callers can assert on per-target
-/// fields like `use_cross` without a YAML dependency.
+/// Extracts the single matrix entry for `target` from `.github/build-targets.json`.
+/// The entry spans from its `"target": "<triple>"` marker up to the closing
+/// brace of that object, so callers can assert on per-target fields like
+/// `use_cross` without a JSON dependency.
 ///
-/// Panics if the target is absent — this is a test-fixture failure, not a
+/// Panics if the target is absent. That is a test-fixture failure, not a
 /// runtime failure, so `panic!`/`expect` is acceptable here.
-fn matrix_entry(workflow: &str, target: &str) -> String {
-    for segment in workflow.split("- target: ").skip(1) {
-        if let Some(rest) = segment.strip_prefix(target) {
-            // `rest` ends where the next `- target: ` marker began, so it is
-            // exactly this entry's body (plus a trailing newline).
-            return format!("- target: {target}{rest}");
-        }
-    }
-    panic!("release workflow matrix should define target {target}");
+fn matrix_entry(targets: &str, target: &str) -> String {
+    let marker = format!("\"target\": \"{target}\"");
+    let entry = targets
+        .split_once(marker.as_str())
+        // The entry ends at the closing brace of its JSON object, so `entry`
+        // is exactly this target's remaining fields.
+        .and_then(|(_, rest)| rest.split_once('}'))
+        .map(|(entry, _)| entry.to_owned())
+        .unwrap_or_else(|| panic!("release workflow matrix should define target {target}"));
+
+    format!("{marker}{entry}")
 }
 
-/// Extracts the non-empty lines of the GitHub Release `files: |` block scalar.
-///
-/// `files` is a YAML literal block scalar, so `#` inside it is content, not a
-/// comment: `softprops/action-gh-release` splits the value on newlines and
-/// treats every resulting line as a glob pattern. Combined with
-/// `fail_on_unmatched_files: true` a stray commented line aborts the release, so
-/// callers assert on the parsed lines rather than on raw substrings.
-///
-/// Panics if the block is absent — a test-fixture failure, not a runtime one.
-fn release_files_patterns(workflow: &str) -> Vec<String> {
-    let block = workflow
-        .replace("\r\n", "\n")
-        .split_once("\n          files: |\n")
-        .map(|(_, rest)| rest.to_owned())
-        .expect("release workflow should define a GitHub Release `files:` block");
+/// The release target matrix. `release.yml` (`build`) and `ci.yml`
+/// (`cross-matrix`) both expand this file into `strategy.matrix.include`, so
+/// it is where the target list, the runner labels, and the asset names live.
+fn build_targets() -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/build-targets.json");
+    std::fs::read_to_string(&path).expect("build-targets.json should be readable")
+}
 
-    block
-        .lines()
-        .map(str::trim_end)
-        // The block ends at the first line that is not indented deeper than the
-        // `files:` key itself (a blank line, or the next key/job).
-        .take_while(|line| line.starts_with("            ") && !line.trim().is_empty())
-        .map(|line| line.trim().to_owned())
-        .collect()
+/// The asset paths the GitHub Release publishes.
+///
+/// The workflow derives them from `build-targets.json` with jq instead of
+/// listing them a second time, so this derives them the same way. Every
+/// resulting line is a glob pattern that `softprops/action-gh-release` matches
+/// with `fail_on_unmatched_files: true`, so a line that is not a bare path
+/// aborts the release.
+fn release_files_patterns() -> Vec<String> {
+    let mut patterns: Vec<String> = build_targets()
+        .split("\"asset_name\": \"")
+        .skip(1)
+        .filter_map(|fragment| fragment.split('"').next().map(str::to_owned))
+        .flat_map(|asset| {
+            [
+                format!("artifacts/{asset}"),
+                format!("artifacts/{asset}.sha256"),
+            ]
+        })
+        .collect();
+    patterns.push("THIRD_PARTY_NOTICES.md".to_owned());
+    patterns
 }
 
 #[test]
 fn release_workflow_files_block_should_contain_only_bare_asset_paths() {
-    let patterns = release_files_patterns(&release_workflow());
+    let wf = release_workflow();
+    let patterns = release_files_patterns();
 
     assert!(
         !patterns.is_empty(),
         "GitHub Release `files:` block must list at least one asset"
     );
+    assert!(
+        wf.contains("files: ${{ steps.assets.outputs.files }}"),
+        "the GitHub Release asset list must come from the step that derives it from \
+         build-targets.json"
+    );
+    assert!(
+        wf.contains(
+            r#"jq -r '.targets[] | "artifacts/\(.asset_name)", "artifacts/\(.asset_name).sha256"'"#
+        ),
+        "the asset list step must emit a binary and a .sha256 sidecar for every target"
+    );
     for pattern in &patterns {
         assert!(
             !pattern.starts_with('#'),
-            "`{pattern}` is a comment inside the `files:` block scalar, so the action \
+            "`{pattern}` reads as a comment rather than a path, so the action \
              treats it as an unmatched glob and fails the release"
         );
         assert!(
@@ -79,39 +98,43 @@ fn release_workflow_files_block_should_contain_only_bare_asset_paths() {
 
 #[test]
 fn release_workflow_should_build_linux_musl_targets() {
-    let wf = release_workflow();
+    let targets = build_targets();
     assert!(
-        wf.contains("x86_64-unknown-linux-musl"),
+        targets.contains("x86_64-unknown-linux-musl"),
         "release workflow must build x86_64-unknown-linux-musl"
     );
     assert!(
-        wf.contains("aarch64-unknown-linux-musl"),
+        targets.contains("aarch64-unknown-linux-musl"),
         "release workflow must build aarch64-unknown-linux-musl"
+    );
+    assert!(
+        release_workflow().contains("include: ${{ fromJSON(needs.config.outputs.build_targets) }}"),
+        "the release build matrix must expand .github/build-targets.json"
     );
 }
 
 #[test]
 fn release_workflow_should_not_build_linux_gnu_targets() {
-    let wf = release_workflow();
+    let targets = build_targets();
     assert!(
-        !wf.contains("x86_64-unknown-linux-gnu"),
+        !targets.contains("x86_64-unknown-linux-gnu"),
         "release workflow must not build x86_64-unknown-linux-gnu"
     );
     assert!(
-        !wf.contains("aarch64-unknown-linux-gnu"),
+        !targets.contains("aarch64-unknown-linux-gnu"),
         "release workflow must not build aarch64-unknown-linux-gnu"
     );
 }
 
 #[test]
 fn release_workflow_should_keep_installer_asset_names() {
-    let wf = release_workflow();
+    let targets = build_targets();
     assert!(
-        wf.contains("aegis-linux-x86_64"),
+        targets.contains("aegis-linux-x86_64"),
         "release workflow must keep aegis-linux-x86_64 asset name"
     );
     assert!(
-        wf.contains("aegis-linux-aarch64"),
+        targets.contains("aegis-linux-aarch64"),
         "release workflow must keep aegis-linux-aarch64 asset name"
     );
 }
@@ -143,15 +166,24 @@ fn release_workflow_should_verify_static_linux_binaries() {
 
 #[test]
 fn release_workflow_should_build_linux_musl_targets_via_cross() {
-    let wf = release_workflow();
+    let targets = build_targets();
 
     for target in ["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"] {
-        let entry = matrix_entry(&wf, target);
+        let entry = matrix_entry(&targets, target);
         assert!(
-            entry.contains("use_cross: true"),
+            entry.contains("\"use_cross\": true"),
             "release workflow must build {target} via cross (use_cross: true); matrix entry:\n{entry}"
         );
     }
+
+    let action = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/actions/build-target/action.yml"),
+    )
+    .expect("build-target action should be readable");
+    assert!(
+        action.contains("cross build --release --target ${{ inputs.target }}"),
+        "the build-target action must build a use_cross target through cross"
+    );
 }
 
 /// The four installer-facing release assets required by the release-asset gate. Every supported
@@ -167,11 +199,11 @@ fn expected_release_assets() -> [&'static str; 4] {
 
 #[test]
 fn release_workflow_should_define_all_supported_asset_names_in_matrix() {
-    let wf = release_workflow();
+    let targets = build_targets();
 
     for asset in expected_release_assets() {
         assert!(
-            wf.contains(&format!("asset_name: {asset}")),
+            targets.contains(&format!("\"asset_name\": \"{asset}\"")),
             "release workflow matrix must define asset_name: {asset}"
         );
     }
@@ -197,18 +229,19 @@ fn release_workflow_should_upload_binary_and_sha256_for_each_matrix_entry() {
 
 #[test]
 fn release_workflow_should_publish_each_binary_and_matching_sha256_sidecar() {
-    // The workflow file is checked out with CRLF on some hosts (core.autocrlf),
-    // so normalize to LF before asserting on line-anchored substrings. The
-    // contract is about which assets are published, not their line endings.
-    let wf = release_workflow().replace("\r\n", "\n");
+    let patterns = release_files_patterns();
 
     for asset in expected_release_assets() {
         assert!(
-            wf.contains(&format!("artifacts/{asset}\n")),
+            patterns
+                .iter()
+                .any(|pattern| pattern == &format!("artifacts/{asset}")),
             "GitHub Release files list must publish binary artifact {asset}"
         );
         assert!(
-            wf.contains(&format!("artifacts/{asset}.sha256")),
+            patterns
+                .iter()
+                .any(|pattern| pattern == &format!("artifacts/{asset}.sha256")),
             "GitHub Release files list must publish checksum sidecar {asset}.sha256"
         );
     }
@@ -218,15 +251,20 @@ fn release_workflow_should_publish_each_binary_and_matching_sha256_sidecar() {
 fn release_workflow_should_publish_the_grammar_license_notice() {
     let wf = release_workflow().replace("\r\n", "\n");
 
-    // Asserted against the parsed `files:` patterns so a passing mention in a
+    // Asserted against the derived `files:` patterns so a passing mention in a
     // comment or another job cannot satisfy the contract. Unlike its siblings
     // this entry is repo-relative rather than `artifacts/`-prefixed: the notice
-    // is checked into the repo, not produced by the build matrix.
+    // is checked into the repo, not produced by the build matrix, so the step
+    // that derives the list appends it rather than reading it from the matrix.
     assert!(
-        release_files_patterns(&wf)
+        release_files_patterns()
             .iter()
             .any(|pattern| pattern == "THIRD_PARTY_NOTICES.md"),
         "GitHub Release files list must publish the grammar license notice"
+    );
+    assert!(
+        wf.contains("echo \"THIRD_PARTY_NOTICES.md\""),
+        "the asset list step must append the grammar license notice"
     );
     assert!(
         wf.contains("fail_on_unmatched_files: true"),

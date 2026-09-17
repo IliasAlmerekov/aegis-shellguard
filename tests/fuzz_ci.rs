@@ -20,17 +20,34 @@ fn assert_fuzz_target_declared(manifest: &str, target: &str) {
     );
 }
 
-fn assert_ci_runs_target(ci: &str, target: &str) {
-    assert!(
-        ci.contains(&format!("Run {target} fuzz")),
-        "CI must include a named step for {target} fuzzing"
-    );
-    assert!(
-        ci.contains(&format!(
-            "cargo +${{{{ env.FUZZ_NIGHTLY_TOOLCHAIN }}}} fuzz run {target} fuzz/corpus/{target} -- -runs=100000"
-        )),
-        "CI must run {target} fuzzing with the committed corpus and -runs=100000"
-    );
+/// The target list the CI fuzz step loops over, i.e. the words between
+/// `for target in` and the `; do` that closes the list. Line continuations are
+/// dropped so a wrapped list reads the same as a single-line one.
+///
+/// Panics if the loop is absent — a test-fixture failure, not a runtime one.
+fn ci_fuzz_targets(ci: &str) -> Vec<String> {
+    let list = ci
+        .split_once("for target in ")
+        .and_then(|(_, rest)| rest.split_once("; do"))
+        .map(|(list, _)| list.to_owned())
+        .expect("the CI fuzz step should loop over a target list");
+
+    list.replace('\\', " ")
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The iteration count the fuzz step passes to libFuzzer, pinned in
+/// `.github/versions.env` rather than in the workflow.
+fn ci_fuzz_runs() -> u64 {
+    read_repo_file(".github/versions.env")
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("FUZZ_RUNS="))
+        .expect("versions.env should pin FUZZ_RUNS")
+        .trim()
+        .parse()
+        .expect("FUZZ_RUNS should be a number")
 }
 
 #[test]
@@ -55,6 +72,7 @@ fn fuzz_manifest_declares_all_prd_targets() {
 #[test]
 fn ci_runs_each_fuzz_target_for_at_least_100000_iterations() {
     let ci = read_repo_file(".github/workflows/ci.yml");
+    let looped = ci_fuzz_targets(&ci);
 
     for target in [
         "parser",
@@ -67,8 +85,24 @@ fn ci_runs_each_fuzz_target_for_at_least_100000_iterations() {
         "language_typescript",
         "language_bash",
     ] {
-        assert_ci_runs_target(&ci, target);
+        assert!(
+            looped.iter().any(|looped| looped == target),
+            "the CI fuzz step must run {target}; it loops over {looped:?}"
+        );
     }
+
+    assert!(
+        ci.contains("fuzz run \"$target\" \"fuzz/corpus/$target\""),
+        "the CI fuzz step must seed every target from its committed corpus"
+    );
+    assert!(
+        ci.contains("\"-runs=$RUNS\""),
+        "the CI fuzz step must bound every target by the pinned iteration count"
+    );
+    assert!(
+        ci_fuzz_runs() >= 100_000,
+        "versions.env must keep FUZZ_RUNS at 100000 iterations or more"
+    );
 }
 
 #[test]

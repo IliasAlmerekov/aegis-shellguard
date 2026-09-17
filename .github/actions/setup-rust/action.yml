@@ -6,7 +6,7 @@ description: >-
   loaded after the repo containing it is already checked out).
 inputs:
   toolchain:
-    description: "Rust toolchain channel or version to install (e.g. 1.94.0, nightly)"
+    description: "Rust toolchain channel or version to install. Comes from .github/versions.env."
     required: true
   components:
     description: "Comma-separated rustup components to install (e.g. rustfmt, clippy)"
@@ -45,5 +45,10 @@ runs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-${{ inputs.cache-key-prefix }}${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: ${{ runner.os }}-cargo-${{ inputs.cache-key-prefix }}
+        # The toolchain is part of the key because `target/` holds artifacts
+        # built by one specific rustc. Restoring a 1.94.0 `target/` into a
+        # nightly job (or into the next stable bump) wins nothing, because cargo
+        # rebuilds everything anyway, and the stale objects stay in the cache
+        # entry, growing it on every save.
+        key: ${{ runner.os }}-cargo-${{ inputs.toolchain }}-${{ inputs.cache-key-prefix }}${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: ${{ runner.os }}-cargo-${{ inputs.toolchain }}-${{ inputs.cache-key-prefix }}
