@@ -95,11 +95,13 @@ baseline_ns = 2_200_000
 regression_pct = 25.0
 description = "RuntimeContext::new() from a default config, reusing the warm BUILTIN_SCANNER static; includes one id -un process spawn. No longer pays a discarded custom-pattern scanner build (issue #319)."
 
-# Placeholder: this must be replaced with the real number from the CI runner
-# after the PR's `performance` job runs. Do not merge with this value.
+# Set 2026-09-17 from the CI runner (PR #327 `performance` job, observed
+# 14.5 ms). With the 50% threshold the regression gate sits at 30 ms, the same
+# value as budget_ns. A higher baseline would put the gate above the budget,
+# where it could never fire first.
 [[benchmarks]]
 name = "startup_safe_command"
-baseline_ns = 200_000_000
+baseline_ns = 20_000_000
 regression_pct = 50.0
 budget_ns = 30_000_000
 description = "One full aegis process invocation, from process start to decision, on an evaluated safe command."
