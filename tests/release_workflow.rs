@@ -272,18 +272,47 @@ fn release_workflow_should_publish_the_grammar_license_notice() {
     );
 }
 
+/// The major version of every pin of `action` in the workflow, read from the
+/// `# vX.Y.Z` comment that follows the SHA.
+///
+/// Third-party actions are pinned by commit SHA, so the trailing tag comment is
+/// the only readable version in the file. Dependabot rewrites the SHA and the
+/// comment together, which is why the version floor below is asserted against
+/// the comment instead of against a literal SHA: a patch bump stays green while
+/// a downgrade across the major boundary still fails.
+fn pinned_action_majors(wf: &str, action: &str) -> Vec<u32> {
+    wf.split(&format!("{action}@"))
+        .skip(1)
+        .filter_map(|rest| rest.split('\n').next())
+        .filter_map(|line| line.split_once("# v"))
+        .filter_map(|(_, version)| version.split('.').next())
+        .filter_map(|major| major.trim().parse().ok())
+        .collect()
+}
+
 #[test]
 fn release_workflow_should_use_node24_actions_for_release_publication() {
     let wf = release_workflow();
 
-    for node24_action in [
-        "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1",
-        "softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2",
+    // Each floor is the major that replaced a Node.js 20 pin in #128. Dropping
+    // below it brings the Node.js 20 runtime back, so the floor is the
+    // contract and the exact patch release is Dependabot's business.
+    for (action, node24_major) in [
+        ("actions/download-artifact", 8),
+        ("softprops/action-gh-release", 3),
     ] {
+        let majors = pinned_action_majors(&wf, action);
         assert!(
-            wf.contains(node24_action),
-            "release publication must pin the Node.js 24 action {node24_action}"
+            !majors.is_empty(),
+            "release publication must pin {action} by SHA with a # vX.Y.Z tag comment"
         );
+        for major in majors {
+            assert!(
+                major >= node24_major,
+                "release publication must pin {action} at v{node24_major} or later \
+                 to keep the Node.js 24 runtime, found v{major}"
+            );
+        }
     }
 
     for node20_action in [

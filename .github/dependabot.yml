@@ -53,5 +53,14 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # `@react-three/fiber` 9.7.0 is the newest release and still declares
+      # `peer react ">=19 <19.3"`. React 19.3 therefore fails `npm ci` with
+      # ERESOLVE, which took the whole grouped update down with it. Remove both
+      # entries once a fiber release accepts 19.3.
+      - dependency-name: react
+        versions: [">=19.3"]
+      - dependency-name: react-dom
+        versions: [">=19.3"]
     commit-message:
       prefix: "deps"
