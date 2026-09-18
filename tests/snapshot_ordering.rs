@@ -384,8 +384,8 @@ fn test_watch_mode_approved_danger_command_child_observes_snapshot_before_exec()
         .expect("git commit baseline");
     assert!(commit.status.success(), "git commit failed: {commit:?}");
 
-    // Create an untracked marker file. The git snapshot must stash it before
-    // the child runs, so the child should not see it.
+    // Create an untracked marker file. The git snapshot must capture it before
+    // the child runs, and must leave it on disk while doing so (issue #356).
     let marker = cwd_path.join("marker.txt");
     fs::write(&marker, "present\n").unwrap();
 
@@ -404,12 +404,12 @@ reason = "approved before-exec test"
     )
     .unwrap();
 
-    // If the snapshot ran before the child, marker.txt is gone and the test
-    // command succeeds. If the child ran first, marker.txt still exists, the
-    // test fails, and the shell exits non-zero. Use a newline to separate the
-    // harmless rm from the marker assertion so the allowlist glob (which
-    // excludes `;`, `&`, and `|`) still matches the whole command.
-    let input = "{\"cmd\":\"rm -rf /tmp/aegis-watch-before-exec\\ntest ! -f marker.txt\",\"id\":\"before-exec-1\"}\n";
+    // If the snapshot ran before the child, the stash ref exists and the probe
+    // succeeds. If the child ran first, there is no stash ref yet, the probe
+    // fails, and the shell exits non-zero. Use a newline to separate the
+    // harmless rm from the probe so the allowlist glob (which excludes `;`,
+    // `&`, and `|`) still matches the whole command.
+    let input = "{\"cmd\":\"rm -rf /tmp/aegis-watch-before-exec\\ntest -f .git/refs/stash\",\"id\":\"before-exec-1\"}\n";
     let output = aegis_watch_in(home.path(), &cwd_path, input.as_bytes());
 
     assert!(
@@ -436,7 +436,12 @@ reason = "approved before-exec test"
     assert_eq!(result["decision"], "approved", "frames: {frames:?}");
     assert_eq!(
         result["exit_code"], 0,
-        "child must observe marker.txt already stashed (snapshot before exec), frames: {frames:?}"
+        "child must observe the stash ref (snapshot before exec), frames: {frames:?}"
+    );
+    assert_eq!(
+        fs::read_to_string(&marker).unwrap(),
+        "present\n",
+        "the snapshot must leave the untracked file on disk"
     );
 
     let entries = read_audit_entries(home.path());
@@ -484,8 +489,8 @@ fn test_shell_approved_danger_command_child_observes_snapshot_before_exec() {
         .expect("git commit baseline");
     assert!(commit.status.success(), "git commit failed: {commit:?}");
 
-    // Create an untracked marker file. The git snapshot must stash it before
-    // the child runs, so the child should not see it.
+    // Create an untracked marker file. The git snapshot must capture it before
+    // the child runs, and must leave it on disk while doing so (issue #356).
     let marker = cwd_path.join("marker.txt");
     fs::write(&marker, "present\n").unwrap();
 
@@ -504,24 +509,29 @@ reason = "approved shell before-exec test"
     )
     .unwrap();
 
-    // If the snapshot ran before the child, marker.txt is gone and the test
-    // command succeeds. If the child ran first, marker.txt still exists, the
-    // test fails, and the shell exits non-zero. Use a newline to separate the
-    // harmless rm from the marker assertion so the allowlist glob (which
-    // excludes `;`, `&`, and `|`) still matches the whole command.
+    // If the snapshot ran before the child, the stash ref exists and the probe
+    // succeeds. If the child ran first, there is no stash ref yet, the probe
+    // fails, and the shell exits non-zero. Use a newline to separate the
+    // harmless rm from the probe so the allowlist glob (which excludes `;`,
+    // `&`, and `|`) still matches the whole command.
     let output = base_command(home.path())
         .current_dir(&cwd_path)
         .args([
             "-c",
-            "rm -rf /tmp/aegis-shell-before-exec\ntest ! -f marker.txt",
+            "rm -rf /tmp/aegis-shell-before-exec\ntest -f .git/refs/stash",
         ])
         .output()
         .expect("run aegis shell wrapper");
 
     assert!(
         output.status.success(),
-        "shell child must observe marker.txt already stashed (snapshot before exec), stderr:\n{}",
+        "shell child must observe the stash ref (snapshot before exec), stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(&marker).unwrap(),
+        "present\n",
+        "the snapshot must leave the untracked file on disk"
     );
 
     let entries = read_audit_entries(home.path());
@@ -575,8 +585,8 @@ fn test_sandboxed_approved_danger_command_records_snapshots_before_exec() {
         .expect("git commit baseline");
     assert!(commit.status.success(), "git commit failed: {commit:?}");
 
-    // Create an untracked marker file. The git snapshot must stash it before
-    // the child runs, so the child should not see it.
+    // Create an untracked marker file. The git snapshot must capture it before
+    // the child runs, and must leave it on disk while doing so (issue #356).
     let marker = cwd_path.join("marker.txt");
     fs::write(&marker, "present\n").unwrap();
 
@@ -614,7 +624,7 @@ allow_network = false
         .current_dir(&cwd_path)
         .args([
             "-c",
-            "rm -rf /tmp/aegis-sandbox-before-exec\ntest ! -f marker.txt",
+            "rm -rf /tmp/aegis-sandbox-before-exec\ntest -f .git/refs/stash",
         ])
         .output()
         .expect("run aegis shell wrapper");
@@ -629,7 +639,12 @@ allow_network = false
 
     assert!(
         output.status.success(),
-        "sandboxed child must observe marker.txt already stashed (snapshot before exec), stderr:\n{stderr}"
+        "sandboxed child must observe the stash ref (snapshot before exec), stderr:\n{stderr}"
+    );
+    assert_eq!(
+        fs::read_to_string(&marker).unwrap(),
+        "present\n",
+        "the snapshot must leave the untracked file on disk"
     );
 
     let entries = read_audit_entries(home.path());
