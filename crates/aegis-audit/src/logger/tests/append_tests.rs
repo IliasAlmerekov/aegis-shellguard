@@ -282,6 +282,32 @@ fn append_rejects_a_symlinked_lock_without_touching_its_target() {
     assert_eq!(fs::read(target).unwrap(), b"sentinel");
 }
 
+#[cfg(unix)]
+#[test]
+fn append_wraps_a_write_failure_with_the_path_and_override_hint() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    let readonly = dir.path().join("readonly");
+    fs::create_dir(&readonly).unwrap();
+    fs::set_permissions(&readonly, fs::Permissions::from_mode(0o500)).unwrap();
+    let log_path = readonly.join("audit.jsonl");
+    let logger = AuditLogger::new(&log_path);
+
+    let error = logger.append(entry(0, RiskLevel::Safe)).unwrap_err();
+
+    fs::set_permissions(&readonly, fs::Permissions::from_mode(0o700)).unwrap();
+
+    match &error {
+        AuditError::WriteFailed { path, .. } => assert_eq!(path, &log_path.to_string_lossy()),
+        other => panic!("expected AuditError::WriteFailed, got {other:?}"),
+    }
+    assert!(
+        error.to_string().contains("AEGIS_AUDIT_PATH"),
+        "message must name the override: {error}"
+    );
+}
+
 #[test]
 fn append_creates_companion_lock_file() {
     let dir = TempDir::new().unwrap();

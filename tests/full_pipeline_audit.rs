@@ -56,6 +56,39 @@ fn audit_logger_failure_exits_nonzero_with_error() {
     );
 }
 
+/// A read-only `~/.aegis` directory must name the audit path and the
+/// `AEGIS_AUDIT_PATH` override in the printed error, not a bare `io error:`
+/// with no way for the operator to unblock themselves.
+#[cfg(unix)]
+#[test]
+fn audit_logger_write_failure_names_path_and_override_hint() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let home = TempDir::new().unwrap();
+    let aegis_dir = home.path().join(".aegis");
+    fs::create_dir(&aegis_dir).unwrap();
+    fs::set_permissions(&aegis_dir, fs::Permissions::from_mode(0o500)).unwrap();
+
+    let output = base_command(home.path())
+        .args(["-c", "echo hello"])
+        .output()
+        .unwrap();
+
+    fs::set_permissions(&aegis_dir, fs::Permissions::from_mode(0o700)).unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let audit_path = aegis_dir.join("audit.jsonl");
+    assert!(
+        stderr.contains(&audit_path.to_string_lossy().to_string()),
+        "error must name the unwritable audit path: {stderr}"
+    );
+    assert!(
+        stderr.contains("AEGIS_AUDIT_PATH"),
+        "error must name the override that unblocks the operator: {stderr}"
+    );
+}
+
 /// Audit write failures must always be reported — not gated on --verbose.
 #[test]
 fn audit_logger_failure_always_prints_error() {

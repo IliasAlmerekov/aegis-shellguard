@@ -15,6 +15,21 @@ pub enum AuditError {
     /// Wrapped I/O error.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    /// The active log could not be written to at its configured path.
+    ///
+    /// Carries the path alongside the underlying I/O failure so the printed
+    /// error names the unwritable location and the override that unblocks
+    /// it, instead of a bare `io error: ...` with no path.
+    #[error(
+        "audit log at '{path}' could not be written: {source} (set AEGIS_AUDIT_PATH to point at a writable location)"
+    )]
+    WriteFailed {
+        /// Audit log path Aegis attempted to write to.
+        path: String,
+        /// Underlying I/O failure.
+        #[source]
+        source: std::io::Error,
+    },
     /// A line in the persisted audit log could not be parsed as a valid entry.
     #[error("audit error: {}", describe_parse_failure(path, line, source))]
     Parse {
