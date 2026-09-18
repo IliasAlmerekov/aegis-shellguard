@@ -39,6 +39,14 @@ updates:
         update-types:
           - minor
           - patch
+      # Security PRs land ungrouped by default and ignore
+      # open-pull-requests-limit, so a burst of advisories on the same
+      # Cargo.lock would otherwise conflict with each other on merge —
+      # same reasoning as the grouping above, just for the security path.
+      cargo-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
     commit-message:
       prefix: "deps"
 
@@ -53,6 +61,10 @@ updates:
         update-types:
           - minor
           - patch
+      landing-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
     ignore:
       # `@react-three/fiber` 9.7.0 is the newest release and still declares
       # `peer react ">=19 <19.3"`. React 19.3 therefore fails `npm ci` with
