@@ -1,4 +1,4 @@
-# ADR-037 — A git Snapshot leaves the working tree untouched
+# ADR-037: A git Snapshot leaves the working tree untouched
 
 ## Status
 
@@ -16,7 +16,7 @@ git stash push --include-untracked -m aegis-snap-<timestamp>
 `git stash push` is not a read. It writes the stash entry and then resets the
 working tree to HEAD. Nothing put the work back. The only code path that
 restored it was `rollback()`, which runs when a human asks for it, so on the
-ordinary path — the command runs, it succeeds, nobody rolls back — the user's
+ordinary path, the command runs, it succeeds, nobody rolls back, the user's
 uncommitted work stayed in the stash list and was gone from disk.
 
 The blast radius is wider than `Danger`. `snapshots_required`
@@ -56,7 +56,7 @@ local changes. Rollback therefore runs
 `git stash push --include-untracked -m aegis-pre-rollback-<timestamp>` first
 when the tree is dirty, then applies the snapshot entry onto the clean tree.
 
-This keeps the rollback contract of ADR-026 §5 — restore the captured state —
+This keeps the rollback contract of ADR-026 §5, restore the captured state,
 without deleting anything to get there. The state a rollback replaces is
 recoverable from its own stash entry, and the entry is logged with its hash.
 `git reset --hard` plus `git clean -fd` would have produced the same tree and
@@ -66,10 +66,10 @@ still want.
 ### 3. The stash entry is dropped by rollback or by retention, not by the success path
 
 The entry outlives the command on purpose: it is the artifact `aegis rollback`
-restores from. `rollback()` drops it after a successful apply, and the `[prune]`
-retention policy bounds the list otherwise (PRD §5.4). The success path does not
-delete it, because "the command succeeded" is not the same as "nobody will want
-to undo it".
+restores from. `rollback()` drops it after a successful apply. When `[prune]`
+has `enabled = true`, Aegis applies its retention limits after recording a
+Snapshot. The success path does not delete a new entry immediately, because
+"the command succeeded" does not mean "nobody will want to undo it".
 
 ## Consequences
 

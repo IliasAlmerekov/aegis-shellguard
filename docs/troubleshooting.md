@@ -316,18 +316,18 @@ holds uncommitted work at that moment, Aegis parks it in a stash entry named
 `aegis-pre-rollback-<timestamp>` before restoring, rather than overwriting it
 (ADR-037). That entry is the only copy of what the rollback replaced, and Aegis
 never drops it. List it with `git stash list` and recover it with
-`git stash apply <ref>`, or drop it once you are sure you do not want it back.
+`git stash apply --index <ref>`, or drop it once you are sure you do not want it back.
 
 ### `git stash list` keeps growing
 
 Each git Snapshot leaves an `aegis-snap-<timestamp>` stash entry behind on
-purpose — it is the artifact `aegis rollback` restores from, so the success
+purpose. It is the artifact `aegis rollback` restores from, so the success
 path never deletes it (ADR-037 §3). Because any effect-opaque command (an
 interpreter run against a script, e.g. `python3 script.py`) requires a Snapshot
 before its risk level is even read, this list grows on far more than `Danger`
 commands.
 
-Aegis does not expire these entries by itself. Retention is opt-in, under
+Automatic expiry is opt-in, under
 `[prune]` in `aegis.toml`:
 
 ```toml
@@ -337,12 +337,10 @@ max_count_per_provider = 10
 max_age_days = 30
 ```
 
-The two limits decide what is eligible: with both unset, prune selects nothing,
-which is the default. Run `aegis snapshot prune` to preview the candidates and
-`aegis snapshot prune --yes` to remove them. `enabled` marks the intent and
-shows up in the preview; the limits are what the policy reads. Nothing is ever
-deleted without running the command, so the recovery window you keep is your
-decision, not an Aegis default.
+The two limits decide what is eligible. With both unset, automatic pruning
+selects nothing. `enabled = true` applies the policy after Aegis records a
+Snapshot. Run `aegis snapshot prune` to preview candidates or `aegis snapshot
+prune --yes` to remove them immediately.
 
 ### A snapshot plugin failed silently, or the Diagnostic stream is too quiet or too noisy
 

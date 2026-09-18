@@ -158,13 +158,23 @@ async fn park_current_work(cwd: &str) -> Result<Option<String>> {
     let rev_out = git_command(cwd)
         .args(["rev-parse", "stash@{0}"])
         .output()
-        .await
-        .map_err(|e| SnapshotError::Snapshot(format!("git rev-parse failed: {e}")))?;
+        .await;
+
+    let rev_out = match rev_out {
+        Ok(output) => output,
+        Err(error) => {
+            return Err(SnapshotError::SnapshotNotRestoredUnknown {
+                cwd: cwd.to_string(),
+                details: format!("git rev-parse failed after parking current work: {error}"),
+            });
+        }
+    };
 
     if !rev_out.status.success() {
-        return Err(SnapshotError::Snapshot(
-            "could not resolve the stash entry that parked the working tree".to_string(),
-        ));
+        return Err(SnapshotError::SnapshotNotRestoredUnknown {
+            cwd: cwd.to_string(),
+            details: "could not resolve the stash entry that parked the working tree".to_string(),
+        });
     }
 
     let hash = String::from_utf8_lossy(&rev_out.stdout).trim().to_string();
@@ -244,13 +254,23 @@ impl SnapshotPlugin for GitPlugin {
         let rev_out = git_command(cwd)
             .args(["rev-parse", "stash@{0}"])
             .output()
-            .await
-            .map_err(|e| SnapshotError::Snapshot(format!("git rev-parse failed: {e}")))?;
+            .await;
+
+        let rev_out = match rev_out {
+            Ok(output) => output,
+            Err(error) => {
+                return Err(SnapshotError::SnapshotNotRestoredUnknown {
+                    cwd: cwd.display().to_string(),
+                    details: format!("git rev-parse failed: {error}"),
+                });
+            }
+        };
 
         if !rev_out.status.success() {
-            return Err(SnapshotError::Snapshot(
-                "could not resolve stash ref after push".to_string(),
-            ));
+            return Err(SnapshotError::SnapshotNotRestoredUnknown {
+                cwd: cwd.display().to_string(),
+                details: "could not resolve stash ref after push".to_string(),
+            });
         }
 
         let hash = String::from_utf8_lossy(&rev_out.stdout).trim().to_string();
@@ -260,7 +280,17 @@ impl SnapshotPlugin for GitPlugin {
         // it must never be observable in the tree (issue #356). The tree is at
         // HEAD here, so this apply has nothing to merge against and the entry
         // stays in the stash list for a later rollback.
-        if let Some(details) = apply_stash(cwd, &hash).await? {
+        let restored = match apply_stash(cwd, &hash).await {
+            Ok(restored) => restored,
+            Err(error) => {
+                return Err(SnapshotError::SnapshotNotRestored {
+                    stash_hash: hash,
+                    cwd: cwd.display().to_string(),
+                    details: error.to_string(),
+                });
+            }
+        };
+        if let Some(details) = restored {
             tracing::error!(
                 stash_hash = %hash,
                 details = %details,
@@ -291,7 +321,7 @@ impl SnapshotPlugin for GitPlugin {
 
         // Resolve the entry before anything is written: a rollback that cannot
         // find its snapshot must fail without touching the working tree.
-        let stash_ref = find_stash_ref(cwd_str, hash).await?.ok_or_else(|| {
+        find_stash_ref(cwd_str, hash).await?.ok_or_else(|| {
             SnapshotError::Snapshot(format!("stash entry not found for hash {hash}"))
         })?;
 
@@ -302,7 +332,11 @@ impl SnapshotPlugin for GitPlugin {
         park_current_work(cwd_str).await?;
 
         // Parking shifts every `stash@{N}`, so resolve the positional ref again.
-        let stash_ref = find_stash_ref(cwd_str, hash).await?.unwrap_or(stash_ref);
+        let stash_ref = find_stash_ref(cwd_str, hash).await?.ok_or_else(|| {
+            SnapshotError::Snapshot(format!(
+                "stash entry disappeared while parking current work; parked work was retained and rollback stopped for hash {hash}"
+            ))
+        })?;
 
         if let Some(details) = apply_stash(cwd_str, hash).await? {
             tracing::error!(

@@ -5,9 +5,9 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use time::OffsetDateTime;
-use tokio::runtime::Handle;
+use tokio::runtime::{Handle, RuntimeFlavor};
 
-use crate::audit::{AuditEntry, AuditLogger, Decision};
+use crate::audit::{AuditEntry, AuditLogger, AuditSnapshot, Decision};
 use crate::config::{
     AegisConfig, Allowlist, AllowlistContext, AllowlistMatch, AllowlistOverrideLevel, Blocklist,
     SnapshotPolicy,
@@ -17,7 +17,10 @@ use crate::explanation::CommandExplanation;
 use crate::explanation::formatter::{CommandExplanationExt, build_outcome_explanation};
 use crate::interceptor;
 use crate::interceptor::scanner::{Assessment, Scanner};
-use crate::snapshot::{SnapshotCoverage, SnapshotRecord, SnapshotRegistry, SnapshotRegistryConfig};
+use crate::snapshot::{
+    Clock, RetentionPolicy, SnapshotCoverage, SnapshotRecord, SnapshotRegistry,
+    SnapshotRegistryConfig, SystemClock,
+};
 #[cfg(feature = "starlark-policy")]
 use aegis_starlark::load_starlark_policy;
 use aegis_types::{RecoveryDegradation, SandboxStatus};
@@ -85,6 +88,7 @@ impl From<&AegisConfig> for RuntimeConfig {
 
 /// Shared runtime dependencies built once per CLI invocation.
 pub struct RuntimeContext {
+    auto_prune_config: AegisConfig,
     runtime_config: RuntimeConfig,
     allowlist: Allowlist,
     blocklist: Blocklist,
@@ -214,6 +218,7 @@ impl RuntimeContext {
         }
 
         Ok(Self {
+            auto_prune_config: config.clone(),
             allowlist: Allowlist::from_layered_rules(&config.layered_allowlist_rules())?,
             blocklist: Blocklist::from_layered_rules(&config.layered_blocklist_rules())?,
             snapshot_registry_config: SnapshotRegistryConfig::try_new(&config)?,
@@ -401,7 +406,9 @@ impl RuntimeContext {
     ) -> Result<(), AegisError> {
         let entry =
             self.build_audit_entry(assessment, decision, snapshots, explanation, options, None);
-        Ok(self.audit_logger.append(entry)?)
+        self.audit_logger.append(entry)?;
+        self.complete_automatic_prune(snapshots)?;
+        Ok(())
     }
 
     /// Append one degraded-recovery audit entry.
@@ -422,7 +429,9 @@ impl RuntimeContext {
             options,
             Some(degradation),
         );
-        Ok(self.audit_logger.append(entry)?)
+        self.audit_logger.append(entry)?;
+        self.complete_automatic_prune(snapshots)?;
+        Ok(())
     }
 
     /// Append a watch-mode audit entry with frame correlation fields.
@@ -453,7 +462,9 @@ impl RuntimeContext {
             )
             .with_watch_context(watch.source, watch.cwd, watch.id);
 
-        Ok(self.audit_logger.append(entry)?)
+        self.audit_logger.append(entry)?;
+        self.complete_automatic_prune(snapshots)?;
+        Ok(())
     }
 
     /// Append a Watch audit entry for a degraded Required recovery attempt.
@@ -482,7 +493,36 @@ impl RuntimeContext {
             )
             .with_watch_context(watch.source, watch.cwd, watch.id);
 
-        Ok(self.audit_logger.append(entry)?)
+        self.audit_logger.append(entry)?;
+        self.complete_automatic_prune(snapshots)?;
+        Ok(())
+    }
+
+    fn complete_automatic_prune(&self, snapshots: &[SnapshotRecord]) -> Result<(), AegisError> {
+        if !self.auto_prune_config.prune.enabled || snapshots.is_empty() {
+            return Ok(());
+        }
+        let config = self.auto_prune_config.clone();
+
+        match Handle::try_current() {
+            Ok(handle) if handle.runtime_flavor() == RuntimeFlavor::MultiThread => {
+                tokio::task::block_in_place(|| self.async_handle.block_on(automatic_prune(config)))
+            }
+            Ok(_) => std::thread::scope(|scope| {
+                scope
+                    .spawn(move || {
+                        tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()?
+                            .block_on(automatic_prune(config))
+                    })
+                    .join()
+                    .map_err(|_| AegisError::Internal {
+                        detail: "automatic snapshot prune worker panicked".to_string(),
+                    })?
+            }),
+            Err(_) => self.async_handle.block_on(automatic_prune(config)),
+        }
     }
 
     fn build_audit_entry(
@@ -545,6 +585,34 @@ impl RuntimeContext {
             None => entry,
         }
     }
+}
+
+async fn automatic_prune(config: AegisConfig) -> Result<(), AegisError> {
+    let registry_config = SnapshotRegistryConfig::for_rollback_from_config(&config)?;
+    let registry = SnapshotRegistry::from_runtime_config(&registry_config);
+    let records = registry.resolve_prunable_records().await?;
+    let candidates = RetentionPolicy::from_config(&config.prune).apply(&records, SystemClock.now());
+    let logger = AuditLogger::from_audit_config(&config.audit);
+    for record in candidates {
+        if let Err(error) = registry.delete(&record.plugin, &record.snapshot_id).await {
+            tracing::warn!(plugin = %record.plugin, id = %record.snapshot_id, %error, "automatic snapshot prune failed");
+            continue;
+        }
+        let entry = AuditEntry::new(
+            format!("aegis prune {}", record.snapshot_id),
+            crate::interceptor::RiskLevel::Safe,
+            Vec::new(),
+            Decision::Pruned,
+            vec![AuditSnapshot {
+                plugin: record.plugin,
+                snapshot_id: record.snapshot_id,
+            }],
+            None,
+            None,
+        );
+        logger.append(entry)?;
+    }
+    Ok(())
 }
 
 fn build_audit_logger(config: &AegisConfig) -> AuditLogger {

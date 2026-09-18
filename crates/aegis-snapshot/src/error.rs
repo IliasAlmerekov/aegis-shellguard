@@ -38,6 +38,15 @@ pub enum SnapshotError {
         details: String,
     },
 
+    /// The git snapshot stash was written, but Git did not return its hash
+    /// before the working tree could be restored.
+    SnapshotNotRestoredUnknown {
+        /// Working directory where the snapshot was taken.
+        cwd: String,
+        /// Underlying error details.
+        details: String,
+    },
+
     /// The dump file that was recorded at snapshot time no longer exists.
     RollbackDumpNotFound {
         /// Expected path of the missing dump file.
@@ -94,28 +103,30 @@ impl std::fmt::Display for SnapshotError {
             Self::Snapshot(message) => write!(f, "snapshot error: {message}"),
             Self::Config(message) => write!(f, "snapshot config error: {message}"),
             Self::RollbackConflict {
-                stash_ref,
-                cwd,
-                details,
+                stash_ref, details, ..
             } => write!(
                 f,
-                "rollback conflict in '{cwd}': git stash pop failed for {stash_ref}.\n\
+                "rollback conflict: git stash pop failed for {stash_ref}.\n\
                  Your changes are still saved in the stash. To recover manually:\n  \
-                   1. Resolve conflicts:  cd '{cwd}' && git diff\n  \
+                   1. Resolve conflicts:  git diff\n  \
                    2. Stage resolutions:  git add <files>\n  \
                    3. Drop the stash:     git stash drop {stash_ref}\n\
                  Details: {details}"
             ),
             Self::SnapshotNotRestored {
                 stash_hash,
-                cwd,
                 details,
+                ..
             } => write!(
                 f,
-                "snapshot taken in '{cwd}', but the working tree could not be restored afterwards.\n\
+                "snapshot taken, but the working tree could not be restored afterwards.\n\
                  Your uncommitted work is safe in stash entry {stash_hash}. To put it back:\n  \
-                   cd '{cwd}' && git stash apply --index {stash_hash}\n\
+                   git stash apply --index {stash_hash}\n\
                  Details: {details}"
+            ),
+            Self::SnapshotNotRestoredUnknown { details, .. } => write!(
+                f,
+                "snapshot taken, but the working tree could not be restored afterwards. Run `git stash list`, then restore the captured work with `git stash apply --index <ref>`. Details: {details}"
             ),
             Self::RollbackDumpNotFound { path } => write!(
                 f,
@@ -176,6 +187,36 @@ impl From<std::io::Error> for SnapshotError {
 #[cfg(test)]
 mod tests {
     use super::SnapshotError;
+
+    #[test]
+    fn git_recovery_messages_do_not_interpolate_the_working_directory() {
+        let cwd = "/tmp/aegis'; rm -rf /".to_string();
+        let errors = [
+            SnapshotError::RollbackConflict {
+                stash_ref: "stash@{0}".to_string(),
+                cwd: cwd.clone(),
+                details: "merge conflict".to_string(),
+            },
+            SnapshotError::SnapshotNotRestored {
+                stash_hash: "0123456789abcdef".to_string(),
+                cwd: cwd.clone(),
+                details: "apply failed".to_string(),
+            },
+            SnapshotError::SnapshotNotRestoredUnknown {
+                cwd: cwd.clone(),
+                details: "rev-parse failed".to_string(),
+            },
+        ];
+
+        for error in errors {
+            let message = error.to_string();
+            assert!(
+                !message.contains(&cwd),
+                "recovery message leaked cwd: {message}"
+            );
+            assert!(message.contains("git stash"));
+        }
+    }
 
     #[test]
     fn test_delete_failed_variant_preserves_context() {
