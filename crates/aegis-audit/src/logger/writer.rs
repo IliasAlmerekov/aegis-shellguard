@@ -278,6 +278,26 @@ impl AuditLogger {
     /// Failures must be handled — ignoring them silently defeats integrity checking.
     #[must_use = "audit write failures must be handled — ignoring them silently defeats integrity checking"]
     pub fn append(&self, entry: AuditEntry) -> Result<()> {
+        self.append_inner(entry)
+            .map_err(|err| self.attach_write_context(err))
+    }
+
+    /// Turn a bare `AuditError::Io` from [`Self::append_inner`] into
+    /// `AuditError::WriteFailed`, naming the configured path and the
+    /// `AEGIS_AUDIT_PATH` override. Other variants already carry their own
+    /// path (`InsecureAuditArtifact`) or are unrelated to the write path, so
+    /// they pass through unchanged.
+    fn attach_write_context(&self, err: AuditError) -> AuditError {
+        match err {
+            AuditError::Io(source) => AuditError::WriteFailed {
+                path: self.path.display().to_string(),
+                source,
+            },
+            other => other,
+        }
+    }
+
+    fn append_inner(&self, entry: AuditEntry) -> Result<()> {
         create_parent_directories(&self.path)?;
         let _lock = AuditLock::exclusive(&self.lock_path())?;
 

@@ -156,7 +156,7 @@ fn gzip_failure_preserves_the_active_log_and_exposes_no_partial_archive() {
 
     let error = logger.append(entry(1, RiskLevel::Warn)).unwrap_err();
 
-    assert!(matches!(error, AuditError::Io(_)));
+    assert!(matches!(error, AuditError::WriteFailed { .. }));
     assert_eq!(fs::read(&path).unwrap(), active_before);
     assert!(!dir.path().join("audit.jsonl.1.gz").exists());
     assert!(!dir.path().join("audit.jsonl.1.gz.tmp").exists());
