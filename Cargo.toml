@@ -1,12 +1,12 @@
 [package]
 name = "aegis"
-version = "0.6.6"
-edition = "2024"
-rust-version = "1.89"
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
 description = "Terminal proxy that intercepts AI agent shell commands and requires human confirmation before destructive operations"
-repository = "https://github.com/IliasAlmerekov/aegis-shellguard"
-homepage = "https://github.com/IliasAlmerekov/aegis-shellguard"
+repository.workspace = true
+homepage.workspace = true
 keywords = ["security", "ai", "shell", "cli", "safety"]
 categories = ["command-line-utilities", "development-tools"]
 readme = "README.md"
@@ -36,23 +36,47 @@ members = [
 # sanitizer flags; it must not be pulled into the main workspace.
 exclude = ["fuzz"]
 
+[workspace.package]
+version = "0.6.7"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
+repository = "https://github.com/IliasAlmerekov/aegis-shellguard"
+homepage = "https://github.com/IliasAlmerekov/aegis-shellguard"
+
+# Single source of truth for every internal crate's version + path, so a
+# release bump is one edit instead of one per crate per dependent.
+[workspace.dependencies]
+aegis-types = { version = "0.6.7", path = "crates/aegis-types" }
+aegis-parser = { version = "0.6.7", path = "crates/aegis-parser" }
+aegis-scanner = { version = "0.6.7", path = "crates/aegis-scanner" }
+aegis-policy = { version = "0.6.7", path = "crates/aegis-policy" }
+aegis-config = { version = "0.6.7", path = "crates/aegis-config" }
+aegis-explanation = { version = "0.6.7", path = "crates/aegis-explanation" }
+aegis-tui = { version = "0.6.7", path = "crates/aegis-tui" }
+aegis-audit = { version = "0.6.7", path = "crates/aegis-audit" }
+aegis-snapshot = { version = "0.6.7", path = "crates/aegis-snapshot" }
+aegis-starlark = { version = "0.6.7", path = "crates/aegis-starlark" }
+aegis-sandbox = { version = "0.6.7", path = "crates/aegis-sandbox" }
+aegis-language = { version = "0.6.7", path = "crates/aegis-language" }
+
 [features]
 default = []
 starlark-policy = ["dep:aegis-starlark"]
 
 [dependencies]
-aegis-types = { version = "0.6.6", path = "crates/aegis-types" }
-aegis-parser = { version = "0.6.6", path = "crates/aegis-parser" }
-aegis-scanner = { version = "0.6.6", path = "crates/aegis-scanner" }
-aegis-policy = { version = "0.6.6", path = "crates/aegis-policy" }
-aegis-config = { version = "0.6.6", path = "crates/aegis-config" }
-aegis-explanation = { version = "0.6.6", path = "crates/aegis-explanation" }
-aegis-tui = { version = "0.6.6", path = "crates/aegis-tui" }
-aegis-audit = { version = "0.6.6", path = "crates/aegis-audit" }
-aegis-snapshot = { version = "0.6.6", path = "crates/aegis-snapshot" }
-aegis-starlark = { version = "0.6.6", path = "crates/aegis-starlark", optional = true }
-aegis-sandbox = { version = "0.6.6", path = "crates/aegis-sandbox" }
-aegis-language = { version = "0.6.6", path = "crates/aegis-language" }
+aegis-types.workspace = true
+aegis-parser.workspace = true
+aegis-scanner.workspace = true
+aegis-policy.workspace = true
+aegis-config.workspace = true
+aegis-explanation.workspace = true
+aegis-tui.workspace = true
+aegis-audit.workspace = true
+aegis-snapshot.workspace = true
+aegis-starlark = { workspace = true, optional = true }
+aegis-sandbox.workspace = true
+aegis-language.workspace = true
 base64 = "0.22"
 clap = { version = "4.5", features = ["derive", "env"] }
 thiserror = "1"

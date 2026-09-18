@@ -9,12 +9,12 @@
 
 ## Current version
 
-`0.6.6` — pre-1.0, targeting `1.0.0` (release preparation; tag pending;
+`0.6.7` — pre-1.0, targeting `1.0.0` (release preparation; tag pending;
 distribution smoke gates open)
 
 ## Active branch
 
-`fix/partial-snapshot-coverage-312`
+`release/v0.6.7`
 
 ## Last updated
 
@@ -118,6 +118,24 @@ distribution smoke gates open)
 - Open: `cargo clippy --workspace --all-targets -D warnings` fails under rustc
   1.98.1 on files this change does not touch (`tests/file_size_budget.rs`,
   `aegis-snapshot` tests and `sqlite.rs`).
+
+---
+
+## Current session (2026-09-18): v0.6.7 release preparation
+
+- Bumped every workspace crate, `Cargo.lock`, the npm package, README badge and
+  install tag, release-line docs, and the landing install transcript to
+  `0.6.7` / `v0.6.7`. The tag is pending until the release branch merges.
+- The root `Cargo.toml` now carries `[workspace.package]` (version, edition,
+  rust-version, license, repository, homepage) and `[workspace.dependencies]`
+  (every internal crate's version + path). All twelve crates and the root
+  binary inherit through `.workspace = true` instead of repeating the literal,
+  so a future version bump touches one file, not thirteen.
+- The `0.6.7` changelog section collects the fixes merged since `v0.6.6`,
+  including the heredoc-to-file and nowdoc backtick rescan gaps (#357, #344),
+  the `rtk proxy` launcher-prefix bypass (#339), the direct-exec degrade bug
+  for unreadable binaries (#345), the audit write error path naming (#367),
+  and the Dependabot security-update grouping (#366).
 
 ---
 
