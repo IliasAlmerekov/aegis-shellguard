@@ -260,6 +260,11 @@ override, or deny.
 curl -fsSL https://raw.githubusercontent.com/IliasAlmerekov/aegis-shellguard/main/scripts/uninstall.sh | sh
 ```
 
+This removes the curl-installed binary and shell/hook setup. It leaves
+`~/.aegis` (audit log, snapshots) in place — add `--purge-data` to wipe it
+too. If you installed via npm instead, the script tells you to run `npm
+uninstall -g @iliasalmerekov/aegis` as a separate step.
+
 ---
 
 ## Docs

@@ -384,6 +384,39 @@ pub fn run_script(script_name: &str, envs: &[(&str, &str)]) -> Output {
     run_script_at(&script_copy, envs)
 }
 
+/// Like `run_script`, but runs against a caller-supplied `HOME` instead of a
+/// throwaway sandbox, so a test can seed files under it (e.g. `~/.aegis`)
+/// before running the script and inspect them afterward.
+pub fn run_script_at_home(home: &Path, script_name: &str, envs: &[(&str, &str)]) -> Output {
+    run_script_at_home_with_args(home, script_name, &[], envs)
+}
+
+pub fn run_script_at_home_with_args(
+    home: &Path,
+    script_name: &str,
+    args: &[&str],
+    envs: &[(&str, &str)],
+) -> Output {
+    fs::create_dir_all(home).unwrap();
+
+    let temp = TempDir::new().unwrap();
+    let script_copy = temp.path().join(script_name);
+    fs::copy(script_path(script_name), &script_copy).unwrap();
+
+    let mut command = Command::new("/bin/sh");
+    command.arg(&script_copy);
+    command.args(args);
+    command.env_remove("AEGIS_REAL_SHELL");
+    command.env_remove("AEGIS_SHELL_RC");
+    command.env("HOME", home);
+
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+
+    command.output().unwrap()
+}
+
 #[derive(Clone, Copy)]
 pub enum ScriptFlavor {
     Bsd,
