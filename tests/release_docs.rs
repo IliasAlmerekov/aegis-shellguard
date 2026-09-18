@@ -9,9 +9,9 @@ fn cargo_package_version() -> String {
     let contents = fs::read_to_string(repo_path("Cargo.toml"))
         .expect("Cargo.toml must exist to verify release-doc version references");
     let parsed: toml::Value = toml::from_str(&contents).expect("Cargo.toml must parse as TOML");
-    parsed["package"]["version"]
+    parsed["workspace"]["package"]["version"]
         .as_str()
-        .expect("Cargo.toml package.version must be a string")
+        .expect("Cargo.toml workspace.package.version must be a string")
         .to_owned()
 }
 
@@ -29,6 +29,32 @@ fn publishable_crates_give_every_path_dependency_a_version_requirement() {
         let contents = fs::read_to_string(&manifest).expect("crate manifest must be readable");
         let parsed: toml::Value = toml::from_str(&contents).expect("crate manifest must parse");
         assert_path_dependencies_are_versioned(&parsed, &manifest);
+    }
+}
+
+// Internal path dependencies are declared once, with a version, in the root
+// `[workspace.dependencies]` table; every crate and the root binary pull them
+// in via `.workspace = true`. That shorthand carries no `path` key of its own,
+// so `assert_path_dependencies_are_versioned` can't see it — this test checks
+// the one place the path+version pairing still needs to hold.
+#[test]
+fn workspace_dependencies_give_every_path_dependency_a_version_requirement() {
+    let manifest = repo_path("Cargo.toml");
+    let contents = fs::read_to_string(&manifest).expect("Cargo.toml must be readable");
+    let parsed: toml::Value = toml::from_str(&contents).expect("Cargo.toml must parse");
+    let deps = parsed["workspace"]["dependencies"]
+        .as_table()
+        .expect("Cargo.toml must declare [workspace.dependencies]");
+    for (name, spec) in deps {
+        let table = spec
+            .as_table()
+            .unwrap_or_else(|| panic!("workspace.dependencies.{name} must be a table"));
+        if table.contains_key("path") {
+            assert!(
+                table.contains_key("version"),
+                "workspace.dependencies.{name} is a path dependency without a version requirement: {table:?}"
+            );
+        }
     }
 }
 

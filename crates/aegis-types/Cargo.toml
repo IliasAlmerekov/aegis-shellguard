@@ -1,11 +1,11 @@
 [package]
 name = "aegis-types"
-version = "0.6.6"
-edition = "2024"
-rust-version = "1.89"
-license = "MIT"
-repository = "https://github.com/IliasAlmerekov/aegis-shellguard"
-homepage = "https://github.com/IliasAlmerekov/aegis-shellguard"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 documentation = "https://docs.rs/aegis-types"
 description = "Core data types for Aegis: RiskLevel, Decision, Pattern, and the shared pattern vocabulary. Zero dependencies beyond serde/schemars."
 
