@@ -298,6 +298,96 @@ fn heredoc_no_match_returns_empty() {
     assert!(bodies.is_empty());
 }
 
+// 31. Double-quoted delimiter (`<<"EOF"`) is nowdoc, same as single-quoted.
+#[test]
+fn heredoc_double_quoted_delimiter_is_nowdoc() {
+    let cmd = "cat <<\"EOF\"\nsome secret\nEOF";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert_eq!(bodies.len(), 1);
+    assert_eq!(bodies[0].delimiter, "EOF");
+    assert_eq!(bodies[0].body, "some secret");
+    assert!(bodies[0].is_nowdoc);
+}
+
+// 32. Backslash-escaped delimiter (`<<\EOF`) is nowdoc.
+#[test]
+fn heredoc_backslash_escaped_delimiter_is_nowdoc() {
+    let cmd = "cat <<\\EOF\nsome secret\nEOF";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert_eq!(bodies.len(), 1);
+    assert_eq!(bodies[0].delimiter, "EOF");
+    assert!(bodies[0].is_nowdoc);
+}
+
+// 33. Nowdoc handed to a passive consumer (`cat`) is not interpreter-executed.
+#[test]
+fn heredoc_nowdoc_to_cat_is_not_interpreter_target() {
+    let cmd = "cat <<'EOF'\nsome text\nEOF";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(!bodies[0].target_is_interpreter);
+}
+
+// 34. Nowdoc handed to a shell interpreter is still interpreter-executed —
+// the interpreter runs the raw text as code regardless of quoting.
+#[test]
+fn heredoc_nowdoc_to_bash_is_interpreter_target() {
+    let cmd = "bash <<'EOF'\necho hi\nEOF";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(bodies[0].target_is_interpreter);
+}
+
+// 35. Nowdoc handed to python3 is also an interpreter target.
+#[test]
+fn heredoc_nowdoc_to_python3_is_interpreter_target() {
+    let cmd = "python3 <<'EOF'\nprint(1)\nEOF";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(bodies[0].target_is_interpreter);
+}
+
+// 35b. Interpreter-target detection is case-insensitive, matching the rest
+// of this codebase's launcher/program matching (e.g. `eq_ignore_ascii_case`
+// in `effective_token_slices`'s launcher checks).
+#[test]
+fn heredoc_nowdoc_to_uppercase_interpreter_is_interpreter_target() {
+    let cmd = "Bash <<'EOF'\necho hi\nEOF";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(bodies[0].target_is_interpreter);
+}
+
+// 36. Masking neutralizes backticks inside a nowdoc body sent to a passive
+// consumer (`cat`) — issue #344's exact repro shape.
+#[test]
+fn mask_inert_heredoc_neutralizes_backticks_for_cat() {
+    let cmd = "cat <<'EOF'\nmentions `python3 -c` as inert markdown code text\nEOF";
+    let masked = mask_inert_heredoc_substitution_markers(cmd);
+    assert!(!masked.contains('`'));
+}
+
+// 37. Masking leaves a nowdoc body untouched when the target is an
+// interpreter — it will execute the raw text regardless of quoting.
+#[test]
+fn mask_inert_heredoc_leaves_interpreter_target_untouched() {
+    let cmd = "bash <<'EOF'\necho `date`\nEOF";
+    let masked = mask_inert_heredoc_substitution_markers(cmd);
+    assert_eq!(masked, cmd);
+}
+
+// 38. Masking leaves a regular (non-nowdoc) heredoc untouched — bash does
+// expand backticks there, so it's a live scan target.
+#[test]
+fn mask_inert_heredoc_leaves_non_nowdoc_untouched() {
+    let cmd = "cat <<EOF\n`rm -rf /`\nEOF";
+    let masked = mask_inert_heredoc_substitution_markers(cmd);
+    assert_eq!(masked, cmd);
+}
+
+// 39. Masking is a no-op on commands with no heredoc at all.
+#[test]
+fn mask_inert_heredoc_no_heredoc_is_noop() {
+    let cmd = "echo `date`";
+    assert_eq!(mask_inert_heredoc_substitution_markers(cmd), cmd);
+}
+
 // 31. python -c "..." — inline Python script extracted
 #[test]
 fn inline_script_python() {

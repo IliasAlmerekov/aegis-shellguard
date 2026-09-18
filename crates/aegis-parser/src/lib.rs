@@ -16,7 +16,7 @@ mod tokenizer;
 pub use aegis_types::{InlineScript, ParsedCommand};
 pub use embedded_scripts::{
     HeredocBody, extract_eval_payloads, extract_heredoc_bodies, extract_inline_scripts,
-    extract_process_substitution_bodies,
+    extract_process_substitution_bodies, mask_inert_heredoc_substitution_markers,
 };
 pub use nested_shells::extract_nested_commands;
 pub use prefix_match::{contains_any_token, matches_prefix};

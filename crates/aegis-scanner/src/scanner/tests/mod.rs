@@ -66,6 +66,7 @@ mod edge_cases;
 mod effect_opaque;
 mod h3_followups;
 mod h3_gaps;
+mod issue_344;
 mod m5_followups;
 mod m5_gaps;
 mod m5_npm;
