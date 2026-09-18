@@ -327,7 +327,7 @@ fn sandboxed_shell_automatic_prune_uses_the_same_git_retention_policy() {
     write_config(home.path(), &repo, true, true);
 
     let output = Command::new(aegis_bin())
-        .env("AEGIS_REAL_SHELL", "/usr/bin/bash")
+        .env("AEGIS_REAL_SHELL", "/bin/sh")
         .env("AEGIS_CI", "0")
         .env("HOME", home.path())
         .current_dir(&repo)
