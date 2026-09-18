@@ -87,6 +87,12 @@ fn collect_effective_program_indices(tokens: &[&str], index: usize, starts: &mut
         return;
     }
 
+    let assignment_prefix_len = leading_environment_assignment_prefix_len(&tokens[index..]);
+    if assignment_prefix_len > 0 {
+        collect_effective_program_indices(tokens, index + assignment_prefix_len, starts);
+        return;
+    }
+
     match launcher_prefix_lengths(&tokens[index..]) {
         Some(lengths) => {
             for len in lengths {
@@ -99,6 +105,31 @@ fn collect_effective_program_indices(tokens: &[&str], index: usize, starts: &mut
         }
         None => starts.push(index),
     }
+}
+
+/// Return the number of leading shell environment assignments.
+///
+/// The shell consumes these words before it resolves the command program, so
+/// effective-program detection must do the same. Restrict the name to the
+/// portable shell identifier grammar so an ordinary argument containing `=`
+/// never disappears from matching.
+fn leading_environment_assignment_prefix_len(tokens: &[&str]) -> usize {
+    tokens
+        .iter()
+        .take_while(|token| is_environment_assignment(token))
+        .count()
+}
+
+fn is_environment_assignment(token: &str) -> bool {
+    let Some((name, _value)) = token.split_once('=') else {
+        return false;
+    };
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
 }
 
 fn launcher_prefix_lengths(tokens: &[&str]) -> Option<Vec<usize>> {
@@ -471,5 +502,32 @@ mod tests {
 
         assert_eq!(slices[0].program, "git");
         assert_eq!(slices[0].tokens, vec!["git", "reset", "--hard"]);
+    }
+
+    #[test]
+    fn effective_token_slices_skip_leading_environment_assignments() {
+        let tokens = [
+            "CARGO_TARGET_DIR=/tmp/aegis",
+            "FOO=x",
+            "git",
+            "reset",
+            "--hard",
+        ];
+        let slices = effective_token_slices(&tokens);
+
+        assert_eq!(slices[0].program, "git");
+        assert_eq!(slices[0].tokens, vec!["git", "reset", "--hard"]);
+    }
+
+    #[test]
+    fn effective_token_slices_keeps_non_shell_assignment_as_a_program() {
+        let tokens = ["1FOO=not-a-command", "echo", "hello"];
+        let slices = effective_token_slices(&tokens);
+
+        assert_eq!(slices[0].program, "1FOO=not-a-command");
+        assert_eq!(
+            slices[0].tokens,
+            vec!["1FOO=not-a-command", "echo", "hello"]
+        );
     }
 }
