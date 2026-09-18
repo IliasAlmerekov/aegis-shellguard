@@ -301,6 +301,11 @@ fn assess_token_prefix_rules_through_absolute_paths_and_launchers() {
             RiskLevel::Warn,
             "GIT-006",
         ),
+        (
+            "CARGO_TARGET_DIR=/tmp/aegis git reset --hard HEAD~1",
+            RiskLevel::Warn,
+            "GIT-001",
+        ),
         ("sudo /bin/kill -9 1", RiskLevel::Block, "PS-001"),
         (
             "/usr/local/bin/docker volume prune -f",

@@ -11,6 +11,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Fixed: Leading shell environment assignments now resolve to the command that follows them, so a path-valued assignment such as `CARGO_TARGET_DIR=/tmp/aegis echo hi` no longer triggers a non-interactive language-analysis denial. (#358)
 - Fixed: With `[prune] enabled = true`, Aegis applies Snapshot retention after writing an audit entry that records a Snapshot and waits for it before the shell, Watch, or Sandbox path completes. Pruned records receive `Decision::Pruned` audit entries. (#356, ADR-037)
 - Documented: `docs/troubleshooting.md` explains how `[prune]` bounds a growing `git stash list` without changing the opt-in default. (#356, ADR-037)
 - Fixed: A git Snapshot no longer empties the working tree it was taken to protect. `git stash push` writes the entry and resets the tree to HEAD, and nothing put the work back on the success path. Uncommitted work, including untracked files, disappeared into the stash list on any command that triggered a Snapshot, down to a `Safe` `python3 script.py`. The plugin now re-applies the entry it just created. `aegis rollback` parks the current state in an `aegis-pre-rollback-*` stash entry before restoring, so it never overwrites work to get there. (#356, ADR-037)

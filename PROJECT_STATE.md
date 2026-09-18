@@ -49,6 +49,19 @@ distribution smoke gates open)
   `tests/automatic_snapshot_prune.rs` covers those boundaries and all three
   transports.
 
+## Current session (2026-09-18): path-valued environment assignments keep their command program (#358)
+
+- `effective_token_slices` now skips leading POSIX-shell environment
+  assignments before it resolves the program. A path in `FOO=/tmp/x` no longer
+  becomes a false direct-exec target, so `FOO=/tmp/x echo hi` remains `Safe` in
+  shell and JSON planning output. The same normalization keeps token-prefix
+  detection active for `CARGO_TARGET_DIR=/tmp/aegis git reset --hard`.
+- Coverage: parser normalization tests, a scanner regression, and shell and
+  JSON end-to-end tests. The full workspace test, Clippy, formatting, Audit,
+  and Deny gates passed. `cargo bench --bench scanner_bench` measured
+  `safe_command_assess` at 634.44 ns (95% CI: 623.53-646.43 ns), below the
+  2 ms assessment budget.
+
 ---
 
 ## Previous session (2026-09-17): partial Snapshot coverage degrades Required recovery (#312)

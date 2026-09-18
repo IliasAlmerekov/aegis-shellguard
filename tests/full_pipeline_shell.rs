@@ -56,6 +56,25 @@ fn shell_wrapper_echo_hello_prints_expected_output_and_exit_code() {
 }
 
 #[test]
+fn path_valued_environment_assignment_runs_the_effective_safe_command() {
+    let home = TempDir::new().unwrap();
+
+    let output = base_command(home.path())
+        .args(["-c", "FOO=/tmp/x echo hello"])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.stdout, b"hello\n");
+    assert!(output.stderr.is_empty());
+
+    let entries = read_audit_entries(home.path());
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["decision"], "AutoApproved");
+    assert_eq!(entries[0]["risk"], "Safe");
+}
+
+#[test]
 fn shell_wrapper_exit_42_preserves_exit_status() {
     let home = TempDir::new().unwrap();
 

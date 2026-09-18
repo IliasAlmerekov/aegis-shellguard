@@ -55,6 +55,29 @@ fn json_output_safe_command_returns_single_evaluation_object_without_exec_or_aud
 }
 
 #[test]
+fn json_output_path_valued_environment_assignment_is_auto_approved_as_safe() {
+    let home = TempDir::new().unwrap();
+
+    let output = base_command(home.path())
+        .args([
+            "-c",
+            "CARGO_TARGET_DIR=/tmp/aegis echo hi",
+            "--output",
+            "json",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["risk"], "safe");
+    assert_eq!(json["decision"], "auto_approve");
+    assert_eq!(json["decision_source"], "fallback");
+}
+
+#[test]
 fn json_output_danger_command_returns_prompt_decision_without_stderr_or_audit() {
     let home = TempDir::new().unwrap();
 
