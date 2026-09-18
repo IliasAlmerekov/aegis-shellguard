@@ -661,6 +661,44 @@ async fn resolve_drops_a_direct_exec_target_with_no_verified_shebang() {
 }
 
 #[tokio::test]
+async fn resolve_for_analysis_treats_an_oversized_direct_exec_target_as_not_applicable() {
+    // A verified shebang is a short ASCII prefix; a directly executed file
+    // too large to read within budget cannot be confirmed as a shebang
+    // script, so it resolves the same as "no shebang" (`NotApplicable`)
+    // rather than degrading — regression test for #345, where a compiled
+    // binary invoked via a path (e.g. `/tmp/actionlint <file>`) was denied
+    // non-interactively as a language-aware command.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("actionlint");
+    std::fs::write(&path, vec![0xffu8; 2048]).unwrap();
+
+    let resolution = resolve_for_analysis(
+        RoutedTarget::DirectExec { path },
+        AnalysisCwd::Unavailable,
+        1024,
+    )
+    .await;
+
+    assert!(matches!(resolution, Resolution::NotApplicable));
+}
+
+#[tokio::test]
+async fn resolve_for_analysis_treats_a_non_utf8_direct_exec_target_as_not_applicable() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("actionlint");
+    std::fs::write(&path, [0x7f, 0x45, 0x4c, 0x46, 0xff, 0xfe]).unwrap();
+
+    let resolution = resolve_for_analysis(
+        RoutedTarget::DirectExec { path },
+        AnalysisCwd::Unavailable,
+        1024,
+    )
+    .await;
+
+    assert!(matches!(resolution, Resolution::NotApplicable));
+}
+
+#[tokio::test]
 async fn resolve_degrades_an_oversized_script_file() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("big.py");

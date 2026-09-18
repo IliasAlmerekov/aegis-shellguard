@@ -170,6 +170,19 @@ Launcher-prefix logic, and trusted global aliases only. It performs no `PATH`,
 `npm run`, `go generate`, Make, Composer, Bundler, and framework CLIs is a v1
 non-goal.
 
+The verified-shebang check is discovery, not committed analysis: routing does
+not yet know whether a directly executed file is a script at all. A read that
+exceeds the script-file budget, or whose content is not valid UTF-8, both
+conclusively rule out a shebang (a short ASCII prefix), so it resolves
+identically to a read that found no `#!` line — `NotApplicable`, not
+degradation. This is narrower than the general "unsupported encoding produces
+degradation" rule above, which governs an `Inline`/`ScriptFile` target: there,
+an interpreter has already committed to treating the argument as source, so an
+equivalent read failure leaves Aegis blind to bytes it knows will execute, and
+stays a genuine `Degraded`. A directly executed file that turns out not to be
+a shebang script at all (e.g. a compiled binary) carries no such certainty of
+imminent script execution to begin with.
+
 The parent tracks only a literal top-level `cd -- <path> &&` cwd change. Dynamic
 `cd`, `pushd`, substitutions, or otherwise unresolved cwd cause degradation.
 

@@ -156,6 +156,18 @@ pub(super) async fn resolve_for_analysis(
                         source_byte_offset: read.source_byte_offset,
                     }
                 }
+                // A verified shebang is a short ASCII prefix, so a file too
+                // large to read within budget or not valid UTF-8 at all
+                // cannot carry one — conclusively "no verified shebang", the
+                // same outcome as the `Ok` branch above with no `#!` match,
+                // not suspicious unresolved content. Otherwise a directly
+                // executed compiled binary (e.g. `actionlint`, #345) would
+                // degrade to a language-aware confirmation it can never pass
+                // non-interactively, despite being no more opaque to Aegis
+                // than any other `PATH`-resolved binary.
+                Err(SourceReadError::TooLarge { .. } | SourceReadError::InvalidUtf8) => {
+                    Resolution::NotApplicable
+                }
                 Err(err) => Resolution::Degraded(degradation_reason(&err)),
             }
         }
