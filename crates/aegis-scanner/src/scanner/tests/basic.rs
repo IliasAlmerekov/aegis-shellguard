@@ -294,6 +294,7 @@ fn assess_token_prefix_rules_through_absolute_paths_and_launchers() {
             "GIT-001",
         ),
         ("rtk git clean -fd src/", RiskLevel::Warn, "GIT-002"),
+        ("rtk proxy git clean -fd src/", RiskLevel::Warn, "GIT-002"),
         ("sudo git stash clear", RiskLevel::Warn, "GIT-008"),
         (
             "env FOO=bar git branch -D stale",
@@ -349,6 +350,22 @@ fn assess_token_prefix_rules_through_absolute_paths_and_launchers() {
     for (cmd, expected_risk, expected_id) in cases {
         assert_assessment_matches_pattern(cmd, expected_risk, expected_id);
     }
+}
+
+// Issue #339: `rtk proxy <cmd>` must classify identically to the bare and
+// plain-`rtk`-wrapped forms of `<cmd>`. `proxy` is rtk's own meta-command for
+// running the wrapped command unfiltered, not the program being classified —
+// treating it as the effective program let the wrapped command through with
+// no matched pattern.
+#[test]
+fn assess_rtk_proxy_does_not_bypass_classification() {
+    assert_assessment_matches_pattern("git rebase origin/main", RiskLevel::Warn, "GIT-005");
+    assert_assessment_matches_pattern("rtk git rebase origin/main", RiskLevel::Warn, "GIT-005");
+    assert_assessment_matches_pattern(
+        "rtk proxy git rebase origin/main",
+        RiskLevel::Warn,
+        "GIT-005",
+    );
 }
 
 // H2: destructive SQL is delivered embedded in a db-cli invocation
