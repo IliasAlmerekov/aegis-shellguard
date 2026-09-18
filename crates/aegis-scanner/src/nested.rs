@@ -2,7 +2,7 @@ use std::collections::{HashSet, VecDeque};
 
 use aegis_parser::{
     Parser, extract_eval_payloads, extract_heredoc_bodies, extract_process_substitution_bodies,
-    logical_segments,
+    logical_segments, mask_inert_heredoc_substitution_markers,
 };
 
 pub(crate) const MAX_NESTED_SCAN_DEPTH: usize = 8;
@@ -55,7 +55,10 @@ pub fn recursive_scan_targets(cmd: &str) -> RecursiveScanReport {
 }
 
 fn expand_nested_targets(cmd: &str) -> Vec<String> {
-    let mut targets = logical_segments(cmd);
+    // See `mask_inert_heredoc_substitution_markers` for why this is needed
+    // before segmentation.
+    let sanitized = mask_inert_heredoc_substitution_markers(cmd);
+    let mut targets = logical_segments(&sanitized);
     let parsed = Parser::parse(cmd);
 
     for script in parsed.inline_scripts {
@@ -63,6 +66,12 @@ fn expand_nested_targets(cmd: &str) -> Vec<String> {
     }
 
     for heredoc in extract_heredoc_bodies(cmd) {
+        // Same inert-nowdoc reasoning as the masking above: don't recurse
+        // into a body that bash never expands and whose target never
+        // executes it either.
+        if heredoc.is_nowdoc && !heredoc.target_is_interpreter {
+            continue;
+        }
         targets.push(heredoc.body);
     }
 

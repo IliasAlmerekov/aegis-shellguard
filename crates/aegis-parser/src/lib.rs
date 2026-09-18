@@ -16,7 +16,7 @@ mod tokenizer;
 pub use aegis_types::{InlineScript, ParsedCommand};
 pub use embedded_scripts::{
     HeredocBody, extract_eval_payloads, extract_heredoc_bodies, extract_inline_scripts,
-    extract_process_substitution_bodies,
+    extract_process_substitution_bodies, mask_inert_heredoc_substitution_markers,
 };
 pub use nested_shells::extract_nested_commands;
 pub use prefix_match::{contains_any_token, matches_prefix};
@@ -103,8 +103,11 @@ fn collect_effective_program_indices(tokens: &[&str], index: usize, starts: &mut
 
 fn launcher_prefix_lengths(tokens: &[&str]) -> Option<Vec<usize>> {
     let launcher = program_basename(tokens.first().copied()?);
-    if launcher.eq_ignore_ascii_case("rtk")
-        || launcher.eq_ignore_ascii_case("nohup")
+    if launcher.eq_ignore_ascii_case("rtk") {
+        return Some(rtk_prefix_lengths(tokens));
+    }
+
+    if launcher.eq_ignore_ascii_case("nohup")
         || launcher.eq_ignore_ascii_case("time")
         || launcher.eq_ignore_ascii_case("command")
         || launcher.eq_ignore_ascii_case("doas")
@@ -129,6 +132,23 @@ fn launcher_prefix_lengths(tokens: &[&str]) -> Option<Vec<usize>> {
     }
 
     None
+}
+
+/// Resolve the launcher-prefix length for the `rtk` wrapper.
+///
+/// `rtk <cmd>` transparently forwards `<cmd>`, so stripping the single `rtk`
+/// token exposes the real program (issue #339's baseline case). `rtk proxy
+/// <cmd>` is different: `proxy` is rtk's own meta-command for running `<cmd>`
+/// unfiltered, so `<cmd>` starts one token further in. Without this
+/// distinction `rtk proxy git rebase origin/main` resolves its effective
+/// program to `proxy`, which matches no rule and is auto-approved safe with
+/// no snapshot — a full detection bypass for the identical underlying
+/// command.
+fn rtk_prefix_lengths(tokens: &[&str]) -> Vec<usize> {
+    match tokens.get(1) {
+        Some(sub) if sub.eq_ignore_ascii_case("proxy") => vec![2],
+        _ => vec![1],
+    }
 }
 
 fn sudo_prefix_lengths(tokens: &[&str]) -> Vec<usize> {
@@ -347,6 +367,36 @@ mod tests {
         assert_eq!(slices.len(), 1);
         assert_eq!(slices[0].program, "git");
         assert_eq!(slices[0].tokens, vec!["git", "reset", "--hard"]);
+    }
+
+    #[test]
+    fn effective_token_slices_strip_rtk_proxy_meta_command() {
+        let tokens = ["rtk", "proxy", "git", "rebase", "origin/main"];
+        let slices = effective_token_slices(&tokens);
+
+        assert_eq!(slices.len(), 1);
+        assert_eq!(slices[0].program, "git");
+        assert_eq!(slices[0].tokens, vec!["git", "rebase", "origin/main"]);
+    }
+
+    #[test]
+    fn effective_token_slices_strip_rtk_proxy_meta_command_case_insensitively() {
+        let tokens = ["rtk", "PROXY", "git", "rebase", "origin/main"];
+        let slices = effective_token_slices(&tokens);
+
+        assert_eq!(slices.len(), 1);
+        assert_eq!(slices[0].program, "git");
+        assert_eq!(slices[0].tokens, vec!["git", "rebase", "origin/main"]);
+    }
+
+    #[test]
+    fn effective_token_slices_treat_rtk_own_subcommand_as_program() {
+        let tokens = ["rtk", "gain", "--history"];
+        let slices = effective_token_slices(&tokens);
+
+        assert_eq!(slices.len(), 1);
+        assert_eq!(slices[0].program, "gain");
+        assert_eq!(slices[0].tokens, vec!["gain", "--history"]);
     }
 
     #[test]
