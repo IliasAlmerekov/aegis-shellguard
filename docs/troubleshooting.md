@@ -254,6 +254,33 @@ scope by design.
 2. Or re-run `aegis install-hooks --claude-code --local` to refresh the local
    shim if you want to keep it.
 
+### `aegis` still runs after `scripts/uninstall.sh` (npm install)
+
+**Why:** `scripts/uninstall.sh` only removes the curl-installed binary at
+`AEGIS_BINDIR` (`/usr/local/bin/aegis` by default). It has no way to drive an
+npm uninstall itself, so on an npm-managed install (`npm install -g
+@iliasalmerekov/aegis`) the real binary is left running. The script detects
+this and prints the exact command to run next.
+
+**Fix:**
+
+1. Run the command the uninstall warning names: `npm uninstall -g
+   @iliasalmerekov/aegis`.
+2. Confirm with `command -v aegis` — it should print nothing once both the
+   curl-installed binary and the npm package are gone.
+
+### `~/.aegis` (audit log, snapshots) survives uninstall
+
+**Why:** `scripts/uninstall.sh` removes the binary and shell/hook setup but
+leaves `~/.aegis/` (`audit.jsonl`, `snapshots/`, `disabled`) untouched by
+default, on the assumption an operator may want the audit trail after
+uninstalling the binary.
+
+**Fix:**
+
+- To wipe it too, rerun with `AEGIS_UNINSTALL_PURGE_DATA=1 sh
+  scripts/uninstall.sh` or pass `--purge-data` to the script.
+
 ### Older Codex hook fails with missing `jq` or `python3`
 
 **Why:** Earlier Codex hook scripts shelled out to `jq`/`python3` to parse and
