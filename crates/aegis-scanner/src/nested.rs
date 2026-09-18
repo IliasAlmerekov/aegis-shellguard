@@ -20,9 +20,10 @@ pub struct RecursiveScanReport {
 
 /// Collect recursive scan targets derived from nested execution wrappers.
 ///
-/// The returned list always contains `cmd` itself plus any normalized or
-/// unwrapped payloads discovered through shell nesting, heredocs, inline
-/// interpreters, process substitution, and `eval`.
+/// The returned list always contains `cmd` itself (with any inert heredoc
+/// text masked out — see `mask_inert_heredoc_substitution_markers`) plus any
+/// normalized or unwrapped payloads discovered through shell nesting,
+/// heredocs, inline interpreters, process substitution, and `eval`.
 pub fn recursive_scan_targets(cmd: &str) -> RecursiveScanReport {
     let mut targets = Vec::new();
     let mut seen = HashSet::new();
@@ -34,7 +35,13 @@ pub fn recursive_scan_targets(cmd: &str) -> RecursiveScanReport {
             continue;
         }
 
-        targets.push(candidate.clone());
+        // Masking (not just the substitution-marker pass but the full-body
+        // blanking for heredocs redirected to a file — see
+        // `mask_inert_heredoc_substitution_markers`) must apply here too:
+        // `candidate` is what full_scan actually pattern-matches against,
+        // and the very first candidate popped off the queue is `cmd` itself
+        // unmodified.
+        targets.push(mask_inert_heredoc_substitution_markers(&candidate));
 
         if depth >= MAX_NESTED_SCAN_DEPTH {
             limit_hit.get_or_insert(RecursiveScanLimit::DepthExceeded {

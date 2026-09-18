@@ -388,6 +388,81 @@ fn mask_inert_heredoc_no_heredoc_is_noop() {
     assert_eq!(mask_inert_heredoc_substitution_markers(cmd), cmd);
 }
 
+// 40. Issue #357: a heredoc handed to `cat` whose stdout is redirected into
+// a file is a data write, not a display or execution — the target is
+// flagged accordingly.
+#[test]
+fn heredoc_cat_redirected_to_file_is_flagged() {
+    let cmd = "cat >> notes.txt <<'EOF'\nsome text\nEOF";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(bodies[0].target_redirects_to_file);
+}
+
+// 41. `cat` with no output redirection prints to the terminal — not a file
+// write.
+#[test]
+fn heredoc_cat_without_redirection_is_not_flagged() {
+    let cmd = "cat <<'EOF'\nsome text\nEOF";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(!bodies[0].target_redirects_to_file);
+}
+
+// 42. `tee` writes to its file argument directly, no shell redirection
+// needed.
+#[test]
+fn heredoc_tee_with_file_argument_is_flagged() {
+    let cmd = "tee out.txt <<'EOF'\nsome text\nEOF";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(bodies[0].target_redirects_to_file);
+}
+
+// 43. An interpreter's stdout being redirected to a file doesn't change what
+// it does with its stdin — it still executes the body.
+#[test]
+fn heredoc_interpreter_redirected_to_file_is_not_flagged_as_file_write() {
+    let cmd = "bash > log.txt <<'EOF'\necho hi\nEOF";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(!bodies[0].target_redirects_to_file);
+}
+
+// 43b. Descriptor duplication (`2>&1`, `>&2`) never touches a file — the
+// bare `>` inside it must not be mistaken for a stdout-to-file redirect.
+#[test]
+fn heredoc_cat_with_fd_duplication_is_not_flagged() {
+    let cases = [
+        "cat 2>&1 <<'EOF'\nsome text\nEOF",
+        "cat >&2 <<'EOF'\nsome text\nEOF",
+    ];
+    for cmd in cases {
+        let bodies = extract_heredoc_bodies(cmd);
+        assert!(
+            !bodies[0].target_redirects_to_file,
+            "command {cmd:?}: expected target_redirects_to_file to be false"
+        );
+    }
+}
+
+// 44. Masking blanks the entire nowdoc body — not just substitution markers
+// — when its target writes it straight to a file.
+#[test]
+fn mask_inert_heredoc_blanks_full_body_for_file_redirected_cat() {
+    let cmd = "cat >> notes.txt <<'EOF'\nrm -rf /\nEOF";
+    let masked = mask_inert_heredoc_substitution_markers(cmd);
+    assert!(!masked.contains("rm -rf"));
+    // Line structure (line count) is preserved so unrelated line-oriented
+    // logic downstream isn't affected.
+    assert_eq!(masked.lines().count(), cmd.lines().count());
+}
+
+// 45. Masking still only blanks substitution markers, not the whole body,
+// when the same nowdoc target has no output redirection.
+#[test]
+fn mask_inert_heredoc_keeps_literal_text_without_redirection() {
+    let cmd = "cat <<'EOF'\nrm -rf /\nEOF";
+    let masked = mask_inert_heredoc_substitution_markers(cmd);
+    assert!(masked.contains("rm -rf"));
+}
+
 // 31. python -c "..." — inline Python script extracted
 #[test]
 fn inline_script_python() {
