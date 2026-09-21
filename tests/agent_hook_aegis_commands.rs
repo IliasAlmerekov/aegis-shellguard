@@ -21,6 +21,22 @@ fn claude_code_hook_wraps_read_only_aegis_and_denies_self_management() {
         "read-only aegis commands must run through the wrapper"
     );
 
+    // #379: read-only commands with a redirect, a filter pipe, or a chain.
+    for command in [
+        "aegis --help 2>&1 | head -40",
+        "aegis --version && aegis status",
+    ] {
+        let output = run_claude_code_hook(home.path(), command);
+        assert!(output.status.success());
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["hookSpecificOutput"]["permissionDecision"], "allow");
+        assert_eq!(
+            json["hookSpecificOutput"]["updatedInput"]["command"],
+            format!("aegis --command '{command}'"),
+            "{command:?} must run through the wrapper"
+        );
+    }
+
     let off = run_claude_code_hook(home.path(), "aegis off");
     assert!(off.status.success());
     let json: Value = serde_json::from_slice(&off.stdout).unwrap();

@@ -4,6 +4,8 @@ use serde_json::Value;
 
 use super::shell_quote;
 
+mod read_only;
+
 /// The fixed, detail-free reason used when a panic is contained at the `Hook`
 /// boundary. The payload is never interpolated into the response, so a panic
 /// carrying paths, command fragments, or internal state cannot steer the deny
@@ -185,13 +187,21 @@ fn hook_response_value(input: &str) -> HookOutcome {
     if is_canonical_aegis_wrapper(command) {
         return HookOutcome::Noop;
     }
-    if starts_with_aegis_word(command) && !is_read_only_aegis_invocation(command) {
+    // Read-only commands are wrapped like any other command (#333). The scanner
+    // also classifies self-management under `Category::Aegis` (ADR-035), which
+    // covers the spellings this first-word check cannot see, such as an
+    // absolute path or a launcher prefix. This deny is the fast path in front
+    // of it, and the only layer that refuses without a prompt in a
+    // non-interactive agent session.
+    if starts_with_aegis_word(command) && !read_only::is_read_only_aegis_command(command) {
         let reason = if is_wrapper_attempt(command) {
             "invalid aegis wrapper syntax; issue the command unwrapped and aegis will rewrite it"
         } else {
             "aegis commands that change Aegis itself are reserved for the human operator; \
              only read-only aegis commands (help, --version, status, audit, snapshot list, \
-             config show, config validate) run through the hook"
+             config show, config validate) run through the hook. They may be chained with \
+             each other or piped into head, tail, grep, wc, jq, or cut, and may redirect \
+             output only to /dev/null or another descriptor"
         };
         return HookOutcome::Deny(hook_deny_output(reason.to_string()));
     }
@@ -238,35 +248,6 @@ fn starts_with_aegis_word(command: &str) -> bool {
     command
         .strip_prefix("aegis")
         .is_some_and(|rest| rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
-}
-
-/// True when `command` is one plain `aegis` invocation that only reads state:
-/// help and version output, `status`, `audit`, `snapshot list`, `config show`
-/// and `config validate`. These are wrapped like any other command (#333).
-/// Anything outside this set stays denied, because commands such as `aegis off`
-/// or `aegis rollback` change Aegis itself. The scanner also classifies those
-/// under `Category::Aegis` (ADR-035), which covers the spellings this
-/// first-word check cannot see — an absolute path, a launcher prefix, or a
-/// second command after `&&`. This deny is the fast path in front of it, and
-/// the only layer that refuses without a prompt in a non-interactive agent
-/// session. Shell metacharacters are rejected up front so a read-only prefix
-/// cannot carry a second command (`aegis status && aegis off`).
-fn is_read_only_aegis_invocation(command: &str) -> bool {
-    let has_no_shell_metacharacters = command
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || " \t-_=.,:/+@".contains(c));
-    if !has_no_shell_metacharacters {
-        return false;
-    }
-
-    let args: Vec<&str> = command.split_whitespace().skip(1).collect();
-    let is_help_flag = |arg: &str| arg == "--help" || arg == "-h";
-    match args.as_slice() {
-        ["--version" | "-V"] | ["status"] | ["snapshot", "list"] => true,
-        ["config", "show" | "validate", ..] | ["audit", ..] | ["help", ..] => true,
-        [words @ .., last] if is_help_flag(last) => words.iter().all(|word| !word.starts_with('-')),
-        _ => false,
-    }
 }
 
 /// True when any `aegis` argument carries the wrapper flag (`--command`, `-c`,
@@ -467,6 +448,76 @@ mod tests {
                 other => panic!("expected {command:?} to be wrapped, got {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn hook_wraps_read_only_aegis_invocations_with_redirects_pipes_and_chains() {
+        // #379: an agent rarely types a bare `aegis status`. It adds `2>&1`,
+        // pipes into `head`, or chains two read-only commands.
+        for command in [
+            "aegis --version 2>&1",
+            "aegis status 2>/dev/null",
+            "aegis status 2> /dev/null",
+            "aegis status >/dev/null 2>&1",
+            "aegis status &>/dev/null",
+            "aegis --help 2>&1 | head -40",
+            "aegis audit --last 50 | grep FS-001",
+            "aegis audit --format json|jq .risk",
+            "aegis config show | tail -n 5 | wc -l",
+            "aegis --version && aegis status",
+            "aegis --version; aegis status",
+            "aegis --version || aegis status",
+            "aegis --version\naegis status",
+            "aegis status;",
+        ] {
+            match hook_outcome_for(command) {
+                HookOutcome::Allow(output) => assert_eq!(
+                    output["hookSpecificOutput"]["updatedInput"]["command"],
+                    format!("aegis --command {}", shell_quote(command)),
+                    "{command:?} must be rewritten through the wrapper"
+                ),
+                other => panic!("expected {command:?} to be wrapped, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn hook_denies_compound_aegis_commands_outside_the_read_only_shapes() {
+        for command in [
+            "aegis status | aegis off",
+            "aegis status && ls",
+            "aegis status | sort -o /tmp/out",
+            "aegis status | uniq - /tmp/out",
+            "aegis status > /tmp/out",
+            "aegis status >> /home/user/.aegis/config.toml",
+            "aegis status 2>/tmp/err",
+            "aegis status < /dev/null",
+            "aegis status & aegis off",
+            "aegis status |& head",
+            "aegis status | | head",
+            "aegis status && && aegis status",
+            "aegis status |",
+            "aegis status 2>&",
+            "aegis status >&file",
+            "aegis status | grep 'x'",
+        ] {
+            assert!(
+                matches!(hook_outcome_for(command), HookOutcome::Deny(_)),
+                "{command:?} must be denied"
+            );
+        }
+    }
+
+    #[test]
+    fn hook_names_the_allowed_compound_shapes_when_a_read_only_command_is_combined() {
+        let HookOutcome::Deny(output) = hook_outcome_for("aegis status | sort") else {
+            panic!("expected a deny");
+        };
+        let reason = output["reason"].as_str().unwrap();
+        assert!(
+            reason.contains("piped into head, tail, grep, wc, jq, or cut"),
+            "the reason must name the allowed shapes: {reason}"
+        );
     }
 
     #[test]
