@@ -5,7 +5,6 @@
 //! injection hook (`INJECT_MANIFEST_WRITE_FAILURE_FOR_TESTS`) is exercised by
 //! `snapshot_fails_when_manifest_commit_fails_and_removes_dump`.
 
-use super::super::*;
 use super::manifest_io::write_manifest_atomically;
 use super::*;
 use tempfile::TempDir;

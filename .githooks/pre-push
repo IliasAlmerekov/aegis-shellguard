@@ -6,11 +6,9 @@ set -eu
 # every such spawn at this repository instead (#317).
 unset $(git rev-parse --local-env-vars)
 
-echo "pre-push: running cargo fmt --check"
-cargo fmt --check
-
-echo "pre-push: running cargo clippy -- -D warnings"
-cargo clippy -- -D warnings
+# The same rustfmt and clippy commands as CI, on the toolchain CI pins.
+echo "pre-push: running scripts/lint.sh"
+scripts/lint.sh
 
 echo "pre-push: running cargo test"
 cargo test

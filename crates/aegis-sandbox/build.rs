@@ -85,6 +85,11 @@ fn try_build_bwrap() -> Result<(), String> {
     for include_path in &libcap.include_paths {
         build.flag(format!("-idirafter{}", include_path.display()));
     }
+    // `network.c` zero-initialises `struct sockaddr_nl` with `{ AF_NETLINK, 0 }`,
+    // which is valid C but trips `-Wextra`'s missing-field-initializers on
+    // every build. The vendored source stays untouched (pinned by ADR-029), so
+    // silence only that one warning to keep `cargo check` output clean (#276).
+    build.flag_if_supported("-Wno-missing-field-initializers");
     let compiler = build.get_compiler();
     build.compile("standalone_bwrap");
 

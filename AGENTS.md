@@ -36,7 +36,7 @@ Only push once `re-review` reports green.
 
 After code passes all gates, update in this order:
 
-1. **Verification gates:** `rtk cargo test --workspace`, `rtk cargo clippy -- -D warnings`, `rtk cargo fmt --check`, `rtk cargo audit`, `rtk cargo deny check` (benchmark if hot path was touched). Wait for all to pass.
+1. **Verification gates:** `rtk cargo test --workspace`, `scripts/lint.sh` (fmt + clippy, CI toolchain), `rtk cargo audit`, `rtk cargo deny check` (benchmark if hot path was touched). Wait for all to pass.
 
 2. **Update `PROJECT_STATE.md`:** Last updated date, Last session summary, Open blockers. Release status is not recorded here — it is the state of the `1.0` milestone.
 

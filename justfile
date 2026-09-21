@@ -13,9 +13,9 @@ write-config-schema:
 test:
     cargo test
 
-# Run clippy
+# Run rustfmt and clippy exactly as CI does
 lint:
-    cargo clippy --all-targets --all-features --locked -- -D warnings
+    scripts/lint.sh
 
 # Build release binary
 build:

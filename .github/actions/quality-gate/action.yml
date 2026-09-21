@@ -38,13 +38,15 @@ runs:
     # Linux compile needs the headers before cargo runs at all.
     - uses: ./.github/actions/install-libcap
 
-    - name: cargo fmt --check
+    # scripts/lint.sh holds the only copy of the rustfmt and clippy commands,
+    # so the pre-push hook and `just lint` run exactly what this gate runs.
+    - name: rustfmt
       shell: bash
-      run: cargo fmt --check --all
+      run: scripts/lint.sh fmt
 
-    - name: cargo clippy
+    - name: clippy
       shell: bash
-      run: cargo clippy --workspace -- -D warnings
+      run: scripts/lint.sh clippy
 
     - name: Install zsh
       shell: bash
