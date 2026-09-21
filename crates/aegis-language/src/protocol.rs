@@ -362,37 +362,38 @@ type DecodedHeader<'a> = (u32, u8, &'a [u8], usize);
 /// id, kind tag, payload slice, and total bytes consumed. Returns `Ok(None)`
 /// when more bytes are needed and `Err` for a malformed-but-decidable header.
 fn decode_header(buf: &[u8]) -> Result<Option<DecodedHeader<'_>>, DecodeError> {
-    // Need the full header to know how many payload bytes follow.
-    if buf.len() < HEADER_LEN {
+    // Need the full header to know how many payload bytes follow. The array
+    // pattern below fails to compile if `HEADER_LEN` ever stops matching it.
+    let Some(&[m0, m1, m2, m3, v0, v1, r0, r1, r2, r3, kind, l0, l1, l2, l3]) =
+        buf.first_chunk::<HEADER_LEN>()
+    else {
         return Ok(None);
-    }
+    };
     // Reject noise/corruption as soon as the magic is readable.
-    let magic: [u8; 4] = buf[0..4].try_into().expect("checked len");
+    let magic = [m0, m1, m2, m3];
     if magic != MAGIC {
         return Err(DecodeError::BadMagic { got: magic });
     }
-    let version = u16::from_le_bytes(buf[4..6].try_into().expect("checked len"));
+    let version = u16::from_le_bytes([v0, v1]);
     if version != PROTOCOL_VERSION {
         return Err(DecodeError::UnsupportedVersion { version });
     }
-    let request_id = u32::from_le_bytes(buf[6..10].try_into().expect("checked len"));
-    let kind = buf[10];
-    let payload_len = u32::from_le_bytes(buf[11..15].try_into().expect("checked len"));
+    let request_id = u32::from_le_bytes([r0, r1, r2, r3]);
+    let payload_len = u32::from_le_bytes([l0, l1, l2, l3]);
     if payload_len as usize > MAX_FRAME_PAYLOAD {
         // Reject from the header alone, before allocating or reading the body.
         return Err(DecodeError::Oversized {
             declared: payload_len,
-            max: u32::try_from(MAX_FRAME_PAYLOAD).expect("MAX_FRAME_PAYLOAD fits in u32"),
+            // Exact: `MAX_FRAME_PAYLOAD <= u32::MAX` is const-asserted above.
+            max: MAX_FRAME_PAYLOAD as u32,
         });
     }
-    let total = HEADER_LEN
-        .checked_add(payload_len as usize)
-        .expect("frame total fits in usize");
-    if buf.len() < total {
+    // `payload_len <= MAX_FRAME_PAYLOAD`, so this sum cannot overflow.
+    let total = HEADER_LEN + payload_len as usize;
+    let Some(payload) = buf.get(HEADER_LEN..total) else {
         // The declared payload has not fully arrived yet.
         return Ok(None);
-    }
-    let payload = &buf[HEADER_LEN..total];
+    };
     Ok(Some((request_id, kind, payload, total)))
 }
 

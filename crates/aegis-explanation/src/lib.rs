@@ -1,4 +1,5 @@
 //! Structured explanation types for Aegis interception decisions.
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 pub use aegis_policy::{BlockReason, ExecutionTransport, PolicyAction, PolicyRationale};
 

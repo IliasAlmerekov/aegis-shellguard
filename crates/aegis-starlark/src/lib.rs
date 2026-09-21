@@ -4,6 +4,7 @@
 //! Exposes [`load_starlark_policy`] which evaluates a `.star` file written by
 //! the user and returns the list of [`PolicyRule`] values it defines via
 //! `prefix_rule(...)` calls.
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 use std::cell::RefCell;
 use std::path::Path;

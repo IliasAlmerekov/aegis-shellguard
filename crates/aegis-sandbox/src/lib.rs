@@ -12,6 +12,7 @@
 //! Platform-specific implementation lives in a private `platform` module alias
 //! that resolves to `linux.rs`, `macos.rs`, or `unsupported.rs` depending on the
 //! build target. Shared test support lives in `support.rs`.
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;

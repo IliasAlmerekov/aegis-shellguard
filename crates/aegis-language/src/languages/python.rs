@@ -26,8 +26,12 @@ use crate::operation::{
 
 /// The bundled Python call-capture query. Compiled once on first use; a failure
 /// here is a build-time query-authoring bug, so panicking on first use is the
-/// correct startup behavior (CLAUDE.md: `.expect()` is acceptable in startup
+/// correct startup behavior (CONVENTION.md: `.expect()` is acceptable in startup
 /// initialization).
+#[expect(
+    clippy::expect_used,
+    reason = "a bundled query that fails to compile is a build-time bug; panicking at startup is intended"
+)]
 static CALLS_QUERY: LazyLock<Query> = LazyLock::new(|| {
     Query::new(
         &SourceLanguage::Python.tree_sitter_language(),
@@ -41,12 +45,16 @@ static CALLS_QUERY: LazyLock<Query> = LazyLock::new(|| {
 // `set_language` runs once per thread on first use (one-time initialization,
 // not on every `analyze` call) — a failure here is a build-time grammar-pin
 // bug, not user input, so panicking on init is the correct startup behavior
-// (CLAUDE.md: `.expect()` is acceptable in startup initialization). Keeping
+// (CONVENTION.md: `.expect()` is acceptable in startup initialization). Keeping
 // the parser out of `analyze`'s body avoids re-running `set_language` on each
 // call and avoids `.expect()` on a per-invocation path. `thread_local!` gives
 // each thread its own parser with no locking; `analyze` is non-reentrant, so
 // the `borrow_mut` cannot clash.
 thread_local! {
+    #[expect(
+        clippy::expect_used,
+        reason = "a pinned grammar that is ABI-incompatible is a build-time bug; panicking at startup is intended"
+    )]
     static PARSER: RefCell<Parser> = RefCell::new({
         let mut parser = Parser::new();
         parser

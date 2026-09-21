@@ -1,4 +1,5 @@
 #![deny(missing_docs)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 //! Core data types shared across the Aegis crates.
 //!

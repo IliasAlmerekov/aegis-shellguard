@@ -146,7 +146,12 @@ Architectural constraints:
 - Library code uses typed errors via `thiserror` and `AegisError`.
 - `anyhow` is allowed only in CLI glue or top-level application wiring when it simplifies propagation.
 - `unwrap()` and `expect()` are forbidden in non-test production paths except for explicit,
-  documented startup-time panics where panic is the intended contract.
+  documented startup-time panics where panic is the intended contract. Every library and
+  binary crate root enforces this with
+  `#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]`, and
+  `tests/panic_lint_guard.rs` fails when a crate root lacks the attribute. A sanctioned startup
+  panic carries `#[expect(clippy::expect_used, reason = "...")]` on the smallest item or
+  statement. Use `expect`, not `allow`, so a stale marker fails the build.
 - Errors must not be silently discarded in production logic.
 - Do not convert actionable errors into `None` or a silent fallback unless that behavior is
   intentional, documented, and tested.
