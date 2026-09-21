@@ -631,8 +631,11 @@ pub(super) async fn execute_prepared_and_emit(
     else {
         // Both streams were requested as piped, so this is unreachable in
         // practice. Fail the request instead of panicking if it ever happens.
-        let _ = child.start_kill();
-        emit_error_or_exit(id, "failed to capture child output".to_owned());
+        let message = match child.start_kill() {
+            Ok(()) => "failed to capture child output".to_owned(),
+            Err(e) => format!("failed to capture child output; failed to kill child: {e}"),
+        };
+        emit_error_or_exit(id, message);
         return;
     };
 
