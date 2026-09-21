@@ -1,6 +1,7 @@
 name: Quality gate
 description: >-
-  Run the workspace quality checks: rustfmt, clippy, and the full test suite.
+  Run the workspace quality checks: rustfmt, clippy, the full test suite, and
+  a check that the committed aegis-schema.json matches its generator.
   Linux only, because the test suite needs zsh and the action installs it with
   apt-get. The caller must run actions/checkout first, and must run on a Linux
   runner.
@@ -58,3 +59,17 @@ runs:
     - name: cargo test --workspace (includes architecture_boundaries)
       shell: bash
       run: cargo test --workspace
+
+    # aegis-schema.json is generated from AegisConfig and committed. Regenerate
+    # it and fail when the result differs, so a config model change cannot land
+    # with a stale schema. The generator writes to a relative path, so this
+    # step relies on the default working directory being the checkout root.
+    - name: aegis-schema.json matches the generator
+      shell: bash
+      run: |
+        set -euo pipefail
+        cargo run --bin aegis_schema
+        if ! git diff --exit-code aegis-schema.json; then
+          echo "::error file=aegis-schema.json::aegis-schema.json is out of date. Run 'cargo run --bin aegis_schema' from the repository root and commit the result."
+          exit 1
+        fi
