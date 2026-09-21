@@ -244,8 +244,7 @@ Minimum expectations:
 
 Quality gates:
 
-- `cargo fmt --check`
-- `cargo clippy -- -D warnings`
+- `scripts/lint.sh` (rustfmt and clippy, the same commands CI runs)
 - `cargo test`
 - `cargo audit`
 - `cargo deny check`

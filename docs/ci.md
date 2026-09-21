@@ -190,8 +190,9 @@ before `release.yml` builds anything. Three jobs run it:
    the commit passed review and the required status checks on `main`; no
    re-run of fmt or clippy can show that.
 2. `Tag admission (fmt, clippy, test)` runs the `quality-gate` composite
-   action: `cargo fmt --check --all`, `cargo clippy --workspace -- -D
-   warnings`, `cargo test --workspace`.
+   action: `scripts/lint.sh fmt`, `scripts/lint.sh clippy`, `cargo test
+   --workspace`. The script runs rustfmt and clippy on the `RUST_TOOLCHAIN`
+   pinned in `.github/versions.env`, over every target and feature.
 3. `Tag admission (audit, deny)` runs the `security-gate` composite action:
    `cargo audit` and `cargo deny check`.
 

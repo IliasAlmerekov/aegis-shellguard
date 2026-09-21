@@ -89,9 +89,13 @@ These tests require a working Docker daemon and `docker` on `PATH`.
 ## Run formatting and linting
 
 ```sh
-cargo fmt --check
-cargo clippy -- -D warnings
+scripts/lint.sh
 ```
+
+The script runs rustfmt and clippy, over every target and feature, on the
+Rust version pinned in `.github/versions.env`. These are the same commands CI
+runs. If that version is missing, the script prints the `rustup` command that
+installs it. Pass `fmt` or `clippy` to run one of the two.
 
 ## Run benchmarks
 
@@ -134,8 +138,7 @@ Install the repository-managed Git hooks once per clone:
 
 The pre-push hook mirrors the CI quality gate as closely as possible:
 
-- `cargo fmt --check`
-- `cargo clippy -- -D warnings`
+- `scripts/lint.sh` (rustfmt and clippy on the pinned toolchain)
 - `cargo test`
 - `cargo audit` when `cargo-audit` is installed locally
 - `cargo deny check bans licenses sources` when `cargo-deny` is installed locally

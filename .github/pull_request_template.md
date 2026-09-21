@@ -5,5 +5,5 @@ Describe what changed and why.
 ## Checklist
 
 - [ ] I ran tests locally (`cargo test`)
-- [ ] I ran clippy with warnings as errors (`cargo clippy -- -D warnings`)
+- [ ] I ran rustfmt and clippy (`scripts/lint.sh`)
 - [ ] I reviewed relevant rules in `CONVENTION.md`
