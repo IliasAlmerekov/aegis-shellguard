@@ -149,6 +149,12 @@ advisory-database parsing issues in `cargo-deny` itself.
 
 Any failing step blocks `git push`.
 
+The CI quality gate also regenerates `aegis-schema.json` and fails when the
+result differs from the committed file. The pre-push hook does not run this
+check. After you change the config model in `crates/aegis-config`, run
+`cargo run --bin aegis_schema` from the repository root and commit the updated
+`aegis-schema.json`.
+
 ## Pull request checklist
 
 Please make sure your PR:
