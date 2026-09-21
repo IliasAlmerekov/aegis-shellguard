@@ -681,3 +681,20 @@ tag time rather than inherited from the commit's earlier history. It is not the
 1.0 release gate, which is milestone membership and lives in the issue tracker
 (ADR-027).
 _Avoid_: release gate, quality gate, publish gate, CI gate
+
+**Merge admission check**:
+The combined result of every CI job for one commit. It decides whether a pull
+request may land on `main`, and on a push to `main` it records that the landed
+commit itself passed every job, including every `Heavy job`. A `Heavy job` that
+was skipped counts as a failure whenever heavy jobs were due. The
+`Tag admission check` relies on it: reachability from `main` means the commit
+passed the Merge admission check.
+_Avoid_: aggregate job, required check, CI gate, all-green
+
+**Heavy job**:
+A CI job too slow or costly to run on every pull request (macOS builds, the
+cross-build matrix, the performance baseline, live installer and live Snapshot
+tests, fuzzing). It runs for every commit bound for or landed on `main`, on the
+weekly schedule, and on manual runs; it is skipped only for pull requests into
+other branches.
+_Avoid_: slow job, optional job

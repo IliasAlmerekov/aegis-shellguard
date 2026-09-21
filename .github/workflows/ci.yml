@@ -8,17 +8,18 @@ on:
     branches: [main]
   pull_request:
     branches: ["**"]
+  merge_group:
   workflow_dispatch:
   schedule:
     - cron: "0 6 * * 1"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  # main must always finish a full run (audit, deny, fuzz) — cancelling it
-  # would let a commit land without ever going green, and would let the
-  # weekly schedule/workflow_dispatch races kill an in-flight main push (or
-  # vice versa). Only cancel superseded runs on non-main refs (feature
-  # branches, PRs).
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  # Every commit on main gets its own group (keyed by SHA) and is never
+  # cancelled, so each one finishes a full run (audit, deny, fuzz). Sharing one
+  # group per ref would let GitHub drop a pending run when a newer push queues,
+  # and that commit would land without ever going green. Only superseded runs
+  # on other refs (feature branches, PRs, merge groups) are cancelled.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # Every pinned version this workflow uses lives in `.github/versions.env`, and
@@ -39,10 +40,9 @@ jobs:
   #    and `.github/build-targets.json` and re-exported as job outputs.
   # 2. The "is this worth a slow/expensive job" gate, used by every heavy job
   #    below (macOS runners, fuzzing, live network/Docker/SQLite integration
-  #    tests, benchmark baselines). A regression in any of them only needs to
-  #    be caught before it lands on main (via a PR targeting main), on the
-  #    weekly schedule, or on a manual run, not on every push to a feature
-  #    branch.
+  #    tests, benchmark baselines). Heavy jobs run for a PR targeting main, a
+  #    push to main, a merge group, the weekly schedule, and a manual run. They
+  #    do not run on a PR into another branch or a push to a feature branch.
   #
   # Keep this job's `name:` unchanged; it is reported as a check run.
   gate:
@@ -75,7 +75,7 @@ jobs:
         id: compute
         shell: bash
         run: |
-          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" || ( "${{ github.event_name }}" == "pull_request" && "${{ github.event.pull_request.base.ref }}" == "main" ) ]]; then
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" || "${{ github.event_name }}" == "merge_group" || ( "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ) || ( "${{ github.event_name }}" == "pull_request" && "${{ github.event.pull_request.base.ref }}" == "main" ) ]]; then
             echo "heavy=true" >> "$GITHUB_OUTPUT"
           else
             echo "heavy=false" >> "$GITHUB_OUTPUT"
@@ -178,12 +178,11 @@ jobs:
 
   # macOS is expensive (10x Linux minutes on GitHub-hosted runners) — only
   # worth running where a regression would otherwise ship: PRs targeting
-  # main (last chance to catch it before it merges), the weekly schedule,
-  # and manual runs. Deliberately NOT re-run on push to main — the PR that
-  # merged it already ran this job, so re-running on the merge commit is
-  # redundant. Feature-branch pushes/PRs stay Linux-only; release.yml still
-  # builds real macOS binaries for every tagged release regardless of this
-  # gate.
+  # main (last chance to catch it before it merges), pushes to main and merge
+  # groups (the exact commit that lands is tested, since a PR run may have
+  # tested an older base), the weekly schedule, and manual runs.
+  # Feature-branch pushes/PRs stay Linux-only; release.yml still builds real
+  # macOS binaries for every tagged release regardless of this gate.
   build-macos:
     name: Release build (macos-26)
     runs-on: ${{ needs.gate.outputs.macos_runner }}
@@ -463,3 +462,56 @@ jobs:
           name: fuzz-crash-artifacts
           path: fuzz/artifacts
           if-no-files-found: ignore
+
+  # The Merge admission check: the one job branch protection requires on main.
+  # It waits for every other job in this file and fails unless they all
+  # succeeded. A heavy job may be skipped only when `gate` computed
+  # heavy=false. An empty `heavy` (the gate itself failed) fails the check.
+  #
+  # `if: always()` is required. Without it a failed need would skip this job,
+  # and GitHub reports a skipped required status as passing.
+  #
+  # Every job added to this file must be listed in `needs:`; a test enforces it.
+  # Keep this job's `name:` unchanged; branch protection requires it by name.
+  merge-admission:
+    name: Merge admission (all CI jobs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs:
+      - gate
+      - quality
+      - landing
+      - security
+      - build
+      - build-macos
+      - cross-matrix
+      - performance
+      - live-installer
+      - snapshot-rollback-live
+      - fuzz
+    steps:
+      - name: Check every job result
+        shell: bash
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          HEAVY_JOBS: build-macos cross-matrix performance live-installer snapshot-rollback-live fuzz
+        run: |
+          set -euo pipefail
+          heavy=$(jq -r '.gate.outputs.heavy // ""' <<<"$NEEDS")
+          if [[ "$heavy" != "true" && "$heavy" != "false" ]]; then
+            echo "::error::gate did not report a heavy value ('$heavy')"
+            exit 1
+          fi
+          status=0
+          while IFS=$'\t' read -r job result; do
+            if [[ "$result" == "success" ]]; then
+              continue
+            fi
+            if [[ "$result" == "skipped" && "$heavy" == "false" && " $HEAVY_JOBS " == *" $job "* ]]; then
+              continue
+            fi
+            echo "::error::$job finished with '$result' (heavy=$heavy)"
+            status=1
+          done < <(jq -r 'to_entries[] | [.key, .value.result] | @tsv' <<<"$NEEDS")
+          exit "$status"

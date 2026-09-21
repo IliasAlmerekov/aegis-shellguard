@@ -253,3 +253,172 @@ fn an_empty_target_table_stops_the_build_and_the_release() {
         "the release asset list must reject a build-targets.json with no targets"
     );
 }
+
+const MERGE_ADMISSION_JOB_NAME: &str = "Merge admission (all CI jobs)";
+
+/// Top-level job ids under `jobs:` in `ci.yml`, in file order. A job id is a
+/// line indented by exactly two spaces that ends in a colon.
+fn ci_job_ids(workflow: &str) -> Vec<String> {
+    let workflow = workflow.replace("\r\n", "\n");
+    let jobs = workflow
+        .split("\njobs:\n")
+        .nth(1)
+        .expect("ci.yml should have a jobs: section");
+
+    jobs.lines()
+        .filter(|line| line.starts_with("  ") && !line.starts_with("   "))
+        .filter_map(|line| line.trim().strip_suffix(':'))
+        .filter(|id| !id.starts_with('#'))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The YAML block of one job, from its id line to the next job id.
+fn ci_job_block(workflow: &str, id: &str) -> String {
+    let workflow = workflow.replace("\r\n", "\n");
+    let header = format!("\n  {id}:\n");
+    let start = workflow
+        .find(&header)
+        .unwrap_or_else(|| panic!("ci.yml should define the {id} job"))
+        + 1;
+    let rest = &workflow[start..];
+    let end = rest
+        .match_indices("\n  ")
+        .find(|(at, _)| {
+            let after = &rest[at + 3..];
+            !after.starts_with(' ') && !after.starts_with('#') && !after.starts_with('\n')
+        })
+        .map_or(rest.len(), |(at, _)| at);
+    rest[..end].to_string()
+}
+
+fn merge_admission_job_id(workflow: &str) -> String {
+    ci_job_ids(workflow)
+        .into_iter()
+        .find(|id| {
+            ci_job_block(workflow, id).contains(&format!("name: {MERGE_ADMISSION_JOB_NAME}"))
+        })
+        .unwrap_or_else(|| panic!("ci.yml should define a job named {MERGE_ADMISSION_JOB_NAME}"))
+}
+
+#[test]
+fn merge_admission_check_needs_every_other_ci_job() {
+    let workflow = ci_workflow();
+    let admission_id = merge_admission_job_id(&workflow);
+    let admission = ci_job_block(&workflow, &admission_id);
+
+    // Only the `      - <id>` items under `    needs:` count. Matching the whole
+    // job block would let an id survive in the `HEAVY_JOBS` env line, or as a
+    // substring of another id (`build` inside `build-macos`).
+    let needs: Vec<&str> = admission
+        .lines()
+        .skip_while(|line| *line != "    needs:")
+        .skip(1)
+        .map_while(|line| line.strip_prefix("      - "))
+        .collect();
+
+    for id in ci_job_ids(&workflow) {
+        if id == admission_id {
+            continue;
+        }
+        assert!(
+            needs.contains(&id.as_str()),
+            "the merge admission check must list the {id} job in its needs:"
+        );
+    }
+}
+
+#[test]
+fn merge_admission_check_knows_which_jobs_are_heavy() {
+    let workflow = ci_workflow();
+    let admission = ci_job_block(&workflow, &merge_admission_job_id(&workflow));
+
+    let mut heavy: Vec<String> = ci_job_ids(&workflow)
+        .into_iter()
+        .filter(|id| ci_job_block(&workflow, id).contains("if: needs.gate.outputs.heavy == 'true'"))
+        .collect();
+    heavy.sort();
+
+    let listed = admission
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("HEAVY_JOBS: "))
+        .expect("the merge admission check should define HEAVY_JOBS");
+    let mut listed: Vec<String> = listed.split_whitespace().map(str::to_string).collect();
+    listed.sort();
+
+    assert_eq!(
+        heavy, listed,
+        "HEAVY_JOBS must name exactly the jobs guarded by the heavy gate"
+    );
+}
+
+#[test]
+fn heavy_jobs_run_for_pushes_to_main_and_merge_groups() {
+    let workflow = ci_workflow().replace("\r\n", "\n");
+    let compute = workflow
+        .split("id: compute")
+        .nth(1)
+        .expect("the gate job should have a compute step")
+        .split("\n  quality:")
+        .next()
+        .expect("the compute step should end before the quality job");
+
+    assert!(
+        workflow.contains("\n  merge_group:"),
+        "ci.yml must trigger on merge_group so a merge queue can be enabled by settings alone"
+    );
+    assert!(
+        compute.contains("merge_group"),
+        "the gate must set heavy=true for merge_group events"
+    );
+    assert!(
+        compute.contains("\"push\"") && compute.contains("refs/heads/main"),
+        "the gate must set heavy=true for pushes to main"
+    );
+}
+
+#[test]
+fn merge_admission_check_runs_even_when_a_need_failed() {
+    let workflow = ci_workflow();
+    let admission = ci_job_block(&workflow, &merge_admission_job_id(&workflow));
+
+    assert!(
+        admission.lines().any(|line| line == "    if: always()"),
+        "the merge admission check must use if: always(), or a failed need would skip it and read as passing"
+    );
+}
+
+/// The `name:` of every `ci.yml` job. A name that embeds a matrix expression
+/// (`Cross build (${{ matrix.target }})`) is cut before the expression, since
+/// docs cannot spell a value that only exists at run time.
+fn ci_job_names(workflow: &str) -> Vec<String> {
+    ci_job_ids(workflow)
+        .iter()
+        .map(|id| {
+            let block = ci_job_block(workflow, id);
+            let name = block
+                .lines()
+                .find_map(|line| line.strip_prefix("    name: "))
+                .unwrap_or_else(|| panic!("the {id} job should have a name:"));
+            name.split(" (${{")
+                .next()
+                .unwrap_or(name)
+                .trim()
+                .to_string()
+        })
+        .collect()
+}
+
+#[test]
+fn docs_ci_documents_every_ci_job() {
+    let docs = fs::read_to_string(repo_path("docs/ci.md"))
+        .expect("docs/ci.md should be readable")
+        .replace("\r\n", "\n");
+
+    for name in ci_job_names(&ci_workflow()) {
+        assert!(
+            docs.contains(&name),
+            "docs/ci.md should list the ci.yml job named {name}"
+        );
+    }
+}
