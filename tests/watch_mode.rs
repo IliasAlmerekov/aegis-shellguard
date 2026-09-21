@@ -131,7 +131,9 @@ fn watch_without_tty_denies_safe_language_degradation_before_recovery() {
     let home = TempDir::new().unwrap();
     let cwd = TempDir::new().unwrap();
     let marker = cwd.path().join("executed");
-    fs::write(cwd.path().join("run.sh"), "printf ran > executed\n").unwrap();
+    // The Bash adapter degrades non-ASCII source (UnsupportedEncoding), which
+    // keeps the analysis degraded now that shell scripts are analyzed (#383).
+    fs::write(cwd.path().join("run.sh"), "printf ran > executed # café\n").unwrap();
 
     let output = aegis_watch_in(
         home.path(),

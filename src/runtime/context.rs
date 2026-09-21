@@ -307,6 +307,7 @@ impl RuntimeContext {
             None,
             &aliases,
             self.runtime_config.language_analysis_budget,
+            Some(&self.scanner),
         )
         .await
         {

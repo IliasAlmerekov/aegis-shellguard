@@ -26,6 +26,7 @@ pub mod orchestrate;
 pub mod queue;
 pub mod recursive;
 pub mod router;
+pub mod shell_scan;
 pub mod source_reader;
 pub mod worker_client;
 

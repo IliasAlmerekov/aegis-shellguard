@@ -19,6 +19,7 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+use aegis_language::SourceLanguage;
 use aegis_language::protocol::Response;
 use aegis_types::{
     AnalysisStatus, Assessment, DegradationReason, LanguageAnalysisResult, SourceOrigin,
@@ -29,7 +30,9 @@ use super::AnalysisCwd;
 use super::mapping::map_adapter_result;
 use super::queue::{AnalysisQueue, QueueBudget, QueueTarget};
 use super::router::{Resolution, RoutedTarget, resolve_for_analysis, route};
+use super::shell_scan::{fold_result, scan_shell_source};
 use super::worker_client::{RequestKind, TargetRequest, TargetResult, Worker, WorkerError};
+use crate::interceptor::scanner::Scanner;
 
 /// The outcome of [`run`]: distinguishes "no routed analysis targets — no
 /// subprocess spawned" from "the worker ran and results were folded in".
@@ -129,7 +132,8 @@ pub async fn run(
 /// convenience for callers with no separate command working directory. Production
 /// callers pass their own [`AnalysisCwd`] to [`run_with_budget_in_cwd`], because an
 /// unresolved command working directory must degrade rather than silently mean `.`
-/// (ADR-022 §6).
+/// (ADR-022 §6). Shell/Bash targets are scanned with the built-in Scanner;
+/// production callers pass their config-aware Scanner instead.
 pub async fn run_with_budget(
     command: &str,
     baseline: &Assessment,
@@ -137,6 +141,11 @@ pub async fn run_with_budget(
     trusted_aliases: &[(&str, &str)],
     budget: OrchestrationBudget,
 ) -> Outcome {
+    let builtin_scanner = crate::interceptor::scanner_for(&[])
+        .inspect_err(|error| {
+            tracing::warn!(%error, "built-in Scanner unavailable; Bash targets degrade");
+        })
+        .ok();
     run_with_budget_in_cwd(
         command,
         AnalysisCwd::Resolved(Path::new(".")),
@@ -144,6 +153,7 @@ pub async fn run_with_budget(
         aegis_path,
         trusted_aliases,
         budget,
+        builtin_scanner.as_deref(),
     )
     .await
 }
@@ -152,6 +162,11 @@ pub async fn run_with_budget(
 ///
 /// Relative script-file and direct-exec targets are resolved against
 /// `command_cwd`; absolute paths and inline sources are unaffected.
+///
+/// `shell_scanner` is applied to the source of every Shell/Bash target (see
+/// [`scan_shell_source`]). With `None`, a Bash target records
+/// [`DegradationReason::GrammarUnavailable`] instead of trusting the Bash
+/// adapter's narrower view of the script.
 pub async fn run_with_budget_in_cwd(
     command: &str,
     command_cwd: AnalysisCwd<'_>,
@@ -159,6 +174,7 @@ pub async fn run_with_budget_in_cwd(
     aegis_path: Option<&str>,
     trusted_aliases: &[(&str, &str)],
     budget: OrchestrationBudget,
+    shell_scanner: Option<&Scanner>,
 ) -> Outcome {
     let session_deadline = Instant::now() + budget.total_timeout;
     let routed = route(command, trusted_aliases);
@@ -275,7 +291,14 @@ pub async fn run_with_budget_in_cwd(
             .into_iter()
             .next()
             .unwrap_or(TargetResult::Failed(WorkerError::Closed));
-        let (analysis, recursive_targets) = map_target_result(result, &target);
+        let (mut analysis, recursive_targets) = map_target_result(result, &target);
+        if target.language == SourceLanguage::Bash {
+            let shell_scan = match shell_scanner {
+                Some(scanner) => scan_shell_source(scanner, &target.source),
+                None => degraded(DegradationReason::GrammarUnavailable),
+            };
+            fold_result(&mut analysis, shell_scan);
+        }
         per_target.push(analysis);
         for recursive in recursive_targets {
             push_with_degradation(&mut queue, recursive, &mut per_target);
