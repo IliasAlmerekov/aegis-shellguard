@@ -1,4 +1,5 @@
 #![deny(missing_docs)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 //! Shell command parsing for Aegis.
 //!

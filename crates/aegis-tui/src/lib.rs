@@ -1,4 +1,5 @@
 //! Crossterm confirmation TUI for Aegis.
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 mod block_screen;
 mod confirm_screen;

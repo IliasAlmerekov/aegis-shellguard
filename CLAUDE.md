@@ -140,8 +140,8 @@ src/
 
 - In library code (`interceptor/`, `snapshot/`, `audit/`, `config/`): use typed errors via `thiserror`. Every error variant must be explicit — no `anyhow` in lib modules.
 - In `main.rs` and CLI glue code: use `anyhow` for easy propagation.
-- Never use `.unwrap()` or `.expect()` in production paths. Use `?` or handle explicitly.
-- `.expect()` is acceptable only in tests and in startup initialization where a panic is the correct behavior (e.g., "config file is malformed on startup").
+- Never use `.unwrap()` or `.expect()` in production paths. Use `?` or handle explicitly. Every lib and bin crate root carries `#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]`; `tests/panic_lint_guard.rs` fails if one lacks it.
+- A startup initialization where a panic is the correct behavior (e.g., a bundled grammar query that fails to compile) marks the call with `#[expect(clippy::expect_used, reason = "...")]` on the smallest item or statement. Use `expect`, not `allow`.
 
 ---
 

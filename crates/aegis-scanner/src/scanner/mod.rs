@@ -197,6 +197,10 @@ impl Scanner {
         keywords.sort_unstable();
         keywords.dedup();
 
+        #[expect(
+            clippy::expect_used,
+            reason = "keywords come from compiled-in patterns, so a build failure is a startup bug"
+        )]
         let ac = AhoCorasick::builder()
             .ascii_case_insensitive(true)
             .build(&keywords)

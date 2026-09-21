@@ -85,15 +85,7 @@ pub async fn run(prepared: &PreparedPlanner, ci_detected: bool) -> i32 {
             }
             Ok(ReadLineResult::Eof) => return 0,
             Ok(ReadLineResult::Oversized) => {
-                if emit_frame(&OutputFrame::Error {
-                    id: None,
-                    exit_code: 4,
-                    message: "frame exceeds 1 MiB limit".to_string(),
-                })
-                .is_err()
-                {
-                    std::process::exit(4);
-                }
+                emit_error_or_exit(None, "frame exceeds 1 MiB limit".to_string());
                 // Not audited — no parseable command. Continue loop.
             }
             Ok(ReadLineResult::Line(line)) => {
@@ -122,15 +114,7 @@ pub async fn run_disabled() -> i32 {
             }
             Ok(ReadLineResult::Eof) => return 0,
             Ok(ReadLineResult::Oversized) => {
-                if emit_frame(&OutputFrame::Error {
-                    id: None,
-                    exit_code: 4,
-                    message: "frame exceeds 1 MiB limit".to_string(),
-                })
-                .is_err()
-                {
-                    std::process::exit(4);
-                }
+                emit_error_or_exit(None, "frame exceeds 1 MiB limit".to_string());
             }
             Ok(ReadLineResult::Line(line)) => {
                 if line.trim().is_empty() {
@@ -149,15 +133,7 @@ async fn process_frame(line: String, prepared: &PreparedPlanner, ci_detected: bo
         Ok(f) => f,
         Err(e) => {
             let msg = format!("invalid JSON: {e}");
-            if emit_frame(&OutputFrame::Error {
-                id: None,
-                exit_code: 4,
-                message: msg,
-            })
-            .is_err()
-            {
-                std::process::exit(4);
-            }
+            emit_error_or_exit(None, msg);
             return;
         }
     };
@@ -166,15 +142,7 @@ async fn process_frame(line: String, prepared: &PreparedPlanner, ci_detected: bo
 
     // ── 2. Validate cmd ───────────────────────────────────────────────────────
     if frame.cmd.trim().is_empty() {
-        if emit_frame(&OutputFrame::Error {
-            id: id.clone(),
-            exit_code: 4,
-            message: "missing or empty cmd".to_string(),
-        })
-        .is_err()
-        {
-            std::process::exit(4);
-        }
+        emit_error_or_exit(id.clone(), "missing or empty cmd".to_string());
         return;
     }
 
@@ -182,15 +150,7 @@ async fn process_frame(line: String, prepared: &PreparedPlanner, ci_detected: bo
     let cwd_state = if let Some(ref cwd_str) = frame.cwd {
         let path = PathBuf::from(cwd_str);
         if !path.is_dir() {
-            if emit_frame(&OutputFrame::Error {
-                id: id.clone(),
-                exit_code: 4,
-                message: "invalid cwd".to_string(),
-            })
-            .is_err()
-            {
-                std::process::exit(4);
-            }
+            emit_error_or_exit(id.clone(), "invalid cwd".to_string());
             return;
         }
         CwdState::Resolved(path)
@@ -225,15 +185,7 @@ async fn process_disabled_frame(line: String) {
         Ok(f) => f,
         Err(e) => {
             let msg = format!("invalid JSON: {e}");
-            if emit_frame(&OutputFrame::Error {
-                id: None,
-                exit_code: 4,
-                message: msg,
-            })
-            .is_err()
-            {
-                std::process::exit(4);
-            }
+            emit_error_or_exit(None, msg);
             return;
         }
     };
@@ -241,15 +193,7 @@ async fn process_disabled_frame(line: String) {
     let id = frame.id.clone();
 
     if frame.cmd.trim().is_empty() {
-        if emit_frame(&OutputFrame::Error {
-            id,
-            exit_code: 4,
-            message: "missing or empty cmd".to_string(),
-        })
-        .is_err()
-        {
-            std::process::exit(4);
-        }
+        emit_error_or_exit(id, "missing or empty cmd".to_string());
         return;
     }
 
@@ -574,15 +518,7 @@ fn append_watch_audit_with_empty_snapshots(
             id: id.clone(),
         },
     ) {
-        if emit_frame(&OutputFrame::Error {
-            id: id.clone(),
-            exit_code: 4,
-            message: format!("audit log write failed: {err}"),
-        })
-        .is_err()
-        {
-            std::process::exit(4);
-        }
+        emit_error_or_exit(id.clone(), format!("audit log write failed: {err}"));
         return false;
     }
     true
@@ -599,15 +535,7 @@ fn resolve_frame_cwd(frame: &InputFrame, id: &Option<String>) -> Result<PathBuf,
     if let Some(ref cwd_str) = frame.cwd {
         let path = PathBuf::from(cwd_str);
         if !path.is_dir() {
-            if emit_frame(&OutputFrame::Error {
-                id: id.clone(),
-                exit_code: 4,
-                message: "invalid cwd".to_string(),
-            })
-            .is_err()
-            {
-                std::process::exit(4);
-            }
+            emit_error_or_exit(id.clone(), "invalid cwd".to_string());
             return Err(());
         }
         return Ok(path);
@@ -656,19 +584,25 @@ async fn execute_and_emit(cmd: &str, cwd: &std::path::Path, id: Option<String>) 
     let (command, _) = match prepare_watch_command(cmd, None).await {
         Ok(prepared) => prepared,
         Err(err) => {
-            if emit_frame(&OutputFrame::Error {
-                id,
-                exit_code: 4,
-                message: format!("failed to prepare child: {err}"),
-            })
-            .is_err()
-            {
-                std::process::exit(4);
-            }
+            emit_error_or_exit(id, format!("failed to prepare child: {err}"));
             return;
         }
     };
     execute_prepared_and_emit(command, cwd, id).await;
+}
+
+/// Emit an `Error` frame with exit code 4. If stdout is gone, nothing can carry
+/// the error to the client, so exit with the same code.
+fn emit_error_or_exit(id: Option<String>, message: String) {
+    if emit_frame(&OutputFrame::Error {
+        id,
+        exit_code: 4,
+        message,
+    })
+    .is_err()
+    {
+        std::process::exit(4);
+    }
 }
 
 pub(super) async fn execute_prepared_and_emit(
@@ -688,21 +622,22 @@ pub(super) async fn execute_prepared_and_emit(
     let mut child = match Command::from(command).spawn() {
         Ok(c) => c,
         Err(e) => {
-            if emit_frame(&OutputFrame::Error {
-                id,
-                exit_code: 4,
-                message: format!("failed to spawn child: {e}"),
-            })
-            .is_err()
-            {
-                std::process::exit(4);
-            }
+            emit_error_or_exit(id, format!("failed to spawn child: {e}"));
             return;
         }
     };
 
-    let child_stdout = child.stdout.take().expect("stdout piped");
-    let child_stderr = child.stderr.take().expect("stderr piped");
+    let (Some(child_stdout), Some(child_stderr)) = (child.stdout.take(), child.stderr.take())
+    else {
+        // Both streams were requested as piped, so this is unreachable in
+        // practice. Fail the request instead of panicking if it ever happens.
+        let message = match child.start_kill() {
+            Ok(()) => "failed to capture child output".to_owned(),
+            Err(e) => format!("failed to capture child output; failed to kill child: {e}"),
+        };
+        emit_error_or_exit(id, message);
+        return;
+    };
 
     let (tx, mut rx) = mpsc::channel::<WatchEvent>(CHANNEL_CAPACITY);
 

@@ -489,11 +489,11 @@ impl<'a> Cursor<'a> {
     }
 
     fn read_u32(&mut self, field: &'static str) -> Result<u32, DecodeError> {
-        if self.buf.len() < 4 {
+        let Some((&bytes, rest)) = self.buf.split_first_chunk::<4>() else {
             return Err(DecodeError::InvalidPayload(field));
-        }
-        let value = u32::from_le_bytes(self.buf[..4].try_into().expect("checked len"));
-        *self = Self::new(&self.buf[4..]);
+        };
+        let value = u32::from_le_bytes(bytes);
+        *self = Self::new(rest);
         Ok(value)
     }
 
