@@ -21,20 +21,76 @@ a version a second time, and when this list disagrees with the file.
 
 ## Current CI Jobs
 
-Current GitHub Actions workflows run these jobs:
+`ci.yml` runs on a pull request, a push to `main`, a `merge_group` event, the
+weekly schedule, and `workflow_dispatch`. The table shows which jobs run for
+each event. A Heavy job is one behind the `heavy` output of the gate job.
 
+| Job | PR into `main` | PR into another branch | Push to `main` | `merge_group` | `schedule` / `workflow_dispatch` |
+| --- | --- | --- | --- | --- | --- |
+| `Determine heavy-job gate` | yes | yes | yes | yes | yes |
+| `Quality (fmt, clippy, test)` | yes | yes | yes | yes | yes |
+| `Landing (test, build)` | yes | yes | yes | yes | yes |
+| `Security (audit, deny)` | yes | yes | yes | yes | yes |
+| `Release build (ubuntu-latest)` | yes | yes | yes | yes | yes |
+| `Release build (macos-26)` (Heavy job) | yes | no | yes | yes | yes |
+| `Cross build` (Heavy job) | yes | no | yes | yes | yes |
+| `Performance baseline (scanner bench)` (Heavy job) | yes | no | yes | yes | yes |
+| `Live installer validation` (Heavy job) | yes | no | yes | yes | yes |
+| `Live snapshot/rollback (Docker + SQLite)` (Heavy job) | yes | no | yes | yes | yes |
+| `Fuzzing (parser, scanner, routing, protocol, adapters)` (Heavy job) | yes | no | yes | yes | yes |
+| `Merge admission (all CI jobs)` | yes | yes | yes | yes | yes |
+
+What each job runs:
+
+- `Determine heavy-job gate`: loads the pinned versions and runner labels, and computes `heavy`
 - `Quality (fmt, clippy, test)`: formatting, clippy, and tests
+- `Landing (test, build)`: type check, tests, and static export build of the `landing/` npm workspace
+- `Security (audit, deny)`: `cargo-audit` and `cargo-deny`
+- `Release build (ubuntu-latest)` and `Release build (macos-26)`: `cargo build --release` on each runner
+- `Cross build`: the four-target cross matrix builds the shipping release binary so qualified grammars are linked into every release artifact
+- `Performance baseline (scanner bench)`: `scanner_bench` plus benchmark policy evaluation
 - `Live installer validation`: downloads the latest GitHub Release asset for the host platform, verifies the SHA-256 sidecar, installs to a temporary `BINDIR`, and asserts `aegis --version` succeeds. Runs on `ubuntu-latest` and `macos-26`; gated in the test suite by `AEGIS_TEST_LIVE_INSTALL=1` so default `cargo test` stays network-free.
 - `Live snapshot/rollback (Docker + SQLite)`: runs on `ubuntu-latest`, pulls the real `alpine` Docker fixture image, installs the real `sqlite3` CLI, then runs the gated Docker and SQLite snapshot/rollback integration tests with `AEGIS_DOCKER_TESTS=1` and `AEGIS_SQLITE_SNAPSHOT_TESTS=1`.
-- `Security (audit, deny)`: `cargo-audit` and `cargo-deny`
-- `Release build`: release builds on Ubuntu and macOS; the four-target cross
-  matrix builds the shipping release binary so qualified grammars are linked
-  into every release artifact
-- `Performance baseline (scanner bench)`: `scanner_bench` plus benchmark policy evaluation
 - `Fuzzing (parser, scanner, routing, protocol, adapters)`: corpus-backed
   parser, scanner, heredoc, router, language-protocol, Python, JavaScript,
   TypeScript, and Bash fuzz targets with bounded `-runs`, on the pinned
   `FUZZ_NIGHTLY_TOOLCHAIN` nightly rather than a floating one
+- `Merge admission (all CI jobs)`: the Merge admission check, described below
+
+### How `heavy` is computed
+
+The gate job sets `heavy=true` for a pull request whose base is `main`, a push
+to `main`, a `merge_group` event, the weekly schedule, and `workflow_dispatch`.
+It sets `heavy=false` for a pull request into any other branch. Heavy jobs
+carry `if: needs.gate.outputs.heavy == 'true'`, so they are skipped when
+`heavy` is `false`.
+
+### Merge admission check
+
+The Merge admission check is the job `Merge admission (all CI jobs)`. It needs
+every other job in `ci.yml` and runs with `if: always()`, so a failed job cannot
+skip it. It fails when any job failed or was cancelled. When `heavy` is `true`,
+it also fails on any job that did not succeed. When `heavy` is `false`, a Heavy
+job may be skipped, and every other job must succeed. An empty `heavy` value
+means the gate job itself failed, and the check fails.
+
+The job is the only required status context on `main`, with "require branches
+to be up to date" on. Its `name:` must stay unchanged, because branch
+protection requires it by name. A test fails when a job is added to `ci.yml`
+without being listed in its `needs:`.
+
+### Concurrency
+
+On `main`, the concurrency group is keyed by the commit SHA and runs are never
+cancelled, so every commit that lands on `main` gets its own full run. GitHub
+cancels a pending run when a newer run joins the same group, and a SHA-keyed
+group avoids that. On every other ref, the group is keyed by the ref and a
+newer run cancels the older one.
+
+### Release workflow jobs
+
+`release.yml` runs these jobs:
+
 - `Release / Tag admission (commit on main, CHANGELOG section)`,
   `Release / Tag admission (fmt, clippy, test)`,
   `Release / Tag admission (audit, deny)`: the Tag admission check, described
