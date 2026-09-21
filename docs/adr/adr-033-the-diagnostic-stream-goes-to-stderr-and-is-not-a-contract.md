@@ -83,7 +83,7 @@ nothing to do (for example, `docker ps` failing because no daemon is running)
 is not a coverage degradation and stays `info`; that call site was previously
 `warn` and is demoted here. The first rule is guarded by
 `tracing_fields_never_carry_raw_command_or_env_value` in
-`tests/architecture_boundaries.rs`, modeled on the existing
+`tests/architecture_source_rules.rs`, modeled on the existing
 `decision_engine_is_pure_no_io` source-grep test.
 
 `aegis_snapshot::SNAPSHOT_FAILED_CONTINUING` names the "snapshot failed,

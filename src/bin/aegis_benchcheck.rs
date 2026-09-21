@@ -60,7 +60,7 @@ struct BenchmarkReport {
 fn main() -> Result<()> {
     let args = Args::parse();
     let policy = load_policy(&args.baseline)?;
-    let reports = evaluate_policy(&policy, &args.criterion_root)?;
+    let reports = evaluate_benchmarks(&policy, &args.criterion_root)?;
 
     for report in &reports {
         println!("{}", report.render_line());
@@ -107,7 +107,7 @@ fn load_policy(path: &Path) -> Result<BenchmarkPolicyFile> {
     })
 }
 
-fn evaluate_policy(
+fn evaluate_benchmarks(
     policy: &BenchmarkPolicyFile,
     criterion_root: &Path,
 ) -> Result<Vec<BenchmarkReport>> {

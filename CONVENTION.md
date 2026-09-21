@@ -61,7 +61,7 @@ These rules are non-negotiable.
 - A `tracing` field must never carry a raw command string or an environment variable value.
   The Diagnostic stream is operator-facing stderr, not the append-only Audit log, and it must
   not become a second place secrets or command text leak to. Guarded by a source-grep test
-  modeled on `decision_engine_is_pure_no_io` (`tests/architecture_boundaries.rs`); the guard
+  modeled on `decision_engine_is_pure_no_io` (`tests/architecture_source_rules.rs`); the guard
   cannot see a path that arrives through a `Display` impl on an error type such as
   `SnapshotError`, so it is a floor, not a proof.
 - A `tracing` event's level follows one rule, not a fixed list: it is `warn` (or higher) if,
