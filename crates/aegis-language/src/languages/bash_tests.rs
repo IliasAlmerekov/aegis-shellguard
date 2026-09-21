@@ -450,6 +450,30 @@ fn dot_builtin_emits_code_execution_without_inline_payload() {
     assert!(op.payload.is_none());
 }
 
+// --- Execution sinks: a program named by path (issue #383) ---------------
+
+#[test]
+fn relative_path_program_emits_dynamic_code_execution() {
+    // `./inner.sh` runs a file whose contents are not in this source, the
+    // same unknown payload as `source inner.sh`.
+    let op = one_op("./inner.sh --flag");
+    assert_eq!(op.kind, OperationKind::CodeExecution);
+    assert_eq!(op.certainty, OperandCertainty::Dynamic);
+    assert!(op.payload.is_none());
+}
+
+#[test]
+fn absolute_path_program_emits_dynamic_code_execution() {
+    let op = one_op("/opt/tools/deploy");
+    assert_eq!(op.kind, OperationKind::CodeExecution);
+    assert_eq!(op.certainty, OperandCertainty::Dynamic);
+}
+
+#[test]
+fn plain_program_name_is_not_a_path_execution() {
+    no_ops("make build");
+}
+
 // --- Negatives ----------------------------------------------------------
 
 #[test]

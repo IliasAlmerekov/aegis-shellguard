@@ -11,6 +11,8 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Fixed: Language-aware analysis denied every Shell/Bash target in non-interactive mode, so a one-line `./lint.sh`, `sh lint.sh`, or `bash -c "echo 1"` was refused while the same Python script passed. The Bash adapter existed but the worker never called it, answered `UnsupportedLanguage` instead, and the target degraded as `grammar_unavailable`. The worker now runs the adapter. Each Bash target also goes through the same shell Scanner as a typed command, so `git push --force` inside `deploy.sh` gets `GIT-003` just as it does at the prompt. The Match reports a fixed label instead of the script text (ADR-022 §10). A nested effect-opaque call such as `python3 other.py` degrades the analysis as `dynamic_source`, and the adapter treats a program named by path such as `./inner.sh` as code execution like `source`. Both still prompt. (#383)
+
 ## [0.6.7] — 2026-09-18
 
 - Fixed: A heredoc handed straight to `cat`/`tee` with its output redirected to a file (`cat >> notes.txt <<'EOF' ... EOF`) is a pure data write — the body never runs and never displays — but a dangerous-looking substring inside it still tripped `FS-001` and denied the write outright. The scanner now blanks that body before pattern matching, while a heredoc routed to an interpreter, or redirected only through descriptor duplication (`2>&1`, `>&2`), still gets scanned in full. (#357, #370)

@@ -143,11 +143,11 @@ fn handle_request(request: &Request) -> Response {
 /// Run the language adapter for an [`Request::Analyze`] and frame its result
 /// (ADR-022 §2: adapters run in the self-spawned worker).
 ///
-/// Python (Iteration 6), JavaScript, and TypeScript (Iteration 7) ship adapters;
-/// Bash does not yet, so it yields [`Response::UnsupportedLanguage`], which the
-/// parent maps to a degradation reason. The parent owns the UTF-8 encoding
-/// contract (ADR-022 §7): bytes that are not valid UTF-8 cannot be handed to the
-/// adapter (it takes a `&str`), so the worker reports an [`Response::Analyzed`]
+/// Every foundation language ships an adapter: Python (Iteration 6), JavaScript
+/// and TypeScript (Iteration 7), and Shell/Bash (Iteration 8). The parent owns
+/// the UTF-8 encoding contract (ADR-022 §7): bytes that are not valid UTF-8
+/// cannot be handed to the adapter (it takes a `&str`), so the worker reports an
+/// [`Response::Analyzed`]
 /// result with one parse error and no operations — the parent maps
 /// `parse_errors` to a degradation reason rather than treating the target as
 /// clean.
@@ -156,10 +156,7 @@ fn analyze_source(language: &SourceLanguage, source: &[u8]) -> Response {
         SourceLanguage::Python => crate::languages::python::analyze,
         SourceLanguage::JavaScript => crate::languages::javascript::analyze,
         SourceLanguage::TypeScript => crate::languages::typescript::analyze,
-        // No adapter is wired for Bash yet (L1 Shell/Bash is Iteration 8);
-        // report the language as unsupported so the parent degrades rather than
-        // silently treating the target as a clean parse.
-        SourceLanguage::Bash => return Response::UnsupportedLanguage,
+        SourceLanguage::Bash => crate::languages::bash::analyze,
     };
     let source_str = match std::str::from_utf8(source) {
         Ok(s) => s,
@@ -575,15 +572,15 @@ mod dispatch_tests {
     }
 
     #[test]
-    fn run_returns_unsupported_language_for_a_language_without_an_adapter() {
-        // Python, JavaScript, and TypeScript ship adapters; Bash does not yet
-        // (L1 Shell/Bash is Iteration 8), so an Analyze request for Bash must
-        // yield `UnsupportedLanguage` rather than a fallback parse or a panic.
-        // The parent maps this to a degradation reason (ADR-022 §9 honest
-        // degradation). TypeScript gained an adapter in Iteration 7 Slice 2, so
-        // it no longer exercises this path; Bash is the last unsupported
-        // foundation grammar.
-        let requests = encode_requests(&[(22, analyze_request(SourceLanguage::Bash, b"x = 1"))]);
+    fn run_analyzes_bash_source_and_returns_an_analyzed_response() {
+        // Iteration 8 wires the Shell/Bash adapter into the worker (issue #383),
+        // so an Analyze request for a destructive shell body must dispatch to
+        // `bash::analyze` and return an `Analyzed` response instead of
+        // `UnsupportedLanguage`. The exact operation shape is the adapter's own
+        // contract; this test pins only that the worker dispatched to the
+        // adapter and framed its result.
+        let requests =
+            encode_requests(&[(22, analyze_request(SourceLanguage::Bash, b"rm -rf build"))]);
         let reader = std::io::Cursor::new(requests);
         let mut output = Vec::new();
 
@@ -592,11 +589,20 @@ mod dispatch_tests {
 
         let responses = decode_responses(&output);
         assert_eq!(responses.len(), 1);
-        assert_eq!(
-            responses[0].message,
-            Response::UnsupportedLanguage,
-            "a language with no adapter must yield UnsupportedLanguage"
-        );
+        assert_eq!(responses[0].request_id, 22);
+        match &responses[0].message {
+            Response::Analyzed { result } => {
+                assert_eq!(
+                    result.parse_errors, 0,
+                    "valid shell source must analyze with a clean parse"
+                );
+                assert!(
+                    !result.operations.is_empty(),
+                    "a destructive command must surface at least one detected operation"
+                );
+            }
+            other => panic!("Bash Analyze must yield Analyzed, got {other:?}"),
+        }
     }
 
     #[test]

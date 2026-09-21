@@ -104,6 +104,7 @@ async fn analyzed_script_source_is_absent_from_every_public_output_surface() {
             total_timeout: Duration::from_secs(2),
             ..OrchestrationBudget::L1_DEFAULT
         },
+        Some(&scanner),
     )
     .await
     {

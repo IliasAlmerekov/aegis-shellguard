@@ -22,8 +22,9 @@
 //! Slice 1 scope: fully-qualified destructive commands (`rm`, `rmdir`,
 //! `unlink`, `chmod`, `chown`, `chgrp`), truncating/append file redirects
 //! (`>`, `>>`, `&>`, `&>>`, `>|`), the `tee` write command, and execution sinks
-//! (`eval`, `source`/`.`, `bash`/`sh`/… `-c`, `python* -c`, `node -e`) with
-//! literal or dynamic operand certainty. Bounded symbol resolution, the
+//! (`eval`, `source`/`.`, `bash`/`sh`/… `-c`, `python* -c`, `node -e`, and any
+//! program named by path, such as `./other.sh`) with literal or dynamic operand
+//! certainty. Bounded symbol resolution, the
 //! `exec`/`command` builtins, multi-argument `eval` joining, `--` option
 //! termination, command prefixes (`sudo`/`nohup`/`nice`/`time`/`command` —
 //! already stripped by `router::source_targets` for the outer command but not
@@ -192,6 +193,9 @@ enum CommandClass {
     /// `python* -c` / `node -e` — an execution sink whose payload is the
     /// interpreter's own language (cross-language, ADR-022 §7).
     InterpExec(SourceLanguage),
+    /// `./other.sh` / `/abs/tool` — a program named by path runs a file whose
+    /// contents are not in the source, like `source` (issue #383).
+    PathExec,
 }
 
 /// Classify a command name into a [`CommandClass`], or `None` when the command
@@ -210,6 +214,7 @@ fn classify_command(name: &str) -> Option<CommandClass> {
         "bash" | "sh" | "dash" | "ash" | "zsh" | "ksh" | "mksh" => CommandClass::ShellExec,
         _ if is_python(name) => CommandClass::InterpExec(SourceLanguage::Python),
         _ if is_node(name) => CommandClass::InterpExec(SourceLanguage::JavaScript),
+        _ if name.contains('/') => CommandClass::PathExec,
         _ => return None,
     })
 }
@@ -307,7 +312,7 @@ fn interpret_command(name_node: Node, cmd_node: Node, bytes: &[u8]) -> Option<De
                 .and_then(|&n| literal_payload(n, bytes, SourceLanguage::Bash));
             Some(exec_op(payload, span))
         }
-        CommandClass::Source => Some(DetectedOperation {
+        CommandClass::Source | CommandClass::PathExec => Some(DetectedOperation {
             kind: OperationKind::CodeExecution,
             modifiers: OperationModifiers::default(),
             // The file's contents are not in the source, so no inline nested

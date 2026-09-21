@@ -93,16 +93,13 @@ async fn run_analyzes_inline_python_and_merges_a_recursive_delete_match() {
 }
 
 #[tokio::test]
-async fn run_records_grammar_unavailable_for_an_unsupported_language() {
-    // A `bash -c` inline body routes to Bash, which has no adapter yet (L1
-    // Shell/Bash is Iteration 8), so the worker returns
-    // Response::UnsupportedLanguage. The orchestration must record
-    // GrammarUnavailable degradation (ADR-022 §4) — never claim the target was
-    // analyzed safely. (JavaScript and TypeScript gained adapters in Iteration 7,
-    // so `node -e` and a future TS inline runner no longer exercise this path.)
+async fn run_analyzes_a_safe_inline_bash_body_without_degradation() {
+    // A `bash -c` inline body routes to Bash. Iteration 8 wires the Bash
+    // adapter into the worker (issue #383), so a body with no destructive
+    // command analyzes cleanly instead of degrading as GrammarUnavailable.
     let baseline = safe_baseline();
     let outcome = run(
-        "bash -c \"x\"",
+        "bash -c \"echo 1\"",
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
@@ -113,22 +110,14 @@ async fn run_records_grammar_unavailable_for_an_unsupported_language() {
         Outcome::Analyzed { assessment, .. } => assessment,
         other => panic!("a bash inline body must spawn the worker: {other:?}"),
     };
-    let summary = assessment
-        .analysis
-        .as_ref()
-        .expect("analysis must be set even when the language is unsupported");
+    let summary = assessment.analysis.as_ref().expect("analysis must be set");
     assert_eq!(
         summary.status,
-        AnalysisStatus::Degraded,
-        "an unsupported language must degrade, not complete"
-    );
-    assert!(
-        summary
-            .degradation_reasons
-            .contains(&DegradationReason::GrammarUnavailable),
-        "must record GrammarUnavailable: {:?}",
+        AnalysisStatus::NotApplicable,
+        "a safe shell body must neither degrade nor produce Matches: {:?}",
         summary.degradation_reasons
     );
+    assert_eq!(assessment.risk, RiskLevel::Safe);
 }
 
 #[tokio::test]
@@ -182,16 +171,15 @@ async fn run_analyzes_inline_javascript_and_merges_a_filesystem_delete_match() {
 }
 
 #[tokio::test]
-async fn run_analyzes_a_javascript_exec_payload_and_degrades_the_recursive_bash_target() {
+async fn run_analyzes_a_javascript_exec_payload_and_its_recursive_bash_target() {
     // `node -e "child_process.exec('rm -rf /tmp/x')"` — the inline body is a
     // JavaScript `child_process.exec` of a literal shell string. The top-level
     // sink is CodeExecution (LANG-EXEC at Danger); its literal payload is Bash
-    // shell source, enqueued as a recursive target. Bash has no adapter yet (L1
-    // Shell/Bash is Iteration 8), so the recursive target degrades as
-    // GrammarUnavailable (ADR-022 §9 honest degradation). Slice C drains the
-    // recursive queue, so the LANG-EXEC match must surface, target_count must
-    // cover the top-level AND the recursive target (>= 2), and the overall
-    // status must be Degraded — never claiming the recursive target was clean.
+    // shell source, enqueued as a recursive target. The Bash adapter (Iteration
+    // 8, issue #383) analyzes that target, so its recursive delete surfaces as
+    // LANG-FS-DEL-RF, the shell Scanner pass adds FS-001, target_count covers
+    // the top-level AND the recursive target (>= 2), and no GrammarUnavailable
+    // degradation is recorded.
     let baseline = safe_baseline();
     let outcome = run(
         "node -e \"child_process.exec('rm -rf /tmp/x')\"",
@@ -224,22 +212,24 @@ async fn run_analyzes_a_javascript_exec_payload_and_degrades_the_recursive_bash_
         "top-level child_process.exec must match LANG-EXEC: {ids:?}"
     );
     assert!(
+        ids.contains(&"LANG-FS-DEL-RF"),
+        "the Bash adapter must match the recursive `rm -rf` as LANG-FS-DEL-RF: {ids:?}"
+    );
+    assert!(
+        ids.contains(&"FS-001"),
+        "the shell Scanner pass must match the recursive `rm -rf` as FS-001: {ids:?}"
+    );
+    assert!(
         assessment.risk >= RiskLevel::Danger,
         "risk must lift to Danger: {:?}",
         assessment.risk
     );
     let summary = assessment.analysis.as_ref().expect("analysis must be set");
-    assert_eq!(
-        summary.status,
-        AnalysisStatus::Degraded,
-        "the recursive Bash target must degrade the overall status: {:?}",
-        summary.status
-    );
     assert!(
-        summary
+        !summary
             .degradation_reasons
             .contains(&DegradationReason::GrammarUnavailable),
-        "must record GrammarUnavailable for the unsupported recursive Bash target: {:?}",
+        "the recursive Bash target must not degrade as GrammarUnavailable: {:?}",
         summary.degradation_reasons
     );
 }
@@ -395,18 +385,17 @@ async fn run_analyzes_inline_open_write_and_lifts_to_warn() {
 }
 
 #[tokio::test]
-async fn run_cross_language_shell_payload_degrades_as_grammar_unavailable() {
-    // `python3 -c "os.system('rm -rf /tmp/x')"` — a Python execution sink whose
-    // literal payload is shell source. The top-level emits LANG-EXEC (Danger)
-    // and enqueues a recursive Bash target (ADR-022 §7 cross-language). The
-    // Bash adapter is not qualified in L1 (Iteration 8), so the worker returns
-    // UnsupportedLanguage for the recursive target and the orchestration
-    // records GrammarUnavailable degradation — never claiming the shell
-    // payload was analyzed safely (ADR-022 §9). target_count covers the
-    // top-level Python target AND the recursive Bash target (>= 2).
+async fn run_scans_a_cross_language_shell_payload_like_a_typed_command() {
+    // `python3 -c "os.system('git push --force origin main')"` is a Python
+    // execution sink whose literal payload is shell source. The top-level emits
+    // LANG-EXEC (Danger) and enqueues a recursive Bash target (ADR-022 §7). The
+    // Bash adapter models no git operation, so the GIT-003 Match can only come
+    // from the shell Scanner pass over the Bash target (issue #383): a command
+    // inside analyzed shell source gets the Match it gets when typed. The
+    // baseline is empty, so the outer command scan cannot supply it.
     let baseline = safe_baseline();
     let outcome = run(
-        "python3 -c \"os.system('rm -rf /tmp/x')\"",
+        "python3 -c \"os.system('git push --force origin main')\"",
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
@@ -426,34 +415,25 @@ async fn run_cross_language_shell_payload_degrades_as_grammar_unavailable() {
         }
         other => panic!("inline python os.system must spawn the worker: {other:?}"),
     };
+    let ids: Vec<&str> = assessment
+        .matched
+        .iter()
+        .map(|m| m.pattern.id.as_ref())
+        .collect();
     assert!(
-        assessment
-            .matched
-            .iter()
-            .any(|m| m.pattern.id.as_ref() == "LANG-EXEC"),
-        "top-level os.system must match LANG-EXEC: {:?}",
-        assessment
-            .matched
-            .iter()
-            .map(|m| m.pattern.id.as_ref().to_string())
-            .collect::<Vec<_>>()
+        ids.contains(&"LANG-EXEC"),
+        "top-level os.system must match LANG-EXEC: {ids:?}"
     );
     assert!(
-        assessment.risk >= RiskLevel::Danger,
-        "risk must lift to Danger: {:?}",
-        assessment.risk
+        ids.contains(&"GIT-003"),
+        "the recursive shell payload must be scanned for GIT-003: {ids:?}"
     );
     let summary = assessment.analysis.as_ref().expect("analysis must be set");
-    assert_eq!(
-        summary.status,
-        AnalysisStatus::Degraded,
-        "the unsupported Bash payload must degrade"
-    );
     assert!(
-        summary
+        !summary
             .degradation_reasons
             .contains(&DegradationReason::GrammarUnavailable),
-        "must record GrammarUnavailable for the recursive Bash target: {:?}",
+        "the recursive Bash target must not degrade as GrammarUnavailable: {:?}",
         summary.degradation_reasons
     );
 }
@@ -571,8 +551,8 @@ async fn run_analyzes_javascript_exec_and_surfaces_the_recursive_javascript_targ
     // target is JavaScript — which IS supported — so BOTH matches must surface,
     // `target_count` must cover the top-level AND the recursive target (>= 2),
     // and the overall status must be Complete with NO degradation. This pins
-    // the JS→JS recursion contract, which no prior test covered (the existing
-    // JS exec test recurses into Bash, which degrades as GrammarUnavailable).
+    // the JS→JS recursion contract; the JS exec test above recurses into Bash
+    // instead, so it does not cover a JavaScript recursive target.
     //
     // The inner operand `x` is a bare identifier (variable), so the recursive
     // target is a FilesystemDelete with `Dynamic` certainty — a non-execution

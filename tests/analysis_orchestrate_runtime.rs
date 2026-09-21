@@ -59,6 +59,7 @@ async fn run_resolves_relative_script_file_against_command_cwd() {
             total_timeout: Duration::from_secs(2),
             ..OrchestrationBudget::L1_DEFAULT
         },
+        None,
     )
     .await;
     let assessment = match outcome {
@@ -93,6 +94,7 @@ async fn run_resolves_relative_direct_exec_against_command_cwd() {
             total_timeout: Duration::from_secs(2),
             ..OrchestrationBudget::L1_DEFAULT
         },
+        None,
     )
     .await;
     let assessment = match outcome {
@@ -122,6 +124,7 @@ async fn run_degrades_relative_script_when_command_cwd_is_unavailable() {
             total_timeout: Duration::from_secs(2),
             ..OrchestrationBudget::L1_DEFAULT
         },
+        None,
     )
     .await;
     let assessment = match outcome {
@@ -154,6 +157,7 @@ async fn run_degrades_relative_direct_exec_after_dynamic_cd() {
             total_timeout: Duration::from_secs(2),
             ..OrchestrationBudget::L1_DEFAULT
         },
+        None,
     )
     .await;
     let assessment = match outcome {
