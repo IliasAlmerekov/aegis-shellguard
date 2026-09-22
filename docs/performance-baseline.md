@@ -298,9 +298,12 @@ value pinned within a few percent of one capture.
 
 ### Startup cost (`benches/startup_bench.rs`)
 
-Three rows split the `Startup cost` from the `Assessment budget` (ADR-034):
+Four rows split the `Startup cost` from the `Assessment budget` (ADR-034):
 one process invocation is dominated by construction, not by classification, so
-a gate on `assess()` alone never saw most of what an agent actually pays.
+a gate on `assess()` alone never saw most of what an agent actually pays. The
+first three are original to ADR-034; the fourth,
+`runtime_context_custom_pattern_construction`, is documented separately below
+(issue #397).
 
 - `scanner_construction` — `PatternSet::load()` plus `Scanner::try_new()`,
   timed on every iteration since the process-wide `BUILTIN_SCANNER` static
