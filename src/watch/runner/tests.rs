@@ -6,9 +6,7 @@ use serde_json::Value;
 use tempfile::TempDir;
 
 use super::{run_watch_plan_with_prompts, watch_execution_cwd};
-use crate::planning::{
-    CwdState, PlanningOutcome, PlanningRequest, PreparedPlanner, prepare_and_plan_async,
-};
+use crate::planning::{CwdState, PlanningOutcome, PlanningRequest, PreparedPlanner};
 use crate::runtime::RuntimeContext;
 use crate::watch::protocol::InputFrame;
 use aegis_config::AegisConfig;
@@ -149,16 +147,14 @@ async fn effect_opaque_plan(
 ) -> (InputFrame, crate::planning::InterceptionPlan) {
     let command = "sh ./run.sh";
     let cwd = workspace.path().to_string_lossy().into_owned();
-    let outcome = prepare_and_plan_async(
-        prepared,
-        PlanningRequest {
+    let outcome = prepared
+        .plan_async(PlanningRequest {
             command,
             cwd_state: CwdState::Resolved(workspace.path().to_path_buf()),
             transport: ExecutionTransport::Watch,
             ci_detected: false,
-        },
-    )
-    .await;
+        })
+        .await;
     let PlanningOutcome::Planned(plan) = outcome else {
         panic!("expected an interception plan");
     };

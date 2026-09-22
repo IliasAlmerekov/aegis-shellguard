@@ -3,10 +3,7 @@
 use tokio::runtime::Handle;
 
 use crate::error::AegisError;
-use crate::planning::core::{PlanningRequest, plan_with_context, plan_with_context_async};
-use crate::planning::types::{
-    FailClosedAction, PlanningOutcome, SetupFailureKind, SetupFailurePlan,
-};
+use crate::planning::types::SetupFailurePlan;
 use crate::runtime::RuntimeContext;
 use aegis_policy::ExecutionTransport;
 
@@ -30,34 +27,6 @@ pub fn prepare_planner(verbose: bool, handle: Handle) -> PreparedPlanner {
     }
 }
 
-/// Consume one planning request using an already prepared planner state.
-pub fn prepare_and_plan(
-    prepared: &PreparedPlanner,
-    request: PlanningRequest<'_>,
-) -> PlanningOutcome {
-    match prepared {
-        PreparedPlanner::Ready(context) => plan_with_context(context, request),
-        PreparedPlanner::SetupFailure(plan) => {
-            let _ = request;
-            PlanningOutcome::SetupFailure(plan.clone())
-        }
-    }
-}
-
-/// Async variant of `prepare_and_plan` for callers inside an async runtime.
-pub async fn prepare_and_plan_async(
-    prepared: &PreparedPlanner,
-    request: PlanningRequest<'_>,
-) -> PlanningOutcome {
-    match prepared {
-        PreparedPlanner::Ready(context) => plan_with_context_async(context, request).await,
-        PreparedPlanner::SetupFailure(plan) => {
-            let _ = request;
-            PlanningOutcome::SetupFailure(plan.clone())
-        }
-    }
-}
-
 /// Map a runtime setup failure into a typed fail-closed setup plan.
 pub fn setup_failure_from_runtime_error(
     err: &AegisError,
@@ -68,36 +37,21 @@ pub fn setup_failure_from_runtime_error(
 
     let is_config_fault = err.is_config_fault();
 
-    let (kind, user_message) = if is_config_fault {
-        (
-            SetupFailureKind::InvalidConfig,
-            format!("error: failed to load config: {err}"),
-        )
+    let user_message = if is_config_fault {
+        format!("error: failed to load config: {err}")
     } else if let AegisError::Audit(aegis_audit::error::AuditError::Parse { path, line, .. }) = err
     {
-        (
-            SetupFailureKind::CorruptAuditLog,
-            match line {
-                Some(number) => {
-                    format!("error: audit log '{path}' is corrupted at line {number}: {err}")
-                }
-                None => format!("error: audit log '{path}' is corrupted: {err}"),
-            },
-        )
+        match line {
+            Some(number) => {
+                format!("error: audit log '{path}' is corrupted at line {number}: {err}")
+            }
+            None => format!("error: audit log '{path}' is corrupted: {err}"),
+        }
     } else {
-        (
-            SetupFailureKind::OtherFailClosed,
-            format!("error: failed to initialize runtime: {err}"),
-        )
+        format!("error: failed to initialize runtime: {err}")
     };
 
-    SetupFailurePlan::new(
-        kind,
-        FailClosedAction::InternalError,
-        user_message,
-        None,
-        is_config_fault,
-    )
+    SetupFailurePlan::new(user_message, is_config_fault)
 }
 
 #[cfg(test)]
@@ -117,20 +71,12 @@ mod tests {
             aegis_policy::ExecutionTransport::Shell,
         );
 
-        assert_eq!(
-            plan.kind(),
-            crate::planning::SetupFailureKind::InvalidConfig
-        );
-        assert_eq!(
-            plan.fail_closed_action(),
-            crate::planning::FailClosedAction::InternalError
-        );
         assert!(plan.user_message().contains("failed to load config"));
         assert!(plan.is_config_fault());
     }
 
     #[test]
-    fn corrupted_audit_log_becomes_a_distinct_setup_failure_kind() {
+    fn corrupted_audit_log_becomes_a_distinct_user_message() {
         let source = serde_json::from_str::<serde_json::Value>("not json").unwrap_err();
         let err = AegisError::Audit(aegis_audit::error::AuditError::Parse {
             path: "/home/user/.aegis/audit.jsonl".to_string(),
@@ -143,10 +89,8 @@ mod tests {
             aegis_policy::ExecutionTransport::Shell,
         );
 
-        assert_eq!(
-            plan.kind(),
-            crate::planning::SetupFailureKind::CorruptAuditLog
-        );
+        assert!(plan.user_message().contains("audit log"));
+        assert!(plan.user_message().contains("corrupted"));
         assert!(!plan.is_config_fault());
     }
 
@@ -159,24 +103,18 @@ mod tests {
                 aegis_policy::ExecutionTransport::Shell,
             ));
 
-        let first = super::prepare_and_plan(
-            &prepared,
-            crate::planning::PlanningRequest {
-                command: "echo one",
-                cwd_state: crate::planning::CwdState::Resolved(std::path::PathBuf::from(".")),
-                transport: aegis_policy::ExecutionTransport::Shell,
-                ci_detected: false,
-            },
-        );
-        let second = super::prepare_and_plan(
-            &prepared,
-            crate::planning::PlanningRequest {
-                command: "echo two",
-                cwd_state: crate::planning::CwdState::Resolved(std::path::PathBuf::from(".")),
-                transport: aegis_policy::ExecutionTransport::Shell,
-                ci_detected: false,
-            },
-        );
+        let first = prepared.plan(crate::planning::PlanningRequest {
+            command: "echo one",
+            cwd_state: crate::planning::CwdState::Resolved(std::path::PathBuf::from(".")),
+            transport: aegis_policy::ExecutionTransport::Shell,
+            ci_detected: false,
+        });
+        let second = prepared.plan(crate::planning::PlanningRequest {
+            command: "echo two",
+            cwd_state: crate::planning::CwdState::Resolved(std::path::PathBuf::from(".")),
+            transport: aegis_policy::ExecutionTransport::Shell,
+            ci_detected: false,
+        });
 
         assert!(matches!(
             first,

@@ -3,8 +3,7 @@ use std::env;
 use tokio::runtime::Handle;
 
 use aegis::planning::{
-    CwdState, InterceptionPlan, PlanningOutcome, PreparedPlanner, SetupFailurePlan,
-    prepare_and_plan, prepare_planner,
+    CwdState, InterceptionPlan, PlanningOutcome, PreparedPlanner, SetupFailurePlan, prepare_planner,
 };
 use aegis::runtime_gate::is_ci_environment;
 use aegis::toggle;
@@ -50,15 +49,12 @@ pub(crate) fn run_shell_wrapper(
         CommandOutputFormat::Text => ExecutionTransport::Shell,
         CommandOutputFormat::Json => ExecutionTransport::Evaluation,
     };
-    let outcome = prepare_and_plan(
-        &prepared,
-        aegis::planning::PlanningRequest {
-            command: cmd,
-            cwd_state,
-            transport,
-            ci_detected: in_ci,
-        },
-    );
+    let outcome = prepared.plan(aegis::planning::PlanningRequest {
+        command: cmd,
+        cwd_state,
+        transport,
+        ci_detected: in_ci,
+    });
 
     if verbosity.is_verbose() && matches!(output, CommandOutputFormat::Text) {
         if in_ci && let PreparedPlanner::Ready(context) = &prepared {

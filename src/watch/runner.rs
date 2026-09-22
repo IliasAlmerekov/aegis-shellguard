@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 
 use crate::planning::{
     CwdState, ExecutionDisposition, InterceptionPlan, PlanningOutcome, PreparedPlanner,
-    SetupFailurePlan, prepare_and_plan_async,
+    SetupFailurePlan,
 };
 use crate::runtime::{RecoveryStatus, RuntimeContext, WatchAuditContext, recovery_status};
 use aegis_config::amend::{
@@ -160,16 +160,14 @@ async fn process_frame(line: String, prepared: &PreparedPlanner, ci_detected: bo
             Err(_) => CwdState::Unavailable,
         }
     };
-    let outcome = prepare_and_plan_async(
-        prepared,
-        crate::planning::PlanningRequest {
+    let outcome = prepared
+        .plan_async(crate::planning::PlanningRequest {
             command: &frame.cmd,
             cwd_state,
             transport: ExecutionTransport::Watch,
             ci_detected,
-        },
-    )
-    .await;
+        })
+        .await;
 
     match outcome {
         PlanningOutcome::SetupFailure(plan) => {
