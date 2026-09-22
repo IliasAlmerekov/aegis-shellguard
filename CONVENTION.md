@@ -176,6 +176,8 @@ Approved dependency categories currently include:
 - `tracing`
 - `tracing-subscriber`
 - `criterion`
+- `semver` — strict SemVer parsing and comparison for the opt-in update
+  notice (ADR-038); pure Rust, no dependencies of its own.
 - `cc` (build-dependency) — the C compiler driver for the vendored bubblewrap
   build; **only** `aegis-sandbox` may depend on it (ADR-029 §3–§4).
 - `pkg-config` (build-dependency) — locates `libcap` for the vendored bubblewrap

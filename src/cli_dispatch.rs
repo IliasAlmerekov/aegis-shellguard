@@ -65,6 +65,7 @@ pub(crate) fn run_cli(cli: Cli, runtime: &tokio::runtime::Runtime, handle: Handl
         Some(Commands::Hook) => install::run_hook(),
         Some(Commands::InstallHooks(args)) => install::run_install(&args),
         Some(Commands::SetupShell(args)) => install::run_setup_shell(&args),
+        Some(Commands::Update(args)) => cli_commands::handle_update_command(args),
         None => {
             if let Some(cmd) = command {
                 run_shell_wrapper(
