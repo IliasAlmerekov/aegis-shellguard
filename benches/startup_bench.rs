@@ -2,9 +2,10 @@ use std::process::Command;
 use std::time::Duration;
 
 use aegis::runtime::context::RuntimeContext;
-use aegis_config::AegisConfig;
+use aegis_config::{AegisConfig, UserPattern};
 use aegis_scanner::PatternSet;
 use aegis_scanner::Scanner;
+use aegis_types::{Category, RiskLevel};
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
@@ -46,10 +47,44 @@ fn bench_runtime_context_construction(c: &mut Criterion) {
     });
 }
 
+fn bench_runtime_context_custom_pattern_construction(c: &mut Criterion) {
+    let runtime = Runtime::new().expect("tokio runtime must start");
+    let handle = runtime.handle().clone();
+
+    // A non-empty `custom_patterns` list sends this config through
+    // `aegis_scanner::scanner_for`'s non-empty branch
+    // (`crates/aegis-scanner/src/lib.rs:47-53`), which builds a fresh
+    // `Scanner` merging the 41 built-ins with the custom set instead of
+    // cloning the warm `BUILTIN_SCANNER` static. One pattern is enough to
+    // take that branch: `PatternSet::from_sources` appends every custom
+    // pattern onto the built-in set before compiling any regex
+    // (`crates/aegis-scanner/src/patterns.rs:132-151`), so built-in compile
+    // dominates regardless of how many custom patterns are added.
+    let mut config = AegisConfig::default();
+    config.custom_patterns = vec![UserPattern {
+        id: "USR-BENCH-001".to_string(),
+        category: Category::Cloud,
+        risk: RiskLevel::Warn,
+        pattern: "internal-teardown".to_string(),
+        description: "custom warning".to_string(),
+        safe_alt: None,
+        justification: None,
+    }];
+
+    c.bench_function("runtime_context_custom_pattern_construction", |b| {
+        b.iter(|| {
+            black_box(
+                RuntimeContext::new(config.clone(), handle.clone())
+                    .expect("runtime context must build from a config with one custom pattern"),
+            )
+        })
+    });
+}
+
 criterion_group! {
     name = construction_benches;
     config = Criterion::default();
-    targets = bench_scanner_construction, bench_runtime_context_construction
+    targets = bench_scanner_construction, bench_runtime_context_construction, bench_runtime_context_custom_pattern_construction
 }
 
 // Group 2: one full process invocation per iteration, dominated by process

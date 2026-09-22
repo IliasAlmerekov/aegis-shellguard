@@ -408,6 +408,7 @@ fn ci_keeps_safe_and_slow_path_qualification_benches_on_the_performance_gate() {
         "safe_command_assess",
         "scanner_construction",
         "runtime_context_construction",
+        "runtime_context_custom_pattern_construction",
         "startup_safe_command",
     ] {
         assert!(

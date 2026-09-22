@@ -298,9 +298,12 @@ value pinned within a few percent of one capture.
 
 ### Startup cost (`benches/startup_bench.rs`)
 
-Three rows split the `Startup cost` from the `Assessment budget` (ADR-034):
+Four rows split the `Startup cost` from the `Assessment budget` (ADR-034):
 one process invocation is dominated by construction, not by classification, so
-a gate on `assess()` alone never saw most of what an agent actually pays.
+a gate on `assess()` alone never saw most of what an agent actually pays. The
+first three are original to ADR-034; the fourth,
+`runtime_context_custom_pattern_construction`, is documented separately below
+(issue #397).
 
 - `scanner_construction` — `PatternSet::load()` plus `Scanner::try_new()`,
   timed on every iteration since the process-wide `BUILTIN_SCANNER` static
@@ -324,6 +327,34 @@ a gate on `assess()` alone never saw most of what an agent actually pays.
   bench` was launched, `AEGIS_CI=0` forced so the non-CI branch is what gets
   measured, evaluation mode only (the path to the decision, no exec, no audit
   write). This is the only row that includes config discovery from disk.
+
+#### `runtime_context_custom_pattern_construction` baseline (issue #397, 2026-09-22)
+
+A fourth `Startup cost` row: `RuntimeContext::new()` from a config carrying
+one `custom_patterns` entry, the branch `runtime_context_construction` does
+not exercise. A non-empty custom-pattern slice sends `aegis_scanner::scanner_for`
+down its other branch, which builds a fresh `Scanner` merging the 41 built-ins
+with the custom set (`crates/aegis-scanner/src/lib.rs:47-53`,
+`crates/aegis-scanner/src/patterns.rs:132-151`) instead of cloning the
+already-warm `BUILTIN_SCANNER` static, so its cost lands close to
+`scanner_construction`'s range rather than `runtime_context_construction`'s.
+
+`baseline_ns` was first set from three local release captures (`cargo bench
+--bench startup_bench -- --quick runtime_context_custom_pattern_construction`),
+which spread 9.266–10.492 ms — the same ~2x-margin-over-observed-max
+methodology as the 2026-09-16 `safe_command_assess`/`scanner_construction`
+rebaseline above: `21_000_000`, roughly double the observed maximum.
+
+Corrected 2026-09-22 from PR #402's `performance` CI job: observed 9.743 ms
+(`PASS runtime_context_custom_pattern_construction observed 9.743 ms baseline
+21.000 ms delta -53.6% threshold +25.0%`), comfortably inside the local-capture
+baseline above. Re-baselined to `19_500_000` — roughly double the CI-observed
+value, the same margin-over-a-single-capture discipline the 2026-09-16
+rebaseline above adopted after `safe_command_assess`/`scanner_construction`
+flapped on baselines pinned within 5% of one capture. This row keeps the
+default `+25%` threshold rather than `startup_safe_command`'s widened `+50%`,
+since it times in-process construction rather than a whole process
+invocation and does not carry that row's process-spawn variance.
 
 ### Language-aware slow path, since Iteration 10 (the two `aegis-language` benches)
 
