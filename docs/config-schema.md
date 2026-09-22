@@ -461,6 +461,20 @@ Guidance:
 
 ## Snapshot prune retention
 
+Model default (what `AegisConfig::defaults()` returns, and what a config file
+that omits `[prune]` gets):
+
+```toml
+[prune]
+enabled = false
+# max_count_per_provider and max_age_days are absent — both unset, so
+# prune.enabled = true still deletes nothing.
+```
+
+The `aegis init` template writes different values on purpose — `enabled =
+false` still, but `max_count_per_provider = 10` and `max_age_days = 30` — as a
+tunable starting point instead of the "keeps everything" default:
+
 ```toml
 [prune]
 enabled = false
@@ -472,11 +486,16 @@ max_age_days = 30
 among the newest `max_count_per_provider` for its provider. An unset limit keeps
 nothing on its own; with both limits unset, prune deletes nothing.
 
-Global config controls the retention floor. A project config may disable prune
-or raise a limit the global layer already sets. It cannot enable prune when the
-global layer disables it, lower either limit, or set a limit the global layer
-leaves unset. `aegis config validate` reports a `project_security_ratchet`
-warning for each dropped project value.
+- `prune.enabled` — default `false`. Ratchet direction: Tighten. A project
+  config may turn it off but never on when the global layer disables it.
+- `prune.max_count_per_provider` — default unset. Ratchet direction: Custom
+  (widen-only). A project may raise it above the global value; it cannot
+  lower it or set it when the global layer leaves it unset.
+- `prune.max_age_days` — default unset. Ratchet direction: Custom (widen-only),
+  same rule as `max_count_per_provider`.
+
+`aegis config validate` reports a `project_security_ratchet` warning for each
+project value the ratchet drops.
 
 ## JSON output contract
 
