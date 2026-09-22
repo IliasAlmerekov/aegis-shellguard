@@ -59,11 +59,13 @@ pub fn enable(channel: Channel) -> Result<UpdateState> {
 }
 
 fn enable_at(path: &Path, channel: Channel) -> Result<UpdateState> {
-    let mut current = state::load(path)?;
-    current.channel = Some(channel);
-    current.consent = true;
-    state::save(path, &current)?;
-    Ok(current)
+    with_state_lock_at(path, || {
+        let mut current = state::load(path)?;
+        current.channel = Some(channel);
+        current.consent = true;
+        state::save(path, &current)?;
+        Ok(current)
+    })
 }
 
 /// `aegis update disable`: opt out and clear the selected channel. The last
@@ -73,11 +75,13 @@ pub fn disable() -> Result<UpdateState> {
 }
 
 fn disable_at(path: &Path) -> Result<UpdateState> {
-    let mut current = state::load(path)?;
-    current.consent = false;
-    current.channel = None;
-    state::save(path, &current)?;
-    Ok(current)
+    with_state_lock_at(path, || {
+        let mut current = state::load(path)?;
+        current.consent = false;
+        current.channel = None;
+        state::save(path, &current)?;
+        Ok(current)
+    })
 }
 
 /// `aegis update status`: read consent, channel, and cache state.
@@ -93,9 +97,9 @@ pub fn status() -> Result<UpdateState> {
 /// only gates whether the wrapper spawns that background invocation
 /// automatically and whether a notice ever prints.
 ///
-/// A failed check returns `Ok(CheckOutcome::Failed { .. })`, not `Err` — the
-/// state file is simply left untouched, so a flaky network never corrupts or
-/// clears the last valid cache record.
+/// A failed check returns `Ok(CheckOutcome::Failed { .. })`, not `Err`. It
+/// records the attempt timestamp but preserves the cached latest version, so
+/// a flaky network neither corrupts nor clears the last valid cache record.
 pub fn check_now(channel: Channel) -> Result<CheckOutcome> {
     check_now_with(
         &state::state_path()?,
@@ -109,13 +113,26 @@ fn check_now_with(
     channel: Channel,
     fetch: impl FnOnce(Channel) -> std::result::Result<String, UpdateError>,
 ) -> Result<CheckOutcome> {
+    with_state_lock_at(path, || check_now_while_locked(path, channel, fetch))
+}
+
+fn check_now_while_locked(
+    path: &Path,
+    channel: Channel,
+    fetch: impl FnOnce(Channel) -> std::result::Result<String, UpdateError>,
+) -> Result<CheckOutcome> {
     let mut current = state::load(path)?;
+    current.last_check_attempt_at = Some(now_rfc3339()?);
 
     let latest = match fetch(channel) {
         Ok(latest) => latest,
-        Err(error) => return Ok(CheckOutcome::Failed { error }),
+        Err(error) => {
+            state::save(path, &current)?;
+            return Ok(CheckOutcome::Failed { error });
+        }
     };
     if let Err(error) = version::parse_strict(&latest) {
+        state::save(path, &current)?;
         return Ok(CheckOutcome::Failed { error });
     }
 
@@ -136,31 +153,32 @@ pub fn maybe_render_notice(installed_version: &str) -> Result<()> {
 }
 
 fn maybe_render_notice_at(path: &Path, installed_version: &str) -> Result<()> {
-    let mut current = state::load(path)?;
-    if !current.consent {
-        return Ok(());
-    }
-    let Some(latest) = current.latest_known_version.clone() else {
-        return Ok(());
-    };
-    let Some(newer) = version::newer_version(installed_version, &latest) else {
-        return Ok(());
-    };
-    if !notice_is_due(&current, &latest) {
-        return Ok(());
-    }
+    with_state_lock_at(path, || {
+        let mut current = state::load(path)?;
+        if !current.consent {
+            return Ok(());
+        }
+        let Some(latest) = current.latest_known_version.clone() else {
+            return Ok(());
+        };
+        let Some(newer) = version::newer_version(installed_version, &latest) else {
+            return Ok(());
+        };
+        if !notice_is_due(&current, &latest) {
+            return Ok(());
+        }
 
-    let mut stderr = std::io::stderr();
-    let _ = writeln!(
-        stderr,
-        "Aegis {newer} is available (installed: {installed_version})."
-    );
-    let _ = writeln!(stderr, "Update: npm i -g @iliasalmerekov/aegis@latest");
+        current.last_notice_version = Some(latest);
+        current.last_notice_at = Some(now_rfc3339()?);
+        state::save(path, &current)?;
 
-    current.last_notice_version = Some(latest);
-    current.last_notice_at = Some(now_rfc3339()?);
-    state::save(path, &current)?;
-    Ok(())
+        let mut stderr = std::io::stderr();
+        let _ = writeln!(
+            stderr,
+            "Aegis {newer} is available (installed: {installed_version}). Update: npm i -g @iliasalmerekov/aegis@latest"
+        );
+        Ok(())
+    })
 }
 
 fn notice_is_due(state: &UpdateState, latest: &str) -> bool {
@@ -175,7 +193,11 @@ fn notice_is_due(state: &UpdateState, latest: &str) -> bool {
 }
 
 fn cache_is_stale(state: &UpdateState) -> bool {
-    match &state.last_success_check_at {
+    match state
+        .last_check_attempt_at
+        .as_ref()
+        .or(state.last_success_check_at.as_ref())
+    {
         Some(at) => match OffsetDateTime::parse(at, &Rfc3339) {
             Ok(at) => OffsetDateTime::now_utc() - at >= CHECK_INTERVAL,
             Err(_) => true,
@@ -203,15 +225,22 @@ pub fn maybe_spawn_background_check() {
     let Ok(state_path) = state::state_path() else {
         return;
     };
-    let Ok(current) = state::load(&state_path) else {
-        return;
-    };
-    let Some(channel) = spawn_channel_if_due(&current) else {
-        return;
-    };
     if !acquire_lock().unwrap_or(false) {
         return;
     }
+    let scheduled = (|| -> Result<Option<Channel>> {
+        let mut current = state::load(&state_path)?;
+        let Some(channel) = spawn_channel_if_due(&current) else {
+            return Ok(None);
+        };
+        current.last_check_attempt_at = Some(now_rfc3339()?);
+        state::save(&state_path, &current)?;
+        Ok(Some(channel))
+    })();
+    let Some(channel) = scheduled.ok().flatten() else {
+        let _ = release_lock();
+        return;
+    };
     let Ok(exe) = std::env::current_exe() else {
         let _ = release_lock();
         return;
@@ -225,12 +254,20 @@ pub fn maybe_spawn_background_check() {
         .stderr(std::process::Stdio::null())
         .spawn();
 
-    // The child releases the lock itself on exit (see
-    // `run_internal_update_check`). If the spawn itself failed, release it
-    // here so a single failed spawn does not permanently wedge future checks
-    // for up to `LOCK_STALE_AFTER`.
-    if spawned.is_err() {
-        let _ = release_lock();
+    let _ = release_lock();
+    let _ = spawned;
+}
+
+fn with_state_lock_at<T>(path: &Path, operation: impl FnOnce() -> Result<T>) -> Result<T> {
+    let lock_path = path.with_file_name("update.lock");
+    if !acquire_lock_at(&lock_path)? {
+        return Err(UpdateError::StateBusy);
+    }
+    let result = operation();
+    let release_result = release_lock_at(&lock_path);
+    match (result, release_result) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Err(error), _) | (_, Err(error)) => Err(error),
     }
 }
 
@@ -302,12 +339,33 @@ fn release_lock_at(path: &Path) -> Result<()> {
 /// wrapper spawns. Not a user-facing command. Always releases the lock on
 /// exit and always returns a best-effort exit code — nothing waits on it.
 pub fn run_internal_update_check(channel: Channel) -> i32 {
-    let result = check_now(channel);
-    let _ = release_lock();
+    let result = internal_check_now(channel);
     match result {
-        Ok(CheckOutcome::Fetched { .. } | CheckOutcome::Failed { .. }) => 0,
+        Ok(Some(CheckOutcome::Fetched { .. } | CheckOutcome::Failed { .. }) | None) => 0,
         Err(_) => 1,
     }
+}
+
+fn internal_check_now(channel: Channel) -> Result<Option<CheckOutcome>> {
+    internal_check_now_with(
+        &state::state_path()?,
+        channel,
+        registry::fetch_latest_version,
+    )
+}
+
+fn internal_check_now_with(
+    path: &Path,
+    channel: Channel,
+    fetch: impl FnOnce(Channel) -> std::result::Result<String, UpdateError>,
+) -> Result<Option<CheckOutcome>> {
+    with_state_lock_at(path, || {
+        let current = state::load(path)?;
+        if !current.consent || current.channel != Some(channel) {
+            return Ok(None);
+        }
+        check_now_while_locked(path, channel, fetch).map(Some)
+    })
 }
 
 /// Parse the channel argument that follows [`INTERNAL_UPDATE_CHECK_FLAG`] in
@@ -321,10 +379,7 @@ pub fn run_internal_update_check_from_env() -> i32 {
 
     match channel {
         Some(channel) => run_internal_update_check(channel),
-        None => {
-            let _ = release_lock();
-            0
-        }
+        None => 0,
     }
 }
 
@@ -359,6 +414,15 @@ mod tests {
     fn cache_is_fresh_right_after_a_check() {
         let state = UpdateState {
             last_success_check_at: Some(now_rfc3339().unwrap()),
+            ..UpdateState::default()
+        };
+        assert!(!cache_is_stale(&state));
+    }
+
+    #[test]
+    fn cache_is_fresh_after_a_failed_attempt() {
+        let state = UpdateState {
+            last_check_attempt_at: Some(now_rfc3339().unwrap()),
             ..UpdateState::default()
         };
         assert!(!cache_is_stale(&state));
@@ -451,6 +515,72 @@ mod tests {
         assert!(matches!(outcome, CheckOutcome::Failed { .. }));
         let reloaded = state::load(&path).unwrap();
         assert_eq!(reloaded.latest_known_version.as_deref(), Some("0.6.7"));
+        assert!(reloaded.last_check_attempt_at.is_some());
+    }
+
+    #[test]
+    fn internal_check_requires_matching_consent_before_fetching() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("update.json");
+        state::save(
+            &path,
+            &UpdateState {
+                consent: true,
+                channel: Some(Channel::Npm),
+                ..UpdateState::default()
+            },
+        )
+        .unwrap();
+        let fetched = std::cell::Cell::new(false);
+
+        let outcome = internal_check_now_with(&path, Channel::Npm, |_| {
+            fetched.set(true);
+            Ok("0.9.9".to_string())
+        })
+        .unwrap();
+
+        assert!(matches!(outcome, Some(CheckOutcome::Fetched { .. })));
+        assert!(fetched.get());
+    }
+
+    #[test]
+    fn internal_check_skips_a_channel_without_consent() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("update.json");
+        let fetched = std::cell::Cell::new(false);
+
+        let outcome = internal_check_now_with(&path, Channel::Npm, |_| {
+            fetched.set(true);
+            Ok("0.9.9".to_string())
+        })
+        .unwrap();
+
+        assert!(outcome.is_none());
+        assert!(!fetched.get());
+    }
+
+    #[test]
+    fn internal_check_requires_the_selected_channel_to_match() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("update.json");
+        state::save(
+            &path,
+            &UpdateState {
+                consent: true,
+                ..UpdateState::default()
+            },
+        )
+        .unwrap();
+        let fetched = std::cell::Cell::new(false);
+
+        let outcome = internal_check_now_with(&path, Channel::Npm, |_| {
+            fetched.set(true);
+            Ok("0.9.9".to_string())
+        })
+        .unwrap();
+
+        assert!(outcome.is_none());
+        assert!(!fetched.get());
     }
 
     #[test]
@@ -462,7 +592,9 @@ mod tests {
             check_now_with(&path, Channel::Npm, |_| Ok("not-a-version".to_string())).unwrap();
 
         assert!(matches!(outcome, CheckOutcome::Failed { .. }));
-        assert!(!path.exists());
+        let reloaded = state::load(&path).unwrap();
+        assert_eq!(reloaded.latest_known_version, None);
+        assert!(reloaded.last_check_attempt_at.is_some());
     }
 
     #[test]

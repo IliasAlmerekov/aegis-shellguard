@@ -46,6 +46,10 @@ pub enum UpdateError {
         detail: String,
     },
 
+    /// Another update-state operation is in progress.
+    #[error("another update-state operation is in progress")]
+    StateBusy,
+
     /// A fault in the update module's own orchestration, not the network or
     /// on-disk state.
     #[error("internal error: {detail}")]

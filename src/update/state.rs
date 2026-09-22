@@ -66,6 +66,10 @@ pub struct UpdateState {
     /// RFC 3339 timestamp of the last successful registry check.
     #[serde(default)]
     pub last_success_check_at: Option<String>,
+    /// RFC 3339 timestamp of the last automatic or explicit registry-check
+    /// attempt. This throttles automatic retries even when the request fails.
+    #[serde(default)]
+    pub last_check_attempt_at: Option<String>,
     /// The version the update notice was last shown for.
     #[serde(default)]
     pub last_notice_version: Option<String>,

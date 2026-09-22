@@ -279,8 +279,12 @@ fn notice_prints_on_a_real_tty_only_for_a_strictly_newer_version() {
 
     let shell_cmd = format!("{} -c true", aegis_bin());
     let run_under_pty = |script: &Path, home: &Path, path: &str| -> std::process::Output {
-        Command::new(script)
-            .args(["-qec", &shell_cmd, "/dev/null"])
+        let mut command = Command::new(script);
+        #[cfg(target_os = "macos")]
+        command.args(["-q", "/dev/null", "/bin/sh", "-c", &shell_cmd]);
+        #[cfg(not(target_os = "macos"))]
+        command.args(["-qec", &shell_cmd, "/dev/null"]);
+        command
             .env("HOME", home)
             .env("PATH", path)
             .env("AEGIS_CI", "0")
@@ -302,8 +306,13 @@ fn notice_prints_on_a_real_tty_only_for_a_strictly_newer_version() {
     );
 
     let loud = run_under_pty(&script, home.path(), &path);
+    let notice_lines = String::from_utf8_lossy(&loud.stdout)
+        .lines()
+        .filter(|line| line.contains("Aegis 99.0.0 is available"))
+        .count();
     assert!(
         String::from_utf8_lossy(&loud.stdout).contains("99.0.0 is available"),
         "a strictly newer cached version must print the notice on a real TTY"
     );
+    assert_eq!(notice_lines, 1, "the update notice must use one line");
 }

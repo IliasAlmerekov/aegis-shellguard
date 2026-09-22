@@ -25,53 +25,37 @@ pub(crate) fn decide_command(
     Vec<aegis_types::SnapshotRecord>,
     bool,
 ) {
-    use aegis::planning::{CwdState, PlanningRequest};
-    use aegis_tui::{ExecutionRenderer, PromptDecision, TestRenderer};
+    use aegis::planning::evaluate_policy_rules;
+    use aegis_policy::{
+        ExecutionTransport, PolicyAction, PolicyAllowlistResult, PolicyBlocklistResult,
+        PolicyCiState, PolicyConfigFlags, PolicyExecutionContext, PolicyInput, evaluate_policy,
+    };
 
-    let outcome = aegis::planning::plan_with_context(
-        context,
-        PlanningRequest {
-            command: &assessment.command.raw,
-            cwd_state: CwdState::Resolved(cwd.to_path_buf()),
-            transport: aegis_policy::ExecutionTransport::Shell,
-            ci_detected: in_ci,
+    let policy_decision = evaluate_policy(PolicyInput {
+        assessment,
+        mode: context.config().mode,
+        ci_state: PolicyCiState { detected: in_ci },
+        allowlist: PolicyAllowlistResult {
+            matched: allowlist_match.is_some(),
         },
-    );
-    let aegis::planning::PlanningOutcome::Planned(plan) = outcome else {
-        return (aegis_types::Decision::Blocked, Vec::new(), false);
+        blocklist: PolicyBlocklistResult {
+            matched: context.is_blocked_for_command(&assessment.command.raw, Some(cwd)),
+        },
+        config_flags: PolicyConfigFlags {
+            ci_policy: context.config().ci_policy,
+            allowlist_override_level: context.config().strict_allowlist_override,
+            snapshot_policy: context.config().snapshot_policy,
+        },
+        execution_context: PolicyExecutionContext {
+            transport: ExecutionTransport::Shell,
+            applicable_snapshot_plugins: &[],
+        },
+        rules: evaluate_policy_rules(context.policy_rules(), &assessment.command.raw),
+    });
+    let decision = match policy_decision.decision {
+        PolicyAction::AutoApprove => aegis_types::Decision::AutoApproved,
+        PolicyAction::Prompt => aegis_types::Decision::Denied,
+        PolicyAction::Block => aegis_types::Decision::Blocked,
     };
-    if allowlist_match.is_some()
-        && ((assessment.risk == aegis_types::RiskLevel::Warn
-            && matches!(
-                context.config().strict_allowlist_override,
-                aegis_types::AllowlistOverrideLevel::Warn
-                    | aegis_types::AllowlistOverrideLevel::Danger
-            ))
-            || (assessment.risk == aegis_types::RiskLevel::Danger
-                && matches!(
-                    context.config().strict_allowlist_override,
-                    aegis_types::AllowlistOverrideLevel::Danger
-                )))
-    {
-        return (aegis_types::Decision::AutoApproved, Vec::new(), true);
-    }
-    let renderer = TestRenderer::new();
-    let decision = match plan.execution_disposition() {
-        aegis::planning::ExecutionDisposition::Execute => aegis_types::Decision::AutoApproved,
-        aegis::planning::ExecutionDisposition::RequiresApproval => {
-            renderer.set_confirmation_decision(PromptDecision::Deny);
-            match renderer.show_confirmation(plan.assessment(), plan.explanation(), &[]) {
-                PromptDecision::Approve | PromptDecision::ApproveAlways => {
-                    aegis_types::Decision::Approved
-                }
-                _ => aegis_types::Decision::Denied,
-            }
-        }
-        aegis::planning::ExecutionDisposition::Block => aegis_types::Decision::Blocked,
-    };
-    (
-        decision,
-        Vec::new(),
-        plan.policy_decision().allowlist_effective,
-    )
+    (decision, Vec::new(), policy_decision.allowlist_effective)
 }

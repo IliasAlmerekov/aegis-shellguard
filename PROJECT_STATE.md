@@ -42,6 +42,13 @@ distribution smoke gates open)
   reclaimable lock at `~/.aegis/update.lock`. The notice itself prints to
   stderr, throttled to once per day per distinct available version, and
   never renders in `Watch`, JSON output, or a `Hook`.
+- Review fixes serialize scheduling, state mutations, and notice recording
+  with `~/.aegis/update.lock`. The wrapper records every scheduled attempt,
+  including one whose fetch later fails, so it does not retry on every shell
+  invocation during an outage. An internal child rechecks consent and its
+  channel while holding the lock before it fetches, so `disable` cannot be
+  overwritten by a stale child state snapshot. The notice state is committed
+  before its one-line stderr message is printed.
 - Version comparison is strict SemVer (`semver` crate, the only new
   dependency) and fails closed on any parse error — a malformed registry
   response or an unparsable installed version never recommends an update.
@@ -54,7 +61,8 @@ distribution smoke gates open)
   curl-unavailable and malformed-response fail-closed paths, and — via a
   `script`(1) pty, `tests/installer_tty.rs`'s pattern — the notice actually
   printing on a real TTY for a newer version and staying silent for an
-  older one). Full workspace test, Clippy, and `cargo fmt` all pass on the
+  older one). The TTY fixture uses BSD `script` arguments on macOS. Full
+  workspace test, Clippy, and `cargo fmt` all pass on the
   pinned toolchain; `cargo deny check` and `cargo audit` show no new
   advisories from `semver`.
 

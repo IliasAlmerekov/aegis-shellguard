@@ -54,9 +54,10 @@ accepted rather than worked around, because the feature's own contract is
 opt-in and best-effort — "an unavailable network... must not block a command"
 already covers a missing `curl` as one more unavailable-network case. A
 missing `curl` makes `check_now` return `CheckOutcome::Failed`; the state file
-is left untouched and nothing else in Aegis is affected. `curl` is already the
-project's own installer transport (`README.md`'s curl-based install), so most
-systems that can install Aegis this way already have it.
+keeps its cached latest version and records the failed attempt for throttling.
+Nothing else in Aegis is affected. `curl` is already the project's own
+installer transport (`README.md`'s curl-based install), so most systems that
+can install Aegis this way already have it.
 
 ### 2. The shell wrapper spawns a detached OS child, not a Tokio task
 
@@ -72,20 +73,24 @@ mirroring the existing `--internal-language-worker` short-circuit in
 recognized before clap parsing and before the Tokio runtime is built, so the
 child pays for neither.
 
-A file lock at `~/.aegis/update.lock` (create-new, owner-only, reclaimed after
-120 seconds of no modification) deduplicates concurrent triggers — several
-shells opening at once each try to spawn a check, and only the one that wins
-the lock actually does. The 120-second reclaim window exists so a killed or
-crashed child cannot wedge future checks indefinitely; it is well above the
-5-second `curl --max-time`, so a live child never loses the lock to a false
-reclaim.
+A file lock at `~/.aegis/update.lock` serializes scheduling, state changes,
+and notice recording. Several shells opening at once each try to schedule a
+check, but only the winner records the attempt and spawns a child. The parent
+releases the lock before the child fetches. The child reacquires it, then
+checks consent and the selected channel again before it makes a request. This
+lets `disable` win against a scheduled child and keeps a stale state snapshot
+from restoring consent. The lock is create-new, owner-only, and reclaimed
+after 120 seconds of no modification so a killed process cannot wedge future
+operations.
 
 ### 3. The notice is throttled per version, not per calendar day
 
 `~/.aegis/update.json` (`UpdateState`) stores the last version a notice was
-shown for and when, not a rolling "last notice shown" timestamp. A newer
-version becomes available, the throttle resets immediately rather than
-waiting out the previous version's 24-hour window — the product contract is
+shown for and when, not a rolling "last notice shown" timestamp. The lock
+covers the due check and state write before Aegis prints, so parallel wrappers
+cannot print the same notice twice. A newer version becomes available, the
+throttle resets immediately rather than waiting out the previous version's
+24-hour window. The product contract is
 "at most once per day **for the same available version**", not "at most one
 notice a day regardless of what changed."
 
