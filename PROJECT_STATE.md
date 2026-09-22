@@ -58,6 +58,18 @@ distribution smoke gates open)
   pinned toolchain; `cargo deny check` and `cargo audit` show no new
   advisories from `semver`.
 
+## Current session (2026-09-22): shared Wrapper execution module (#284)
+
+- Moved Wrapper plan execution from `src/shell_flow.rs` into `src/execution/`.
+  The new module owns Snapshot, recovery, Sandbox, Audit, block, and spawn
+  ordering. `shell_flow.rs` now only passes Wrapper inputs to it.
+- Added `ExecutionRenderer`, `TerminalRenderer`, and `TestRenderer` to
+  `aegis-tui`. Execution tests use real planning outcomes and cover the
+  effect-opaque recovery backstop.
+- The full Clippy command still reports pre-existing failures in
+  `tests/file_size_budget.rs` and `aegis-snapshot` test helpers under rustc
+  1.98.1.
+
 ## Current session (2026-09-17): the git Snapshot stops emptying the working tree (#356)
 
 - `GitPlugin::snapshot` (`crates/aegis-snapshot/src/git/mod.rs`) applies the

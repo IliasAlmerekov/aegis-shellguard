@@ -3,10 +3,15 @@
 
 mod block_screen;
 mod confirm_screen;
+mod execution_renderer;
 mod recovery_screen;
 mod shared;
 mod stdout_renderer;
 mod tty_renderer;
+
+pub use execution_renderer::ExecutionRenderer;
+pub use execution_renderer::TerminalRenderer;
+pub use execution_renderer::{ExecutionRendererCall, TestRenderer};
 
 pub use recovery_screen::{
     RecoveryPromptDecision, show_recovery_override_decision, show_recovery_override_via_tty,

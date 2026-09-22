@@ -10,6 +10,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 mod cli_commands;
 mod cli_dispatch;
 mod diagnostics;
+mod execution;
 mod install;
 mod policy_output;
 mod prune;
