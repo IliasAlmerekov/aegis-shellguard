@@ -1,13 +1,56 @@
 use std::fs;
 
 use super::{
-    ConfigSourceMap, GLOBAL_CONFIG_DIR, GLOBAL_CONFIG_FILE, PROJECT_CONFIG_FILE, validate_config,
-    validate_config_layers,
+    ConfigSourceMap, GLOBAL_CONFIG_DIR, GLOBAL_CONFIG_FILE, PROJECT_CONFIG_FILE,
+    locate_invalid_custom_pattern, validate_config, validate_config_layers,
 };
+use crate::allowlist::ConfigSourceLayer;
 use crate::error::ConfigError;
+use crate::model::UserPattern;
 use crate::{AegisConfig, AllowlistRule};
+use aegis_types::{Category, RiskLevel};
 use tempfile::TempDir;
 use time::{Duration, OffsetDateTime};
+
+fn user_pattern(id: &str, pattern: &str) -> UserPattern {
+    UserPattern {
+        id: id.to_string(),
+        category: Category::Filesystem,
+        risk: RiskLevel::Warn,
+        pattern: pattern.to_string(),
+        description: "test pattern".to_string(),
+        safe_alt: None,
+        justification: None,
+    }
+}
+
+/// Two custom patterns that are each individually valid, but collide once
+/// both are present (duplicate id) — the shape #399 is about: a pattern set
+/// that only fails once both config layers have contributed to it.
+#[test]
+fn locate_invalid_custom_pattern_attributes_the_layer_that_completes_the_conflict() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+
+    let config = AegisConfig {
+        custom_patterns: vec![
+            user_pattern("USR-DUP", "custom-alpha-only-pattern"),
+            user_pattern("USR-DUP", "custom-beta-only-pattern"),
+        ],
+        custom_pattern_layers: vec![ConfigSourceLayer::Global, ConfigSourceLayer::Project],
+        ..AegisConfig::defaults()
+    };
+
+    let err = locate_invalid_custom_pattern(&config, Some(workspace.path()), Some(home.path()));
+
+    let project_config_path = workspace.path().join(PROJECT_CONFIG_FILE);
+    let message = err.to_string();
+    assert!(
+        message.contains(&project_config_path.display().to_string()),
+        "error must attribute the pattern to the project config file that completed the \
+         conflict, got: {message}"
+    );
+}
 
 #[test]
 fn validate_reports_warning_for_broad_rule_without_scope() {

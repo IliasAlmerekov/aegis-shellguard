@@ -108,7 +108,9 @@ impl ConfigSourceMap {
             .unwrap_or_else(|| format!("allowlist[{index}]"))
     }
 
-    fn custom_pattern_location(&self, index: usize) -> String {
+    /// Location string for `custom_patterns[index]` — which config layer
+    /// contributed it, and that layer's resolved file path when known.
+    pub fn custom_pattern_location(&self, index: usize) -> String {
         self.custom_pattern_locations
             .get(index)
             .cloned()
@@ -290,6 +292,54 @@ pub fn validation_load_error(err: &ConfigError) -> ValidationReport {
     }
 }
 
+/// Attribute a custom-pattern set already known to fail scanner construction
+/// (`aegis_scanner::scanner_for` returned `Err`) to the config layer that
+/// caused it.
+///
+/// Bisects by growing prefix — the same technique as
+/// [`custom_pattern_validation_issue`] — to find the first index whose
+/// inclusion makes the set invalid, then reports it through the same
+/// `"invalid config {path}: {message}"` wording the layered loader used
+/// before scanner construction moved to `RuntimeContext` (issue #399).
+///
+/// Callers must only invoke this after confirming the full set fails; an
+/// already-valid set falls through to a generic message that should be
+/// unreachable in practice.
+pub fn locate_invalid_custom_pattern(
+    config: &AegisConfig,
+    current_dir: Option<&Path>,
+    home_dir: Option<&Path>,
+) -> ConfigError {
+    let source_map = ConfigSourceMap::for_config_with_paths(config, current_dir, home_dir);
+
+    match first_invalid_custom_pattern_prefix(&config.custom_patterns) {
+        Some((index, err)) => ConfigError::Config(format!(
+            "invalid config {}: {err}",
+            source_map.custom_pattern_location(index)
+        )),
+        None => ConfigError::Config(
+            "invalid custom pattern configuration (bisection found no failing prefix)".to_string(),
+        ),
+    }
+}
+
+/// Bisect `patterns` by growing prefix to find the first index whose
+/// inclusion makes the set invalid.
+///
+/// Shared by [`locate_invalid_custom_pattern`] and
+/// [`custom_pattern_validation_issue`] so the two callers — runtime scanner
+/// construction and `aegis config validate`'s diagnostics — agree on which
+/// pattern gets blamed.
+fn first_invalid_custom_pattern_prefix(
+    patterns: &[crate::model::UserPattern],
+) -> Option<(usize, ConfigError)> {
+    (0..patterns.len()).find_map(|index| {
+        super::model::validate_custom_patterns(&patterns[..=index])
+            .err()
+            .map(|err| (index, err))
+    })
+}
+
 fn custom_pattern_validation_issue(
     config: &AegisConfig,
     source_map: &ConfigSourceMap,
@@ -311,18 +361,13 @@ fn custom_pattern_validation_issue(
         return None;
     }
 
-    for index in 0..config.custom_patterns.len() {
-        if let Err(err) = super::model::validate_custom_patterns(&config.custom_patterns[..=index])
-        {
-            return Some(ValidationIssue {
-                code: "invalid_custom_pattern",
-                message: err.to_string(),
-                location: source_map.custom_pattern_location(index),
-            });
+    first_invalid_custom_pattern_prefix(&config.custom_patterns).map(|(index, err)| {
+        ValidationIssue {
+            code: "invalid_custom_pattern",
+            message: err.to_string(),
+            location: source_map.custom_pattern_location(index),
         }
-    }
-
-    None
+    })
 }
 
 fn first_invalid_allowlist_issue(

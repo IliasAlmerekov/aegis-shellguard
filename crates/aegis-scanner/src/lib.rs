@@ -24,7 +24,9 @@ pub use aegis_types::{
 };
 pub use error::ScannerError;
 pub use patterns::{PatternSet, PrefixRule};
-pub use scanner::{Assessment, DecisionSource, HighlightRange, MatchResult, Scanner};
+pub use scanner::{
+    Assessment, DecisionSource, HighlightRange, MatchResult, Scanner, try_new_call_count_for_tests,
+};
 
 /// Process-wide built-in scanner, compiled once from the embedded
 /// `patterns.toml`. The error is carried as a `String` (not `ScannerError`,

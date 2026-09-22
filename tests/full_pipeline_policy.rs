@@ -268,6 +268,68 @@ description = "Conflicts with built-in pattern id"
     );
 }
 
+/// A custom pattern that is valid alone in each layer, but conflicts once
+/// both layers are merged, must still abort startup and attribute the
+/// failure to the project config file — the layer that completed the
+/// conflict (issue #399).
+#[test]
+fn invalid_custom_pattern_completed_by_project_layer_aborts_shell_wrapper() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+
+    let global_dir = home.path().join(".config").join("aegis");
+    fs::create_dir_all(&global_dir).unwrap();
+    fs::write(
+        global_dir.join("config.toml"),
+        r#"
+[[custom_patterns]]
+id = "USR-DUP"
+category = "Filesystem"
+risk = "Warn"
+pattern = "custom-alpha-only-pattern"
+description = "global entry"
+"#,
+    )
+    .unwrap();
+
+    let project_path = workspace.path().join(".aegis.toml");
+    fs::write(
+        &project_path,
+        r#"
+[[custom_patterns]]
+id = "USR-DUP"
+category = "Filesystem"
+risk = "Warn"
+pattern = "custom-beta-only-pattern"
+description = "project entry, duplicates the global id"
+"#,
+    )
+    .unwrap();
+
+    let output = base_command(home.path())
+        .current_dir(workspace.path())
+        .args(["-c", "echo hello"])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(4));
+    assert!(output.stdout.is_empty(), "command must not execute");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("error: failed to load config"),
+        "stderr must explain the startup failure: {stderr}"
+    );
+    assert!(
+        stderr.contains(&project_path.display().to_string()),
+        "stderr must attribute the conflict to the project layer that completed it: {stderr}"
+    );
+    assert!(
+        stderr.contains("duplicate pattern id"),
+        "stderr must include the custom pattern failure detail: {stderr}"
+    );
+}
+
 /// Project audit reductions must not override the trusted global retention policy.
 #[test]
 fn project_audit_reduction_does_not_abort_shell_wrapper() {

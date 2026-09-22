@@ -435,8 +435,13 @@ reason = "unscoped rule contributed by a layer with no custom patterns"
     assert!(message.contains("must declare cwd or user scope"));
 }
 
+/// A config layer that adds an invalid custom pattern no longer fails
+/// `AegisConfig::load_for` itself (issue #399): the layered loader stops
+/// eagerly rebuilding a `Scanner` per layer just to surface this early, so
+/// the pattern error only surfaces once `RuntimeContext` builds the real
+/// scanner from the merged config.
 #[test]
-fn invalid_custom_pattern_config_is_rejected_with_source_path() {
+fn invalid_custom_pattern_config_no_longer_fails_at_load_for() {
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let config_path = workspace.path().join(PROJECT_CONFIG_FILE);
@@ -454,17 +459,10 @@ description = "Conflicts with built-in pattern id"
     )
     .unwrap();
 
-    let err = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap_err();
-    let message = err.to_string();
+    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
 
-    assert!(
-        message.contains(&config_path.display().to_string()),
-        "custom pattern error must identify the offending config file: {message}"
-    );
-    assert!(
-        message.contains("duplicate pattern id"),
-        "custom pattern error must preserve scanner validation details: {message}"
-    );
+    assert_eq!(config.custom_patterns.len(), 1);
+    assert_eq!(config.custom_patterns[0].id, "FS-001");
 }
 
 #[test]

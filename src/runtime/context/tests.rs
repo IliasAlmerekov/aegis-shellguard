@@ -28,6 +28,8 @@ fn test_handle() -> Handle {
 
 #[test]
 fn custom_patterns_are_built_once_into_runtime_scanner() {
+    let _guard = SCANNER_BUILD_COUNT_MUTEX.lock().unwrap();
+
     let mut config = AegisConfig::default();
     config.custom_patterns = vec![UserPattern {
         id: "USR-CTX-001".to_string(),
@@ -62,6 +64,8 @@ fn custom_patterns_are_built_once_into_runtime_scanner() {
 
 #[test]
 fn invalid_custom_scanner_aborts_runtime_context_construction() {
+    let _guard = SCANNER_BUILD_COUNT_MUTEX.lock().unwrap();
+
     let mut config = AegisConfig::default();
     config.custom_patterns = vec![UserPattern {
         id: "FS-001".to_string(),
@@ -78,6 +82,76 @@ fn invalid_custom_scanner_aborts_runtime_context_construction() {
         Err(err) => err,
     };
     assert!(err.to_string().contains("duplicate pattern id"));
+    assert!(
+        !err.to_string().contains("invalid config"),
+        "a directly-constructed config carries no file provenance for its custom \
+         patterns, so the error must not fabricate a config file path: {err}"
+    );
+}
+
+/// Serializes tests that measure `aegis_scanner::try_new_call_count_for_tests`
+/// deltas — the counter is process-global, so concurrent scanner builds from
+/// other custom-pattern tests in this file would make the delta flaky.
+static SCANNER_BUILD_COUNT_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// A config with custom patterns contributed by both the global and project
+/// layers must build the scanner exactly once on the success path — the
+/// layered file-load path used to build it once per layer plus once more in
+/// `RuntimeContext` (issue #399).
+#[test]
+fn layered_custom_patterns_build_the_scanner_exactly_once() {
+    let _guard = SCANNER_BUILD_COUNT_MUTEX.lock().unwrap();
+
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+
+    let global_dir = home.path().join(".config").join("aegis");
+    fs::create_dir_all(&global_dir).unwrap();
+    fs::write(
+        global_dir.join("config.toml"),
+        r#"
+[[custom_patterns]]
+id = "USR-GLOBAL"
+category = "Filesystem"
+risk = "Warn"
+pattern = "custom-global-only-pattern"
+description = "global entry"
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        workspace.path().join(".aegis.toml"),
+        r#"
+[[custom_patterns]]
+id = "USR-PROJECT"
+category = "Filesystem"
+risk = "Warn"
+pattern = "custom-project-only-pattern"
+description = "project entry"
+"#,
+    )
+    .unwrap();
+
+    // Warm the cached built-in scanner first: its one-time build (shared by
+    // every `assess()` call in this process) happens on first use from
+    // *any* concurrently-running test, not just this one. Forcing it here
+    // keeps that one-off build out of the measurement window below, so the
+    // delta only reflects the layered-config path this test exercises.
+    let _ = aegis_scanner::scanner_for(&[]);
+
+    let before = aegis_scanner::try_new_call_count_for_tests();
+    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
+    assert_eq!(config.custom_patterns.len(), 2);
+
+    let _context = RuntimeContext::new(config, test_handle()).unwrap();
+    let after = aegis_scanner::try_new_call_count_for_tests();
+
+    assert_eq!(
+        after - before,
+        1,
+        "exactly one Scanner::try_new call is expected on the success path"
+    );
 }
 
 #[cfg(not(windows))]

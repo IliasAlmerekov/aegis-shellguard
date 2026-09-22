@@ -39,6 +39,6 @@ pub use snapshot::{
     SupabaseSnapshotConfig,
 };
 pub use validate::{
-    ConfigSourceMap, ValidationIssue, ValidationReport, validate_config, validate_config_layers,
-    validate_policy_rules, validation_load_error,
+    ConfigSourceMap, ValidationIssue, ValidationReport, locate_invalid_custom_pattern,
+    validate_config, validate_config_layers, validate_policy_rules, validation_load_error,
 };
