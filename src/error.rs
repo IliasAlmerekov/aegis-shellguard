@@ -75,6 +75,10 @@ pub enum AegisError {
     /// Wrapped I/O error from the standard library.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+
+    /// Update-notice consent, cache, or registry-check failure.
+    #[error(transparent)]
+    Update(#[from] crate::update::UpdateError),
 }
 
 impl AegisError {

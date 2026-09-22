@@ -36,6 +36,7 @@ fn public_api_surface_is_stable() {
         "runtime",
         "runtime_gate",
         "toggle",
+        "update",
         "watch",
     ]
     .into_iter()

@@ -1,4 +1,5 @@
 use std::env;
+use std::io::IsTerminal;
 
 use tokio::runtime::Handle;
 
@@ -102,7 +103,7 @@ fn run_shell_text_outcome(
     outcome: PlanningOutcome,
     launch: &ShellLaunchOptions,
 ) -> i32 {
-    match outcome {
+    let exit_code = match outcome {
         PlanningOutcome::SetupFailure(plan) => report_setup_failure(&plan),
         PlanningOutcome::Planned(plan) => shell_flow::run_planned_shell_command(
             cmd,
@@ -111,7 +112,23 @@ fn run_shell_text_outcome(
             &plan,
             launch,
         ),
+    };
+
+    maybe_offer_update_notice();
+
+    exit_code
+}
+
+/// Update notice (ADR-038): interactive-TTY-only, best-effort, and never
+/// allowed to affect the wrapped command's own exit code. Gated here rather
+/// than inside `aegis::update` so `Watch`, JSON output, and `aegis hook` —
+/// none of which call this function — never even construct the check.
+fn maybe_offer_update_notice() {
+    if is_ci_environment() || !std::io::stdout().is_terminal() {
+        return;
     }
+    let _ = aegis::update::maybe_render_notice(env!("CARGO_PKG_VERSION"));
+    aegis::update::maybe_spawn_background_check();
 }
 
 fn log_assessment(assessment: &Assessment, allowlist_match: Option<&AllowlistMatch>) {

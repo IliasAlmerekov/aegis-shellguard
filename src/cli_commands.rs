@@ -186,6 +186,97 @@ pub(crate) fn handle_toggle_status_command() -> i32 {
     0
 }
 
+pub(crate) fn handle_update_command(args: crate::UpdateArgs) -> i32 {
+    match args.command {
+        crate::UpdateCommand::Enable(enable_args) => handle_update_enable_command(enable_args),
+        crate::UpdateCommand::Disable => handle_update_disable_command(),
+        crate::UpdateCommand::Status => handle_update_status_command(),
+        crate::UpdateCommand::Check => handle_update_check_command(),
+    }
+}
+
+fn handle_update_enable_command(args: crate::UpdateEnableArgs) -> i32 {
+    match aegis::update::enable(args.channel.into()) {
+        Ok(state) => {
+            println!(
+                "Update checks enabled for channel {}.",
+                state.channel.map(|c| c.to_string()).unwrap_or_default()
+            );
+            println!(
+                "Aegis checks at most once a day, from the shell wrapper only, and never runs npm."
+            );
+            0
+        }
+        Err(err) => {
+            eprintln!("error: failed to enable update checks: {err}");
+            EXIT_INTERNAL
+        }
+    }
+}
+
+fn handle_update_disable_command() -> i32 {
+    match aegis::update::disable() {
+        Ok(_) => {
+            println!("Update checks disabled.");
+            0
+        }
+        Err(err) => {
+            eprintln!("error: failed to disable update checks: {err}");
+            EXIT_INTERNAL
+        }
+    }
+}
+
+fn handle_update_status_command() -> i32 {
+    match aegis::update::status() {
+        Ok(state) => {
+            println!("consent: {}", state.consent);
+            println!(
+                "channel: {}",
+                state
+                    .channel
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "none".to_string())
+            );
+            println!(
+                "latest known version: {}",
+                state.latest_known_version.as_deref().unwrap_or("unknown")
+            );
+            println!(
+                "last successful check: {}",
+                state.last_success_check_at.as_deref().unwrap_or("never")
+            );
+            0
+        }
+        Err(err) => {
+            eprintln!("error: failed to read update status: {err}");
+            EXIT_INTERNAL
+        }
+    }
+}
+
+fn handle_update_check_command() -> i32 {
+    let channel = aegis::update::status()
+        .ok()
+        .and_then(|state| state.channel)
+        .unwrap_or(aegis::update::Channel::Npm);
+
+    match aegis::update::check_now(channel) {
+        Ok(aegis::update::CheckOutcome::Fetched { latest }) => {
+            println!("latest available: {latest}");
+            0
+        }
+        Ok(aegis::update::CheckOutcome::Failed { error }) => {
+            eprintln!("error: update check failed: {error}");
+            EXIT_INTERNAL
+        }
+        Err(err) => {
+            eprintln!("error: update check failed: {err}");
+            EXIT_INTERNAL
+        }
+    }
+}
+
 pub(crate) fn handle_rollback_command(
     args: RollbackArgs,
     runtime: &tokio::runtime::Runtime,

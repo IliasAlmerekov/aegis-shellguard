@@ -154,6 +154,21 @@ Runs `aegis install-hooks --all` automatically when Claude Code or Codex config 
 
 npm and Cargo install the binary only; neither runs the global shell installer or edits your shell startup files. Opt in with `aegis setup-shell` (see below).
 
+**Update notices (opt-in, npm only):**
+
+```bash
+aegis update enable --channel npm   # opt in
+aegis update status                 # consent, cache, last check
+aegis update check                  # check the registry right now
+aegis update disable                # opt out
+```
+
+With this on, the shell proxy checks for a newer release at most once a day
+and prints a one-line notice — only on an interactive terminal, never in
+`aegis watch`, `--output json`, or an agent hook. Aegis never runs `npm`
+itself; it only tells you the version and the exact command to run
+(ADR-038).
+
 ### Homebrew
 
 ```bash

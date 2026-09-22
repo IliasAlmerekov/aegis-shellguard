@@ -698,3 +698,33 @@ tests, fuzzing). It runs for every commit bound for or landed on `main`, on the
 weekly schedule, and on manual runs; it is skipped only for pull requests into
 other branches.
 _Avoid_: slow job, optional job
+
+## Update notice
+
+**Installation channel**:
+The distribution Aegis was installed from and should check for a newer release
+on (`Channel::Npm` in v1; ADR-038). Stored in `Update state`, never inferred
+from how the running binary happens to be invoked.
+_Avoid_: distribution channel, package source
+
+**Update check**:
+One request to the installation channel's registry for its `latest` version,
+made only with consent and bounded in time and response size. Never confused
+with `aegis update check`, the CLI command that runs one on demand regardless
+of consent — see ADR-038 for why an explicit invocation is its own
+authorization.
+_Avoid_: version check, registry poll
+
+**Update state**:
+The consent, selected `Installation channel`, cached latest version, and
+notice-throttling timestamps persisted at `~/.aegis/update.json`, global and
+never read from a project `.aegis.toml` layer (ADR-038). A project must not be
+able to turn on an outbound request on a developer's machine.
+_Avoid_: update config, update cache
+
+**Update notice**:
+The one-line "a newer version is available" message printed to stderr by the
+`$SHELL proxy`'s text path, gated to an interactive TTY, non-CI, and at most
+once per day per distinct available version. Never printed by `Watch`, JSON
+output, or a `Hook`; never triggers a self-update or runs `npm` (ADR-038).
+_Avoid_: update prompt, version banner

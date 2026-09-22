@@ -374,6 +374,17 @@ Current fuzzing coverage includes parser and scanner harnesses under:
 
 Both targets are integrated into CI with bounded runs and corpus-backed seed inputs.
 
+## Aegis's own outbound network use
+
+Aegis itself makes exactly one outbound network call, and only with explicit,
+persisted opt-in: the update check (ADR-038, `aegis update enable`). It is an
+HTTPS GET to the npm registry for the `latest` version of
+`@iliasalmerekov/aegis`, bounded in time and response size, never executed
+without consent, never rendered outside an interactive TTY, and never used to
+self-update or to run `npm`. This is distinct from — and does not relax — the
+guardrail's own detection of outbound irreversible actions in commands it
+intercepts (ADR-032).
+
 ## Operational guidance
 
 Use Aegis as one layer in a larger safety posture:

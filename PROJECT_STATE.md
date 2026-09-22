@@ -18,9 +18,45 @@ distribution smoke gates open)
 
 ## Last updated
 
-2026-09-18
+2026-09-22
 
 ---
+
+## Current session (2026-09-22): opt-in npm update notice (ADR-038)
+
+- New `aegis update enable --channel npm` / `disable` / `status` / `check`
+  commands (`src/main.rs`, `src/cli_commands.rs`) and a new `aegis::update`
+  library module (`src/update/`: `state.rs`, `registry.rs`, `version.rs`,
+  `error.rs`) hold consent, the selected channel, the cached latest version,
+  and per-version notice timestamps in `~/.aegis/update.json` — global, never
+  read from a project `.aegis.toml` layer.
+- The registry fetch shells out to the system `curl` rather than adding a
+  Rust HTTP/TLS client — avoids a third native-code build input beyond the
+  two ADR-sanctioned ones (Tree-sitter, bubblewrap). See ADR-038 for the
+  full trade-off.
+- The shell wrapper's text path (`src/shell_wrapper.rs`) is the only
+  automatic trigger: on an interactive TTY, outside CI, with a cache older
+  than 24 hours, it spawns a detached background child
+  (`--internal-update-check <channel>`, short-circuited in `main.rs` before
+  clap/Tokio, mirroring `--internal-language-worker`) deduplicated by a
+  reclaimable lock at `~/.aegis/update.lock`. The notice itself prints to
+  stderr, throttled to once per day per distinct available version, and
+  never renders in `Watch`, JSON output, or a `Hook`.
+- Version comparison is strict SemVer (`semver` crate, the only new
+  dependency) and fails closed on any parse error — a malformed registry
+  response or an unparsable installed version never recommends an update.
+- `CONTEXT.md` gains the "Update notice" section (`Installation channel`,
+  `Update check`, `Update state`, `Update notice`); `docs/threat-model.md`
+  documents Aegis's own one-call outbound network exception.
+- Coverage: unit tests across `src/update/` (state round-trip, strict SemVer
+  edge cases, malformed/oversized registry responses, lock acquire/reclaim,
+  notice throttling) and `tests/update_cli.rs` (all four subcommands,
+  curl-unavailable and malformed-response fail-closed paths, and — via a
+  `script`(1) pty, `tests/installer_tty.rs`'s pattern — the notice actually
+  printing on a real TTY for a newer version and staying silent for an
+  older one). Full workspace test, Clippy, and `cargo fmt` all pass on the
+  pinned toolchain; `cargo deny check` and `cargo audit` show no new
+  advisories from `semver`.
 
 ## Current session (2026-09-17): the git Snapshot stops emptying the working tree (#356)
 

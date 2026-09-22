@@ -19,5 +19,7 @@ pub mod runtime;
 pub mod runtime_gate;
 /// Global on/off toggle state helpers.
 pub mod toggle;
+/// Opt-in npm update-notice consent, cache, and registry check.
+pub mod update;
 /// Watch-mode NDJSON protocol and runner.
 pub mod watch;

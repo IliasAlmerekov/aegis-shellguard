@@ -44,6 +44,7 @@ dependencies = [
  "libc",
  "regex",
  "schemars",
+ "semver",
  "serde",
  "serde_json",
  "sha2",

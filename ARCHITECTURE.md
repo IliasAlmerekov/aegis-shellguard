@@ -770,6 +770,7 @@ pub mod runtime_gate;
 pub mod snapshot;
 pub mod toggle;
 pub mod ui;
+pub mod update;
 pub mod watch;
 ```
 

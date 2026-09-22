@@ -79,6 +79,8 @@ enum Commands {
     InstallHooks(InstallArgs),
     /// Configure Aegis as an explicit opt-in $SHELL proxy for new terminal sessions
     SetupShell(SetupShellArgs),
+    /// Manage the opt-in npm update notice
+    Update(UpdateArgs),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -232,6 +234,44 @@ struct SetupShellArgs {
     aegis_bin: Option<std::path::PathBuf>,
 }
 
+#[derive(Args)]
+struct UpdateArgs {
+    #[command(subcommand)]
+    command: UpdateCommand,
+}
+
+#[derive(Subcommand)]
+enum UpdateCommand {
+    /// Opt in to periodic update checks for an installation channel
+    Enable(UpdateEnableArgs),
+    /// Opt out; the last known cache is kept but goes inert
+    Disable,
+    /// Show consent, channel, and cache state
+    Status,
+    /// Check the registry now and print the result
+    Check,
+}
+
+#[derive(Args)]
+struct UpdateEnableArgs {
+    /// Installation channel to check for updates
+    #[arg(long, value_enum, default_value_t = UpdateChannelArg::Npm)]
+    channel: UpdateChannelArg,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum UpdateChannelArg {
+    Npm,
+}
+
+impl From<UpdateChannelArg> for aegis::update::Channel {
+    fn from(value: UpdateChannelArg) -> Self {
+        match value {
+            UpdateChannelArg::Npm => aegis::update::Channel::Npm,
+        }
+    }
+}
+
 #[derive(Subcommand)]
 enum ConfigCommand {
     /// Create a project-local .aegis.toml in the current directory
@@ -299,6 +339,17 @@ fn main() {
     #[cfg(target_os = "linux")]
     if std::env::args().any(|a| a == aegis_sandbox::INNER_LANDLOCK_FLAG) {
         process::exit(aegis_sandbox::run_inner_landlock_wrapper());
+    }
+
+    // The background update-check child (ADR-038) the shell wrapper spawns
+    // is, like the two short-circuits above, a minimal, synchronous,
+    // fire-and-forget process: it must not pay for clap parsing or the Tokio
+    // runtime, and it must never write to stdout/stderr since nothing reads
+    // its output. The flag literal is owned by
+    // `aegis::update::INTERNAL_UPDATE_CHECK_FLAG` so the detector here and
+    // the spawner in `aegis::update` cannot drift.
+    if std::env::args().any(|a| a == aegis::update::INTERNAL_UPDATE_CHECK_FLAG) {
+        process::exit(aegis::update::run_internal_update_check_from_env());
     }
 
     let invocation = match shell_compat::parse_invocation_mode() {
