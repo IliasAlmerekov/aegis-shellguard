@@ -1,6 +1,6 @@
 use super::MatchResult;
 
-pub use aegis_types::HighlightRange;
+use aegis_types::HighlightRange;
 
 pub(super) fn sorted_highlight_ranges(cmd: &str, matches: &[MatchResult]) -> Vec<HighlightRange> {
     let mut ranges = Vec::with_capacity(matches.len());

@@ -1,19 +1,20 @@
 use std::path::Path;
 
-use aegis::audit::Decision;
-use aegis::config::amend::{
-    AppendOutcome, active_config_path_for_append, append_allow_rule, append_block_rule,
-};
-use aegis::decision::BlockReason;
-use aegis::interceptor::parser::{extract_prefix, split_tokens};
 use aegis::planning::{CwdState, ExecutionDisposition, InterceptionPlan, PreparedPlanner};
 use aegis::runtime::{AuditWriteOptions, RecoveryStatus, recovery_status};
-use aegis::snapshot::{SnapshotCoverage, SnapshotRecord};
-use aegis::ui::confirm::{
+use aegis_config::amend::{
+    AppendOutcome, active_config_path_for_append, append_allow_rule, append_block_rule,
+};
+use aegis_parser::{extract_prefix, split_tokens};
+use aegis_policy::BlockReason;
+use aegis_snapshot::SnapshotCoverage;
+use aegis_tui::{
     PromptDecision, RecoveryPromptDecision, show_confirmation, show_confirmation_decision,
     show_policy_block, show_recovery_override_decision,
 };
+use aegis_types::Decision;
 use aegis_types::SandboxStatus;
+use aegis_types::SnapshotRecord;
 
 use crate::shell_compat::{ShellLaunchOptions, exec_prepared_command, prepare_command};
 use crate::{EXIT_BLOCKED, EXIT_DENIED, EXIT_INTERNAL};
@@ -25,7 +26,7 @@ fn persist_rule(
         &std::path::Path,
         &[String],
         &std::path::Path,
-    ) -> Result<AppendOutcome, aegis::config::ConfigError>,
+    ) -> Result<AppendOutcome, aegis_config::ConfigError>,
     label: &str,
 ) -> Result<(), String> {
     match active_config_path_for_append() {
@@ -42,8 +43,8 @@ fn persist_rule(
                     existing_location,
                 }) => {
                     let location = match existing_location {
-                        aegis::config::allowlist::ConfigSourceLayer::Project => "project",
-                        aegis::config::allowlist::ConfigSourceLayer::Global => "global",
+                        aegis_config::allowlist::ConfigSourceLayer::Project => "project",
+                        aegis_config::allowlist::ConfigSourceLayer::Global => "global",
                     };
                     eprintln!(
                         "warning: conflicting rule for '{pattern}' already exists in {location} config"

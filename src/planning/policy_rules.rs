@@ -65,16 +65,15 @@ fn effective_decision(rule: &PolicyRule, is_compound: bool) -> PolicyRuleDecisio
 
 #[cfg(test)]
 mod tests {
-    use aegis_config::{
-        AegisConfig, PolicyPatternToken, PolicyRule, PolicyRuleDecision, WhenClause,
-    };
+    use aegis_config::{AegisConfig, PolicyPatternToken, PolicyRule, WhenClause};
     use aegis_parser::Parser as CommandParser;
     use aegis_policy::{
         ExecutionTransport, PolicyAction, PolicyAllowlistResult, PolicyBlocklistResult,
         PolicyCiState, PolicyConfigFlags, PolicyDecision, PolicyExecutionContext, PolicyInput,
         PolicyRationale, evaluate_policy,
     };
-    use aegis_scanner::Assessment;
+    use aegis_types::Assessment;
+    use aegis_types::PolicyRuleDecision;
     use aegis_types::{AllowlistOverrideLevel, CiPolicy, Mode, RiskLevel, SnapshotPolicy};
     use std::fs;
     use tempfile::TempDir;

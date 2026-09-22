@@ -99,25 +99,28 @@ Current module responsibilities:
 - `src/main.rs`: CLI parsing and orchestration only
 - `src/error.rs`: shared typed errors (maps `aegis_scanner::ScannerError` inward)
 - `crates/aegis-parser/`: shell tokenizer, segmentation, and `PrefixPattern` matching
-- `src/interceptor/parser/`: thin re-export shim over the `aegis-parser` crate
-- `crates/aegis-scanner/`: command classification, `PatternSet`, built-in patterns
-- `src/interceptor/scanner.rs`: thin re-export shim over the `aegis-scanner` crate
-- `src/interceptor/patterns.rs`: thin re-export shim over the `aegis-scanner` crate
+- `crates/aegis-scanner/`: command classification, `PatternSet`, built-in patterns, `assess()`
 - `crates/aegis-policy/`: pure policy evaluation (`Assessment` + context → decision)
-- `src/decision/`: thin re-export shim over the `aegis-policy` crate
 - `crates/aegis-config/`: config model, layered loader, validation, schema, `amend`
-- `src/config/`: thin re-export shim over the `aegis-config` crate
 - `crates/aegis-snapshot/`: snapshot plugin trait and six backends (git, docker, pg, mysql, sqlite, supabase)
-- `src/snapshot/`: thin re-export shim over the `aegis-snapshot` crate
 - `crates/aegis-sandbox/`: opt-in execution confinement (bwrap + Landlock / sandbox-exec)
-- `src/ui/confirm.rs`: interactive confirmation flow
+- `crates/aegis-tui/`: interactive confirmation flow (crossterm)
 - `crates/aegis-audit/`: `AuditLogger`, append-only JSONL, rotation, optional hash-chain
-- `src/audit/`: thin re-export shim over the `aegis-audit` crate
+
+There are no `src/` re-export shims over these crates (issue #281): every
+call site imports a type from the crate that defines it, never through an
+intermediate `pub use`. The `aegis` binary crate's own public module list
+(`src/lib.rs`, pinned by `public_api_surface_is_stable` in
+`tests/architecture_boundaries.rs`) carries only the modules external
+consumers use — `analysis`, `error`, `explanation`, `planning`, `runtime`,
+`runtime_gate`, `toggle`, `watch` — not a mirror of every library crate.
 
 Architectural constraints:
 
 - `src/main.rs` must remain thin; business logic belongs in focused modules.
-- `src/interceptor/` is the hot path and must stay synchronous.
+- Import each type from the crate that defines it — never re-export a crate's
+  type through a `src/` module just to shorten the path.
+- The scanner is the hot path and must stay synchronous.
 - Async is allowed for subprocess and snapshot operations, not for parser/scanner logic.
 - Quick scan must remain Aho-Corasick based.
 - Full regex evaluation must remain on the slower second pass only.
@@ -384,15 +387,12 @@ Treat a change as high-risk if it touches any of:
 - `crates/aegis-parser/`
 - `crates/aegis-scanner/`
 - `crates/aegis-policy/`
-- `src/interceptor/`
 - `crates/aegis-config/`
 - `crates/aegis-tui/`
 - `crates/aegis-explanation/`
-- `src/ui/confirm.rs` (re-export shim — real implementation in `crates/aegis-tui/`)
-- `crates/aegis-audit/` (re-exported via `src/audit/` shim)
-- `crates/aegis-snapshot/` (re-exported via `src/snapshot/` shim)
+- `crates/aegis-audit/`
+- `crates/aegis-snapshot/`
 - `crates/aegis-sandbox/`
-- `src/snapshot/`
 - `Cargo.toml`
 - `Cargo.lock`
 - CI workflows

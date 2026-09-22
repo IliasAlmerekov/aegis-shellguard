@@ -37,7 +37,7 @@ fn runtime_context_fails_closed_when_policy_star_exists_without_feature() {
         .unwrap();
     let handle = rt.handle().clone();
 
-    let config = aegis::config::AegisConfig::default();
+    let config = aegis_config::AegisConfig::default();
     let result =
         aegis::runtime::RuntimeContext::new_with_policy_path(config, handle, Some(&policy_path));
 

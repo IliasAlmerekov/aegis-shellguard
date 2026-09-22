@@ -11,6 +11,7 @@ description = "Starlark policy loader for Aegis — loads ~/.aegis/policy.star i
 
 [dependencies]
 aegis-config.workspace = true
+aegis-types.workspace = true
 anyhow = "1"
 thiserror = "1"
 starlark = "0.14.2"

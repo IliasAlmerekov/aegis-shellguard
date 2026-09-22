@@ -27,7 +27,7 @@ pub(crate) fn validate_custom_patterns(patterns: &[UserPattern]) -> Result<()> {
     if patterns.is_empty() {
         return Ok(());
     }
-    let converted: Vec<aegis_scanner::Pattern> = patterns.iter().cloned().map(Into::into).collect();
+    let converted: Vec<aegis_types::Pattern> = patterns.iter().cloned().map(Into::into).collect();
     aegis_scanner::PatternSet::from_sources(&converted)
         .and_then(aegis_scanner::Scanner::try_new)
         .map(|_| ())
@@ -62,11 +62,11 @@ mod rules;
 mod serde_helpers;
 mod template;
 
-pub use enums::{AllowlistOverrideLevel, AuditIntegrityMode, CiPolicy, Mode, SnapshotPolicy};
+use aegis_types::{AllowlistOverrideLevel, CiPolicy, Mode, PolicyRuleDecision, SnapshotPolicy};
+pub use enums::AuditIntegrityMode;
 pub use rules::{
     AllowlistRule, AuditConfig, BlockRule, LANGUAGE_ANALYSIS_SCRIPT_FILE_HARD_CEILING_BYTES,
-    LanguageAnalysisConfig, PolicyPatternToken, PolicyRule, PolicyRuleDecision, TrustedAlias,
-    UserPattern, WhenClause,
+    LanguageAnalysisConfig, PolicyPatternToken, PolicyRule, TrustedAlias, UserPattern, WhenClause,
 };
 
 // Bring submodule items into the `model` namespace so they remain reachable

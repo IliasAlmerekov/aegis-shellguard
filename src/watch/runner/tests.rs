@@ -6,15 +6,15 @@ use serde_json::Value;
 use tempfile::TempDir;
 
 use super::{run_watch_plan_with_prompts, watch_execution_cwd};
-use crate::config::AegisConfig;
-use crate::decision::ExecutionTransport;
 use crate::planning::{
     CwdState, PlanningOutcome, PlanningRequest, PreparedPlanner, prepare_and_plan_async,
 };
 use crate::runtime::RuntimeContext;
-use crate::snapshot::{GitPlugin, SnapshotRegistry};
-use crate::ui::confirm::{PromptDecision, RecoveryPromptDecision};
 use crate::watch::protocol::InputFrame;
+use aegis_config::AegisConfig;
+use aegis_policy::ExecutionTransport;
+use aegis_snapshot::{GitPlugin, SnapshotRegistry};
+use aegis_tui::{PromptDecision, RecoveryPromptDecision};
 
 #[test]
 fn watch_execution_cwd_returns_resolved_path() {
@@ -68,7 +68,7 @@ fn prepared_with_optional_sandbox(audit_path: PathBuf) -> PreparedPlanner {
 struct SucceedingPlugin;
 
 #[async_trait::async_trait]
-impl crate::snapshot::SnapshotPlugin for SucceedingPlugin {
+impl aegis_snapshot::SnapshotPlugin for SucceedingPlugin {
     fn name(&self) -> &'static str {
         "mock-succeeding"
     }
@@ -81,15 +81,15 @@ impl crate::snapshot::SnapshotPlugin for SucceedingPlugin {
         &self,
         _cwd: &std::path::Path,
         _cmd: &str,
-    ) -> Result<String, crate::snapshot::SnapshotError> {
+    ) -> Result<String, aegis_snapshot::SnapshotError> {
         Ok("mock-snapshot-id".to_string())
     }
 
-    async fn rollback(&self, _snapshot_id: &str) -> Result<(), crate::snapshot::SnapshotError> {
+    async fn rollback(&self, _snapshot_id: &str) -> Result<(), aegis_snapshot::SnapshotError> {
         Ok(())
     }
 
-    async fn delete(&self, _snapshot_id: &str) -> Result<(), crate::snapshot::SnapshotError> {
+    async fn delete(&self, _snapshot_id: &str) -> Result<(), aegis_snapshot::SnapshotError> {
         Ok(())
     }
 }
@@ -98,7 +98,7 @@ impl crate::snapshot::SnapshotPlugin for SucceedingPlugin {
 struct FailingPlugin;
 
 #[async_trait::async_trait]
-impl crate::snapshot::SnapshotPlugin for FailingPlugin {
+impl aegis_snapshot::SnapshotPlugin for FailingPlugin {
     fn name(&self) -> &'static str {
         "mock-failing"
     }
@@ -111,17 +111,17 @@ impl crate::snapshot::SnapshotPlugin for FailingPlugin {
         &self,
         _cwd: &std::path::Path,
         _cmd: &str,
-    ) -> Result<String, crate::snapshot::SnapshotError> {
-        Err(crate::snapshot::SnapshotError::Snapshot(
+    ) -> Result<String, aegis_snapshot::SnapshotError> {
+        Err(aegis_snapshot::SnapshotError::Snapshot(
             "mock plugin failure".to_string(),
         ))
     }
 
-    async fn rollback(&self, _snapshot_id: &str) -> Result<(), crate::snapshot::SnapshotError> {
+    async fn rollback(&self, _snapshot_id: &str) -> Result<(), aegis_snapshot::SnapshotError> {
         Ok(())
     }
 
-    async fn delete(&self, _snapshot_id: &str) -> Result<(), crate::snapshot::SnapshotError> {
+    async fn delete(&self, _snapshot_id: &str) -> Result<(), aegis_snapshot::SnapshotError> {
         Ok(())
     }
 }

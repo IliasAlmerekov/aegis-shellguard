@@ -9,8 +9,8 @@ use std::process::{Command, Output, Stdio};
 use std::time::Duration;
 
 use aegis::analysis::{AnalysisCwd, OrchestrationBudget, Outcome, run_with_budget_in_cwd};
-use aegis::interceptor::patterns::PatternSet;
-use aegis::interceptor::scanner::Scanner;
+use aegis_scanner::PatternSet;
+use aegis_scanner::Scanner;
 use tempfile::TempDir;
 
 const SOURCE_SENTINEL: &str = "LANGUAGE_SOURCE_PRIVACY_SENTINEL_7f1c";

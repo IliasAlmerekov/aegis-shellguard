@@ -7,27 +7,25 @@
 
 use std::path::Path;
 
-use aegis::audit::Decision;
-use aegis::config::AllowlistMatch;
-use aegis::decision::BlockReason;
-use aegis::decision::{
-    ExecutionTransport, PolicyAction, PolicyAllowlistResult, PolicyBlocklistResult, PolicyCiState,
-    PolicyConfigFlags, PolicyDecision, PolicyExecutionContext, PolicyInput, evaluate_policy,
-};
 use aegis::explanation::{
     AllowlistExplanation, CommandExplanation, ExecutionContextExplanation, PolicyExplanation,
     ScanExplanation,
 };
 use aegis::planning::evaluate_policy_rules;
 use aegis::runtime::RuntimeContext;
-use aegis::snapshot::SnapshotRecord;
-use aegis::ui::confirm::{
-    PromptDecision, show_confirmation, show_confirmation_decision, show_policy_block,
+use aegis_config::AllowlistMatch;
+use aegis_policy::BlockReason;
+use aegis_policy::{
+    ExecutionTransport, PolicyAction, PolicyAllowlistResult, PolicyBlocklistResult, PolicyCiState,
+    PolicyConfigFlags, PolicyDecision, PolicyExecutionContext, PolicyInput, evaluate_policy,
 };
+use aegis_tui::{PromptDecision, show_confirmation, show_confirmation_decision, show_policy_block};
+use aegis_types::Decision;
+use aegis_types::SnapshotRecord;
 
 pub(crate) fn decide_command(
     context: &RuntimeContext,
-    assessment: &aegis::interceptor::scanner::Assessment,
+    assessment: &aegis_types::Assessment,
     cwd: &Path,
     verbose: bool,
     allowlist_match: Option<&AllowlistMatch>,
@@ -62,7 +60,7 @@ pub(crate) fn decide_command(
 
 pub(super) fn execute_policy_decision(
     context: &RuntimeContext,
-    assessment: &aegis::interceptor::scanner::Assessment,
+    assessment: &aegis_types::Assessment,
     cwd: &Path,
     policy_decision: PolicyDecision,
     explanation: &CommandExplanation,
@@ -133,7 +131,7 @@ pub(super) fn execute_policy_decision(
 
 pub(super) fn test_command_explanation(
     context: &RuntimeContext,
-    assessment: &aegis::interceptor::scanner::Assessment,
+    assessment: &aegis_types::Assessment,
     policy_decision: PolicyDecision,
     allowlist_match: Option<&AllowlistMatch>,
     in_ci: bool,
@@ -185,14 +183,14 @@ pub(super) fn test_command_explanation(
 
 fn evaluate_policy_decision(
     context: &RuntimeContext,
-    assessment: &aegis::interceptor::scanner::Assessment,
+    assessment: &aegis_types::Assessment,
     cwd: &Path,
     allowlist_match: Option<&AllowlistMatch>,
     in_ci: bool,
     transport: ExecutionTransport,
 ) -> (PolicyDecision, Vec<&'static str>) {
-    let applicable_snapshot_plugins = if assessment.risk == aegis::interceptor::RiskLevel::Danger
-        && context.config().snapshot_policy != aegis::config::SnapshotPolicy::None
+    let applicable_snapshot_plugins = if assessment.risk == aegis_types::RiskLevel::Danger
+        && context.config().snapshot_policy != aegis_types::SnapshotPolicy::None
     {
         context.applicable_snapshot_plugins(cwd)
     } else {

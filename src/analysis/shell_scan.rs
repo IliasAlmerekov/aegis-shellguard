@@ -14,7 +14,7 @@
 
 use aegis_types::{AnalysisStatus, DegradationReason, LanguageAnalysisResult};
 
-use crate::interceptor::scanner::Scanner;
+use aegis_scanner::Scanner;
 
 /// Source-free label carried by a Scanner Match found inside analyzed source.
 pub const SHELL_SOURCE_MATCH_LABEL: &str = "shell command in analyzed source";

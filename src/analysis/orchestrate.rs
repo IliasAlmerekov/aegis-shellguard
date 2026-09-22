@@ -32,7 +32,7 @@ use super::queue::{AnalysisQueue, QueueBudget, QueueTarget};
 use super::router::{Resolution, RoutedTarget, resolve_for_analysis, route};
 use super::shell_scan::{fold_result, scan_shell_source};
 use super::worker_client::{RequestKind, TargetRequest, TargetResult, Worker, WorkerError};
-use crate::interceptor::scanner::Scanner;
+use aegis_scanner::Scanner;
 
 /// The outcome of [`run`]: distinguishes "no routed analysis targets — no
 /// subprocess spawned" from "the worker ran and results were folded in".

@@ -3,13 +3,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use aegis::config::AegisConfig;
-use aegis::decision::ExecutionTransport;
-use aegis::interceptor::parser::Parser as CommandParser;
-use aegis::interceptor::scanner::Assessment;
 use aegis::planning::{CwdState, PlanningOutcome, PreparedPlanner, prepare_and_plan};
 use aegis::runtime::RuntimeContext;
-use aegis::snapshot::SnapshotRecord;
+use aegis_config::AegisConfig;
+use aegis_parser::Parser as CommandParser;
+use aegis_policy::ExecutionTransport;
+use aegis_types::Assessment;
+use aegis_types::SnapshotRecord;
 use tempfile::TempDir;
 use tokio::runtime::Handle;
 
@@ -20,10 +20,9 @@ use crate::shell_compat::{
     same_file,
 };
 use crate::shell_flow::decide_command;
-use aegis::config::{
-    AllowlistMatch, AllowlistOverrideLevel, CiPolicy, ConfigSourceLayer, Mode, SnapshotPolicy,
-};
 use aegis::error::AegisError;
+use aegis_config::{AllowlistMatch, ConfigSourceLayer};
+use aegis_types::{AllowlistOverrideLevel, CiPolicy, Mode, SnapshotPolicy};
 
 // ── Scanner init failure ──────────────────────────────────────────────────
 //
@@ -281,7 +280,7 @@ fn exit_codes_do_not_overlap_with_success() {
 #[test]
 fn config_load_error_lines_include_fix_hint_only_for_config_errors() {
     let lines = config_load_error_lines(&AegisError::Config(
-        aegis::config::error::ConfigError::Config("bad config".to_string()),
+        aegis_config::error::ConfigError::Config("bad config".to_string()),
     ));
     assert_eq!(lines.len(), 2);
     assert!(lines[0].contains("failed to load config"));

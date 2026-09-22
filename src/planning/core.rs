@@ -2,13 +2,13 @@
 
 use std::path::Path;
 
-use crate::decision::{
-    ExecutionTransport, PolicyAllowlistResult, PolicyBlocklistResult, PolicyCiState,
-    PolicyConfigFlags, PolicyExecutionContext, PolicyInput, evaluate_policy,
-};
 use crate::planning::policy_rules::evaluate_policy_rules;
 use crate::planning::types::{CwdState, DecisionContext, InterceptionPlan, PlanningOutcome};
 use crate::runtime::RuntimeContext;
+use aegis_policy::{
+    ExecutionTransport, PolicyAllowlistResult, PolicyBlocklistResult, PolicyCiState,
+    PolicyConfigFlags, PolicyExecutionContext, PolicyInput, evaluate_policy,
+};
 
 /// Typed request for pure planning against an already prepared runtime context.
 #[derive(Debug, Clone)]
@@ -68,11 +68,11 @@ pub fn plan_with_context(
 /// either one warrants resolving applicable snapshot plugins.
 /// `SnapshotPolicy::None` (the trusted/global opt-out) suppresses both.
 fn recovery_backstop_applies(
-    assessment: &crate::interceptor::scanner::Assessment,
-    snapshot_policy: crate::config::SnapshotPolicy,
+    assessment: &aegis_types::Assessment,
+    snapshot_policy: aegis_types::SnapshotPolicy,
 ) -> bool {
-    (assessment.risk == crate::interceptor::RiskLevel::Danger || assessment.effect_opaque)
-        && snapshot_policy != crate::config::SnapshotPolicy::None
+    (assessment.risk == aegis_types::RiskLevel::Danger || assessment.effect_opaque)
+        && snapshot_policy != aegis_types::SnapshotPolicy::None
 }
 
 /// Async variant of `plan_with_context` for callers already inside an async
@@ -134,8 +134,8 @@ fn analysis_cwd(cwd_state: &CwdState) -> crate::analysis::AnalysisCwd<'_> {
 fn build_planning_outcome(
     context: &RuntimeContext,
     request: PlanningRequest<'_>,
-    assessment: crate::interceptor::scanner::Assessment,
-    allowlist_match: Option<crate::config::AllowlistMatch>,
+    assessment: aegis_types::Assessment,
+    allowlist_match: Option<aegis_config::AllowlistMatch>,
     blocklist_match: bool,
     applicable_snapshot_plugins: Vec<&'static str>,
 ) -> PlanningOutcome {
@@ -185,12 +185,13 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
-    use crate::config::{AegisConfig, Mode, SnapshotPolicy};
-    use crate::decision::ExecutionTransport;
     use crate::planning::types::{
         ApprovalRequirement, ExecutionDisposition, PlanningOutcome, SnapshotPlan,
     };
     use crate::runtime::RuntimeContext;
+    use aegis_config::AegisConfig;
+    use aegis_policy::ExecutionTransport;
+    use aegis_types::{Mode, SnapshotPolicy};
     use tempfile::TempDir;
     use tokio::runtime::Handle;
 
@@ -238,7 +239,7 @@ mod tests {
 
     #[test]
     fn safe_command_plan_does_not_materialize_snapshot_registry() {
-        crate::snapshot::reset_snapshot_registry_build_count_for_tests();
+        aegis_snapshot::testing::reset_registry_build_count();
 
         let mut config = AegisConfig::default();
         config.mode = Mode::Protect;
@@ -261,10 +262,7 @@ mod tests {
             panic!("safe command must produce a normal plan");
         };
         assert_eq!(plan.snapshot_plan(), SnapshotPlan::NotRequired);
-        assert_eq!(
-            crate::snapshot::snapshot_registry_build_count_for_tests(),
-            0
-        );
+        assert_eq!(aegis_snapshot::testing::registry_build_count(), 0);
     }
 
     #[test]
@@ -295,7 +293,7 @@ mod tests {
 
     #[test]
     fn warn_command_plan_keeps_snapshot_registry_unmaterialized() {
-        crate::snapshot::reset_snapshot_registry_build_count_for_tests();
+        aegis_snapshot::testing::reset_registry_build_count();
 
         let mut config = AegisConfig::default();
         config.mode = Mode::Protect;
@@ -317,10 +315,7 @@ mod tests {
             panic!("warn command must produce a normal plan");
         };
         assert_eq!(plan.snapshot_plan(), SnapshotPlan::NotRequired);
-        assert_eq!(
-            crate::snapshot::snapshot_registry_build_count_for_tests(),
-            0
-        );
+        assert_eq!(aegis_snapshot::testing::registry_build_count(), 0);
     }
 
     #[test]
@@ -387,7 +382,7 @@ mod tests {
 
     #[test]
     fn danger_command_plan_materializes_snapshot_registry_once() {
-        crate::snapshot::reset_snapshot_registry_build_count_for_tests();
+        aegis_snapshot::testing::reset_registry_build_count();
 
         let _guard = CURRENT_DIR_TEST_MUTEX.lock().unwrap();
         let original_cwd = std::env::current_dir().unwrap();
@@ -425,10 +420,7 @@ mod tests {
             plan.snapshot_plan(),
             SnapshotPlan::Required { .. }
         ));
-        assert_eq!(
-            crate::snapshot::snapshot_registry_build_count_for_tests(),
-            1
-        );
+        assert_eq!(aegis_snapshot::testing::registry_build_count(), 1);
     }
 
     #[test]
@@ -436,7 +428,7 @@ mod tests {
         // ADR-016 + ADR-022: recovery and language-analysis approval are
         // orthogonal. A script that exceeds its read budget needs a one-time
         // approval, while effect opacity still requires the recovery snapshot.
-        crate::snapshot::reset_snapshot_registry_build_count_for_tests();
+        aegis_snapshot::testing::reset_registry_build_count();
 
         let _guard = CURRENT_DIR_TEST_MUTEX.lock().unwrap();
         let original_cwd = std::env::current_dir().unwrap();

@@ -179,6 +179,7 @@ name = "aegis-starlark"
 version = "0.6.7"
 dependencies = [
  "aegis-config",
+ "aegis-types",
  "anyhow",
  "starlark",
  "tempfile",

@@ -18,10 +18,8 @@ mod scanner;
 
 use std::sync::{Arc, LazyLock};
 
-pub use aegis_types::{
-    AssessmentBasis, Category, DetectionMechanism, DetectionSource, MatchEvidence, Pattern,
-    PatternSource, PatternToken, PrefixPattern,
-};
+use aegis_types::{Assessment, Pattern};
+
 pub use error::ScannerError;
 pub use patterns::{PatternSet, PrefixRule};
 pub use scanner::{
@@ -70,6 +68,8 @@ fn builtin_scanner() -> Result<Arc<Scanner>, ScannerError> {
 #[cfg(test)]
 mod tests {
     use std::borrow::Cow;
+
+    use aegis_types::{Category, PatternSource};
 
     use super::*;
 

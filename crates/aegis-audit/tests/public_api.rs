@@ -1,11 +1,11 @@
 //! Public-API contract tests for `aegis-audit`.
 
 use aegis_audit::{
-    AuditEntry, AuditError, AuditLogger, AuditQuery, AuditRotationPolicy, AuditTimestamp, Decision,
+    AuditEntry, AuditError, AuditLogger, AuditQuery, AuditRotationPolicy, AuditTimestamp,
     MatchedPattern,
 };
 use aegis_config::AuditConfig;
-use aegis_types::RiskLevel;
+use aegis_types::{Decision, RiskLevel};
 
 // ---------------------------------------------------------------------------
 // 1. AuditError — public type with Io and Parse variants (thiserror-based)

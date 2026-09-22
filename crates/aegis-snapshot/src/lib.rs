@@ -10,8 +10,6 @@ use std::path::Path;
 
 use async_trait::async_trait;
 
-pub use aegis_types::SnapshotRecord;
-
 /// Typed error for snapshot operations.
 pub mod error;
 pub use error::SnapshotError;

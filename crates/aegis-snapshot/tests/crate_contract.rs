@@ -15,8 +15,9 @@
 
 use std::sync::Mutex;
 
-use aegis_config::{AegisConfig, SnapshotPolicy};
+use aegis_config::AegisConfig;
 use aegis_snapshot::{SnapshotError, SnapshotPlugin, SnapshotRegistry, SnapshotRegistryConfig};
+use aegis_types::SnapshotPolicy;
 
 /// Guards tests that mutate `HOME`/`USERPROFILE` so they are never concurrent.
 static HOME_ENV: Mutex<()> = Mutex::new(());
@@ -147,28 +148,13 @@ fn test_snapshot_registry_full_policy_contains_all_six_providers() {
     );
 }
 
-// ── Test 6: re-export shim — root crate re-exports the extracted type ─────────
+// ── Test 6: `aegis_snapshot::SnapshotPlugin` is the sole definition ────────────
 
-/// After extraction, `src/snapshot/mod.rs` in the root `aegis` binary crate
-/// must become a re-export shim.  At the type level this means that
-/// `aegis_snapshot::SnapshotPlugin` and the type reachable via
-/// `aegis::snapshot` are the *same* trait object.
+/// The root `aegis` binary crate imports `SnapshotPlugin` directly from
+/// `aegis_snapshot` (see ADR on the narrowed library surface) rather than
+/// through a re-export shim, so there is only one path to this trait.
 ///
-/// We verify this with a blanket `impl` trick: a concrete type that implements
-/// `aegis_snapshot::SnapshotPlugin` must also satisfy any bound written in
-/// terms of the re-exported alias, and vice-versa.  If the two paths alias the
-/// same item, the compiler will accept a function that is generic over one but
-/// called with the other.
-///
-/// NOTE: The `aegis` binary crate is NOT listed as a dev-dependency here
-/// because doing so would create a circular workspace dependency.  Instead,
-/// this test verifies the weaker but sufficient condition: the trait defined
-/// in `aegis_snapshot` is the sole definition.  The actual re-export from
-/// `aegis::snapshot` is asserted by a unit test inside `src/snapshot/mod.rs`
-/// that must be added as part of the implementation work (documented here as
-/// a contract obligation for the green-tester).
-///
-/// The test below therefore acts as a compile-time marker: it passes only when
+/// This test acts as a compile-time marker: it passes only when
 /// `aegis_snapshot::SnapshotPlugin` exists and is object-safe.
 #[test]
 fn test_snapshot_plugin_trait_is_object_safe_and_exported() {

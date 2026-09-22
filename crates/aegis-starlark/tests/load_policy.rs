@@ -6,8 +6,9 @@
 
 use std::io::Write as _;
 
-use aegis_config::{PolicyPatternToken, PolicyRuleDecision};
+use aegis_config::PolicyPatternToken;
 use aegis_starlark::{StarlarkPolicyError, load_starlark_policy};
+use aegis_types::PolicyRuleDecision;
 use tempfile::NamedTempFile;
 
 // ---------------------------------------------------------------------------

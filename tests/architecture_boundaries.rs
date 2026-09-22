@@ -30,18 +30,12 @@ fn public_api_surface_is_stable() {
 
     let expected: BTreeSet<&str> = [
         "analysis",
-        "audit",
-        "config",
-        "decision",
         "error",
         "explanation",
-        "interceptor",
         "planning",
         "runtime",
         "runtime_gate",
-        "snapshot",
         "toggle",
-        "ui",
         "watch",
     ]
     .into_iter()

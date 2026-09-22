@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use aegis::audit::{AuditEntry, AuditLogger, AuditSnapshot, Decision};
-use aegis::interceptor::RiskLevel;
+use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
+use aegis_types::Decision;
+use aegis_types::RiskLevel;
 use tempfile::TempDir;
 
 fn aegis_bin() -> PathBuf {

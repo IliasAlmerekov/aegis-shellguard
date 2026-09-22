@@ -18,12 +18,13 @@ use regex::{Regex, RegexBuilder};
 use crate::error::ScannerError;
 #[cfg(test)]
 use crate::nested::MAX_NESTED_SCAN_DEPTH;
-use crate::patterns::{Pattern, PatternSet, PatternSource};
-use aegis_types::{DetectionSource, MatchEvidence};
+use crate::patterns::PatternSet;
+use aegis_types::{
+    DetectionSource, HighlightRange, MatchEvidence, MatchResult, Pattern, PatternSource,
+    PatternToken,
+};
 
-pub use crate::patterns::{PatternToken, PrefixRule};
-pub use assessment::{Assessment, DecisionSource, MatchResult};
-pub use highlighting::HighlightRange;
+pub use crate::patterns::PrefixRule;
 
 /// First-pass scanner backed by an Aho-Corasick automaton.
 ///

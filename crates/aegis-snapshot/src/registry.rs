@@ -3,10 +3,9 @@
 use std::path::{Path, PathBuf};
 
 use aegis_config::{
-    AegisConfig, DockerScope, MysqlSnapshotConfig, PostgresSnapshotConfig, SnapshotPolicy,
-    SupabaseSnapshotConfig,
+    AegisConfig, DockerScope, MysqlSnapshotConfig, PostgresSnapshotConfig, SupabaseSnapshotConfig,
 };
-use aegis_types::SnapshotRecord;
+use aegis_types::{SnapshotPolicy, SnapshotRecord};
 
 use crate::error::SnapshotError;
 use crate::paths::resolve_snapshots_dir;

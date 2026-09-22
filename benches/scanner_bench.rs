@@ -1,4 +1,4 @@
-use aegis::interceptor::{patterns::PatternSet, scanner::Scanner};
+use aegis_scanner::{PatternSet, Scanner};
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use std::time::Duration;
 

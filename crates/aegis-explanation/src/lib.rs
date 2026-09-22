@@ -4,7 +4,7 @@
 pub use aegis_policy::{BlockReason, ExecutionTransport, PolicyAction, PolicyRationale};
 
 use aegis_config::ConfigSourceLayer;
-use aegis_config::Mode;
+use aegis_types::Mode;
 use aegis_types::{AssessmentBasis, DecisionSource, RiskLevel};
 use serde::{Deserialize, Serialize};
 

@@ -8,11 +8,11 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
-use aegis_config::{AuditIntegrityMode, Mode};
+use aegis_config::AuditIntegrityMode;
 use aegis_explanation::CommandExplanation;
-use aegis_scanner::MatchResult;
 use aegis_types::{
-    Category, PatternSource, RecoveryDegradation, RiskLevel, SandboxStatus, SnapshotRecord,
+    Category, Decision, MatchResult, Mode, PatternSource, RecoveryDegradation, RiskLevel,
+    SandboxStatus, SnapshotRecord,
 };
 
 use crate::error::AuditError;
@@ -424,8 +424,6 @@ impl<'de> Deserialize<'de> for AuditEntry {
         AuditEntryFlat::deserialize(deserializer).map(AuditEntry::from)
     }
 }
-
-pub use aegis_types::Decision;
 
 /// Parameters for filtering the audit log.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

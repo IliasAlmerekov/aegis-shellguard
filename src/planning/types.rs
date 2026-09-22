@@ -2,13 +2,12 @@
 
 use std::path::PathBuf;
 
-use crate::audit::MatchedPattern;
-use crate::config::{AllowlistMatch, Mode};
-use crate::decision::{BlockReason, ExecutionTransport, PolicyAction, PolicyDecision};
 use crate::explanation::CommandExplanation;
 use crate::explanation::formatter::build_explanation_from_plan;
-use crate::interceptor::RiskLevel;
-use crate::interceptor::scanner::Assessment;
+use aegis_audit::MatchedPattern;
+use aegis_config::AllowlistMatch;
+use aegis_policy::{BlockReason, ExecutionTransport, PolicyAction, PolicyDecision};
+use aegis_types::{Assessment, Mode, RiskLevel};
 
 /// Canonical planning result shared by interception surfaces.
 pub enum PlanningOutcome {
@@ -374,13 +373,13 @@ impl AuditFacts {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::allowlist::ConfigSourceLayer;
-    use crate::decision::BlockReason;
-    use crate::decision::{PolicyAction, PolicyDecision, PolicyRationale};
     use crate::explanation::formatter::{
         build_explanation_from_plan, from_plan_inputs_call_count_for_tests,
         reset_from_plan_inputs_call_count_for_tests,
     };
+    use aegis_config::allowlist::ConfigSourceLayer;
+    use aegis_policy::BlockReason;
+    use aegis_policy::{PolicyAction, PolicyDecision, PolicyRationale};
     #[test]
     fn decision_context_constructor_preserves_read_access_via_getters() {
         let cwd_state = CwdState::Resolved(PathBuf::from("."));

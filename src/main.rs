@@ -2,8 +2,9 @@
 
 use std::process;
 
-use aegis::audit::{AuditTimestamp, Decision};
-use aegis::interceptor::RiskLevel;
+use aegis_audit::AuditTimestamp;
+use aegis_types::Decision;
+use aegis_types::RiskLevel;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 mod cli_commands;

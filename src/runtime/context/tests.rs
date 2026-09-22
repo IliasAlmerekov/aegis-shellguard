@@ -2,15 +2,14 @@ use std::fs;
 use std::path::Path;
 
 use super::*;
-use crate::config::{CiPolicy, UserPattern};
-use crate::decision::{ExecutionTransport, PolicyAction, PolicyRationale};
 use crate::explanation::formatter::allowlist_explanation_from;
 use crate::explanation::{
     CommandExplanation, ExecutionContextExplanation, ExplainedPatternMatch, PolicyExplanation,
     ScanExplanation,
 };
-use crate::interceptor::RiskLevel;
-use crate::interceptor::patterns::{Category, PatternSource};
+use aegis_config::UserPattern;
+use aegis_policy::{ExecutionTransport, PolicyAction, PolicyRationale};
+use aegis_types::{Category, CiPolicy, PatternSource, RiskLevel};
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
@@ -157,7 +156,7 @@ description = "project entry"
 #[cfg(not(windows))]
 #[test]
 fn config_is_shared_across_runtime_dependencies() {
-    use crate::config::AllowlistRule;
+    use aegis_config::AllowlistRule;
 
     let mut config = AegisConfig::default();
     config.allowlist_override_level = AllowlistOverrideLevel::Danger;
@@ -206,7 +205,7 @@ fn config_is_shared_across_runtime_dependencies() {
 
 #[test]
 fn runtime_context_rejects_expired_allowlist_rules() {
-    use crate::config::AllowlistRule;
+    use aegis_config::AllowlistRule;
     use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
     let mut config = AegisConfig::default();
@@ -228,7 +227,7 @@ fn runtime_context_rejects_expired_allowlist_rules() {
 
 #[test]
 fn runtime_context_rejects_unscoped_allowlist_rules() {
-    use crate::config::AllowlistRule;
+    use aegis_config::AllowlistRule;
 
     let mut config = AegisConfig::default();
     config.allowlist = vec![AllowlistRule {
@@ -248,7 +247,7 @@ fn runtime_context_rejects_unscoped_allowlist_rules() {
 
 #[test]
 fn runtime_context_accepts_scoped_allowlist_rules() {
-    use crate::config::AllowlistRule;
+    use aegis_config::AllowlistRule;
 
     let mut config = AegisConfig::default();
     config.allowlist = vec![AllowlistRule {
@@ -272,7 +271,7 @@ fn runtime_context_accepts_scoped_allowlist_rules() {
 
 #[test]
 fn runtime_context_accepts_user_scoped_allowlist_rules() {
-    use crate::config::AllowlistRule;
+    use aegis_config::AllowlistRule;
 
     let Some(current_user) = detect_effective_user() else {
         return;
@@ -302,7 +301,7 @@ fn runtime_context_accepts_user_scoped_allowlist_rules() {
 
 #[test]
 fn unknown_user_does_not_match_user_scoped_allowlist_rule() {
-    use crate::config::AllowlistRule;
+    use aegis_config::AllowlistRule;
 
     let mut config = AegisConfig::default();
     config.allowlist = vec![AllowlistRule {
@@ -328,7 +327,7 @@ fn unknown_user_does_not_match_user_scoped_allowlist_rule() {
 
 #[test]
 fn unknown_cwd_does_not_match_cwd_scoped_allowlist_rule() {
-    use crate::config::AllowlistRule;
+    use aegis_config::AllowlistRule;
 
     let mut config = AegisConfig::default();
     config.allowlist = vec![AllowlistRule {
@@ -396,7 +395,7 @@ expires_at = "2030-01-01T00:00:00Z"
     assert_eq!(matched.reason, "project teardown");
     assert_eq!(
         matched.source_layer,
-        crate::config::ConfigSourceLayer::Project
+        aegis_config::ConfigSourceLayer::Project
     );
 }
 
@@ -427,7 +426,7 @@ fn runtime_context_uses_external_handle_for_snapshots() {
 
 #[test]
 fn runtime_context_new_does_not_build_snapshot_registry_eagerly() {
-    crate::snapshot::reset_snapshot_registry_build_count_for_tests();
+    aegis_snapshot::testing::reset_registry_build_count();
 
     let mut config = AegisConfig::default();
     config.snapshot_policy = SnapshotPolicy::Selective;
@@ -436,10 +435,7 @@ fn runtime_context_new_does_not_build_snapshot_registry_eagerly() {
 
     let _context = RuntimeContext::new(config, test_handle()).unwrap();
 
-    assert_eq!(
-        crate::snapshot::snapshot_registry_build_count_for_tests(),
-        0
-    );
+    assert_eq!(aegis_snapshot::testing::registry_build_count(), 0);
 }
 
 #[test]
@@ -531,7 +527,7 @@ fn append_audit_entry_enriches_explanation_with_runtime_outcome() {
 #[test]
 fn append_audit_entry_preserves_allowlist_context_fields() {
     let mut config = AegisConfig::default();
-    config.allowlist = vec![crate::config::AllowlistRule {
+    config.allowlist = vec![aegis_config::AllowlistRule {
         pattern: "rm -rf target".to_string(),
         cwd: Some(".".to_string()),
         user: None,

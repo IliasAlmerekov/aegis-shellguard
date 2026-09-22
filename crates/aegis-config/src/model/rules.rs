@@ -3,8 +3,7 @@ use std::borrow::Cow;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-pub use aegis_types::PolicyRuleDecision;
-use aegis_types::{Category, Pattern, PatternSource, RiskLevel};
+use aegis_types::{Category, Pattern, PatternSource, PolicyRuleDecision, RiskLevel};
 
 use super::AuditIntegrityMode;
 use crate::error::ConfigError;

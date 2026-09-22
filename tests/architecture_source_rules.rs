@@ -90,34 +90,6 @@ fn decision_engine_is_pure_no_io() {
     }
 }
 
-// ── §4 Forbidden edges — Interceptor is a leaf ────────────────────────────────
-
-/// §4: `interceptor/**` may not depend on `audit`, `snapshot`, `ui`, or
-/// `runtime`. Scanner is transport-agnostic and has no recovery/logging/UI
-/// concerns. `src/interceptor` is a thin shim re-exporting `aegis-scanner`
-/// and `aegis-parser`, but a `Cargo.toml` check cannot see module-level
-/// edges, so this test still checks the shim itself does not grow one.
-#[test]
-fn interceptor_has_no_downstream_dependencies() {
-    for (rel, src) in production_rs_files("src/interceptor") {
-        for forbidden in [
-            "use crate::audit",
-            "use crate::snapshot",
-            "use crate::ui",
-            "use crate::runtime",
-            "use crate::planning",
-            "use crate::decision",
-        ] {
-            assert_absent(
-                &src,
-                forbidden,
-                &rel,
-                "§4: interceptor must not depend on audit/snapshot/ui/runtime/planning/decision",
-            );
-        }
-    }
-}
-
 // ── §4 Forbidden edges — UI is rendering only ─────────────────────────────────
 
 /// §4: `ui/**` may not write audit entries, run snapshot business logic, or
@@ -126,12 +98,7 @@ fn interceptor_has_no_downstream_dependencies() {
 /// `SnapshotRegistry::*`, `.snapshot_all(`, or `.rollback(` is forbidden.
 #[test]
 fn ui_does_not_call_audit_or_snapshot_business_logic() {
-    // Check both the shim layer (src/ui) and the real implementation (crates/aegis-tui/src).
-    let files = production_rs_files("src/ui")
-        .into_iter()
-        .chain(production_rs_files("crates/aegis-tui/src"));
-
-    for (rel, src) in files {
+    for (rel, src) in production_rs_files("crates/aegis-tui/src") {
         // No audit coupling at all (binary-crate or workspace-crate form).
         assert_absent(
             &src,
@@ -187,16 +154,10 @@ fn ui_does_not_call_audit_or_snapshot_business_logic() {
 // ── §4 Forbidden edges — Transports go through planning ───────────────────────
 
 /// Production paths allowed to name `evaluate_policy`, each with the reason.
-const EVALUATE_POLICY_ALLOWED: &[(&str, &str)] = &[
-    (
-        "src/planning/",
-        "the sanctioned consumer: planning is the one caller of the policy engine",
-    ),
-    (
-        "src/decision/mod.rs",
-        "re-exports the engine from aegis-policy for the rest of the crate",
-    ),
-];
+const EVALUATE_POLICY_ALLOWED: &[(&str, &str)] = &[(
+    "src/planning/",
+    "the sanctioned consumer: planning is the one caller of the policy engine",
+)];
 
 /// I4 + §4: no module of the root crate outside `planning` may call
 /// `evaluate_policy`; transports (`shell_flow`, `watch`, `install`) must go
@@ -214,6 +175,58 @@ fn transports_route_policy_through_planning_module() {
             !contains_ident(&src, "evaluate_policy"),
             "{rel}: I4: only src/planning may call evaluate_policy — route through planning::*"
         );
+    }
+}
+
+// ── #281 Narrowed library surface — no re-forwarding of aegis-types ───────────
+
+/// #281: only `aegis-types` may hold a `pub use aegis_types` line. Every other
+/// crate imports the type it needs directly from `aegis-types`; forwarding it
+/// back out under a second name defeats the point of the narrowed surface.
+#[test]
+fn only_aegis_types_re_exports_aegis_types() {
+    for (rel, src) in production_rs_files("crates") {
+        if rel.starts_with("crates/aegis-types/") {
+            continue;
+        }
+        assert_absent(
+            &src,
+            "pub use aegis_types",
+            &rel,
+            "#281: only aegis-types may re-export its own items — import aegis_types::X directly",
+        );
+    }
+}
+
+/// #281: the shim modules (`src/audit`, `src/config`, `src/decision`,
+/// `src/snapshot`, `src/ui`, `src/interceptor`) are gone. Nothing in `src/` or
+/// `tests/` may name them again, either as `crate::<shim>::` (inside the root
+/// crate) or `aegis::<shim>::` (from an integration test).
+#[test]
+fn former_shim_paths_do_not_reappear() {
+    let files = production_rs_files("src")
+        .into_iter()
+        .chain(production_rs_files("tests"));
+
+    for (rel, src) in files {
+        for shim in [
+            "audit",
+            "config",
+            "decision",
+            "snapshot",
+            "ui",
+            "interceptor",
+        ] {
+            for prefix in ["crate", "aegis"] {
+                let needle = format!("{prefix}::{shim}::");
+                assert_absent(
+                    &src,
+                    &needle,
+                    &rel,
+                    "#281: the src/ re-export shims are deleted — import from the crate that defines the type",
+                );
+            }
+        }
     }
 }
 

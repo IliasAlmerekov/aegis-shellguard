@@ -34,8 +34,8 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use aegis::config::{DockerScope, DockerScopeMode};
-use aegis::snapshot::{DockerPlugin, SnapshotPlugin};
+use aegis_config::{DockerScope, DockerScopeMode};
+use aegis_snapshot::{DockerPlugin, SnapshotPlugin};
 
 // ─── guard ───────────────────────────────────────────────────────────────────
 

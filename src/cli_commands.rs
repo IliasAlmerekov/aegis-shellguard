@@ -1,10 +1,11 @@
 use std::env;
 use std::path::PathBuf;
 
-use aegis::audit::{AuditEntry, AuditIntegrityStatus, AuditLogger, AuditQuery, Decision};
-use aegis::config::{AegisConfig, ValidationReport, validate_config_layers};
 use aegis::error::AegisError;
 use aegis::toggle;
+use aegis_audit::{AuditEntry, AuditIntegrityStatus, AuditLogger, AuditQuery};
+use aegis_config::{AegisConfig, ValidationReport, validate_config_layers};
+use aegis_types::Decision;
 
 use crate::{
     AuditArgs, AuditOutputFormat, ConfigArgs, ConfigCommand, ConfigValidateArgs,
@@ -463,8 +464,9 @@ fn format_audit_summary(
 #[cfg(test)]
 mod tests {
     use super::format_snapshot_listing;
-    use aegis::audit::{AuditEntry, AuditSnapshot, Decision};
-    use aegis::interceptor::RiskLevel;
+    use aegis_audit::{AuditEntry, AuditSnapshot};
+    use aegis_types::Decision;
+    use aegis_types::RiskLevel;
 
     fn entry_with_snapshot(command: &str, plugin: &str, snapshot_id: &str) -> AuditEntry {
         AuditEntry::new(
