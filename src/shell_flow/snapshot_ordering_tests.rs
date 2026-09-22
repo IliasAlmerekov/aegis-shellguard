@@ -78,7 +78,7 @@ fn test_execute_policy_decision_prompt_denied_records_no_snapshots() {
     init_git_repo(dir.path());
 
     let context = danger_context();
-    let assessment = aegis::interceptor::assess("rm -rf /tmp/aegis-denied-target").unwrap();
+    let assessment = aegis_scanner::assess("rm -rf /tmp/aegis-denied-target").unwrap();
     assert_eq!(assessment.risk, aegis::interceptor::RiskLevel::Danger);
 
     let policy_decision = PolicyDecision {
@@ -113,7 +113,7 @@ fn test_execute_policy_decision_block_records_no_snapshots() {
     init_git_repo(dir.path());
 
     let context = danger_context();
-    let assessment = aegis::interceptor::assess("rm -rf /").unwrap();
+    let assessment = aegis_scanner::assess("rm -rf /").unwrap();
     assert_eq!(assessment.risk, aegis::interceptor::RiskLevel::Block);
 
     let policy_decision = PolicyDecision {

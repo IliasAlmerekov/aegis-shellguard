@@ -14,12 +14,12 @@ use tokio::runtime::Runtime;
 // because that bench times 1,000 `assess` calls per iteration.
 
 fn bench_scanner_construction(c: &mut Criterion) {
-    // Production reaches the scanner through `interceptor::scanner_for` →
+    // Production reaches the scanner through `aegis_scanner::scanner_for` →
     // `builtin_scanner()`, which returns `Arc::clone` of the process-wide
-    // `BUILTIN_SCANNER` static (`src/interceptor/mod.rs:64-69`). That static
-    // cannot be re-initialised in a loop, so this bench models the
-    // one-per-process cost rather than repeating the production call. For a
-    // `$SHELL` proxy, one per process is one per command.
+    // `BUILTIN_SCANNER` static (`crates/aegis-scanner/src/lib.rs:33-38`).
+    // That static cannot be re-initialised in a loop, so this bench models
+    // the one-per-process cost rather than repeating the production call.
+    // For a `$SHELL` proxy, one per process is one per command.
     c.bench_function("scanner_construction", |b| {
         b.iter(|| {
             let patterns = PatternSet::load().expect("patterns.toml must load");

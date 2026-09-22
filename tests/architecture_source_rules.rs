@@ -94,8 +94,9 @@ fn decision_engine_is_pure_no_io() {
 
 /// §4: `interceptor/**` may not depend on `audit`, `snapshot`, `ui`, or
 /// `runtime`. Scanner is transport-agnostic and has no recovery/logging/UI
-/// concerns. `src/interceptor` holds real root-crate code (the scanner cache
-/// and `assess()`), so a `Cargo.toml` check cannot see these module edges.
+/// concerns. `src/interceptor` is a thin shim re-exporting `aegis-scanner`
+/// and `aegis-parser`, but a `Cargo.toml` check cannot see module-level
+/// edges, so this test still checks the shim itself does not grow one.
 #[test]
 fn interceptor_has_no_downstream_dependencies() {
     for (rel, src) in production_rs_files("src/interceptor") {

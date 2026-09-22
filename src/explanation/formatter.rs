@@ -321,7 +321,7 @@ mod tests {
 
     #[test]
     fn from_plan_inputs_counter_is_isolated_per_thread() {
-        let assessment = crate::interceptor::assess("echo hello").unwrap();
+        let assessment = aegis_scanner::assess("echo hello").unwrap();
         let context = DecisionContext::new(
             Mode::Protect,
             ExecutionTransport::Shell,

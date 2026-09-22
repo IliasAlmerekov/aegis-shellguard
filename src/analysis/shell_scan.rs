@@ -77,7 +77,7 @@ mod tests {
     use super::*;
 
     fn builtin() -> std::sync::Arc<Scanner> {
-        crate::interceptor::scanner_for(&[]).expect("built-in patterns compile")
+        aegis_scanner::scanner_for(&[]).expect("built-in patterns compile")
     }
 
     #[test]
