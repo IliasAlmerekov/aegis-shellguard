@@ -196,10 +196,12 @@ through `planning::*`. `install::run_hook` is **not** a policy surface; it may
 only rewrite supported Bash invocations back into shell-wrapper flow. No
 transport may reimplement any part of the decision.
 
-### 2.3 Scanner / Interceptor — `src/interceptor/`
+### 2.3 Scanner / Interceptor — `crates/aegis-scanner/`, `src/interceptor/`
 
 **Responsibility:** parse a raw shell command and compute an `Assessment`
-(`RiskLevel` + matched patterns + highlights).
+(`RiskLevel` + matched patterns + highlights). The Scanner and its pattern
+types live in the `aegis-scanner` crate; `src/interceptor` is a thin
+re-export shim over that crate plus `aegis-parser`.
 
 Two-stage engine (hot path must stay ≤ 2 ms for safe commands):
 
@@ -212,10 +214,10 @@ Two-stage engine (hot path must stay ≤ 2 ms for safe commands):
 
 ```
 src/interceptor/
-├── mod.rs      shim: `pub mod` re-exports plus `pub use aegis_types::RiskLevel`
-├── parser.rs   re-exports `aegis-parser`'s public API
-├── patterns.rs re-exports `aegis-scanner`'s pattern types
-└── scanner.rs  re-exports `aegis-scanner`'s Scanner, Assessment, MatchResult, …
+├── mod.rs         shim: `pub mod` re-exports plus `pub use aegis_types::RiskLevel`
+├── parser/mod.rs  re-exports `aegis-parser`'s public API
+├── patterns.rs    re-exports `aegis-scanner`'s pattern types
+└── scanner.rs     re-exports `aegis-scanner`'s Scanner, Assessment, MatchResult, …
 ```
 
 The Scanner, its pattern types, and the built-in pattern static all live in
@@ -225,8 +227,10 @@ scanner for a caller-supplied custom-pattern slice. Built-in patterns live in
 `crates/aegis-scanner/patterns.toml` (embedded at compile time and loaded via
 `PatternSet::load`). User patterns come from `aegis.toml`; `RuntimeContext`
 converts them to the crate's `Pattern` type and merges them per effective
-config through `scanner_for` — once per process, since a single
-`RuntimeContext` covers one command.
+config through `scanner_for` — once per `RuntimeContext`, built once per
+process (`src/shell_wrapper.rs` builds the only production instance; Watch
+mode reuses that same instance across every command in the session rather
+than building a new one per command).
 
 `MAX_SCAN_COMMAND_LEN = 64 KiB` and `MAX_INLINE_SCRIPT_LEN = 16 KiB` cap
 scanner input to bound worst-case work.
