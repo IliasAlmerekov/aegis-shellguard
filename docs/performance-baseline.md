@@ -339,14 +339,22 @@ with the custom set (`crates/aegis-scanner/src/lib.rs:47-53`,
 already-warm `BUILTIN_SCANNER` static, so its cost lands close to
 `scanner_construction`'s range rather than `runtime_context_construction`'s.
 
-`baseline_ns` is set from three local release captures (`cargo bench --bench
-startup_bench -- --quick runtime_context_custom_pattern_construction`), which
-spread 9.266–10.492 ms — the same ~2x-margin-over-observed-max methodology as
-the 2026-09-16 `safe_command_assess`/`scanner_construction` rebaseline above:
-`21_000_000`, roughly double the observed maximum. Pending a CI-runner
-capture: once the `performance` job runs on the PR that adds this row,
-`baseline_ns` gets corrected to the observed CI-runner mean in a follow-up
-commit, the same pattern `startup_safe_command`'s baseline followed.
+`baseline_ns` was first set from three local release captures (`cargo bench
+--bench startup_bench -- --quick runtime_context_custom_pattern_construction`),
+which spread 9.266–10.492 ms — the same ~2x-margin-over-observed-max
+methodology as the 2026-09-16 `safe_command_assess`/`scanner_construction`
+rebaseline above: `21_000_000`, roughly double the observed maximum.
+
+Corrected 2026-09-22 from PR #402's `performance` CI job: observed 9.743 ms
+(`PASS runtime_context_custom_pattern_construction observed 9.743 ms baseline
+21.000 ms delta -53.6% threshold +25.0%`), comfortably inside the local-capture
+baseline above. Re-baselined to `19_500_000` — roughly double the CI-observed
+value, the same margin-over-a-single-capture discipline the 2026-09-16
+rebaseline above adopted after `safe_command_assess`/`scanner_construction`
+flapped on baselines pinned within 5% of one capture. This row keeps the
+default `+25%` threshold rather than `startup_safe_command`'s widened `+50%`,
+since it times in-process construction rather than a whole process
+invocation and does not carry that row's process-spawn variance.
 
 ### Language-aware slow path, since Iteration 10 (the two `aegis-language` benches)
 

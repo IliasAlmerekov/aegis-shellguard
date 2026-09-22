@@ -95,13 +95,13 @@ baseline_ns = 2_200_000
 regression_pct = 25.0
 description = "RuntimeContext::new() from a default config, reusing the warm BUILTIN_SCANNER static; includes one id -un process spawn. No longer pays a discarded custom-pattern scanner build (issue #319)."
 
-# Local release capture, 2026-09-22, pending a CI-runner capture (issue #397).
+# Corrected 2026-09-22 from PR #402's `performance` CI run (observed 9.743 ms).
 # See "runtime_context_custom_pattern_construction baseline (issue #397)" in
-# docs/performance-baseline.md for the capture and the follow-up to rebaseline
-# from the CI-runner number once the first PR run reports it.
+# docs/performance-baseline.md for the local-capture history and the
+# CI-runner correction.
 [[benchmarks]]
 name = "runtime_context_custom_pattern_construction"
-baseline_ns = 21_000_000
+baseline_ns = 19_500_000
 regression_pct = 25.0
 description = "RuntimeContext::new() from a config with one custom pattern, building a fresh Scanner that merges the built-ins with the custom set instead of reusing BUILTIN_SCANNER; includes one id -un process spawn."
 
