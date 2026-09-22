@@ -140,7 +140,14 @@ fn defaults_work_without_any_config_file() {
 
     let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
 
-    assert_eq!(config, AegisConfig::defaults());
+    assert_eq!(
+        config,
+        AegisConfig {
+            source_current_dir: Some(workspace.path().to_path_buf()),
+            source_home_dir: Some(home.path().to_path_buf()),
+            ..AegisConfig::defaults()
+        }
+    );
 }
 
 #[test]

@@ -239,6 +239,14 @@ pub struct AegisConfig {
     /// Per-pattern provenance (which layer each `custom_patterns` entry came from). Internal; not serialized.
     #[serde(skip)]
     pub(crate) custom_pattern_layers: Vec<ConfigSourceLayer>,
+    /// `current_dir` this config was resolved against, when loaded via
+    /// [`Self::load_for`]/[`Self::load`]. Internal; not serialized.
+    #[serde(skip)]
+    pub(crate) source_current_dir: Option<PathBuf>,
+    /// `home_dir` this config was resolved against, when loaded via
+    /// [`Self::load_for`]/[`Self::load`]. Internal; not serialized.
+    #[serde(skip)]
+    pub(crate) source_home_dir: Option<PathBuf>,
     /// Structured allow-list rules (TOML: `[[allow]]`).
     #[serde(
         default,
@@ -341,6 +349,8 @@ impl AegisConfig {
             mode: Mode::Protect,
             custom_patterns: Vec::new(),
             custom_pattern_layers: Vec::new(),
+            source_current_dir: None,
+            source_home_dir: None,
             allowlist: Vec::new(),
             allowlist_layers: Vec::new(),
             blocklist: Vec::new(),
@@ -389,6 +399,25 @@ impl AegisConfig {
     pub fn has_full_custom_pattern_provenance(&self) -> bool {
         !self.custom_patterns.is_empty()
             && self.custom_pattern_layers.len() == self.custom_patterns.len()
+    }
+
+    /// The `current_dir` this config was resolved against, if it was loaded
+    /// through [`Self::load_for`] or [`Self::load`].
+    ///
+    /// A caller building a `RuntimeContext` from a config loaded against a
+    /// non-default directory (tests, or any other explicit `load_for` call)
+    /// should attribute scanner errors to this root rather than the
+    /// process's actual `current_dir`, which may point somewhere else
+    /// entirely.
+    pub fn source_current_dir(&self) -> Option<&Path> {
+        self.source_current_dir.as_deref()
+    }
+
+    /// The `home_dir` this config was resolved against, if it was loaded
+    /// through [`Self::load_for`] or [`Self::load`]. See
+    /// [`Self::source_current_dir`].
+    pub fn source_home_dir(&self) -> Option<&Path> {
+        self.source_home_dir.as_deref()
     }
 
     /// Validate config invariants required before constructing runtime state.
@@ -512,6 +541,9 @@ impl AegisConfig {
                 merged.validate_runtime_requirements_for_path(&project_path)?;
             }
         }
+
+        merged.source_current_dir = Some(current_dir.to_path_buf());
+        merged.source_home_dir = home_dir.map(Path::to_path_buf);
 
         Ok(merged)
     }

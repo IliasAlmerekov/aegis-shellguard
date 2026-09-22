@@ -205,8 +205,20 @@ impl RuntimeContext {
             if !config.has_full_custom_pattern_provenance() {
                 return AegisError::from(err);
             }
-            let current_dir = std::env::current_dir().ok();
-            let home_dir = home_dir_for_error_attribution();
+            // Prefer the roots the config was actually resolved against
+            // (`AegisConfig::load_for` stamps these on every load, including
+            // ones against a non-default `current_dir`/`home_dir`, e.g. in
+            // tests). Only a config built without going through the file
+            // loader has neither, and even then it fails
+            // `has_full_custom_pattern_provenance` above.
+            let current_dir = config
+                .source_current_dir()
+                .map(std::path::Path::to_path_buf)
+                .or_else(|| std::env::current_dir().ok());
+            let home_dir = config
+                .source_home_dir()
+                .map(std::path::Path::to_path_buf)
+                .or_else(home_dir_for_error_attribution);
             crate::config::locate_invalid_custom_pattern(
                 &config,
                 current_dir.as_deref(),
@@ -643,7 +655,6 @@ fn build_audit_logger(config: &AegisConfig) -> AuditLogger {
     AuditLogger::from_audit_config(&config.audit)
 }
 
-/// Resolve `~/.aegis/policy.star`, returning `None` when `HOME` is unset.
 /// Resolve the home directory the same way `AegisConfig::load` does (`HOME`,
 /// falling back to `USERPROFILE`), so the two path-attribution formats agree
 /// on Windows hosts without `HOME` set.
@@ -654,6 +665,7 @@ fn home_dir_for_error_attribution() -> Option<std::path::PathBuf> {
         .map(std::path::PathBuf::from)
 }
 
+/// Resolve `~/.aegis/policy.star`, returning `None` when `HOME` is unset.
 fn starlark_policy_path() -> Option<std::path::PathBuf> {
     std::env::var_os("HOME").map(|h| {
         std::path::PathBuf::from(h)
