@@ -10,7 +10,7 @@ use crate::explanation::{
     ScanExplanation,
 };
 use crate::interceptor::RiskLevel;
-use crate::interceptor::patterns::Category;
+use crate::interceptor::patterns::{Category, PatternSource};
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
@@ -31,20 +31,33 @@ fn custom_patterns_are_built_once_into_runtime_scanner() {
     let mut config = AegisConfig::default();
     config.custom_patterns = vec![UserPattern {
         id: "USR-CTX-001".to_string(),
-        category: Category::Process,
+        category: Category::Cloud,
         risk: RiskLevel::Warn,
-        pattern: "echo hello".to_string(),
+        pattern: "internal-teardown".to_string(),
         description: "custom warning".to_string(),
         safe_alt: None,
         justification: None,
     }];
 
     let context = RuntimeContext::new(config, test_handle()).unwrap();
-    let assessment = context.assess("echo hello");
+    let assessment = context.assess("internal-teardown && rm -rf /tmp/demo");
 
-    assert_eq!(assessment.risk, RiskLevel::Warn);
-    assert_eq!(assessment.matched.len(), 1);
-    assert_eq!(assessment.matched[0].pattern.id.as_ref(), "USR-CTX-001");
+    assert_eq!(assessment.risk, RiskLevel::Danger);
+    assert!(
+        assessment
+            .matched
+            .iter()
+            .any(|matched| matched.pattern.id.as_ref() == "USR-CTX-001"
+                && matched.pattern.source == PatternSource::Custom),
+        "custom pattern must fire alongside the built-in one"
+    );
+    assert!(
+        assessment
+            .matched
+            .iter()
+            .any(|matched| matched.pattern.source == PatternSource::Builtin),
+        "a built-in pattern must fire too, proving the merged set — not just the custom pattern — reached the runtime scanner"
+    );
 }
 
 #[test]

@@ -377,12 +377,15 @@ impl AegisConfig {
 
     /// Validate config invariants required before constructing runtime state.
     ///
-    /// This covers semantic config checks plus scanner and allowlist
-    /// compilation so direct `RuntimeContext::new` callers get the same
-    /// fail-closed guarantees as file-loaded configs.
+    /// This covers semantic config checks plus allowlist compilation so
+    /// direct `RuntimeContext::new` callers get the same fail-closed
+    /// guarantees as file-loaded configs. It does not build a scanner: the
+    /// custom-pattern scanner `RuntimeContext::new` builds right after this
+    /// call is the fail-closed signal for invalid custom patterns, so
+    /// building one here too would pay `Scanner::try_new` twice per command
+    /// only to discard the first result (issue #319/#280).
     pub fn validate_runtime_requirements(&self) -> Result<()> {
         self.validate()?;
-        validate_custom_patterns(&self.custom_patterns)?;
         Allowlist::from_layered_rules(&self.layered_allowlist_rules()).map(|_| ())?;
         Blocklist::from_layered_rules(&self.layered_blocklist_rules()).map(|_| ())?;
         Ok(())

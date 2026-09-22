@@ -15,7 +15,6 @@ use crate::config::{
 use crate::error::AegisError;
 use crate::explanation::CommandExplanation;
 use crate::explanation::formatter::{CommandExplanationExt, build_outcome_explanation};
-use crate::interceptor;
 use crate::interceptor::scanner::{Assessment, Scanner};
 use crate::snapshot::{
     Clock, RetentionPolicy, SnapshotCoverage, SnapshotRecord, SnapshotRegistry,
@@ -190,7 +189,13 @@ impl RuntimeContext {
         explicit_policy_path: Option<&std::path::Path>,
     ) -> Result<Self, AegisError> {
         config.validate_runtime_requirements()?;
-        let scanner = interceptor::scanner_for(&config.custom_patterns)?;
+        let custom_patterns: Vec<aegis_scanner::Pattern> = config
+            .custom_patterns
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect();
+        let scanner = aegis_scanner::scanner_for(&custom_patterns)?;
         let current_user = detect_effective_user();
 
         // Merge TOML [[rules]] with rules from ~/.aegis/policy.star when present.

@@ -141,7 +141,7 @@ pub async fn run_with_budget(
     trusted_aliases: &[(&str, &str)],
     budget: OrchestrationBudget,
 ) -> Outcome {
-    let builtin_scanner = crate::interceptor::scanner_for(&[])
+    let builtin_scanner = aegis_scanner::scanner_for(&[])
         .inspect_err(|error| {
             tracing::warn!(%error, "built-in Scanner unavailable; Bash targets degrade");
         })

@@ -381,8 +381,6 @@ mod tests {
         build_explanation_from_plan, from_plan_inputs_call_count_for_tests,
         reset_from_plan_inputs_call_count_for_tests,
     };
-    use crate::interceptor;
-
     #[test]
     fn decision_context_constructor_preserves_read_access_via_getters() {
         let cwd_state = CwdState::Resolved(PathBuf::from("."));
@@ -414,7 +412,7 @@ mod tests {
 
     #[test]
     fn audit_facts_exposes_pre_outcome_fields_via_getters() {
-        let assessment = interceptor::assess("rm -rf /").unwrap();
+        let assessment = aegis_scanner::assess("rm -rf /").unwrap();
         let decision_context = DecisionContext::new(
             Mode::Strict,
             ExecutionTransport::Shell,
@@ -447,7 +445,7 @@ mod tests {
 
     #[test]
     fn from_policy_builds_command_explanation_once() {
-        let assessment = interceptor::assess("rm -rf ./tmp").unwrap();
+        let assessment = aegis_scanner::assess("rm -rf ./tmp").unwrap();
         let decision_context = DecisionContext::new(
             Mode::Protect,
             ExecutionTransport::Shell,
@@ -476,7 +474,7 @@ mod tests {
 
     #[test]
     fn planning_keeps_allowlist_provenance_in_context_section() {
-        let assessment = interceptor::assess("cargo test --lib").unwrap();
+        let assessment = aegis_scanner::assess("cargo test --lib").unwrap();
         let allowlist_match = AllowlistMatch {
             pattern: "cargo test *".to_string(),
             reason: "safe local verification".to_string(),

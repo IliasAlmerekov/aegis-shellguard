@@ -6,7 +6,7 @@
 //! `command aegis off` all reached the scanner and were auto-approved as Safe.
 //! These tests pin the scanner classification for every spelling.
 
-use aegis::interceptor::assess;
+use aegis_scanner::assess;
 use aegis_types::RiskLevel;
 
 fn risk_of(command: &str) -> RiskLevel {
