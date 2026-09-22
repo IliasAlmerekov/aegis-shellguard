@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use aegis::planning::{CwdState, PlanningOutcome, PreparedPlanner, prepare_and_plan};
+use aegis::planning::{CwdState, PlanningOutcome, PreparedPlanner};
 use aegis::runtime::RuntimeContext;
 use aegis_config::AegisConfig;
 use aegis_parser::Parser as CommandParser;
@@ -535,15 +535,12 @@ auto_snapshot_docker = false
     );
     let context = RuntimeContext::new(config, test_handle()).unwrap();
     let prepared = PreparedPlanner::Ready(Box::new(context));
-    let outcome = prepare_and_plan(
-        &prepared,
-        aegis::planning::PlanningRequest {
-            command: "terraform destroy -target=module.prod.api",
-            cwd_state: CwdState::Unavailable,
-            transport: ExecutionTransport::Shell,
-            ci_detected: false,
-        },
-    );
+    let outcome = prepared.plan(aegis::planning::PlanningRequest {
+        command: "terraform destroy -target=module.prod.api",
+        cwd_state: CwdState::Unavailable,
+        transport: ExecutionTransport::Shell,
+        ci_detected: false,
+    });
 
     let PlanningOutcome::Planned(plan) = outcome else {
         panic!("expected planned outcome");

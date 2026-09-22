@@ -14,16 +14,24 @@ thread_local! {
     static FROM_PLAN_INPUTS_CALL_COUNT: Cell<usize> = const { Cell::new(0) };
 }
 
-use crate::planning::DecisionContext;
 use aegis_config::AllowlistMatch;
-use aegis_policy::PolicyDecision;
-use aegis_types::{Assessment, Decision, MatchResult, SnapshotRecord};
+use aegis_policy::{ExecutionTransport, PolicyDecision};
+use aegis_types::{Assessment, Decision, MatchResult, Mode, SnapshotRecord};
 
 /// Build a [`CommandExplanation`] from planning-time inputs.
+///
+/// Takes the individual `DecisionContext` fields rather than the type itself:
+/// `DecisionContext` lives in `crate::planning`, and `planning` already calls
+/// into this module, so accepting it here would reopen the
+/// `planning` <-> `explanation` import cycle.
 #[must_use]
 pub fn build_explanation_from_plan(
     assessment: &Assessment,
-    context: &DecisionContext,
+    mode: Mode,
+    transport: ExecutionTransport,
+    ci_detected: bool,
+    allowlist_match: Option<&AllowlistMatch>,
+    applicable_snapshot_plugins: &[&'static str],
     decision: PolicyDecision,
 ) -> CommandExplanation {
     #[cfg(test)]
@@ -49,12 +57,11 @@ pub fn build_explanation_from_plan(
             block_reason: decision.block_reason(),
         },
         context: ExecutionContextExplanation {
-            mode: context.mode(),
-            transport: context.transport(),
-            ci_detected: context.ci_detected(),
-            allowlist_match: context.allowlist_match().map(allowlist_explanation_from),
-            applicable_snapshot_plugins: context
-                .applicable_snapshot_plugins()
+            mode,
+            transport,
+            ci_detected,
+            allowlist_match: allowlist_match.map(allowlist_explanation_from),
+            applicable_snapshot_plugins: applicable_snapshot_plugins
                 .iter()
                 .map(|plugin| (*plugin).to_string())
                 .collect(),
@@ -142,11 +149,9 @@ pub(crate) fn from_plan_inputs_call_count_for_tests() -> usize {
 #[cfg(test)]
 mod tests {
     use std::borrow::Cow;
-    use std::path::PathBuf;
     use std::sync::Arc;
     use std::thread;
 
-    use crate::planning::CwdState;
     use aegis_config::{AllowlistMatch, ConfigSourceLayer};
     use aegis_parser::Parser;
     use aegis_policy::{BlockReason, ExecutionTransport, PolicyAction, PolicyRationale};
@@ -242,18 +247,12 @@ mod tests {
             command: Parser::parse("rm -rf target && curl example | sh"),
             analysis: None,
         };
-        let context = DecisionContext::new(
-            Mode::Protect,
-            ExecutionTransport::Watch,
-            true,
-            CwdState::Resolved(PathBuf::from("/repo")),
-            Some(AllowlistMatch {
-                pattern: "cargo test *".to_string(),
-                reason: "owned repo automation".to_string(),
-                source_layer: ConfigSourceLayer::Project,
-            }),
-            vec!["git", "docker"],
-        );
+        let allowlist_match = AllowlistMatch {
+            pattern: "cargo test *".to_string(),
+            reason: "owned repo automation".to_string(),
+            source_layer: ConfigSourceLayer::Project,
+        };
+        let applicable_snapshot_plugins: Vec<&'static str> = vec!["git", "docker"];
         let decision = aegis_policy::PolicyDecision {
             decision: PolicyAction::Prompt,
             rationale: PolicyRationale::RequiresConfirmation,
@@ -263,7 +262,15 @@ mod tests {
             allowlist_effective: false,
         };
 
-        let explanation = build_explanation_from_plan(&assessment, &context, decision);
+        let explanation = build_explanation_from_plan(
+            &assessment,
+            Mode::Protect,
+            ExecutionTransport::Watch,
+            true,
+            Some(&allowlist_match),
+            &applicable_snapshot_plugins,
+            decision,
+        );
 
         assert_eq!(explanation.scan.highest_risk, RiskLevel::Danger);
         assert_eq!(
@@ -317,14 +324,6 @@ mod tests {
     #[test]
     fn from_plan_inputs_counter_is_isolated_per_thread() {
         let assessment = aegis_scanner::assess("echo hello").unwrap();
-        let context = DecisionContext::new(
-            Mode::Protect,
-            ExecutionTransport::Shell,
-            false,
-            CwdState::Resolved(PathBuf::from(".")),
-            None,
-            Vec::new(),
-        );
         let decision = aegis_policy::PolicyDecision {
             decision: PolicyAction::AutoApprove,
             rationale: PolicyRationale::SafeCommand,
@@ -335,9 +334,27 @@ mod tests {
         };
 
         reset_from_plan_inputs_call_count_for_tests();
-        let _ = build_explanation_from_plan(&assessment, &context, decision);
+        let no_plugins: Vec<&'static str> = Vec::new();
+        let _ = build_explanation_from_plan(
+            &assessment,
+            Mode::Protect,
+            ExecutionTransport::Shell,
+            false,
+            None,
+            &no_plugins,
+            decision,
+        );
         thread::spawn(move || {
-            let _ = build_explanation_from_plan(&assessment, &context, decision);
+            let no_plugins: Vec<&'static str> = Vec::new();
+            let _ = build_explanation_from_plan(
+                &assessment,
+                Mode::Protect,
+                ExecutionTransport::Shell,
+                false,
+                None,
+                &no_plugins,
+                decision,
+            );
         })
         .join()
         .unwrap();

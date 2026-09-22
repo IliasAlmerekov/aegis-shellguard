@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use crate::planning::policy_rules::evaluate_policy_rules;
+use crate::planning::prepare::PreparedPlanner;
 use crate::planning::types::{CwdState, DecisionContext, InterceptionPlan, PlanningOutcome};
 use crate::runtime::RuntimeContext;
 use aegis_policy::{
@@ -24,42 +25,17 @@ pub struct PlanningRequest<'a> {
 }
 
 /// Build a typed planning outcome from runtime context plus one request.
+///
+/// Thin sync wrapper around [`plan_with_context_async`]; safe here because no
+/// caller of this sync path is nested inside an active `runtime.block_on(...)`
+/// (see `crate::watch::run`, which is, and therefore keeps the async path).
 pub fn plan_with_context(
     context: &RuntimeContext,
     request: PlanningRequest<'_>,
 ) -> PlanningOutcome {
-    let assessment = context
-        .assess_with_language_analysis_in_cwd(request.command, analysis_cwd(&request.cwd_state));
-    let allowlist_match = match &request.cwd_state {
-        CwdState::Resolved(path) => {
-            context.allowlist_match_for_command(request.command, Some(path.as_path()))
-        }
-        CwdState::Unavailable => context.allowlist_match_for_command(request.command, None),
-    };
-    let blocklist_match = match &request.cwd_state {
-        CwdState::Resolved(path) => {
-            context.is_blocked_for_command(request.command, Some(path.as_path()))
-        }
-        CwdState::Unavailable => context.is_blocked_for_command(request.command, None),
-    };
-    let applicable_snapshot_plugins =
-        if recovery_backstop_applies(&assessment, context.config().snapshot_policy) {
-            match &request.cwd_state {
-                CwdState::Resolved(path) => context.applicable_snapshot_plugins(path),
-                CwdState::Unavailable => context.applicable_snapshot_plugins(Path::new(".")),
-            }
-        } else {
-            Vec::new()
-        };
-
-    build_planning_outcome(
-        context,
-        request,
-        assessment,
-        allowlist_match,
-        blocklist_match,
-        applicable_snapshot_plugins,
-    )
+    context
+        .async_handle()
+        .block_on(plan_with_context_async(context, request))
 }
 
 /// Whether a recovery (pre-exec snapshot) backstop must be considered for this
@@ -124,6 +100,30 @@ pub async fn plan_with_context_async(
     )
 }
 
+impl PreparedPlanner {
+    /// Consume one planning request using an already prepared planner state.
+    pub fn plan(&self, request: PlanningRequest<'_>) -> PlanningOutcome {
+        match self {
+            PreparedPlanner::Ready(context) => plan_with_context(context, request),
+            PreparedPlanner::SetupFailure(plan) => {
+                let _ = request;
+                PlanningOutcome::SetupFailure(plan.clone())
+            }
+        }
+    }
+
+    /// Async variant of [`Self::plan`] for callers inside an async runtime.
+    pub async fn plan_async(&self, request: PlanningRequest<'_>) -> PlanningOutcome {
+        match self {
+            PreparedPlanner::Ready(context) => plan_with_context_async(context, request).await,
+            PreparedPlanner::SetupFailure(plan) => {
+                let _ = request;
+                PlanningOutcome::SetupFailure(plan.clone())
+            }
+        }
+    }
+}
+
 fn analysis_cwd(cwd_state: &CwdState) -> crate::analysis::AnalysisCwd<'_> {
     match cwd_state {
         CwdState::Resolved(path) => crate::analysis::AnalysisCwd::Resolved(path.as_path()),
@@ -185,9 +185,7 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
-    use crate::planning::types::{
-        ApprovalRequirement, ExecutionDisposition, PlanningOutcome, SnapshotPlan,
-    };
+    use crate::planning::types::{ExecutionDisposition, PlanningOutcome, SnapshotPlan};
     use crate::runtime::RuntimeContext;
     use aegis_config::AegisConfig;
     use aegis_policy::ExecutionTransport;
@@ -233,7 +231,6 @@ mod tests {
             panic!("safe command must produce a normal plan");
         };
         assert_eq!(plan.execution_disposition(), ExecutionDisposition::Execute);
-        assert_eq!(plan.approval_requirement(), ApprovalRequirement::None);
         assert_eq!(plan.snapshot_plan(), SnapshotPlan::NotRequired);
     }
 
@@ -285,10 +282,6 @@ mod tests {
             plan.execution_disposition(),
             ExecutionDisposition::RequiresApproval
         );
-        assert_eq!(
-            plan.approval_requirement(),
-            ApprovalRequirement::HumanConfirmationRequired
-        );
     }
 
     #[test]
@@ -335,7 +328,6 @@ mod tests {
             panic!("block command must produce a normal plan");
         };
         assert_eq!(plan.execution_disposition(), ExecutionDisposition::Block);
-        assert_eq!(plan.approval_requirement(), ApprovalRequirement::None);
     }
 
     #[test]
@@ -467,10 +459,6 @@ mod tests {
         assert_eq!(
             plan.execution_disposition(),
             ExecutionDisposition::RequiresApproval
-        );
-        assert_eq!(
-            plan.approval_requirement(),
-            ApprovalRequirement::HumanConfirmationRequired
         );
         // Recovery backstop: a pre-exec snapshot is requested from the git plugin.
         assert_eq!(

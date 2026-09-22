@@ -182,13 +182,13 @@ It is the _single_ entry point every transport uses.
 
 ```
 src/planning/
-├── mod.rs       public API: plan_with_context, prepare_and_plan, PreparedPlanner
+├── mod.rs       public API: plan_with_context, PreparedPlanner::plan, PreparedPlanner
 ├── core.rs      plan_with_context: assess → allowlist → snapshot-plugins →
-│                evaluate_policy → InterceptionPlan
-├── prepare.rs   prepare_and_plan / prepare_planner: lazy RuntimeContext
+│                evaluate_policy → InterceptionPlan; PreparedPlanner::plan /
+│                plan_async delegate here
+├── prepare.rs   prepare_planner: lazy RuntimeContext; setup_failure_from_runtime_error
 └── types.rs     PlanningOutcome, InterceptionPlan, DecisionContext, CwdState,
-                 ApprovalRequirement, ExecutionDisposition, SnapshotPlan,
-                 SetupFailureKind, SetupFailurePlan
+                 ExecutionDisposition, SnapshotPlan, SetupFailurePlan
 ```
 
 **Rule:** shell-wrapper execution, watch mode, and evaluation-only JSON all go
@@ -486,7 +486,7 @@ main ─▶ shell_compat::parse_invocation_mode
      ├─▶ InvocationMode::ShellCompatCommand ─▶ shell_wrapper::run_shell_wrapper
      └─▶ InvocationMode::Cli(--command) ─▶ cli_dispatch::run_cli
                                          ─▶ shell_wrapper::run_shell_wrapper
-                                             ├─▶ planning::prepare_and_plan
+                                             ├─▶ prepared.plan()
                                              │   (builds RuntimeContext,
                                              │   assesses, resolves allowlist,
                                              │   checks snapshot applicability,
@@ -515,7 +515,7 @@ main ─▶ cli_dispatch::run_cli
      ─▶ watch::run(prepared, in_ci)
          loop per stdin frame:
          ├─▶ parse InputFrame (reject if > MAX_FRAME_BYTES)
-         ├─▶ planning::prepare_and_plan (transport = Watch)
+         ├─▶ prepared.plan_async() (transport = Watch)
          ├─▶ prompt via ui::confirm::show_*_via_tty (TTY, not stdout)
          ├─▶ snapshot + Sandbox prepare_for_spawn + audit
          ├─▶ optional OutputFrame::Warning
@@ -691,8 +691,8 @@ Three things will likely be added often. Each has a fixed shape.
 
 ### 6.3 Add a transport
 
-1. Do **not** duplicate policy. Use `planning::prepare_and_plan` or
-   `plan_with_context` to get an `InterceptionPlan`.
+1. Do **not** duplicate policy. Use `PreparedPlanner::plan` (or `plan_async`)
+   or `plan_with_context` to get an `InterceptionPlan`.
 2. Add a new variant to `ExecutionTransport` (this is an allowed additive
    change).
 3. Implement input parsing and output emission in a new `src/<transport>.rs`.

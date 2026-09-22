@@ -4,10 +4,9 @@ use std::path::PathBuf;
 
 use crate::explanation::CommandExplanation;
 use crate::explanation::formatter::build_explanation_from_plan;
-use aegis_audit::MatchedPattern;
 use aegis_config::AllowlistMatch;
-use aegis_policy::{BlockReason, ExecutionTransport, PolicyAction, PolicyDecision};
-use aegis_types::{Assessment, Mode, RiskLevel};
+use aegis_policy::{ExecutionTransport, PolicyAction, PolicyDecision};
+use aegis_types::{Assessment, Mode};
 
 /// Canonical planning result shared by interception surfaces.
 pub enum PlanningOutcome {
@@ -22,7 +21,6 @@ pub struct InterceptionPlan {
     assessment: Box<Assessment>,
     decision_context: DecisionContext,
     policy_decision: PolicyDecision,
-    approval_requirement: ApprovalRequirement,
     snapshot_plan: SnapshotPlan,
     execution_disposition: ExecutionDisposition,
     explanation: Box<CommandExplanation>,
@@ -35,10 +33,6 @@ impl InterceptionPlan {
         decision_context: DecisionContext,
         policy_decision: PolicyDecision,
     ) -> Self {
-        let approval_requirement = match policy_decision.decision {
-            PolicyAction::Prompt => ApprovalRequirement::HumanConfirmationRequired,
-            PolicyAction::AutoApprove | PolicyAction::Block => ApprovalRequirement::None,
-        };
         let snapshot_plan = if policy_decision.snapshots_required {
             SnapshotPlan::Required {
                 applicable_plugins: decision_context.applicable_snapshot_plugins.clone(),
@@ -51,14 +45,20 @@ impl InterceptionPlan {
             PolicyAction::Prompt => ExecutionDisposition::RequiresApproval,
             PolicyAction::Block => ExecutionDisposition::Block,
         };
-        let explanation =
-            build_explanation_from_plan(&assessment, &decision_context, policy_decision);
+        let explanation = build_explanation_from_plan(
+            &assessment,
+            decision_context.mode,
+            decision_context.transport,
+            decision_context.ci_detected,
+            decision_context.allowlist_match.as_ref(),
+            &decision_context.applicable_snapshot_plugins,
+            policy_decision,
+        );
 
         Self {
             assessment: Box::new(assessment),
             decision_context,
             policy_decision,
-            approval_requirement,
             snapshot_plan,
             execution_disposition,
             explanation: Box::new(explanation),
@@ -80,11 +80,6 @@ impl InterceptionPlan {
         self.policy_decision
     }
 
-    /// Return whether human confirmation is required before execution.
-    pub fn approval_requirement(&self) -> ApprovalRequirement {
-        self.approval_requirement
-    }
-
     /// Return the pre-execution snapshot requirements for this plan.
     pub fn snapshot_plan(&self) -> SnapshotPlan {
         self.snapshot_plan.clone()
@@ -104,34 +99,17 @@ impl InterceptionPlan {
 /// Typed fail-closed planning result for setup failures.
 #[derive(Debug, Clone)]
 pub struct SetupFailurePlan {
-    kind: SetupFailureKind,
-    fail_closed_action: FailClosedAction,
     user_message: String,
-    audit_facts: Option<AuditFacts>,
     is_config_fault: bool,
 }
 
 impl SetupFailurePlan {
     /// Create a fail-closed setup failure plan.
-    pub(crate) fn new(
-        kind: SetupFailureKind,
-        fail_closed_action: FailClosedAction,
-        user_message: String,
-        audit_facts: Option<AuditFacts>,
-        is_config_fault: bool,
-    ) -> Self {
+    pub(crate) fn new(user_message: String, is_config_fault: bool) -> Self {
         Self {
-            kind,
-            fail_closed_action,
             user_message,
-            audit_facts,
             is_config_fault,
         }
-    }
-
-    /// Return the setup failure classification.
-    pub fn kind(&self) -> SetupFailureKind {
-        self.kind
     }
 
     /// Whether the underlying failure stems from invalid user configuration.
@@ -142,19 +120,9 @@ impl SetupFailurePlan {
         self.is_config_fault
     }
 
-    /// Return the fail-closed action surfaces must apply.
-    pub fn fail_closed_action(&self) -> FailClosedAction {
-        self.fail_closed_action
-    }
-
     /// Return the user-facing setup failure message.
     pub fn user_message(&self) -> &str {
         &self.user_message
-    }
-
-    /// Return pre-outcome audit facts when they were available.
-    pub fn audit_facts(&self) -> Option<&AuditFacts> {
-        self.audit_facts.as_ref()
     }
 }
 
@@ -229,15 +197,6 @@ pub enum CwdState {
     Unavailable,
 }
 
-/// Approval requirement derived from policy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ApprovalRequirement {
-    /// No human confirmation is required.
-    None,
-    /// Human confirmation is required before execution may proceed.
-    HumanConfirmationRequired,
-}
-
 /// Snapshot requirement derived from policy and cwd context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SnapshotPlan {
@@ -261,115 +220,6 @@ pub enum ExecutionDisposition {
     Block,
 }
 
-/// Fail-closed action surfaces must apply for setup failures.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FailClosedAction {
-    /// Deny execution.
-    Deny,
-    /// Hard-block execution.
-    Block,
-    /// Treat as internal error while remaining fail-closed.
-    InternalError,
-}
-
-/// Setup-failure classification for typed fail-closed planning.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SetupFailureKind {
-    /// The runtime config could not be prepared safely.
-    InvalidConfig,
-    /// The Audit log is corrupted and could not be read.
-    CorruptAuditLog,
-    /// The scanner could not be prepared safely.
-    ScannerUnavailable,
-    /// Cwd was required for the policy path but unavailable.
-    CwdUnavailableForPolicy,
-    /// Allowlist context resolution was ambiguous.
-    AllowlistContextAmbiguous,
-    /// Any other fail-closed setup error.
-    OtherFailClosed,
-}
-
-/// Pre-outcome audit facts derived during planning.
-#[derive(Debug, Clone)]
-pub struct AuditFacts {
-    command: String,
-    risk: RiskLevel,
-    matched_patterns: Vec<MatchedPattern>,
-    mode: Mode,
-    ci_detected: bool,
-    allowlist_matched: bool,
-    allowlist_effective: bool,
-    transport: ExecutionTransport,
-    block_reason: Option<BlockReason>,
-}
-
-impl AuditFacts {
-    #[cfg(test)]
-    pub(crate) fn from_plan_inputs(
-        assessment: &Assessment,
-        decision_context: &DecisionContext,
-        block_reason: Option<BlockReason>,
-        allowlist_effective: bool,
-    ) -> Self {
-        Self {
-            command: assessment.command.raw.clone(),
-            risk: assessment.risk,
-            matched_patterns: assessment.matched.iter().map(Into::into).collect(),
-            mode: decision_context.mode,
-            ci_detected: decision_context.ci_detected,
-            allowlist_matched: decision_context.allowlist_match.is_some(),
-            allowlist_effective,
-            transport: decision_context.transport,
-            block_reason,
-        }
-    }
-
-    /// Return the raw command string being planned.
-    pub fn command(&self) -> &str {
-        &self.command
-    }
-
-    /// Return the assessed risk for the command.
-    pub fn risk(&self) -> RiskLevel {
-        self.risk
-    }
-
-    /// Return the stable audit representations of matched patterns.
-    pub fn matched_patterns(&self) -> &[MatchedPattern] {
-        self.matched_patterns.as_slice()
-    }
-
-    /// Return the effective mode used during planning.
-    pub fn mode(&self) -> Mode {
-        self.mode
-    }
-
-    /// Return whether CI was detected during planning.
-    pub fn ci_detected(&self) -> bool {
-        self.ci_detected
-    }
-
-    /// Return whether any allowlist rule matched the command.
-    pub fn allowlist_matched(&self) -> bool {
-        self.allowlist_matched
-    }
-
-    /// Return whether allowlist changed the policy outcome.
-    pub fn allowlist_effective(&self) -> bool {
-        self.allowlist_effective
-    }
-
-    /// Return the decision transport associated with the plan.
-    pub fn transport(&self) -> ExecutionTransport {
-        self.transport
-    }
-
-    /// Return the hard-block reason when policy blocked the command.
-    pub fn block_reason(&self) -> Option<BlockReason> {
-        self.block_reason
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,7 +228,6 @@ mod tests {
         reset_from_plan_inputs_call_count_for_tests,
     };
     use aegis_config::allowlist::ConfigSourceLayer;
-    use aegis_policy::BlockReason;
     use aegis_policy::{PolicyAction, PolicyDecision, PolicyRationale};
     #[test]
     fn decision_context_constructor_preserves_read_access_via_getters() {
@@ -410,39 +259,6 @@ mod tests {
     }
 
     #[test]
-    fn audit_facts_exposes_pre_outcome_fields_via_getters() {
-        let assessment = aegis_scanner::assess("rm -rf /").unwrap();
-        let decision_context = DecisionContext::new(
-            Mode::Strict,
-            ExecutionTransport::Shell,
-            false,
-            CwdState::Resolved(PathBuf::from(".")),
-            None,
-            Vec::new(),
-        );
-
-        let audit_facts = AuditFacts::from_plan_inputs(
-            &assessment,
-            &decision_context,
-            Some(BlockReason::IntrinsicRiskBlock),
-            false,
-        );
-
-        assert_eq!(audit_facts.command(), "rm -rf /");
-        assert_eq!(audit_facts.risk(), RiskLevel::Block);
-        assert!(!audit_facts.matched_patterns().is_empty());
-        assert_eq!(audit_facts.mode(), Mode::Strict);
-        assert!(!audit_facts.ci_detected());
-        assert!(!audit_facts.allowlist_matched());
-        assert!(!audit_facts.allowlist_effective());
-        assert_eq!(audit_facts.transport(), ExecutionTransport::Shell);
-        assert_eq!(
-            audit_facts.block_reason(),
-            Some(BlockReason::IntrinsicRiskBlock)
-        );
-    }
-
-    #[test]
     fn from_policy_builds_command_explanation_once() {
         let assessment = aegis_scanner::assess("rm -rf ./tmp").unwrap();
         let decision_context = DecisionContext::new(
@@ -461,8 +277,15 @@ mod tests {
             confinement_required: false,
             allowlist_effective: false,
         };
-        let expected_explanation =
-            build_explanation_from_plan(&assessment, &decision_context, policy_decision);
+        let expected_explanation = build_explanation_from_plan(
+            &assessment,
+            decision_context.mode(),
+            decision_context.transport(),
+            decision_context.ci_detected(),
+            decision_context.allowlist_match(),
+            decision_context.applicable_snapshot_plugins(),
+            policy_decision,
+        );
         reset_from_plan_inputs_call_count_for_tests();
 
         let plan = InterceptionPlan::from_policy(assessment, decision_context, policy_decision);

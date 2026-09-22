@@ -8,12 +8,8 @@ pub mod types;
 pub use policy_rules::evaluate_policy_rules;
 
 pub use core::{PlanningRequest, plan_with_context, plan_with_context_async};
-pub use prepare::{
-    PreparedPlanner, prepare_and_plan, prepare_and_plan_async, prepare_planner,
-    setup_failure_from_runtime_error,
-};
+pub use prepare::{PreparedPlanner, prepare_planner, setup_failure_from_runtime_error};
 pub use types::{
-    ApprovalRequirement, AuditFacts, CwdState, DecisionContext, ExecutionDisposition,
-    FailClosedAction, InterceptionPlan, PlanningOutcome, SetupFailureKind, SetupFailurePlan,
-    SnapshotPlan,
+    CwdState, DecisionContext, ExecutionDisposition, InterceptionPlan, PlanningOutcome,
+    SetupFailurePlan, SnapshotPlan,
 };
