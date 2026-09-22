@@ -65,6 +65,8 @@ impl AegisConfig {
             mode: base_mode,
             custom_patterns: base_custom_patterns,
             custom_pattern_layers: base_custom_pattern_layers,
+            source_current_dir: _base_source_current_dir,
+            source_home_dir: _base_source_home_dir,
             allowlist: base_allowlist,
             allowlist_layers: base_allowlist_layers,
             blocklist: base_blocklist,
@@ -319,6 +321,10 @@ impl AegisConfig {
             mode,
             custom_patterns,
             custom_pattern_layers,
+            // Stamped by `AegisConfig::load_for_internal` once every layer
+            // has merged, not per layer here.
+            source_current_dir: None,
+            source_home_dir: None,
             allowlist,
             allowlist_layers,
             blocklist,

@@ -10,6 +10,7 @@ mod recursive;
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use aho_corasick::AhoCorasick;
 use regex::{Regex, RegexBuilder};
@@ -123,6 +124,7 @@ impl Scanner {
     /// inspects field presence), so it is enforced here — a user-supplied custom
     /// pattern with a malformed regex is a typed error, never a panic.
     pub fn try_new(patterns: PatternSet) -> Result<Self, ScannerError> {
+        TRY_NEW_CALLS.fetch_add(1, Ordering::Relaxed);
         let effective_patterns = patterns.patterns();
 
         // Flat keyword list fed to the `quick_scan` automaton. Prefix-rule-only
@@ -355,6 +357,20 @@ impl Scanner {
     pub(crate) fn prefix_indexed_program_count(&self, program: &str) -> usize {
         self.prefix_lookup(program).map_or(0, Vec::len)
     }
+}
+
+static TRY_NEW_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+/// Total number of `Scanner::try_new` calls so far in this process.
+///
+/// Cross-crate build-count instrumentation for regression tests such as
+/// "exactly one scanner build per `RuntimeContext` construction" (issue
+/// #399) — a per-crate `#[cfg(test)]` counter would not be visible from the
+/// binary crate's own test suite. Reading it costs one relaxed atomic load;
+/// it is not on the `assess()` hot path.
+#[doc(hidden)]
+pub fn try_new_call_count_for_tests() -> usize {
+    TRY_NEW_CALLS.load(Ordering::Relaxed)
 }
 
 /// Case-insensitive ASCII comparison without allocation.

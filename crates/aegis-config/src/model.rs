@@ -239,6 +239,14 @@ pub struct AegisConfig {
     /// Per-pattern provenance (which layer each `custom_patterns` entry came from). Internal; not serialized.
     #[serde(skip)]
     pub(crate) custom_pattern_layers: Vec<ConfigSourceLayer>,
+    /// `current_dir` this config was resolved against, when loaded via
+    /// [`Self::load_for`]/[`Self::load`]. Internal; not serialized.
+    #[serde(skip)]
+    pub(crate) source_current_dir: Option<PathBuf>,
+    /// `home_dir` this config was resolved against, when loaded via
+    /// [`Self::load_for`]/[`Self::load`]. Internal; not serialized.
+    #[serde(skip)]
+    pub(crate) source_home_dir: Option<PathBuf>,
     /// Structured allow-list rules (TOML: `[[allow]]`).
     #[serde(
         default,
@@ -341,6 +349,8 @@ impl AegisConfig {
             mode: Mode::Protect,
             custom_patterns: Vec::new(),
             custom_pattern_layers: Vec::new(),
+            source_current_dir: None,
+            source_home_dir: None,
             allowlist: Vec::new(),
             allowlist_layers: Vec::new(),
             blocklist: Vec::new(),
@@ -375,6 +385,41 @@ impl AegisConfig {
             .map_err(|error| ConfigError::Config(format!("failed to serialize config: {error}")))
     }
 
+    /// Whether every `custom_patterns` entry carries config-file provenance.
+    ///
+    /// True only for a config assembled by the layered file loader, which
+    /// stamps `custom_pattern_layers` one-for-one alongside `custom_patterns`
+    /// as each layer is merged in. A config built directly in memory (no
+    /// file behind it) leaves `custom_pattern_layers` empty, so a caller that
+    /// wants to attribute a scanner failure to a config file — see
+    /// [`crate::validate::locate_invalid_custom_pattern`] — must check this
+    /// first: without it, the bisection would fall back to a placeholder
+    /// layer and could report a config file that never contributed the
+    /// pattern.
+    pub fn has_full_custom_pattern_provenance(&self) -> bool {
+        !self.custom_patterns.is_empty()
+            && self.custom_pattern_layers.len() == self.custom_patterns.len()
+    }
+
+    /// The `current_dir` this config was resolved against, if it was loaded
+    /// through [`Self::load_for`] or [`Self::load`].
+    ///
+    /// A caller building a `RuntimeContext` from a config loaded against a
+    /// non-default directory (tests, or any other explicit `load_for` call)
+    /// should attribute scanner errors to this root rather than the
+    /// process's actual `current_dir`, which may point somewhere else
+    /// entirely.
+    pub fn source_current_dir(&self) -> Option<&Path> {
+        self.source_current_dir.as_deref()
+    }
+
+    /// The `home_dir` this config was resolved against, if it was loaded
+    /// through [`Self::load_for`] or [`Self::load`]. See
+    /// [`Self::source_current_dir`].
+    pub fn source_home_dir(&self) -> Option<&Path> {
+        self.source_home_dir.as_deref()
+    }
+
     /// Validate config invariants required before constructing runtime state.
     ///
     /// This covers semantic config checks plus allowlist compilation so
@@ -391,19 +436,16 @@ impl AegisConfig {
         Ok(())
     }
 
-    /// Same checks as [`Self::validate_runtime_requirements`], but skips the
-    /// custom-pattern scanner rebuild when `check_patterns` is `false`.
+    /// Same checks as [`Self::validate_runtime_requirements`], minus the
+    /// custom-pattern scanner rebuild.
     ///
-    /// Used by [`Self::validate_runtime_requirements_for_path`] for a config
-    /// layer that contributed no new custom patterns: the cumulative pattern
-    /// set was already validated (or will be) by the layer that actually
-    /// added them, so redoing it here is pure waste — a full scanner rebuild
-    /// per layer with no new patterns (issue #319).
-    fn validate_runtime_requirements_selective(&self, check_patterns: bool) -> Result<()> {
+    /// Used by [`Self::validate_runtime_requirements_for_path`] per config
+    /// layer. Custom patterns are validated exactly once, downstream, when
+    /// `RuntimeContext` builds the real scanner from the fully merged config
+    /// — rebuilding one here too, per layer, would pay `Scanner::try_new`
+    /// redundantly (issue #319/#399).
+    fn validate_runtime_requirements_selective(&self) -> Result<()> {
         self.validate()?;
-        if check_patterns {
-            validate_custom_patterns(&self.custom_patterns)?;
-        }
         Allowlist::from_layered_rules(&self.layered_allowlist_rules()).map(|_| ())?;
         Blocklist::from_layered_rules(&self.layered_blocklist_rules()).map(|_| ())?;
         Ok(())
@@ -476,7 +518,6 @@ impl AegisConfig {
 
         if let Some(path) = global_path.as_deref().filter(|p| p.is_file()) {
             let global = PartialConfig::from_path(path)?;
-            let layer_added_patterns = !global.custom_patterns.is_empty();
             (merged, _) = Self::merge_layer(
                 merged,
                 global,
@@ -484,13 +525,12 @@ impl AegisConfig {
                 &path.to_string_lossy(),
             );
             if validate_runtime_requirements {
-                merged.validate_runtime_requirements_for_path(path, layer_added_patterns)?;
+                merged.validate_runtime_requirements_for_path(path)?;
             }
         }
 
         if project_path.is_file() {
             let project = PartialConfig::from_path(&project_path)?;
-            let layer_added_patterns = !project.custom_patterns.is_empty();
             (merged, _) = Self::merge_layer(
                 merged,
                 project,
@@ -498,10 +538,12 @@ impl AegisConfig {
                 &project_path.to_string_lossy(),
             );
             if validate_runtime_requirements {
-                merged
-                    .validate_runtime_requirements_for_path(&project_path, layer_added_patterns)?;
+                merged.validate_runtime_requirements_for_path(&project_path)?;
             }
         }
+
+        merged.source_current_dir = Some(current_dir.to_path_buf());
+        merged.source_home_dir = home_dir.map(Path::to_path_buf);
 
         Ok(merged)
     }
@@ -552,12 +594,8 @@ impl AegisConfig {
         Ok(())
     }
 
-    fn validate_runtime_requirements_for_path(
-        &self,
-        path: &Path,
-        check_patterns: bool,
-    ) -> Result<()> {
-        self.validate_runtime_requirements_selective(check_patterns)
+    fn validate_runtime_requirements_for_path(&self, path: &Path) -> Result<()> {
+        self.validate_runtime_requirements_selective()
             .map_err(|err| match err {
                 ConfigError::Config(message) => {
                     ConfigError::Config(format!("invalid config {}: {message}", path.display()))

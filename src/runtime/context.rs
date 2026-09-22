@@ -195,7 +195,37 @@ impl RuntimeContext {
             .cloned()
             .map(Into::into)
             .collect();
-        let scanner = aegis_scanner::scanner_for(&custom_patterns)?;
+        let scanner = aegis_scanner::scanner_for(&custom_patterns).map_err(|err| {
+            // Bisection only attributes a config-file path when every custom
+            // pattern carries file provenance (`custom_pattern_layers` is
+            // stamped one-for-one by the layered file loader). A config built
+            // directly in memory — no file, no layer info — has no path to
+            // attribute; report the scanner's own error unchanged so it does
+            // not claim a config file that never contributed the pattern.
+            if !config.has_full_custom_pattern_provenance() {
+                return AegisError::from(err);
+            }
+            // Prefer the roots the config was actually resolved against
+            // (`AegisConfig::load_for` stamps these on every load, including
+            // ones against a non-default `current_dir`/`home_dir`, e.g. in
+            // tests). Only a config built without going through the file
+            // loader has neither, and even then it fails
+            // `has_full_custom_pattern_provenance` above.
+            let current_dir = config
+                .source_current_dir()
+                .map(std::path::Path::to_path_buf)
+                .or_else(|| std::env::current_dir().ok());
+            let home_dir = config
+                .source_home_dir()
+                .map(std::path::Path::to_path_buf)
+                .or_else(home_dir_for_error_attribution);
+            crate::config::locate_invalid_custom_pattern(
+                &config,
+                current_dir.as_deref(),
+                home_dir.as_deref(),
+            )
+            .into()
+        })?;
         let current_user = detect_effective_user();
 
         // Merge TOML [[rules]] with rules from ~/.aegis/policy.star when present.
@@ -623,6 +653,16 @@ async fn automatic_prune(config: AegisConfig) -> Result<(), AegisError> {
 
 fn build_audit_logger(config: &AegisConfig) -> AuditLogger {
     AuditLogger::from_audit_config(&config.audit)
+}
+
+/// Resolve the home directory the same way `AegisConfig::load` does (`HOME`,
+/// falling back to `USERPROFILE`), so the two path-attribution formats agree
+/// on Windows hosts without `HOME` set.
+fn home_dir_for_error_attribution() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from)
 }
 
 /// Resolve `~/.aegis/policy.star`, returning `None` when `HOME` is unset.
