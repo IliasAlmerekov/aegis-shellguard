@@ -17,8 +17,9 @@
 
 use std::fs;
 
-use aegis_audit::{AuditEntry, AuditLogger, AuditQuery, Decision, MatchedPattern};
+use aegis_audit::{AuditEntry, AuditLogger, AuditQuery, MatchedPattern};
 use aegis_config::{AuditConfig, AuditIntegrityMode};
+use aegis_types::Decision;
 use aegis_types::RiskLevel;
 use serde_json::Value;
 use tempfile::TempDir;

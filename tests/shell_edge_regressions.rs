@@ -1,5 +1,5 @@
-use aegis::interceptor::RiskLevel;
 use aegis_scanner::assess;
+use aegis_types::RiskLevel;
 
 #[test]
 fn regression_commands_with_heredoc_hermetically_block_or_warn() {

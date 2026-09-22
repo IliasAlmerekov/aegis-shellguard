@@ -1,5 +1,6 @@
 use crate::nested::{RecursiveScanReport, recursive_scan_targets};
-use aegis_parser::{ParsedCommand, logical_segments};
+use aegis_parser::logical_segments;
+use aegis_types::ParsedCommand;
 
 pub(super) fn scan_targets(cmd: &str, parsed: &ParsedCommand) -> RecursiveScanReport {
     // Heredoc / process-substitution / eval detection requires the raw string.

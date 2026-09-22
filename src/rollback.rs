@@ -1,8 +1,9 @@
-use aegis::audit::{AuditEntry, AuditLogger, AuditSnapshot, Decision};
-use aegis::config::AegisConfig;
 use aegis::error::AegisError;
-use aegis::interceptor::RiskLevel;
-use aegis::snapshot::{SnapshotRegistry, SnapshotRegistryConfig};
+use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
+use aegis_config::AegisConfig;
+use aegis_snapshot::{SnapshotRegistry, SnapshotRegistryConfig};
+use aegis_types::Decision;
+use aegis_types::RiskLevel;
 
 type Result<T> = std::result::Result<T, AegisError>;
 

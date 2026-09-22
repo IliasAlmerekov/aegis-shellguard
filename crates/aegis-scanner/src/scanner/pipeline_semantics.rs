@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use crate::patterns::{Category, Pattern, PatternSource};
 use aegis_parser::PipelineChain;
-use aegis_types::{DetectionSource, MatchEvidence, RiskLevel};
+use aegis_types::{Category, DetectionSource, MatchEvidence, Pattern, PatternSource, RiskLevel};
 
 use super::MatchResult;
 

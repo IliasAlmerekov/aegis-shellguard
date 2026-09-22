@@ -1,4 +1,4 @@
-use aegis::interceptor::patterns::PatternSet;
+use aegis_scanner::PatternSet;
 
 #[test]
 fn builtin_prefix_rules_git_push_has_justification() {
@@ -52,7 +52,7 @@ fn builtin_prefix_rules_danger_rules_have_justification() {
         .filter(|r| {
             matches!(
                 r.risk,
-                aegis::interceptor::RiskLevel::Danger | aegis::interceptor::RiskLevel::Block
+                aegis_types::RiskLevel::Danger | aegis_types::RiskLevel::Block
             )
         })
         .collect();
@@ -77,9 +77,9 @@ fn builtin_prefix_rules_warn_and_danger_have_match_examples() {
     for rule in set.prefix_rules() {
         if matches!(
             rule.risk,
-            aegis::interceptor::RiskLevel::Warn
-                | aegis::interceptor::RiskLevel::Danger
-                | aegis::interceptor::RiskLevel::Block
+            aegis_types::RiskLevel::Warn
+                | aegis_types::RiskLevel::Danger
+                | aegis_types::RiskLevel::Block
         ) {
             assert!(
                 !rule.match_examples.is_empty(),

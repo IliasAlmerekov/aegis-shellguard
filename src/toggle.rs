@@ -6,11 +6,12 @@ use std::process;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
-use crate::audit::{AuditEntry, AuditLogger, Decision};
-use crate::config::allowlist::ConfigSourceLayer;
-use crate::config::{AegisConfig, model::ConfigLayerPath};
 use crate::error::AegisError;
-use crate::interceptor::RiskLevel;
+use aegis_audit::{AuditEntry, AuditLogger};
+use aegis_config::allowlist::ConfigSourceLayer;
+use aegis_config::{AegisConfig, model::ConfigLayerPath};
+use aegis_types::Decision;
+use aegis_types::RiskLevel;
 
 type Result<T> = std::result::Result<T, AegisError>;
 

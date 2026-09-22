@@ -1,6 +1,6 @@
 //! Policy types: inputs, actions, rationales, and execution transport.
 
-use aegis_scanner::Assessment;
+use aegis_types::Assessment;
 use aegis_types::{AllowlistOverrideLevel, CiPolicy, Mode, PolicyRuleDecision, SnapshotPolicy};
 use serde::{Deserialize, Serialize};
 

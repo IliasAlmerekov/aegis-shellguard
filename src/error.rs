@@ -2,7 +2,7 @@ use aegis_audit::error::AuditError;
 use aegis_scanner::ScannerError;
 use aegis_snapshot::SnapshotError;
 
-use crate::config::error::ConfigError;
+use aegis_config::error::ConfigError;
 
 /// Typed error hierarchy for all Aegis operations.
 ///

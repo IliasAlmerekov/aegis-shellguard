@@ -2,15 +2,15 @@ use std::env;
 
 use tokio::runtime::Handle;
 
-use aegis::config::AllowlistMatch;
-use aegis::decision::ExecutionTransport;
-use aegis::interceptor::scanner::{Assessment, DecisionSource};
 use aegis::planning::{
     CwdState, InterceptionPlan, PlanningOutcome, PreparedPlanner, SetupFailurePlan,
     prepare_and_plan, prepare_planner,
 };
 use aegis::runtime_gate::is_ci_environment;
 use aegis::toggle;
+use aegis_config::AllowlistMatch;
+use aegis_policy::ExecutionTransport;
+use aegis_types::{Assessment, DecisionSource};
 
 use crate::policy_output;
 use crate::shell_compat::{self, ShellLaunchOptions};
@@ -153,7 +153,7 @@ fn log_assessment(assessment: &Assessment, allowlist_match: Option<&AllowlistMat
     }
 }
 
-fn emit_policy_evaluation_json(plan: &InterceptionPlan, ci_policy: aegis::config::CiPolicy) -> i32 {
+fn emit_policy_evaluation_json(plan: &InterceptionPlan, ci_policy: aegis_types::CiPolicy) -> i32 {
     match policy_output::render_planned(plan, ci_policy) {
         Ok(json) => {
             println!("{json}");

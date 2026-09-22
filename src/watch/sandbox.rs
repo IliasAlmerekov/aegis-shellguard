@@ -4,10 +4,10 @@ use std::future::Future;
 
 use aegis_types::{RecoveryDegradation, SandboxStatus};
 
-use crate::audit::Decision;
 use crate::planning::InterceptionPlan;
 use crate::runtime::{RuntimeContext, WatchAuditContext};
-use crate::snapshot::SnapshotRecord;
+use aegis_types::Decision;
+use aegis_types::SnapshotRecord;
 
 use super::protocol::{InputFrame, OutputDecision, OutputFrame, emit_frame};
 

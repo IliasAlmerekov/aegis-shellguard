@@ -1,6 +1,6 @@
 //! Shared post-attempt Required recovery status.
 
-use crate::snapshot::SnapshotCoverage;
+use aegis_snapshot::SnapshotCoverage;
 use aegis_types::RecoveryDegradation;
 
 /// Post-attempt state for an active ADR-016 Required recovery obligation.
@@ -40,7 +40,7 @@ pub fn recovery_status(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::snapshot::SnapshotRecord;
+    use aegis_types::SnapshotRecord;
 
     fn record(plugin: &'static str) -> SnapshotRecord {
         SnapshotRecord {

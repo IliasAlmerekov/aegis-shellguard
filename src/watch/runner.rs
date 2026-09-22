@@ -5,22 +5,22 @@ use std::path::PathBuf;
 use tokio::io::{AsyncReadExt, BufReader as TokioBufReader};
 use tokio::sync::mpsc;
 
-use crate::audit::Decision;
-use crate::config::amend::{
-    AppendOutcome, active_config_path_for_append, append_allow_rule, append_block_rule,
-};
-use crate::decision::{BlockReason, ExecutionTransport};
-use crate::interceptor::parser::{extract_prefix, split_tokens};
 use crate::planning::{
     CwdState, ExecutionDisposition, InterceptionPlan, PlanningOutcome, PreparedPlanner,
     SetupFailurePlan, prepare_and_plan_async,
 };
 use crate::runtime::{RecoveryStatus, RuntimeContext, WatchAuditContext, recovery_status};
-use crate::ui::confirm::{
+use aegis_config::amend::{
+    AppendOutcome, active_config_path_for_append, append_allow_rule, append_block_rule,
+};
+use aegis_parser::{extract_prefix, split_tokens};
+use aegis_policy::{BlockReason, ExecutionTransport};
+use aegis_tui::{
     PromptDecision, RecoveryPromptDecision, show_block_via_tty,
     show_confirmation_via_tty_with_decision, show_policy_block_via_tty,
     show_recovery_override_via_tty,
 };
+use aegis_types::Decision;
 
 use super::protocol::{
     InputFrame, MAX_FRAME_BYTES, OutputDecision, OutputFrame, ReadLineResult, emit_frame,
@@ -234,10 +234,7 @@ async fn run_watch_plan_with_prompts<C, R>(
     confirmation_prompt: C,
     recovery_prompt: R,
 ) where
-    C: FnOnce(
-        &crate::interceptor::scanner::Assessment,
-        &aegis_explanation::CommandExplanation,
-    ) -> PromptDecision,
+    C: FnOnce(&aegis_types::Assessment, &aegis_explanation::CommandExplanation) -> PromptDecision,
     R: FnOnce(aegis_types::RecoveryDegradation) -> RecoveryPromptDecision,
 {
     let id = frame.id.clone();
@@ -258,8 +255,8 @@ async fn run_watch_plan_with_prompts<C, R>(
                             existing_location,
                         }) => {
                             let location = match existing_location {
-                                crate::config::allowlist::ConfigSourceLayer::Project => "project",
-                                crate::config::allowlist::ConfigSourceLayer::Global => "global",
+                                aegis_config::allowlist::ConfigSourceLayer::Project => "project",
+                                aegis_config::allowlist::ConfigSourceLayer::Global => "global",
                             };
                             eprintln!(
                                 "warning: conflicting rule for '{pattern}' already exists in {location} config"
@@ -282,8 +279,8 @@ async fn run_watch_plan_with_prompts<C, R>(
                             existing_location,
                         }) => {
                             let location = match existing_location {
-                                crate::config::allowlist::ConfigSourceLayer::Project => "project",
-                                crate::config::allowlist::ConfigSourceLayer::Global => "global",
+                                aegis_config::allowlist::ConfigSourceLayer::Project => "project",
+                                aegis_config::allowlist::ConfigSourceLayer::Global => "global",
                             };
                             eprintln!(
                                 "warning: conflicting rule for '{pattern}' already exists in {location} config"
@@ -558,12 +555,12 @@ async fn create_watch_snapshots(
     context: &RuntimeContext,
     plan: &InterceptionPlan,
     cwd: &std::path::Path,
-) -> crate::snapshot::SnapshotCoverage {
+) -> aegis_snapshot::SnapshotCoverage {
     if matches!(
         plan.snapshot_plan(),
         crate::planning::SnapshotPlan::NotRequired
     ) {
-        return crate::snapshot::SnapshotCoverage::default();
+        return aegis_snapshot::SnapshotCoverage::default();
     }
 
     context

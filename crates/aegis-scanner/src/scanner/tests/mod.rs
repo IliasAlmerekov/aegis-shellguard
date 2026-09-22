@@ -1,9 +1,12 @@
 pub use std::sync::Arc;
 
-pub use crate::patterns::{Category, Pattern, PatternSet, PatternSource};
+pub use crate::patterns::PatternSet;
 pub use crate::scanner::*;
 pub use aegis_parser::{Parser, top_level_pipelines};
-pub use aegis_types::{DetectionMechanism, DetectionSource, MatchEvidence, RiskLevel};
+pub use aegis_types::{
+    Assessment, Category, DecisionSource, DetectionMechanism, DetectionSource, MatchEvidence,
+    Pattern, PatternSource, RiskLevel,
+};
 
 #[cfg(test)]
 fn scanner() -> Scanner {

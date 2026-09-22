@@ -1,10 +1,10 @@
 use std::process::Command;
 use std::time::Duration;
 
-use aegis::config::AegisConfig;
-use aegis::interceptor::patterns::PatternSet;
-use aegis::interceptor::scanner::Scanner;
 use aegis::runtime::context::RuntimeContext;
+use aegis_config::AegisConfig;
+use aegis_scanner::PatternSet;
+use aegis_scanner::Scanner;
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use tempfile::TempDir;
 use tokio::runtime::Runtime;

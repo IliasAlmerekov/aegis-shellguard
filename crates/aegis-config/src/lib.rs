@@ -29,9 +29,8 @@ pub use amend::{
     AppendOutcome, active_config_path_for_append, append_allow_rule, append_block_rule,
 };
 pub use model::{
-    AegisConfig, AllowlistOverrideLevel, AllowlistRule, AuditConfig, AuditIntegrityMode, BlockRule,
-    CiPolicy, Mode, PolicyPatternToken, PolicyRule, PolicyRuleDecision, PruneConfig,
-    SandboxSettings, SnapshotPolicy, UserPattern, WhenClause,
+    AegisConfig, AllowlistRule, AuditConfig, AuditIntegrityMode, BlockRule, PolicyPatternToken,
+    PolicyRule, PruneConfig, SandboxSettings, UserPattern, WhenClause,
 };
 pub use pattern_match::policy_pattern_matches;
 pub use snapshot::{

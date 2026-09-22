@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
-pub use aegis_types::{Category, Pattern, PatternSource, PatternToken, PrefixPattern};
+use aegis_types::{Category, Pattern, PatternSource, PatternToken, PrefixPattern};
 
 use aegis_types::RiskLevel;
 

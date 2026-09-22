@@ -1,10 +1,11 @@
 //! CLI implementation for `aegis snapshot prune`.
 
-use aegis::audit::{AuditEntry, AuditLogger, AuditSnapshot, Decision};
-use aegis::config::{AegisConfig, PruneConfig};
 use aegis::error::AegisError;
-use aegis::interceptor::RiskLevel;
-use aegis::snapshot::{Clock, PrunableRecord, RetentionPolicy, SnapshotRegistry, SystemClock};
+use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
+use aegis_config::{AegisConfig, PruneConfig};
+use aegis_snapshot::{Clock, PrunableRecord, RetentionPolicy, SnapshotRegistry, SystemClock};
+use aegis_types::Decision;
+use aegis_types::RiskLevel;
 
 /// Execute the prune command and return the records that were actually removed.
 ///

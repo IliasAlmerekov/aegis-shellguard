@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use crate::nested::RecursiveScanLimit;
-use crate::patterns::{Category, Pattern, PatternSource};
-use aegis_parser::ParsedCommand;
-use aegis_types::{DetectionSource, MatchEvidence, RiskLevel};
-
-pub use aegis_types::{Assessment, DecisionSource, MatchResult};
+use aegis_types::ParsedCommand;
+use aegis_types::{
+    Assessment, Category, DetectionSource, MatchEvidence, MatchResult, Pattern, PatternSource,
+    RiskLevel,
+};
 
 use super::{Scanner, highlighting, pipeline_semantics, recursive};
 

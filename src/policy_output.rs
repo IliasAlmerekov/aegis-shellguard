@@ -1,7 +1,6 @@
-use aegis::config::{CiPolicy, Mode};
-use aegis::decision::{BlockReason, PolicyAction};
-use aegis::interceptor::scanner::DecisionSource;
 use aegis::planning::{InterceptionPlan, SnapshotPlan};
+use aegis_policy::{BlockReason, PolicyAction};
+use aegis_types::{CiPolicy, DecisionSource, Mode};
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -184,22 +183,22 @@ fn decision_source_string(source: DecisionSource) -> &'static str {
     }
 }
 
-fn category_string(category: aegis::interceptor::patterns::Category) -> &'static str {
+fn category_string(category: aegis_types::Category) -> &'static str {
     match category {
-        aegis::interceptor::patterns::Category::Filesystem => "filesystem",
-        aegis::interceptor::patterns::Category::Git => "git",
-        aegis::interceptor::patterns::Category::Database => "database",
-        aegis::interceptor::patterns::Category::Cloud => "cloud",
-        aegis::interceptor::patterns::Category::Docker => "docker",
-        aegis::interceptor::patterns::Category::Process => "process",
-        aegis::interceptor::patterns::Category::Package => "package",
-        aegis::interceptor::patterns::Category::Aegis => "aegis",
+        aegis_types::Category::Filesystem => "filesystem",
+        aegis_types::Category::Git => "git",
+        aegis_types::Category::Database => "database",
+        aegis_types::Category::Cloud => "cloud",
+        aegis_types::Category::Docker => "docker",
+        aegis_types::Category::Process => "process",
+        aegis_types::Category::Package => "package",
+        aegis_types::Category::Aegis => "aegis",
     }
 }
 
-fn pattern_source_string(source: aegis::interceptor::patterns::PatternSource) -> &'static str {
+fn pattern_source_string(source: aegis_types::PatternSource) -> &'static str {
     match source {
-        aegis::interceptor::patterns::PatternSource::Builtin => "builtin",
-        aegis::interceptor::patterns::PatternSource::Custom => "custom",
+        aegis_types::PatternSource::Builtin => "builtin",
+        aegis_types::PatternSource::Custom => "custom",
     }
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::patterns::PrefixRule;
 use crate::scanner::MatchResult;
-use aegis_types::{DetectionSource, MatchEvidence};
+use aegis_types::{DetectionSource, MatchEvidence, Pattern};
 
 impl PrefixRule {
     /// Check whether `tokens` matches this rule's prefix pattern.
@@ -42,7 +42,7 @@ impl PrefixRule {
     pub fn to_match_result(&self, tokens: &[&str]) -> MatchResult {
         let consumed = tokens.join(" ");
         MatchResult {
-            pattern: Arc::new(crate::patterns::Pattern {
+            pattern: Arc::new(Pattern {
                 id: self.id.clone(),
                 category: self.category,
                 risk: self.risk,
@@ -184,8 +184,8 @@ fn redis_cli_flush_is_command(tokens: &[&str]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::patterns::{Category, PatternSource, PatternToken, PrefixRule};
-    use aegis_types::RiskLevel;
+    use crate::patterns::PrefixRule;
+    use aegis_types::{Category, PatternSource, PatternToken, RiskLevel};
 
     fn single(s: &'static str) -> PatternToken {
         PatternToken::Single(Cow::Borrowed(s))

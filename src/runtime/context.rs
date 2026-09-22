@@ -7,22 +7,21 @@ use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::runtime::{Handle, RuntimeFlavor};
 
-use crate::audit::{AuditEntry, AuditLogger, AuditSnapshot, Decision};
-use crate::config::{
-    AegisConfig, Allowlist, AllowlistContext, AllowlistMatch, AllowlistOverrideLevel, Blocklist,
-    SnapshotPolicy,
-};
 use crate::error::AegisError;
 use crate::explanation::CommandExplanation;
 use crate::explanation::formatter::{CommandExplanationExt, build_outcome_explanation};
-use crate::interceptor::scanner::{Assessment, Scanner};
-use crate::snapshot::{
-    Clock, RetentionPolicy, SnapshotCoverage, SnapshotRecord, SnapshotRegistry,
-    SnapshotRegistryConfig, SystemClock,
+use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
+use aegis_config::{AegisConfig, Allowlist, AllowlistContext, AllowlistMatch, Blocklist};
+use aegis_scanner::Scanner;
+use aegis_snapshot::{
+    Clock, RetentionPolicy, SnapshotCoverage, SnapshotRegistry, SnapshotRegistryConfig, SystemClock,
 };
 #[cfg(feature = "starlark-policy")]
 use aegis_starlark::load_starlark_policy;
-use aegis_types::{RecoveryDegradation, SandboxStatus};
+use aegis_types::{
+    AllowlistOverrideLevel, Assessment, Decision, RecoveryDegradation, SandboxStatus,
+    SnapshotPolicy, SnapshotRecord,
+};
 
 use super::user::detect_effective_user;
 
@@ -34,9 +33,9 @@ use super::user::detect_effective_user;
 #[derive(Clone, Debug)]
 pub struct RuntimeConfig {
     /// Effective operating mode.
-    pub mode: crate::config::Mode,
+    pub mode: aegis_types::Mode,
     /// Effective CI policy.
-    pub ci_policy: crate::config::CiPolicy,
+    pub ci_policy: aegis_types::CiPolicy,
     /// Effective Protect/Strict allowlist ceiling for non-safe commands.
     pub strict_allowlist_override: AllowlistOverrideLevel,
     /// Effective snapshot policy.
@@ -98,7 +97,7 @@ pub struct RuntimeContext {
     async_handle: Handle,
     audit_logger: AuditLogger,
     /// Typed `[[rules]]` entries from the effective config.
-    policy_rules: Vec<crate::config::PolicyRule>,
+    policy_rules: Vec<aegis_config::PolicyRule>,
 }
 
 /// Options controlling how an audit entry is written.
@@ -169,7 +168,7 @@ impl RuntimeContext {
     #[cfg(test)]
     pub(crate) fn set_snapshot_registry_for_tests(
         &self,
-        registry: crate::snapshot::SnapshotRegistry,
+        registry: aegis_snapshot::SnapshotRegistry,
     ) {
         self.snapshot_registry
             .set(registry)
@@ -189,7 +188,7 @@ impl RuntimeContext {
         explicit_policy_path: Option<&std::path::Path>,
     ) -> Result<Self, AegisError> {
         config.validate_runtime_requirements()?;
-        let custom_patterns: Vec<aegis_scanner::Pattern> = config
+        let custom_patterns: Vec<aegis_types::Pattern> = config
             .custom_patterns
             .iter()
             .cloned()
@@ -219,7 +218,7 @@ impl RuntimeContext {
                 .source_home_dir()
                 .map(std::path::Path::to_path_buf)
                 .or_else(home_dir_for_error_attribution);
-            crate::config::locate_invalid_custom_pattern(
+            aegis_config::locate_invalid_custom_pattern(
                 &config,
                 current_dir.as_deref(),
                 home_dir.as_deref(),
@@ -236,7 +235,7 @@ impl RuntimeContext {
         #[cfg(feature = "starlark-policy")]
         if let Some(star_path) = explicit_policy_path.filter(|p| p.exists()) {
             let star_rules = load_starlark_policy(star_path).map_err(|e| {
-                AegisError::Config(crate::config::error::ConfigError::Config(format!(
+                AegisError::Config(aegis_config::error::ConfigError::Config(format!(
                     "policy.star: {e}"
                 )))
             })?;
@@ -273,7 +272,7 @@ impl RuntimeContext {
     }
 
     /// Return the typed `[[rules]]` entries from the effective config.
-    pub fn policy_rules(&self) -> &[crate::config::PolicyRule] {
+    pub fn policy_rules(&self) -> &[aegis_config::PolicyRule] {
         &self.policy_rules
     }
 
@@ -636,7 +635,7 @@ async fn automatic_prune(config: AegisConfig) -> Result<(), AegisError> {
         }
         let entry = AuditEntry::new(
             format!("aegis prune {}", record.snapshot_id),
-            crate::interceptor::RiskLevel::Safe,
+            aegis_types::RiskLevel::Safe,
             Vec::new(),
             Decision::Pruned,
             vec![AuditSnapshot {

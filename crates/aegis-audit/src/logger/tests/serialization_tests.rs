@@ -5,8 +5,8 @@ fn audit_entry_serializes_nested_explanation_sections() {
     let explanation = CommandExplanation {
         scan: ScanExplanation {
             highest_risk: RiskLevel::Danger,
-            decision_source: aegis_scanner::DecisionSource::BuiltinPattern,
-            basis: aegis_scanner::AssessmentBasis::Decisive {
+            decision_source: aegis_types::DecisionSource::BuiltinPattern,
+            basis: aegis_types::AssessmentBasis::Decisive {
                 match_ids: vec!["FS-001".to_string()],
             },
             matched_patterns: vec![ExplainedPatternMatch {
@@ -108,8 +108,8 @@ fn audit_entry_keeps_existing_top_level_fields_for_backward_compatibility() {
     .with_explanation(CommandExplanation {
         scan: ScanExplanation {
             highest_risk: RiskLevel::Danger,
-            decision_source: aegis_scanner::DecisionSource::BuiltinPattern,
-            basis: aegis_scanner::AssessmentBasis::Decisive {
+            decision_source: aegis_types::DecisionSource::BuiltinPattern,
+            basis: aegis_types::AssessmentBasis::Decisive {
                 match_ids: vec!["FS-001".to_string()],
             },
             matched_patterns: vec![ExplainedPatternMatch {

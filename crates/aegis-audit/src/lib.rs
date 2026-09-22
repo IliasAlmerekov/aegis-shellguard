@@ -12,6 +12,6 @@ mod secure_fs;
 pub use error::AuditError;
 pub use logger::{
     AuditEntry, AuditIntegrityReport, AuditIntegrityStatus, AuditLogger, AuditQuery,
-    AuditRotationPolicy, AuditSnapshot, AuditSummary, AuditTimestamp, Decision, DecisionEntry,
+    AuditRotationPolicy, AuditSnapshot, AuditSummary, AuditTimestamp, DecisionEntry,
     MatchedPattern, WatchEntry,
 };

@@ -2,13 +2,13 @@
 
 use tokio::runtime::Handle;
 
-use crate::decision::ExecutionTransport;
 use crate::error::AegisError;
 use crate::planning::core::{PlanningRequest, plan_with_context, plan_with_context_async};
 use crate::planning::types::{
     FailClosedAction, PlanningOutcome, SetupFailureKind, SetupFailurePlan,
 };
 use crate::runtime::RuntimeContext;
+use aegis_policy::ExecutionTransport;
 
 /// Prepared planning dependency state shared across multiple planning requests.
 pub enum PreparedPlanner {
@@ -102,8 +102,8 @@ pub fn setup_failure_from_runtime_error(
 
 #[cfg(test)]
 mod tests {
-    use crate::config::error::ConfigError;
     use crate::error::AegisError;
+    use aegis_config::error::ConfigError;
 
     fn bad_config_error() -> AegisError {
         AegisError::Config(ConfigError::Config("bad config".to_string()))
@@ -114,7 +114,7 @@ mod tests {
         let plan = super::setup_failure_from_runtime_error(
             &bad_config_error(),
             "echo hi",
-            crate::decision::ExecutionTransport::Shell,
+            aegis_policy::ExecutionTransport::Shell,
         );
 
         assert_eq!(
@@ -140,7 +140,7 @@ mod tests {
         let plan = super::setup_failure_from_runtime_error(
             &err,
             "echo hi",
-            crate::decision::ExecutionTransport::Shell,
+            aegis_policy::ExecutionTransport::Shell,
         );
 
         assert_eq!(
@@ -156,7 +156,7 @@ mod tests {
             super::PreparedPlanner::SetupFailure(super::setup_failure_from_runtime_error(
                 &bad_config_error(),
                 "echo hi",
-                crate::decision::ExecutionTransport::Shell,
+                aegis_policy::ExecutionTransport::Shell,
             ));
 
         let first = super::prepare_and_plan(
@@ -164,7 +164,7 @@ mod tests {
             crate::planning::PlanningRequest {
                 command: "echo one",
                 cwd_state: crate::planning::CwdState::Resolved(std::path::PathBuf::from(".")),
-                transport: crate::decision::ExecutionTransport::Shell,
+                transport: aegis_policy::ExecutionTransport::Shell,
                 ci_detected: false,
             },
         );
@@ -173,7 +173,7 @@ mod tests {
             crate::planning::PlanningRequest {
                 command: "echo two",
                 cwd_state: crate::planning::CwdState::Resolved(std::path::PathBuf::from(".")),
-                transport: crate::decision::ExecutionTransport::Shell,
+                transport: aegis_policy::ExecutionTransport::Shell,
                 ci_detected: false,
             },
         );

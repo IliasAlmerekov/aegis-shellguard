@@ -11,8 +11,8 @@ use std::time::Duration;
 
 use aegis::analysis::OrchestrationBudget;
 use aegis::analysis::queue::QueueBudget;
-use aegis::config::AegisConfig;
 use aegis::runtime::RuntimeConfig;
+use aegis_config::AegisConfig;
 use aegis_language::manifest::BUILTIN_MANIFEST;
 
 const QUALIFIED_GRAMMARS: &[(&str, &str, &str)] = &[

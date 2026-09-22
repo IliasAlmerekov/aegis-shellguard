@@ -5,7 +5,8 @@
 use std::fs;
 
 use aegis_config::model::ConfigLayerPath;
-use aegis_config::{AegisConfig, ConfigSourceLayer, Mode};
+use aegis_config::{AegisConfig, ConfigSourceLayer};
+use aegis_types::Mode;
 use tempfile::TempDir;
 
 #[test]

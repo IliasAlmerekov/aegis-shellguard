@@ -216,16 +216,15 @@ fn validate_scanner_path_runs_when_no_custom_patterns() {
 }
 
 // ── Phase 5.2: [[rules]] validation tests ────────────────────────────────
-// NOTE: PolicyPatternToken, PolicyRule, PolicyRuleDecision are referenced via
-// `crate::PolicyRule` etc., which requires the implementation to add
-// `pub use model::{..., PolicyPatternToken, PolicyRule, PolicyRuleDecision, WhenClause};`
-// to both model.rs and lib.rs.  Until then these tests fail with E0432.
+// NOTE: PolicyPatternToken and PolicyRule are re-exported via `crate::*`;
+// PolicyRuleDecision lives in `aegis-types` and is imported from there directly.
 
 /// match_examples that genuinely match the pattern must pass validation.
 #[test]
 fn test_validate_match_examples_pass() {
     use super::validate_policy_rules;
-    use crate::{PolicyPatternToken, PolicyRule, PolicyRuleDecision};
+    use crate::{PolicyPatternToken, PolicyRule};
+    use aegis_types::PolicyRuleDecision;
 
     let rule = PolicyRule {
         pattern: vec![
@@ -250,7 +249,8 @@ fn test_validate_match_examples_pass() {
 #[test]
 fn test_validate_not_match_examples_pass() {
     use super::validate_policy_rules;
-    use crate::{PolicyPatternToken, PolicyRule, PolicyRuleDecision};
+    use crate::{PolicyPatternToken, PolicyRule};
+    use aegis_types::PolicyRuleDecision;
 
     let rule = PolicyRule {
         pattern: vec![
@@ -275,7 +275,8 @@ fn test_validate_not_match_examples_pass() {
 #[test]
 fn test_validate_match_example_fails_when_no_match() {
     use super::validate_policy_rules;
-    use crate::{PolicyPatternToken, PolicyRule, PolicyRuleDecision};
+    use crate::{PolicyPatternToken, PolicyRule};
+    use aegis_types::PolicyRuleDecision;
 
     let rule = PolicyRule {
         pattern: vec![
@@ -306,7 +307,8 @@ fn test_validate_match_example_fails_when_no_match() {
 #[test]
 fn test_validate_not_match_example_fails_when_matches() {
     use super::validate_policy_rules;
-    use crate::{PolicyPatternToken, PolicyRule, PolicyRuleDecision};
+    use crate::{PolicyPatternToken, PolicyRule};
+    use aegis_types::PolicyRuleDecision;
 
     let rule = PolicyRule {
         pattern: vec![
@@ -337,7 +339,7 @@ fn test_validate_not_match_example_fails_when_matches() {
 /// `AegisConfig.rules` correctly.
 #[test]
 fn test_aegisconfig_rules_field_parses_from_toml() {
-    use crate::PolicyRuleDecision;
+    use aegis_types::PolicyRuleDecision;
 
     let toml = r#"
 config_version = 1

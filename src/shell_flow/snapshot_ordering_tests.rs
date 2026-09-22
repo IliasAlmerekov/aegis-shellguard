@@ -5,11 +5,11 @@ use tempfile::TempDir;
 use tokio::runtime::Handle;
 
 use super::test_support::{execute_policy_decision, test_command_explanation};
-use aegis::audit::Decision;
-use aegis::config::{AegisConfig, AllowlistOverrideLevel, SnapshotPolicy};
-use aegis::decision::{ExecutionTransport, PolicyAction, PolicyDecision, PolicyRationale};
 use aegis::explanation::CommandExplanation;
 use aegis::runtime::RuntimeContext;
+use aegis_config::AegisConfig;
+use aegis_policy::{ExecutionTransport, PolicyAction, PolicyDecision, PolicyRationale};
+use aegis_types::{AllowlistOverrideLevel, Decision, SnapshotPolicy};
 
 fn test_handle() -> Handle {
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -57,7 +57,7 @@ fn init_git_repo(path: &Path) {
 
 fn danger_explanation(
     context: &RuntimeContext,
-    assessment: &aegis::interceptor::scanner::Assessment,
+    assessment: &aegis_types::Assessment,
     policy_decision: PolicyDecision,
     plugins: &[&'static str],
 ) -> CommandExplanation {
@@ -79,7 +79,7 @@ fn test_execute_policy_decision_prompt_denied_records_no_snapshots() {
 
     let context = danger_context();
     let assessment = aegis_scanner::assess("rm -rf /tmp/aegis-denied-target").unwrap();
-    assert_eq!(assessment.risk, aegis::interceptor::RiskLevel::Danger);
+    assert_eq!(assessment.risk, aegis_types::RiskLevel::Danger);
 
     let policy_decision = PolicyDecision {
         decision: PolicyAction::Prompt,
@@ -114,11 +114,11 @@ fn test_execute_policy_decision_block_records_no_snapshots() {
 
     let context = danger_context();
     let assessment = aegis_scanner::assess("rm -rf /").unwrap();
-    assert_eq!(assessment.risk, aegis::interceptor::RiskLevel::Block);
+    assert_eq!(assessment.risk, aegis_types::RiskLevel::Block);
 
     let policy_decision = PolicyDecision {
         decision: PolicyAction::Block,
-        rationale: aegis::decision::PolicyRationale::IntrinsicRiskBlock,
+        rationale: aegis_policy::PolicyRationale::IntrinsicRiskBlock,
         requires_confirmation: false,
         snapshots_required: true,
         confinement_required: false,

@@ -2,7 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use aegis::audit::{AuditLogger, Decision};
+use aegis_audit::AuditLogger;
+use aegis_types::Decision;
 use tempfile::TempDir;
 
 fn aegis_bin() -> PathBuf {

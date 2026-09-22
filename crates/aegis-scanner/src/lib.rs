@@ -18,15 +18,11 @@ mod scanner;
 
 use std::sync::{Arc, LazyLock};
 
-pub use aegis_types::{
-    AssessmentBasis, Category, DetectionMechanism, DetectionSource, MatchEvidence, Pattern,
-    PatternSource, PatternToken, PrefixPattern,
-};
+use aegis_types::{Assessment, Pattern};
+
 pub use error::ScannerError;
 pub use patterns::{PatternSet, PrefixRule};
-pub use scanner::{
-    Assessment, DecisionSource, HighlightRange, MatchResult, Scanner, try_new_call_count_for_tests,
-};
+pub use scanner::{Scanner, try_new_call_count_for_tests};
 
 /// Process-wide built-in scanner, compiled once from the embedded
 /// `patterns.toml`. The error is carried as a `String` (not `ScannerError`,
@@ -70,6 +66,8 @@ fn builtin_scanner() -> Result<Arc<Scanner>, ScannerError> {
 #[cfg(test)]
 mod tests {
     use std::borrow::Cow;
+
+    use aegis_types::{Category, PatternSource};
 
     use super::*;
 

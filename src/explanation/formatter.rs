@@ -1,6 +1,6 @@
 //! Explanation formatter: render human-readable decision explanations.
 
-use super::templates::{
+use aegis_explanation::{
     AllowlistExplanation, CommandExplanation, ExecutionContextExplanation,
     ExecutionDecisionExplanation, ExecutionOutcomeExplanation, ExplainedPatternMatch,
     PolicyExplanation, ScanExplanation, SnapshotOutcomeExplanation,
@@ -14,12 +14,10 @@ thread_local! {
     static FROM_PLAN_INPUTS_CALL_COUNT: Cell<usize> = const { Cell::new(0) };
 }
 
-use crate::audit::Decision;
-use crate::config::AllowlistMatch;
-use crate::decision::PolicyDecision;
-use crate::interceptor::scanner::{Assessment, MatchResult};
 use crate::planning::DecisionContext;
-use crate::snapshot::SnapshotRecord;
+use aegis_config::AllowlistMatch;
+use aegis_policy::PolicyDecision;
+use aegis_types::{Assessment, Decision, MatchResult, SnapshotRecord};
 
 /// Build a [`CommandExplanation`] from planning-time inputs.
 #[must_use]
@@ -148,24 +146,21 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
 
-    use crate::audit::Decision;
-    use crate::config::{AllowlistMatch, ConfigSourceLayer, Mode};
-    use crate::decision::{BlockReason, ExecutionTransport, PolicyAction, PolicyRationale};
-    use crate::interceptor::RiskLevel;
-    use crate::interceptor::parser::Parser;
-    use crate::interceptor::patterns::{Category, Pattern, PatternSource};
-    use crate::interceptor::scanner::{
-        AssessmentBasis, DecisionSource, DetectionSource, MatchEvidence, MatchResult,
-    };
     use crate::planning::CwdState;
-    use crate::snapshot::SnapshotRecord;
+    use aegis_config::{AllowlistMatch, ConfigSourceLayer};
+    use aegis_parser::Parser;
+    use aegis_policy::{BlockReason, ExecutionTransport, PolicyAction, PolicyRationale};
+    use aegis_types::{
+        AssessmentBasis, Category, Decision, DecisionSource, DetectionSource, MatchEvidence,
+        MatchResult, Mode, Pattern, PatternSource, RiskLevel, SnapshotRecord,
+    };
 
-    use super::super::templates::{
+    use super::*;
+    use aegis_explanation::{
         CommandExplanation, ExecutionContextExplanation, ExecutionDecisionExplanation,
         ExecutionOutcomeExplanation, ExplainedPatternMatch, PolicyExplanation, ScanExplanation,
         SnapshotOutcomeExplanation,
     };
-    use super::*;
 
     fn test_explanation() -> CommandExplanation {
         CommandExplanation {
@@ -204,7 +199,7 @@ mod tests {
 
     #[test]
     fn builds_base_explanation_from_existing_pipeline_facts() {
-        let assessment = crate::interceptor::scanner::Assessment {
+        let assessment = aegis_types::Assessment {
             risk: RiskLevel::Danger,
             effect_opaque: false,
             matched: vec![
@@ -259,7 +254,7 @@ mod tests {
             }),
             vec!["git", "docker"],
         );
-        let decision = crate::decision::PolicyDecision {
+        let decision = aegis_policy::PolicyDecision {
             decision: PolicyAction::Prompt,
             rationale: PolicyRationale::RequiresConfirmation,
             requires_confirmation: true,
@@ -330,7 +325,7 @@ mod tests {
             None,
             Vec::new(),
         );
-        let decision = crate::decision::PolicyDecision {
+        let decision = aegis_policy::PolicyDecision {
             decision: PolicyAction::AutoApprove,
             rationale: PolicyRationale::SafeCommand,
             requires_confirmation: false,

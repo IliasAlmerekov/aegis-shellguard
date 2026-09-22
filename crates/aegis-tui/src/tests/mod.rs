@@ -9,12 +9,13 @@ pub(crate) use crate::tty_renderer::tty_unavailable_prompt_decision;
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use aegis_config::{ConfigSourceLayer, Mode};
+use aegis_config::ConfigSourceLayer;
 use aegis_explanation::{
     AllowlistExplanation, BlockReason, CommandExplanation, ExecutionContextExplanation,
     ExecutionTransport, PolicyAction, PolicyExplanation, PolicyRationale, ScanExplanation,
 };
 use aegis_parser::Parser;
+use aegis_types::Mode;
 use aegis_types::{
     AnalysisProvenance, AnalysisStatus, Assessment, ByteSpan, Category, DetectedOperation,
     DetectionSource, HighlightRange, MatchEvidence, MatchResult, OperandCertainty, OperationKind,

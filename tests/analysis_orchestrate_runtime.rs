@@ -8,11 +8,11 @@ use std::time::{Duration, Instant};
 use aegis::analysis::{
     AnalysisCwd, OrchestrationBudget, Outcome, run, run_with_budget, run_with_budget_in_cwd,
 };
-use aegis::decision::{
+use aegis_policy::PolicyRulesResult;
+use aegis_policy::{
     ExecutionTransport, PolicyAction, PolicyAllowlistResult, PolicyBlocklistResult, PolicyCiState,
     PolicyConfigFlags, PolicyExecutionContext, PolicyInput, evaluate_policy,
 };
-use aegis_policy::PolicyRulesResult;
 use aegis_types::{
     AllowlistOverrideLevel, AnalysisStatus, Assessment, CiPolicy, DegradationReason, MatchEvidence,
     Mode, ParsedCommand, RiskLevel, SnapshotPolicy,

@@ -14,7 +14,9 @@ mod prefix_match;
 mod segmentation;
 mod tokenizer;
 
-pub use aegis_types::{InlineScript, ParsedCommand};
+#[cfg(test)]
+use aegis_types::InlineScript;
+use aegis_types::ParsedCommand;
 pub use embedded_scripts::{
     HeredocBody, extract_eval_payloads, extract_heredoc_bodies, extract_inline_scripts,
     extract_process_substitution_bodies, mask_inert_heredoc_substitution_markers,

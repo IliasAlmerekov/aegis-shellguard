@@ -9,9 +9,10 @@
 use std::cell::RefCell;
 use std::path::Path;
 
+use aegis_config::PolicyRule;
 use aegis_config::model::{PolicyPatternToken, WhenClause};
 use aegis_config::validate::validate_policy_rules;
-use aegis_config::{PolicyRule, PolicyRuleDecision};
+use aegis_types::PolicyRuleDecision;
 use starlark::any::ProvidesStaticType;
 use starlark::environment::GlobalsBuilder;
 use starlark::environment::Module;

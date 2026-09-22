@@ -8,7 +8,7 @@ use super::super::types::{
 };
 use super::evaluate_policy;
 use aegis_parser::Parser as CommandParser;
-use aegis_scanner::Assessment;
+use aegis_types::Assessment;
 use aegis_types::{
     AllowlistOverrideLevel, AnalysisProvenance, Category, CiPolicy, DetectedOperation,
     DetectionSource, MatchEvidence, MatchResult, Mode, OperandCertainty, OperationKind,
