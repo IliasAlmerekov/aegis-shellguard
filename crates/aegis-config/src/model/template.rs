@@ -81,6 +81,9 @@ name_patterns = []       # Name patterns for Names mode (Docker regex, ORed).
 # a snapshot is kept if it is within max_age_days OR among the newest
 # max_count_per_provider for its provider. Set enabled = true and use
 # `aegis snapshot prune` to preview or remove artifacts.
+# The model default leaves both limits unset (prune deletes nothing even if
+# enabled); this template deliberately suggests 10/30 days as a starting
+# point a new project can tune instead of starting from "keeps everything".
 [prune]
 enabled = false
 max_count_per_provider = 10
