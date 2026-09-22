@@ -218,7 +218,7 @@ impl RuntimeContext {
                 .source_home_dir()
                 .map(std::path::Path::to_path_buf)
                 .or_else(home_dir_for_error_attribution);
-            crate::config::locate_invalid_custom_pattern(
+            aegis_config::locate_invalid_custom_pattern(
                 &config,
                 current_dir.as_deref(),
                 home_dir.as_deref(),

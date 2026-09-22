@@ -41,7 +41,7 @@ description = "project entry"
     )
     .unwrap();
 
-    let config = aegis::config::AegisConfig::load_for(workspace.path(), Some(home.path()))
+    let config = aegis_config::AegisConfig::load_for(workspace.path(), Some(home.path()))
         .expect("layered load with only a duplicate-id conflict must still parse");
 
     let rt = tokio::runtime::Builder::new_multi_thread()
