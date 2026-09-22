@@ -325,6 +325,26 @@ a gate on `assess()` alone never saw most of what an agent actually pays.
   measured, evaluation mode only (the path to the decision, no exec, no audit
   write). This is the only row that includes config discovery from disk.
 
+#### `runtime_context_custom_pattern_construction` baseline (issue #397, 2026-09-22)
+
+A fourth `Startup cost` row: `RuntimeContext::new()` from a config carrying
+one `custom_patterns` entry, the branch `runtime_context_construction` does
+not exercise. A non-empty custom-pattern slice sends `aegis_scanner::scanner_for`
+down its other branch, which builds a fresh `Scanner` merging the 41 built-ins
+with the custom set (`crates/aegis-scanner/src/lib.rs:47-53`,
+`crates/aegis-scanner/src/patterns.rs:132-151`) instead of cloning the
+already-warm `BUILTIN_SCANNER` static, so its cost lands close to
+`scanner_construction`'s range rather than `runtime_context_construction`'s.
+
+`baseline_ns` is set from three local release captures (`cargo bench --bench
+startup_bench -- --quick runtime_context_custom_pattern_construction`), which
+spread 9.266–10.492 ms — the same ~2x-margin-over-observed-max methodology as
+the 2026-09-16 `safe_command_assess`/`scanner_construction` rebaseline above:
+`21_000_000`, roughly double the observed maximum. Pending a CI-runner
+capture: once the `performance` job runs on the PR that adds this row,
+`baseline_ns` gets corrected to the observed CI-runner mean in a follow-up
+commit, the same pattern `startup_safe_command`'s baseline followed.
+
 ### Language-aware slow path, since Iteration 10 (the two `aegis-language` benches)
 
 - `no_source_does_not_start_worker` (`benches/no_source_bench.rs`)
