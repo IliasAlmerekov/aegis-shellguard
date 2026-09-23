@@ -113,9 +113,27 @@ pub(super) fn unclaimed_interpreter_net(
 
     let names_an_interpreter = slice.tokens[1..]
         .iter()
-        .any(|tok| resolve_interpreter(basename(tok), trusted_aliases).is_some());
+        .any(|tok| token_names_an_interpreter(tok, trusted_aliases));
 
     names_an_interpreter.then_some(RoutedTarget::Unresolved {
         reason: DegradationReason::DynamicSource,
     })
+}
+
+/// `true` when `tok` itself names a known registry interpreter, or — for a
+/// token that survived unquoting with embedded whitespace still in it (a
+/// quoted multi-word argument, e.g. `"python3 ./evil.py"` passed to `script
+/// -c`) — its first word does. `basename` alone mishandles the quoted case:
+/// run on the whole token it finds the last `/`-separated segment of the
+/// *last* word instead of the interpreter name that opens it (issue
+/// #384/#430 round 5).
+fn token_names_an_interpreter(tok: &str, trusted_aliases: &[(&str, &str)]) -> bool {
+    if resolve_interpreter(basename(tok), trusted_aliases).is_some() {
+        return true;
+    }
+    tok.contains(char::is_whitespace)
+        && tok
+            .split_whitespace()
+            .next()
+            .is_some_and(|word| resolve_interpreter(basename(word), trusted_aliases).is_some())
 }

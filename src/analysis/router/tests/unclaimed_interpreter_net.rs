@@ -174,3 +174,29 @@ fn find_piped_into_xargs_grep_is_not_routed() {
         Vec::new()
     );
 }
+
+// ── An interpreter named inside a quoted multi-word token is routed ────────
+
+#[test]
+fn script_dash_c_quoted_interpreter_command_is_routed() {
+    assert_eq!(
+        route(r#"script -c "python3 ./evil.py""#, &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn script_dash_qc_quoted_interpreter_command_is_routed() {
+    assert_eq!(
+        route(r#"script -qc "python3 ./evil.py" /dev/null"#, &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn quoted_multiword_token_naming_a_benign_command_is_not_routed() {
+    // "echo" is not a registered registry interpreter, so a quoted command
+    // that merely starts with it carries no interpreter to catch, the same
+    // way `echo python3` itself names one as data rather than running it.
+    assert_eq!(route(r#"ssh host "echo hello""#, &[]), Vec::new());
+}
