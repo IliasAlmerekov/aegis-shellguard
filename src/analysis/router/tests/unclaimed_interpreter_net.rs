@@ -200,3 +200,55 @@ fn quoted_multiword_token_naming_a_benign_command_is_not_routed() {
     // way `echo python3` itself names one as data rather than running it.
     assert_eq!(route(r#"ssh host "echo hello""#, &[]), Vec::new());
 }
+
+// ── A path-like operand after an unenumerated launcher is a direct-exec candidate ──
+
+#[test]
+fn setsid_direct_exec_operand_is_routed() {
+    assert_eq!(
+        route("setsid ./pyx", &[]),
+        vec![RoutedTarget::DirectExec {
+            path: PathBuf::from("./pyx"),
+        }]
+    );
+}
+
+#[tokio::test]
+async fn setsid_direct_exec_operand_with_a_verified_shebang_prompts() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pyx");
+    std::fs::write(&path, "#!/usr/bin/env python3\nprint(1)\n").unwrap();
+
+    let command = format!("setsid {}", path.display());
+    let targets = route(&command, &[]);
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::DirectExec { path: path.clone() }]
+    );
+
+    let results = resolve(targets, 1024).await;
+    assert_eq!(
+        results,
+        vec![Ok(SourceTarget {
+            language: SourceLanguage::Python,
+            source: "#!/usr/bin/env python3\nprint(1)\n".to_owned(),
+        })]
+    );
+}
+
+#[tokio::test]
+async fn setsid_direct_exec_operand_without_a_shebang_stays_auto_approved() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("notes.txt");
+    std::fs::write(&path, "just notes, not a script\n").unwrap();
+
+    let command = format!("setsid {}", path.display());
+    let targets = route(&command, &[]);
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::DirectExec { path: path.clone() }]
+    );
+
+    let results = resolve(targets, 1024).await;
+    assert_eq!(results, Vec::new());
+}

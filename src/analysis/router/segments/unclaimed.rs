@@ -114,9 +114,22 @@ pub(super) fn unclaimed_interpreter_net(
     let names_an_interpreter = slice.tokens[1..]
         .iter()
         .any(|tok| token_names_an_interpreter(tok, trusted_aliases));
+    if names_an_interpreter {
+        return Some(RoutedTarget::Unresolved {
+            reason: DegradationReason::DynamicSource,
+        });
+    }
 
-    names_an_interpreter.then_some(RoutedTarget::Unresolved {
-        reason: DegradationReason::DynamicSource,
+    // Nothing named a known interpreter, but an unenumerated wrapper
+    // (`setsid ./pyx`) may still hand a script its own path-like operand
+    // straight through: `resolve` reads the file and only treats it as a
+    // target with a verified shebang, so a non-script operand stays safe
+    // (issue #384/#430 round 5).
+    let first_operand = slice.tokens[1..].iter().find(|tok| !tok.starts_with('-'))?;
+    (first_operand.contains('/') && is_literal_path(first_operand)).then(|| {
+        RoutedTarget::DirectExec {
+            path: PathBuf::from(*first_operand),
+        }
     })
 }
 

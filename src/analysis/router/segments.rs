@@ -340,7 +340,7 @@ fn route_stage(
     // (issue #384/#430, ADR-022 §6 amendment) for a wrapper word the
     // launcher list does not enumerate.
     if !claimed && let Some(net_target) = unclaimed_interpreter_net(stage_raw, trusted_aliases) {
-        push_unique(targets, net_target);
+        push_unique(targets, apply_cwd(net_target, cwd));
     }
 }
 
