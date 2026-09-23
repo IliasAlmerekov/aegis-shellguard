@@ -79,16 +79,22 @@ fn strip_trailing_esac(s: &str) -> &str {
 }
 
 /// `Some(body)` when `trimmed` (a whole stage, already trimmed of leading
-/// whitespace) is a POSIX function definition — `NAME() { BODY; }` or
-/// `NAME(){ BODY; }`, with no whitespace between `)` and `{` required (issue
-/// #384 G1; routing the body at definition time is the accepted conservative
-/// choice — a later call site of `NAME` is not tracked). `NAME` must be a
-/// bare identifier-like token with no shell metacharacter, so this cannot
-/// misfire on a subshell or command substitution. Raw-substring only, same
+/// whitespace and any trailing redirection — see [`strip_trailing_redirection`])
+/// is a POSIX function definition — `NAME() BODY`, `NAME(){ BODY; }`, `NAME
+/// () BODY`, ... — with `NAME` a bare identifier-like token with no shell
+/// metacharacter, so this cannot misfire on a subshell or command
+/// substitution. No whitespace is required, or disallowed, anywhere around
+/// `()` (issue #384 G1, B2). `BODY` is returned exactly as written, whatever
+/// compound command it is (`{...}`, `(...)`, `case...esac`, an `if`/`while`
+/// keyword body, ...): routing the body at definition time is the accepted
+/// conservative choice (a later call site of `NAME` is not tracked), and the
+/// caller's own wrapper-body recursion already knows how to peel any
+/// compound-command shape, so this stops at "found the body's start" rather
+/// than duplicating that per-shape knowledge here. Raw-substring only, same
 /// standard as this module's other wrapper-body extraction.
 pub(super) fn posix_function_definition_body(trimmed: &str) -> Option<&str> {
     let paren_pos = trimmed.find('(')?;
-    let name = &trimmed[..paren_pos];
+    let name = trimmed[..paren_pos].trim_end();
     if name.is_empty()
         || name
             .chars()
@@ -97,27 +103,16 @@ pub(super) fn posix_function_definition_body(trimmed: &str) -> Option<&str> {
         return None;
     }
     let after_close = trimmed[paren_pos + 1..].strip_prefix(')')?;
-    let brace_pos = after_close.find('{')?;
-    if !after_close[..brace_pos].chars().all(char::is_whitespace) {
-        return None;
-    }
-    trimmed_body_between_braces(&after_close[brace_pos + 1..])
-}
-
-/// The body between the first `{` (already stripped by the caller) and this
-/// text's own trailing `}` — the whole rest of `trimmed`, since the caller
-/// already isolated exactly one wrapper/definition unit
-/// (`aegis_parser::list_segments`'s brace-depth tracking guarantees the
-/// stage's last character is the matching close brace).
-fn trimmed_body_between_braces(rest: &str) -> Option<&str> {
-    rest.trim_end().strip_suffix('}')
+    let body = after_close.trim_start();
+    (!body.is_empty()).then_some(body)
 }
 
 /// `Some(body)` when `rest` (already past the leading `function ` keyword) is
-/// a `function NAME { BODY; }` definition, with or without the optional empty
-/// `()` before the brace (issue #384 G1; same conservative
-/// routed-at-definition choice as [`posix_function_definition_body`]).
-/// `NAME` must be a bare identifier-like token with no shell metacharacter.
+/// a `function NAME BODY` definition, with or without the optional empty
+/// `()` between `NAME` and `BODY` (issue #384 G1, B2; same conservative
+/// routed-at-definition choice, and the same "any compound command" contract,
+/// as [`posix_function_definition_body`]). `NAME` must be a bare
+/// identifier-like token with no shell metacharacter.
 fn function_keyword_body(rest: &str) -> Option<&str> {
     let name_end = rest.find(|c: char| c.is_whitespace() || c == '(')?;
     let name = &rest[..name_end];
@@ -128,15 +123,20 @@ fn function_keyword_body(rest: &str) -> Option<&str> {
     {
         return None;
     }
-    let mut tail = rest[name_end..].trim_start();
-    if let Some(after_open) = tail.strip_prefix('(') {
-        tail = after_open.trim_start().strip_prefix(')')?.trim_start();
-    }
-    let brace_pos = tail.find('{')?;
-    if !tail[..brace_pos].chars().all(char::is_whitespace) {
-        return None;
-    }
-    trimmed_body_between_braces(&tail[brace_pos + 1..])
+    let tail = rest[name_end..].trim_start();
+    let body = match tail.strip_prefix('(') {
+        // `NAME ( ) BODY`: an empty parameter-list pair, discarded, before
+        // the compound-command body.
+        Some(after_open) if after_open.trim_start().starts_with(')') => after_open
+            .trim_start()
+            .strip_prefix(')')
+            .map_or("", str::trim_start),
+        // `NAME ( BODY` with no matching empty pair right after — the `(`
+        // itself opens the compound command (a subshell body), so it stays
+        // part of the body rather than being consumed as the empty pair.
+        _ => tail,
+    };
+    (!body.is_empty()).then_some(body)
 }
 
 /// `Some(body)` when `rest` (already past the leading `coproc ` keyword) is a
@@ -156,6 +156,47 @@ fn coproc_body(rest: &str) -> Option<&str> {
     strip_group_or_subshell_wrapper(tail.trim_start())
 }
 
+/// Strip every trailing shell redirection off `s`, glued (`>log`,
+/// `2>/dev/null`, `{fd}>out`) or spaced (`> log`, `2> /dev/null`) alike,
+/// repeated until none remain (`>out 2>&1` is two redirections). Reuses
+/// [`aegis_parser::starts_with_redirection_glyph`] and
+/// [`aegis_parser::is_redirection_operator`] — the same glyph primitives
+/// `aegis_parser`'s own effective-program walk uses for a *leading*
+/// redirection (issue #384 B3) — so a wrapper stage's trailing redirect and
+/// argv's leading one are recognized by one rule, not two. Whitespace-
+/// boundary word splitting only, the same raw-substring standard as this
+/// module's other wrapper-body extraction: a quoted redirect target is not
+/// unquoted or re-tokenized.
+fn strip_trailing_redirection(s: &str) -> &str {
+    let mut rest = s.trim_end();
+    loop {
+        let (before, last_word) = match rest.rfind(char::is_whitespace) {
+            Some(idx) => (&rest[..idx], &rest[idx + 1..]),
+            None => ("", rest),
+        };
+        if last_word.is_empty() {
+            return rest;
+        }
+        if aegis_parser::starts_with_redirection_glyph(last_word) {
+            rest = before.trim_end();
+            continue;
+        }
+        // Not glued to its target — check whether the word before it is a
+        // standalone redirection operator (`>`, `2>`, ...) whose target
+        // `last_word` is, so the pair strips together.
+        let before = before.trim_end();
+        let (before_before, prior_word) = match before.rfind(char::is_whitespace) {
+            Some(idx) => (&before[..idx], &before[idx + 1..]),
+            None => ("", before),
+        };
+        if aegis_parser::is_redirection_operator(prior_word) {
+            rest = before_before.trim_end();
+            continue;
+        }
+        return rest;
+    }
+}
+
 /// Every raw wrapper body found directly in `stage_raw`: a reserved-word
 /// prefix's remainder, a `(...)`/`{...}` group wrapping the whole stage, and
 /// every top-level `$(...)`/backtick command-substitution body — the exact
@@ -169,7 +210,12 @@ fn coproc_body(rest: &str) -> Option<&str> {
 /// [`super::route_direct_stage`] performs.
 pub(super) fn wrapper_bodies(stage_raw: &str, trusted_aliases: &[(&str, &str)]) -> Vec<String> {
     let mut bodies = Vec::new();
-    let trimmed = stage_raw.trim_start();
+    // Stripped once, generally, for every wrapper-shape check below (issue
+    // #384 B2) rather than per wrapper kind — a trailing `2>/dev/null` (or
+    // any other redirect) on a brace group, coprocess, or function/case body
+    // is not part of that body's own closing punctuation, whichever wrapper
+    // it turns out to be.
+    let trimmed = strip_trailing_redirection(stage_raw.trim_start());
 
     for kw in RESERVED_WORD_PREFIXES {
         if let Some(rest) = trimmed.strip_prefix(kw)
