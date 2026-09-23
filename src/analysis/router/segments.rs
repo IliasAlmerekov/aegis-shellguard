@@ -320,6 +320,36 @@ fn stage_may_be_wrapped(stage_raw: &str) -> bool {
                 .strip_prefix(kw)
                 .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
         })
+        || (command_has_heredoc(stage_raw) && heredoc_marker_line_tail(stage_raw).is_some())
+}
+
+/// The chained-command tail glued onto a heredoc marker's own physical line
+/// (issue #384 H1, a regression of S1) — e.g. `&& python3 ./evil.py` in `cat
+/// <<A && python3 ./evil.py`, or `; python3 ./evil.py` in `cat <<A; python3
+/// ./evil.py`. `aegis_parser::list_segments` deliberately keeps this glued to
+/// the heredoc-owning segment (S1: the body itself must stay data, not
+/// further segments, and the marker's own line must stay one unit for
+/// `heredoc_write_then_exec_reuse` below), so without this the chained
+/// command silently vanished into the heredoc-owning stage's own program
+/// text — `route_direct_stage` cannot detect it because that text never
+/// resolves to a routable program at all. `None` when `stage_raw` owns no
+/// heredoc marker, or nothing follows the marker(s) on its opening line.
+fn heredoc_marker_line_tail(stage_raw: &str) -> Option<&str> {
+    let first_line = stage_raw.lines().next()?;
+    let (_, mut after) = aegis_parser::split_at_heredoc_marker(first_line)?;
+    while let Some((_, next_after)) = aegis_parser::split_at_heredoc_marker(after) {
+        // A further stacked marker (`cat <<A <<B; ...`) on the same line —
+        // keep walking past every marker before looking for the tail.
+        after = next_after;
+    }
+    let trimmed = after.trim_start();
+    let without_operator = trimmed
+        .strip_prefix("&&")
+        .or_else(|| trimmed.strip_prefix("||"))
+        .or_else(|| trimmed.strip_prefix(';'))
+        .unwrap_or(trimmed)
+        .trim_start();
+    (!without_operator.is_empty()).then_some(without_operator)
 }
 
 /// Peel a `case` arm's `WORD in LABEL)` header off its raw text (`rest` is
@@ -346,7 +376,7 @@ fn strip_case_arm_header(rest: &str) -> Option<&str> {
 /// reused here because its output is already dequoted, which would corrupt
 /// an inline `-c`/`-e` body's quoting on the second tokenizer pass
 /// [`route_direct_stage`] performs.
-fn wrapper_bodies(stage_raw: &str) -> Vec<String> {
+fn wrapper_bodies(stage_raw: &str, trusted_aliases: &[(&str, &str)]) -> Vec<String> {
     let mut bodies = Vec::new();
     let trimmed = stage_raw.trim_start();
 
@@ -370,6 +400,16 @@ fn wrapper_bodies(stage_raw: &str) -> Vec<String> {
         bodies.push(inner.to_owned());
     }
     bodies.extend(aegis_parser::extract_command_substitution_bodies(stage_raw));
+    if command_has_heredoc(stage_raw)
+        && heredoc_write_then_exec_reuse(stage_raw, trusted_aliases).is_none()
+        && let Some(tail) = heredoc_marker_line_tail(stage_raw)
+    {
+        // Guarded against `heredoc_write_then_exec_reuse` above: that narrow
+        // shape already reads the heredoc body directly for its own single
+        // route, so re-walking the same tail here would add a redundant
+        // second route for the identical exec.
+        bodies.push(tail.to_owned());
+    }
     bodies
 }
 
@@ -401,7 +441,7 @@ fn route_wrapped_stage(
         return;
     }
 
-    for body in wrapper_bodies(stage_raw) {
+    for body in wrapper_bodies(stage_raw, trusted_aliases) {
         let mut body_cwd = cwd.clone();
         let mut body_targets = Vec::new();
         for segment in aegis_parser::list_segments(&body) {
