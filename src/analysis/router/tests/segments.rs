@@ -202,3 +202,46 @@ fn a_three_stage_pipe_ending_in_a_bare_interpreter_degrades_dynamically() {
         }]
     );
 }
+
+// ── A heredoc marker no longer sends the whole command down a first-segment-
+// only legacy path (issue #384) ───────────────────────────────────────────
+//
+// Before this fix, any `<<WORD` in the command routed the whole thing
+// through a single-segment fallback, so a real command hiding behind an
+// inert heredoc-consuming no-op (`:`, `cat`) was never reached.
+
+#[test]
+fn a_script_after_a_heredoc_consumed_by_a_no_op_is_routed() {
+    let targets = route(": <<X\nhi\nX\ntrue; python3 ./evil.py", &[]);
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::ScriptFile {
+            language: SourceLanguage::Python,
+            path: PathBuf::from("./evil.py"),
+        }]
+    );
+}
+
+#[test]
+fn a_script_before_a_logical_and_with_a_trailing_heredoc_is_still_routed() {
+    let targets = route("true && python3 ./evil.py <<X\nhi\nX", &[]);
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::ScriptFile {
+            language: SourceLanguage::Python,
+            path: PathBuf::from("./evil.py"),
+        }]
+    );
+}
+
+#[test]
+fn a_script_after_a_heredoc_consumed_by_cat_is_routed() {
+    let targets = route("cat <<X\nhi\nX\npython3 ./evil.py", &[]);
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::ScriptFile {
+            language: SourceLanguage::Python,
+            path: PathBuf::from("./evil.py"),
+        }]
+    );
+}

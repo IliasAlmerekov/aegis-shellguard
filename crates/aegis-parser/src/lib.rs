@@ -21,6 +21,7 @@ use aegis_types::ParsedCommand;
 pub use embedded_scripts::{
     HeredocBody, extract_eval_payloads, extract_heredoc_bodies, extract_inline_scripts,
     extract_process_substitution_bodies, mask_inert_heredoc_substitution_markers,
+    split_at_heredoc_marker,
 };
 pub use list_segments::{ListSegment, ListSeparator, list_segments};
 pub use nested_shells::extract_nested_commands;

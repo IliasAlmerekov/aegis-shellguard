@@ -267,6 +267,10 @@ struct HeredocMarker {
     /// callers can locate the target-command token ahead of it without
     /// re-searching the line.
     operator_start: usize,
+    /// Byte offset immediately after the delimiter spec (past the closing
+    /// quote, or past the bare/escaped word) — the start of whatever else
+    /// shares this physical line with the marker (e.g. a `&&`-chained exec).
+    delimiter_end: usize,
 }
 
 /// Scan one line for a heredoc operator (`<<`) and return the parsed marker.
@@ -280,48 +284,97 @@ struct HeredocMarker {
 /// - `<<-'WORD'`       — nowdoc with leading-tab stripping
 fn find_heredoc_marker(line: &str) -> Option<HeredocMarker> {
     let operator_start = line.find("<<")?;
-    let rest = &line[operator_start + 2..];
-    let mk = |delimiter: String, is_nowdoc: bool, strip_tabs: bool| HeredocMarker {
+    let after_op = &line[operator_start + 2..];
+    let (strip_tabs, after_dash) = match after_op.strip_prefix('-') {
+        Some(stripped) => (true, stripped),
+        None => (false, after_op),
+    };
+    let trimmed = after_dash.trim_start();
+    let spec_start =
+        operator_start + 2 + (strip_tabs as usize) + (after_dash.len() - trimmed.len());
+
+    let mk = |delimiter: String, is_nowdoc: bool, delimiter_end: usize| HeredocMarker {
         delimiter,
         is_nowdoc,
         strip_tabs,
         operator_start,
+        delimiter_end,
     };
 
-    let (strip_tabs, rest) = if let Some(stripped) = rest.strip_prefix('-') {
-        (true, stripped)
-    } else {
-        (false, rest)
-    };
-
-    let rest = rest.trim_start();
-
-    if let Some(inner) = rest.strip_prefix('\'') {
+    if let Some(inner) = trimmed.strip_prefix('\'') {
         let close = inner.find('\'')?;
         let delim = &inner[..close];
-        return (!delim.is_empty()).then(|| mk(delim.to_string(), true, strip_tabs));
+        return (!delim.is_empty())
+            .then(|| mk(delim.to_string(), true, spec_start + 1 + close + 1));
     }
 
-    if let Some(inner) = rest.strip_prefix('"') {
+    if let Some(inner) = trimmed.strip_prefix('"') {
         let close = inner.find('"')?;
         let delim = &inner[..close];
-        return (!delim.is_empty()).then(|| mk(delim.to_string(), true, strip_tabs));
+        return (!delim.is_empty())
+            .then(|| mk(delim.to_string(), true, spec_start + 1 + close + 1));
     }
 
-    if let Some(inner) = rest.strip_prefix('\\') {
+    if let Some(inner) = trimmed.strip_prefix('\\') {
         let word: String = inner
             .chars()
             .take_while(|c| c.is_alphanumeric() || *c == '_')
             .collect();
-        return (!word.is_empty()).then(|| mk(word, true, strip_tabs));
+        let word_len = word.len();
+        return (!word.is_empty()).then(|| mk(word, true, spec_start + 1 + word_len));
     }
 
-    let word: String = rest
+    let word: String = trimmed
         .chars()
         .take_while(|c| c.is_alphanumeric() || *c == '_')
         .collect();
+    let word_len = word.len();
 
-    (!word.is_empty()).then(|| mk(word, false, strip_tabs))
+    (!word.is_empty()).then(|| mk(word, false, spec_start + word_len))
+}
+
+/// Split `line` at its first heredoc marker (`<<WORD`, `<<'WORD'`, or the
+/// `<<-` tab-stripping variants), returning the text before the marker and
+/// the text immediately after the delimiter spec (which, per shell grammar,
+/// is still part of the same command line — e.g. a `&&`-chained command).
+/// `None` when `line` carries no recognizable marker.
+pub fn split_at_heredoc_marker(line: &str) -> Option<(&str, &str)> {
+    let marker = find_heredoc_marker(line)?;
+    Some((
+        &line[..marker.operator_start],
+        &line[marker.delimiter_end..],
+    ))
+}
+
+/// Byte ranges in `cmd`, each spanning from a heredoc marker's `<<` operator
+/// through the end of its terminator line (or through the end of `cmd`, for
+/// a heredoc that never terminates) — the span list-segment splitting must
+/// treat as one opaque unit rather than further command text. This keeps a
+/// same-line `&&`-chained exec glued to the segment that owns the marker
+/// (mirroring how the body itself is data, not further segments), and never
+/// misreads a quoted delimiter's own quote characters as string quoting.
+pub(crate) fn heredoc_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
+    if !cmd.contains("<<") {
+        return Vec::new();
+    }
+
+    let base = cmd.as_ptr() as usize;
+    let lines: Vec<&str> = cmd.lines().collect();
+    let mut ranges = Vec::new();
+
+    walk_heredocs(&lines, |marker, _interpreter, _redirects, body_range| {
+        let marker_line = lines[body_range.start - 1];
+        let start = (marker_line.as_ptr() as usize - base) + marker.operator_start;
+        let end = if body_range.end < lines.len() {
+            let terminator_line = lines[body_range.end];
+            (terminator_line.as_ptr() as usize - base) + terminator_line.len()
+        } else {
+            cmd.len()
+        };
+        ranges.push(start..end);
+    });
+
+    ranges
 }
 
 /// Walk `lines` for heredoc/nowdoc markers, invoking `on_heredoc` once per

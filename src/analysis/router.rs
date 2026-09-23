@@ -35,9 +35,7 @@ use super::heredoc::{self, StdinRoute};
 use super::source_reader::{self, SourceReadError};
 
 mod segments;
-use segments::{
-    ArgvWalk, CwdState, command_has_heredoc, route_list_segment, walk_interpreter_argv,
-};
+use segments::{CwdState, route_list_segment};
 
 /// A source-analysis route decided without (for `Inline`) or before (for
 /// `ScriptFile`) any filesystem access.
@@ -244,28 +242,12 @@ const INTERPRETERS: &[Interpreter] = &[
 ///
 /// Every top-level list segment of `command` is routed, not only the first
 /// (issue #384: `true; python3 evil.py` used to route nothing because routing
-/// only looked at the command's first effective token). A command containing
-/// a genuine heredoc marker (`<<WORD`, not the single-line here-string
-/// `<<<`) is the one documented exception: heredoc bodies are data, not
-/// further command segments, and the existing heredoc-aware single-command
-/// routing below already tokenizes and reads a heredoc body correctly for
-/// the whole command as one unit, so a heredoc-bearing command is routed
-/// exactly as it always has been rather than risk a general segmenter
-/// slicing through the body's lines (ADR-022 §6).
+/// only looked at the command's first effective token). [`aegis_parser::list_segments`]
+/// is heredoc-aware, so a segment that owns a heredoc marker keeps its body
+/// (and anything `&&`-chained on the marker's own line) glued to it rather
+/// than splitting on a separator inside the body (ADR-022 §6).
 #[must_use]
 pub fn route(command: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarget> {
-    if command_has_heredoc(command) {
-        let (cwd, rest_command) = strip_cd_prefix(command);
-        let targets = route_after_cd(rest_command, trusted_aliases);
-        return match cwd {
-            Some(cwd) => targets
-                .into_iter()
-                .filter_map(|t| apply_cwd(t, &cwd))
-                .collect(),
-            None => targets,
-        };
-    }
-
     let mut cwd = CwdState::Unset;
     let mut targets = Vec::new();
     for segment in aegis_parser::list_segments(command) {
@@ -282,36 +264,6 @@ enum CwdRoute {
     /// Any other `cd`/`pushd` form: dynamic, substituted, or otherwise
     /// unresolved.
     Dynamic,
-}
-
-/// Detect and strip a literal top-level `cd -- <path> &&` prefix.
-///
-/// Only this exact form is tracked; any other leading `cd`/`pushd` invocation
-/// (no `--`, a dynamic path, no trailing `&&`) is reported as
-/// [`CwdRoute::Dynamic`] with an empty remainder, since the true cwd for
-/// whatever follows cannot be established (ADR-022 §6).
-fn strip_cd_prefix(command: &str) -> (Option<CwdRoute>, &str) {
-    let trimmed = command.trim_start();
-    let Some(after_cd) = trimmed.strip_prefix("cd ") else {
-        return (None, command);
-    };
-
-    if let Some(after_dashdash) = after_cd.trim_start().strip_prefix("-- ")
-        && let Some((path, rest)) = after_dashdash.split_once("&&")
-        && is_literal_path(path.trim())
-    {
-        return (
-            Some(CwdRoute::Literal(PathBuf::from(path.trim()))),
-            rest.trim_start(),
-        );
-    }
-
-    // Dynamic: still route whatever follows `&&` (if any), so the language
-    // can still be identified — only path resolution is degraded.
-    let rest = after_cd
-        .split_once("&&")
-        .map_or("", |(_, rest)| rest.trim_start());
-    (Some(CwdRoute::Dynamic), rest)
 }
 
 /// A path with no substitution, expansion, or glob syntax.
@@ -354,59 +306,6 @@ fn apply_cwd(target: RoutedTarget, cwd: &CwdRoute) -> Option<RoutedTarget> {
     }
 }
 
-fn route_after_cd(command: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarget> {
-    if let Some(targets) = heredoc_write_then_exec_reuse(command, trusted_aliases) {
-        return targets;
-    }
-
-    let owned_tokens = aegis_parser::split_tokens(command);
-    if owned_tokens.is_empty() {
-        return Vec::new();
-    }
-    let tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
-
-    let Some(slice) = aegis_parser::effective_token_slices(&tokens)
-        .into_iter()
-        .next()
-    else {
-        return Vec::new();
-    };
-
-    let Some(interp) = resolve_interpreter(slice.program, trusted_aliases) else {
-        if let Some(targets) = pipeline_route(command, trusted_aliases) {
-            return targets;
-        }
-        // `effective_token_slices` only strips launcher-prefix tokens and
-        // basename-normalizes the program token it keeps — the rest of the
-        // original tokens (including the directory component a `DirectExec`
-        // path needs) are copied through unchanged. That means the effective
-        // program's *original* token (with its directory, if any) is always
-        // at this fixed offset in `tokens`, whether or not a launcher prefix
-        // (`sudo`, `timeout 5`, `env FOO=bar`, …) preceded it.
-        let effective_start = tokens.len() - slice.tokens.len();
-        return direct_exec_route(tokens[effective_start])
-            .into_iter()
-            .collect();
-    };
-
-    let rest = &slice.tokens[1..];
-    match walk_interpreter_argv(interp, rest) {
-        ArgvWalk::Routed(target) => vec![target],
-        ArgvWalk::NoSource => Vec::new(),
-        ArgvWalk::NoMatch => {
-            // No inline flag and no leading file argument: fall back to
-            // heredoc/here-string stdin, if any.
-            if let Some(stdin_route) =
-                heredoc::heredoc_stdin(command).or_else(|| heredoc::here_string_stdin(rest))
-            {
-                vec![stdin_target(interp.language, stdin_route)]
-            } else {
-                Vec::new()
-            }
-        }
-    }
-}
-
 /// A bare path-like program token (`./script.py`, `/abs/path/script`) is a
 /// candidate direct-exec target; a plain name (no `/`) would require `PATH`
 /// resolution, which routing never performs (ADR-022 §6).
@@ -446,7 +345,7 @@ fn heredoc_write_then_exec_reuse(
     trusted_aliases: &[(&str, &str)],
 ) -> Option<Vec<RoutedTarget>> {
     let first_line = command.lines().next()?;
-    let (before_marker, after_marker) = split_at_heredoc_marker(first_line)?;
+    let (before_marker, after_marker) = aegis_parser::split_at_heredoc_marker(first_line)?;
     let write_path = heredoc_write_target(before_marker)?;
 
     let exec_part = after_marker.trim_start().strip_prefix("&&")?.trim_start();
@@ -478,37 +377,6 @@ fn heredoc_write_then_exec_reuse(
     Some(vec![stdin_target(interp.language, route)])
 }
 
-/// Split `line` at its first heredoc marker (`<<WORD`, `<<'WORD'`, or the
-/// `<<-` tab-stripping variants), returning the text before the marker and
-/// the text immediately after it (which, per shell grammar, is still part of
-/// the same command line — e.g. a `&&`-chained command).
-///
-/// Mirrors the marker grammar of `aegis-parser`'s private
-/// `find_heredoc_marker` exactly (no double-quoted delimiter form; an
-/// unquoted delimiter word is bounded by the first non-alphanumeric,
-/// non-underscore character, matching real shell word lexing — a
-/// metacharacter like `&` terminates it without needing whitespace) so the
-/// two do not silently diverge on which markers they recognize.
-fn split_at_heredoc_marker(line: &str) -> Option<(&str, &str)> {
-    let start = line.find("<<")?;
-    let before = &line[..start];
-    let after_prefix = line[start + 2..]
-        .strip_prefix('-')
-        .unwrap_or(&line[start + 2..]);
-    let rest = after_prefix.trim_start();
-    if let Some(after_quote) = rest.strip_prefix('\'') {
-        let end = after_quote.find('\'')?;
-        return Some((before, &after_quote[end + 1..]));
-    }
-    let end = rest
-        .find(|c: char| !(c.is_alphanumeric() || c == '_'))
-        .unwrap_or(rest.len());
-    if end == 0 {
-        return None;
-    }
-    Some((before, &rest[end..]))
-}
-
 /// Recognize a literal `cat > PATH` or `tee PATH` write target — the text
 /// before the heredoc marker on its opening line.
 fn heredoc_write_target(before_marker: &str) -> Option<PathBuf> {
@@ -518,49 +386,6 @@ fn heredoc_write_target(before_marker: &str) -> Option<PathBuf> {
         ["cat", ">", path] | ["tee", path] => Some(PathBuf::from(*path)),
         _ => None,
     }
-}
-
-/// Detect a two-stage pipeline whose last stage is a bare (no flags/file
-/// argument) interpreter invocation, e.g. `producer | python3`.
-///
-/// Only a single, narrowly-proven literal-only producer (`printf '%s'
-/// <literal>`) is treated as recoverable; every other producer is Dynamic —
-/// its content is honestly unresolved, never evaluated or guessed at
-/// (ADR-022 §6). Chains that are not exactly two stages, or whose last stage
-/// carries flags/arguments, are out of this slice's scope and yield no route.
-fn pipeline_route(command: &str, trusted_aliases: &[(&str, &str)]) -> Option<Vec<RoutedTarget>> {
-    if !command.contains('|') {
-        return None;
-    }
-    let chain = aegis_parser::top_level_pipelines(command)
-        .into_iter()
-        .next()?;
-    if chain.segments.len() != 2 {
-        return None;
-    }
-
-    let last_tokens = aegis_parser::split_tokens(&chain.segments[1].raw);
-    let last_refs: Vec<&str> = last_tokens.iter().map(String::as_str).collect();
-    let last_slice = aegis_parser::effective_token_slices(&last_refs)
-        .into_iter()
-        .next()?;
-    let interp = resolve_interpreter(last_slice.program, trusted_aliases)?;
-    if last_slice.tokens.len() > 1 {
-        // The last stage has flags/arguments of its own — out of scope here.
-        return None;
-    }
-
-    if let Some(literal) = printf_percent_s_literal(&chain.segments[0].raw) {
-        return Some(vec![RoutedTarget::Inline {
-            language: interp.language,
-            source: literal,
-        }]);
-    }
-
-    Some(vec![RoutedTarget::Dynamic {
-        language: interp.language,
-        reason: DegradationReason::DynamicSource,
-    }])
 }
 
 /// Recognize `printf '%s' <literal>` exactly — a narrowly-proven

@@ -213,17 +213,19 @@ fn push_unique(targets: &mut Vec<RoutedTarget>, target: RoutedTarget) {
     }
 }
 
-/// Resolve `stage` (already isolated to one pipeline stage's raw text, no
-/// heredoc marker present — callers guarantee that) to its own route exactly
-/// as a standalone command would be: explicit interpreter inline/file/
-/// redirection argv walk, then heredoc/here-string stdin fallback, then a
-/// bare path-like direct-exec candidate. Shares [`walk_interpreter_argv`]
-/// with [`route_after_cd`] so both apply identical interpreter-argv semantics;
-/// it omits [`heredoc_write_then_exec_reuse`] (a whole-command, heredoc-only
-/// shape routed only by the legacy heredoc path) and the 2-stage
-/// [`pipeline_route`] fallback (pipeline stage adjacency is the caller's
-/// concern, see [`route_list_segment`]).
+/// Resolve `stage` (one pipeline stage's raw text) to its own route: the
+/// narrow heredoc-write-then-exec reuse shape first (when `stage` owns a
+/// heredoc marker), then explicit interpreter inline/file/redirection argv
+/// walk, then heredoc/here-string stdin fallback, then a bare path-like
+/// direct-exec candidate. The 2-stage `producer | interp` fallback is the
+/// caller's concern (see [`route_list_segment`]'s multi-stage branch).
 fn route_single_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarget> {
+    if command_has_heredoc(stage)
+        && let Some(targets) = heredoc_write_then_exec_reuse(stage, trusted_aliases)
+    {
+        return targets;
+    }
+
     let owned_tokens = aegis_parser::split_tokens(stage);
     if owned_tokens.is_empty() {
         return Vec::new();
@@ -301,9 +303,7 @@ pub(super) enum ArgvWalk {
 /// the script's own argv, not the interpreter, and must not be misread as the
 /// interpreter's inline flag (ADR-022 §6).
 ///
-/// Shared by [`route_after_cd`] (the legacy, heredoc-aware whole-command
-/// path) and [`route_single_stage`] (one list/pipeline segment), so both
-/// apply identical interpreter-argv semantics.
+/// The single interpreter-argv walk shared by every routing call site.
 pub(super) fn walk_interpreter_argv(interp: &Interpreter, rest: &[&str]) -> ArgvWalk {
     // The tokenizer has no heredoc-boundary awareness, so tokens *after* a
     // `<<WORD`/`<<<` marker are the heredoc/here-string *body*, not further
