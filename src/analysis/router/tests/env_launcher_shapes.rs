@@ -52,6 +52,55 @@ fn env_split_string_long_flag_equals_form_routes_the_split_command() {
 }
 
 #[test]
+fn env_split_string_single_word_value_with_a_trailing_arg_routes_the_split_command() {
+    // GNU `env -S STRING ARGS...` splits STRING into the program's argv and
+    // appends any further ARGS to it — it does not require STRING to spell
+    // out the whole command line by itself (issue #384/#430).
+    assert_eq!(
+        route(r#"env -S "python3" ./evil.py"#, &[]),
+        vec![evil_py_script_file()]
+    );
+}
+
+#[test]
+fn env_split_string_value_carrying_its_own_flags_routes_the_split_command() {
+    assert_eq!(
+        route(r#"env -S "python3 -u" ./evil.py"#, &[]),
+        vec![evil_py_script_file()]
+    );
+}
+
+#[test]
+fn env_split_string_multi_word_value_with_a_trailing_arg_routes_the_split_command() {
+    assert_eq!(
+        route(r#"env -S "python3 ./evil.py" extra"#, &[]),
+        vec![evil_py_script_file()]
+    );
+}
+
+#[test]
+fn env_split_string_after_chdir_routes_the_split_command_with_a_degraded_cwd() {
+    // `-C`/`--chdir` ahead of `-S` must not desync the split-string
+    // recognizer into an out-of-range program index that silently drops the
+    // whole command (issue #384/#430) — it still routes, with the cwd
+    // degradation `-C` itself carries.
+    assert_eq!(
+        route(r#"env -C d1 -S "python3 ./evil.py""#, &[]),
+        vec![evil_py_dynamic()]
+    );
+}
+
+#[test]
+fn env_split_string_of_a_non_interpreter_program_stays_unrouted() {
+    assert_eq!(route(r#"env -S "echo ok""#, &[]), Vec::new());
+}
+
+#[test]
+fn env_split_string_glued_value_of_a_non_interpreter_program_stays_unrouted() {
+    assert_eq!(route(r#"env -S "echo" ok"#, &[]), Vec::new());
+}
+
+#[test]
 fn env_chdir_short_flag_degrades_the_relative_target() {
     assert_eq!(
         route("env -C d1 python3 ./evil.py", &[]),

@@ -142,25 +142,30 @@ fn redirection_token_len(tok: &str) -> usize {
     if is_redirection_operator(tok) { 2 } else { 1 }
 }
 
-/// Recognize `env -S "<command line>"` / `env --split-string "<command
-/// line>"` and its wider shapes (issue #384 B4/L1): GNU `env`'s split-string
-/// mode treats its value as a whole command line to split into words, not as
-/// a value preceding a further program token. Recognized: the value as a
+/// Recognize `env -S "<command line>" [ARGS...]` / `env --split-string
+/// "<command line>" [ARGS...]` and its wider shapes (issue #384 B4/L1/#430):
+/// GNU `env`'s split-string mode treats its value as a whole command line to
+/// split into words — the program's argv, not a value preceding a further
+/// program token — and appends any further `env` command-line tokens after
+/// it as-is (real `env -S` argv semantics: `split(STRING) ++ ARGS`, matching
+/// a shebang line such as `#!/usr/bin/env -S python3 -u`, which needs its
+/// own script path appended by the kernel). Recognized: the value as a
 /// separate token (`-S "cmd"`) or glued to the flag (`-S"cmd"`), the
 /// `--split-string=<value>` equals form, and any of `env`'s own
-/// environment-clearing/unset/assignment options ahead of the split flag
-/// (`env -i -S "cmd"`, `env -u X -S "cmd"`, `env FOO=1 -S "cmd"`). The split
-/// value must be the last thing on the line — the same "recognized, not
-/// guessed" standard as this crate's other launcher rules; a shape this
-/// does not recognize (an unrecognized flag ahead of `-S`, or more tokens
-/// after the value) falls through to the generic env-prefix handling in
-/// [`env_prefix_lengths`] instead, which may consume the value as a
-/// mid-command flag/value pair rather than routing the split command — a
-/// caller that needs the split command's own program should treat a
-/// [`None`] return from this function as "not confidently split", not as
-/// "safe to skip". `split_whitespace` reuses the original tokens' lifetime —
-/// no allocation, and no quote-aware re-tokenization of the value (a
-/// narrower but safe subset of GNU `env`'s own splitting).
+/// environment-clearing/unset/chdir/assignment options ahead of the split
+/// flag (`env -i -S "cmd"`, `env -u X -S "cmd"`, `env -C d1 -S "cmd"`,
+/// `env FOO=1 -S "cmd"`). A shape this does not recognize (an unrecognized
+/// flag ahead of `-S`, or a value that splits to nothing) returns [`None`] —
+/// a caller that needs the split command's own program should treat that as
+/// "not confidently split", not as "safe to skip": the generic env-prefix
+/// handling in [`env_prefix_lengths`] it falls through to does not itself
+/// know split-string semantics, so it must never resolve such a shape to an
+/// in-range program token either (it would be the wrong token) — only to
+/// nothing found at all, which the router degrades rather than silently
+/// treating as an unrelated, ordinary command with no program (issue #384
+/// B4/#430). `split_whitespace` reuses the original tokens' lifetime — no
+/// allocation, and no quote-aware re-tokenization of the value (a narrower
+/// but safe subset of GNU `env`'s own splitting).
 fn env_split_string_tokens<'a>(tokens: &[&'a str]) -> Option<Vec<&'a str>> {
     let (env, tail) = tokens.split_first()?;
     if !program_basename(env).eq_ignore_ascii_case("env") {
@@ -170,13 +175,12 @@ fn env_split_string_tokens<'a>(tokens: &[&'a str]) -> Option<Vec<&'a str>> {
     let mut index = 0;
     while index < tail.len() {
         if let Some((value, consumed)) = split_string_flag_value(tail, index) {
-            if index + consumed != tail.len() {
-                // Something else follows the value — not the narrow
-                // "nothing after" shape this recognizer is scoped to.
+            let mut words: Vec<&str> = value.split_whitespace().collect();
+            if words.is_empty() {
                 return None;
             }
-            let words: Vec<&str> = value.split_whitespace().collect();
-            return (!words.is_empty()).then_some(words);
+            words.extend_from_slice(&tail[index + consumed..]);
+            return Some(words);
         }
         match env_split_string_leading_option_len(tail, index) {
             Some(len) => index += len,
@@ -209,9 +213,15 @@ fn split_string_flag_value<'a>(tail: &[&'a str], index: usize) -> Option<(&'a st
 
 /// Number of tokens consumed by a recognized `env` option ahead of the
 /// split-string flag (an environment assignment, `-i`/`--ignore-
-/// environment`, `-0`/`--null`, or `-u`/`--unset NAME`), or [`None`] for
-/// anything else — which stops [`env_split_string_tokens`] from guessing
-/// past an option it does not recognize.
+/// environment`, `-0`/`--null`, `-u`/`--unset NAME`, or `-C`/`--chdir DIR`),
+/// or [`None`] for anything else — which stops [`env_split_string_tokens`]
+/// from guessing past an option it does not recognize. `-C`/`--chdir` must
+/// be recognized here, not left to fall through to [`env_prefix_lengths`]:
+/// chained with `-S` (`env -C d1 -S "cmd"`), the generic handler's flag+
+/// value skips land exactly on the split flag's own value token as if it
+/// were a plain flag argument, walking the index straight past the last
+/// token — an out-of-range program index that silently drops the whole
+/// command instead of routing it (issue #384/#430).
 fn env_split_string_leading_option_len(tail: &[&str], index: usize) -> Option<usize> {
     let token = tail[index];
     if is_environment_assignment(token) {
@@ -220,8 +230,11 @@ fn env_split_string_leading_option_len(tail: &[&str], index: usize) -> Option<us
     if matches!(token, "-i" | "--ignore-environment" | "-0" | "--null") {
         return Some(1);
     }
-    if matches!(token, "-u" | "--unset") {
+    if matches!(token, "-u" | "--unset" | "-C" | "--chdir") {
         return tail.get(index + 1).is_some().then_some(2);
+    }
+    if token.starts_with("--chdir=") {
+        return Some(1);
     }
     None
 }
