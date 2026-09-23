@@ -11,6 +11,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Fixed: The ADR index contract now checks file/row coverage, unique and gap-free numbering, and Status references. Renumbered the duplicate Docker Snapshot decision as ADR-039. (#238)
 - Fixed: Update checks serialize state changes, re-check consent and channel before an internal child fetches, throttle failed attempts for 24 hours, and record a notice before printing its single-line message. The TTY test now uses BSD `script` arguments on macOS. (#405)
 - Changed: Wrapper plan execution now lives in a shared `src/execution` module with an injected `ExecutionRenderer`; Watch can use the same execution path without reimplementing policy or recovery handling. (#284)
 - Added: `aegis update enable --channel npm` / `disable` / `status` / `check` — an opt-in npm update notice. Consent and cache state live under `~/.aegis/`, global and never in a project `.aegis.toml`. With consent on, the shell wrapper's text path spawns one bounded background registry check when the cache is older than 24 hours, and prints a one-line notice — at most once a day per available version — only on an interactive TTY; it never renders in `Watch`, JSON output, or a `Hook`. Aegis never self-updates and never runs `npm`, and the registry fetch shells out to the system `curl` rather than adding an HTTP/TLS dependency. (ADR-038)

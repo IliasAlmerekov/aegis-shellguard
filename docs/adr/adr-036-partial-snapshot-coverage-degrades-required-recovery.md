@@ -60,7 +60,7 @@ plugins that reported themselves applicable during that same pass.
 `SnapshotRegistry::applicable_plugins` still exists for the planning stage,
 which runs before the confirmation dialog, but `recovery_status` does not use
 it. Applicability is live state: `DockerPlugin::is_applicable` asks the daemon
-what is running (ADR-034), and `GitPlugin::is_applicable` fails open when the
+what is running (ADR-039), and `GitPlugin::is_applicable` fails open when the
 `git` spawn returns an error. Sampling it twice can return two different
 answers, and a barrier that fires on the disagreement between two samples would
 be exactly the kind of false positive this ADR is trying not to introduce.
@@ -69,7 +69,7 @@ be exactly the kind of false positive this ADR is trying not to introduce.
 only the plugins that said yes on this pass. Every provider gates
 `is_applicable` on config that is empty by default — sqlite on `db_path`, mysql
 and postgres and supabase on `database`, docker on the `aegis.snapshot` label
-(ADR-034 item 3). A configured-but-inapplicable provider never enters the count
+(ADR-039 item 3). A configured-but-inapplicable provider never enters the count
 and can never produce a degradation. This is the trade-off the issue asked to
 have written down, and it is why the count is taken inside the snapshot loop
 rather than from the registry's configured provider list.
