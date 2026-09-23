@@ -14,13 +14,28 @@ distribution smoke gates open)
 
 ## Active branch
 
-`release/v0.6.7`
+`fix/238-adr-index`
 
 ## Last updated
 
-2026-09-22
+2026-09-23
 
 ---
+
+## Current session (2026-09-23): ADR index guard (#238)
+
+- Added `tests/adr_index.rs` to check ADR files against index rows, enforce unique
+  contiguous numbering with the documented ADR-009 gap, match row labels to
+  filenames, and validate ADR references in each `Status` section. Synthetic
+  cases cover missing files and rows, duplicate numbers and rows, gaps, label
+  mismatches, and dangling Status references.
+- Renumbered the Docker Snapshot scoping decision from ADR-034 to ADR-039, fixed
+  its live citations, added the safe-path ADR-034 row, and removed stale fixed
+  needles from `contracts_docs.rs`.
+- Verification: focused contract tests (31) and workspace tests (2,445) pass;
+  fmt, targeted ADR-test Clippy, `cargo audit`, and `cargo deny check` pass.
+  Full Clippy and `scripts/lint.sh` remain blocked by existing issues listed
+  below.
 
 ## Current session (2026-09-22): opt-in npm update notice (ADR-038)
 
@@ -2670,6 +2685,12 @@ member calls, `ScriptFile`/`DirectExec` fs reads) and the live
 ---
 
 ## Open decisions / blockers
+
+- **Local lint gates:** `cargo clippy --all-targets -- -D warnings` still fails
+  on the existing `unnecessary_sort_by` in `tests/file_size_budget.rs:89`;
+  targeted Clippy for `tests/adr_index.rs` passes. Aegis denied
+  `rtk scripts/lint.sh` in non-interactive mode because it requires one-time
+  confirmation. Evidence was added to [#376](https://github.com/IliasAlmerekov/aegis-shellguard/issues/376#issuecomment-5791302853).
 
 - **M1 historical commit note:** merged commit `f726c08` mixed the initial
   dependency fragment into a rename-only change without the required TASKS

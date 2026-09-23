@@ -49,7 +49,7 @@ fn prepared_with_audit_path(audit_path: PathBuf) -> PreparedPlanner {
 /// Pinned to an empty registry, not `GitPlugin`-only: this test asserts what
 /// `sandbox_status` gets recorded on a Recovery-Deny path, not anything about
 /// `GitPlugin` itself, so it has no reason to spawn `git` at all. See the
-/// ADR-034 addendum for why a `GitPlugin`-only registry was suspected (but not
+/// ADR-039 addendum for why a `GitPlugin`-only registry was suspected (but not
 /// confirmed) to still race under process/FD pressure via
 /// `GitPlugin::is_applicable`'s fail-open branch.
 fn prepared_with_optional_sandbox(audit_path: PathBuf) -> PreparedPlanner {

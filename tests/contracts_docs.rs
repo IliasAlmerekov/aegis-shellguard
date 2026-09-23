@@ -503,9 +503,6 @@ fn adr_index_split_is_present_and_active_docs_reference_it() {
         "## Current architecture snapshot",
         "## ADR index",
         "## Verification guidance",
-        "ADR-001",
-        "ADR-010",
-        "adr-010-full-shell-evaluation-and-deferred-execution-remain-non-goals.md",
     ] {
         assert!(
             adr_index.contains(needle),

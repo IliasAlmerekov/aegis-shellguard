@@ -1,8 +1,10 @@
-# ADR-034 — Docker snapshot scoping ignores `cwd` by design; the flake it looked like is a test-isolation gap
+# ADR-039 — Docker snapshot scoping ignores `cwd` by design; the flake it looked like is a test-isolation gap
 
 ## Status
 
 Accepted.
+
+Renumbered from ADR-034 on 2026-09-23 because ADR-034 collided with the safe-path ADR.
 
 ## Context
 
