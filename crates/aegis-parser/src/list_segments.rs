@@ -577,10 +577,7 @@ mod tests {
         let cmd = "case a in x) echo \"esac\";; esac; python3 ./evil.py";
         assert_eq!(
             raw_segments(cmd),
-            vec![
-                "case a in x) echo \"esac\";; esac",
-                "python3 ./evil.py"
-            ]
+            vec!["case a in x) echo \"esac\";; esac", "python3 ./evil.py"]
         );
     }
 

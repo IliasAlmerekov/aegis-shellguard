@@ -309,8 +309,7 @@ fn route_stage(
 /// (grammar wrappers, issue #430) — the same set `strip_leading_shell_syntax`
 /// recognizes.
 const RESERVED_WORD_PREFIXES: &[&str] = &[
-    "if", "then", "elif", "else", "while", "until", "do", "case", "time", "!", "function",
-    "coproc",
+    "if", "then", "elif", "else", "while", "until", "do", "case", "time", "!", "function", "coproc",
 ];
 
 /// `true` when `stage_raw` may hide a routable command behind shell grammar
@@ -457,7 +456,10 @@ fn route_direct_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<Rout
         return Vec::new();
     }
 
-    let Some(slice) = aegis_parser::effective_token_slices(tokens).into_iter().next() else {
+    let Some(slice) = aegis_parser::effective_token_slices(tokens)
+        .into_iter()
+        .next()
+    else {
         return Vec::new();
     };
 
