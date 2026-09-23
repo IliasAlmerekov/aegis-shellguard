@@ -459,15 +459,26 @@ fn route_direct_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<Rout
         return Vec::new();
     };
 
+    let effective_start = tokens.len() - slice.tokens.len();
+    // `env -C DIR`/`--chdir[=]DIR` changes the cwd for that one child
+    // process only, not the shell's own — a relative target must degrade
+    // rather than resolve against the shell's own cwd (issue #384 B4).
+    let env_cwd = if env_chdir_prefix(&tokens[..effective_start]) {
+        CwdState::Degraded
+    } else {
+        CwdState::Unset
+    };
+
     let Some(interp) = resolve_interpreter(slice.program, trusted_aliases) else {
-        let effective_start = tokens.len() - slice.tokens.len();
-        return direct_exec_route(tokens[effective_start])
+        let routed = direct_exec_route(tokens[effective_start]);
+        return routed
             .into_iter()
+            .map(|target| apply_cwd(target, &env_cwd))
             .collect();
     };
 
     let rest = &slice.tokens[1..];
-    match walk_interpreter_argv(interp, rest) {
+    let routed = match walk_interpreter_argv(interp, rest) {
         ArgvWalk::Routed(target) => vec![target],
         ArgvWalk::NoSource => Vec::new(),
         ArgvWalk::NoMatch => {
@@ -479,7 +490,30 @@ fn route_direct_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<Rout
                 Vec::new()
             }
         }
+    };
+    routed
+        .into_iter()
+        .map(|target| apply_cwd(target, &env_cwd))
+        .collect()
+}
+
+/// `true` when `prefix` — the tokens routing consumed before the effective
+/// program (assignments, launcher words, redirections) — is an `env`
+/// invocation carrying `-C`/`--chdir` (issue #384 B4). A cheap token-
+/// equality scan, not a full re-parse of `env`'s own option grammar: routing
+/// only needs to know a chdir flag is present somewhere in the prefix it
+/// already resolved, not its exact position.
+fn env_chdir_prefix(prefix: &[&str]) -> bool {
+    let Some(first) = prefix.first() else {
+        return false;
+    };
+    let basename = first.rsplit('/').next().unwrap_or(first);
+    if !basename.eq_ignore_ascii_case("env") {
+        return false;
     }
+    prefix[1..]
+        .iter()
+        .any(|tok| *tok == "-C" || *tok == "--chdir" || tok.starts_with("--chdir="))
 }
 
 /// Resolve `stage` to its interpreter only if it is bare (program token
