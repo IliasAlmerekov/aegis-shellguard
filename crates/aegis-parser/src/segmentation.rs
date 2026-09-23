@@ -410,7 +410,13 @@ fn strip_shell_keyword<'a>(segment: &'a str, keyword: &str) -> Option<&'a str> {
         .then(|| rest.trim_start())
 }
 
-fn unwrap_subshell_group(raw_segment: &str) -> Option<String> {
+/// `Some(inner)` when `raw_segment`, trimmed, starts with a `(...)` subshell —
+/// the raw text between the matching parens, quote/backtick-aware, ignoring
+/// anything after the close (a redirect, `&&`-chained command, ...). Returns
+/// the exact source bytes, not a dequoted/normalized copy, so a caller that
+/// needs to route an inline interpreter body found inside keeps its original
+/// quoting.
+pub fn unwrap_subshell_group(raw_segment: &str) -> Option<String> {
     let trimmed = raw_segment.trim();
     if !trimmed.starts_with('(') {
         return None;
@@ -456,7 +462,7 @@ fn unwrap_subshell_group(raw_segment: &str) -> Option<String> {
             }
             ')' if !in_single_quote
                 && !in_backticks
-                && (command_subst_depth > 0 || paren_depth > 0) =>
+                && (command_subst_depth > 0 || (!in_double_quote && paren_depth > 0)) =>
             {
                 if command_subst_depth > 0 {
                     command_subst_depth -= 1;
@@ -486,7 +492,10 @@ fn unwrap_subshell_group(raw_segment: &str) -> Option<String> {
     None
 }
 
-fn extract_command_substitution_bodies(raw_segment: &str) -> Vec<String> {
+/// Every top-level `$(...)`/backtick command-substitution body in
+/// `raw_segment`, quote/nesting-aware, in the exact source bytes rather than
+/// a dequoted/normalized copy.
+pub fn extract_command_substitution_bodies(raw_segment: &str) -> Vec<String> {
     let chars: Vec<char> = raw_segment.chars().collect();
     let mut bodies = Vec::new();
     let mut i = 0;
@@ -576,7 +585,7 @@ fn extract_dollar_paren_body(chars: &[char], start_idx: usize) -> Option<(String
                 body.push(chars[idx]);
                 idx += 1;
             }
-            ')' if !in_single_quote && !in_backticks => {
+            ')' if !in_single_quote && !in_backticks && !in_double_quote => {
                 depth -= 1;
                 if depth == 0 {
                     return Some((body.trim().to_string(), idx));

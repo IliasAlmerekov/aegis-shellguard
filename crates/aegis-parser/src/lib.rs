@@ -26,7 +26,10 @@ pub use embedded_scripts::{
 pub use list_segments::{ListSegment, ListSeparator, list_segments};
 pub use nested_shells::extract_nested_commands;
 pub use prefix_match::{contains_any_token, matches_prefix};
-pub use segmentation::{logical_segments, top_level_pipelines};
+pub use segmentation::{
+    extract_command_substitution_bodies, logical_segments, top_level_pipelines,
+    unwrap_subshell_group,
+};
 pub use tokenizer::{extract_prefix, split_tokens};
 
 /// A token slice resolved to the program that prefix-style detection should use.

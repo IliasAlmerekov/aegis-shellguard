@@ -199,6 +199,27 @@ fn segments_subshell_body_extracted() {
     );
 }
 
+// A `)` inside a double-quoted argument must not read as the subshell's own
+// close (issue #430: an inline interpreter body such as `shutil.rmtree('x')`
+// carries its own parens and quotes).
+#[test]
+fn unwrap_subshell_group_ignores_a_close_paren_inside_double_quotes() {
+    assert_eq!(
+        unwrap_subshell_group(r#"(python3 -c "shutil.rmtree('x')")"#),
+        Some(r#"python3 -c "shutil.rmtree('x')""#.to_string())
+    );
+}
+
+// Same bug, command-substitution side: a `)` inside a double-quoted argument
+// must not read as the `$( )`'s own close.
+#[test]
+fn command_substitution_body_ignores_a_close_paren_inside_double_quotes() {
+    assert_eq!(
+        extract_command_substitution_bodies(r#"echo $(python3 -c "open('x','w')")"#),
+        vec![r#"python3 -c "open('x','w')""#.to_string()]
+    );
+}
+
 // A subshell body with more than one command (issue #430) must split on its
 // own top-level separator the same way the outer command does, not stay
 // glued as one unsplit string.
