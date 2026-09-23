@@ -33,9 +33,10 @@ distribution smoke gates open)
   its live citations, added the safe-path ADR-034 row, and removed stale fixed
   needles from `contracts_docs.rs`.
 - Verification: focused contract tests (31) and workspace tests (2,445) pass;
-  fmt, targeted ADR-test Clippy, `cargo audit`, and `cargo deny check` pass.
-  Full Clippy and `scripts/lint.sh` remain blocked by existing issues listed
-  below.
+  the pinned pre-push `scripts/lint.sh`, `cargo audit`, and `cargo deny check`
+  also pass. Host Clippy 1.98.1 reports an existing lint in
+  `tests/file_size_budget.rs:89`; direct Aegis execution of `scripts/lint.sh`
+  was denied, though the Git hook ran it successfully.
 
 ## Current session (2026-09-22): opt-in npm update notice (ADR-038)
 
@@ -2686,11 +2687,13 @@ member calls, `ScriptFile`/`DirectExec` fs reads) and the live
 
 ## Open decisions / blockers
 
-- **Local lint gates:** `cargo clippy --all-targets -- -D warnings` still fails
-  on the existing `unnecessary_sort_by` in `tests/file_size_budget.rs:89`;
-  targeted Clippy for `tests/adr_index.rs` passes. Aegis denied
-  `rtk scripts/lint.sh` in non-interactive mode because it requires one-time
-  confirmation. Evidence was added to [#376](https://github.com/IliasAlmerekov/aegis-shellguard/issues/376#issuecomment-5791302853).
+- **Host-only Clippy:** `cargo clippy --all-targets -- -D warnings` on
+  rustc/clippy 1.98.1 reports the existing `unnecessary_sort_by` in
+  `tests/file_size_budget.rs:89`. The pinned Rust 1.94.0 pre-push lint gate
+  passes. Direct `aegis --command 'rtk scripts/lint.sh'` execution was denied
+  because it requires one-time confirmation; the Git hook ran the same script
+  successfully. Evidence is in
+  [#376](https://github.com/IliasAlmerekov/aegis-shellguard/issues/376#issuecomment-5791302853).
 
 - **M1 historical commit note:** merged commit `f726c08` mixed the initial
   dependency fragment into a rename-only change without the required TASKS
