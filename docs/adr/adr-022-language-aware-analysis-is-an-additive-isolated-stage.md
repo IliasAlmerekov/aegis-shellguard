@@ -222,17 +222,31 @@ interpreter (after unquoting, basename, and the same versioned-name
 normalization routing already applies), routing degrades that stage to
 `Unresolved`/`Dynamic source` instead of leaving it silent. This does not
 depend on recognizing the wrapper word itself — an interpreter name later in
-the command is enough on its own.
+the command is enough on its own. The interpreter check also reads the
+opening word of a token that still carries embedded whitespace after
+unquoting (`script -c "python3 ./evil.py"`), since a plain basename lookup
+on that whole token would instead find the trailing path segment of its
+*last* word.
 
-A fixed exclusion list holds the programs that legitimately name a command
-as data rather than run it: `echo`, `printf`, `which`, `type`, `whereis`,
-`man`, `info`, `help`, `apropos`, `grep`, `egrep`, `fgrep`, `rg`, `ag`, `ls`,
-`cat`, `head`, `tail`, `less`, `more`, `file`, `stat`, `wc`, `diff`, `apt`,
-`apt-get`, `apt-cache`, `dnf`, `yum`, `brew`, `pacman`, `git`,
-`update-alternatives`, and `dpkg`, plus `command -v`/`command -V` and
-`type` lookups. A stage whose own program is on that list stays unclaimed
-even when a later word spells an interpreter name (`echo python3`, `grep -r
-node src`, `apt install python3`).
+When no token names a known interpreter but the stage's own first operand
+(past any leading flags) is a path-like literal, routing instead emits a
+`Direct exec` candidate for it (`setsid ./pyx`) rather than leaving the
+stage silent. This costs nothing beyond what `Direct exec` already does for
+a bare path-like program: `resolve` still reads the file and only treats it
+as a target with a verified shebang, so a non-script operand (`setsid
+./notes.txt`) stays unclaimed.
+
+A fixed exclusion list holds the programs that legitimately name a command,
+or a filesystem path, as data rather than run it: `echo`, `printf`, `which`,
+`type`, `whereis`, `man`, `info`, `help`, `apropos`, `grep`, `egrep`,
+`fgrep`, `rg`, `ag`, `ls`, `cat`, `head`, `tail`, `less`, `more`, `file`,
+`stat`, `wc`, `diff`, `apt`, `apt-get`, `apt-cache`, `dnf`, `yum`, `brew`,
+`pacman`, `git`, `update-alternatives`, `dpkg`, `mkdir`, `rmdir`, `touch`,
+`rm`, `cp`, `mv`, `ln`, `chmod`, `chown`, `chgrp`, `basename`, `dirname`,
+`realpath`, and `readlink`, plus `command -v`/`command -V` and `type`
+lookups. A stage whose own program is on that list stays unclaimed even when
+a later word spells an interpreter name (`echo python3`, `grep -r node
+src`, `apt install python3`, `mkdir python3`, `rm -f node`).
 
 This trades false positives for closing the false-negative gap: a program
 outside both the interpreter registry and the exclusion list that happens to
