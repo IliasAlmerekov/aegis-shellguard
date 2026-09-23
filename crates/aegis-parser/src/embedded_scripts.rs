@@ -360,23 +360,56 @@ pub(crate) fn heredoc_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
         return Vec::new();
     }
 
-    let base = cmd.as_ptr() as usize;
-    let lines: Vec<&str> = cmd.lines().collect();
+    let indexed = indexed_lines(cmd);
+    let lines: Vec<&str> = indexed.iter().map(|&(line, _)| line).collect();
     let mut ranges = Vec::new();
 
     walk_heredocs(&lines, |marker, _interpreter, _redirects, body_range| {
-        let marker_line = lines[body_range.start - 1];
-        let start = (marker_line.as_ptr() as usize - base) + marker.operator_start;
-        let end = if body_range.end < lines.len() {
-            let terminator_line = lines[body_range.end];
-            (terminator_line.as_ptr() as usize - base) + terminator_line.len()
-        } else {
-            cmd.len()
+        // `body_range.start` is always the marker line's own index plus one
+        // (`walk_heredocs` never calls back before that increment), so this
+        // never underflows in practice; `checked_sub`/`.get()` make that a
+        // fact this can't panic on rather than one this merely relies on.
+        let Some(marker_line_index) = body_range.start.checked_sub(1) else {
+            return;
+        };
+        let Some(&(_, marker_line_start)) = indexed.get(marker_line_index) else {
+            return;
+        };
+        let start = marker_line_start + marker.operator_start;
+        let end = match indexed.get(body_range.end) {
+            Some(&(terminator_line, terminator_start)) => terminator_start + terminator_line.len(),
+            None => cmd.len(),
         };
         ranges.push(start..end);
     });
 
     ranges
+}
+
+/// `cmd` split the same way [`str::lines`] does — on `\n`, with one optional
+/// trailing `\r` stripped from each line and no phantom empty final line when
+/// `cmd` itself ends in `\n` — paired with each line's own byte offset into
+/// `cmd`. The byte-offset companion [`str::lines`] does not provide, computed
+/// by walking `cmd` once instead of recovering it from a line's pointer
+/// address (issue #384 B6): pointer-offset recovery risks reading
+/// uninitialized/foreign memory if a caller ever passes a `lines` value that
+/// did not originate from this exact `cmd`, and no `unsafe` marks that risk
+/// at the call site the way it would for a raw pointer read.
+fn indexed_lines(cmd: &str) -> Vec<(&str, usize)> {
+    let mut lines = Vec::new();
+    let mut start = 0;
+    for (idx, ch) in cmd.char_indices() {
+        if ch == '\n' {
+            let raw = &cmd[start..idx];
+            lines.push((raw.strip_suffix('\r').unwrap_or(raw), start));
+            start = idx + 1;
+        }
+    }
+    if start < cmd.len() {
+        let raw = &cmd[start..];
+        lines.push((raw.strip_suffix('\r').unwrap_or(raw), start));
+    }
+    lines
 }
 
 /// Walk `lines` for heredoc/nowdoc markers, invoking `on_heredoc` once per
@@ -592,4 +625,51 @@ pub fn extract_inline_scripts(cmd: &str) -> Vec<InlineScript> {
     }
 
     scripts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::heredoc_suspend_ranges;
+
+    // Boundaries `heredoc_suspend_ranges`' byte-offset tracking must hold at
+    // (issue #384 B6): a heredoc with nothing between its marker and
+    // terminator, one that never terminates because `cmd` ends on the marker
+    // line itself, a CRLF-terminated command, and a terminated heredoc whose
+    // last line carries no trailing newline at all.
+
+    #[test]
+    fn a_heredoc_with_no_body_lines_suspends_marker_through_terminator() {
+        let cmd = "cat <<EOF\nEOF\n";
+        assert_eq!(
+            heredoc_suspend_ranges(cmd),
+            vec![cmd.find("<<").unwrap()..(cmd.rfind("EOF").unwrap() + "EOF".len())]
+        );
+    }
+
+    #[test]
+    fn a_heredoc_marker_with_nothing_after_it_suspends_to_the_end_of_cmd() {
+        let cmd = "cat <<EOF";
+        assert_eq!(
+            heredoc_suspend_ranges(cmd),
+            vec![cmd.find("<<").unwrap()..cmd.len()]
+        );
+    }
+
+    #[test]
+    fn a_crlf_heredoc_suspends_marker_through_terminator() {
+        let cmd = "cat <<EOF\r\nbody\r\nEOF\r\n";
+        assert_eq!(
+            heredoc_suspend_ranges(cmd),
+            vec![cmd.find("<<").unwrap()..(cmd.rfind("EOF").unwrap() + "EOF".len())]
+        );
+    }
+
+    #[test]
+    fn a_heredoc_terminator_with_no_trailing_newline_still_ends_the_suspend_range() {
+        let cmd = "cat <<EOF\nbody\nEOF";
+        assert_eq!(
+            heredoc_suspend_ranges(cmd),
+            vec![cmd.find("<<").unwrap()..(cmd.rfind("EOF").unwrap() + "EOF".len())]
+        );
+    }
 }
