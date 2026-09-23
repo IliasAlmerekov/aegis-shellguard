@@ -304,9 +304,9 @@ A pipeline stage (or a single-stage `List segment`) that reaches the end of sour
 routing having produced no `RoutedTarget` from any other path — the condition that
 feeds the fail-closed `unclaimed_interpreter_net` (ADR-022 §6 amendment, issue
 #384/#430). It degrades to `Unresolved`/`Dynamic source` once a later token names a
-known registry interpreter, or resolves as a `Direct exec` candidate when its own first
-operand is a path-like literal; a program on the net's `NAME_ONLY_PROGRAMS` exclusion
-list is exempt either way.
+known registry interpreter, or resolves as a `Launcher operand` candidate when its own
+first operand is a path-like literal; a program on the net's `NAME_ONLY_PROGRAMS`
+exclusion list is exempt either way.
 _Avoid_: unrouted stage, unmatched stage
 
 **Trusted global alias**:

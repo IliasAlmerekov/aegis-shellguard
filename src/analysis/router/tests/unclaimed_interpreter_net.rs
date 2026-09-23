@@ -228,20 +228,20 @@ fn mv_naming_an_interpreter_is_not_routed() {
     assert_eq!(route("mv node node.bak", &[]), Vec::new());
 }
 
-// ── A path-like operand after an unenumerated launcher is a direct-exec candidate ──
+// ── A path-like operand after an unenumerated launcher is a launcher-operand candidate ──
 
 #[test]
-fn setsid_direct_exec_operand_is_routed() {
+fn setsid_launcher_operand_is_routed() {
     assert_eq!(
         route("setsid ./pyx", &[]),
-        vec![RoutedTarget::DirectExec {
+        vec![RoutedTarget::LauncherOperand {
             path: PathBuf::from("./pyx"),
         }]
     );
 }
 
 #[tokio::test]
-async fn setsid_direct_exec_operand_with_a_verified_shebang_prompts() {
+async fn setsid_launcher_operand_with_a_verified_shebang_prompts() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("pyx");
     std::fs::write(&path, "#!/usr/bin/env python3\nprint(1)\n").unwrap();
@@ -250,7 +250,7 @@ async fn setsid_direct_exec_operand_with_a_verified_shebang_prompts() {
     let targets = route(&command, &[]);
     assert_eq!(
         targets,
-        vec![RoutedTarget::DirectExec { path: path.clone() }]
+        vec![RoutedTarget::LauncherOperand { path: path.clone() }]
     );
 
     let results = resolve(targets, 1024).await;
@@ -264,7 +264,7 @@ async fn setsid_direct_exec_operand_with_a_verified_shebang_prompts() {
 }
 
 #[tokio::test]
-async fn setsid_direct_exec_operand_without_a_shebang_stays_auto_approved() {
+async fn setsid_launcher_operand_without_a_shebang_stays_auto_approved() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("notes.txt");
     std::fs::write(&path, "just notes, not a script\n").unwrap();
@@ -273,9 +273,226 @@ async fn setsid_direct_exec_operand_without_a_shebang_stays_auto_approved() {
     let targets = route(&command, &[]);
     assert_eq!(
         targets,
-        vec![RoutedTarget::DirectExec { path: path.clone() }]
+        vec![RoutedTarget::LauncherOperand { path: path.clone() }]
     );
 
     let results = resolve(targets, 1024).await;
     assert_eq!(results, Vec::new());
+}
+
+// ── A launcher operand that is missing or a directory stays speculative ────
+//
+// `resolve`/`resolve_for_analysis` read a launcher operand exactly like a
+// user-typed direct-exec target, with one exception (issue #384/#430 round
+// 5): a missing path or a literal directory is an everyday shape for an
+// *ordinary* command's argument (`vim ./new.txt`, `du -sh ./srcdir`), not
+// evidence of anything unsafe, so it drops silently instead of degrading —
+// unlike a user-typed `./missing.sh`, which still degrades exactly as it did
+// before this net existed.
+
+#[tokio::test]
+async fn vim_missing_file_operand_is_not_degraded() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("new.txt");
+
+    let command = format!("vim {}", path.display());
+    let targets = route(&command, &[]);
+    assert_eq!(targets, vec![RoutedTarget::LauncherOperand { path }]);
+
+    let resolution = resolve_for_analysis(
+        targets.into_iter().next().unwrap(),
+        AnalysisCwd::Unavailable,
+        1024,
+    )
+    .await;
+    assert!(matches!(resolution, Resolution::NotApplicable));
+}
+
+#[tokio::test]
+async fn tar_missing_archive_operand_is_not_degraded() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("a.tar");
+
+    let command = format!("tar -xf {}", path.display());
+    let targets = route(&command, &[]);
+    assert_eq!(targets, vec![RoutedTarget::LauncherOperand { path }]);
+
+    let resolution = resolve_for_analysis(
+        targets.into_iter().next().unwrap(),
+        AnalysisCwd::Unavailable,
+        1024,
+    )
+    .await;
+    assert!(matches!(resolution, Resolution::NotApplicable));
+}
+
+#[tokio::test]
+async fn wget_missing_output_operand_is_not_degraded() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("out");
+
+    let command = format!("wget -O {} http://x", path.display());
+    let targets = route(&command, &[]);
+    assert_eq!(targets, vec![RoutedTarget::LauncherOperand { path }]);
+
+    let resolution = resolve_for_analysis(
+        targets.into_iter().next().unwrap(),
+        AnalysisCwd::Unavailable,
+        1024,
+    )
+    .await;
+    assert!(matches!(resolution, Resolution::NotApplicable));
+}
+
+#[tokio::test]
+async fn zsh_missing_script_operand_is_not_degraded() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("missing.sh");
+
+    let command = format!("zsh {}", path.display());
+    let targets = route(&command, &[]);
+    assert_eq!(targets, vec![RoutedTarget::LauncherOperand { path }]);
+
+    let resolution = resolve_for_analysis(
+        targets.into_iter().next().unwrap(),
+        AnalysisCwd::Unavailable,
+        1024,
+    )
+    .await;
+    assert!(matches!(resolution, Resolution::NotApplicable));
+}
+
+#[tokio::test]
+async fn code_directory_operand_is_not_degraded() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("srcdir");
+    std::fs::create_dir(&path).unwrap();
+
+    let command = format!("code {}", path.display());
+    let targets = route(&command, &[]);
+    assert_eq!(targets, vec![RoutedTarget::LauncherOperand { path }]);
+
+    let resolution = resolve_for_analysis(
+        targets.into_iter().next().unwrap(),
+        AnalysisCwd::Unavailable,
+        1024,
+    )
+    .await;
+    assert!(matches!(resolution, Resolution::NotApplicable));
+}
+
+#[tokio::test]
+async fn du_directory_operand_is_not_degraded() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("srcdir");
+    std::fs::create_dir(&path).unwrap();
+
+    let command = format!("du -sh {}", path.display());
+    let targets = route(&command, &[]);
+    assert_eq!(targets, vec![RoutedTarget::LauncherOperand { path }]);
+
+    let resolution = resolve_for_analysis(
+        targets.into_iter().next().unwrap(),
+        AnalysisCwd::Unavailable,
+        1024,
+    )
+    .await;
+    assert!(matches!(resolution, Resolution::NotApplicable));
+}
+
+#[tokio::test]
+async fn tree_directory_operand_is_not_degraded() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("srcdir");
+    std::fs::create_dir(&path).unwrap();
+
+    let command = format!("tree {}", path.display());
+    let targets = route(&command, &[]);
+    assert_eq!(targets, vec![RoutedTarget::LauncherOperand { path }]);
+
+    let resolution = resolve_for_analysis(
+        targets.into_iter().next().unwrap(),
+        AnalysisCwd::Unavailable,
+        1024,
+    )
+    .await;
+    assert!(matches!(resolution, Resolution::NotApplicable));
+}
+
+#[tokio::test]
+async fn pytest_directory_operand_is_not_degraded() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("tests");
+    std::fs::create_dir(&path).unwrap();
+
+    let command = format!("pytest {}", path.display());
+    let targets = route(&command, &[]);
+    assert_eq!(targets, vec![RoutedTarget::LauncherOperand { path }]);
+
+    let resolution = resolve_for_analysis(
+        targets.into_iter().next().unwrap(),
+        AnalysisCwd::Unavailable,
+        1024,
+    )
+    .await;
+    assert!(matches!(resolution, Resolution::NotApplicable));
+}
+
+#[tokio::test]
+#[cfg(unix)]
+async fn setsid_launcher_operand_naming_a_symlink_still_degrades() {
+    // A symlink is neither "missing" nor a "literal directory" — the narrow
+    // pair this fix carves out — so it keeps degrading exactly as a
+    // user-typed direct-exec target's symlink operand already does
+    // (`source_reader::read_script_file` rejects every symlink without
+    // following it, regardless of what it points to).
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("real.py");
+    std::fs::write(&target, "print(1)\n").unwrap();
+    let link = dir.path().join("link.py");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    let command = format!("setsid {}", link.display());
+    let targets = route(&command, &[]);
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::LauncherOperand { path: link.clone() }]
+    );
+
+    let resolution = resolve_for_analysis(
+        targets.into_iter().next().unwrap(),
+        AnalysisCwd::Unavailable,
+        1024,
+    )
+    .await;
+    assert!(matches!(
+        resolution,
+        Resolution::Degraded(DegradationReason::UnsafeSource)
+    ));
+}
+
+// ── A user-typed direct-exec target keeps its pre-existing behavior ────────
+
+#[tokio::test]
+async fn user_typed_direct_exec_of_a_missing_script_still_degrades() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("missing.sh");
+
+    let command = path.display().to_string();
+    let targets = route(&command, &[]);
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::DirectExec { path: path.clone() }]
+    );
+
+    let resolution = resolve_for_analysis(
+        targets.into_iter().next().unwrap(),
+        AnalysisCwd::Unavailable,
+        1024,
+    )
+    .await;
+    assert!(matches!(
+        resolution,
+        Resolution::Degraded(DegradationReason::UnsafeSource)
+    ));
 }

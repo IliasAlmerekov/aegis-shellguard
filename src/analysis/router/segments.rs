@@ -177,6 +177,16 @@ fn apply_cwd(target: RoutedTarget, cwd: &CwdState) -> RoutedTarget {
                 reason: DegradationReason::DynamicSource,
             }
         }
+        (RoutedTarget::LauncherOperand { path }, CwdState::Literal(base)) if path.is_relative() => {
+            RoutedTarget::LauncherOperand {
+                path: base.join(path),
+            }
+        }
+        (RoutedTarget::LauncherOperand { path }, CwdState::Degraded) if path.is_relative() => {
+            RoutedTarget::Unresolved {
+                reason: DegradationReason::DynamicSource,
+            }
+        }
         (other, _) => other,
     }
 }

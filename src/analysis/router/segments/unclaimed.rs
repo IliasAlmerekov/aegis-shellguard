@@ -139,10 +139,15 @@ pub(super) fn unclaimed_interpreter_net(
     // (`setsid ./pyx`) may still hand a script its own path-like operand
     // straight through: `resolve` reads the file and only treats it as a
     // target with a verified shebang, so a non-script operand stays safe
-    // (issue #384/#430 round 5).
+    // (issue #384/#430 round 5). Routed as `LauncherOperand`, not
+    // `DirectExec`, because this operand is a candidate the net itself
+    // picked out of an unclaimed stage's arguments — not a program the
+    // command named — so a missing path or a directory (an everyday shape
+    // for an ordinary command's argument) resolves speculatively instead of
+    // degrading like a user-typed `DirectExec` still does.
     let first_operand = slice.tokens[1..].iter().find(|tok| !tok.starts_with('-'))?;
     (first_operand.contains('/') && is_literal_path(first_operand)).then(|| {
-        RoutedTarget::DirectExec {
+        RoutedTarget::LauncherOperand {
             path: PathBuf::from(*first_operand),
         }
     })

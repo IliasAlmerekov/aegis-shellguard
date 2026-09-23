@@ -68,6 +68,20 @@ pub enum RoutedTarget {
         /// The path as it appeared in the command.
         path: PathBuf,
     },
+    /// A path-like first operand of an unclaimed stage behind an
+    /// unenumerated launcher (`setsid ./pyx`) — the unclaimed-interpreter
+    /// net's own candidate (issue #384/#430 round 5), not a program the
+    /// command itself named. [`resolve`] reads it exactly like
+    /// [`RoutedTarget::DirectExec`] (a verified shebang makes it a target;
+    /// no shebang, nothing), except a path that does not exist or is itself
+    /// a directory is speculative rather than unsafe: an ordinary command
+    /// takes a missing or directory argument every day (`vim ./new.txt`,
+    /// `du -sh ./srcdir`), so it resolves to no target and no degradation
+    /// instead of prompting.
+    LauncherOperand {
+        /// The path as it appeared in the command.
+        path: PathBuf,
+    },
 }
 
 /// A route that did not resolve into an analyzable [`SourceTarget`].
@@ -129,38 +143,74 @@ pub(super) async fn resolve_for_analysis(
                 Ok(path) => path,
                 Err(reason) => return Resolution::Degraded(reason),
             };
-            match source_reader::read_script_file(&path, script_file_limit_bytes).await {
-                Ok(read) => {
-                    let Some(language) = read
-                        .source
-                        .lines()
-                        .next()
-                        .and_then(verified_shebang_language)
-                    else {
-                        return Resolution::NotApplicable;
-                    };
-                    Resolution::Resolved {
-                        language,
-                        source: read.source,
-                        source_hash: Some(read.source_hash),
-                        source_byte_offset: read.source_byte_offset,
-                    }
-                }
-                // A verified shebang is a short ASCII prefix, so a file too
-                // large to read within budget or not valid UTF-8 at all
-                // cannot carry one — conclusively "no verified shebang", the
-                // same outcome as the `Ok` branch above with no `#!` match,
-                // not suspicious unresolved content. Otherwise a directly
-                // executed compiled binary (e.g. `actionlint`, #345) would
-                // degrade to a language-aware confirmation it can never pass
-                // non-interactively, despite being no more opaque to Aegis
-                // than any other `PATH`-resolved binary.
-                Err(SourceReadError::TooLarge { .. } | SourceReadError::InvalidUtf8) => {
-                    Resolution::NotApplicable
-                }
-                Err(err) => Resolution::Degraded(degradation_reason(&err)),
+            resolve_verified_shebang_read(&path, script_file_limit_bytes).await
+        }
+        RoutedTarget::LauncherOperand { path } => {
+            let path = match resolve_command_path(&path, command_cwd) {
+                Ok(path) => path,
+                Err(reason) => return Resolution::Degraded(reason),
+            };
+            // Missing or a literal directory is an everyday shape for an
+            // ordinary command's argument (`vim ./new.txt`, `du -sh
+            // ./srcdir`), not evidence of anything unsafe — unlike a
+            // user-typed `RoutedTarget::DirectExec`, which keeps degrading
+            // on the same read failure (issue #384/#430 round 5).
+            if launcher_operand_is_missing_or_directory(&path).await {
+                return Resolution::NotApplicable;
+            }
+            resolve_verified_shebang_read(&path, script_file_limit_bytes).await
+        }
+    }
+}
+
+/// Read `path` and resolve it exactly as [`RoutedTarget::DirectExec`] always
+/// has: a verified shebang makes it a target, anything else (no shebang, too
+/// large, not UTF-8) is `NotApplicable`, and every other read failure
+/// (symlink, FIFO, socket, device, permission denied, …) degrades.
+async fn resolve_verified_shebang_read(path: &Path, script_file_limit_bytes: u64) -> Resolution {
+    match source_reader::read_script_file(path, script_file_limit_bytes).await {
+        Ok(read) => {
+            let Some(language) = read
+                .source
+                .lines()
+                .next()
+                .and_then(verified_shebang_language)
+            else {
+                return Resolution::NotApplicable;
+            };
+            Resolution::Resolved {
+                language,
+                source: read.source,
+                source_hash: Some(read.source_hash),
+                source_byte_offset: read.source_byte_offset,
             }
         }
+        // A verified shebang is a short ASCII prefix, so a file too
+        // large to read within budget or not valid UTF-8 at all
+        // cannot carry one — conclusively "no verified shebang", the
+        // same outcome as the `Ok` branch above with no `#!` match,
+        // not suspicious unresolved content. Otherwise a directly
+        // executed compiled binary (e.g. `actionlint`, #345) would
+        // degrade to a language-aware confirmation it can never pass
+        // non-interactively, despite being no more opaque to Aegis
+        // than any other `PATH`-resolved binary.
+        Err(SourceReadError::TooLarge { .. } | SourceReadError::InvalidUtf8) => {
+            Resolution::NotApplicable
+        }
+        Err(err) => Resolution::Degraded(degradation_reason(&err)),
+    }
+}
+
+/// `true` when `path` does not exist, or is itself — not through a symlink —
+/// a directory. Checked with `symlink_metadata` (no follow), the same
+/// no-follow stat [`source_reader::read_script_file`] performs internally,
+/// so a symlink (to a directory or anything else) is left to
+/// [`resolve_verified_shebang_read`]'s ordinary degrade path rather than
+/// silently dropped here (issue #384/#430 round 5).
+async fn launcher_operand_is_missing_or_directory(path: &Path) -> bool {
+    match tokio::fs::symlink_metadata(path).await {
+        Ok(metadata) => metadata.is_dir(),
+        Err(err) => err.kind() == std::io::ErrorKind::NotFound,
     }
 }
 
@@ -449,7 +499,7 @@ async fn resolve_one(
             language: None,
             reason,
         })),
-        RoutedTarget::DirectExec { path } => {
+        RoutedTarget::DirectExec { path } | RoutedTarget::LauncherOperand { path } => {
             let read = source_reader::read_script_file(&path, script_file_limit_bytes)
                 .await
                 .ok()?;

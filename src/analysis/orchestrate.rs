@@ -208,7 +208,9 @@ pub async fn run_with_budget_in_cwd(
         }
         let (origin, file_path, is_script_file) = match &target {
             RoutedTarget::Inline { .. } => (SourceOrigin::Inline, None, false),
-            RoutedTarget::ScriptFile { path, .. } | RoutedTarget::DirectExec { path } => (
+            RoutedTarget::ScriptFile { path, .. }
+            | RoutedTarget::DirectExec { path }
+            | RoutedTarget::LauncherOperand { path } => (
                 SourceOrigin::ScriptFile,
                 Some(path.to_string_lossy().into_owned()),
                 true,

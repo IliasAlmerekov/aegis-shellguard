@@ -230,11 +230,16 @@ on that whole token would instead find the trailing path segment of its
 
 When no token names a known interpreter but the stage's own first operand
 (past any leading flags) is a path-like literal, routing instead emits a
-`Direct exec` candidate for it (`setsid ./pyx`) rather than leaving the
+`Launcher operand` candidate for it (`setsid ./pyx`) rather than leaving the
 stage silent. This costs nothing beyond what `Direct exec` already does for
 a bare path-like program: `resolve` still reads the file and only treats it
 as a target with a verified shebang, so a non-script operand (`setsid
-./notes.txt`) stays unclaimed.
+./notes.txt`) stays unclaimed. Unlike `Direct exec`, a missing path or a
+literal directory resolves to no target and no degradation rather than
+prompting, since the net picked this operand out of an ordinary command's
+own arguments rather than the command naming it as the thing to run, and a
+missing or directory argument (`vim ./new.txt`, `du -sh ./srcdir`) is
+routine there (issue #384/#430 round 5).
 
 A fixed exclusion list holds the programs that legitimately name a command,
 or a filesystem path, as data rather than run it: `echo`, `printf`, `which`,
