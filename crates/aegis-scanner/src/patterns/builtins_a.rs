@@ -6,12 +6,9 @@ use super::{Category, PatternSource, PatternToken, PrefixRule, a, any_star, s};
 pub(super) fn rules() -> Vec<PrefixRule> {
     vec![
         // ── Filesystem ───────────────────────────────────────────────────
-        // First Filesystem-category token-prefix rules: `wipefs`/`unlink`
-        // have no match-anywhere delivery variety — the dangerous verb is
-        // always the effective program token (ADR-014). `rm` itself has both
-        // kinds: FS-001 (patterns.toml) is a regex anchored to the flag right
-        // after `rm`, and FS-020 below is a token-prefix rule that finds the
-        // recursive flag at any position (GHSA-7gcj-4f7x-7fxj / #415).
+        // First Filesystem-category token-prefix rules: unlike `rm` (regex
+        // FS-001), `wipefs`/`unlink` have no match-anywhere delivery variety —
+        // the dangerous verb is always the effective program token (ADR-014).
         PrefixRule {
             id: Cow::Borrowed("FS-011"),
             category: Category::Filesystem,
@@ -68,9 +65,8 @@ pub(super) fn rules() -> Vec<PrefixRule> {
             match_examples: &["unlink important.txt"],
             not_match_examples: &["readlink mylink", "ln -s a b"],
         },
-        // FS-020 catches `rm -r` at any position, closing a gap FS-001's
-        // first-token-only regex left open (GHSA-7gcj-4f7x-7fxj / #415).
-        // `matches_tokens` fully replaces this rule's own match logic below.
+        // FS-020 finds `rm -r` at any position, which FS-001's regex misses
+        // (GHSA-7gcj-4f7x-7fxj / #415). `matches_tokens` decides the match.
         PrefixRule {
             id: Cow::Borrowed("FS-020"),
             category: Category::Filesystem,
