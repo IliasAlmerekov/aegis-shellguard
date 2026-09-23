@@ -317,7 +317,8 @@ fn route_stage(
 /// (grammar wrappers, issue #430) — the same set `strip_leading_shell_syntax`
 /// recognizes.
 const RESERVED_WORD_PREFIXES: &[&str] = &[
-    "if", "then", "elif", "else", "while", "until", "do", "case", "time", "!",
+    "if", "then", "elif", "else", "while", "until", "do", "case", "time", "!", "function",
+    "coproc",
 ];
 
 /// `true` when `stage_raw` may hide a routable command behind shell grammar
@@ -331,12 +332,15 @@ fn stage_may_be_wrapped(stage_raw: &str) -> bool {
         || trimmed.starts_with('{')
         || stage_raw.contains("$(")
         || stage_raw.contains('`')
+        || stage_raw.contains("<(")
+        || stage_raw.contains(">(")
         || RESERVED_WORD_PREFIXES.iter().any(|kw| {
             trimmed
                 .strip_prefix(kw)
                 .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
         })
         || (command_has_heredoc(stage_raw) && heredoc_marker_line_tail(stage_raw).is_some())
+        || posix_function_definition_body(trimmed).is_some()
 }
 
 /// The chained-command tail glued onto a heredoc marker's own physical line
@@ -368,17 +372,142 @@ fn heredoc_marker_line_tail(stage_raw: &str) -> Option<&str> {
     (!without_operator.is_empty()).then_some(without_operator)
 }
 
-/// Peel a `case` arm's `WORD in LABEL)` header off its raw text (`rest` is
-/// already past the leading `case ` keyword), raw-substring only — a
-/// tokenize/rejoin pass here would corrode an inline body's quoting the same
-/// way `logical_segments` does. Imprecise on a case word containing the
-/// literal substring `" in "`; that only means routing misses the arm, the
-/// same fail-open gap `route_direct_stage` already has for any command it
-/// cannot parse.
-fn strip_case_arm_header(rest: &str) -> Option<&str> {
-    let (_word, after_in) = rest.split_once(" in ")?;
-    let (label, after_label) = after_in.split_once(')')?;
-    (!label.is_empty() && !label.chars().any(char::is_whitespace)).then(|| after_label.trim_start())
+/// Every `case` arm body in `rest` (already past the leading `case ` keyword),
+/// one entry per arm, raw-substring only — a tokenize/rejoin pass here would
+/// corrode an inline body's quoting the same way `logical_segments` does.
+/// Splits on each arm terminator (`;;`, `;;&`, `;&`, issue #384 G1: a
+/// fallthrough arm's body must route exactly like a normal arm's) and strips
+/// the trailing `esac` off the last arm. Imprecise on a case word containing
+/// the literal substring `" in "`, or a body whose own text happens to embed
+/// one of these terminator sequences outside any arm boundary; that only
+/// means routing misses or misdraws an arm, the same fail-open gap
+/// `route_direct_stage` already has for any command it cannot parse.
+fn case_arm_bodies(rest: &str) -> Vec<String> {
+    let Some((_word, mut remaining)) = rest.split_once(" in ") else {
+        return Vec::new();
+    };
+    let mut bodies = Vec::new();
+
+    loop {
+        let trimmed = remaining.trim_start();
+        let Some((label, after_label)) = trimmed.split_once(')') else {
+            break;
+        };
+        if label.is_empty() || label.chars().any(char::is_whitespace) {
+            break;
+        }
+        match find_case_arm_terminator(after_label) {
+            Some((pos, len)) => {
+                bodies.push(after_label[..pos].trim().to_owned());
+                remaining = &after_label[pos + len..];
+            }
+            None => {
+                bodies.push(strip_trailing_esac(after_label).trim().to_owned());
+                break;
+            }
+        }
+    }
+    bodies
+}
+
+/// The earliest `case` arm terminator (`;;&`, `;;`, or `;&`, longest match
+/// first so `;;&` is never misread as `;;` followed by a stray `&`) in `s`,
+/// as a `(byte_index, terminator_len)` pair.
+fn find_case_arm_terminator(s: &str) -> Option<(usize, usize)> {
+    for (idx, _) in s.match_indices(';') {
+        if s[idx..].starts_with(";;&") {
+            return Some((idx, 3));
+        }
+        if s[idx..].starts_with(";;") || s[idx..].starts_with(";&") {
+            return Some((idx, 2));
+        }
+    }
+    None
+}
+
+/// Strip a case statement's trailing `esac` keyword (and the whitespace
+/// before it) off its last arm's body.
+fn strip_trailing_esac(s: &str) -> &str {
+    let trimmed = s.trim_end();
+    trimmed.strip_suffix("esac").map_or(trimmed, str::trim_end)
+}
+
+/// `Some(body)` when `trimmed` (a whole stage, already trimmed of leading
+/// whitespace) is a POSIX function definition — `NAME() { BODY; }` or
+/// `NAME(){ BODY; }`, with no whitespace between `)` and `{` required (issue
+/// #384 G1; routing the body at definition time is the accepted conservative
+/// choice — a later call site of `NAME` is not tracked). `NAME` must be a
+/// bare identifier-like token with no shell metacharacter, so this cannot
+/// misfire on a subshell or command substitution. Raw-substring only, same
+/// standard as this module's other wrapper-body extraction.
+fn posix_function_definition_body(trimmed: &str) -> Option<&str> {
+    let paren_pos = trimmed.find('(')?;
+    let name = &trimmed[..paren_pos];
+    if name.is_empty()
+        || name
+            .chars()
+            .any(|c| c.is_whitespace() || matches!(c, '$' | '`' | '/' | '{' | '}' | ';' | '|'))
+    {
+        return None;
+    }
+    let after_close = trimmed[paren_pos + 1..].strip_prefix(')')?;
+    let brace_pos = after_close.find('{')?;
+    if !after_close[..brace_pos].chars().all(char::is_whitespace) {
+        return None;
+    }
+    trimmed_body_between_braces(&after_close[brace_pos + 1..])
+}
+
+/// The body between the first `{` (already stripped by the caller) and this
+/// text's own trailing `}` — the whole rest of `trimmed`, since the caller
+/// already isolated exactly one wrapper/definition unit
+/// (`aegis_parser::list_segments`'s brace-depth tracking guarantees the
+/// stage's last character is the matching close brace).
+fn trimmed_body_between_braces(rest: &str) -> Option<&str> {
+    rest.trim_end().strip_suffix('}')
+}
+
+/// `Some(body)` when `rest` (already past the leading `function ` keyword) is
+/// a `function NAME { BODY; }` definition, with or without the optional empty
+/// `()` before the brace (issue #384 G1; same conservative
+/// routed-at-definition choice as [`posix_function_definition_body`]).
+/// `NAME` must be a bare identifier-like token with no shell metacharacter.
+fn function_keyword_body(rest: &str) -> Option<&str> {
+    let name_end = rest.find(|c: char| c.is_whitespace() || c == '(')?;
+    let name = &rest[..name_end];
+    if name.is_empty()
+        || name
+            .chars()
+            .any(|c| matches!(c, '$' | '`' | '{' | '}' | ';' | '|'))
+    {
+        return None;
+    }
+    let mut tail = rest[name_end..].trim_start();
+    if let Some(after_open) = tail.strip_prefix('(') {
+        tail = after_open.trim_start().strip_prefix(')')?.trim_start();
+    }
+    let brace_pos = tail.find('{')?;
+    if !tail[..brace_pos].chars().all(char::is_whitespace) {
+        return None;
+    }
+    trimmed_body_between_braces(&tail[brace_pos + 1..])
+}
+
+/// `Some(body)` when `rest` (already past the leading `coproc ` keyword) is a
+/// bash coprocess with a brace-group body — `NAME { BODY; }` or `{ BODY; }`
+/// (issue #384 G1). A bare `coproc <cmd> <args>` with no brace group is
+/// already resolved by `aegis_parser`'s launcher-prefix stripping before
+/// routing ever reaches wrapper detection, so this only needs to cover the
+/// brace-group shape.
+fn coproc_body(rest: &str) -> Option<&str> {
+    if let Some(body) = strip_group_or_subshell_wrapper(rest) {
+        return Some(body);
+    }
+    let (name, tail) = rest.split_once(char::is_whitespace)?;
+    if name.is_empty() || name.chars().any(|c| matches!(c, '{' | '}' | '(' | ')')) {
+        return None;
+    }
+    strip_group_or_subshell_wrapper(tail.trim_start())
 }
 
 /// Every raw wrapper body found directly in `stage_raw`: a reserved-word
@@ -401,11 +530,23 @@ fn wrapper_bodies(stage_raw: &str, trusted_aliases: &[(&str, &str)]) -> Vec<Stri
             && rest.starts_with(char::is_whitespace)
         {
             let rest = rest.trim_start();
-            match (*kw, strip_case_arm_header(rest)) {
-                ("case", Some(arm_body)) => bodies.push(arm_body.to_owned()),
+            match *kw {
+                "case" => bodies.extend(case_arm_bodies(rest)),
+                "function" => {
+                    if let Some(body) = function_keyword_body(rest) {
+                        bodies.push(body.to_owned());
+                    }
+                }
+                "coproc" => match coproc_body(rest) {
+                    Some(body) => bodies.push(body.to_owned()),
+                    None => bodies.push(rest.to_owned()),
+                },
                 _ => bodies.push(rest.to_owned()),
             }
         }
+    }
+    if let Some(body) = posix_function_definition_body(trimmed) {
+        bodies.push(body.to_owned());
     }
     if let Some(inner) = aegis_parser::unwrap_subshell_group(trimmed) {
         bodies.push(inner);
@@ -416,6 +557,7 @@ fn wrapper_bodies(stage_raw: &str, trusted_aliases: &[(&str, &str)]) -> Vec<Stri
         bodies.push(inner.to_owned());
     }
     bodies.extend(aegis_parser::extract_command_substitution_bodies(stage_raw));
+    bodies.extend(aegis_parser::extract_process_substitution_bodies(stage_raw));
     if command_has_heredoc(stage_raw)
         && heredoc_write_then_exec_reuse(stage_raw, trusted_aliases).is_none()
         && let Some(tail) = heredoc_marker_line_tail(stage_raw)
@@ -511,12 +653,18 @@ fn route_direct_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<Rout
     if owned_tokens.is_empty() {
         return Vec::new();
     }
-    let tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
+    let all_tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
+    // A leading redirection (`>out python3 x.py`, `2>&1 python3 x.py`) is
+    // shell syntax attached to the *stage*, not an argument of the program
+    // that follows it — the shell strips it before argv0 resolution, so
+    // routing must too, or the redirection token itself gets mistaken for
+    // the effective program (issue #384 G1).
+    let tokens = strip_leading_redirections(&all_tokens);
+    if tokens.is_empty() {
+        return Vec::new();
+    }
 
-    let Some(slice) = aegis_parser::effective_token_slices(&tokens)
-        .into_iter()
-        .next()
-    else {
+    let Some(slice) = aegis_parser::effective_token_slices(tokens).into_iter().next() else {
         return Vec::new();
     };
 
@@ -595,6 +743,14 @@ pub(super) fn walk_interpreter_argv(interp: &Interpreter, rest: &[&str]) -> Argv
     let marker_pos = rest.iter().position(|tok| tok.starts_with("<<"));
     let before_marker = marker_pos.map_or(rest, |idx| &rest[..idx]);
 
+    // A standalone `< file` with a literal target means the interpreter
+    // reads its script from stdin, and stdin is exactly that file (issue
+    // #384 G1): `python3 < ./evil.py` is the same source as `python3 - <
+    // ./evil.py`. Recorded here and only consulted if the walk below finds
+    // no inline body or positional script argument of its own — either of
+    // those wins outright, same as a real interpreter's own argv parsing.
+    let mut stdin_redirect_target: Option<&str> = None;
+
     let mut pos = 0;
     while pos < before_marker.len() {
         let tok = before_marker[pos];
@@ -613,6 +769,12 @@ pub(super) fn walk_interpreter_argv(interp: &Interpreter, rest: &[&str]) -> Argv
             // its target in the *next* token, which the interpreter never
             // sees either — skip both, not just the operator, or the target
             // filename would be misread as the script argument.
+            if is_plain_input_redirect(tok)
+                && let Some(target) = before_marker.get(pos + 1)
+                && is_literal_path(target)
+            {
+                stdin_redirect_target = Some(target);
+            }
             pos += 2;
             continue;
         }
@@ -625,7 +787,13 @@ pub(super) fn walk_interpreter_argv(interp: &Interpreter, rest: &[&str]) -> Argv
         pos += 1;
     }
 
-    ArgvWalk::NoMatch
+    match stdin_redirect_target {
+        Some(path) => ArgvWalk::Routed(RoutedTarget::ScriptFile {
+            language: interp.language,
+            path: PathBuf::from(path),
+        }),
+        None => ArgvWalk::NoMatch,
+    }
 }
 
 /// A standalone shell redirection operator token (`>`, `>>`, `<`, `2>`, …) —
@@ -643,4 +811,39 @@ fn is_redirection_operator(tok: &str) -> bool {
     // token, which is correct.
     let after_amp = after_fd.strip_prefix('&').unwrap_or(after_fd);
     !after_amp.is_empty() && after_amp.chars().all(|c| c == '<' || c == '>')
+}
+
+/// `true` for a standalone plain input redirection (`<`, `3<`, …) — an
+/// [`is_redirection_operator`] token with no `>` and no fd-duplication `&`,
+/// the only shape whose target can mean "this file is the interpreter's
+/// stdin source" (issue #384 G1).
+fn is_plain_input_redirect(tok: &str) -> bool {
+    tok.trim_start_matches(|c: char| c.is_ascii_digit()) == "<"
+}
+
+/// Drop a leading run of redirection tokens (standalone or glued to their
+/// target/fd, e.g. `>out`, `2>&1`, `<file`) so the token right after them is
+/// treated as the effective program (issue #384 G1): a leading redirection
+/// before the command word is shell syntax the shell strips before argv0
+/// resolution, and otherwise gets mistaken for the program itself.
+fn strip_leading_redirections<'a>(tokens: &'a [&'a str]) -> &'a [&'a str] {
+    let mut idx = 0;
+    while idx < tokens.len() && starts_with_redirection_glyph(tokens[idx]) {
+        idx += if is_redirection_operator(tokens[idx]) {
+            2 // standalone operator: its target is the *next* token too.
+        } else {
+            1 // glued form: operator and target/fd share this one token.
+        };
+    }
+    &tokens[idx.min(tokens.len())..]
+}
+
+/// `true` when `tok` *starts* with a redirection glyph (`<`, `>`, or a
+/// digit/`&`-prefixed one), whether standalone (`>`, `2>`) or with a glued
+/// target/fd (`>out`, `2>&1`, `<file`). Broader than
+/// [`is_redirection_operator`], which only matches the pure-operator form.
+fn starts_with_redirection_glyph(tok: &str) -> bool {
+    let after_fd = tok.trim_start_matches(|c: char| c.is_ascii_digit());
+    let after_amp = after_fd.strip_prefix('&').unwrap_or(after_fd);
+    after_amp.starts_with('<') || after_amp.starts_with('>')
 }

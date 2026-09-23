@@ -106,6 +106,127 @@ fn deeply_nested_subshells_finish_quickly_and_degrade_past_the_bound() {
     );
 }
 
+// ── G1: shell grammar that still hid an interpreter ────────────────────────
+
+#[test]
+fn a_leading_redirection_does_not_hide_the_program() {
+    assert_eq!(
+        route(">out python3 ./evil.py", &[]),
+        vec![evil_py_script_file()]
+    );
+}
+
+#[test]
+fn a_leading_glued_fd_duplication_redirection_does_not_hide_the_program() {
+    assert_eq!(
+        route("2>&1 python3 ./evil.py", &[]),
+        vec![evil_py_script_file()]
+    );
+}
+
+#[test]
+fn a_leading_redirection_before_a_direct_exec_path_does_not_hide_it() {
+    assert_eq!(
+        route(">o ./pyx", &[]),
+        vec![RoutedTarget::DirectExec {
+            path: PathBuf::from("./pyx"),
+        }]
+    );
+}
+
+#[test]
+fn stdin_redirected_from_a_literal_file_routes_that_file() {
+    assert_eq!(
+        route("python3 < ./evil.py", &[]),
+        vec![evil_py_script_file()]
+    );
+}
+
+#[test]
+fn a_posix_function_definition_routes_its_body() {
+    assert_eq!(
+        route("f(){ python3 ./evil.py; }; f", &[]),
+        vec![evil_py_script_file()]
+    );
+}
+
+#[test]
+fn a_function_keyword_definition_routes_its_body() {
+    assert_eq!(
+        route("function f { python3 ./evil.py; }; f", &[]),
+        vec![evil_py_script_file()]
+    );
+}
+
+#[test]
+fn a_named_coproc_body_is_routed() {
+    assert_eq!(
+        route("coproc X { python3 ./evil.py; }", &[]),
+        vec![evil_py_script_file()]
+    );
+}
+
+#[test]
+fn input_process_substitution_is_routed() {
+    assert_eq!(
+        route("cat <(python3 ./evil.py)", &[]),
+        vec![evil_py_script_file()]
+    );
+}
+
+#[test]
+fn output_process_substitution_is_routed() {
+    assert_eq!(
+        route("echo >(python3 ./evil.py)", &[]),
+        vec![evil_py_script_file()]
+    );
+}
+
+#[test]
+fn a_case_fallthrough_double_semicolon_arm_is_routed() {
+    assert_eq!(
+        route("case a in a) true;;& *) python3 ./evil.py;; esac", &[]),
+        vec![evil_py_script_file()]
+    );
+}
+
+#[test]
+fn a_case_fallthrough_single_ampersand_arm_is_routed() {
+    assert_eq!(
+        route("case a in a) true;& *) python3 ./evil.py;; esac", &[]),
+        vec![evil_py_script_file()]
+    );
+}
+
+// ── L1: launchers and aliases ───────────────────────────────────────────────
+
+#[test]
+fn xargs_launcher_does_not_hide_the_program() {
+    assert_eq!(
+        route("xargs python3 ./evil.py", &[]),
+        vec![evil_py_script_file()]
+    );
+}
+
+#[test]
+fn env_split_string_does_not_hide_the_program() {
+    assert_eq!(
+        route(r#"env -S "python3 ./evil.py""#, &[]),
+        vec![evil_py_script_file()]
+    );
+}
+
+#[test]
+fn nodejs_debian_alias_routes_like_node() {
+    assert_eq!(
+        route("nodejs ./evil.js", &[]),
+        vec![RoutedTarget::ScriptFile {
+            language: SourceLanguage::JavaScript,
+            path: PathBuf::from("./evil.js"),
+        }]
+    );
+}
+
 // ── Regression: safe commands stay safe ─────────────────────────────────────
 
 #[test]

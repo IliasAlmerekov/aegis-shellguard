@@ -4,6 +4,8 @@
 //! budget. A sibling of `segmentation` under the crate root, so it reaches
 //! `segmentation`'s shared scanning helpers through `pub(crate)`.
 
+use std::ops::Range;
+
 use crate::PipelineChain;
 use crate::embedded_scripts::heredoc_suspend_ranges;
 use crate::segmentation::{ends_with_redirect_target, finalize_segment, split_pipeline_segments};
@@ -56,6 +58,79 @@ pub fn list_segments(cmd: &str) -> Vec<ListSegment> {
         .collect()
 }
 
+/// Byte ranges spanning a whole top-level `case ... esac` statement (issue
+/// #384 G1): a `case` block's own `;;`/`;;&`/`;&` arm terminators and any `&`
+/// inside an arm body are case grammar, not list operators, so top-level
+/// splitting must not treat them as one — only the router's own
+/// `case`-keyword wrapper handling (which re-parses each arm as its own list)
+/// should ever see them as boundaries. Word-boundary and quote/backtick
+/// aware; nesting is depth-counted so only the outermost `case`/`esac` pair
+/// produces a range, since that range already spans every statement nested
+/// inside it. A `case` with no matching `esac` (or vice versa) produces no
+/// range at all — the same fail-open gap as the rest of this crate's raw
+/// scans for malformed input.
+fn case_statement_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
+    if !cmd.contains("case") {
+        return Vec::new();
+    }
+
+    let mut ranges = Vec::new();
+    let mut open_starts: Vec<usize> = Vec::new();
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut in_backticks = false;
+    let mut at_word_boundary = true;
+
+    let mut chars = cmd.char_indices();
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '\\' if !in_single_quote => {
+                chars.next();
+                at_word_boundary = false;
+                continue;
+            }
+            '\'' if !in_double_quote && !in_backticks => {
+                in_single_quote = !in_single_quote;
+                at_word_boundary = false;
+                continue;
+            }
+            '"' if !in_single_quote && !in_backticks => {
+                in_double_quote = !in_double_quote;
+                at_word_boundary = false;
+                continue;
+            }
+            '`' if !in_single_quote => {
+                in_backticks = !in_backticks;
+                at_word_boundary = false;
+                continue;
+            }
+            _ => {}
+        }
+
+        if !in_single_quote && !in_double_quote && !in_backticks && at_word_boundary {
+            if cmd[idx..]
+                .strip_prefix("case")
+                .is_some_and(|rest| rest.starts_with(char::is_whitespace))
+            {
+                open_starts.push(idx);
+            } else if let Some(rest) = cmd[idx..].strip_prefix("esac")
+                && rest
+                    .chars()
+                    .next()
+                    .is_none_or(|c| !c.is_alphanumeric() && c != '_')
+                && let Some(start) = open_starts.pop()
+                && open_starts.is_empty()
+            {
+                ranges.push(start..idx + "esac".len());
+            }
+        }
+
+        at_word_boundary = ch.is_whitespace() || matches!(ch, ';' | '&' | '|' | '(');
+    }
+
+    ranges
+}
+
 /// Finalize `current` into `segments`, and if that pushed a new segment,
 /// record `kind` as the separator immediately following it.
 fn finalize_with_separator(
@@ -86,7 +161,9 @@ fn finalize_with_separator(
 pub(crate) fn split_top_level_command_groups_with_separators(
     cmd: &str,
 ) -> Vec<(String, Option<ListSeparator>)> {
-    let suspend_ranges = heredoc_suspend_ranges(cmd);
+    let mut suspend_ranges = heredoc_suspend_ranges(cmd);
+    suspend_ranges.extend(case_statement_suspend_ranges(cmd));
+    suspend_ranges.sort_by_key(|range| range.start);
     let mut suspend_ranges = suspend_ranges.iter();
     let mut active_suspend = suspend_ranges.next();
 
@@ -168,12 +245,19 @@ pub(crate) fn split_top_level_command_groups_with_separators(
             // from the braces that make it a single unit to route (ADR-022
             // §6, issue #384 S3: a group's `cd` persists to the caller's
             // cwd, unlike a subshell's, and the router must see the whole
-            // wrapper to tell the two apart).
+            // wrapper to tell the two apart). A `{` immediately after `)`
+            // additionally opens a POSIX function body (`f(){ ...; }`, issue
+            // #384 G1): unlike a bare grouping `{`, real shell grammar allows
+            // no whitespace there, so this is the one preceding character a
+            // grouping `{` itself could never have — no ambiguity between
+            // the two shapes.
             '{' if !in_single_quote
                 && !in_double_quote
                 && !in_backticks
                 && command_subst_depth == 0
-                && (current.is_empty() || current.ends_with(char::is_whitespace))
+                && (current.is_empty()
+                    || current.ends_with(char::is_whitespace)
+                    || current.ends_with(')'))
                 && next_char.is_some_and(char::is_whitespace) =>
             {
                 brace_depth += 1;

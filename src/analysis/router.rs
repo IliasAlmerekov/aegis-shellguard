@@ -217,6 +217,15 @@ const INTERPRETERS: &[Interpreter] = &[
         inline_flag: "-e",
         language: SourceLanguage::JavaScript,
     },
+    Interpreter {
+        // Debian/Ubuntu's `nodejs` package installs the binary under this
+        // name instead of `node` (issue #384 L1) — the same interpreter,
+        // registered directly rather than as a basename family since it
+        // carries no version suffix for `strip_version_suffix` to normalize.
+        program: "nodejs",
+        inline_flag: "-e",
+        language: SourceLanguage::JavaScript,
+    },
 ];
 
 /// Route analyzable source in `command`. `trusted_aliases` maps a trusted

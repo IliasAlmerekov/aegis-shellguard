@@ -118,10 +118,11 @@ fn heredoc_target_program(line: &str, marker_start: usize) -> Option<&str> {
     }
 }
 
-/// Extract process-substitution bodies from shell input forms like `<(...)`.
+/// Extract process-substitution bodies from shell forms like `<(...)` (input)
+/// and `>(...)` (output, issue #384 G1) alike.
 ///
-/// The returned strings are the shell commands inside the substitution, without
-/// the surrounding `<(` and `)`.
+/// The returned strings are the shell commands inside the substitution,
+/// without the surrounding `<(`/`>(` and `)`.
 pub fn extract_process_substitution_bodies(cmd: &str) -> Vec<String> {
     let chars: Vec<char> = cmd.chars().collect();
     let mut bodies = Vec::new();
@@ -147,10 +148,11 @@ pub fn extract_process_substitution_bodies(cmd: &str) -> Vec<String> {
                 in_backticks = !in_backticks;
                 i += 1;
             }
-            '<' if !in_single_quote
-                && !in_double_quote
-                && !in_backticks
-                && chars.get(i + 1) == Some(&'(') =>
+            '<' | '>'
+                if !in_single_quote
+                    && !in_double_quote
+                    && !in_backticks
+                    && chars.get(i + 1) == Some(&'(') =>
             {
                 if let Some((body, end_idx)) = extract_angle_paren_body(&chars, i) {
                     bodies.push(body);

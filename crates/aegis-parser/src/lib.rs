@@ -48,9 +48,12 @@ pub struct EffectiveTokenSlice<'a> {
 /// their basename, and launchers such as `sudo`, `env`, `rtk`, `timeout`, and
 /// `command` are skipped recursively so token-prefix rules see the program they
 /// are meant to protect.
-pub fn effective_token_slices<'a>(tokens: &'a [&'a str]) -> Vec<EffectiveTokenSlice<'a>> {
+pub fn effective_token_slices<'a>(tokens: &[&'a str]) -> Vec<EffectiveTokenSlice<'a>> {
     if tokens.is_empty() {
         return Vec::new();
+    }
+    if let Some(split) = env_split_string_tokens(tokens) {
+        return effective_token_slices(&split);
     }
 
     let starts = effective_program_indices(tokens);
@@ -76,11 +79,40 @@ pub fn effective_token_slices<'a>(tokens: &'a [&'a str]) -> Vec<EffectiveTokenSl
 ///
 /// This is the allocation-free companion to [`effective_token_slices`] for call
 /// sites that only need the lookup key, not a rewritten token slice.
-pub fn effective_program<'a>(tokens: &'a [&'a str]) -> Option<&'a str> {
+pub fn effective_program<'a>(tokens: &[&'a str]) -> Option<&'a str> {
+    if let Some(split) = env_split_string_tokens(tokens) {
+        return effective_program(&split);
+    }
     effective_program_indices(tokens)
         .into_iter()
         .next()
         .and_then(|start| tokens.get(start).map(|token| program_basename(token)))
+}
+
+/// Recognize the exact `env -S "<command line>"` / `env --split-string
+/// "<command line>"` shape (issue #384 L1): GNU `env`'s split-string mode
+/// treats its value as a whole command line to split into words, not as a
+/// value preceding a further program token. Narrowly proven to exactly three
+/// tokens (`env`, the flag, the value with nothing after) — the same
+/// "recognized, not guessed" standard as this crate's other launcher rules;
+/// a wider shape (further flags, a prefix launcher before `env`) falls
+/// through to the generic env-prefix handling in [`env_prefix_lengths`]
+/// instead, which still degrades honestly rather than misreading the value.
+/// `split_whitespace` reuses the original tokens' lifetime — no allocation,
+/// and no quote-aware re-tokenization of the value (a narrower but safe
+/// subset of GNU `env`'s own splitting).
+fn env_split_string_tokens<'a>(tokens: &[&'a str]) -> Option<Vec<&'a str>> {
+    let [env, flag, value] = tokens else {
+        return None;
+    };
+    if !program_basename(env).eq_ignore_ascii_case("env") {
+        return None;
+    }
+    if *flag != "-S" && *flag != "--split-string" {
+        return None;
+    }
+    let words: Vec<&str> = value.split_whitespace().collect();
+    (!words.is_empty()).then_some(words)
 }
 
 fn effective_program_indices(tokens: &[&str]) -> Vec<usize> {
@@ -174,7 +206,54 @@ fn launcher_prefix_lengths(tokens: &[&str]) -> Option<Vec<usize>> {
         return Some(env_prefix_lengths(tokens));
     }
 
+    if launcher.eq_ignore_ascii_case("xargs") {
+        return Some(vec![xargs_prefix_len(tokens)]);
+    }
+
     None
+}
+
+/// Resolve the launcher-prefix length for bare `xargs <program> <args...>`
+/// (issue #384 L1): with no placeholder/replacement flag, `xargs` runs
+/// `<program> <args...>` directly (plus stdin lines appended as further
+/// arguments), so the program right after its own flags is the effective
+/// program the same way `sudo`'s or `nice`'s is.
+fn xargs_prefix_len(tokens: &[&str]) -> usize {
+    let mut index = 1;
+    while index < tokens.len() {
+        let token = tokens[index];
+        if token == "--" {
+            index += 1;
+            break;
+        }
+        if !token.starts_with('-') {
+            break;
+        }
+        index += 1;
+        if matches!(
+            token,
+            "-a" | "--arg-file"
+                | "-d"
+                | "--delimiter"
+                | "-E"
+                | "-I"
+                | "-i"
+                | "--replace"
+                | "-L"
+                | "--max-lines"
+                | "-l"
+                | "-n"
+                | "--max-args"
+                | "-P"
+                | "--max-procs"
+                | "-s"
+                | "--max-chars"
+        ) && index < tokens.len()
+        {
+            index += 1;
+        }
+    }
+    index
 }
 
 /// Resolve the launcher-prefix length for the `rtk` wrapper.
@@ -421,6 +500,41 @@ mod tests {
             assert_eq!(slices[0].program, "git", "{launcher}");
             assert_eq!(slices[0].tokens, vec!["git", "push", "--force"]);
         }
+    }
+
+    #[test]
+    fn effective_token_slices_strip_xargs_launcher() {
+        let tokens = ["xargs", "python3", "./evil.py"];
+        let slices = effective_token_slices(&tokens);
+
+        assert_eq!(slices.len(), 1);
+        assert_eq!(slices[0].program, "python3");
+        assert_eq!(slices[0].tokens, vec!["python3", "./evil.py"]);
+    }
+
+    #[test]
+    fn effective_token_slices_strip_xargs_flags_before_the_program() {
+        let tokens = ["xargs", "-n1", "python3", "./evil.py"];
+        let slices = effective_token_slices(&tokens);
+
+        assert_eq!(slices[0].program, "python3");
+        assert_eq!(slices[0].tokens, vec!["python3", "./evil.py"]);
+    }
+
+    #[test]
+    fn effective_token_slices_split_env_dash_s_string_into_the_real_program() {
+        let tokens = ["env", "-S", "python3 ./evil.py"];
+        let slices = effective_token_slices(&tokens);
+
+        assert_eq!(slices.len(), 1);
+        assert_eq!(slices[0].program, "python3");
+        assert_eq!(slices[0].tokens, vec!["python3", "./evil.py"]);
+    }
+
+    #[test]
+    fn effective_program_splits_env_dash_s_string_too() {
+        let tokens = ["env", "--split-string", "python3 ./evil.py"];
+        assert_eq!(effective_program(&tokens), Some("python3"));
     }
 
     #[test]
