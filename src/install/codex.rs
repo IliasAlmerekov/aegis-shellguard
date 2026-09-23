@@ -284,7 +284,7 @@ mod tests {
         // The malformed entry sits under a matcher Aegis does not own
         // (`startup`, not the canonical `startup|resume`): a foreign/corrupted
         // shape outside Aegis' canonical namespace is left untouched rather
-        // than blocking the install (TASKS.md#M3a). Under the canonical
+        // than blocking the install (M3a). Under the canonical
         // matcher the same shape fails closed — covered by the Claude
         // malformed-nested-hook test.
         let home = TempDir::new().expect("home dir");

@@ -7,8 +7,8 @@
 > whose real code lives under `crates/` (see `CONVENTION.md` for the current
 > map). §7's "Current breaches" table cites `src/snapshot/*.rs` files that were
 > moved into `crates/aegis-snapshot` and split. The per-file LoC budget quoted
-> here (1500/2000) is superseded by the **800**-line budget in `ROADMAP.md`
-> §3.1 / `CONVENTION.md`. Treat crate-level boundaries and
+> here (1500/2000) is superseded by the **800**-line budget in
+> `docs/history/roadmap.md` §3.1 / `CONVENTION.md`. Treat crate-level boundaries and
 > invariants as authoritative; treat `src/...` file paths as needing
 > verification against the tree until this document is revised.
 >

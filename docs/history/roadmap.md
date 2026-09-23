@@ -4,11 +4,11 @@ This document records **the path taken** — the phases the project moved throug
 their deliverables, and their definitions of done. It is not the 1.0 scope and it
 holds no release gate.
 
-- The normative 1.0 product promise is [`PRD.md`](PRD.md).
+- The normative 1.0 product promise is [`PRD.md`](../../PRD.md).
 - The live release gate is the
   [`1.0` milestone](https://github.com/IliasAlmerekov/aegis-shellguard/milestone/1)
   and nothing else
-  ([ADR-027](docs/adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)).
+  ([ADR-027](../adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)).
 - Where a phase below states a goal that a later decision changed, the PRD wins.
   The phase text is kept as written, with the superseding decision named.
 
@@ -17,7 +17,7 @@ command, classifies it with zero false negatives, persists every human decision 
 a machine-readable rule, and confines execution at the OS level — all in under
 2 ms on the hot path. The confinement half was optional when the roadmap was
 written and is a mandatory 1.0 layer under
-[ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md); see Phase 6.
+[ADR-029](../adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md); see Phase 6.
 
 ---
 
@@ -351,7 +351,7 @@ Status: 12 crates extracted — the nine above plus `aegis-starlark` in Phase 5,
 `aegis-sandbox` in Phase 6, and `aegis-language` in milestone L1. `Cargo.toml` is
 the authority on the workspace member list. `aegis-starlark` leaves the tree with
 [#225](https://github.com/IliasAlmerekov/aegis-shellguard/issues/225)
-([ADR-028](docs/adr/adr-028-the-starlark-policy-dsl-is-removed-before-1-0.md)).
+([ADR-028](../adr/adr-028-the-starlark-policy-dsl-is-removed-before-1-0.md)).
 
 Each `crates/X/Cargo.toml` must not depend on `aegis-binary` or any other
 application crate. Dependency arrows flow inward toward `aegis-types`.
@@ -448,7 +448,7 @@ without embedding an interpreter.
 
 That opt-in tier is **withdrawn**: the Starlark DSL is deleted from the tree
 before 1.0, and the typed TOML DSL is the only way to declare a Policy rule
-([ADR-028](docs/adr/adr-028-the-starlark-policy-dsl-is-removed-before-1-0.md),
+([ADR-028](../adr/adr-028-the-starlark-policy-dsl-is-removed-before-1-0.md),
 [#225](https://github.com/IliasAlmerekov/aegis-shellguard/issues/225)).
 `PRD.md` §5.2 is the normative statement.
 
@@ -514,7 +514,7 @@ approved commands. This Sandbox is not a confidentiality boundary and does not
 replace Aegis' heuristic decision guardrail.
 
 **Superseded on the "optional" half by
-[ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md).** The 1.0
+[ADR-029](../adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md).** The 1.0
 contract, stated normatively in `PRD.md` §5.5, is:
 
 - Confinement is a **mandatory 1.0 layer**. It is attempted for every executed
@@ -526,7 +526,7 @@ contract, stated normatively in `PRD.md` §5.5, is:
   schema v1. Aegis never rewrites a config file to remove them.
 - Write and network authority is bounded by the `Trusted ceiling` and narrowed
   further by whichever rules matched the command
-  ([ADR-030](docs/adr/adr-030-the-confinement-profile-is-derived-from-the-assessment.md)).
+  ([ADR-030](../adr/adr-030-the-confinement-profile-is-derived-from-the-assessment.md)).
 - The surviving honesty claim is unchanged: the layer is a write/network
   guardrail, **not a confidentiality boundary and not a privilege boundary**.
 
@@ -587,7 +587,7 @@ fail closed rather than degrading.
 Under the 1.0 contract there is no unconfined continuation to configure: the
 recorded `sandbox_status = "unavailable"` accompanies `Decision::Blocked` as one
 event, and the flag that used to select between the two is gone
-([ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md)).
+([ADR-029](../adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md)).
 
 **Done when:** `cargo test --workspace` passes with sandbox enabled on
 `ubuntu-latest` and `macos-latest`; a command that attempts to write outside the
@@ -603,7 +603,7 @@ agents pass to interpreters, without replacing the shell Scanner or regressing
 the no-source safe-command hot path.
 
 **This milestone is not in 1.0.** It was charted as pre-1.0 and moved out by
-[ADR-024](docs/adr/adr-024-language-aware-analysis-ships-opt-in-and-is-not-a-1-0-release-gate.md):
+[ADR-024](../adr/adr-024-language-aware-analysis-ships-opt-in-and-is-not-a-1-0-release-gate.md):
 it ships after 1.0 behind the `language-analysis` cargo feature, default off, and
 the Tree-sitter grammars are absent from the 1.0 release binaries. `PRD.md` §5.11
 states it as an explicit 1.0 Non-Goal. The grounds are scope, not schedule —
@@ -614,13 +614,13 @@ work is [#212](https://github.com/IliasAlmerekov/aegis-shellguard/issues/212) an
 **`L1` is defined here and nowhere else.** It names this milestone — the language-aware
 analysis track — and carries no other meaning in the repository. In particular it is not
 a distribution gate: Homebrew, npm, and installer smoke evidence belongs to the
-distribution gates in [`docs/release-readiness.md`](docs/release-readiness.md) and never
+distribution gates in [`docs/release-readiness.md`](../release-readiness.md) and never
 blocks `L1`. Milestone IDs and finding IDs are disjoint namespaces (`CONVENTION.md` §11).
 
 Architecture and trade-offs are fixed by
-[`ADR-022`](docs/adr/adr-022-language-aware-analysis-is-an-additive-isolated-stage.md).
+[`ADR-022`](../adr/adr-022-language-aware-analysis-is-an-additive-isolated-stage.md).
 The test-first delivery sequence is in
-[`docs/plans/2026-07-16-language-aware-analysis.md`](docs/plans/2026-07-16-language-aware-analysis.md).
+[`docs/plans/2026-07-16-language-aware-analysis.md`](../plans/2026-07-16-language-aware-analysis.md).
 
 ### L1.1 Shared foundation
 
@@ -666,10 +666,10 @@ enabling it in a 1.x release; none of them blocks 1.0.
 **Goal:** ship a 1.0 release.
 
 This phase carries **no checklist**. What must be true for 1.0 is promised
-normatively in [`PRD.md`](PRD.md) §5–§8, and what still blocks it is the
+normatively in [`PRD.md`](../../PRD.md) §5–§8, and what still blocks it is the
 [`1.0` milestone](https://github.com/IliasAlmerekov/aegis-shellguard/milestone/1) —
 the only gate
-([ADR-027](docs/adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)).
+([ADR-027](../adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)).
 The list that used to stand here was one of three mutually inconsistent 1.0 gates
 in this repository; that is exactly the drift a single gate removes.
 

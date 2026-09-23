@@ -113,7 +113,7 @@ pub fn split_tokens(cmd: &str) -> Vec<String> {
 /// self-delimited by its closing brace. Unknown variables stay opaque: this is a
 /// narrow, deterministic normalization, not full shell expansion.
 ///
-/// Out of scope (see TASKS.md "C-next"): parameter-expansion modifiers such as
+/// Out of scope (see P3-3): parameter-expansion modifiers such as
 /// `${IFS:-x}` / `${IFS:+x}` and runtime `IFS=` reassignment are not normalized.
 /// This helper only recognizes the two literal default-IFS spellings.
 fn ifs_marker_len(chars: &Peekable<Chars<'_>>) -> Option<usize> {

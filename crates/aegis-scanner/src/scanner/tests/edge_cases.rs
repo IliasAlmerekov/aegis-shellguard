@@ -555,7 +555,7 @@ fn prefix_rule_git_branch_normal_delete_not_flagged() {
 // ── C2: `$IFS` obfuscation bypass regressions ─────────────────────────────
 //
 // Unquoted literal `$IFS` / `${IFS}` separators must not hide destructive
-// commands. These cover the exact `TASKS.md` C2 examples plus nested shell,
+// commands. These cover the exact C2 examples plus nested shell,
 // heredoc, process substitution, and additional destructive pattern families.
 
 fn assert_command_matches_pattern(cmd: &str, expected_risk: RiskLevel, expected_id: &str) {

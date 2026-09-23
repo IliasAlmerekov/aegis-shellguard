@@ -9,7 +9,6 @@ It consolidates the current enforced rules from:
 - `docs/adr/README.md`
 - `.github/workflows/ci.yml`
 - `CONTRIBUTING.md`
-- `ROADMAP.md`
 
 If these documents ever disagree, treat this precedence as authoritative:
 
@@ -74,7 +73,7 @@ These rules are non-negotiable.
 
 The repository is a Cargo workspace. The `aegis` binary crate lives at the
 root and depends on focused library crates under `crates/` (Phase 4 of
-`ROADMAP.md`). Extraction is complete — all 12 library crates are live:
+`docs/history/roadmap.md`). Extraction is complete — all 12 library crates are live:
 `aegis-types` (zero-dep foundation), `aegis-parser` (shell tokenizer +
 `PrefixPattern` matcher), `aegis-scanner` (`Scanner`, `PatternSet`, built-in
 patterns), `aegis-policy` (pure `PolicyEngine`), `aegis-config` (config model,
@@ -287,12 +286,13 @@ Local development rules:
 - Security docs must state limitations explicitly.
 - User-facing docs must not overstate snapshot fidelity, threat coverage, or maturity.
 - Changes to public behavior require corresponding doc updates.
-- **Tracker ID namespaces are disjoint and never reused.** `C<n>`, `H<n>`, `M<n>`, and
-  `P3-<n>` belong to security findings in `TASKS.md` — the letter is severity.
-  `Phase <n>` and `L<n>` belong to milestones in `ROADMAP.md`. No identifier may carry
-  a second meaning in another document, a test name, an assert message, or a source
-  file name. Milestones without a `ROADMAP.md` entry are referred to by name, not by an
-  invented ID.
+- **Tracker ID namespaces are disjoint, frozen, and never reused.** `C<n>`, `H<n>`,
+  `M<n>`, and `P3-<n>` are defined in `CONTEXT.md` — the letter is severity.
+  `Phase <n>` and `L<n>` refer to `docs/history/roadmap.md`. Both namespaces are
+  frozen: neither mints new identifiers, and new work cites its GitHub issue number
+  instead. No identifier may carry a second meaning in another document, a test name,
+  an assert message, or a source file name. Milestones without a
+  `docs/history/roadmap.md` entry are referred to by name, not by an invented ID.
 
 ## 12. Current Release Gates
 

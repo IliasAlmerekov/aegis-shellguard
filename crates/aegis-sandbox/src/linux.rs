@@ -129,7 +129,7 @@ fn prepare(
 /// symlink confusion. Returns an error if a path cannot be canonicalized
 /// (e.g. it does not exist).
 pub(crate) fn build_bwrap_args(config: &SandboxConfig) -> Result<Vec<OsString>, SandboxError> {
-    // A read-only view of the whole filesystem (ROADMAP §6.1), with
+    // A read-only view of the whole filesystem (docs/history/roadmap.md §6.1), with
     // `allow_write` paths bound writable on top. Binding `/` (rather than a
     // minimal set of system dirs) keeps any `allow_write` path — wherever its
     // parent lives — visible inside the namespace.
