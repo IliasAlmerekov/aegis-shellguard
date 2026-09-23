@@ -56,6 +56,24 @@ pub(super) enum CwdState {
     Degraded,
 }
 
+/// Resolve already-tokenized `owned_tokens` to its `&str` view and its first
+/// effective-program slice — the `Vec<&str>` conversion plus
+/// `effective_token_slices().next()` idiom every stage-routing call site
+/// that resolves one program per stage repeats (issue #384/#430 T10). Takes
+/// a borrow rather than calling `aegis_parser::split_tokens` itself so a
+/// caller that still needs the raw `&str` tokens afterward (an `env -C`/cwd
+/// scan past the program, say) can keep them; one that doesn't just ignores
+/// the first element of the pair.
+fn effective_stage_slice<'a>(
+    owned_tokens: &'a [String],
+) -> (Vec<&'a str>, Option<aegis_parser::EffectiveTokenSlice<'a>>) {
+    let tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
+    let slice = aegis_parser::effective_token_slices(&tokens)
+        .into_iter()
+        .next();
+    (tokens, slice)
+}
+
 /// Recognize a segment (or pipeline stage) as a construct that changes the
 /// cwd, through the same launcher/assignment stripping the router uses for
 /// programs (`builtin cd`, `command cd`, `X=1 cd` all resolve to `cd`), and
@@ -68,10 +86,8 @@ pub(super) enum CwdState {
 /// [`route_wrapped_stage`] handles a wrapper's own cwd effect instead.
 fn parse_cd_like(stage_raw: &str) -> Option<CwdState> {
     let owned_tokens = aegis_parser::split_tokens(stage_raw);
-    let tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
-    let slice = aegis_parser::effective_token_slices(&tokens)
-        .into_iter()
-        .next()?;
+    let (_tokens, slice) = effective_stage_slice(&owned_tokens);
+    let slice = slice?;
 
     match slice.program {
         "cd" => Some(match slice.tokens.get(1..) {
@@ -453,17 +469,14 @@ fn route_direct_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<Rout
     if owned_tokens.is_empty() {
         return Vec::new();
     }
-    let tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
     // A redirection anywhere before the program (`>out python3 x.py`,
     // `FOO=1 >out python3 x.py`, `env >out python3 x.py`) is shell syntax
     // attached to the stage, not an argument of the program that follows it
     // — the shell strips it before argv0 resolution, so routing must too.
     // `aegis_parser::effective_token_slices` handles this at every step
     // (issue #384 B3), not only a redirection at position 0.
-    let Some(slice) = aegis_parser::effective_token_slices(&tokens)
-        .into_iter()
-        .next()
-    else {
+    let (tokens, slice) = effective_stage_slice(&owned_tokens);
+    let Some(slice) = slice else {
         return Vec::new();
     };
 
@@ -537,10 +550,8 @@ fn bare_stage_interpreter(
     trusted_aliases: &[(&str, &str)],
 ) -> Option<&'static Interpreter> {
     let owned_tokens = aegis_parser::split_tokens(stage);
-    let tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
-    let slice = aegis_parser::effective_token_slices(&tokens)
-        .into_iter()
-        .next()?;
+    let (_tokens, slice) = effective_stage_slice(&owned_tokens);
+    let slice = slice?;
     if slice.tokens.len() > 1 {
         return None;
     }
