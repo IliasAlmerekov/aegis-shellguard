@@ -25,10 +25,9 @@ Before starting any code task, use global skills from `~/.agents/skills/` in thi
 
 1. **`grill-me`** (or **`grill-with-docs`** when a spec exists) — interview the task
 2. **`tdd`** — red-green implementation (load **`rust-best-practices`** before writing Rust)
-3. **`code-review`** — Standards and Spec axes  
-4. **`re-review`** — verify findings and fixes (max 2 rounds; see `~/.agents/ENGINEERING_GATES.md`)
+3. **`code-review`** — Standards and Spec axes
 
-Only push once `re-review` reports green.
+Only push once every `code-review` finding is fixed or explicitly waived by the user.
 
 ---
 
@@ -52,9 +51,8 @@ After code passes all gates, update in this order:
 
 ## Execution
 
-- Route all shell commands through `rtk` — see [`RTK.md`](RTK.md) for examples
+- Route shell commands through `rtk` when it is installed. Examples live in a local, gitignored `RTK.md`; the repository does not ship one
 - Respect denied Aegis decisions; do not propose bypasses
-- For Rust code, apply `rust-best-practices` skill before writing
 
 ---
 
