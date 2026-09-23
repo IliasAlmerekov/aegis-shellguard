@@ -486,6 +486,11 @@ fn route_direct_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<Rout
                 heredoc::heredoc_stdin(stage).or_else(|| heredoc::here_string_stdin(rest))
             {
                 vec![stdin_target(interp.language, stdin_route)]
+            } else if let Some(path) = leading_stdin_redirect_target(&tokens[..effective_start]) {
+                vec![RoutedTarget::ScriptFile {
+                    language: interp.language,
+                    path: PathBuf::from(path),
+                }]
             } else {
                 Vec::new()
             }
@@ -603,6 +608,16 @@ pub(super) fn walk_interpreter_argv(interp: &Interpreter, rest: &[&str]) -> Argv
             pos += 2;
             continue;
         }
+        if let Some(target) = glued_plain_input_redirect_target(tok)
+            && is_literal_path(target)
+        {
+            // A redirection with no space before its filename (`<file`,
+            // `0<file`) is the same stdin source as the spaced form above,
+            // just glued into one token by the tokenizer (issue #384 B5).
+            stdin_redirect_target = Some(target);
+            pos += 1;
+            continue;
+        }
         if !tok.starts_with('-') && !tok.contains('<') && !tok.contains('>') {
             return ArgvWalk::Routed(RoutedTarget::ScriptFile {
                 language: interp.language,
@@ -627,4 +642,48 @@ pub(super) fn walk_interpreter_argv(interp: &Interpreter, rest: &[&str]) -> Argv
 /// the interpreter's stdin source" (issue #384 G1).
 fn is_plain_input_redirect(tok: &str) -> bool {
     tok.trim_start_matches(|c: char| c.is_ascii_digit()) == "<"
+}
+
+/// The literal target of a plain input redirection glued to its own token
+/// with no separating space (`<file`, `0<file`) — the same shape
+/// [`is_plain_input_redirect`] recognizes when spaced out, but the
+/// tokenizer keeps this one glued because nothing splits it (issue #384
+/// B5). `None` for anything else: a duplication/dup-fd form (`<&3`), a
+/// heredoc/here-string marker (`<<`, `<<<`, already excluded upstream by
+/// the marker-boundary scan), an output redirection, or an empty target.
+fn glued_plain_input_redirect_target(tok: &str) -> Option<&str> {
+    let after_fd = tok.trim_start_matches(|c: char| c.is_ascii_digit());
+    let target = after_fd.strip_prefix('<')?;
+    (!target.is_empty() && !target.starts_with(['<', '&', '>'])).then_some(target)
+}
+
+/// The literal target of a plain input redirection sitting *before* the
+/// program (`<./evil.py python3`, `< ./evil.py python3`) — the shell
+/// resolves stdin from it the same way regardless of which side of the
+/// program name it sits on, but only the trailing form is visible to
+/// [`walk_interpreter_argv`], which only ever sees `rest` (the tokens
+/// *after* the program). Scans left to right and returns the first match,
+/// spaced or glued (issue #384 B5).
+fn leading_stdin_redirect_target<'a>(prefix: &[&'a str]) -> Option<&'a str> {
+    let mut pos = 0;
+    while pos < prefix.len() {
+        let tok = prefix[pos];
+        if aegis_parser::is_redirection_operator(tok) {
+            if is_plain_input_redirect(tok)
+                && let Some(target) = prefix.get(pos + 1)
+                && is_literal_path(target)
+            {
+                return Some(target);
+            }
+            pos += 2;
+            continue;
+        }
+        if let Some(target) = glued_plain_input_redirect_target(tok)
+            && is_literal_path(target)
+        {
+            return Some(target);
+        }
+        pos += 1;
+    }
+    None
 }
