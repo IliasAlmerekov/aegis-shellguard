@@ -93,6 +93,52 @@ async fn run_analyzes_inline_python_and_merges_a_recursive_delete_match() {
 }
 
 #[tokio::test]
+async fn run_analyzes_inline_python_after_a_semicolon_the_same_as_leading() {
+    // Regression for issue #384: routing used to look only at the command's
+    // first effective token, so a leading no-op before the real command
+    // (`true; python3 -c ...`) routed nothing and the worker never started —
+    // the exact same payload one token earlier (the test right above this
+    // one) already caught the LANG-FS-DEL-R match, only the placement
+    // changed.
+    let baseline = safe_baseline();
+    let outcome = run(
+        "true; python3 -c \"shutil.rmtree('x')\"",
+        &baseline,
+        Some(env!("CARGO_BIN_EXE_aegis")),
+        &[],
+        Duration::from_secs(5),
+    )
+    .await;
+    let assessment = match outcome {
+        Outcome::Analyzed {
+            assessment,
+            target_count,
+        } => {
+            assert_eq!(target_count, 1, "one inline target must be analyzed");
+            assessment
+        }
+        other => panic!("python3 after `true;` must spawn the worker: {other:?}"),
+    };
+    assert!(
+        assessment.risk >= RiskLevel::Danger,
+        "risk must lift to Danger: {:?}",
+        assessment.risk
+    );
+    assert!(
+        assessment
+            .matched
+            .iter()
+            .any(|m| m.pattern.id.as_ref() == "LANG-FS-DEL-R"),
+        "must carry a LANG-FS-DEL-R match: {:?}",
+        assessment
+            .matched
+            .iter()
+            .map(|m| m.pattern.id.as_ref().to_string())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
 async fn run_analyzes_a_safe_inline_bash_body_without_degradation() {
     // A `bash -c` inline body routes to Bash. Iteration 8 wires the Bash
     // adapter into the worker (issue #383), so a body with no destructive

@@ -11,6 +11,8 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Fixed: Language-aware routing now examines every top-level segment of a compound command, not just the first. `true; python3 evil.py`, `cmd1 && python3 evil.py`, `cmd1 || python3 evil.py`, a backgrounded `cmd1 & python3 evil.py`, and a script named later in a pipeline (`true | python3 evil.py`) previously skipped language analysis entirely and auto-approved. `cd -- <path> &&` cwd tracking now also follows across chained segments and degrades on any other separator or a non-literal `cd`/`pushd`/`popd`, anywhere in the command. (#384)
+
 - Changed: npm releases use GitHub OIDC trusted publishing instead of a repository token. A manual run can retry npm publication for an existing stable GitHub Release without rebuilding its assets.
 
 ## [0.6.8] (2026-09-23)

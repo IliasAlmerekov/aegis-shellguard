@@ -201,117 +201,13 @@ pub(super) fn split_top_level_segments(cmd: &str) -> Vec<String> {
 }
 
 fn split_top_level_command_groups(cmd: &str) -> Vec<String> {
-    let mut segments = Vec::new();
-    let mut current = String::new();
-    let mut chars = cmd.chars().peekable();
-    let mut in_single_quote = false;
-    let mut in_double_quote = false;
-    let mut in_backticks = false;
-    let mut paren_depth = 0usize;
-    let mut command_subst_depth = 0usize;
-
-    while let Some(ch) = chars.next() {
-        match ch {
-            '\\' if !in_single_quote => {
-                current.push(ch);
-                if let Some(next) = chars.next() {
-                    current.push(next);
-                }
-            }
-            '\'' if !in_double_quote && !in_backticks => {
-                in_single_quote = !in_single_quote;
-                current.push(ch);
-            }
-            '"' if !in_single_quote && !in_backticks => {
-                in_double_quote = !in_double_quote;
-                current.push(ch);
-            }
-            '`' if !in_single_quote => {
-                in_backticks = !in_backticks;
-                current.push(ch);
-            }
-            '$' if !in_single_quote && !in_backticks && chars.peek() == Some(&'(') => {
-                command_subst_depth += 1;
-                current.push(ch);
-                if let Some(next) = chars.next() {
-                    current.push(next);
-                }
-            }
-            '(' if !in_single_quote
-                && !in_double_quote
-                && !in_backticks
-                && command_subst_depth == 0 =>
-            {
-                paren_depth += 1;
-                current.push(ch);
-            }
-            ')' if !in_single_quote
-                && !in_backticks
-                && (command_subst_depth > 0 || paren_depth > 0) =>
-            {
-                if command_subst_depth > 0 {
-                    command_subst_depth -= 1;
-                } else {
-                    paren_depth -= 1;
-                }
-                current.push(ch);
-            }
-            '\n' if !in_single_quote
-                && !in_double_quote
-                && !in_backticks
-                && paren_depth == 0
-                && command_subst_depth == 0 =>
-            {
-                finalize_segment(&mut current, &mut segments);
-            }
-            ';' if !in_single_quote
-                && !in_double_quote
-                && !in_backticks
-                && paren_depth == 0
-                && command_subst_depth == 0 =>
-            {
-                finalize_segment(&mut current, &mut segments);
-            }
-            '&' if !in_single_quote
-                && !in_double_quote
-                && !in_backticks
-                && paren_depth == 0
-                && command_subst_depth == 0 =>
-            {
-                if chars.peek() == Some(&'&') {
-                    // `&&` — logical AND
-                    chars.next();
-                    finalize_segment(&mut current, &mut segments);
-                } else if chars.peek() != Some(&'>') && !ends_with_redirect_target(&current) {
-                    // Standalone background `&` — a command separator.
-                    // Excludes redirect forms `&>` / `&>>` (peek is `>`) and
-                    // unescaped `>&` / `<&` / `2>&1` / `3>&-` (preceding char is
-                    // an unescaped `>` or `<`). An escaped `\>` is a literal arg.
-                    finalize_segment(&mut current, &mut segments);
-                } else {
-                    // Part of a redirect operator — keep as an ordinary char.
-                    current.push(ch);
-                }
-            }
-            '|' if !in_single_quote
-                && !in_double_quote
-                && !in_backticks
-                && paren_depth == 0
-                && command_subst_depth == 0
-                && chars.peek() == Some(&'|') =>
-            {
-                chars.next();
-                finalize_segment(&mut current, &mut segments);
-            }
-            _ => current.push(ch),
-        }
-    }
-
-    finalize_segment(&mut current, &mut segments);
-    segments
+    crate::list_segments::split_top_level_command_groups_with_separators(cmd)
+        .into_iter()
+        .map(|(raw, _separator)| raw)
+        .collect()
 }
 
-fn split_pipeline_segments(raw_group: &str) -> Vec<PipelineSegment> {
+pub(crate) fn split_pipeline_segments(raw_group: &str) -> Vec<PipelineSegment> {
     let mut raw_segments = Vec::new();
     let mut current = String::new();
     let mut chars = raw_group.chars().peekable();
@@ -402,7 +298,7 @@ fn split_pipeline_segments(raw_group: &str) -> Vec<PipelineSegment> {
 ///
 /// Shared by both `split_top_level_segments` and `split_top_level_command_groups`
 /// so the security-critical background-`&` decision has a single source of truth.
-fn ends_with_redirect_target(current: &str) -> bool {
+pub(crate) fn ends_with_redirect_target(current: &str) -> bool {
     let mut rev = current.trim_end().chars().rev();
     match rev.next() {
         Some('>') | Some('<') => rev.take_while(|&c| c == '\\').count() % 2 == 0,
@@ -410,7 +306,7 @@ fn ends_with_redirect_target(current: &str) -> bool {
     }
 }
 
-fn finalize_segment(current: &mut String, segments: &mut Vec<String>) {
+pub(crate) fn finalize_segment(current: &mut String, segments: &mut Vec<String>) {
     let trimmed = current.trim();
     if !trimmed.is_empty() {
         segments.push(trimmed.to_string());

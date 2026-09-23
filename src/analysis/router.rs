@@ -34,6 +34,12 @@ use super::AnalysisCwd;
 use super::heredoc::{self, StdinRoute};
 use super::source_reader::{self, SourceReadError};
 
+#[path = "router_segments.rs"]
+mod router_segments;
+use router_segments::{
+    ArgvWalk, CwdState, command_has_heredoc, route_list_segment, walk_interpreter_argv,
+};
+
 /// A source-analysis route decided without (for `Inline`) or before (for
 /// `ScriptFile`) any filesystem access.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -236,17 +242,37 @@ const INTERPRETERS: &[Interpreter] = &[
 /// `"python3"`). It is a caller-supplied parameter rather than an
 /// `aegis-config` read: config wiring for trusted aliases is a follow-up
 /// slice.
+///
+/// Every top-level list segment of `command` is routed, not only the first
+/// (issue #384: `true; python3 evil.py` used to route nothing because routing
+/// only looked at the command's first effective token). A command containing
+/// a genuine heredoc marker (`<<WORD`, not the single-line here-string
+/// `<<<`) is the one documented exception: heredoc bodies are data, not
+/// further command segments, and the existing heredoc-aware single-command
+/// routing below already tokenizes and reads a heredoc body correctly for
+/// the whole command as one unit, so a heredoc-bearing command is routed
+/// exactly as it always has been rather than risk a general segmenter
+/// slicing through the body's lines (ADR-022 §6).
 #[must_use]
 pub fn route(command: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarget> {
-    let (cwd, rest_command) = strip_cd_prefix(command);
-    let targets = route_after_cd(rest_command, trusted_aliases);
-    match cwd {
-        Some(cwd) => targets
-            .into_iter()
-            .filter_map(|t| apply_cwd(t, &cwd))
-            .collect(),
-        None => targets,
+    if command_has_heredoc(command) {
+        let (cwd, rest_command) = strip_cd_prefix(command);
+        let targets = route_after_cd(rest_command, trusted_aliases);
+        return match cwd {
+            Some(cwd) => targets
+                .into_iter()
+                .filter_map(|t| apply_cwd(t, &cwd))
+                .collect(),
+            None => targets,
+        };
     }
+
+    let mut cwd = CwdState::Unset;
+    let mut targets = Vec::new();
+    for segment in aegis_parser::list_segments(command) {
+        route_list_segment(&segment, trusted_aliases, &mut cwd, &mut targets);
+    }
+    targets
 }
 
 /// A resolved (or provably unresolved) top-level `cd` cwd change.
@@ -365,81 +391,21 @@ fn route_after_cd(command: &str, trusted_aliases: &[(&str, &str)]) -> Vec<Routed
     };
 
     let rest = &slice.tokens[1..];
-
-    // The tokenizer has no heredoc-boundary awareness, so tokens *after* a
-    // `<<WORD`/`<<<` marker are the heredoc/here-string *body*, not further
-    // command arguments. Both the inline-flag scan and the file-argument scan
-    // below must stop at the marker, or a crafted heredoc body could be
-    // misread as the interpreter's own flag/argument instead of being
-    // classified as stdin.
-    let marker_pos = rest.iter().position(|tok| tok.starts_with("<<"));
-    let before_marker = marker_pos.map_or(rest, |idx| &rest[..idx]);
-
-    // A single left-to-right walk, mirroring how a real interpreter parses
-    // its own argv: it keeps consuming flags (including the inline `-c`/`-e`
-    // body, which wins immediately) and shell redirections (which the shell
-    // strips before exec — the interpreter never sees them) until it hits
-    // the first positional (non-flag, non-redirection) token, which is the
-    // script file and ends option parsing right there — any flag-shaped
-    // token *after* it belongs to the script's own argv, not the
-    // interpreter, and must not be misread as the interpreter's inline flag
-    // (ADR-022 §6).
-    let mut pos = 0;
-    while pos < before_marker.len() {
-        let tok = before_marker[pos];
-        if let Some(source) = inline_body(tok, interp.inline_flag, before_marker, pos) {
-            if source.is_empty() {
-                // Flag present but no inline body to analyze — not a source target.
-                return Vec::new();
+    match walk_interpreter_argv(interp, rest) {
+        ArgvWalk::Routed(target) => vec![target],
+        ArgvWalk::NoSource => Vec::new(),
+        ArgvWalk::NoMatch => {
+            // No inline flag and no leading file argument: fall back to
+            // heredoc/here-string stdin, if any.
+            if let Some(stdin_route) =
+                heredoc::heredoc_stdin(command).or_else(|| heredoc::here_string_stdin(rest))
+            {
+                vec![stdin_target(interp.language, stdin_route)]
+            } else {
+                Vec::new()
             }
-            return vec![RoutedTarget::Inline {
-                language: interp.language,
-                source,
-            }];
         }
-        if is_redirection_operator(tok) {
-            // A spaced-out redirection (`> file`, `2> file`, `>> file`) has
-            // its target in the *next* token, which the interpreter never
-            // sees either — skip both, not just the operator, or the target
-            // filename would be misread as the script argument.
-            pos += 2;
-            continue;
-        }
-        if !tok.starts_with('-') && !tok.contains('<') && !tok.contains('>') {
-            return vec![RoutedTarget::ScriptFile {
-                language: interp.language,
-                path: PathBuf::from(tok),
-            }];
-        }
-        pos += 1;
     }
-
-    // No inline flag and no leading file argument: fall back to heredoc/
-    // here-string stdin, if any.
-    if let Some(stdin_route) =
-        heredoc::heredoc_stdin(command).or_else(|| heredoc::here_string_stdin(rest))
-    {
-        return vec![stdin_target(interp.language, stdin_route)];
-    }
-
-    Vec::new()
-}
-
-/// A standalone shell redirection operator token (`>`, `>>`, `<`, `2>`, …) —
-/// an optional leading file-descriptor number followed by nothing but `<`/`>`
-/// characters. A glued form (`>out.txt`, `2>&1`) is not standalone — it
-/// carries its own target in the same token and needs no extra token
-/// skipped, so it is deliberately excluded here.
-fn is_redirection_operator(tok: &str) -> bool {
-    let after_fd = tok.trim_start_matches(|c: char| c.is_ascii_digit());
-    // `&>`/`&>>` (bash's combined stdout+stderr redirection) carry one
-    // leading `&` before the `<`/`>` run; a glued fd-duplication form like
-    // `>&2`/`2>&1` has `&` *after* the `<`/`>` instead and is deliberately
-    // left unmatched here — it carries its own target in the same token, so
-    // the generic "contains `<`/`>`" fallback already skips just that one
-    // token, which is correct.
-    let after_amp = after_fd.strip_prefix('&').unwrap_or(after_fd);
-    !after_amp.is_empty() && after_amp.chars().all(|c| c == '<' || c == '>')
 }
 
 /// A bare path-like program token (`./script.py`, `/abs/path/script`) is a

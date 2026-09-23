@@ -721,3 +721,6 @@ async fn resolve_degrades_an_oversized_script_file() {
         })]
     );
 }
+
+#[path = "router_tests_segments.rs"]
+mod segments;
