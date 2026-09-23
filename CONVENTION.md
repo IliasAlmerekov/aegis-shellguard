@@ -5,7 +5,6 @@ tooling, and release readiness in Aegis.
 
 It consolidates the current enforced rules from:
 
-- `.claude/CLAUDE.md`
 - `docs/adr/README.md`
 - `.github/workflows/ci.yml`
 - `CONTRIBUTING.md`
@@ -121,6 +120,9 @@ Architectural constraints:
   type through a `src/` module just to shorten the path.
 - The scanner is the hot path and must stay synchronous.
 - Async is allowed for subprocess and snapshot operations, not for parser/scanner logic.
+- Blocking work on an async path (subprocess spawn/wait, sandbox probes) goes through `spawn_blocking`, never straight onto the async runtime thread.
+- A trait with an async method used as `dyn Trait` carries `#[async_trait]`, because a native `async fn` in a trait is not object-safe.
+- Library crates under `crates/` never write to stdout; they emit `tracing` events or write to stderr. Only the root `aegis` crate writes to stdout, for example the watch-mode NDJSON frames in `src/watch/protocol.rs`.
 - Quick scan must remain Aho-Corasick based.
 - Full regex evaluation must remain on the slower second pass only.
 - `RiskLevel` ordering is semantic and must not be changed.
@@ -142,6 +144,7 @@ Architectural constraints:
 - Keep comments concise and explanatory, not redundant.
 - All new public items must have `///` doc comments.
 - Avoid broad re-export layers unless they materially improve the public API.
+- Commits use the short conventional form (`feat:`, `fix:`, `perf:`, ...), subject line under 72 characters, body explaining why rather than what.
 
 ## 5. Error Handling Rules
 
@@ -162,19 +165,17 @@ Architectural constraints:
 
 Approved dependency categories currently include:
 
-- `clap`
-- `crossterm`
-- `aho-corasick`
-- `regex`
-- `serde`
-- `toml`
-- `thiserror`
-- `anyhow`
-- `tokio`
-- `async-trait`
-- `tracing`
-- `tracing-subscriber`
-- `criterion`
+- `clap` (4.5, derive API) — CLI parsing.
+- `crossterm` (0.28) — terminal UI, confirmation dialog.
+- `aho-corasick` (1.1) — fast multi-pattern quick scan.
+- `regex` (1.11) — full pattern scan, second pass only.
+- `serde` + `toml` (0.8) — config model and parsing.
+- `thiserror` — typed errors in library crates.
+- `anyhow` — error propagation in CLI glue.
+- `tokio` (features: process, fs, rt, rt-multi-thread, io-util, io-std, sync, time) — async subprocess and snapshot work.
+- `async-trait` (0.1) — async methods on `dyn Trait` (e.g. `SnapshotPlugin`).
+- `tracing` + `tracing-subscriber` — structured logging.
+- `criterion` (0.5) — benchmarks.
 - `semver` — strict SemVer parsing and comparison for the opt-in update
   notice (ADR-038); pure Rust, no dependencies of its own.
 - `cc` (build-dependency) — the C compiler driver for the vendored bubblewrap
@@ -196,6 +197,19 @@ Approved dependency categories currently include:
   because vendored C is not a cargo dependency — so it is recorded in
   `THIRD_PARTY_NOTICES.md` and enforced by the contract test that reads the
   vendored sources, not by cargo-deny.
+
+Compiling the workspace on Linux needs `libcap` headers (`libcap-dev` on
+Debian/Ubuntu): the `aegis-sandbox` build script compiles the vendored
+bubblewrap C sources and probes `libcap` via `pkg-config`, failing the build
+when the headers are absent (ADR-029 §3–§4). CI installs them on every
+Linux-compiling job through `.github/actions/install-libcap`. Two escape
+hatches exist for local builds only; neither may be used in CI:
+
+- `AEGIS_SKIP_BWRAP_BUILD=1` skips the C build entirely. The resulting binary
+  has no embedded `bwrap` fallback, so confinement then needs a usable system
+  `bwrap` on `PATH`.
+- `AEGIS_BWRAP_SOURCE_DIR=<path>` builds against an alternative bubblewrap
+  source checkout instead of `crates/aegis-sandbox/vendor/bubblewrap/`.
 
 Dependency rules:
 
@@ -219,6 +233,7 @@ Configuration rules:
   - global `~/.config/aegis/config.toml`
   - built-in defaults
 - New config fields must preserve backward compatibility.
+- New fields are optional via `#[serde(default)]`, so older config files keep loading.
 - Config changes must be documented and tested for merge semantics.
 
 Audit rules:
@@ -293,95 +308,12 @@ Local development rules:
   instead. No identifier may carry a second meaning in another document, a test name,
   an assert message, or a source file name. Milestones without a
   `docs/history/roadmap.md` entry are referred to by name, not by an invented ID.
+- Release gating lives in the `1.0` milestone
+  ([ADR-027](docs/adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)); the
+  open supply-chain items (SBOM, signing, `cargo publish --dry-run`) are tracked in
+  issue #414.
 
-## 12. Current Release Gates
-
-The project should not market itself as a mature security product unless these remain true:
-
-- fail-open behavior is removed
-- security model is documented honestly
-- `Block` behavior is implemented exactly as documented
-- layered config semantics are real and tested
-- snapshot claims match implementation
-- critical failure modes have regression coverage
-- supply-chain checks pass in CI
-
-Additional production-readiness gates:
-
-- an explicit MSRV is declared and enforced
-- a supported platform matrix is documented and tested
-- public compatibility promises are documented for config, audit log, and exit codes
-- fuzzing exists for parser/scanner or there is an explicit, documented replacement strategy
-- release artifacts are checksumed and verifiable
-- release automation is exercised end-to-end
-- threat model and limitations documents exist and are current
-
-## 13. Future Mandatory Changes from the Roadmap
-
-These are not all complete today, but they are part of the intended project contract
-and should guide all new work so we do not build in the wrong direction.
-
-### Release and supply-chain readiness
-
-Before a release is treated as trustworthy:
-
-- validate the release workflow end-to-end with a real tag
-- verify installer downloads with SHA256 or equivalent checksum validation
-- provide a verification-first install path, not only `curl | sh`
-- publish reproducible release notes with artifacts, checksums, targets, and changelog
-- add crate publishing validation such as `cargo publish --dry-run`
-- publish or generate SBOM / provenance metadata if the release process supports it
-- prefer artifact signing or attestations once release automation is stable
-
-### Product clarity
-
-Before stronger adoption messaging:
-
-- position Aegis clearly as an MVP / local guardrail / human approval layer
-- add a dedicated limitations section
-- add an architecture diagram that matches real code paths
-- add a threat model document with assets, attacker model, assumptions, and known bypasses
-
-### Deferred features
-
-The following features are intentionally deferred and must not be treated as near-term defaults:
-
-- Windows support, until shell interception is redesigned for that platform
-- rollback CLI, until snapshot fidelity is trustworthy
-- remote audit sinks, until the local audit contract is stable
-- web dashboard, until core security semantics are stable
-- policy DSL, until current policy semantics are proven
-
-### Fuzzing and parser hardening
-
-Before a strong v1 security posture:
-
-- parser and scanner fuzz targets should exist and be maintained
-- complex shell input handling should be treated as high-risk input parsing
-- fuzzing should be treated as a release gate for security-sensitive parsing changes
-
-### Compatibility and support policy
-
-Before production claims:
-
-- document supported OS targets and tested versions
-- document expected shell execution assumptions and known unsupported environments
-- document compatibility guarantees for:
-  - config schema
-  - audit log schema
-  - exit codes
-- define deprecation policy for public behavior changes
-
-### Operational readiness
-
-Before production claims:
-
-- define what constitutes a security regression
-- define who can approve a release-blocking override
-- define rollback / hotfix expectations for bad releases
-- define how documentation drift is caught before release
-
-## 14. Change Review Heuristics
+## 12. Change Review Heuristics
 
 Treat a change as high-risk if it touches any of:
 
@@ -410,7 +342,7 @@ High-risk changes must be reviewed for:
 - documentation drift
 - supply-chain impact
 
-## 15. Production Readiness Criteria
+## 13. Production Readiness Criteria
 
 The project can be described as production-ready only when all of the following are true:
 

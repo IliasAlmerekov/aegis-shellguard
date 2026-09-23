@@ -3,7 +3,8 @@
 # Aegis — Codex project baseline
 # Codex rules for this repository live in:
 # - AGENTS.md (repo root) — loaded via model_instructions_file below
-# - CLAUDE.md (repo root) — shared conventions
+# - CONVENTION.md (repo root) — authoritative rules AGENTS.md points to
+# - CLAUDE.md (repo root) — thin pointer to AGENTS.md, auto-loaded by Claude Code only
 
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
