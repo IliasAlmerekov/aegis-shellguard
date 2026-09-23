@@ -72,6 +72,15 @@ reserved words, case-arm patterns, and function headers cannot hide the program:
 an additional Logical segment starts at that program.
 _Avoid_: segment, sub-command, command part
 
+**List segment**:
+A top-level command unit produced by `aegis-parser`'s `list_segments`
+(`ListSegment`/`ListSeparator`) — the command cut at `;`, `&&`, `||`, a standalone
+background `&`, and newline, with each segment keeping its own pipeline chain intact.
+Unlike `Logical segment`, `|` never starts a new List segment: a pipeline's stages stay
+grouped under one, so the source router (ADR-022 §6) can track cwd state and route
+every stage of that pipeline in turn without losing the pipeline's own shape.
+_Avoid_: segment, list group, top-level segment
+
 **Command separator**:
 A top-level shell control operator that ends one `Logical segment` and starts the next:
 `;`, `&&`, `||`, `|`, newline, and a standalone background `&`. A `&` that is part of a
@@ -289,6 +298,16 @@ _Avoid_: decision basis
 A `Match` whose `RiskLevel` equals the `Assessment`'s maximum; the `Assessment
 basis` retains every such `Match`, not just one.
 _Avoid_: primary match, winning match
+
+**Unclaimed stage**:
+A pipeline stage (or a single-stage `List segment`) that reaches the end of source
+routing having produced no `RoutedTarget` from any other path — the condition that
+feeds the fail-closed `unclaimed_interpreter_net` (ADR-022 §6 amendment, issue
+#384/#430). It degrades to `Unresolved`/`Dynamic source` once a later token names a
+known registry interpreter, or resolves as a `Direct exec` candidate when its own first
+operand is a path-like literal; a program on the net's `NAME_ONLY_PROGRAMS` exclusion
+list is exempt either way.
+_Avoid_: unrouted stage, unmatched stage
 
 **Trusted global alias**:
 A wrapper program name (e.g. a `py` shim) that the trusted global config layer
