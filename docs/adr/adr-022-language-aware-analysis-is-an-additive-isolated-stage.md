@@ -202,6 +202,48 @@ Interpreter stdin is analyzed only when source is statically recoverable: a quot
 heredoc, literal here-string, or a narrowly proven literal-only producer such as
 `printf '%s'`. Dynamic pipelines remain Effect-opaque and degrade honestly.
 
+#### Amendment (2026-09-23)
+
+Routing's launcher-prefix list (`launcher_prefix_lengths`) only recognizes a
+closed set of wrapper words — `sudo`, `env`, `timeout`, `nice`, `command`,
+and a handful more. A wrapper outside that list (`setsid`, `stdbuf`,
+`strace`, `ionice`, `taskset`, `exec -a`, `doas`, `time -p`, `find -exec`,
+and any word not yet added) hid the interpreter behind it from routing
+entirely: routing found no target, so the language-aware stage never ran,
+and the command auto-approved as if it carried no source at all. Adding each
+wrapper word by name to the launcher list only closes the specific gap
+reported that day; the next wrapper word leaks the same way (issue
+#384/#430).
+
+Routing now closes this class of gap once, structurally: when a command or
+pipeline stage reaches the end of routing having produced no target by any
+other path, and a token past its own program names a known registry
+interpreter (after unquoting, basename, and the same versioned-name
+normalization routing already applies), routing degrades that stage to
+`Unresolved`/`Dynamic source` instead of leaving it silent. This does not
+depend on recognizing the wrapper word itself — an interpreter name later in
+the command is enough on its own.
+
+A fixed exclusion list holds the programs that legitimately name a command
+as data rather than run it: `echo`, `printf`, `which`, `type`, `whereis`,
+`man`, `info`, `help`, `apropos`, `grep`, `egrep`, `fgrep`, `rg`, `ag`, `ls`,
+`cat`, `head`, `tail`, `less`, `more`, `file`, `stat`, `wc`, `diff`, `apt`,
+`apt-get`, `apt-cache`, `dnf`, `yum`, `brew`, `pacman`, `git`,
+`update-alternatives`, and `dpkg`, plus `command -v`/`command -V` and
+`type` lookups. A stage whose own program is on that list stays unclaimed
+even when a later word spells an interpreter name (`echo python3`, `grep -r
+node src`, `apt install python3`).
+
+This trades false positives for closing the false-negative gap: a program
+outside both the interpreter registry and the exclusion list that happens to
+take an interpreter name as an unrelated argument will now prompt even
+though it never runs that interpreter. Accepted cost, not a defect — routing
+already fails closed rather than silently trusting an unrecognized shape,
+and the exclusion list is free to grow as legitimate cases turn up. Parsing
+the full Bash grammar so routing understands every wrapper's own argument
+conventions precisely, instead of scanning tokens after the fact, is out of
+scope for this net and tracked separately (issue #434).
+
 ### 7. Bound recursive and encoded analysis
 
 Literal process or eval payloads become new targets in a bounded cross-language
