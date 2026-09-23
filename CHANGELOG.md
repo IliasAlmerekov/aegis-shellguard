@@ -11,6 +11,8 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Changed: npm releases use GitHub OIDC trusted publishing instead of a repository token. A manual run can retry npm publication for an existing stable GitHub Release without rebuilding its assets.
+
 ## [0.6.8] (2026-09-23)
 
 - Fixed: The ADR index contract now checks file/row coverage, unique and gap-free numbering, and Status references. Renumbered the duplicate Docker Snapshot decision as ADR-039. (#238)

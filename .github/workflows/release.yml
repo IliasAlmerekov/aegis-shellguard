@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing GitHub Release tag whose npm publish failed"
+        required: true
+        type: string
 
 # Least privilege by default, like ci.yml. The `release` job raises this to
 # `contents: write` for itself, and it is the only job that needs to.
@@ -20,7 +26,7 @@ permissions:
 # same tag is a re-run, never a supersede. Cancelling one mid-publish could
 # leave a Release with a partial asset set, so queue instead of cancel.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 # Every pinned version this workflow uses lives in `.github/versions.env`, and
@@ -46,6 +52,8 @@ jobs:
       cargo_audit_version: ${{ steps.versions.outputs.cargo_audit_version }}
       cargo_deny_version: ${{ steps.versions.outputs.cargo_deny_version }}
       cross_version: ${{ steps.versions.outputs.cross_version }}
+      node_version: ${{ steps.versions.outputs.node_version }}
+      npm_cli_version: ${{ steps.versions.outputs.npm_cli_version }}
       build_targets: ${{ steps.versions.outputs.build_targets }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -68,6 +76,7 @@ jobs:
   # git history, so the release checkout keeps its default shallow fetch.
   admission-ancestry:
     name: Tag admission (commit on main, CHANGELOG section)
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -339,14 +348,72 @@ jobs:
     needs: [config, release]
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: ${{ !contains(github.ref_name, '-rc') && !contains(github.ref_name, '-beta') && !contains(github.ref_name, '-alpha') }}
+    if: >-
+      always() && needs.config.result == 'success' &&
+      ((github.event_name == 'push' && needs.release.result == 'success' &&
+        !contains(github.ref_name, '-rc') && !contains(github.ref_name, '-beta') &&
+        !contains(github.ref_name, '-alpha')) || github.event_name == 'workflow_dispatch')
     permissions:
       contents: read
+      id-token: write
 
     steps:
+      - name: Validate npm publish target
+        id: target
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "npm publish requires a stable vX.Y.Z tag" >&2
+            exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+              echo "npm recovery must run from main" >&2
+              exit 1
+            fi
+            gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null
+            SHA="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)"
+            status="$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$SHA" --jq .status)"
+            case "$status" in
+              identical | behind) ;;
+              *) echo "release tag $TAG is not reachable from main" >&2; exit 1 ;;
+            esac
+          else
+            SHA="$GITHUB_SHA"
+            tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)"
+            if [ "$tag_sha" != "$SHA" ]; then
+              echo "release tag $TAG moved after this workflow started" >&2
+              exit 1
+            fi
+          fi
+          is_draft="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+          if [ "$is_draft" != false ]; then
+            echo "GitHub Release $TAG is not published" >&2
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ steps.target.outputs.sha }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ needs.config.outputs.node_version }}
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Use pinned npm CLI
+        env:
+          NPM_CLI_VERSION: ${{ needs.config.outputs.npm_cli_version }}
+        run: |
+          npm install --global npm@${NPM_CLI_VERSION}
+          npm --version
 
       - uses: ./.github/actions/setup-rust
         with:
@@ -358,7 +425,8 @@ jobs:
       - name: Generate npm checksums from release assets
         env:
           AEGIS_RELEASE_REPO: ${{ github.repository }}
-        run: scripts/update-npm-package.sh "${{ github.ref_name }}"
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: scripts/update-npm-package.sh "$TAG"
 
       - name: Verify npm package contract
         run: cargo test --test npm_package
@@ -377,17 +445,10 @@ jobs:
           grep -q 'THIRD_PARTY_NOTICES.md' pack.log
           rm -f pack.log
 
-      - name: Configure npm authentication
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        shell: bash
-        run: |
-          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "NPM_TOKEN secret is required to publish @iliasalmerekov/aegis" >&2
-            exit 1
-          fi
-          printf '//registry.npmjs.org/:_authToken=%s\n' "$NODE_AUTH_TOKEN" > "$HOME/.npmrc"
-
       - name: Publish npm package
         working-directory: packaging/npm
+        env:
+          # A recovery dispatch runs the workflow from main but checks out an
+          # earlier tag. Do not claim main's commit as that package's source.
+          NPM_CONFIG_PROVENANCE: ${{ github.event_name == 'workflow_dispatch' && 'false' || 'true' }}
         run: npm publish --access public

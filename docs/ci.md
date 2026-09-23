@@ -12,6 +12,7 @@ a version a second time, and when this list disagrees with the file.
 - `cargo-audit`: `0.22.1`
 - `cargo-deny`: `0.19.0`
 - `cross`: `0.2.5`
+- npm CLI for trusted publishing: `11.13.0`
 - The release target matrix and every runner label live in
   `.github/build-targets.json`. `ci.yml` (`Cross build`) and `release.yml`
   (`build`) both expand it into `strategy.matrix.include`, and the macOS jobs
@@ -127,6 +128,18 @@ keeping default `cargo test` network-free. The npm wrapper downloads a pinned
 GitHub Release binary during `postinstall`, verifies SHA256, and does not edit
 shell startup files or agent config.
 
+The release workflow publishes npm with GitHub OIDC, not `NPM_TOKEN`. Its
+`publish-npm` job requests `id-token: write`, uses pinned Node and npm CLI
+versions, and reads checksums from the published GitHub Release. If that job
+fails after a tag release succeeds, an operator can dispatch `release.yml` on
+`main` with the existing stable tag. The recovery run verifies the tag is on
+`main` and the GitHub Release is public, checks out the tagged source, then
+repeats only npm package preparation and publishing. It does not rebuild or
+replace the GitHub Release. A recovery dispatch omits npm provenance because
+its workflow commit on `main` differs from the tagged package source. Normal
+tag-triggered publishes retain provenance. The npm package must trust
+`release.yml` as a GitHub Actions publisher and allow `npm publish`.
+
 ## What CI Guarantees
 
 - the workflow definitions do not depend on floating toolchain, tool, or action refs
@@ -160,9 +173,9 @@ Current runtime behavior is documented in `docs/config-schema.md`, but at a high
 
 ## Release Workflow Contract
 
-The current release workflow is triggered by tags matching `v*` and:
+On a push of a tag matching `v*`, the release workflow:
 
-- runs the Tag admission check before any other job
+- runs the Tag admission check before building or publishing artifacts
 - installs Rust `1.94.0`
 - uses `cross 0.2.5` for both Linux musl targets (`x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`) so the release matrix does not depend on runner-specific musl linker setup
 - builds the current four-target release matrix
@@ -173,6 +186,10 @@ The current release workflow is triggered by tags matching `v*` and:
 - generates SHA-256 checksum sidecar files
 - uploads artifacts from the build job
 - publishes a GitHub Release with generated release notes and the built artifacts
+
+A manual dispatch from `main` accepts an existing stable tag only for npm
+recovery. It skips Tag admission, builds, and GitHub Release creation, and
+publishes from the validated tagged commit.
 
 ### Tag admission check
 

@@ -263,16 +263,17 @@ fn release_workflow_should_publish_npm_after_github_release_assets_exist() {
         "release workflow must include an npm publish job"
     );
     assert!(
-        workflow.contains("needs: [config, release]"),
-        "npm publish must wait for the GitHub Release job so checksum sidecars exist"
+        workflow.contains("needs: [config, release]")
+            && workflow.contains("needs.release.result == 'success'"),
+        "tag-triggered npm publish must wait for the GitHub Release job"
     );
     assert!(
-        workflow.contains("scripts/update-npm-package.sh \"${{ github.ref_name }}\""),
-        "npm publish must generate checksums.json from the pushed release tag"
+        workflow.contains("scripts/update-npm-package.sh \"$TAG\""),
+        "npm publish must generate checksums.json from the selected release tag"
     );
     assert!(
-        workflow.contains("secrets.NPM_TOKEN"),
-        "npm publish must use the repository NPM_TOKEN secret"
+        workflow.contains("id-token: write") && !workflow.contains("secrets.NPM_TOKEN"),
+        "npm publish must use OIDC instead of a registry token"
     );
     assert!(
         workflow.contains("npm publish --access public"),

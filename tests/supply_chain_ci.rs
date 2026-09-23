@@ -160,6 +160,10 @@ fn docs_ci_documents_the_pinned_versions() {
         ),
         format!("- `cargo-deny`: `{}`", pinned_version("CARGO_DENY_VERSION")),
         format!("- `cross`: `{}`", pinned_version("CROSS_VERSION")),
+        format!(
+            "- npm CLI for trusted publishing: `{}`",
+            pinned_version("NPM_CLI_VERSION")
+        ),
     ];
 
     for line in documented {
