@@ -37,7 +37,7 @@ members = [
 exclude = ["fuzz"]
 
 [workspace.package]
-version = "0.6.7"
+version = "0.6.8"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT"
@@ -47,18 +47,18 @@ homepage = "https://github.com/IliasAlmerekov/aegis-shellguard"
 # Single source of truth for every internal crate's version + path, so a
 # release bump is one edit instead of one per crate per dependent.
 [workspace.dependencies]
-aegis-types = { version = "0.6.7", path = "crates/aegis-types" }
-aegis-parser = { version = "0.6.7", path = "crates/aegis-parser" }
-aegis-scanner = { version = "0.6.7", path = "crates/aegis-scanner" }
-aegis-policy = { version = "0.6.7", path = "crates/aegis-policy" }
-aegis-config = { version = "0.6.7", path = "crates/aegis-config" }
-aegis-explanation = { version = "0.6.7", path = "crates/aegis-explanation" }
-aegis-tui = { version = "0.6.7", path = "crates/aegis-tui" }
-aegis-audit = { version = "0.6.7", path = "crates/aegis-audit" }
-aegis-snapshot = { version = "0.6.7", path = "crates/aegis-snapshot" }
-aegis-starlark = { version = "0.6.7", path = "crates/aegis-starlark" }
-aegis-sandbox = { version = "0.6.7", path = "crates/aegis-sandbox" }
-aegis-language = { version = "0.6.7", path = "crates/aegis-language" }
+aegis-types = { version = "0.6.8", path = "crates/aegis-types" }
+aegis-parser = { version = "0.6.8", path = "crates/aegis-parser" }
+aegis-scanner = { version = "0.6.8", path = "crates/aegis-scanner" }
+aegis-policy = { version = "0.6.8", path = "crates/aegis-policy" }
+aegis-config = { version = "0.6.8", path = "crates/aegis-config" }
+aegis-explanation = { version = "0.6.8", path = "crates/aegis-explanation" }
+aegis-tui = { version = "0.6.8", path = "crates/aegis-tui" }
+aegis-audit = { version = "0.6.8", path = "crates/aegis-audit" }
+aegis-snapshot = { version = "0.6.8", path = "crates/aegis-snapshot" }
+aegis-starlark = { version = "0.6.8", path = "crates/aegis-starlark" }
+aegis-sandbox = { version = "0.6.8", path = "crates/aegis-sandbox" }
+aegis-language = { version = "0.6.8", path = "crates/aegis-language" }
 
 [features]
 default = []
