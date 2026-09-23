@@ -145,6 +145,9 @@ fn launcher_prefix_lengths(tokens: &[&str]) -> Option<Vec<usize>> {
         || launcher.eq_ignore_ascii_case("time")
         || launcher.eq_ignore_ascii_case("command")
         || launcher.eq_ignore_ascii_case("doas")
+        || launcher.eq_ignore_ascii_case("exec")
+        || launcher.eq_ignore_ascii_case("builtin")
+        || launcher.eq_ignore_ascii_case("coproc")
     {
         return Some(vec![1]);
     }
@@ -401,6 +404,16 @@ mod tests {
         assert_eq!(slices.len(), 1);
         assert_eq!(slices[0].program, "git");
         assert_eq!(slices[0].tokens, vec!["git", "reset", "--hard"]);
+    }
+
+    #[test]
+    fn effective_token_slices_strip_shell_launchers() {
+        for launcher in ["exec", "builtin", "coproc"] {
+            let tokens = [launcher, "git", "push", "--force"];
+            let slices = effective_token_slices(&tokens);
+            assert_eq!(slices[0].program, "git", "{launcher}");
+            assert_eq!(slices[0].tokens, vec!["git", "push", "--force"]);
+        }
     }
 
     #[test]

@@ -9,7 +9,10 @@ use super::{PipelineChain, PipelineSegment, extract_nested_commands, split_token
 /// The returned list is scan-oriented rather than execution-oriented:
 /// - top-level command chains become separate segments
 /// - shell wrappers such as env-prefix forms contribute an additional stripped segment
-/// - subshell groups and command substitutions contribute normalized inner segments
+/// - leading grouping syntax, reserved words, case arms, and function headers
+///   contribute an additional segment beginning with the program
+/// - subshell groups and command substitutions contribute normalized inner segments,
+///   even when a redirect or comment follows a closing subshell parenthesis
 /// - quoted shell strings (for example `bash -c "cmd1 && cmd2"`) keep the outer segment
 ///   and also contribute the inner normalized commands
 ///
@@ -64,6 +67,10 @@ fn collect_scan_segments(raw_segment: &str, segments: &mut Vec<String>) {
 
     if let Some(stripped_env_command) = strip_env_prefix(raw_segment) {
         collect_scan_segments(&stripped_env_command, segments);
+    }
+
+    if let Some(stripped_syntax) = strip_leading_shell_syntax(raw_segment) {
+        collect_scan_segments(&stripped_syntax, segments);
     }
 
     for nested in extract_nested_commands(raw_segment) {
@@ -456,6 +463,50 @@ fn strip_env_prefix(raw_segment: &str) -> Option<String> {
     }
 }
 
+fn strip_leading_shell_syntax(raw_segment: &str) -> Option<String> {
+    let segment = raw_segment.trim_start();
+
+    if strip_shell_keyword(segment, "case").is_some() {
+        let tokens = split_tokens(segment);
+        if tokens.get(2).is_some_and(|token| token == "in") && tokens.len() > 3 {
+            return Some(tokens[3..].join(" "));
+        }
+    }
+
+    if let Some(header) = strip_shell_keyword(segment, "function")
+        && let Some((name, body)) = header.split_once('{')
+        && !name.trim().is_empty()
+        && !name.trim().chars().any(char::is_whitespace)
+    {
+        return Some(body.trim_start().to_string());
+    }
+
+    for prefix in [
+        "{", "!", "if", "then", "elif", "else", "while", "until", "do", "time",
+    ] {
+        if let Some(rest) = strip_shell_keyword(segment, prefix) {
+            return Some(rest.to_string());
+        }
+    }
+
+    if let Some((pattern, rest)) = segment.split_once(')')
+        && !pattern.is_empty()
+        && !pattern.chars().any(char::is_whitespace)
+        && rest.chars().next().is_some_and(char::is_whitespace)
+    {
+        return Some(rest.trim_start().to_string());
+    }
+    None
+}
+
+fn strip_shell_keyword<'a>(segment: &'a str, keyword: &str) -> Option<&'a str> {
+    let rest = segment.strip_prefix(keyword)?;
+    rest.chars()
+        .next()
+        .is_some_and(char::is_whitespace)
+        .then(|| rest.trim_start())
+}
+
 fn unwrap_subshell_group(raw_segment: &str) -> Option<String> {
     let trimmed = raw_segment.trim();
     if !trimmed.starts_with('(') {
@@ -521,8 +572,8 @@ fn unwrap_subshell_group(raw_segment: &str) -> Option<String> {
         }
     }
 
-    if close_idx == Some(chars.len() - 1) {
-        let inner: String = chars[1..chars.len() - 1].iter().collect();
+    if let Some(close_idx) = close_idx {
+        let inner: String = chars[1..close_idx].iter().collect();
         let inner = inner.trim();
         if !inner.is_empty() {
             return Some(inner.to_string());

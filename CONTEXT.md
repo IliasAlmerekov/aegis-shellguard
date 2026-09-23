@@ -47,7 +47,8 @@ _Avoid_: hidden effect, opaque command, unknown execution
 
 **Launcher prefix**:
 A leading token that launches another program rather than being the target itself
-(`sudo`, `env`, `nice`, `timeout`, `command`, the site-specific `rtk`, …). Stripped — with
+(`sudo`, `env`, `nice`, `timeout`, `command`, `exec`, `builtin`, `coproc`, the
+site-specific `rtk`, …). Stripped — with
 its options, via a built-in option-arity table — to expose the real program for **detection
 matching only** (never for execution). Built-in launchers are trusted and include
 the local `rtk` execution wrapper. Distinct from the `Wrapper` (`$SHELL` proxy) and
@@ -66,7 +67,9 @@ _Avoid_: real program, resolved command, normalized program
 A scan-oriented command unit produced by `logical_segments` — the raw string cut at
 top-level `Command separator`s and normalized, so each independent command is assessed
 on its own. A scan-time boundary, not an execution unit: fork semantics of a background
-`&` are ignored; it only marks where one command ends.
+`&` are ignored; it only marks where one command ends. Leading grouping syntax,
+reserved words, case-arm patterns, and function headers cannot hide the program:
+an additional Logical segment starts at that program.
 _Avoid_: segment, sub-command, command part
 
 **Command separator**:

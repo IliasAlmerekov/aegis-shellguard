@@ -199,6 +199,68 @@ fn segments_subshell_body_extracted() {
     );
 }
 
+#[test]
+fn segments_brace_group_exposes_its_program() {
+    assert_eq!(
+        logical_segments("{ git push --force origin main; }"),
+        vec![
+            "{ git push --force origin main",
+            "git push --force origin main",
+            "}"
+        ]
+    );
+}
+
+#[test]
+fn segments_then_clause_exposes_its_program() {
+    assert_eq!(
+        logical_segments("if true; then git push --force origin main; fi"),
+        vec![
+            "if true",
+            "true",
+            "then git push --force origin main",
+            "git push --force origin main",
+            "fi"
+        ]
+    );
+}
+
+#[test]
+fn segments_case_arm_exposes_its_program() {
+    assert_eq!(
+        logical_segments("case x in a) git push --force origin main;; esac"),
+        vec![
+            "case x in a) git push --force origin main",
+            "a) git push --force origin main",
+            "git push --force origin main",
+            "esac"
+        ]
+    );
+}
+
+#[test]
+fn segments_subshell_with_redirect_exposes_its_program() {
+    assert_eq!(
+        logical_segments("(git push --force origin main) 2>&1"),
+        vec![
+            "(git push --force origin main) 2>&1",
+            "git push --force origin main"
+        ]
+    );
+}
+
+#[test]
+fn segments_function_header_exposes_its_program() {
+    assert_eq!(
+        logical_segments("function f { git push --force origin main; }"),
+        vec![
+            "function f { git push --force origin main",
+            "git push --force origin main",
+            "}"
+        ]
+    );
+}
+
 // An unmatched outer `(` must not be "closed" by an inner command-substitution `)`.
 #[test]
 fn segments_unbalanced_subshell_is_not_unwrapped() {
