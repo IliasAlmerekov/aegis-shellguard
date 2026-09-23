@@ -43,18 +43,14 @@ pub(super) enum CwdState {
 
 /// Recognize a segment (or pipeline stage) as a construct that changes the
 /// cwd, through the same launcher/assignment stripping the router uses for
-/// programs (`effective_token_slices` — `builtin cd`, `command cd`, `X=1 cd`
-/// all resolve to `cd`), and report its effect: `Literal` only for the exact
-/// `cd -- <path>` shape with no globs/expansions, `Degraded` for every other
-/// `cd`/`pushd`/`popd` shape and for `source`/`.` (a sourced script's own
-/// `cd` calls are opaque to this router, so any sourcing is conservatively
-/// treated as an unresolvable cwd change).
-///
-/// Deliberately does *not* look through a `{...}`/`(...)` wrapper around the
-/// whole stage — a wrapper that also routes to something else (issue #384
-/// R1) must still have that something routed, which this narrow token check
-/// cannot tell apart from a bare cwd-changing command. [`route_wrapped_stage`]
-/// handles a wrapper's own cwd effect by walking its body instead.
+/// programs (`builtin cd`, `command cd`, `X=1 cd` all resolve to `cd`), and
+/// report its effect: `Literal` only for the exact `cd -- <path>` shape,
+/// `Degraded` for every other `cd`/`pushd`/`popd` shape and for `source`/`.`
+/// (an opaque script may `cd` on its own). Deliberately does *not* look
+/// through a `{...}`/`(...)` wrapper — a wrapper that also routes to
+/// something else must still have that something routed, which this narrow
+/// token check cannot tell apart from a bare cwd change;
+/// [`route_wrapped_stage`] handles a wrapper's own cwd effect instead.
 fn parse_cd_like(stage_raw: &str) -> Option<CwdState> {
     let owned_tokens = aegis_parser::split_tokens(stage_raw);
     let tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
@@ -379,25 +375,22 @@ fn wrapper_bodies(stage_raw: &str) -> Vec<String> {
 
 /// Route targets hidden behind a grammar wrapper (issue #430): a subshell,
 /// brace group, command substitution/backtick, or reserved-word prefix. Each
-/// [`wrapper_bodies`] entry is real shell source in its own right, so it is
-/// walked exactly like a top-level command: split into
-/// [`aegis_parser::list_segments`] and routed through [`route_list_segment`]
-/// with its own scratch `body_cwd`, seeded from the caller's `cwd` on entry
-/// (a `cd` inside the wrapper joins onto whatever cwd was already known, not
-/// a blank slate) — recursing back into wrapper detection is safe here
-/// because a wrapper body is always strictly shorter than the text it was
-/// peeled from.
+/// [`wrapper_bodies`] entry is real shell source, so it is walked exactly
+/// like a top-level command — split into [`aegis_parser::list_segments`] and
+/// routed through [`route_list_segment`] with its own scratch `body_cwd`,
+/// seeded from the caller's `cwd` on entry so a `cd` inside the wrapper joins
+/// onto whatever cwd was already known, not a blank slate. Recursing back
+/// into wrapper detection is safe: a wrapper body is always strictly shorter
+/// than the text it was peeled from.
 ///
 /// The wrapper's own targets are pushed as the body walk already resolved
-/// them (never re-rebased by the caller). If the body's final cwd differs
-/// from what it started with, some cwd-changing construct ran inside it —
-/// a brace group, `if`/`while`/`for`/`case`/… body, or `!`/`time` prefix runs
-/// in the *current* shell, so that change genuinely persists to whatever
-/// follows this wrapper in the caller's own list, and the caller's `cwd`
-/// must degrade to reflect it. A subshell or `$(...)`/backtick's cd does not
-/// persist, but degrading here anyway is the safe direction and keeps this
-/// one mechanism instead of a per-wrapper-kind special case (ADR-022 §6,
-/// issue #384 R1).
+/// them. If the body's final cwd differs from what it started with, some
+/// cwd-changing construct ran inside it: a brace group or reserved-word body
+/// runs in the *current* shell, so that persists to whatever follows this
+/// wrapper and the caller's `cwd` must degrade to match. A subshell's or
+/// `$(...)`'s cd does not persist, but degrading here anyway is the safe
+/// direction — one mechanism instead of a per-wrapper-kind special case
+/// (ADR-022 §6, issue #384 R1).
 fn route_wrapped_stage(
     stage_raw: &str,
     trusted_aliases: &[(&str, &str)],

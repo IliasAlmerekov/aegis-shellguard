@@ -392,6 +392,7 @@ impl Parser {
 mod tests {
     use super::*;
     mod parsing_tests;
+    mod segments_logical_tests;
     mod tokenizer_tests;
 
     #[test]

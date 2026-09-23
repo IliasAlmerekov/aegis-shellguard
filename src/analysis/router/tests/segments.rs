@@ -71,7 +71,7 @@ fn a_script_after_a_newline_is_routed() {
 fn a_pipeline_stage_with_its_own_script_argument_is_routed_like_a_standalone_command() {
     // The producer's stdout is irrelevant here: `python3 ./evil.py` names its
     // own script file, so it routes exactly as it would outside a pipeline —
-    // the second documented gap in #384 (`pipeline_route` only recognized a
+    // the second documented gap in #384 (pipeline routing only recognized a
     // *bare* last stage reading piped stdin).
     assert_eq!(
         route("true | python3 ./evil.py", &[]),

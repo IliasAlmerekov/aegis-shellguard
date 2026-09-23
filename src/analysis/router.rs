@@ -1,29 +1,16 @@
-//! Production source-target router (ADR-022 §6, L1 Iteration 4 slices 1-3).
+//! Production source-target router (ADR-022 §6).
 //!
 //! Detects analyzable source in an intercepted command, reusing the real
-//! `aegis-parser` tokenizer and `Effective program` resolution instead of the
-//! ad hoc helpers in the Iteration-0 `aegis_language::router` prototype
-//! (`aegis-language` cannot depend on `aegis-parser` to reuse them directly —
+//! `aegis-parser` tokenizer and `Effective program` resolution rather than
+//! duplicating it (`aegis-language` cannot depend on `aegis-parser` directly —
 //! ADR-022 §4's leaf-crate boundary, pinned by
-//! `tests/aegis_language_boundary.rs`). This module lives in the root `aegis`
-//! crate, which already depends on both.
+//! `tests/aegis_language_boundary.rs`).
 //!
-//! [`route`] is pure and performs no filesystem access — it only decides
-//! *what* to analyze ([`RoutedTarget::Inline`] source it already has in hand,
-//! or a [`RoutedTarget::ScriptFile`] path it has not read yet). Turning a
-//! `ScriptFile` route into an actual [`aegis_language::SourceTarget`] is
-//! [`resolve`]'s job, which defers to [`crate::analysis::source_reader`] for
-//! the bounded, catch-only read (ADR-022 §6).
-//!
-//! Slice 1 (explicit interpreter, versioned-basename normalization,
-//! trusted-alias resolution), slice 2 (script-file argv routing, verified
-//! shebang, direct-exec-by-shebang), slice 3 (heredoc/here-string/
-//! literal-producer stdin, via [`crate::analysis::heredoc`]), slice 4
-//! (literal top-level `cd -- <path> &&` tracking), and the deferred
-//! same-command heredoc-to-file reuse ([`heredoc_write_then_exec_reuse`],
-//! narrowly scoped to `cat > PATH`/`tee PATH <<HEREDOC && <interp> PATH`) are
-//! in scope. `aegis-config` budget/trusted-alias wiring lands in a later
-//! slice per `docs/plans/2026-07-16-language-aware-analysis.md`.
+//! [`route`] is pure and touches no filesystem — it only decides *what* to
+//! analyze ([`RoutedTarget::Inline`] source already in hand, or a
+//! [`RoutedTarget::ScriptFile`] path not yet read). [`resolve`] turns a
+//! `ScriptFile` route into an [`aegis_language::SourceTarget`], deferring to
+//! [`crate::analysis::source_reader`] for the bounded, catch-only read.
 
 use std::path::{Path, PathBuf};
 
@@ -232,20 +219,17 @@ const INTERPRETERS: &[Interpreter] = &[
     },
 ];
 
-/// Route analyzable source in `command`.
+/// Route analyzable source in `command`. `trusted_aliases` maps a trusted
+/// global alias (e.g. a wrapper script name) to the canonical registry
+/// `program` name it stands in for (e.g. `"py"` → `"python3"`); a
+/// caller-supplied parameter rather than an `aegis-config` read.
 ///
-/// `trusted_aliases` maps a trusted global alias (e.g. a wrapper script name)
-/// to the canonical registry `program` name it stands in for (e.g. `"py"` →
-/// `"python3"`). It is a caller-supplied parameter rather than an
-/// `aegis-config` read: config wiring for trusted aliases is a follow-up
-/// slice.
-///
-/// Every top-level list segment of `command` is routed, not only the first
-/// (issue #384: `true; python3 evil.py` used to route nothing because routing
-/// only looked at the command's first effective token). [`aegis_parser::list_segments`]
-/// is heredoc-aware, so a segment that owns a heredoc marker keeps its body
-/// (and anything `&&`-chained on the marker's own line) glued to it rather
-/// than splitting on a separator inside the body (ADR-022 §6).
+/// Routes every top-level list segment (issue #384), not only the first, and
+/// looks through a wrapper — subshell, brace group, command substitution, or
+/// reserved-word prefix — that would otherwise hide the real command (#430).
+/// A `cd`/`pushd`/`popd`/`source`/`.` found anywhere, including inside a
+/// wrapper body, is tracked with the same cwd-folding rules and degrades a
+/// later relative target it cannot place correctly (#384 R1).
 #[must_use]
 pub fn route(command: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarget> {
     let mut cwd = CwdState::Unset;
@@ -279,22 +263,12 @@ fn stdin_target(language: SourceLanguage, route: StdinRoute) -> RoutedTarget {
     }
 }
 
-/// Detect the narrow `<write-cmd> <<HEREDOC && <interp> <path>` shape (the
-/// `&&`-chained exec lives on the same physical line as the heredoc redirect
-/// — real shell grammar reads the heredoc body starting on the *next* line,
-/// terminated by a bare delimiter line, regardless of what follows the
-/// redirect on the opening line) and reuse the already-in-hand heredoc body
-/// instead of routing a `ScriptFile` that would re-read the identical content
-/// from disk.
-///
-/// Recognized exactly: a write command of `cat > PATH` or `tee PATH` before
-/// the heredoc marker, exactly one top-level `&&` after it (checked by
-/// rejecting any further separator token in the exec part), and a second
-/// segment that is exactly `<interpreter> PATH` (no flags, no other
-/// arguments) naming the identical literal path. Any other shape — no `&&`
-/// chain, `;`/`||` instead, a mismatched path, or extra exec-segment tokens —
-/// is not recognized here and falls through to the existing routing above,
-/// per `docs/plans/2026-07-16-language-aware-analysis.md` Iteration 4.
+/// Detect the narrow `<write-cmd> <<HEREDOC && <interp> <path>` shape and
+/// reuse the already-in-hand heredoc body instead of routing a `ScriptFile`
+/// that would re-read the identical content from disk. Recognized exactly:
+/// `cat > PATH`/`tee PATH` before the heredoc marker, one top-level `&&`
+/// after it, and a second segment of exactly `<interpreter> PATH` naming the
+/// same literal path. Any other shape falls through to the routing above.
 fn heredoc_write_then_exec_reuse(
     command: &str,
     trusted_aliases: &[(&str, &str)],

@@ -578,7 +578,7 @@ fn direct_exec_of_a_relative_path_is_routed_pending_shebang_verification() {
 fn route_never_touches_the_filesystem_for_a_script_file_target() {
     // `route` decides *what* to analyze without any filesystem access — only
     // `resolve` (async, later) reads the file. This is structurally
-    // guaranteed (`route`/`route_after_cd` are synchronous and the module
+    // guaranteed (`route` and its helpers are synchronous and the module
     // imports no `fs`/I/O API — see the `resolve_one` boundary, the only
     // place `source_reader::read_script_file` is called). This test is a
     // black-box behavioral pin, not independent proof of zero syscalls: a

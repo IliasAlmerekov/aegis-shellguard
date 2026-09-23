@@ -39,7 +39,7 @@ pub struct ListSegment {
 /// background `&`, and newlines — each carrying its own pipeline chain
 /// (`|`-delimited stages) and the operator that follows it.
 ///
-/// Unlike [`top_level_pipelines`], every group is returned even when it has
+/// Unlike [`crate::top_level_pipelines`], every group is returned even when it has
 /// only one pipeline stage: a caller that must route every top-level command
 /// of a compound command, not only its multi-stage pipelines, uses this
 /// instead (issue #384).
