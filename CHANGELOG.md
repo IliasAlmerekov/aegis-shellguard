@@ -15,6 +15,8 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [0.6.8] (2026-09-23)
 
+- Security: The scanner now finds the Effective program behind leading shell syntax: subshells followed by a redirect or comment, brace groups, reserved words, case arms, function bodies, and the `exec`, `builtin`, and `coproc` launchers. Before this fix, such a command could skip program-indexed patterns and fall back to Safe, with no confirmation and no Snapshot. ([GHSA-mgwj-4828-3mrg](https://github.com/IliasAlmerekov/aegis-shellguard/security/advisories/GHSA-mgwj-4828-3mrg))
+
 - Fixed: The ADR index contract now checks file/row coverage, unique and gap-free numbering, and Status references. Renumbered the duplicate Docker Snapshot decision as ADR-039. (#238)
 - Fixed: Update checks serialize state changes, re-check consent and channel before an internal child fetches, throttle failed attempts for 24 hours, and record a notice before printing its single-line message. The TTY test now uses BSD `script` arguments on macOS. (#405)
 - Changed: Wrapper plan execution now lives in a shared `src/execution` module with an injected `ExecutionRenderer`; Watch can use the same execution path without reimplementing policy or recovery handling. (#284)
