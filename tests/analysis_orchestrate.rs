@@ -659,3 +659,91 @@ async fn run_analyzes_javascript_exec_and_surfaces_the_recursive_javascript_targ
         summary.degradation_reasons
     );
 }
+
+// ── #430: routing sees through a grammar wrapper ────────────────────────────
+
+async fn assert_recursive_delete_found(command: &str) {
+    let baseline = safe_baseline();
+    let outcome = run(
+        command,
+        &baseline,
+        Some(env!("CARGO_BIN_EXE_aegis")),
+        &[],
+        Duration::from_secs(5),
+    )
+    .await;
+    let assessment = match outcome {
+        Outcome::Analyzed { assessment, .. } => assessment,
+        other => panic!("{command} must spawn the worker: {other:?}"),
+    };
+    assert!(
+        assessment.risk >= RiskLevel::Danger,
+        "{command}: risk must lift to Danger: {:?}",
+        assessment.risk
+    );
+    assert!(
+        assessment
+            .matched
+            .iter()
+            .any(|m| m.pattern.id.as_ref() == "LANG-FS-DEL-R"),
+        "{command}: must carry a LANG-FS-DEL-R match: {:?}",
+        assessment
+            .matched
+            .iter()
+            .map(|m| m.pattern.id.as_ref().to_string())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn run_finds_an_inline_python_delete_inside_an_if_then_wrapper() {
+    assert_recursive_delete_found("if true; then python3 -c \"shutil.rmtree('x')\"; fi").await;
+}
+
+#[tokio::test]
+async fn run_finds_an_inline_python_delete_inside_a_subshell() {
+    assert_recursive_delete_found("(true; python3 -c \"shutil.rmtree('x')\")").await;
+}
+
+#[tokio::test]
+async fn run_finds_an_inline_python_delete_inside_a_command_substitution() {
+    assert_recursive_delete_found("echo $(python3 -c \"shutil.rmtree('x')\")").await;
+}
+
+#[tokio::test]
+async fn run_finds_an_open_write_inside_a_subshell_with_a_trailing_redirect() {
+    // Issue #430 acceptance: a subshell around an inline Python write, with a
+    // trailing redirect on the subshell itself, must still reach the Python
+    // adapter and match LANG-FS-OVR-W — the same as the unwrapped command in
+    // `run_analyzes_inline_open_write_and_lifts_to_warn` above.
+    let baseline = safe_baseline();
+    let outcome = run(
+        "(python3 -c \"open('x','w')\") > out.txt",
+        &baseline,
+        Some(env!("CARGO_BIN_EXE_aegis")),
+        &[],
+        Duration::from_secs(5),
+    )
+    .await;
+    let assessment = match outcome {
+        Outcome::Analyzed { assessment, .. } => assessment,
+        other => panic!("subshell-wrapped python open-w must spawn the worker: {other:?}"),
+    };
+    assert!(
+        assessment.risk >= RiskLevel::Warn,
+        "open-w inside a subshell must lift Safe → Warn: {:?}",
+        assessment.risk
+    );
+    assert!(
+        assessment
+            .matched
+            .iter()
+            .any(|m| m.pattern.id.as_ref() == "LANG-FS-OVR-W"),
+        "must carry LANG-FS-OVR-W: {:?}",
+        assessment
+            .matched
+            .iter()
+            .map(|m| m.pattern.id.as_ref().to_string())
+            .collect::<Vec<_>>()
+    );
+}

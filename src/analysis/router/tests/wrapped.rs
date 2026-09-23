@@ -140,3 +140,23 @@ fn a_cd_inside_a_command_substitution_degrades_a_relative_script_found_there() {
         }]
     );
 }
+
+// ── An inline body's own quoting survives wrapper extraction ───────────────
+//
+// A wrapper body is real shell source, routed by splitting it with
+// `aegis_parser::list_segments` and feeding each raw stage straight to
+// `route_single_stage` — never through a dequoted/rejoined copy — so a
+// literal `'` inside an inline `-c` body is not mistaken for a second-pass
+// quote delimiter (issue #430 acceptance: `open('x','w')` must reach the
+// worker byte-for-byte, not corrode into `open(x,w)`).
+#[test]
+fn an_inline_body_with_single_quotes_keeps_its_quoting_through_a_subshell() {
+    let targets = route(r#"(python3 -c "open('x','w')")"#, &[]);
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::Inline {
+            language: SourceLanguage::Python,
+            source: "open('x','w')".to_owned(),
+        }]
+    );
+}

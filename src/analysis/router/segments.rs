@@ -143,34 +143,34 @@ fn advance_across_separator(
 /// either way. A relative [`RoutedTarget::DirectExec`] retains an untyped
 /// degradation: its language is only knowable from a shebang that must not
 /// be read from an unknown cwd (ADR-022 §6, Iteration 10 P7).
-fn apply_cwd(target: RoutedTarget, cwd: &CwdState) -> Option<RoutedTarget> {
+fn apply_cwd(target: RoutedTarget, cwd: &CwdState) -> RoutedTarget {
     match (target, cwd) {
-        (t, CwdState::Unset) => Some(t),
+        (t, CwdState::Unset) => t,
         (RoutedTarget::ScriptFile { language, path }, CwdState::Literal(base))
             if path.is_relative() =>
         {
-            Some(RoutedTarget::ScriptFile {
+            RoutedTarget::ScriptFile {
                 language,
                 path: base.join(path),
-            })
+            }
         }
         (RoutedTarget::ScriptFile { language, path }, CwdState::Degraded) if path.is_relative() => {
-            Some(RoutedTarget::Dynamic {
+            RoutedTarget::Dynamic {
                 language,
                 reason: DegradationReason::DynamicSource,
-            })
+            }
         }
         (RoutedTarget::DirectExec { path }, CwdState::Literal(base)) if path.is_relative() => {
-            Some(RoutedTarget::DirectExec {
+            RoutedTarget::DirectExec {
                 path: base.join(path),
-            })
+            }
         }
         (RoutedTarget::DirectExec { path }, CwdState::Degraded) if path.is_relative() => {
-            Some(RoutedTarget::Unresolved {
+            RoutedTarget::Unresolved {
                 reason: DegradationReason::DynamicSource,
-            })
+            }
         }
-        (other, _) => Some(other),
+        (other, _) => other,
     }
 }
 
@@ -192,9 +192,7 @@ pub(super) fn route_list_segment(
         }
 
         for target in route_single_stage(&stages[0].raw, trusted_aliases) {
-            if let Some(routed) = apply_cwd(target, cwd) {
-                push_unique(targets, routed);
-            }
+            push_unique(targets, apply_cwd(target, cwd));
         }
         let current = std::mem::replace(cwd, CwdState::Unset);
         *cwd = advance_across_separator(current, segment.separator);
@@ -254,9 +252,7 @@ pub(super) fn route_list_segment(
         *cwd = CwdState::Degraded;
     }
     for target in stage_targets {
-        if let Some(routed) = apply_cwd(target, cwd) {
-            push_unique(targets, routed);
-        }
+        push_unique(targets, apply_cwd(target, cwd));
     }
     let current = std::mem::replace(cwd, CwdState::Unset);
     *cwd = advance_across_separator(current, segment.separator);
@@ -321,38 +317,94 @@ fn is_cd_like_segment(segment: &str) -> bool {
         .is_some_and(|slice| matches!(slice.program, "cd" | "pushd" | "popd"))
 }
 
-/// Route targets hidden behind a grammar wrapper (issue #430) by reusing the
-/// scanner's own [`aegis_parser::logical_segments`] flattening (the
-/// GHSA-mgwj-4828-3mrg fix) instead of a parallel unwrap implementation.
-/// `logical_segments` is already fully recursive, so one pass over its output
-/// is enough — each entry routes through [`route_direct_stage`], not
-/// [`route_single_stage`], so this never re-enters wrapper detection and
-/// loops on its own fixed point (a wrapper's first flattened entry is its own
-/// normalized text).
+/// Peel a `case` arm's `WORD in LABEL)` header off its raw text (`rest` is
+/// already past the leading `case ` keyword), raw-substring only — a
+/// tokenize/rejoin pass here would corrode an inline body's quoting the same
+/// way `logical_segments` does. Imprecise on a case word containing the
+/// literal substring `" in "`; that only means routing misses the arm, the
+/// same fail-open gap `route_direct_stage` already has for any command it
+/// cannot parse.
+fn strip_case_arm_header(rest: &str) -> Option<&str> {
+    let (_word, after_in) = rest.split_once(" in ")?;
+    let (label, after_label) = after_in.split_once(')')?;
+    (!label.is_empty() && !label.chars().any(char::is_whitespace)).then(|| after_label.trim_start())
+}
+
+/// Every raw wrapper body found directly in `stage_raw`: a reserved-word
+/// prefix's remainder, a `(...)`/`{...}` group wrapping the whole stage, and
+/// every top-level `$(...)`/backtick command-substitution body — the exact
+/// source bytes of each, not a dequoted/normalized copy. Reuses
+/// [`aegis_parser::unwrap_subshell_group`] and
+/// [`aegis_parser::extract_command_substitution_bodies`], the same raw
+/// extraction the scanner's `logical_segments` composes (GHSA-mgwj-4828-3mrg),
+/// instead of a parallel implementation; `logical_segments` itself is not
+/// reused here because its output is already dequoted, which would corrupt
+/// an inline `-c`/`-e` body's quoting on the second tokenizer pass
+/// [`route_direct_stage`] performs.
+fn wrapper_bodies(stage_raw: &str) -> Vec<String> {
+    let mut bodies = Vec::new();
+    let trimmed = stage_raw.trim_start();
+
+    for kw in RESERVED_WORD_PREFIXES {
+        if let Some(rest) = trimmed.strip_prefix(kw)
+            && rest.starts_with(char::is_whitespace)
+        {
+            let rest = rest.trim_start();
+            match (*kw, strip_case_arm_header(rest)) {
+                ("case", Some(arm_body)) => bodies.push(arm_body.to_owned()),
+                _ => bodies.push(rest.to_owned()),
+            }
+        }
+    }
+    if let Some(inner) = aegis_parser::unwrap_subshell_group(trimmed) {
+        bodies.push(inner);
+    } else if let Some(inner) = strip_group_or_subshell_wrapper(trimmed) {
+        // A `{ ...; }` group (or a `(...)` with no trailing text —
+        // `unwrap_subshell_group` above already covers `(...)` including a
+        // trailing redirect, so this only adds the brace case).
+        bodies.push(inner.to_owned());
+    }
+    bodies.extend(aegis_parser::extract_command_substitution_bodies(stage_raw));
+    bodies
+}
+
+/// Route targets hidden behind a grammar wrapper (issue #430): a subshell,
+/// brace group, command substitution/backtick, or reserved-word prefix.
+/// Each [`wrapper_bodies`] entry is itself real shell source, so it is split
+/// on its own top-level separators via [`aegis_parser::list_segments`] and
+/// each stage routed through [`route_single_stage`] — recursing back into
+/// wrapper detection is safe here because a wrapper body is always strictly
+/// shorter than the text it was peeled from.
 ///
-/// The flattened entries lose the wrapped body's original order, so a
-/// relative-path target found there cannot be trusted against the parent cwd
-/// once the body is found to `cd`/`pushd`/`popd` on its own anywhere — every
-/// such target is forced to the same typed degradation [`apply_cwd`] gives a
-/// target under a [`CwdState::Degraded`] cwd (ADR-022 §6).
+/// A wrapper body found to `cd`/`pushd`/`popd` anywhere in itself forces
+/// every relative-path target found in that same body to the same typed
+/// degradation [`apply_cwd`] gives a target under a [`CwdState::Degraded`]
+/// cwd — the body's commands are routed independently of the outer cwd
+/// tracking, so a `cd` inside it can never be trusted to place a later
+/// relative target correctly (ADR-022 §6).
 fn route_wrapped_stage(stage_raw: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarget> {
     if !stage_may_be_wrapped(stage_raw) {
         return Vec::new();
     }
 
-    let inner_segments = aegis_parser::logical_segments(stage_raw);
-    let body_has_cd = inner_segments.iter().any(|seg| is_cd_like_segment(seg));
-
     let mut targets = Vec::new();
-    for inner in &inner_segments {
-        for target in route_direct_stage(inner, trusted_aliases) {
-            let target = if body_has_cd {
-                apply_cwd(target, &CwdState::Degraded).expect("apply_cwd never drops a target")
-            } else {
-                target
-            };
-            if !targets.contains(&target) {
-                targets.push(target);
+    for body in wrapper_bodies(stage_raw) {
+        let body_segments = aegis_parser::list_segments(&body);
+        let body_has_cd = body_segments
+            .iter()
+            .flat_map(|seg| &seg.pipeline.segments)
+            .any(|stage| is_cd_like_segment(&stage.raw));
+
+        for stage in body_segments.iter().flat_map(|seg| &seg.pipeline.segments) {
+            for target in route_single_stage(&stage.raw, trusted_aliases) {
+                let target = if body_has_cd {
+                    apply_cwd(target, &CwdState::Degraded)
+                } else {
+                    target
+                };
+                if !targets.contains(&target) {
+                    targets.push(target);
+                }
             }
         }
     }
