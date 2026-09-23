@@ -98,7 +98,22 @@ _Avoid_: result, verdict, scan output
 
 **RiskLevel**:
 The severity a command is classified as, ordered by escalation: `Safe`, `Warn`,
-`Danger`, `Block`. The order is semantic — never reorder it.
+`Danger`, `Block`. The order is semantic — never reorder it. Each level names
+what the command does when it runs:
+
+- `Safe`: reads state, changes it in a way that is undone trivially and stays
+  inside the project, or publishes new work without overwriting anything
+  (ls, git status, cargo build, git push, gh issue create).
+- `Warn`: changes state that ordinary effort can restore (git commit --amend,
+  npm install -g, git push --force-with-lease).
+- `Danger`: destroys or overwrites data, history, or remote state; recovery needs
+  a Snapshot or a backup (recursive delete of a directory, git reset --hard,
+  git push --force, DROP TABLE, docker volume rm).
+- `Block`: destroys at system or home scope with no realistic recovery (wiping
+  `/` or `~`, formatting a disk, a fork bomb). Matches the Intrinsic Block set.
+
+These describe intended classification. Where the scanner disagrees, the gap is
+a bug in the scanner, not in this definition.
 _Avoid_: severity level, threat level
 
 **Intrinsic Block**:
