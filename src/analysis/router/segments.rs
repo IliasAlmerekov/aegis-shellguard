@@ -22,66 +22,102 @@ pub(super) fn command_has_heredoc(command: &str) -> bool {
     command.contains("<<") && !aegis_parser::extract_heredoc_bodies(command).is_empty()
 }
 
-/// The cwd-tracking state threaded across top-level list segments while
-/// routing a compound command (ADR-022 §6).
+/// The router's one cwd-tracking type (ADR-022 §6): both the state threaded
+/// across top-level list segments and the effect a single recognized `cd`
+/// segment has on it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum CwdState {
-    /// No `cd`/`pushd`/`popd` segment has been seen yet: relative targets are
-    /// routed unchanged (resolved later against the real process/command cwd).
+    /// No `cd`/`pushd`/`popd` effect is in play: relative targets are routed
+    /// unchanged (resolved later against the real process/command cwd).
     Unset,
-    /// A literal `cd -- <path>` segment was seen, directly `&&`-chained to
-    /// every segment routed under this state.
+    /// A literal path is known to be the cwd for every segment routed under
+    /// this state.
     Literal(PathBuf),
-    /// A `cd`/`pushd`/`popd` segment was seen whose effect on the cwd cannot
-    /// be trusted (dynamic path, wrong operator, or a separator crossed
-    /// since the last literal `cd`) — every later relative target degrades.
+    /// A `cd`/`pushd`/`popd` was seen whose effect on the cwd cannot be
+    /// trusted (dynamic path, wrong operator, a crossed separator, or a
+    /// group/subshell wrapper this router cannot see into) — every later
+    /// relative target degrades, and this state never recovers.
     Degraded,
 }
 
-/// A `cd`/`pushd`/`popd` command shape recognized while walking list segments.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum CdKind {
-    /// The exact literal `cd -- <path>` shape (no globs/expansions).
-    Literal(PathBuf),
-    /// Any other `cd`/`pushd`/`popd` invocation.
-    Dynamic,
-}
+/// Recognize a segment (or pipeline stage) as a `cd`/`pushd`/`popd`
+/// invocation, through the same launcher/assignment stripping the router
+/// uses for programs (`effective_token_slices` — `builtin cd`, `command cd`,
+/// `X=1 cd` all resolve to `cd`), and report its cwd effect: `Literal` only
+/// for the exact `cd -- <path>` shape with no globs/expansions, `Degraded`
+/// for every other cd/pushd/popd shape — including one found anywhere inside
+/// a `{ ...; }` group or `(...)` subshell wrapper, since whether it persists
+/// to the caller's cwd depends on which wrapper it is, and this router
+/// cannot resolve that without a real shell (ADR-022 §6).
+fn parse_cd_like(stage_raw: &str) -> Option<CwdState> {
+    if let Some(inner) = strip_group_or_subshell_wrapper(stage_raw) {
+        return contains_cd_like_token(inner).then_some(CwdState::Degraded);
+    }
 
-/// Recognize a whole segment (or pipeline stage) as a `cd`/`pushd`/`popd`
-/// invocation, distinguishing the literal `cd -- <path>` shape ADR-022 §6
-/// tracks from every other shape (dynamic path, missing `--`, `pushd`,
-/// `popd`), which degrades instead.
-fn parse_cd_like(normalized: &str) -> Option<CdKind> {
-    let trimmed = normalized.trim();
-    if let Some(after) = trimmed.strip_prefix("cd ") {
-        if let Some(after_dashdash) = after.trim_start().strip_prefix("-- ") {
-            let path = after_dashdash.trim();
-            if !path.is_empty() && is_literal_path(path) {
-                return Some(CdKind::Literal(PathBuf::from(path)));
+    let owned_tokens = aegis_parser::split_tokens(stage_raw);
+    let tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
+    let slice = aegis_parser::effective_token_slices(&tokens)
+        .into_iter()
+        .next()?;
+
+    match slice.program {
+        "cd" => Some(match slice.tokens.get(1..) {
+            Some([dashdash, path]) if *dashdash == "--" && is_literal_path(path) => {
+                CwdState::Literal(PathBuf::from(*path))
             }
-        }
-        return Some(CdKind::Dynamic);
+            _ => CwdState::Degraded,
+        }),
+        "pushd" | "popd" => Some(CwdState::Degraded),
+        _ => None,
     }
-    if trimmed == "cd" || trimmed == "pushd" || trimmed == "popd" {
-        return Some(CdKind::Dynamic);
-    }
-    if trimmed.starts_with("pushd ") || trimmed.starts_with("popd ") {
-        return Some(CdKind::Dynamic);
-    }
-    None
 }
 
-/// Fold a recognized `cd`/`pushd`/`popd` segment into the cwd state carried
-/// forward to the next segment. Only a literal `cd -- <path>` immediately
-/// followed by `&&` produces a trusted rebase target; every other shape, or
-/// any other separator after it, degrades (ADR-022 §6: "a cd whose success is
-/// not guaranteed ... leaves the cwd unknown").
-fn apply_cd_kind(kind: CdKind, separator: Option<aegis_parser::ListSeparator>) -> CwdState {
-    match kind {
-        CdKind::Literal(path) if separator == Some(aegis_parser::ListSeparator::And) => {
-            CwdState::Literal(path)
+/// `Some(inner)` when `raw`, trimmed, is wholly wrapped in a `{ ...; }` group
+/// or a `(...)` subshell.
+fn strip_group_or_subshell_wrapper(raw: &str) -> Option<&str> {
+    let trimmed = raw.trim();
+    trimmed
+        .strip_prefix('{')
+        .and_then(|s| s.strip_suffix('}'))
+        .or_else(|| trimmed.strip_prefix('(').and_then(|s| s.strip_suffix(')')))
+}
+
+/// `true` when any top-level segment inside `inner` resolves to a
+/// `cd`/`pushd`/`popd` effective program.
+fn contains_cd_like_token(inner: &str) -> bool {
+    aegis_parser::list_segments(inner).iter().any(|segment| {
+        segment.pipeline.segments.iter().any(|stage| {
+            let owned_tokens = aegis_parser::split_tokens(&stage.raw);
+            let tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
+            aegis_parser::effective_token_slices(&tokens)
+                .into_iter()
+                .next()
+                .is_some_and(|slice| matches!(slice.program, "cd" | "pushd" | "popd"))
+        })
+    })
+}
+
+/// Fold a recognized `cd`/`pushd`/`popd` segment's effect into the cwd state
+/// carried to the next segment. Only an unbroken `&&` chain trusts the
+/// result at all; a relative literal joins onto the current `Literal` base
+/// (or becomes the base outright from `Unset`), an absolute literal replaces
+/// it outright, and `Degraded` — on either side — never recovers (ADR-022 §6).
+fn fold_cd(
+    current: &CwdState,
+    effect: CwdState,
+    separator: Option<aegis_parser::ListSeparator>,
+) -> CwdState {
+    if separator != Some(aegis_parser::ListSeparator::And) {
+        return CwdState::Degraded;
+    }
+    match (current, effect) {
+        (CwdState::Degraded, _) => CwdState::Degraded,
+        (_, CwdState::Literal(new_path)) if new_path.is_absolute() => CwdState::Literal(new_path),
+        (CwdState::Literal(base), CwdState::Literal(new_path)) => {
+            CwdState::Literal(base.join(new_path))
         }
-        CdKind::Literal(_) | CdKind::Dynamic => CwdState::Degraded,
+        (CwdState::Unset, CwdState::Literal(new_path)) => CwdState::Literal(new_path),
+        _ => CwdState::Degraded,
     }
 }
 
@@ -95,24 +131,46 @@ fn advance_across_separator(
     separator: Option<aegis_parser::ListSeparator>,
 ) -> CwdState {
     match state {
-        CwdState::Literal(path) if separator == Some(aegis_parser::ListSeparator::And) => {
-            CwdState::Literal(path)
+        CwdState::Literal(_) if separator != Some(aegis_parser::ListSeparator::And) => {
+            CwdState::Degraded
         }
-        CwdState::Literal(_) => CwdState::Degraded,
         other => other,
     }
 }
 
-/// Translate the router's cwd-tracking state into the [`CwdRoute`] the
-/// existing [`apply_cwd`] already knows how to apply, passing an `Unset`
-/// target through unchanged (no cwd has ever been tracked for it, so it
-/// resolves later against the real command/process cwd, unaffected by this
-/// routing stage).
-fn apply_current_cwd(target: RoutedTarget, cwd: &CwdState) -> Option<RoutedTarget> {
-    match cwd {
-        CwdState::Unset => Some(target),
-        CwdState::Literal(path) => apply_cwd(target, &CwdRoute::Literal(path.clone())),
-        CwdState::Degraded => apply_cwd(target, &CwdRoute::Dynamic),
+/// Rebase a target's relative path onto the current cwd state, or degrade it
+/// when the cwd is unknown or untrusted. Absolute paths are unaffected
+/// either way. A relative [`RoutedTarget::DirectExec`] retains an untyped
+/// degradation: its language is only knowable from a shebang that must not
+/// be read from an unknown cwd (ADR-022 §6, Iteration 10 P7).
+fn apply_cwd(target: RoutedTarget, cwd: &CwdState) -> Option<RoutedTarget> {
+    match (target, cwd) {
+        (t, CwdState::Unset) => Some(t),
+        (RoutedTarget::ScriptFile { language, path }, CwdState::Literal(base))
+            if path.is_relative() =>
+        {
+            Some(RoutedTarget::ScriptFile {
+                language,
+                path: base.join(path),
+            })
+        }
+        (RoutedTarget::ScriptFile { language, path }, CwdState::Degraded) if path.is_relative() => {
+            Some(RoutedTarget::Dynamic {
+                language,
+                reason: DegradationReason::DynamicSource,
+            })
+        }
+        (RoutedTarget::DirectExec { path }, CwdState::Literal(base)) if path.is_relative() => {
+            Some(RoutedTarget::DirectExec {
+                path: base.join(path),
+            })
+        }
+        (RoutedTarget::DirectExec { path }, CwdState::Degraded) if path.is_relative() => {
+            Some(RoutedTarget::Unresolved {
+                reason: DegradationReason::DynamicSource,
+            })
+        }
+        (other, _) => Some(other),
     }
 }
 
@@ -128,13 +186,13 @@ pub(super) fn route_list_segment(
     let stages = &segment.pipeline.segments;
 
     if stages.len() == 1 {
-        if let Some(cd_kind) = parse_cd_like(&stages[0].normalized) {
-            *cwd = apply_cd_kind(cd_kind, segment.separator);
+        if let Some(effect) = parse_cd_like(&stages[0].raw) {
+            *cwd = fold_cd(cwd, effect, segment.separator);
             return;
         }
 
         for target in route_single_stage(&stages[0].raw, trusted_aliases) {
-            if let Some(routed) = apply_current_cwd(target, cwd) {
+            if let Some(routed) = apply_cwd(target, cwd) {
                 push_unique(targets, routed);
             }
         }
@@ -151,7 +209,7 @@ pub(super) fn route_list_segment(
     let mut pipeline_had_cd = false;
     let mut stage_targets = Vec::new();
     for (index, stage) in stages.iter().enumerate() {
-        if parse_cd_like(&stage.normalized).is_some() {
+        if parse_cd_like(&stage.raw).is_some() {
             pipeline_had_cd = true;
             continue;
         }
@@ -196,7 +254,7 @@ pub(super) fn route_list_segment(
         *cwd = CwdState::Degraded;
     }
     for target in stage_targets {
-        if let Some(routed) = apply_current_cwd(target, cwd) {
+        if let Some(routed) = apply_cwd(target, cwd) {
             push_unique(targets, routed);
         }
     }

@@ -256,54 +256,9 @@ pub fn route(command: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarge
     targets
 }
 
-/// A resolved (or provably unresolved) top-level `cd` cwd change.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum CwdRoute {
-    /// A literal `cd -- <path> &&` prefix (ADR-022 §6).
-    Literal(PathBuf),
-    /// Any other `cd`/`pushd` form: dynamic, substituted, or otherwise
-    /// unresolved.
-    Dynamic,
-}
-
 /// A path with no substitution, expansion, or glob syntax.
 fn is_literal_path(path: &str) -> bool {
     !path.is_empty() && !path.contains(['$', '`', '*', '~', '?', '[', ']', '{', '}'])
-}
-
-/// Rebase a route's relative path onto a resolved `cd`, or degrade it when
-/// the `cd` itself was unresolved. Absolute paths are unaffected either way.
-/// A relative [`RoutedTarget::DirectExec`] retains an untyped degradation:
-/// its language is only knowable from a shebang that must not be read from an
-/// unknown cwd (ADR-022 §6, Iteration 10 P7).
-fn apply_cwd(target: RoutedTarget, cwd: &CwdRoute) -> Option<RoutedTarget> {
-    match (target, cwd) {
-        (RoutedTarget::ScriptFile { language, path }, CwdRoute::Literal(base))
-            if path.is_relative() =>
-        {
-            Some(RoutedTarget::ScriptFile {
-                language,
-                path: base.join(path),
-            })
-        }
-        (RoutedTarget::ScriptFile { language, path }, CwdRoute::Dynamic) if path.is_relative() => {
-            Some(RoutedTarget::Dynamic {
-                language,
-                reason: DegradationReason::DynamicSource,
-            })
-        }
-        (RoutedTarget::DirectExec { path }, CwdRoute::Literal(base)) if path.is_relative() => {
-            Some(RoutedTarget::DirectExec {
-                path: base.join(path),
-            })
-        }
-        (RoutedTarget::DirectExec { path }, CwdRoute::Dynamic) if path.is_relative() => {
-            Some(RoutedTarget::Unresolved {
-                reason: DegradationReason::DynamicSource,
-            })
-        }
-        (other, _) => Some(other),
-    }
 }
 
 /// A bare path-like program token (`./script.py`, `/abs/path/script`) is a

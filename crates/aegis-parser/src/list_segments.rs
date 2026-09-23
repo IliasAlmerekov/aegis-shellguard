@@ -98,6 +98,7 @@ pub(crate) fn split_top_level_command_groups_with_separators(
     let mut in_double_quote = false;
     let mut in_backticks = false;
     let mut paren_depth = 0usize;
+    let mut brace_depth = 0usize;
     let mut command_subst_depth = 0usize;
 
     while let Some((byte_idx, ch)) = chars.next() {
@@ -160,10 +161,37 @@ pub(crate) fn split_top_level_command_groups_with_separators(
                 }
                 current.push(ch);
             }
+            // `{ ...; }` grouping syntax: real shell grammar requires `{` to
+            // stand alone as a word followed by whitespace, and `}` to stand
+            // alone right after a `;`/newline/whitespace — tracked the same
+            // way as `(...)` so a `cd` inside the group is never split away
+            // from the braces that make it a single unit to route (ADR-022
+            // §6, issue #384 S3: a group's `cd` persists to the caller's
+            // cwd, unlike a subshell's, and the router must see the whole
+            // wrapper to tell the two apart).
+            '{' if !in_single_quote
+                && !in_double_quote
+                && !in_backticks
+                && command_subst_depth == 0
+                && (current.is_empty() || current.ends_with(char::is_whitespace))
+                && next_char.is_some_and(char::is_whitespace) =>
+            {
+                brace_depth += 1;
+                current.push(ch);
+            }
+            '}' if !in_single_quote
+                && !in_backticks
+                && brace_depth > 0
+                && (current.ends_with(char::is_whitespace) || current.ends_with(';')) =>
+            {
+                brace_depth -= 1;
+                current.push(ch);
+            }
             '\n' if !in_single_quote
                 && !in_double_quote
                 && !in_backticks
                 && paren_depth == 0
+                && brace_depth == 0
                 && command_subst_depth == 0 =>
             {
                 finalize_with_separator(
@@ -177,6 +205,7 @@ pub(crate) fn split_top_level_command_groups_with_separators(
                 && !in_double_quote
                 && !in_backticks
                 && paren_depth == 0
+                && brace_depth == 0
                 && command_subst_depth == 0 =>
             {
                 finalize_with_separator(
@@ -190,6 +219,7 @@ pub(crate) fn split_top_level_command_groups_with_separators(
                 && !in_double_quote
                 && !in_backticks
                 && paren_depth == 0
+                && brace_depth == 0
                 && command_subst_depth == 0 =>
             {
                 if next_char == Some('&') {
@@ -221,6 +251,7 @@ pub(crate) fn split_top_level_command_groups_with_separators(
                 && !in_double_quote
                 && !in_backticks
                 && paren_depth == 0
+                && brace_depth == 0
                 && command_subst_depth == 0
                 && next_char == Some('|') =>
             {
@@ -315,5 +346,24 @@ mod tests {
             raw_segments(cmd),
             vec!["cat <<X\nhi\ntrue; python3 ./evil.py"]
         );
+    }
+
+    #[test]
+    fn a_brace_group_stays_one_segment_despite_an_internal_semicolon() {
+        // Issue #384 S3: without this, `{ cd -- d1; }` used to split at the
+        // internal `;`, so the router never saw the whole group and could
+        // not tell a `cd` that persists to the caller's cwd from one it
+        // cannot resolve.
+        let cmd = "{ cd -- d1; }; python3 ./sub/evil.py";
+        assert_eq!(
+            raw_segments(cmd),
+            vec!["{ cd -- d1; }", "python3 ./sub/evil.py"]
+        );
+    }
+
+    #[test]
+    fn brace_expansion_with_no_surrounding_whitespace_is_not_treated_as_a_group() {
+        let cmd = "echo {a,b}; python3 script.py";
+        assert_eq!(raw_segments(cmd), vec!["echo {a,b}", "python3 script.py"]);
     }
 }
