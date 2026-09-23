@@ -376,10 +376,12 @@ fn readme_should_document_npm_and_cargo_without_overclaiming_shell_setup() {
         readme.contains("npm i -g @iliasalmerekov/aegis"),
         "README must document npm global install"
     );
+    let install_from_tag = format!(
+        "cargo install --git https://github.com/IliasAlmerekov/aegis-shellguard --tag v{} aegis",
+        env!("CARGO_PKG_VERSION")
+    );
     assert!(
-        readme.contains(
-            "cargo install --git https://github.com/IliasAlmerekov/aegis-shellguard --tag v0.6.7 aegis"
-        ),
+        readme.contains(&install_from_tag),
         "README must document cargo install from a release tag"
     );
     assert!(
