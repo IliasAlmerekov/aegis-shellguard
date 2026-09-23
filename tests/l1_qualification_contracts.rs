@@ -758,21 +758,3 @@ fn convention_documents_lgpl_exception_and_sandbox_build_dependencies() {
         "CONVENTION.md §6 must scope the `cc`/`pkg-config` build-dependencies to aegis-sandbox"
     );
 }
-
-#[test]
-fn claude_md_approves_the_sandbox_build_dependencies() {
-    let claude = read_repo_file("CLAUDE.md");
-
-    // The `cc` and `pkg-config` build-dependencies in aegis-sandbox's Cargo.toml
-    // must be recorded in the approved-dependencies table so the hard Standards
-    // violation (a build-dependency outside the approved set) is closed.
-    assert!(
-        claude.contains("`cc`") && claude.contains("`pkg-config`"),
-        "CLAUDE.md approved-dependencies table must list `cc` and `pkg-config` as \
-         build-dependencies for aegis-sandbox"
-    );
-    assert!(
-        claude.contains("aegis-sandbox"),
-        "CLAUDE.md must scope the `cc`/`pkg-config` build-dependencies to aegis-sandbox"
-    );
-}

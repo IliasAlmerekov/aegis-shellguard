@@ -2,7 +2,7 @@
 
 **Aegis** is a lightweight Rust CLI that acts as a `$SHELL` proxy for AI coding agents, intercepting commands and requiring human confirmation before destructive operations. It must stay fast (< 2ms for safe paths), correct, and minimal.
 
-See [`CLAUDE.md`](CLAUDE.md) for detailed project conventions; this document is the entry point.
+See [`CONVENTION.md`](CONVENTION.md) for detailed project conventions; this document is the entry point.
 
 ---
 
@@ -61,7 +61,6 @@ After code passes all gates, update in this order:
 ## Key references
 
 - **`PRD.md`** — the normative Aegis 1.0 product promise; every other document is derived from it and keeps no 1.0 checklist of its own
-- **`CLAUDE.md`** — detailed conventions (error handling, performance, module structure, testing, naming, key types, approved dependencies)
 - **`CONVENTION.md`** — authoritative rules with precedence order
 - **`.github/workflows/ci.yml`** — required branch-protection status checks
 - **`~/.agents/ENGINEERING_GATES.md`** — Definition-of-Done, traceability, branch policy

@@ -141,7 +141,7 @@ pub(super) fn startup_unavailability(
 pub(super) async fn warn_if_sandbox_unavailable_at_startup(context: &RuntimeContext) {
     let sandbox = context.config().sandbox.clone();
     // The probe spawns and waits on a real bwrap child, which must not block
-    // the async runtime thread (CLAUDE.md); this module's prepare path
+    // the async runtime thread (CONVENTION.md §3); this module's prepare path
     // already routes blocking sandbox work through spawn_blocking.
     let unavailability = tokio::task::spawn_blocking(move || {
         startup_unavailability(
