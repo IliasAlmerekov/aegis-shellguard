@@ -684,6 +684,17 @@ status. External SIGKILL, an OOM-kill of the agent process itself, and a corrupt
 `Hook` script are not covered (ADR-023).
 _Avoid_: crash handling, panic recovery (reserve "recovery" for snapshot rollback)
 
+**Execution renderer**:
+The seam between one transport's shared execution steps (Snapshot, recovery gate,
+Sandbox, Audit, spawn) and how it shows a dialog or writes a warning or error
+(`ExecutionRenderer` trait). `TerminalRenderer` draws on the real terminal;
+`TestRenderer` records calls instead, for assertions. Lives in `crates/aegis-tui`
+so `Wrapper` and `Watch` can share one implementation without depending on each
+other.
+_Avoid_: adapter (reserved for `Adapter qualification`, a per-language code
+adapter — a different domain, ADR-022), surface (this file's `## Surfaces` are
+Wrapper/Hook, not this seam)
+
 ## Release automation
 
 **Tag admission check**:
