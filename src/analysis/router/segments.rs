@@ -14,7 +14,9 @@
 
 use super::*;
 
+mod unclaimed;
 mod wrappers;
+use unclaimed::unclaimed_interpreter_net;
 use wrappers::{posix_function_definition_body, wrapper_bodies};
 
 /// Bound on wrapper-peeling recursion. Each level of
@@ -249,32 +251,38 @@ pub(super) fn route_list_segment(
         if wrapped_produced {
             continue;
         }
-        if index == 0 {
-            // No preceding stage to pipe stdin from.
-            continue;
-        }
-        let Some(bare_interp) = bare_stage_interpreter(&stage.raw, trusted_aliases) else {
-            continue;
-        };
-        // A bare interpreter reads whatever the previous stage writes to
-        // stdout. Only the narrow, exactly-two-stage `printf '%s' <literal> |
-        // <interp>` shape has a statically recoverable producer; every other
-        // producer (including a longer chain) is honestly Dynamic rather than
-        // evaluated or guessed at (ADR-022 §6).
-        if index == 1
-            && stages.len() == 2
-            && let Some(literal) = printf_percent_s_literal(&stages[0].raw)
+        // A bare interpreter (no args of its own) reads whatever the
+        // previous stage writes to stdout — only meaningful past the first
+        // stage, which has no preceding producer to read from.
+        if index > 0
+            && let Some(bare_interp) = bare_stage_interpreter(&stage.raw, trusted_aliases)
         {
-            stage_targets.push(RoutedTarget::Inline {
-                language: bare_interp.language,
-                source: literal,
-            });
+            // Only the narrow, exactly-two-stage `printf '%s' <literal> |
+            // <interp>` shape has a statically recoverable producer; every
+            // other producer (including a longer chain) is honestly Dynamic
+            // rather than evaluated or guessed at (ADR-022 §6).
+            if index == 1
+                && stages.len() == 2
+                && let Some(literal) = printf_percent_s_literal(&stages[0].raw)
+            {
+                stage_targets.push(RoutedTarget::Inline {
+                    language: bare_interp.language,
+                    source: literal,
+                });
+            } else {
+                stage_targets.push(RoutedTarget::Dynamic {
+                    language: bare_interp.language,
+                    reason: DegradationReason::DynamicSource,
+                });
+            }
             continue;
         }
-        stage_targets.push(RoutedTarget::Dynamic {
-            language: bare_interp.language,
-            reason: DegradationReason::DynamicSource,
-        });
+        // Nothing else claimed this stage: fall back to the fail-closed net
+        // (issue #384/#430, ADR-022 §6 amendment) for a wrapper word the
+        // launcher list does not enumerate.
+        if let Some(net_target) = unclaimed_interpreter_net(&stage.raw, trusted_aliases) {
+            stage_targets.push(net_target);
+        }
     }
 
     if pipeline_had_cd {
@@ -315,10 +323,25 @@ fn route_stage(
     targets: &mut Vec<RoutedTarget>,
     depth: u32,
 ) {
-    for target in route_direct_stage(stage_raw, trusted_aliases) {
+    let direct = route_direct_stage(stage_raw, trusted_aliases);
+    let mut claimed = !direct.is_empty();
+    for target in direct {
         push_unique(targets, apply_cwd(target, cwd));
     }
-    route_wrapped_stage(stage_raw, trusted_aliases, cwd, targets, depth);
+
+    let mut wrapped_targets = Vec::new();
+    route_wrapped_stage(stage_raw, trusted_aliases, cwd, &mut wrapped_targets, depth);
+    claimed |= !wrapped_targets.is_empty();
+    for target in wrapped_targets {
+        push_unique(targets, target);
+    }
+
+    // Nothing else claimed this stage: fall back to the fail-closed net
+    // (issue #384/#430, ADR-022 §6 amendment) for a wrapper word the
+    // launcher list does not enumerate.
+    if !claimed && let Some(net_target) = unclaimed_interpreter_net(stage_raw, trusted_aliases) {
+        push_unique(targets, net_target);
+    }
 }
 
 /// Reserved words that can open a stage without being its own command

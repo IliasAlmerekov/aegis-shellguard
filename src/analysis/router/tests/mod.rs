@@ -746,6 +746,7 @@ mod interpreter_stdin_redirect;
 mod redirection_placement;
 mod segments;
 mod shell_grammar_and_launchers;
+mod unclaimed_interpreter_net;
 mod wrapped;
 mod wrapper_grammar;
 mod wrapper_trailing_redirection;
