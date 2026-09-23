@@ -101,3 +101,86 @@ fn a_cd_inside_a_brace_group_degrades_a_later_relative_target() {
         }]
     );
 }
+
+// ── #384 R1: a cd hidden behind a reserved word or a compound condition is
+// tracked the same way a bare cd is ─────────────────────────────────────────
+
+#[test]
+fn a_cd_behind_a_bang_negation_degrades_a_later_relative_target() {
+    let targets = route("! cd d1; python3 ./sub/evil.py", &[]);
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::Dynamic {
+            language: SourceLanguage::Python,
+            reason: DegradationReason::DynamicSource,
+        }]
+    );
+}
+
+#[test]
+fn a_cd_in_an_if_condition_degrades_a_later_relative_target() {
+    // `if cd d1; then :; fi` runs its condition in the current shell
+    // regardless of which branch it takes, so a successful `cd` there
+    // persists past the `fi`.
+    let targets = route("if cd d1; then :; fi; python3 ./sub/evil.py", &[]);
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::Dynamic {
+            language: SourceLanguage::Python,
+            reason: DegradationReason::DynamicSource,
+        }]
+    );
+}
+
+#[test]
+fn a_cd_in_an_until_condition_degrades_a_later_relative_target() {
+    let targets = route("until cd d1; do :; done; python3 ./sub/evil.py", &[]);
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::Dynamic {
+            language: SourceLanguage::Python,
+            reason: DegradationReason::DynamicSource,
+        }]
+    );
+}
+
+#[test]
+fn a_cd_inside_a_for_loop_body_degrades_a_later_relative_target() {
+    let targets = route("for d in d1; do cd $d; done; python3 ./sub/evil.py", &[]);
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::Dynamic {
+            language: SourceLanguage::Python,
+            reason: DegradationReason::DynamicSource,
+        }]
+    );
+}
+
+// ── #384 R1: `source`/`.` can run a `cd` the router cannot see into ────────
+
+#[test]
+fn source_degrades_a_later_relative_target() {
+    let targets = route("source ./x.sh; python3 ./sub/evil.py", &[]);
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::Dynamic {
+            language: SourceLanguage::Python,
+            reason: DegradationReason::DynamicSource,
+        }]
+    );
+}
+
+#[test]
+fn dot_source_stays_degraded_through_a_later_literal_cd() {
+    // "Degraded never recovers": `.` runs an arbitrary script that might cd
+    // anywhere, so a literal-looking `cd -- sub` right after it must not be
+    // trusted either.
+    let targets = route(". ./x.sh; cd -- sub && python3 ./evil.py", &[]);
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::Dynamic {
+            language: SourceLanguage::Python,
+            reason: DegradationReason::DynamicSource,
+        }]
+    );
+}

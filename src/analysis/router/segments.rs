@@ -7,8 +7,9 @@
 //! `true; python3 evil.py` routed nothing. This module makes every top-level
 //! list segment of a compound command ([`aegis_parser::list_segments`]) route
 //! independently, and every stage of a multi-stage pipeline within a segment,
-//! while tracking the one cwd change ADR-022 §6 allows (`cd -- <path> &&`) across
-//! consecutive segments.
+//! while tracking cwd changes (`cd`/`pushd`/`popd`/`source`/`.`) across
+//! consecutive segments *and* inside any grammar wrapper's own body, via the
+//! single recursive walk in [`route_wrapped_stage`] (issue #384 R1).
 
 use super::*;
 
@@ -23,37 +24,38 @@ pub(super) fn command_has_heredoc(command: &str) -> bool {
 }
 
 /// The router's one cwd-tracking type (ADR-022 §6): both the state threaded
-/// across top-level list segments and the effect a single recognized `cd`
-/// segment has on it.
+/// across list segments (top-level and inside a wrapper body alike) and the
+/// effect a single recognized `cd`-like segment has on it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum CwdState {
-    /// No `cd`/`pushd`/`popd` effect is in play: relative targets are routed
-    /// unchanged (resolved later against the real process/command cwd).
+    /// No cwd effect is in play: relative targets are routed unchanged
+    /// (resolved later against the real process/command cwd).
     Unset,
     /// A literal path is known to be the cwd for every segment routed under
     /// this state.
     Literal(PathBuf),
-    /// A `cd`/`pushd`/`popd` was seen whose effect on the cwd cannot be
-    /// trusted (dynamic path, wrong operator, a crossed separator, or a
-    /// group/subshell wrapper this router cannot see into) — every later
-    /// relative target degrades, and this state never recovers.
+    /// A cwd-changing construct was seen whose effect cannot be trusted
+    /// (dynamic path, wrong operator, a crossed separator, an unknown
+    /// `source`d script, …) — every later relative target degrades, and this
+    /// state never recovers.
     Degraded,
 }
 
-/// Recognize a segment (or pipeline stage) as a `cd`/`pushd`/`popd`
-/// invocation, through the same launcher/assignment stripping the router
-/// uses for programs (`effective_token_slices` — `builtin cd`, `command cd`,
-/// `X=1 cd` all resolve to `cd`), and report its cwd effect: `Literal` only
-/// for the exact `cd -- <path>` shape with no globs/expansions, `Degraded`
-/// for every other cd/pushd/popd shape — including one found anywhere inside
-/// a `{ ...; }` group or `(...)` subshell wrapper, since whether it persists
-/// to the caller's cwd depends on which wrapper it is, and this router
-/// cannot resolve that without a real shell (ADR-022 §6).
+/// Recognize a segment (or pipeline stage) as a construct that changes the
+/// cwd, through the same launcher/assignment stripping the router uses for
+/// programs (`effective_token_slices` — `builtin cd`, `command cd`, `X=1 cd`
+/// all resolve to `cd`), and report its effect: `Literal` only for the exact
+/// `cd -- <path>` shape with no globs/expansions, `Degraded` for every other
+/// `cd`/`pushd`/`popd` shape and for `source`/`.` (a sourced script's own
+/// `cd` calls are opaque to this router, so any sourcing is conservatively
+/// treated as an unresolvable cwd change).
+///
+/// Deliberately does *not* look through a `{...}`/`(...)` wrapper around the
+/// whole stage — a wrapper that also routes to something else (issue #384
+/// R1) must still have that something routed, which this narrow token check
+/// cannot tell apart from a bare cwd-changing command. [`route_wrapped_stage`]
+/// handles a wrapper's own cwd effect by walking its body instead.
 fn parse_cd_like(stage_raw: &str) -> Option<CwdState> {
-    if let Some(inner) = strip_group_or_subshell_wrapper(stage_raw) {
-        return contains_cd_like_token(inner).then_some(CwdState::Degraded);
-    }
-
     let owned_tokens = aegis_parser::split_tokens(stage_raw);
     let tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
     let slice = aegis_parser::effective_token_slices(&tokens)
@@ -67,13 +69,14 @@ fn parse_cd_like(stage_raw: &str) -> Option<CwdState> {
             }
             _ => CwdState::Degraded,
         }),
-        "pushd" | "popd" => Some(CwdState::Degraded),
+        "pushd" | "popd" | "source" | "." => Some(CwdState::Degraded),
         _ => None,
     }
 }
 
 /// `Some(inner)` when `raw`, trimmed, is wholly wrapped in a `{ ...; }` group
-/// or a `(...)` subshell.
+/// or a `(...)` subshell. Used only as [`wrapper_bodies`]'s brace-group
+/// fallback ([`aegis_parser::unwrap_subshell_group`] already covers `(...)`).
 fn strip_group_or_subshell_wrapper(raw: &str) -> Option<&str> {
     let trimmed = raw.trim();
     trimmed
@@ -82,26 +85,11 @@ fn strip_group_or_subshell_wrapper(raw: &str) -> Option<&str> {
         .or_else(|| trimmed.strip_prefix('(').and_then(|s| s.strip_suffix(')')))
 }
 
-/// `true` when any top-level segment inside `inner` resolves to a
-/// `cd`/`pushd`/`popd` effective program.
-fn contains_cd_like_token(inner: &str) -> bool {
-    aegis_parser::list_segments(inner).iter().any(|segment| {
-        segment.pipeline.segments.iter().any(|stage| {
-            let owned_tokens = aegis_parser::split_tokens(&stage.raw);
-            let tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
-            aegis_parser::effective_token_slices(&tokens)
-                .into_iter()
-                .next()
-                .is_some_and(|slice| matches!(slice.program, "cd" | "pushd" | "popd"))
-        })
-    })
-}
-
-/// Fold a recognized `cd`/`pushd`/`popd` segment's effect into the cwd state
-/// carried to the next segment. Only an unbroken `&&` chain trusts the
-/// result at all; a relative literal joins onto the current `Literal` base
-/// (or becomes the base outright from `Unset`), an absolute literal replaces
-/// it outright, and `Degraded` — on either side — never recovers (ADR-022 §6).
+/// Fold a recognized cwd-changing segment's effect into the cwd state carried
+/// to the next segment. Only an unbroken `&&` chain trusts the result at all;
+/// a relative literal joins onto the current `Literal` base (or becomes the
+/// base outright from `Unset`), an absolute literal replaces it outright, and
+/// `Degraded` — on either side — never recovers (ADR-022 §6).
 fn fold_cd(
     current: &CwdState,
     effect: CwdState,
@@ -176,7 +164,10 @@ fn apply_cwd(target: RoutedTarget, cwd: &CwdState) -> RoutedTarget {
 
 /// Route one top-level [`aegis_parser::ListSegment`], mutating `cwd` for the
 /// next segment and appending any produced targets (rebased/degraded per the
-/// current cwd state) to `targets`, left to right, in order.
+/// current cwd state) to `targets`, left to right, in order. Also the engine
+/// [`route_wrapped_stage`] recurses into for a wrapper's own body, so a `cd`
+/// nested behind a subshell, brace group, or reserved word folds with the
+/// exact same rules a top-level walk uses (issue #384 R1).
 pub(super) fn route_list_segment(
     segment: &aegis_parser::ListSegment,
     trusted_aliases: &[(&str, &str)],
@@ -191,9 +182,7 @@ pub(super) fn route_list_segment(
             return;
         }
 
-        for target in route_single_stage(&stages[0].raw, trusted_aliases) {
-            push_unique(targets, apply_cwd(target, cwd));
-        }
+        route_stage(&stages[0].raw, trusted_aliases, cwd, targets);
         let current = std::mem::replace(cwd, CwdState::Unset);
         *cwd = advance_across_separator(current, segment.separator);
         return;
@@ -203,21 +192,42 @@ pub(super) fn route_list_segment(
     // no target of its own, but running in a pipeline subshell means its
     // outcome (and the pipeline's own cwd afterward) is never trustworthy
     // (ADR-022 §6) — every relative target in this same pipeline degrades,
-    // and so does everything after it, same as crossing `;`/`||`/`&`.
+    // and so does everything after it, same as crossing `;`/`||`/`&`. A
+    // wrapper hidden in a stage is walked with its own scratch cwd (seeded
+    // from the pipeline's cwd on entry) for the same reason: whatever it
+    // finds inside is already resolved, and a cd effect there also taints
+    // the whole pipeline.
     let mut pipeline_had_cd = false;
     let mut stage_targets = Vec::new();
+    let mut wrapped_stage_targets = Vec::new();
     for (index, stage) in stages.iter().enumerate() {
         if parse_cd_like(&stage.raw).is_some() {
             pipeline_had_cd = true;
             continue;
         }
 
-        let routed = route_single_stage(&stage.raw, trusted_aliases);
+        let mut scratch_cwd = cwd.clone();
+        let wrapped_before = wrapped_stage_targets.len();
+        route_wrapped_stage(
+            &stage.raw,
+            trusted_aliases,
+            &mut scratch_cwd,
+            &mut wrapped_stage_targets,
+        );
+        let wrapped_produced = wrapped_stage_targets.len() > wrapped_before;
+        if scratch_cwd != *cwd {
+            pipeline_had_cd = true;
+        }
+
+        let routed = route_direct_stage(&stage.raw, trusted_aliases);
         if !routed.is_empty() {
             // A stage with its own script file, inline flag, or direct-exec
             // path routes exactly as it would standalone (ADR-022 §6),
             // whatever its position in the pipeline.
             stage_targets.extend(routed);
+            continue;
+        }
+        if wrapped_produced {
             continue;
         }
         if index == 0 {
@@ -254,6 +264,12 @@ pub(super) fn route_list_segment(
     for target in stage_targets {
         push_unique(targets, apply_cwd(target, cwd));
     }
+    // Already resolved against `scratch_cwd` above — pushed as-is, never
+    // rebased a second time against the pipeline's own (possibly now
+    // Degraded) cwd.
+    for target in wrapped_stage_targets {
+        push_unique(targets, target);
+    }
     let current = std::mem::replace(cwd, CwdState::Unset);
     *cwd = advance_across_separator(current, segment.separator);
 }
@@ -267,18 +283,22 @@ fn push_unique(targets: &mut Vec<RoutedTarget>, target: RoutedTarget) {
     }
 }
 
-/// Resolve `stage` to its own route, trying direct routing first and then
-/// routing through any grammar wrapper direct routing cannot see past
-/// (issue #430). The 2-stage `producer | interp` pipeline fallback is the
-/// caller's concern (see [`route_list_segment`]'s multi-stage branch).
-fn route_single_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarget> {
-    let mut targets = route_direct_stage(stage, trusted_aliases);
-    for target in route_wrapped_stage(stage, trusted_aliases) {
-        if !targets.contains(&target) {
-            targets.push(target);
-        }
+/// Route one non-pipeline stage's own text: direct interpreter/file/
+/// redirection argv routing, plus anything hidden behind a grammar wrapper.
+/// A wrapper body's targets are already resolved through its own nested cwd
+/// walk, so [`route_wrapped_stage`] pushes them into `targets` directly; only
+/// the direct-routed targets still need `apply_cwd` against the caller's
+/// current `cwd` here.
+fn route_stage(
+    stage_raw: &str,
+    trusted_aliases: &[(&str, &str)],
+    cwd: &mut CwdState,
+    targets: &mut Vec<RoutedTarget>,
+) {
+    for target in route_direct_stage(stage_raw, trusted_aliases) {
+        push_unique(targets, apply_cwd(target, cwd));
     }
-    targets
+    route_wrapped_stage(stage_raw, trusted_aliases, cwd, targets);
 }
 
 /// Reserved words that can open a stage without being its own command
@@ -304,17 +324,6 @@ fn stage_may_be_wrapped(stage_raw: &str) -> bool {
                 .strip_prefix(kw)
                 .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
         })
-}
-
-/// `true` when already-flattened `segment` (no further list/pipeline
-/// structure of its own) resolves to a `cd`/`pushd`/`popd` effective program.
-fn is_cd_like_segment(segment: &str) -> bool {
-    let owned_tokens = aegis_parser::split_tokens(segment);
-    let tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
-    aegis_parser::effective_token_slices(&tokens)
-        .into_iter()
-        .next()
-        .is_some_and(|slice| matches!(slice.program, "cd" | "pushd" | "popd"))
 }
 
 /// Peel a `case` arm's `WORD in LABEL)` header off its raw text (`rest` is
@@ -369,46 +378,51 @@ fn wrapper_bodies(stage_raw: &str) -> Vec<String> {
 }
 
 /// Route targets hidden behind a grammar wrapper (issue #430): a subshell,
-/// brace group, command substitution/backtick, or reserved-word prefix.
-/// Each [`wrapper_bodies`] entry is itself real shell source, so it is split
-/// on its own top-level separators via [`aegis_parser::list_segments`] and
-/// each stage routed through [`route_single_stage`] — recursing back into
-/// wrapper detection is safe here because a wrapper body is always strictly
-/// shorter than the text it was peeled from.
+/// brace group, command substitution/backtick, or reserved-word prefix. Each
+/// [`wrapper_bodies`] entry is real shell source in its own right, so it is
+/// walked exactly like a top-level command: split into
+/// [`aegis_parser::list_segments`] and routed through [`route_list_segment`]
+/// with its own scratch `body_cwd`, seeded from the caller's `cwd` on entry
+/// (a `cd` inside the wrapper joins onto whatever cwd was already known, not
+/// a blank slate) — recursing back into wrapper detection is safe here
+/// because a wrapper body is always strictly shorter than the text it was
+/// peeled from.
 ///
-/// A wrapper body found to `cd`/`pushd`/`popd` anywhere in itself forces
-/// every relative-path target found in that same body to the same typed
-/// degradation [`apply_cwd`] gives a target under a [`CwdState::Degraded`]
-/// cwd — the body's commands are routed independently of the outer cwd
-/// tracking, so a `cd` inside it can never be trusted to place a later
-/// relative target correctly (ADR-022 §6).
-fn route_wrapped_stage(stage_raw: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarget> {
+/// The wrapper's own targets are pushed as the body walk already resolved
+/// them (never re-rebased by the caller). If the body's final cwd differs
+/// from what it started with, some cwd-changing construct ran inside it —
+/// a brace group, `if`/`while`/`for`/`case`/… body, or `!`/`time` prefix runs
+/// in the *current* shell, so that change genuinely persists to whatever
+/// follows this wrapper in the caller's own list, and the caller's `cwd`
+/// must degrade to reflect it. A subshell or `$(...)`/backtick's cd does not
+/// persist, but degrading here anyway is the safe direction and keeps this
+/// one mechanism instead of a per-wrapper-kind special case (ADR-022 §6,
+/// issue #384 R1).
+fn route_wrapped_stage(
+    stage_raw: &str,
+    trusted_aliases: &[(&str, &str)],
+    cwd: &mut CwdState,
+    targets: &mut Vec<RoutedTarget>,
+) {
     if !stage_may_be_wrapped(stage_raw) {
-        return Vec::new();
+        return;
     }
 
-    let mut targets = Vec::new();
     for body in wrapper_bodies(stage_raw) {
-        let body_segments = aegis_parser::list_segments(&body);
-        let body_has_cd = body_segments
-            .iter()
-            .flat_map(|seg| &seg.pipeline.segments)
-            .any(|stage| is_cd_like_segment(&stage.raw));
-
-        for stage in body_segments.iter().flat_map(|seg| &seg.pipeline.segments) {
-            for target in route_single_stage(&stage.raw, trusted_aliases) {
-                let target = if body_has_cd {
-                    apply_cwd(target, &CwdState::Degraded)
-                } else {
-                    target
-                };
-                if !targets.contains(&target) {
-                    targets.push(target);
-                }
+        let mut body_cwd = cwd.clone();
+        let mut body_targets = Vec::new();
+        for segment in aegis_parser::list_segments(&body) {
+            route_list_segment(&segment, trusted_aliases, &mut body_cwd, &mut body_targets);
+        }
+        for target in body_targets {
+            if !targets.contains(&target) {
+                targets.push(target);
             }
         }
+        if body_cwd != *cwd {
+            *cwd = CwdState::Degraded;
+        }
     }
-    targets
 }
 
 /// Resolve `stage` (one pipeline stage's raw text) to its own route without
