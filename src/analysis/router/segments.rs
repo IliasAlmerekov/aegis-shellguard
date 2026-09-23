@@ -271,13 +271,100 @@ fn push_unique(targets: &mut Vec<RoutedTarget>, target: RoutedTarget) {
     }
 }
 
-/// Resolve `stage` (one pipeline stage's raw text) to its own route: the
-/// narrow heredoc-write-then-exec reuse shape first (when `stage` owns a
-/// heredoc marker), then explicit interpreter inline/file/redirection argv
-/// walk, then heredoc/here-string stdin fallback, then a bare path-like
-/// direct-exec candidate. The 2-stage `producer | interp` fallback is the
+/// Resolve `stage` to its own route, trying direct routing first and then
+/// routing through any grammar wrapper direct routing cannot see past
+/// (issue #430). The 2-stage `producer | interp` pipeline fallback is the
 /// caller's concern (see [`route_list_segment`]'s multi-stage branch).
 fn route_single_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarget> {
+    let mut targets = route_direct_stage(stage, trusted_aliases);
+    for target in route_wrapped_stage(stage, trusted_aliases) {
+        if !targets.contains(&target) {
+            targets.push(target);
+        }
+    }
+    targets
+}
+
+/// Reserved words that can open a stage without being its own command
+/// (grammar wrappers, issue #430) — the same set `strip_leading_shell_syntax`
+/// recognizes.
+const RESERVED_WORD_PREFIXES: &[&str] = &[
+    "if", "then", "elif", "else", "while", "until", "do", "case", "time", "!",
+];
+
+/// `true` when `stage_raw` may hide a routable command behind shell grammar
+/// [`route_direct_stage`] cannot see through: a subshell, a brace group, a
+/// command substitution/backtick, or a reserved-word prefix. Cheap prefix/
+/// substring checks only, so the no-wrapper hot path stays allocation-light
+/// (issue #430, `CONVENTION.md` §8).
+fn stage_may_be_wrapped(stage_raw: &str) -> bool {
+    let trimmed = stage_raw.trim_start();
+    trimmed.starts_with('(')
+        || trimmed.starts_with('{')
+        || stage_raw.contains("$(")
+        || stage_raw.contains('`')
+        || RESERVED_WORD_PREFIXES.iter().any(|kw| {
+            trimmed
+                .strip_prefix(kw)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+        })
+}
+
+/// `true` when already-flattened `segment` (no further list/pipeline
+/// structure of its own) resolves to a `cd`/`pushd`/`popd` effective program.
+fn is_cd_like_segment(segment: &str) -> bool {
+    let owned_tokens = aegis_parser::split_tokens(segment);
+    let tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
+    aegis_parser::effective_token_slices(&tokens)
+        .into_iter()
+        .next()
+        .is_some_and(|slice| matches!(slice.program, "cd" | "pushd" | "popd"))
+}
+
+/// Route targets hidden behind a grammar wrapper (issue #430) by reusing the
+/// scanner's own [`aegis_parser::logical_segments`] flattening (the
+/// GHSA-mgwj-4828-3mrg fix) instead of a parallel unwrap implementation.
+/// `logical_segments` is already fully recursive, so one pass over its output
+/// is enough — each entry routes through [`route_direct_stage`], not
+/// [`route_single_stage`], so this never re-enters wrapper detection and
+/// loops on its own fixed point (a wrapper's first flattened entry is its own
+/// normalized text).
+///
+/// The flattened entries lose the wrapped body's original order, so a
+/// relative-path target found there cannot be trusted against the parent cwd
+/// once the body is found to `cd`/`pushd`/`popd` on its own anywhere — every
+/// such target is forced to the same typed degradation [`apply_cwd`] gives a
+/// target under a [`CwdState::Degraded`] cwd (ADR-022 §6).
+fn route_wrapped_stage(stage_raw: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarget> {
+    if !stage_may_be_wrapped(stage_raw) {
+        return Vec::new();
+    }
+
+    let inner_segments = aegis_parser::logical_segments(stage_raw);
+    let body_has_cd = inner_segments.iter().any(|seg| is_cd_like_segment(seg));
+
+    let mut targets = Vec::new();
+    for inner in &inner_segments {
+        for target in route_direct_stage(inner, trusted_aliases) {
+            let target = if body_has_cd {
+                apply_cwd(target, &CwdState::Degraded).expect("apply_cwd never drops a target")
+            } else {
+                target
+            };
+            if !targets.contains(&target) {
+                targets.push(target);
+            }
+        }
+    }
+    targets
+}
+
+/// Resolve `stage` (one pipeline stage's raw text) to its own route without
+/// looking through any grammar wrapper: the narrow heredoc-write-then-exec
+/// reuse shape first (when `stage` owns a heredoc marker), then explicit
+/// interpreter inline/file/redirection argv walk, then heredoc/here-string
+/// stdin fallback, then a bare path-like direct-exec candidate.
+fn route_direct_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarget> {
     if command_has_heredoc(stage)
         && let Some(targets) = heredoc_write_then_exec_reuse(stage, trusted_aliases)
     {

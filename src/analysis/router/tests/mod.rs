@@ -724,3 +724,4 @@ async fn resolve_degrades_an_oversized_script_file() {
 
 mod cwd;
 mod segments;
+mod wrapped;
