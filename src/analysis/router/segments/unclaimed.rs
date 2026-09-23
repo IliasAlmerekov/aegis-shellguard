@@ -14,11 +14,12 @@
 use super::*;
 
 /// Programs that *name* a command as data — an argument, a search pattern,
-/// a documentation topic — without ever running it. A stage whose own
-/// (effective, launcher-stripped) program is one of these stays unclaimed
-/// exactly as it did before this net existed, even when a later token
-/// happens to spell an interpreter name (`echo python3`, `grep -r node
-/// src`, `apt install python3`, `git log --grep python3`).
+/// a documentation topic, a filesystem path to create/remove/rename —
+/// without ever running it. A stage whose own (effective, launcher-stripped)
+/// program is one of these stays unclaimed exactly as it did before this net
+/// existed, even when a later token happens to spell an interpreter name
+/// (`echo python3`, `grep -r node src`, `apt install python3`, `git log
+/// --grep python3`, `mkdir python3`, `rm -f node`).
 const NAME_ONLY_PROGRAMS: &[&str] = &[
     "echo",
     "printf",
@@ -54,6 +55,20 @@ const NAME_ONLY_PROGRAMS: &[&str] = &[
     "git",
     "update-alternatives",
     "dpkg",
+    "mkdir",
+    "rmdir",
+    "touch",
+    "rm",
+    "cp",
+    "mv",
+    "ln",
+    "chmod",
+    "chown",
+    "chgrp",
+    "basename",
+    "dirname",
+    "realpath",
+    "readlink",
 ];
 
 /// `true` for `command -v ...` / `command -V ...` — POSIX's "print where

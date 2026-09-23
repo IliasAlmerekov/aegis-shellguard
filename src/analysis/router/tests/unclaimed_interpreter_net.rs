@@ -201,6 +201,33 @@ fn quoted_multiword_token_naming_a_benign_command_is_not_routed() {
     assert_eq!(route(r#"ssh host "echo hello""#, &[]), Vec::new());
 }
 
+// ── A program that never executes its operands stays unclaimed ─────────────
+
+#[test]
+fn mkdir_naming_an_interpreter_is_not_routed() {
+    assert_eq!(route("mkdir python3", &[]), Vec::new());
+}
+
+#[test]
+fn rm_dash_f_naming_an_interpreter_is_not_routed() {
+    assert_eq!(route("rm -f node", &[]), Vec::new());
+}
+
+#[test]
+fn touch_naming_an_interpreter_is_not_routed() {
+    assert_eq!(route("touch python3", &[]), Vec::new());
+}
+
+#[test]
+fn cp_naming_an_interpreter_is_not_routed() {
+    assert_eq!(route("cp python3 /tmp/", &[]), Vec::new());
+}
+
+#[test]
+fn mv_naming_an_interpreter_is_not_routed() {
+    assert_eq!(route("mv node node.bak", &[]), Vec::new());
+}
+
 // ── A path-like operand after an unenumerated launcher is a direct-exec candidate ──
 
 #[test]
