@@ -12,6 +12,52 @@ fn release_workflow() -> String {
     std::fs::read_to_string(&path).expect("release workflow should be readable")
 }
 
+#[test]
+fn npm_publish_should_use_trusted_publishing_without_a_registry_token() {
+    let workflow = release_workflow();
+    let publish = workflow
+        .split_once("  publish-npm:")
+        .map(|(_, job)| job)
+        .expect("release workflow should contain the npm publish job");
+
+    assert!(
+        publish.contains("id-token: write"),
+        "npm publish needs an OIDC token"
+    );
+    assert!(
+        publish.contains("npm install --global npm@${NPM_CLI_VERSION}"),
+        "npm publish needs the pinned OIDC-capable npm CLI"
+    );
+    assert!(
+        !publish.contains("secrets.NPM_TOKEN") && !publish.contains("NODE_AUTH_TOKEN"),
+        "npm publish must not fall back to a long-lived registry token"
+    );
+    assert!(
+        publish.contains("NPM_CONFIG_PROVENANCE: ${{ github.event_name == 'workflow_dispatch' && 'false' || 'true' }}"),
+        "a recovery dispatch must not attribute the tagged package to main's workflow commit"
+    );
+}
+
+#[test]
+fn npm_publish_recovery_should_checkout_and_validate_the_released_tag() {
+    let workflow = release_workflow();
+    let publish = workflow
+        .split_once("  publish-npm:")
+        .map(|(_, job)| job)
+        .expect("release workflow should contain the npm publish job");
+
+    assert!(workflow.contains("workflow_dispatch:"));
+    assert!(publish.contains("$GITHUB_REF\" != \"refs/heads/main"));
+    assert!(publish.contains("ref: ${{ steps.target.outputs.sha }}"));
+    assert!(publish.contains("sha=$SHA"));
+    assert!(publish.contains("compare/main...$SHA"));
+    assert!(publish.contains("gh release view \"$TAG\""));
+    assert!(
+        publish.contains("scripts/update-npm-package.sh \"$TAG\""),
+        "npm checksums must come from the selected published release"
+    );
+}
+
 /// Extracts the single matrix entry for `target` from `.github/build-targets.json`.
 /// The entry spans from its `"target": "<triple>"` marker up to the closing
 /// brace of that object, so callers can assert on per-target fields like

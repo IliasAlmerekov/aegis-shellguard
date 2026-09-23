@@ -29,6 +29,9 @@ outputs:
   node_version:
     description: "Node major version the landing workspace builds with"
     value: ${{ steps.load.outputs.node_version }}
+  npm_cli_version:
+    description: "npm CLI version for OIDC publishing"
+    value: ${{ steps.load.outputs.npm_cli_version }}
   fuzz_runs:
     description: "Iterations per fuzz target"
     value: ${{ steps.load.outputs.fuzz_runs }}
@@ -83,7 +86,7 @@ runs:
         # stopping.
         for required in RUST_TOOLCHAIN FUZZ_NIGHTLY_TOOLCHAIN CARGO_AUDIT_VERSION \
                         CARGO_DENY_VERSION CARGO_FUZZ_VERSION CROSS_VERSION \
-                        NODE_VERSION FUZZ_RUNS FUZZ_MAX_LEN; do
+                        NODE_VERSION NPM_CLI_VERSION FUZZ_RUNS FUZZ_MAX_LEN; do
           if ! grep -q "^${required}=..*$" .github/versions.env; then
             echo "versions.env is missing a non-empty $required" >&2
             exit 1
