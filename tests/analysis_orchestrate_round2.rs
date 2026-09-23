@@ -85,3 +85,23 @@ async fn run_finds_a_delete_chained_on_a_heredoc_marker_line() {
     let workspace = round2_workspace();
     assert_recursive_delete_found_in(&workspace, "cat <<A && python3 ./evil.py\nhi\nA").await;
 }
+
+// ── G1/L1: leading redirection, stdin redirection, and a function body ─────
+
+#[tokio::test]
+async fn run_finds_a_delete_behind_a_leading_output_redirection() {
+    let workspace = round2_workspace();
+    assert_recursive_delete_found_in(&workspace, ">out python3 ./evil.py").await;
+}
+
+#[tokio::test]
+async fn run_finds_a_delete_fed_in_through_stdin_redirection() {
+    let workspace = round2_workspace();
+    assert_recursive_delete_found_in(&workspace, "python3 < ./evil.py").await;
+}
+
+#[tokio::test]
+async fn run_finds_a_delete_inside_a_function_body_at_definition() {
+    let workspace = round2_workspace();
+    assert_recursive_delete_found_in(&workspace, "f(){ python3 ./evil.py; }; f").await;
+}

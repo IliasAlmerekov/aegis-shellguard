@@ -227,6 +227,24 @@ fn nodejs_debian_alias_routes_like_node() {
     );
 }
 
+// ── C1: `case`/`esac` in argument position must not suspend list splitting ─
+
+#[test]
+fn case_and_esac_as_grep_arguments_do_not_hide_a_chained_exec() {
+    assert_eq!(
+        route("grep case f; python3 ./evil.py; grep esac f", &[]),
+        vec![evil_py_script_file()]
+    );
+}
+
+#[test]
+fn case_and_esac_as_echo_arguments_do_not_hide_a_chained_exec() {
+    assert_eq!(
+        route("echo case x in; python3 ./evil.py; echo esac", &[]),
+        vec![evil_py_script_file()]
+    );
+}
+
 // ── Regression: safe commands stay safe ─────────────────────────────────────
 
 #[test]
@@ -238,4 +256,5 @@ fn known_safe_commands_stay_unrouted_or_unchanged() {
     assert_eq!(route("ls -la | grep foo; echo done", &[]), Vec::new());
     assert_eq!(route("cat <<EOF\nhello\nEOF", &[]), Vec::new());
     assert_eq!(route("git log --format='%h (%s)'", &[]), Vec::new());
+    assert_eq!(route("grep -r \"case\" src; echo done", &[]), Vec::new());
 }

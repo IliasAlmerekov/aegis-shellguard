@@ -58,13 +58,66 @@ pub fn list_segments(cmd: &str) -> Vec<ListSegment> {
         .collect()
 }
 
+/// Reserved words that, seen in command position, keep the *next* word in
+/// command position too (issue #384 C1) — `!`/`if`/`then`/`elif`/`else`/
+/// `while`/`until`/`do`/`time` all introduce a command rather than being one
+/// themselves. `case` and `esac` are deliberately absent: each is handled by
+/// name in [`note_word_boundary`] instead, since seeing either must also
+/// touch the nesting stack, not just flip a flag.
+const COMMAND_STARTING_KEYWORDS: [&str; 9] = [
+    "!", "if", "then", "elif", "else", "while", "until", "do", "time",
+];
+
+/// Fold one completed word (`word_start..word_end` of `cmd`) into the
+/// `case`/`esac` nesting scan: open a range when `word` is `case` seen in
+/// command position, close the outermost one when `word` is `esac` seen in
+/// command position, and report whether the word just consumed leaves the
+/// *next* word in command position (true only for a reserved starter word).
+fn note_word_boundary(
+    word: &str,
+    word_start: usize,
+    word_end: usize,
+    was_command_position: bool,
+    open_starts: &mut Vec<usize>,
+    ranges: &mut Vec<Range<usize>>,
+) -> bool {
+    if !was_command_position {
+        return false;
+    }
+    if word == "case" {
+        open_starts.push(word_start);
+        false
+    } else if word == "esac" {
+        if let Some(start) = open_starts.pop()
+            && open_starts.is_empty()
+        {
+            ranges.push(start..word_end);
+        }
+        false
+    } else {
+        COMMAND_STARTING_KEYWORDS.contains(&word)
+    }
+}
+
 /// Byte ranges spanning a whole top-level `case ... esac` statement (issue
-/// #384 G1): a `case` block's own `;;`/`;;&`/`;&` arm terminators and any `&`
-/// inside an arm body are case grammar, not list operators, so top-level
-/// splitting must not treat them as one — only the router's own
-/// `case`-keyword wrapper handling (which re-parses each arm as its own list)
-/// should ever see them as boundaries. Word-boundary and quote/backtick
-/// aware; nesting is depth-counted so only the outermost `case`/`esac` pair
+/// #384 G1, issue #384 C1): a `case` block's own `;;`/`;;&`/`;&` arm
+/// terminators and any `&` inside an arm body are case grammar, not list
+/// operators, so top-level splitting must not treat them as one — only the
+/// router's own `case`-keyword wrapper handling (which re-parses each arm as
+/// its own list) should ever see them as boundaries.
+///
+/// Only a `case`/`esac` word seen in *command position* opens or closes a
+/// range: the start of `cmd`, right after `;`/`&`/`|`/`(`/`)`/`{`/a newline,
+/// or right after a reserved starter word (`!`, `if`, `then`, ...). A bare
+/// word boundary is not enough — `grep case f` or `echo esac` must never
+/// suspend splitting, because there `case`/`esac` sit in argument position,
+/// not command position (issue #384 C1, a real bypass: those two auto-
+/// approved a smuggled command that a plain `;` would have caught). Quoting
+/// falls out of the same word-level scan for free: a quoted `"esac"` keeps
+/// its quote characters as part of the word text, so it never matches the
+/// bare four-letter keyword.
+///
+/// Nesting is depth-counted so only the outermost `case`/`esac` pair
 /// produces a range, since that range already spans every statement nested
 /// inside it. A `case` with no matching `esac` (or vice versa) produces no
 /// range at all — the same fail-open gap as the rest of this crate's raw
@@ -79,53 +132,78 @@ fn case_statement_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
     let mut in_single_quote = false;
     let mut in_double_quote = false;
     let mut in_backticks = false;
-    let mut at_word_boundary = true;
+    // `true` right before the *next* word starts means that word begins in
+    // command position. Starts `true`: the very start of `cmd` is command
+    // position, matching every other top-level list segment's own start.
+    let mut command_position = true;
+    let mut word_start: Option<usize> = None;
 
     let mut chars = cmd.char_indices();
     while let Some((idx, ch)) = chars.next() {
         match ch {
             '\\' if !in_single_quote => {
+                word_start.get_or_insert(idx);
                 chars.next();
-                at_word_boundary = false;
                 continue;
             }
             '\'' if !in_double_quote && !in_backticks => {
+                word_start.get_or_insert(idx);
                 in_single_quote = !in_single_quote;
-                at_word_boundary = false;
                 continue;
             }
             '"' if !in_single_quote && !in_backticks => {
+                word_start.get_or_insert(idx);
                 in_double_quote = !in_double_quote;
-                at_word_boundary = false;
                 continue;
             }
             '`' if !in_single_quote => {
+                word_start.get_or_insert(idx);
                 in_backticks = !in_backticks;
-                at_word_boundary = false;
                 continue;
             }
             _ => {}
         }
 
-        if !in_single_quote && !in_double_quote && !in_backticks && at_word_boundary {
-            if cmd[idx..]
-                .strip_prefix("case")
-                .is_some_and(|rest| rest.starts_with(char::is_whitespace))
-            {
-                open_starts.push(idx);
-            } else if let Some(rest) = cmd[idx..].strip_prefix("esac")
-                && rest
-                    .chars()
-                    .next()
-                    .is_none_or(|c| !c.is_alphanumeric() && c != '_')
-                && let Some(start) = open_starts.pop()
-                && open_starts.is_empty()
-            {
-                ranges.push(start..idx + "esac".len());
-            }
+        if in_single_quote || in_double_quote || in_backticks {
+            // Inside a quoted/backticked span every byte — including
+            // whitespace — stays part of the current word; a quoted string
+            // is one token even when it embeds spaces.
+            word_start.get_or_insert(idx);
+            continue;
         }
 
-        at_word_boundary = ch.is_whitespace() || matches!(ch, ';' | '&' | '|' | '(');
+        // A separator ends the current word *and* puts the next word in
+        // command position; plain whitespace only ends the word.
+        let is_separator = matches!(ch, ';' | '&' | '|' | '(' | ')' | '{') || ch == '\n';
+        if ch.is_whitespace() || is_separator {
+            if let Some(start) = word_start.take() {
+                command_position = note_word_boundary(
+                    &cmd[start..idx],
+                    start,
+                    idx,
+                    command_position,
+                    &mut open_starts,
+                    &mut ranges,
+                );
+            }
+            if is_separator {
+                command_position = true;
+            }
+            continue;
+        }
+
+        word_start.get_or_insert(idx);
+    }
+
+    if let Some(start) = word_start.take() {
+        note_word_boundary(
+            &cmd[start..],
+            start,
+            cmd.len(),
+            command_position,
+            &mut open_starts,
+            &mut ranges,
+        );
     }
 
     ranges
@@ -449,5 +527,72 @@ mod tests {
     fn brace_expansion_with_no_surrounding_whitespace_is_not_treated_as_a_group() {
         let cmd = "echo {a,b}; python3 script.py";
         assert_eq!(raw_segments(cmd), vec!["echo {a,b}", "python3 script.py"]);
+    }
+
+    #[test]
+    fn case_keyword_in_argument_position_does_not_suspend_splitting() {
+        // Issue #384 C1: `case`/`esac` only mean anything in command
+        // position. Here both are plain arguments to `grep`, so the `;`
+        // between them must still split — a smuggled `python3` used to
+        // auto-approve because the old scan opened a range on any word
+        // boundary, not just a command-position one.
+        let cmd = "grep case f; python3 ./evil.py; grep esac f";
+        assert_eq!(
+            raw_segments(cmd),
+            vec!["grep case f", "python3 ./evil.py", "grep esac f"]
+        );
+    }
+
+    #[test]
+    fn case_and_esac_as_echo_arguments_do_not_pair_up() {
+        let cmd = "echo case x in; python3 ./evil.py; echo esac";
+        assert_eq!(
+            raw_segments(cmd),
+            vec!["echo case x in", "python3 ./evil.py", "echo esac"]
+        );
+    }
+
+    #[test]
+    fn quoted_case_keyword_does_not_open_a_suspend_range() {
+        let cmd = "echo \"case\" x in; python3 ./evil.py; echo esac";
+        assert_eq!(
+            raw_segments(cmd),
+            vec!["echo \"case\" x in", "python3 ./evil.py", "echo esac"]
+        );
+    }
+
+    #[test]
+    fn case_used_as_a_filename_does_not_suspend_splitting() {
+        let cmd = "cat case; python3 ./evil.py; cat esac";
+        assert_eq!(
+            raw_segments(cmd),
+            vec!["cat case", "python3 ./evil.py", "cat esac"]
+        );
+    }
+
+    #[test]
+    fn esac_inside_a_quoted_string_does_not_close_a_case_statement_early() {
+        // The quoted `"esac"` inside the arm body must not pop the nesting
+        // stack; only the real, unquoted `esac` at the end may.
+        let cmd = "case a in x) echo \"esac\";; esac; python3 ./evil.py";
+        assert_eq!(
+            raw_segments(cmd),
+            vec![
+                "case a in x) echo \"esac\";; esac",
+                "python3 ./evil.py"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_nested_case_statement_is_tracked_by_depth() {
+        let cmd = "case a in x) (case b in y) true;; esac) ;; esac; python3 ./evil.py";
+        assert_eq!(
+            raw_segments(cmd),
+            vec![
+                "case a in x) (case b in y) true;; esac) ;; esac",
+                "python3 ./evil.py"
+            ]
+        );
     }
 }
