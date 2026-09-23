@@ -11,6 +11,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Security: A recursive `rm` is now Danger wherever its `-r`/`-R`/`--recursive` flag sits and whether or not `-f` is present, and Block when an operand is `/` or a path that resolves to it, such as `//`, `/.`, or `/..`. `FS-001` and `PS-006` only fired when the flags came right after `rm`, so `rm -r build`, `rm -v -rf build`, `rm build -rf`, and `rm -v -rf /` fell back to Safe with no confirmation and no Snapshot. The new token-prefix rules `FS-020` (Danger) and `PS-008` (Block) check every token before a bare `--`; each one stays silent when its regex twin already matched. ([GHSA-7gcj-4f7x-7fxj](https://github.com/IliasAlmerekov/aegis-shellguard/security/advisories/GHSA-7gcj-4f7x-7fxj), #415)
 - Changed: npm releases use GitHub OIDC trusted publishing instead of a repository token. A manual run can retry npm publication for an existing stable GitHub Release without rebuilding its assets.
 
 ## [0.6.8] (2026-09-23)

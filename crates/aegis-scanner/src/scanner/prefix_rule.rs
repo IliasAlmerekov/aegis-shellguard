@@ -24,6 +24,14 @@ impl PrefixRule {
             return true;
         }
 
+        if self.id.as_ref() == "FS-020" {
+            return rm_recursive_flag_present(tokens);
+        }
+
+        if self.id.as_ref() == "PS-008" {
+            return rm_recursive_flag_present(tokens) && rm_root_operand_present(tokens);
+        }
+
         if self.id.as_ref() == "DB-006"
             && tokens
                 .first()
@@ -113,6 +121,54 @@ fn wipefs_all_flag_present(tokens: &[&str]) -> bool {
             .strip_prefix('-')
             .is_some_and(|short_flags| !short_flags.starts_with('-') && short_flags.contains('a'))
     })
+}
+
+/// Returns `true` when `tokens` is an `rm` invocation with a recursive flag
+/// anywhere before a bare `--` (GHSA-7gcj-4f7x-7fxj / #415). Replaces the
+/// generic prefix matcher entirely — that would ignore `--` and match `rm -- -r`.
+fn rm_recursive_flag_present(tokens: &[&str]) -> bool {
+    if !tokens
+        .first()
+        .is_some_and(|program| program.eq_ignore_ascii_case("rm"))
+    {
+        return false;
+    }
+
+    tokens
+        .iter()
+        .skip(1)
+        .take_while(|token| **token != "--")
+        .any(|token| is_rm_recursive_flag(token))
+}
+
+/// Whether `tokens` carries an operand that names the root directory — a
+/// non-flag token before `--`, or any token after one. A root operand starts
+/// with `/`, so it never starts with `-`, and a plain scan already respects
+/// that split.
+fn rm_root_operand_present(tokens: &[&str]) -> bool {
+    tokens.iter().skip(1).any(|&token| is_root_path(token))
+}
+
+/// Whether `path` resolves to `/` lexically: an absolute path whose every
+/// component is empty, `.`, or `..` (`/`, `//`, `/.`, `/..`, `//./`). The
+/// parent of `/` is `/`, so `..` cannot climb out of it.
+fn is_root_path(path: &str) -> bool {
+    path.starts_with('/')
+        && path
+            .split('/')
+            .all(|component| matches!(component, "" | "." | ".."))
+}
+
+/// Whether `token` is `rm`'s recursive flag: a short-option bundle
+/// containing `r`/`R`, or an unambiguous prefix of `--recursive`.
+fn is_rm_recursive_flag(token: &str) -> bool {
+    if let Some(long) = token.strip_prefix("--") {
+        return !long.is_empty() && "recursive".starts_with(long);
+    }
+
+    token
+        .strip_prefix('-')
+        .is_some_and(|short_flags| short_flags.contains('r') || short_flags.contains('R'))
 }
 
 /// redis-cli flags that consume one following value token.

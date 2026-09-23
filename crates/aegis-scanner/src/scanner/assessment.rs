@@ -9,6 +9,29 @@ use aegis_types::{
 
 use super::{Scanner, highlighting, pipeline_semantics, recursive};
 
+/// (regex id, prefix id) pairs where the regex already reports everything its
+/// paired token-prefix rule would add for the same target, so the prefix rule
+/// steps aside once the regex has matched (GHSA-7gcj-4f7x-7fxj / #415).
+const REGEX_SUPERSEDED_PREFIXES: &[(&str, &str)] = &[("FS-001", "FS-020"), ("PS-006", "PS-008")];
+
+/// Records that regex `id` matched the current target, for a later
+/// [`prefix_id_superseded`] check.
+fn note_regex_match(seen: &mut [bool; REGEX_SUPERSEDED_PREFIXES.len()], id: &str) {
+    for (slot, (regex_id, _)) in seen.iter_mut().zip(REGEX_SUPERSEDED_PREFIXES) {
+        if *regex_id == id {
+            *slot = true;
+        }
+    }
+}
+
+/// Whether prefix rule `id` should step aside because its paired regex (see
+/// [`REGEX_SUPERSEDED_PREFIXES`]) already matched the current target.
+fn prefix_id_superseded(seen: &[bool; REGEX_SUPERSEDED_PREFIXES.len()], id: &str) -> bool {
+    seen.iter()
+        .zip(REGEX_SUPERSEDED_PREFIXES)
+        .any(|(&matched, (_, prefix_id))| matched && *prefix_id == id)
+}
+
 impl Scanner {
     /// Assess a raw shell command and return a complete [`Assessment`].
     ///
@@ -109,7 +132,11 @@ impl Scanner {
             // Derive the program from the target's first token (lowercase) so
             // full_scan can use the by-program index on the fast path.
             let prog = aegis_parser::effective_program(&token_refs).map(str::to_ascii_lowercase);
+            // Tracks which of REGEX_SUPERSEDED_PREFIXES' regex ids fired for
+            // this target, so the paired prefix rule below can step aside.
+            let mut regex_matched_for_target = [false; REGEX_SUPERSEDED_PREFIXES.len()];
             for pattern in self.full_scan(target, prog.as_deref()) {
+                note_regex_match(&mut regex_matched_for_target, pattern.pattern.id.as_ref());
                 if !matched
                     .iter()
                     .any(|existing: &MatchResult| existing.pattern.id == pattern.pattern.id)
@@ -125,6 +152,7 @@ impl Scanner {
                     continue;
                 }
                 for pattern in self.full_scan(&effective_target, Some(candidate.program)) {
+                    note_regex_match(&mut regex_matched_for_target, pattern.pattern.id.as_ref());
                     if !matched
                         .iter()
                         .any(|existing: &MatchResult| existing.pattern.id == pattern.pattern.id)
@@ -135,6 +163,9 @@ impl Scanner {
             }
 
             for result in self.prefix_scan_effective_slices(&effective_slices) {
+                if prefix_id_superseded(&regex_matched_for_target, result.pattern.id.as_ref()) {
+                    continue;
+                }
                 if !matched
                     .iter()
                     .any(|existing: &MatchResult| existing.pattern.id == result.pattern.id)

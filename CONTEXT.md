@@ -136,9 +136,13 @@ _Avoid_: rule, signature (reserve "rule" for prefix rules)
 A detection rule keyed on a command's `Effective program` token (e.g. `git`, `docker`) and
 matched against the token sequence — distinct from a regex `Pattern`. Git, Cloud,
 Docker, some Process, and some Filesystem rules (`wipefs`, `unlink` — where the
-destructive verb *is* the effective program) are token-prefix rules. A destructive
-operation that arrives embedded mid-command instead (SQL verbs, a redirect to a
-sensitive path) stays a regex `Pattern` (ADR-014/015).
+destructive verb *is* the effective program) are token-prefix rules. `rm`'s own
+recursive-flag checks (`FS-020`, `PS-008`) are token-prefix rules too, so they
+find `-r`/`-R`/`--recursive` anywhere in the invocation, not only in the
+position right after `rm` that the `FS-001`/`PS-006` regexes are anchored to
+(GHSA-7gcj-4f7x-7fxj). A destructive operation that arrives embedded
+mid-command instead (SQL verbs, a redirect to a sensitive path) stays a regex
+`Pattern` (ADR-014/015).
 _Avoid_: prefix pattern, first-token rule
 
 **Quick scan**:

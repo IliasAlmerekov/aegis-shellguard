@@ -6,9 +6,12 @@ use super::{Category, PatternSource, PatternToken, PrefixRule, a, any_star, s};
 pub(super) fn rules() -> Vec<PrefixRule> {
     vec![
         // ── Filesystem ───────────────────────────────────────────────────
-        // First Filesystem-category token-prefix rules: unlike `rm` (regex
-        // FS-001), `wipefs`/`unlink` have no match-anywhere delivery variety —
-        // the dangerous verb is always the effective program token (ADR-014).
+        // First Filesystem-category token-prefix rules: `wipefs`/`unlink`
+        // have no match-anywhere delivery variety — the dangerous verb is
+        // always the effective program token (ADR-014). `rm` itself has both
+        // kinds: FS-001 (patterns.toml) is a regex anchored to the flag right
+        // after `rm`, and FS-020 below is a token-prefix rule that finds the
+        // recursive flag at any position (GHSA-7gcj-4f7x-7fxj / #415).
         PrefixRule {
             id: Cow::Borrowed("FS-011"),
             category: Category::Filesystem,
@@ -64,6 +67,48 @@ pub(super) fn rules() -> Vec<PrefixRule> {
             suppressed_by: &[],
             match_examples: &["unlink important.txt"],
             not_match_examples: &["readlink mylink", "ln -s a b"],
+        },
+        // FS-020 catches `rm -r` at any position, closing a gap FS-001's
+        // first-token-only regex left open (GHSA-7gcj-4f7x-7fxj / #415).
+        // `matches_tokens` fully replaces this rule's own match logic below.
+        PrefixRule {
+            id: Cow::Borrowed("FS-020"),
+            category: Category::Filesystem,
+            pattern: vec![s("rm"), any_star(), a(&["-r", "-R", "--recursive"])],
+            risk: RiskLevel::Danger,
+            description: Cow::Borrowed(
+                "rm -r — recursively deletes a directory tree; without a trash step the data is gone even without -f",
+            ),
+            safe_alt: Some(Cow::Borrowed(
+                "Move to trash instead: 'trash <path>' or 'mv <path> /tmp/backup-$(date +%s)'",
+            )),
+            justification: Some(Cow::Borrowed(
+                "Recursive deletion removes an entire directory tree with no confirmation or trash step. -f only skips prompts; the tree is gone either way. Confirm the path before proceeding.",
+            )),
+            source: PatternSource::Builtin,
+            suppressed_by: &[],
+            match_examples: &[
+                "rm -r build",
+                "rm -R build",
+                "rm --recursive build",
+                "rm -rv build",
+                "rm -i -r build",
+                "rm -r -- build",
+                "rm build -r",
+                "rm -v -rf build",
+                "rm build -rf",
+                "rm build -r -f",
+                "rm -r build -f",
+            ],
+            not_match_examples: &[
+                "rm file",
+                "rm -f file",
+                "rm -i file",
+                "rmdir d",
+                "rm -- -r",
+                "git rm -r --cached d",
+                "gsutil rm -r gs://b",
+            ],
         },
         PrefixRule {
             id: Cow::Borrowed("FS-015"),

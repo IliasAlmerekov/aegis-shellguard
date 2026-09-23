@@ -67,6 +67,7 @@ mod compatibility;
 mod construction;
 mod edge_cases;
 mod effect_opaque;
+mod ghsa_7gcj;
 mod h3_followups;
 mod h3_gaps;
 mod issue_344;
