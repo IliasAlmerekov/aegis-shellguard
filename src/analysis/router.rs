@@ -34,9 +34,8 @@ use super::AnalysisCwd;
 use super::heredoc::{self, StdinRoute};
 use super::source_reader::{self, SourceReadError};
 
-#[path = "router_segments.rs"]
-mod router_segments;
-use router_segments::{
+mod segments;
+use segments::{
     ArgvWalk, CwdState, command_has_heredoc, route_list_segment, walk_interpreter_argv,
 };
 
@@ -731,5 +730,4 @@ pub fn verified_shebang_language(first_line: &str) -> Option<SourceLanguage> {
 }
 
 #[cfg(test)]
-#[path = "router_tests.rs"]
 mod tests;

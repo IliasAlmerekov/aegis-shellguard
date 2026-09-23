@@ -1,6 +1,6 @@
 //! List-segment, pipeline-stage, and cwd-tracking routing (issue #384, ADR-022
 //! §6). A child module of [`super`] (`router.rs`): every private item there is
-//! visible here via `use super::*`, exactly as `router_tests.rs` already relies
+//! visible here via `use super::*`, exactly as `router::tests` already relies
 //! on for its own tests.
 //!
 //! [`super::route`] used to look only at a command's first effective token, so

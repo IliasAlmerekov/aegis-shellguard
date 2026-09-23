@@ -1,5 +1,5 @@
 //! New router tests for issue #384 (route every segment of a compound
-//! command). Split from `router_tests.rs` to stay under the repo's 800-line
+//! command). Split from `router::tests` to stay under the repo's 800-line
 //! file-size budget; `use super::*` reaches through to the same `router` test
 //! imports (`RoutedTarget`, `SourceLanguage`, `route`, ...).
 
