@@ -199,6 +199,21 @@ fn segments_subshell_body_extracted() {
     );
 }
 
+// A subshell body with more than one command (issue #430) must split on its
+// own top-level separator the same way the outer command does, not stay
+// glued as one unsplit string.
+#[test]
+fn segments_subshell_body_with_internal_separator_splits_into_its_own_commands() {
+    assert_eq!(
+        logical_segments("(true; git push --force origin main)"),
+        vec![
+            "(true ; git push --force origin main)",
+            "true",
+            "git push --force origin main"
+        ]
+    );
+}
+
 #[test]
 fn segments_brace_group_exposes_its_program() {
     assert_eq!(

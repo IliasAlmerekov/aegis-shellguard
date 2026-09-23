@@ -78,7 +78,14 @@ fn collect_scan_segments(raw_segment: &str, segments: &mut Vec<String>) {
     }
 
     if let Some(subshell_body) = unwrap_subshell_group(raw_segment) {
-        collect_scan_segments(&subshell_body, segments);
+        // Re-split on the body's own top-level separators (issue #430) —
+        // without this, `(true; git push --force origin main)` stayed one
+        // unsplit string and the interpreter/program past the `;` was never
+        // exposed as its own segment, the same gap `extract_command_substitution_bodies`
+        // below already avoids for `$( )`/backtick bodies.
+        for nested_segment in split_top_level_segments(&subshell_body) {
+            collect_scan_segments(&nested_segment, segments);
+        }
     }
 
     for body in extract_command_substitution_bodies(raw_segment) {
