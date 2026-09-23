@@ -1,7 +1,7 @@
 //! Wrapper-routing regression tests for issue #430: a subshell, brace group,
-//! command substitution/backtick, or reserved-word prefix used to hide an
-//! interpreter from routing entirely. Split from `router::tests` to stay
-//! under the file-size budget.
+//! command substitution/backtick, or reserved-word prefix can hide an
+//! interpreter from routing, and the router must see through each shape.
+//! Split from `router::tests` to stay under the file-size budget.
 
 use super::*;
 
@@ -123,7 +123,7 @@ fn a_command_substitution_with_no_interpreter_routes_nothing() {
 // ── A cd inside the wrapped body degrades a relative target found there ────
 //
 // `route_wrapped_stage` walks every wrapper body with its own cwd tracking,
-// seeded from whatever cwd the caller already had (issue #384 R1) — a `cd`
+// seeded from whatever cwd the caller already had (issue #384) — a `cd`
 // found inside a command substitution's body must not leave a sibling
 // relative target in the same body trusting the parent's cwd.
 #[test]
@@ -138,13 +138,12 @@ fn a_cd_inside_a_command_substitution_degrades_a_relative_script_found_there() {
     );
 }
 
-// ── #384 R1: a cd sharing a wrapper body with a routable command must not
+// ── #384: a cd sharing a wrapper body with a routable command must not
 // suppress routing of that command ─────────────────────────────────────────
 //
-// A whole-stage `(...)`/`{...}` wrap containing *any* cd-like segment used to
-// be swallowed by `parse_cd_like`'s own wrapper-stripping branch before this
-// fix: `route_list_segment` folded the cd into cwd state and returned without
-// ever routing the rest of the body. A cd running *after* the routable
+// A whole-stage `(...)`/`{...}` wrap containing *any* cd-like segment folds
+// the cd into cwd state without skipping the rest of the body: every other
+// segment in the wrapper still routes. A cd running *after* the routable
 // command must not affect that command's own resolution either (it reads
 // against the cwd this segment entered with, not the cwd the cd sets on the
 // way out) — the router has no notion of statement order inside a fold, only
@@ -198,7 +197,7 @@ fn a_cd_tainted_subshell_piped_into_cat_still_routes_its_earlier_script() {
     );
 }
 
-// ── #384 R1: a whole-stage-wrapped cd that leads its body degrades the
+// ── #384: a whole-stage-wrapped cd that leads its body degrades the
 // outer walk instead of silently dropping the rest of the body ────────────
 
 #[test]

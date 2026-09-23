@@ -1,5 +1,5 @@
 //! Wrapper-body peeling for `case`/`function`/`coproc` and grammar-wrapper
-//! constructs (issue #384 G1, issue #430), split out of [`super`]
+//! constructs (issue #384, issue #430), split out of [`super`]
 //! (`segments.rs`) to keep that file under `CONVENTION.md`'s file-size gate.
 //! A descendant of [`super::super`] (`router.rs`) as much as `segments` is:
 //! every private item there is visible here via `use super::*`, the same
@@ -21,7 +21,7 @@ fn strip_group_or_subshell_wrapper(raw: &str) -> Option<&str> {
 /// Every `case` arm body in `rest` (already past the leading `case ` keyword),
 /// one entry per arm, raw-substring only — a tokenize/rejoin pass here would
 /// corrode an inline body's quoting the same way `logical_segments` does.
-/// Splits on each arm terminator (`;;`, `;;&`, `;&`, issue #384 G1: a
+/// Splits on each arm terminator (`;;`, `;;&`, `;&`, issue #384: a
 /// fallthrough arm's body must route exactly like a normal arm's) and strips
 /// the trailing `esac` off the last arm. Imprecise on a case word containing
 /// the literal substring `" in "`, or a body whose own text happens to embed
@@ -84,7 +84,7 @@ fn strip_trailing_esac(s: &str) -> &str {
 /// () BODY`, ... — with `NAME` a bare identifier-like token with no shell
 /// metacharacter, so this cannot misfire on a subshell or command
 /// substitution. No whitespace is required, or disallowed, anywhere around
-/// `()` (issue #384 G1, B2). `BODY` is returned exactly as written, whatever
+/// `()` (issue #384). `BODY` is returned exactly as written, whatever
 /// compound command it is (`{...}`, `(...)`, `case...esac`, an `if`/`while`
 /// keyword body, ...): routing the body at definition time is the accepted
 /// conservative choice (a later call site of `NAME` is not tracked), and the
@@ -109,7 +109,7 @@ pub(super) fn posix_function_definition_body(trimmed: &str) -> Option<&str> {
 
 /// `Some(body)` when `rest` (already past the leading `function ` keyword) is
 /// a `function NAME BODY` definition, with or without the optional empty
-/// `()` between `NAME` and `BODY` (issue #384 G1, B2; same conservative
+/// `()` between `NAME` and `BODY` (issue #384; same conservative
 /// routed-at-definition choice, and the same "any compound command" contract,
 /// as [`posix_function_definition_body`]). `NAME` must be a bare
 /// identifier-like token with no shell metacharacter.
@@ -141,7 +141,7 @@ fn function_keyword_body(rest: &str) -> Option<&str> {
 
 /// `Some(body)` when `rest` (already past the leading `coproc ` keyword) is a
 /// bash coprocess with a brace-group body — `NAME { BODY; }` or `{ BODY; }`
-/// (issue #384 G1). A bare `coproc <cmd> <args>` with no brace group is
+/// (issue #384). A bare `coproc <cmd> <args>` with no brace group is
 /// already resolved by `aegis_parser`'s launcher-prefix stripping before
 /// routing ever reaches wrapper detection, so this only needs to cover the
 /// brace-group shape.
@@ -162,7 +162,7 @@ fn coproc_body(rest: &str) -> Option<&str> {
 /// [`aegis_parser::starts_with_redirection_glyph`] and
 /// [`aegis_parser::is_redirection_operator`] — the same glyph primitives
 /// `aegis_parser`'s own effective-program walk uses for a *leading*
-/// redirection (issue #384 B3) — so a wrapper stage's trailing redirect and
+/// redirection (issue #384) — so a wrapper stage's trailing redirect and
 /// argv's leading one are recognized by one rule, not two. Whitespace-
 /// boundary word splitting only, the same raw-substring standard as this
 /// module's other wrapper-body extraction: a quoted redirect target is not
@@ -211,7 +211,7 @@ fn strip_trailing_redirection(s: &str) -> &str {
 pub(super) fn wrapper_bodies(stage_raw: &str, trusted_aliases: &[(&str, &str)]) -> Vec<String> {
     let mut bodies = Vec::new();
     // Stripped once, generally, for every wrapper-shape check below (issue
-    // #384 B2) rather than per wrapper kind — a trailing `2>/dev/null` (or
+    // #384) rather than per wrapper kind — a trailing `2>/dev/null` (or
     // any other redirect) on a brace group, coprocess, or function/case body
     // is not part of that body's own closing punctuation, whichever wrapper
     // it turns out to be.

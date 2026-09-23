@@ -1,8 +1,9 @@
-//! Router unit tests for the #384/#430 round-2 findings (H1 regression, P1
-//! recursion bound, G1 grammar gaps, L1 launcher/alias gaps). Split from
-//! `router::tests` to stay under the repo's 800-line file-size budget;
-//! `use super::*` reaches the same `router` test imports (`RoutedTarget`,
-//! `SourceLanguage`, `route`, ...) `router::tests`'s other siblings use.
+//! Router unit tests (issue #384/#430) for heredoc-chained execs, the
+//! wrapper-peeling recursion bound, shell grammar that can hide an
+//! interpreter, and launcher/alias routing. Split from `router::tests` to
+//! stay under the repo's 800-line file-size budget; `use super::*` reaches
+//! the same `router` test imports (`RoutedTarget`, `SourceLanguage`,
+//! `route`, ...) `router::tests`'s other siblings use.
 
 use super::*;
 use std::time::Instant;
@@ -14,7 +15,7 @@ fn evil_py_script_file() -> RoutedTarget {
     }
 }
 
-// ── H1: a command chained on a heredoc marker's own line used to vanish ────
+// ── A command chained on a heredoc marker's own line is routed ─────────────
 
 #[test]
 fn heredoc_and_then_chained_exec_is_routed() {
@@ -69,7 +70,8 @@ fn heredoc_write_then_exec_reuse_still_wins_over_the_generic_tail_route() {
     // The narrow reuse shape (router.rs's `heredoc_write_then_exec_reuse`)
     // reads the heredoc body directly instead of re-reading the file it was
     // just written to, and must not also produce a second, redundant
-    // `ScriptFile` route for the same command via the generic H1 tail path.
+    // `ScriptFile` route for the same command via the generic chained-exec
+    // tail path.
     let targets = route("cat > f <<EOF && python3 f\nprint(1)\nEOF", &[]);
     assert_eq!(
         targets,
@@ -80,7 +82,7 @@ fn heredoc_write_then_exec_reuse_still_wins_over_the_generic_tail_route() {
     );
 }
 
-// ── P1: wrapper-peeling recursion is bounded ───────────────────────────────
+// ── Wrapper-peeling recursion is bounded ────────────────────────────────────
 
 #[test]
 fn deeply_nested_subshells_finish_quickly_and_degrade_past_the_bound() {
@@ -106,7 +108,7 @@ fn deeply_nested_subshells_finish_quickly_and_degrade_past_the_bound() {
     );
 }
 
-// ── G1: shell grammar that still hid an interpreter ────────────────────────
+// ── Shell grammar that can hide an interpreter ──────────────────────────────
 
 #[test]
 fn a_leading_redirection_does_not_hide_the_program() {
@@ -198,7 +200,7 @@ fn a_case_fallthrough_single_ampersand_arm_is_routed() {
     );
 }
 
-// ── L1: launchers and aliases ───────────────────────────────────────────────
+// ── Launchers and aliases ────────────────────────────────────────────────────
 
 #[test]
 fn xargs_launcher_does_not_hide_the_program() {
@@ -227,7 +229,7 @@ fn nodejs_debian_alias_routes_like_node() {
     );
 }
 
-// ── C1: `case`/`esac` in argument position must not suspend list splitting ─
+// ── `case`/`esac` in argument position must not suspend list splitting ─────
 
 #[test]
 fn case_and_esac_as_grep_arguments_do_not_hide_a_chained_exec() {

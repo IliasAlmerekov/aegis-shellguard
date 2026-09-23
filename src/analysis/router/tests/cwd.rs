@@ -1,12 +1,12 @@
-//! cwd-tracking regression tests for issue #384 findings S2 (a second
-//! literal `cd` must join onto the tracked cwd, not replace it) and S3 (`cd`
-//! detection must see through launcher/assignment prefixes and group/
-//! subshell wrappers, degrading rather than trusting a real cwd it cannot
-//! resolve). Split from `router::tests` to stay under the file-size budget.
+//! cwd-tracking regression tests for issue #384: a second literal `cd` must
+//! join onto the tracked cwd, not replace it, and `cd` detection must see
+//! through launcher/assignment prefixes and group/subshell wrappers,
+//! degrading rather than trusting a real cwd it cannot resolve. Split from
+//! `router::tests` to stay under the file-size budget.
 
 use super::*;
 
-// ── S2: a second literal `cd` joins onto the tracked cwd ────────────────────
+// ── A second literal `cd` joins onto the tracked cwd ────────────────────────
 
 #[test]
 fn two_chained_literal_cds_join_into_one_relative_base() {
@@ -47,7 +47,7 @@ fn a_second_absolute_cd_replaces_the_tracked_base_outright() {
     );
 }
 
-// ── S3: `cd` detection sees through launcher/assignment prefixes and
+// ── `cd` detection sees through launcher/assignment prefixes and
 // group/subshell wrappers, degrading rather than trusting a stale cwd ──────
 
 #[test]
@@ -102,7 +102,7 @@ fn a_cd_inside_a_brace_group_degrades_a_later_relative_target() {
     );
 }
 
-// ── #384 R1: a cd hidden behind a reserved word or a compound condition is
+// ── #384: a cd hidden behind a reserved word or a compound condition is
 // tracked the same way a bare cd is ─────────────────────────────────────────
 
 #[test]
@@ -156,7 +156,7 @@ fn a_cd_inside_a_for_loop_body_degrades_a_later_relative_target() {
     );
 }
 
-// ── #384 R1: `source`/`.` can run a `cd` the router cannot see into ────────
+// ── #384: `source`/`.` can run a `cd` the router cannot see into ───────────
 
 #[test]
 fn source_degrades_a_later_relative_target() {

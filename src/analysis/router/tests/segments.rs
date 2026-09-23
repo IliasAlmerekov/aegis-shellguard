@@ -7,10 +7,10 @@ use super::*;
 
 // ── Every top-level segment is routed (issue #384) ──────────────────────────
 //
-// Routing used to look only at the command's first effective token, so a
-// script hidden behind a leading no-op (`true; python3 evil.py`) or any other
-// list operator routed nothing at all — the language-aware analysis stage
-// never even started, and the command auto-approved.
+// Routing looks past the command's first effective token: a script hidden
+// behind a leading no-op (`true; python3 evil.py`) or any other list operator
+// still routes, so the language-aware analysis stage starts and the command
+// does not auto-approve.
 
 #[test]
 fn a_script_after_a_semicolon_is_routed() {
@@ -123,8 +123,8 @@ fn an_inline_body_after_a_semicolon_is_routed() {
 #[test]
 fn a_mid_command_dynamic_cd_degrades_the_script_that_follows_it() {
     // `cd x` (no `--`) is not the literal, tracked shape, and it appears
-    // after a `;` rather than leading — both are new to #384: routing used to
-    // track a `cd` only when it led the whole command.
+    // after a `;` rather than leading — routing tracks a `cd` at any
+    // position, not only when it leads the whole command.
     let targets = route("true; cd x && python3 a.py", &[]);
     assert_eq!(
         targets,
@@ -203,12 +203,12 @@ fn a_three_stage_pipe_ending_in_a_bare_interpreter_degrades_dynamically() {
     );
 }
 
-// ── A heredoc marker no longer sends the whole command down a first-segment-
-// only legacy path (issue #384) ───────────────────────────────────────────
+// ── A heredoc marker does not send the whole command down a single-segment-
+// only path (issue #384) ────────────────────────────────────────────────────
 //
-// Before this fix, any `<<WORD` in the command routed the whole thing
-// through a single-segment fallback, so a real command hiding behind an
-// inert heredoc-consuming no-op (`:`, `cat`) was never reached.
+// A real command hiding behind an inert heredoc-consuming no-op (`:`, `cat`)
+// must still be reached, not swallowed by a `<<WORD` fallback that routes
+// only the first segment.
 
 #[test]
 fn a_script_after_a_heredoc_consumed_by_a_no_op_is_routed() {

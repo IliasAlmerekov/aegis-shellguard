@@ -4,7 +4,7 @@
 use crate::{is_environment_assignment, program_basename};
 
 /// Recognize `env -S "<command line>" [ARGS...]` / `env --split-string
-/// "<command line>" [ARGS...]` and its wider shapes (issue #384 B4/L1/#430):
+/// "<command line>" [ARGS...]` and its wider shapes (issue #384/#430):
 /// GNU `env`'s split-string mode treats its value as a whole command line to
 /// split into words — the program's argv, not a value preceding a further
 /// program token — and appends any further `env` command-line tokens after
@@ -23,8 +23,8 @@ use crate::{is_environment_assignment, program_basename};
 /// know split-string semantics, so it must never resolve such a shape to an
 /// in-range program token either (it would be the wrong token) — only to
 /// nothing found at all, which the router degrades rather than silently
-/// treating as an unrelated, ordinary command with no program (issue #384
-/// B4/#430). `split_whitespace` reuses the original tokens' lifetime — no
+/// treating as an unrelated, ordinary command with no program (issue
+/// #384/#430). `split_whitespace` reuses the original tokens' lifetime — no
 /// allocation, and no quote-aware re-tokenization of the value (a narrower
 /// but safe subset of GNU `env`'s own splitting).
 pub(crate) fn env_split_string_tokens<'a>(tokens: &[&'a str]) -> Option<Vec<&'a str>> {

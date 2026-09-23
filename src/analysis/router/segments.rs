@@ -3,13 +3,14 @@
 //! visible here via `use super::*`, exactly as `router::tests` already relies
 //! on for its own tests.
 //!
-//! [`super::route`] used to look only at a command's first effective token, so
-//! `true; python3 evil.py` routed nothing. This module makes every top-level
-//! list segment of a compound command ([`aegis_parser::list_segments`]) route
-//! independently, and every stage of a multi-stage pipeline within a segment,
-//! while tracking cwd changes (`cd`/`pushd`/`popd`/`source`/`.`) across
-//! consecutive segments *and* inside any grammar wrapper's own body, via the
-//! single recursive walk in [`route_wrapped_stage`] (issue #384 R1).
+//! [`super::route`] looks past a command's first effective token: this module
+//! makes every top-level list segment of a compound command
+//! ([`aegis_parser::list_segments`]) route independently — so
+//! `true; python3 evil.py` still routes the second segment — and every stage
+//! of a multi-stage pipeline within a segment, while tracking cwd changes
+//! (`cd`/`pushd`/`popd`/`source`/`.`) across consecutive segments *and*
+//! inside any grammar wrapper's own body, via the single recursive walk in
+//! [`route_wrapped_stage`] (issue #384).
 
 use super::*;
 
@@ -59,7 +60,7 @@ pub(super) enum CwdState {
 /// Resolve already-tokenized `owned_tokens` to its `&str` view and its first
 /// effective-program slice — the `Vec<&str>` conversion plus
 /// `effective_token_slices().next()` idiom every stage-routing call site
-/// that resolves one program per stage repeats (issue #384/#430 T10). Takes
+/// that resolves one program per stage repeats (issue #384/#430). Takes
 /// a borrow rather than calling `aegis_parser::split_tokens` itself so a
 /// caller that still needs the raw `&str` tokens afterward (an `env -C`/cwd
 /// scan past the program, say) can keep them; one that doesn't just ignores
@@ -183,7 +184,7 @@ fn apply_cwd(target: RoutedTarget, cwd: &CwdState) -> RoutedTarget {
 /// current cwd state) to `targets`, left to right, in order. Also the engine
 /// [`route_wrapped_stage`] recurses into for a wrapper's own body, so a `cd`
 /// nested behind a subshell, brace group, or reserved word folds with the
-/// exact same rules a top-level walk uses (issue #384 R1).
+/// exact same rules a top-level walk uses (issue #384).
 pub(super) fn route_list_segment(
     segment: &aegis_parser::ListSegment,
     trusted_aliases: &[(&str, &str)],
@@ -359,15 +360,14 @@ fn stage_may_be_wrapped(stage_raw: &str) -> bool {
 }
 
 /// The chained-command tail glued onto a heredoc marker's own physical line
-/// (issue #384 H1, a regression of S1) — e.g. `&& python3 ./evil.py` in `cat
-/// <<A && python3 ./evil.py`, or `; python3 ./evil.py` in `cat <<A; python3
-/// ./evil.py`. `aegis_parser::list_segments` deliberately keeps this glued to
-/// the heredoc-owning segment (S1: the body itself must stay data, not
-/// further segments, and the marker's own line must stay one unit for
-/// `heredoc_write_then_exec_reuse` below), so without this the chained
-/// command silently vanished into the heredoc-owning stage's own program
-/// text — `route_direct_stage` cannot detect it because that text never
-/// resolves to a routable program at all. `None` when `stage_raw` owns no
+/// (issue #384) — e.g. `&& python3 ./evil.py` in `cat <<A && python3
+/// ./evil.py`, or `; python3 ./evil.py` in `cat <<A; python3 ./evil.py`.
+/// `aegis_parser::list_segments` deliberately keeps this glued to the
+/// heredoc-owning segment (the body itself must stay data, not further
+/// segments, and the marker's own line must stay one unit for
+/// `heredoc_write_then_exec_reuse` below); this walks that same tail and
+/// routes it, since `route_direct_stage` cannot — that text never resolves
+/// to a routable program on its own. `None` when `stage_raw` owns no
 /// heredoc marker, or nothing follows the marker(s) on its opening line.
 fn heredoc_marker_line_tail(stage_raw: &str) -> Option<&str> {
     let first_line = stage_raw.lines().next()?;
@@ -404,7 +404,7 @@ fn heredoc_marker_line_tail(stage_raw: &str) -> Option<&str> {
 /// wrapper and the caller's `cwd` must degrade to match. A subshell's or
 /// `$(...)`'s cd does not persist, but degrading here anyway is the safe
 /// direction — one mechanism instead of a per-wrapper-kind special case
-/// (ADR-022 §6, issue #384 R1).
+/// (ADR-022 §6, issue #384).
 fn route_wrapped_stage(
     stage_raw: &str,
     trusted_aliases: &[(&str, &str)],
@@ -418,7 +418,7 @@ fn route_wrapped_stage(
 
     if depth >= MAX_WRAP_DEPTH {
         // Something is still hidden behind this wrapper that routing refuses
-        // to keep peeling into (issue #384 P1): recursing further would cost
+        // to keep peeling into (issue #384): recursing further would cost
         // work proportional to the whole remaining string at every
         // additional level, and deep enough nesting overflows the call stack
         // outright. Degrade honestly rather than silently treat the
@@ -474,7 +474,7 @@ fn route_direct_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<Rout
     // attached to the stage, not an argument of the program that follows it
     // — the shell strips it before argv0 resolution, so routing must too.
     // `aegis_parser::effective_token_slices` handles this at every step
-    // (issue #384 B3), not only a redirection at position 0.
+    // (issue #384), not only a redirection at position 0.
     let (tokens, slice) = effective_stage_slice(&owned_tokens);
     let Some(slice) = slice else {
         return Vec::new();
@@ -483,7 +483,7 @@ fn route_direct_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<Rout
     let effective_start = tokens.len() - slice.tokens.len();
     // `env -C DIR`/`--chdir[=]DIR` changes the cwd for that one child
     // process only, not the shell's own — a relative target must degrade
-    // rather than resolve against the shell's own cwd (issue #384 B4).
+    // rather than resolve against the shell's own cwd (issue #384).
     let env_cwd = if env_chdir_prefix(&tokens[..effective_start]) {
         CwdState::Degraded
     } else {
@@ -525,7 +525,7 @@ fn route_direct_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<Rout
 
 /// `true` when `prefix` — the tokens routing consumed before the effective
 /// program (assignments, launcher words, redirections) — is an `env`
-/// invocation carrying `-C`/`--chdir` (issue #384 B4). A cheap token-
+/// invocation carrying `-C`/`--chdir` (issue #384). A cheap token-
 /// equality scan, not a full re-parse of `env`'s own option grammar: routing
 /// only needs to know a chdir flag is present somewhere in the prefix it
 /// already resolved, not its exact position.
@@ -594,7 +594,7 @@ pub(super) fn walk_interpreter_argv(interp: &Interpreter, rest: &[&str]) -> Argv
 
     // A standalone `< file` with a literal target means the interpreter
     // reads its script from stdin, and stdin is exactly that file (issue
-    // #384 G1): `python3 < ./evil.py` is the same source as `python3 - <
+    // #384): `python3 < ./evil.py` is the same source as `python3 - <
     // ./evil.py`. Recorded here and only consulted if the walk below finds
     // no inline body or positional script argument of its own — either of
     // those wins outright, same as a real interpreter's own argv parsing.
@@ -632,7 +632,7 @@ pub(super) fn walk_interpreter_argv(interp: &Interpreter, rest: &[&str]) -> Argv
         {
             // A redirection with no space before its filename (`<file`,
             // `0<file`) is the same stdin source as the spaced form above,
-            // just glued into one token by the tokenizer (issue #384 B5).
+            // just glued into one token by the tokenizer (issue #384).
             stdin_redirect_target = Some(target);
             pos += 1;
             continue;
@@ -658,7 +658,7 @@ pub(super) fn walk_interpreter_argv(interp: &Interpreter, rest: &[&str]) -> Argv
 /// `true` for a standalone plain input redirection (`<`, `3<`, …) — an
 /// [`aegis_parser::is_redirection_operator`] token with no `>` and no
 /// fd-duplication `&`, the only shape whose target can mean "this file is
-/// the interpreter's stdin source" (issue #384 G1).
+/// the interpreter's stdin source" (issue #384).
 fn is_plain_input_redirect(tok: &str) -> bool {
     tok.trim_start_matches(|c: char| c.is_ascii_digit()) == "<"
 }
@@ -666,8 +666,8 @@ fn is_plain_input_redirect(tok: &str) -> bool {
 /// The literal target of a plain input redirection glued to its own token
 /// with no separating space (`<file`, `0<file`) — the same shape
 /// [`is_plain_input_redirect`] recognizes when spaced out, but the
-/// tokenizer keeps this one glued because nothing splits it (issue #384
-/// B5). `None` for anything else: a duplication/dup-fd form (`<&3`), a
+/// tokenizer keeps this one glued because nothing splits it (issue #384).
+/// `None` for anything else: a duplication/dup-fd form (`<&3`), a
 /// heredoc/here-string marker (`<<`, `<<<`, already excluded upstream by
 /// the marker-boundary scan), an output redirection, or an empty target.
 fn glued_plain_input_redirect_target(tok: &str) -> Option<&str> {
@@ -682,7 +682,7 @@ fn glued_plain_input_redirect_target(tok: &str) -> Option<&str> {
 /// program name it sits on, but only the trailing form is visible to
 /// [`walk_interpreter_argv`], which only ever sees `rest` (the tokens
 /// *after* the program). Scans left to right and returns the first match,
-/// spaced or glued (issue #384 B5).
+/// spaced or glued (issue #384).
 fn leading_stdin_redirect_target<'a>(prefix: &[&'a str]) -> Option<&'a str> {
     let mut pos = 0;
     while pos < prefix.len() {

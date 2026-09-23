@@ -122,7 +122,7 @@ fn note_word_boundary(
 }
 
 /// Byte ranges spanning a whole top-level `case ... esac` statement (issue
-/// #384 G1, issue #384 C1): a `case` block's own `;;`/`;;&`/`;&` arm
+/// #384): a `case` block's own `;;`/`;;&`/`;&` arm
 /// terminators and any `&` inside an arm body are case grammar, not list
 /// operators, so top-level splitting must not treat them as one — only the
 /// router's own `case`-keyword wrapper handling (which re-parses each arm as
@@ -133,7 +133,7 @@ fn note_word_boundary(
 /// or right after a reserved starter word (`!`, `if`, `then`, ...). A bare
 /// word boundary is not enough — `grep case f` or `echo esac` must never
 /// suspend splitting, because there `case`/`esac` sit in argument position,
-/// not command position (issue #384 C1, a real bypass: those two auto-
+/// not command position (issue #384, a real bypass: those two auto-
 /// approved a smuggled command that a plain `;` would have caught). Quoting
 /// falls out of the same word-level scan for free: a quoted `"esac"` keeps
 /// its quote characters as part of the word text, so it never matches the
@@ -343,11 +343,11 @@ pub(crate) fn split_top_level_command_groups_with_separators(
             // alone right after a `;`/newline/whitespace — tracked the same
             // way as `(...)` so a `cd` inside the group is never split away
             // from the braces that make it a single unit to route (ADR-022
-            // §6, issue #384 S3: a group's `cd` persists to the caller's
+            // §6, issue #384: a group's `cd` persists to the caller's
             // cwd, unlike a subshell's, and the router must see the whole
             // wrapper to tell the two apart). A `{` immediately after `)`
             // additionally opens a POSIX function body (`f(){ ...; }`, issue
-            // #384 G1): unlike a bare grouping `{`, real shell grammar allows
+            // #384): unlike a bare grouping `{`, real shell grammar allows
             // no whitespace there, so this is the one preceding character a
             // grouping `{` itself could never have — no ambiguity between
             // the two shapes.
@@ -483,9 +483,9 @@ mod tests {
 
     #[test]
     fn heredoc_body_line_does_not_split_on_an_embedded_separator() {
-        // Issue #384: a `;` inside a heredoc body used to be indistinguishable
-        // from a real command separator, so the body could slice a later
-        // command away from its owning segment.
+        // Issue #384: a `;` inside a heredoc body is not a real command
+        // separator, so it must not slice a later command away from its
+        // owning segment.
         let cmd = ": <<X\nhi; there\nX\ntrue; python3 ./evil.py";
         assert_eq!(
             raw_segments(cmd),
@@ -534,10 +534,9 @@ mod tests {
 
     #[test]
     fn a_brace_group_stays_one_segment_despite_an_internal_semicolon() {
-        // Issue #384 S3: without this, `{ cd -- d1; }` used to split at the
-        // internal `;`, so the router never saw the whole group and could
-        // not tell a `cd` that persists to the caller's cwd from one it
-        // cannot resolve.
+        // Issue #384: `{ cd -- d1; }` must stay one segment, or the router
+        // never sees the whole group and cannot tell a `cd` that persists to
+        // the caller's cwd from one it cannot resolve.
         let cmd = "{ cd -- d1; }; python3 ./sub/evil.py";
         assert_eq!(
             raw_segments(cmd),
@@ -553,11 +552,11 @@ mod tests {
 
     #[test]
     fn case_keyword_in_argument_position_does_not_suspend_splitting() {
-        // Issue #384 C1: `case`/`esac` only mean anything in command
-        // position. Here both are plain arguments to `grep`, so the `;`
-        // between them must still split — a smuggled `python3` used to
-        // auto-approve because the old scan opened a range on any word
-        // boundary, not just a command-position one.
+        // Issue #384: `case`/`esac` only mean anything in command position.
+        // Here both are plain arguments to `grep`, so the `;` between them
+        // must still split, or a smuggled `python3` auto-approves — the scan
+        // must open a range only on a command-position boundary, not any
+        // word boundary.
         let cmd = "grep case f; python3 ./evil.py; grep esac f";
         assert_eq!(
             raw_segments(cmd),

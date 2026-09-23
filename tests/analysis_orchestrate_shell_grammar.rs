@@ -1,6 +1,7 @@
-//! Decision-level regression tests for the #384/#430 round-2 findings (H1
-//! heredoc-chain regression, G1 shell-grammar gaps). Real-subprocess seam,
-//! same as `tests/analysis_orchestrate.rs` and its `wrapper_cd` sibling:
+//! Decision-level regression tests for issue #384/#430: a command chained on
+//! a heredoc marker's own line, and shell-grammar gaps that could hide an
+//! interpreter. Real-subprocess seam, same as `tests/analysis_orchestrate.rs`
+//! and its `wrapper_cd` sibling:
 //! these exercise the full route -> spawn -> Analyze -> map -> merge
 //! composition through `aegis::analysis::run_with_budget_in_cwd`.
 
@@ -30,7 +31,7 @@ fn dangerous_recursive_delete() -> &'static str {
     "import shutil\nshutil.rmtree('x')\n"
 }
 
-fn round2_workspace() -> tempfile::TempDir {
+fn shell_grammar_workspace() -> tempfile::TempDir {
     let workspace = tempfile::tempdir().expect("temp workspace");
     std::fs::write(
         workspace.path().join("evil.py"),
@@ -78,30 +79,30 @@ async fn assert_recursive_delete_found_in(workspace: &tempfile::TempDir, command
     );
 }
 
-// ── H1: a command chained on a heredoc marker's own line used to vanish ────
+// ── A command chained on a heredoc marker's own line is routed ─────────────
 
 #[tokio::test]
 async fn run_finds_a_delete_chained_on_a_heredoc_marker_line() {
-    let workspace = round2_workspace();
+    let workspace = shell_grammar_workspace();
     assert_recursive_delete_found_in(&workspace, "cat <<A && python3 ./evil.py\nhi\nA").await;
 }
 
-// ── G1/L1: leading redirection, stdin redirection, and a function body ─────
+// ── Leading redirection, stdin redirection, and a function body ────────────
 
 #[tokio::test]
 async fn run_finds_a_delete_behind_a_leading_output_redirection() {
-    let workspace = round2_workspace();
+    let workspace = shell_grammar_workspace();
     assert_recursive_delete_found_in(&workspace, ">out python3 ./evil.py").await;
 }
 
 #[tokio::test]
 async fn run_finds_a_delete_fed_in_through_stdin_redirection() {
-    let workspace = round2_workspace();
+    let workspace = shell_grammar_workspace();
     assert_recursive_delete_found_in(&workspace, "python3 < ./evil.py").await;
 }
 
 #[tokio::test]
 async fn run_finds_a_delete_inside_a_function_body_at_definition() {
-    let workspace = round2_workspace();
+    let workspace = shell_grammar_workspace();
     assert_recursive_delete_found_in(&workspace, "f(){ python3 ./evil.py; }; f").await;
 }

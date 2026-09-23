@@ -380,7 +380,7 @@ fn heredoc_written_then_executed_with_a_mismatched_path_is_not_reused() {
     // Written to `script.py` but a different file is executed — the router
     // must not substitute the heredoc body as evidence for `other.py`. It
     // still routes `other.py` itself as an ordinary `ScriptFile` (read from
-    // disk at resolution time, issue #384 H1): the chained exec on the
+    // disk at resolution time, issue #384): the chained exec on the
     // marker's own line is real command text, not evidence about `script.py`.
     let command = "cat > script.py <<'EOF' && python3 other.py\nprint(1)\nEOF";
     assert_eq!(
@@ -403,7 +403,7 @@ fn heredoc_write_then_exec_with_a_third_chained_segment_is_not_reused() {
     // A further top-level segment after the exec means this is not the
     // narrow exactly-two-segment shape the heredoc-body reuse is scoped to,
     // so the router falls back to routing `python3 script.py` as an ordinary
-    // `ScriptFile` (issue #384 H1); the trailing `&& rm script.py` names no
+    // `ScriptFile` (issue #384); the trailing `&& rm script.py` names no
     // interpreter, so it stays unrouted, same as a bare `rm` anywhere else.
     let command = "cat > script.py <<'EOF' && python3 script.py && rm script.py\nprint(1)\nEOF";
     assert_eq!(

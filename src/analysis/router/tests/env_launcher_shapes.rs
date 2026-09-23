@@ -1,7 +1,7 @@
 //! Router unit tests for `env` launcher shapes wider than the narrow
 //! three-token `env -S "<cmd>"` recognition: leading flags before `-S`, a
 //! glued `-S<value>`, `--split-string=<value>`, and `-C`/`--chdir` cwd
-//! degradation (issue #384 B4).
+//! degradation (issue #384).
 
 use super::*;
 

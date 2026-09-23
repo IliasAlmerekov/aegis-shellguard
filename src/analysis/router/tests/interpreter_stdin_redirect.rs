@@ -1,7 +1,7 @@
 //! Router unit tests for an interpreter fed its script through a stdin
 //! redirect — glued, fd-prefixed, or placed ahead of the program token
-//! (issue #384 B5). A spaced trailing `python3 < ./evil.py` already routed;
-//! these pin the shapes that did not.
+//! (issue #384). Covers the shapes beyond a spaced trailing
+//! `python3 < ./evil.py`.
 
 use super::*;
 

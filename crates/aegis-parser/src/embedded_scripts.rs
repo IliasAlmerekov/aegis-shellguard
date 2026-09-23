@@ -119,7 +119,7 @@ fn heredoc_target_program(line: &str, marker_start: usize) -> Option<&str> {
 }
 
 /// Extract process-substitution bodies from shell forms like `<(...)` (input)
-/// and `>(...)` (output, issue #384 G1) alike.
+/// and `>(...)` (output, issue #384) alike.
 ///
 /// The returned strings are the shell commands inside the substitution,
 /// without the surrounding `<(`/`>(` and `)`.
@@ -391,7 +391,7 @@ pub(crate) fn heredoc_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
 /// `cmd` itself ends in `\n` — paired with each line's own byte offset into
 /// `cmd`. The byte-offset companion [`str::lines`] does not provide, computed
 /// by walking `cmd` once instead of recovering it from a line's pointer
-/// address (issue #384 B6): pointer-offset recovery risks reading
+/// address (issue #384): pointer-offset recovery risks reading
 /// uninitialized/foreign memory if a caller ever passes a `lines` value that
 /// did not originate from this exact `cmd`, and no `unsafe` marks that risk
 /// at the call site the way it would for a raw pointer read.
@@ -632,7 +632,7 @@ mod tests {
     use super::heredoc_suspend_ranges;
 
     // Boundaries `heredoc_suspend_ranges`' byte-offset tracking must hold at
-    // (issue #384 B6): a heredoc with nothing between its marker and
+    // (issue #384): a heredoc with nothing between its marker and
     // terminator, one that never terminates because `cmd` ends on the marker
     // line itself, a CRLF-terminated command, and a terminated heredoc whose
     // last line carries no trailing newline at all.

@@ -40,8 +40,8 @@ pub fn heredoc_stdin(command: &str) -> Option<StdinRoute> {
 }
 
 /// Detect a here-string (`<<< 'literal'` / `<<<"literal"` / the glued
-/// `<<<'literal'` the tokenizer never puts a space in front of, issue #384
-/// B5) among the tokens following an interpreter invocation.
+/// `<<<'literal'` the tokenizer never puts a space in front of, issue #384)
+/// among the tokens following an interpreter invocation.
 #[must_use]
 pub fn here_string_stdin(rest_tokens: &[&str]) -> Option<StdinRoute> {
     let pos = rest_tokens.iter().position(|tok| tok.starts_with("<<<"))?;

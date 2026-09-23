@@ -295,8 +295,7 @@ pub(crate) fn split_pipeline_segments(raw_group: &str) -> Vec<PipelineSegment> {
             {
                 // `>|` (e.g. `>|out`, the noclobber-override redirect)
                 // glues a `|` straight onto an unescaped `>`/`<` — that is
-                // redirection syntax, not a pipeline separator (issue #384
-                // B3).
+                // redirection syntax, not a pipeline separator (issue #384).
                 finalize_segment(&mut current, &mut raw_segments);
             }
             _ => current.push(ch),
@@ -452,9 +451,9 @@ pub fn unwrap_subshell_group(raw_segment: &str) -> Option<String> {
 
     while let Some((idx, ch)) = chars.next() {
         // A `case` arm's own `)` (e.g. `x)`) is arm grammar, not this
-        // wrapper's closing paren — without this a nested `case ... esac`
-        // used to close the subshell at the pattern's first `)` and drop
-        // everything from the arm body onward (issue #384).
+        // wrapper's closing paren — without this guard a nested
+        // `case ... esac` would close the subshell at the pattern's first
+        // `)` and drop everything from the arm body onward (issue #384).
         if suspend.contains(idx) {
             continue;
         }

@@ -35,7 +35,7 @@ pub use segmentation::{
 pub use tokenizer::{extract_prefix, split_tokens};
 
 /// Reserved words that keep the *next* word in command position too (issue
-/// #384 C1) — `!`/`if`/`then`/`elif`/`else`/`while`/`until`/`do`/`time` all
+/// #384) — `!`/`if`/`then`/`elif`/`else`/`while`/`until`/`do`/`time` all
 /// introduce a command rather than being one themselves. The single source
 /// every command-position/reserved-word scan in this crate, and callers
 /// outside it, reads instead of each keeping its own copy to drift out of
@@ -112,7 +112,7 @@ pub fn effective_program<'a>(tokens: &[&'a str]) -> Option<&'a str> {
 /// [`is_redirection_operator`], which only matches the pure-operator form.
 ///
 /// The single source of truth for this decision, reused by both effective-
-/// program resolution here and the router's own argv walk (issue #384 B3).
+/// program resolution here and the router's own argv walk (issue #384).
 #[must_use]
 pub fn starts_with_redirection_glyph(tok: &str) -> bool {
     let after_fd = strip_leading_fd_marker(tok);
@@ -174,7 +174,7 @@ fn collect_effective_program_indices(tokens: &[&str], index: usize, starts: &mut
     // program (`FOO=1 >out python3 x.py`, `env >out python3 x.py`) — the
     // shell strips it before argv0 resolution the same way it does a
     // leading one, so this check runs first at every recursive step, not
-    // only at index 0 (issue #384 B3).
+    // only at index 0 (issue #384).
     if starts_with_redirection_glyph(tokens[index]) {
         let len = redirection_token_len(tokens[index]).min(tokens.len() - index);
         collect_effective_program_indices(tokens, index + len, starts);
@@ -267,7 +267,7 @@ fn launcher_prefix_lengths(tokens: &[&str]) -> Option<Vec<usize>> {
 }
 
 /// Resolve the launcher-prefix length for bare `xargs <program> <args...>`
-/// (issue #384 L1): with no placeholder/replacement flag, `xargs` runs
+/// (issue #384): with no placeholder/replacement flag, `xargs` runs
 /// `<program> <args...>` directly (plus stdin lines appended as further
 /// arguments), so the program right after its own flags is the effective
 /// program the same way `sudo`'s or `nice`'s is.
