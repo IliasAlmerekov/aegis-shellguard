@@ -27,15 +27,22 @@ fn aegis_bin() -> String {
     env!("CARGO_BIN_EXE_aegis").to_owned()
 }
 
-/// Spawn the worker subprocess with piped stdin/stdout.
-fn spawn_worker() -> std::process::Child {
+/// Spawn the worker subprocess with piped stdin/stdout, with any
+/// `leading_args` placed before `--internal-language-worker`.
+fn spawn_worker_with_args(leading_args: &[&str]) -> std::process::Child {
     Command::new(aegis_bin())
+        .args(leading_args)
         .arg("--internal-language-worker")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .expect("the aegis binary must be buildable and spawnable")
+}
+
+/// Spawn the worker subprocess with piped stdin/stdout.
+fn spawn_worker() -> std::process::Child {
+    spawn_worker_with_args(&[])
 }
 
 /// Encode a sequence of requests into one byte buffer.
@@ -159,6 +166,37 @@ fn worker_subprocess_stops_on_a_malformed_frame_with_a_nonzero_exit() {
         1,
         "only the well-formed first request is served before the malformed frame"
     );
+}
+
+#[test]
+fn internal_worker_flag_wins_over_an_argument_clap_would_reject() {
+    // `--not-a-real-clap-flag` matches no `Cli` argument. If `main()` ran
+    // clap before checking for the worker flag, this invocation would fail
+    // with clap's "unexpected argument" error and exit 2 instead of running
+    // a worker session.
+    let mut child = spawn_worker_with_args(&["--not-a-real-clap-flag"]);
+
+    let input = encode_requests(&[(1, parse_request(SourceLanguage::Python, b"print(1)"))]);
+    {
+        let mut stdin = child.stdin.take().expect("stdin must be piped");
+        stdin
+            .write_all(&input)
+            .expect("writing requests to the worker must succeed");
+    }
+    let mut stdout = child.stdout.take().expect("stdout must be piped");
+    let mut out = Vec::new();
+    stdout
+        .read_to_end(&mut out)
+        .expect("reading worker stdout must succeed");
+    let status = child.wait().expect("the worker must terminate");
+
+    assert!(
+        status.success(),
+        "the worker flag must be detected before clap sees the unrecognized argument"
+    );
+    let responses = decode_all_responses(&out);
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].message, Response::Parsed { error_count: 0 });
 }
 
 #[test]

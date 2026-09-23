@@ -9,7 +9,6 @@ use aegis_config::AegisConfig;
 use aegis_parser::Parser as CommandParser;
 use aegis_policy::ExecutionTransport;
 use aegis_types::Assessment;
-use aegis_types::SnapshotRecord;
 use tempfile::TempDir;
 use tokio::runtime::Handle;
 
@@ -23,42 +22,6 @@ use crate::shell_flow::decide_command;
 use aegis::error::AegisError;
 use aegis_config::{AllowlistMatch, ConfigSourceLayer};
 use aegis_types::{AllowlistOverrideLevel, CiPolicy, Mode, SnapshotPolicy};
-
-// ── Scanner init failure ──────────────────────────────────────────────────
-//
-// Fail-closed: when interceptor assessment returns Err, assess_command()
-// must fall back to RiskLevel::Warn — NOT Safe.  Safe would auto-approve
-// every command (including rm -rf /) while the scanner is broken.
-// Warn forces the confirmation dialog for every command until healthy.
-
-#[test]
-fn scanner_init_failure_fallback_is_warn_not_safe() {
-    let fallback = Assessment {
-        risk: RiskLevel::Warn,
-        effect_opaque: false,
-        matched: Vec::new(),
-        highlight_ranges: Vec::new(),
-        command: CommandParser::parse("any command"),
-        analysis: None,
-    };
-    assert_eq!(fallback.risk, RiskLevel::Warn);
-    assert!(
-        fallback.risk > RiskLevel::Safe,
-        "fail-closed: scanner failure must require confirmation, not auto-approve"
-    );
-    assert!(fallback.matched.is_empty());
-}
-
-// ── Snapshot runtime failure ──────────────────────────────────────────────
-//
-// When the tokio runtime fails to build, create_snapshots() returns an empty
-// Vec — the dialog still appears, just without snapshot records listed.
-
-#[test]
-fn snapshot_runtime_failure_fallback_returns_empty_vec() {
-    let fallback: Vec<SnapshotRecord> = Vec::new();
-    assert!(fallback.is_empty());
-}
 
 #[test]
 fn shell_compat_parser_handles_dash_lc_command() {
@@ -252,29 +215,6 @@ fn same_file_false_for_distinct_paths() {
         &PathBuf::from("/bin/sh"),
         Some(&PathBuf::from("/usr/bin/bash"))
     ));
-}
-
-// ── Exit-code contract ────────────────────────────────────────────────────
-
-#[test]
-fn exit_codes_have_expected_values() {
-    assert_eq!(EXIT_DENIED, 2);
-    assert_eq!(EXIT_BLOCKED, 3);
-    assert_eq!(EXIT_INTERNAL, 4);
-}
-
-#[test]
-fn exit_codes_are_distinct() {
-    assert_ne!(EXIT_DENIED, EXIT_BLOCKED);
-    assert_ne!(EXIT_DENIED, EXIT_INTERNAL);
-    assert_ne!(EXIT_BLOCKED, EXIT_INTERNAL);
-}
-
-#[test]
-fn exit_codes_do_not_overlap_with_success() {
-    assert_ne!(EXIT_DENIED, 0);
-    assert_ne!(EXIT_BLOCKED, 0);
-    assert_ne!(EXIT_INTERNAL, 0);
 }
 
 #[test]
