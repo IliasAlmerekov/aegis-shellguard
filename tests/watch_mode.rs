@@ -473,7 +473,7 @@ fn malformed_audit_dir_emits_protocol_error_and_does_not_execute_command() {
     let cwd = TempDir::new().unwrap();
     // Place a file at ~/.aegis so create_dir_all(~/.aegis) fails — audit write
     // is impossible. Aegis must fail-closed: emit a protocol-level error and
-    // not execute the command (ROADMAP 0.2 acceptance criterion).
+    // not execute the command (docs/history/roadmap.md §0.2 acceptance criterion).
     fs::write(home.path().join(".aegis"), "not a directory").unwrap();
 
     let output = aegis_watch_in(home.path(), cwd.path(), b"{\"cmd\":\"echo hi\"}\n");

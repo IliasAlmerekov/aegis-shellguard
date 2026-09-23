@@ -130,9 +130,9 @@ divergent copies: two expressions of one set, and nothing keeping them equal.
 
 ## References
 
-- [`TASKS.md`](../../TASKS.md)
+- [`TASKS.md`](https://github.com/IliasAlmerekov/aegis-shellguard/blob/500aaf5a808b5083ec8b9bdb85f76c398c646302/TASKS.md)
 - [`AGENTS.md`](../../AGENTS.md)
-- [`PROJECT_STATE.md`](../../PROJECT_STATE.md)
+- [`PROJECT_STATE.md`](https://github.com/IliasAlmerekov/aegis-shellguard/blob/500aaf5a808b5083ec8b9bdb85f76c398c646302/PROJECT_STATE.md)
 - [ADR-024](adr-024-language-aware-analysis-ships-opt-in-and-is-not-a-1-0-release-gate.md)
 - [ADR-026](adr-026-snapshot-rollback-contract-for-1-0.md)
 - [#199 — Map: rebaseline Aegis 1.0 scope](https://github.com/IliasAlmerekov/aegis-shellguard/issues/199)

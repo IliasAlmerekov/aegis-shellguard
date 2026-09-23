@@ -251,7 +251,7 @@ pub(crate) fn prune_aegis_managed_hooks(
         // A non-object entry is not one Aegis manages — `matcher` is optional
         // to the agent and a third-party entry may be shaped however that tool
         // likes. Skip it rather than rejecting it: refusing to install over a
-        // foreign shape leaves the operator with no hook at all (TASKS.md#M3a).
+        // foreign shape leaves the operator with no hook at all (M3a).
         let Some(entry_obj) = entry.as_object_mut() else {
             continue;
         };

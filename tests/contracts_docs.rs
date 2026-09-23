@@ -180,14 +180,13 @@ fn prd_defines_the_mandatory_sandbox_contract() {
     assert_no_confidentiality_overclaims(&prd, "PRD.md");
 }
 
-/// The five documents derived from `PRD.md` §5.5. Each one describes the Sandbox
+/// The four documents derived from `PRD.md` §5.5. Each one describes the Sandbox
 /// to a different audience, and each must agree with the PRD about what 1.0
 /// promises.
-const DERIVED_SANDBOX_DOCS: [&str; 5] = [
+const DERIVED_SANDBOX_DOCS: [&str; 4] = [
     "README.md",
     "docs/config-schema.md",
     "docs/threat-model.md",
-    "ROADMAP.md",
     "ARCHITECTURE.md",
 ];
 
@@ -251,12 +250,7 @@ fn derived_docs_state_the_mandatory_sandbox_contract() {
     }
 
     // The surfaces that name the migration contract of the two retired flags.
-    for doc in [
-        "README.md",
-        "docs/config-schema.md",
-        "docs/threat-model.md",
-        "ROADMAP.md",
-    ] {
+    for doc in ["README.md", "docs/config-schema.md", "docs/threat-model.md"] {
         let contents = fs::read_to_string(repo_path(doc)).unwrap();
         assert!(
             contents.contains("deprecated_sandbox_field"),

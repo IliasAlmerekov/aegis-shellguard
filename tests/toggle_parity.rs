@@ -1,4 +1,4 @@
-//! M3a parity contract (`TASKS.md#M3a`): the `Session-start notice` an agent
+//! M3a parity contract: the `Session-start notice` an agent
 //! hook emits must report the same `Effective enforcement state` that
 //! `aegis status` reports for the same environment.
 //!

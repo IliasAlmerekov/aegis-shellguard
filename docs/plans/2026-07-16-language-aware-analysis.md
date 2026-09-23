@@ -18,7 +18,7 @@ this plan says "before 1.0", read "before the feature is enabled by default in a
 **Architecture contract:**
 [`ADR-022`](../adr/adr-022-language-aware-analysis-is-an-additive-isolated-stage.md)
 
-**Roadmap milestone:** `L1` in [`ROADMAP.md`](../../ROADMAP.md)
+**Roadmap milestone:** `L1` in [`docs/history/roadmap.md`](../history/roadmap.md)
 
 ## Objective
 

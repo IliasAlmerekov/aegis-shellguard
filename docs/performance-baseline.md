@@ -122,7 +122,9 @@ Three conclusions the numbers support:
    `bdfbaf9` (ADR-014), which made the inline-script body a *second* regex scan target
    (`effective_token_slices` → `join(" ")` → `full_scan`, on top of the
    `recursive::scan_targets` pass). The redundant second scan of the same body is
-   tracked as **P3-9** in `TASKS.md`; closing it should recover roughly half of
+   tracked as **P3-9** in the
+   [TASKS.md permalink](https://github.com/IliasAlmerekov/aegis-shellguard/blob/500aaf5a808b5083ec8b9bdb85f76c398c646302/TASKS.md);
+   closing it should recover roughly half of
    this row and is the reason the new ceiling is 1.3 ms rather than a looser one.
 
 The growth is linear and bounded by the existing input caps, measured on the

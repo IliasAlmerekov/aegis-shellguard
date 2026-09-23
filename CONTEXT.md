@@ -714,6 +714,26 @@ weekly schedule, and on manual runs; it is skipped only for pull requests into
 other branches.
 _Avoid_: slow job, optional job
 
+**Finding ID**:
+The `C<n>`/`H<n>`/`M<n>`/`P3-<n>` identifiers assigned by the 2026-06-23
+security audit and the 2026-06-24 crash-test of `aegis 0.5.9`. The letter is
+the reviewer's original severity judgement, not a release verdict: `C` critical,
+`H` high, `M` medium, `P3` low/informational. A trailing letter splits one
+finding into independently closable parts (`H7a`/`H7b`); a trailing `.<n>`
+names an implementation slice of one finding (`M5.3` is the third slice of
+`M5`, not a separate finding). This namespace is frozen: no new finding ID is
+minted, and new work cites its GitHub issue number instead. The historical
+registry that once explained each ID now lives at the permalink
+https://github.com/IliasAlmerekov/aegis-shellguard/blob/500aaf5a808b5083ec8b9bdb85f76c398c646302/TASKS.md.
+_Avoid_: task ID, audit ID
+
+**Roadmap milestone ID**:
+The `Phase <n>` and `L<n>` identifiers naming a stage in `docs/history/roadmap.md`,
+a namespace disjoint from `Finding ID` — neither ever reuses the other's letter
+or number (`CONVENTION.md` §11). Also frozen: no new phase or `L<n>` is minted,
+and new work cites its GitHub issue number instead.
+_Avoid_: phase ID, milestone number
+
 ## Update notice
 
 **Installation channel**:
