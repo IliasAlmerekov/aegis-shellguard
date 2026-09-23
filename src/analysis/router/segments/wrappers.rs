@@ -217,7 +217,10 @@ pub(super) fn wrapper_bodies(stage_raw: &str, trusted_aliases: &[(&str, &str)]) 
     // it turns out to be.
     let trimmed = strip_trailing_redirection(stage_raw.trim_start());
 
-    for kw in RESERVED_WORD_PREFIXES {
+    for kw in aegis_parser::COMMAND_STARTING_KEYWORDS
+        .iter()
+        .chain(WRAPPER_ONLY_RESERVED_WORDS)
+    {
         if let Some(rest) = trimmed.strip_prefix(kw)
             && rest.starts_with(char::is_whitespace)
         {

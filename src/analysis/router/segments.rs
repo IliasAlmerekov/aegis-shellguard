@@ -16,18 +16,17 @@ use super::*;
 mod wrappers;
 use wrappers::{posix_function_definition_body, wrapper_bodies};
 
-/// Bound on wrapper-peeling recursion (issue #384 P1). Each level of
+/// Bound on wrapper-peeling recursion. Each level of
 /// [`route_wrapped_stage`] re-scans its own (shrinking) body with
 /// [`aegis_parser::list_segments`] and the wrapper-detection substring scans,
 /// so an unbounded pathological nest such as `((((...))))` cost work
 /// proportional to the *sum* of every level's remaining string length —
 /// quadratic in nesting depth, and deep enough to blow the call stack before
 /// that cost even mattered. Past this many levels, routing stops peeling and
-/// records degradation instead of recursing further. Matches ADR-022 §7's
-/// cross-language recursion-depth ceiling
-/// (`OrchestrationBudget::L1_DEFAULT.max_depth`) rather than inventing a
-/// second, unrelated number for the same "how deep is too deep" question.
-const MAX_WRAP_DEPTH: u32 = 8;
+/// records degradation instead of recursing further. Reads
+/// `OrchestrationBudget::L1_DEFAULT.max_depth` (ADR-022 §7's cross-language
+/// recursion-depth ceiling) rather than duplicating that number here.
+const MAX_WRAP_DEPTH: u32 = crate::analysis::OrchestrationBudget::L1_DEFAULT.max_depth;
 
 /// `true` when `command` contains a genuine heredoc marker (`<<WORD`,
 /// `<<'WORD'`, `<<-WORD`, …) — never the unrelated single-line here-string
@@ -306,11 +305,21 @@ fn route_stage(
 }
 
 /// Reserved words that can open a stage without being its own command
-/// (grammar wrappers, issue #430) — the same set `strip_leading_shell_syntax`
-/// recognizes.
-const RESERVED_WORD_PREFIXES: &[&str] = &[
-    "if", "then", "elif", "else", "while", "until", "do", "case", "time", "!", "function", "coproc",
-];
+/// (grammar wrappers, issue #430) beyond `aegis_parser::COMMAND_STARTING_KEYWORDS`
+/// (the shared list `strip_leading_shell_syntax` also reads): `case` and
+/// `function` open a wrapper `stage_may_be_wrapped` must see through but
+/// don't keep the *next* word in command position the way that list's own
+/// members do, and `coproc` is this router's own addition for the same
+/// reason.
+const WRAPPER_ONLY_RESERVED_WORDS: &[&str] = &["case", "function", "coproc"];
+
+/// `true` when `word` prefixes `trimmed` as a whole reserved word, not just a
+/// literal substring (`iffy` must not match `if`).
+fn stage_starts_with_reserved_word(trimmed: &str, word: &str) -> bool {
+    trimmed
+        .strip_prefix(word)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+}
 
 /// `true` when `stage_raw` may hide a routable command behind shell grammar
 /// [`route_direct_stage`] cannot see through: a subshell, a brace group, a
@@ -325,11 +334,10 @@ fn stage_may_be_wrapped(stage_raw: &str) -> bool {
         || stage_raw.contains('`')
         || stage_raw.contains("<(")
         || stage_raw.contains(">(")
-        || RESERVED_WORD_PREFIXES.iter().any(|kw| {
-            trimmed
-                .strip_prefix(kw)
-                .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
-        })
+        || aegis_parser::COMMAND_STARTING_KEYWORDS
+            .iter()
+            .chain(WRAPPER_ONLY_RESERVED_WORDS)
+            .any(|kw| stage_starts_with_reserved_word(trimmed, kw))
         || (command_has_heredoc(stage_raw) && heredoc_marker_line_tail(stage_raw).is_some())
         || posix_function_definition_body(trimmed).is_some()
 }

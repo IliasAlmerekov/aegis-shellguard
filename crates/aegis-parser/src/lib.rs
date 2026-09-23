@@ -32,6 +32,19 @@ pub use segmentation::{
 };
 pub use tokenizer::{extract_prefix, split_tokens};
 
+/// Reserved words that keep the *next* word in command position too (issue
+/// #384 C1) — `!`/`if`/`then`/`elif`/`else`/`while`/`until`/`do`/`time` all
+/// introduce a command rather than being one themselves. The single source
+/// every command-position/reserved-word scan in this crate, and callers
+/// outside it, reads instead of each keeping its own copy to drift out of
+/// sync (issue #384/#430). `case`, `function`, and `coproc` are deliberately
+/// absent: each needs handling beyond a flat membership check (nesting nested
+/// `case`/`esac`, a header's own name and body, a two-word start), done
+/// separately at the call sites that need it.
+pub const COMMAND_STARTING_KEYWORDS: [&str; 9] = [
+    "!", "if", "then", "elif", "else", "while", "until", "do", "time",
+];
+
 /// A token slice resolved to the program that prefix-style detection should use.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EffectiveTokenSlice<'a> {

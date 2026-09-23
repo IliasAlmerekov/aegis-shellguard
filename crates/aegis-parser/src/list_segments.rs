@@ -87,21 +87,14 @@ pub fn list_segments(cmd: &str) -> Vec<ListSegment> {
         .collect()
 }
 
-/// Reserved words that, seen in command position, keep the *next* word in
-/// command position too (issue #384 C1) — `!`/`if`/`then`/`elif`/`else`/
-/// `while`/`until`/`do`/`time` all introduce a command rather than being one
-/// themselves. `case` and `esac` are deliberately absent: each is handled by
-/// name in [`note_word_boundary`] instead, since seeing either must also
-/// touch the nesting stack, not just flip a flag.
-const COMMAND_STARTING_KEYWORDS: [&str; 9] = [
-    "!", "if", "then", "elif", "else", "while", "until", "do", "time",
-];
-
 /// Fold one completed word (`word_start..word_end` of `cmd`) into the
 /// `case`/`esac` nesting scan: open a range when `word` is `case` seen in
 /// command position, close the outermost one when `word` is `esac` seen in
 /// command position, and report whether the word just consumed leaves the
-/// *next* word in command position (true only for a reserved starter word).
+/// *next* word in command position (true only for a reserved starter word in
+/// [`crate::COMMAND_STARTING_KEYWORDS`]). `case` and `esac` are handled by
+/// name here instead, since seeing either must also touch the nesting stack,
+/// not just flip a flag.
 fn note_word_boundary(
     word: &str,
     word_start: usize,
@@ -124,7 +117,7 @@ fn note_word_boundary(
         }
         false
     } else {
-        COMMAND_STARTING_KEYWORDS.contains(&word)
+        crate::COMMAND_STARTING_KEYWORDS.contains(&word)
     }
 }
 

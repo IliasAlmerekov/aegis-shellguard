@@ -323,7 +323,7 @@ pub(crate) fn split_pipeline_segments(raw_group: &str) -> Vec<PipelineSegment> {
 /// determined by the parity of the run of backslashes immediately preceding the
 /// redirect char (odd = escaped).
 ///
-/// Shared by both `split_top_level_segments` and `split_top_level_command_groups`
+/// Shared by both `split_top_level_segments` and `split_pipeline_segments`
 /// so the security-critical background-`&` decision has a single source of truth.
 pub(crate) fn ends_with_redirect_target(current: &str) -> bool {
     let mut rev = current.trim_end().chars().rev();
@@ -404,9 +404,7 @@ fn strip_leading_shell_syntax(raw_segment: &str) -> Option<String> {
         return Some(body.trim_start().to_string());
     }
 
-    for prefix in [
-        "{", "!", "if", "then", "elif", "else", "while", "until", "do", "time",
-    ] {
+    for prefix in std::iter::once("{").chain(crate::COMMAND_STARTING_KEYWORDS) {
         if let Some(rest) = strip_shell_keyword(segment, prefix) {
             return Some(rest.to_string());
         }
