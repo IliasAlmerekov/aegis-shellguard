@@ -741,6 +741,7 @@ async fn resolve_degrades_an_oversized_script_file() {
 }
 
 mod cwd;
+mod redirection_placement;
 mod round2;
 mod segments;
 mod wrapped;

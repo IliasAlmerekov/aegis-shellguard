@@ -290,8 +290,13 @@ pub(crate) fn split_pipeline_segments(raw_group: &str) -> Vec<PipelineSegment> {
                 && !in_backticks
                 && paren_depth == 0
                 && command_subst_depth == 0
-                && chars.peek().map(|&(_, c)| c) != Some('|') =>
+                && chars.peek().map(|&(_, c)| c) != Some('|')
+                && !ends_with_redirect_target(&current) =>
             {
+                // `>|` (e.g. `>|out`, the noclobber-override redirect)
+                // glues a `|` straight onto an unescaped `>`/`<` — that is
+                // redirection syntax, not a pipeline separator (issue #384
+                // B3).
                 finalize_segment(&mut current, &mut raw_segments);
             }
             _ => current.push(ch),

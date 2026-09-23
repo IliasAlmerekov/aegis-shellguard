@@ -445,18 +445,14 @@ fn route_direct_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<Rout
     if owned_tokens.is_empty() {
         return Vec::new();
     }
-    let all_tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
-    // A leading redirection (`>out python3 x.py`, `2>&1 python3 x.py`) is
-    // shell syntax attached to the *stage*, not an argument of the program
-    // that follows it — the shell strips it before argv0 resolution, so
-    // routing must too, or the redirection token itself gets mistaken for
-    // the effective program (issue #384 G1).
-    let tokens = strip_leading_redirections(&all_tokens);
-    if tokens.is_empty() {
-        return Vec::new();
-    }
-
-    let Some(slice) = aegis_parser::effective_token_slices(tokens)
+    let tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
+    // A redirection anywhere before the program (`>out python3 x.py`,
+    // `FOO=1 >out python3 x.py`, `env >out python3 x.py`) is shell syntax
+    // attached to the stage, not an argument of the program that follows it
+    // — the shell strips it before argv0 resolution, so routing must too.
+    // `aegis_parser::effective_token_slices` handles this at every step
+    // (issue #384 B3), not only a redirection at position 0.
+    let Some(slice) = aegis_parser::effective_token_slices(&tokens)
         .into_iter()
         .next()
     else {
@@ -559,7 +555,7 @@ pub(super) fn walk_interpreter_argv(interp: &Interpreter, rest: &[&str]) -> Argv
                 source,
             });
         }
-        if is_redirection_operator(tok) {
+        if aegis_parser::is_redirection_operator(tok) {
             // A spaced-out redirection (`> file`, `2> file`, `>> file`) has
             // its target in the *next* token, which the interpreter never
             // sees either — skip both, not just the operator, or the target
@@ -591,54 +587,10 @@ pub(super) fn walk_interpreter_argv(interp: &Interpreter, rest: &[&str]) -> Argv
     }
 }
 
-/// A standalone shell redirection operator token (`>`, `>>`, `<`, `2>`, …) —
-/// an optional leading file-descriptor number followed by nothing but `<`/`>`
-/// characters. A glued form (`>out.txt`, `2>&1`) is not standalone — it
-/// carries its own target in the same token and needs no extra token
-/// skipped, so it is deliberately excluded here.
-fn is_redirection_operator(tok: &str) -> bool {
-    let after_fd = tok.trim_start_matches(|c: char| c.is_ascii_digit());
-    // `&>`/`&>>` (bash's combined stdout+stderr redirection) carry one
-    // leading `&` before the `<`/`>` run; a glued fd-duplication form like
-    // `>&2`/`2>&1` has `&` *after* the `<`/`>` instead and is deliberately
-    // left unmatched here — it carries its own target in the same token, so
-    // the generic "contains `<`/`>`" fallback already skips just that one
-    // token, which is correct.
-    let after_amp = after_fd.strip_prefix('&').unwrap_or(after_fd);
-    !after_amp.is_empty() && after_amp.chars().all(|c| c == '<' || c == '>')
-}
-
 /// `true` for a standalone plain input redirection (`<`, `3<`, …) — an
-/// [`is_redirection_operator`] token with no `>` and no fd-duplication `&`,
-/// the only shape whose target can mean "this file is the interpreter's
-/// stdin source" (issue #384 G1).
+/// [`aegis_parser::is_redirection_operator`] token with no `>` and no
+/// fd-duplication `&`, the only shape whose target can mean "this file is
+/// the interpreter's stdin source" (issue #384 G1).
 fn is_plain_input_redirect(tok: &str) -> bool {
     tok.trim_start_matches(|c: char| c.is_ascii_digit()) == "<"
-}
-
-/// Drop a leading run of redirection tokens (standalone or glued to their
-/// target/fd, e.g. `>out`, `2>&1`, `<file`) so the token right after them is
-/// treated as the effective program (issue #384 G1): a leading redirection
-/// before the command word is shell syntax the shell strips before argv0
-/// resolution, and otherwise gets mistaken for the program itself.
-fn strip_leading_redirections<'a>(tokens: &'a [&'a str]) -> &'a [&'a str] {
-    let mut idx = 0;
-    while idx < tokens.len() && starts_with_redirection_glyph(tokens[idx]) {
-        idx += if is_redirection_operator(tokens[idx]) {
-            2 // standalone operator: its target is the *next* token too.
-        } else {
-            1 // glued form: operator and target/fd share this one token.
-        };
-    }
-    &tokens[idx.min(tokens.len())..]
-}
-
-/// `true` when `tok` *starts* with a redirection glyph (`<`, `>`, or a
-/// digit/`&`-prefixed one), whether standalone (`>`, `2>`) or with a glued
-/// target/fd (`>out`, `2>&1`, `<file`). Broader than
-/// [`is_redirection_operator`], which only matches the pure-operator form.
-fn starts_with_redirection_glyph(tok: &str) -> bool {
-    let after_fd = tok.trim_start_matches(|c: char| c.is_ascii_digit());
-    let after_amp = after_fd.strip_prefix('&').unwrap_or(after_fd);
-    after_amp.starts_with('<') || after_amp.starts_with('>')
 }
