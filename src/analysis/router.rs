@@ -235,7 +235,7 @@ pub fn route(command: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarge
     let mut cwd = CwdState::Unset;
     let mut targets = Vec::new();
     for segment in aegis_parser::list_segments(command) {
-        route_list_segment(&segment, trusted_aliases, &mut cwd, &mut targets);
+        route_list_segment(&segment, trusted_aliases, &mut cwd, &mut targets, 0);
     }
     targets
 }

@@ -5,6 +5,7 @@
 //! `SourceLanguage`, `route`, ...) `router::tests`'s other siblings use.
 
 use super::*;
+use std::time::Instant;
 
 fn evil_py_script_file() -> RoutedTarget {
     RoutedTarget::ScriptFile {
@@ -76,6 +77,32 @@ fn heredoc_write_then_exec_reuse_still_wins_over_the_generic_tail_route() {
             language: SourceLanguage::Python,
             source: "print(1)".to_owned(),
         }]
+    );
+}
+
+// ── P1: wrapper-peeling recursion is bounded ───────────────────────────────
+
+#[test]
+fn deeply_nested_subshells_finish_quickly_and_degrade_past_the_bound() {
+    let nested = format!("{}true{}", "(".repeat(3000), ")".repeat(3000));
+
+    let start = Instant::now();
+    let targets = route(&nested, &[]);
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed.as_secs() < 5,
+        "3000-level nesting must stay well within a generous bound, took {elapsed:?}"
+    );
+    assert!(
+        targets.iter().any(|t| matches!(
+            t,
+            RoutedTarget::Unresolved {
+                reason: aegis_types::DegradationReason::LimitExceeded
+            }
+        )),
+        "past the wrap-depth bound routing must degrade rather than silently \
+         treat the unexamined body as safe: {targets:?}"
     );
 }
 

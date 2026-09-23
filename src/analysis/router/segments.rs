@@ -13,6 +13,19 @@
 
 use super::*;
 
+/// Bound on wrapper-peeling recursion (issue #384 P1). Each level of
+/// [`route_wrapped_stage`] re-scans its own (shrinking) body with
+/// [`aegis_parser::list_segments`] and the wrapper-detection substring scans,
+/// so an unbounded pathological nest such as `((((...))))` cost work
+/// proportional to the *sum* of every level's remaining string length —
+/// quadratic in nesting depth, and deep enough to blow the call stack before
+/// that cost even mattered. Past this many levels, routing stops peeling and
+/// records degradation instead of recursing further. Matches ADR-022 §7's
+/// cross-language recursion-depth ceiling
+/// (`OrchestrationBudget::L1_DEFAULT.max_depth`) rather than inventing a
+/// second, unrelated number for the same "how deep is too deep" question.
+const MAX_WRAP_DEPTH: u32 = 8;
+
 /// `true` when `command` contains a genuine heredoc marker (`<<WORD`,
 /// `<<'WORD'`, `<<-WORD`, …) — never the unrelated single-line here-string
 /// operator `<<<`, which `aegis_parser::extract_heredoc_bodies` already does
@@ -169,6 +182,7 @@ pub(super) fn route_list_segment(
     trusted_aliases: &[(&str, &str)],
     cwd: &mut CwdState,
     targets: &mut Vec<RoutedTarget>,
+    depth: u32,
 ) {
     let stages = &segment.pipeline.segments;
 
@@ -178,7 +192,7 @@ pub(super) fn route_list_segment(
             return;
         }
 
-        route_stage(&stages[0].raw, trusted_aliases, cwd, targets);
+        route_stage(&stages[0].raw, trusted_aliases, cwd, targets, depth);
         let current = std::mem::replace(cwd, CwdState::Unset);
         *cwd = advance_across_separator(current, segment.separator);
         return;
@@ -209,6 +223,7 @@ pub(super) fn route_list_segment(
             trusted_aliases,
             &mut scratch_cwd,
             &mut wrapped_stage_targets,
+            depth,
         );
         let wrapped_produced = wrapped_stage_targets.len() > wrapped_before;
         if scratch_cwd != *cwd {
@@ -290,11 +305,12 @@ fn route_stage(
     trusted_aliases: &[(&str, &str)],
     cwd: &mut CwdState,
     targets: &mut Vec<RoutedTarget>,
+    depth: u32,
 ) {
     for target in route_direct_stage(stage_raw, trusted_aliases) {
         push_unique(targets, apply_cwd(target, cwd));
     }
-    route_wrapped_stage(stage_raw, trusted_aliases, cwd, targets);
+    route_wrapped_stage(stage_raw, trusted_aliases, cwd, targets, depth);
 }
 
 /// Reserved words that can open a stage without being its own command
@@ -436,8 +452,25 @@ fn route_wrapped_stage(
     trusted_aliases: &[(&str, &str)],
     cwd: &mut CwdState,
     targets: &mut Vec<RoutedTarget>,
+    depth: u32,
 ) {
     if !stage_may_be_wrapped(stage_raw) {
+        return;
+    }
+
+    if depth >= MAX_WRAP_DEPTH {
+        // Something is still hidden behind this wrapper that routing refuses
+        // to keep peeling into (issue #384 P1): recursing further would cost
+        // work proportional to the whole remaining string at every
+        // additional level, and deep enough nesting overflows the call stack
+        // outright. Degrade honestly rather than silently treat the
+        // unexamined body as safe (fail-closed, CONVENTION.md §2).
+        push_unique(
+            targets,
+            RoutedTarget::Unresolved {
+                reason: DegradationReason::LimitExceeded,
+            },
+        );
         return;
     }
 
@@ -445,12 +478,16 @@ fn route_wrapped_stage(
         let mut body_cwd = cwd.clone();
         let mut body_targets = Vec::new();
         for segment in aegis_parser::list_segments(&body) {
-            route_list_segment(&segment, trusted_aliases, &mut body_cwd, &mut body_targets);
+            route_list_segment(
+                &segment,
+                trusted_aliases,
+                &mut body_cwd,
+                &mut body_targets,
+                depth + 1,
+            );
         }
         for target in body_targets {
-            if !targets.contains(&target) {
-                targets.push(target);
-            }
+            push_unique(targets, target);
         }
         if body_cwd != *cwd {
             *cwd = CwdState::Degraded;
