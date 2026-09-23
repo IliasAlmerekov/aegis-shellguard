@@ -10,6 +10,35 @@ use crate::PipelineChain;
 use crate::embedded_scripts::heredoc_suspend_ranges;
 use crate::segmentation::{ends_with_redirect_target, finalize_segment, split_pipeline_segments};
 
+/// Walks a byte offset forward through a sorted, non-overlapping list of
+/// ranges, tracking which one (if any) currently contains it. Shared by
+/// every scanner that must treat a byte span — a `case` statement, a
+/// heredoc body — as opaque data rather than parseable shell grammar,
+/// instead of each one re-deriving the same "advance past ranges that have
+/// already ended" walk.
+pub(crate) struct SuspendCursor<'a> {
+    remaining: std::slice::Iter<'a, Range<usize>>,
+    active: Option<&'a Range<usize>>,
+}
+
+impl<'a> SuspendCursor<'a> {
+    pub(crate) fn new(ranges: &'a [Range<usize>]) -> Self {
+        let mut remaining = ranges.iter();
+        let active = remaining.next();
+        Self { remaining, active }
+    }
+
+    /// Advances past any ranges that have already ended by `byte_idx`, then
+    /// reports whether `byte_idx` falls inside the (possibly new) active
+    /// one. `byte_idx` must be non-decreasing across calls on one cursor.
+    pub(crate) fn contains(&mut self, byte_idx: usize) -> bool {
+        while self.active.is_some_and(|range| range.end <= byte_idx) {
+            self.active = self.remaining.next();
+        }
+        self.active.is_some_and(|range| range.contains(&byte_idx))
+    }
+}
+
 /// The top-level shell list operator connecting one [`ListSegment`] to the next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListSeparator {
@@ -122,7 +151,7 @@ fn note_word_boundary(
 /// inside it. A `case` with no matching `esac` (or vice versa) produces no
 /// range at all — the same fail-open gap as the rest of this crate's raw
 /// scans for malformed input.
-fn case_statement_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
+pub(crate) fn case_statement_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
     if !cmd.contains("case") {
         return Vec::new();
     }

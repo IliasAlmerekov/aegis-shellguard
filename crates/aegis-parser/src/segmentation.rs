@@ -1,4 +1,5 @@
 use super::{PipelineChain, PipelineSegment, extract_nested_commands, split_tokens};
+use crate::list_segments::{SuspendCursor, case_statement_suspend_ranges};
 
 /// Split a raw shell command string into its logical segments.
 ///
@@ -217,18 +218,29 @@ fn split_top_level_command_groups(cmd: &str) -> Vec<String> {
 pub(crate) fn split_pipeline_segments(raw_group: &str) -> Vec<PipelineSegment> {
     let mut raw_segments = Vec::new();
     let mut current = String::new();
-    let mut chars = raw_group.chars().peekable();
+    let case_ranges = case_statement_suspend_ranges(raw_group);
+    let mut suspend = SuspendCursor::new(&case_ranges);
+    let mut chars = raw_group.char_indices().peekable();
     let mut in_single_quote = false;
     let mut in_double_quote = false;
     let mut in_backticks = false;
     let mut paren_depth = 0usize;
     let mut command_subst_depth = 0usize;
 
-    while let Some(ch) = chars.next() {
+    while let Some((byte_idx, ch)) = chars.next() {
+        // A `case` pattern's own `)`/`|` (e.g. `x|y)`) is arm grammar, not a
+        // pipe or a paren-close, so this whole command's byte span is opaque
+        // here the same way it already is at the top-level list-segment
+        // split — otherwise `case x in x|y) python3 evil.py;; esac` splits
+        // into two bogus pipeline stages at the pattern's `|` (issue #384).
+        if suspend.contains(byte_idx) {
+            current.push(ch);
+            continue;
+        }
         match ch {
             '\\' if !in_single_quote => {
                 current.push(ch);
-                if let Some(next) = chars.next() {
+                if let Some((_, next)) = chars.next() {
                     current.push(next);
                 }
             }
@@ -244,10 +256,13 @@ pub(crate) fn split_pipeline_segments(raw_group: &str) -> Vec<PipelineSegment> {
                 in_backticks = !in_backticks;
                 current.push(ch);
             }
-            '$' if !in_single_quote && !in_backticks && chars.peek() == Some(&'(') => {
+            '$' if !in_single_quote
+                && !in_backticks
+                && chars.peek().map(|&(_, c)| c) == Some('(') =>
+            {
                 command_subst_depth += 1;
                 current.push(ch);
-                if let Some(next) = chars.next() {
+                if let Some((_, next)) = chars.next() {
                     current.push(next);
                 }
             }
@@ -275,7 +290,7 @@ pub(crate) fn split_pipeline_segments(raw_group: &str) -> Vec<PipelineSegment> {
                 && !in_backticks
                 && paren_depth == 0
                 && command_subst_depth == 0
-                && chars.peek() != Some(&'|') =>
+                && chars.peek().map(|&(_, c)| c) != Some('|') =>
             {
                 finalize_segment(&mut current, &mut raw_segments);
             }
@@ -422,8 +437,9 @@ pub fn unwrap_subshell_group(raw_segment: &str) -> Option<String> {
         return None;
     }
 
-    let chars: Vec<char> = trimmed.chars().collect();
-    let mut i = 0;
+    let case_ranges = case_statement_suspend_ranges(trimmed);
+    let mut suspend = SuspendCursor::new(&case_ranges);
+    let mut chars = trimmed.char_indices().peekable();
     let mut in_single_quote = false;
     let mut in_double_quote = false;
     let mut in_backticks = false;
@@ -431,26 +447,33 @@ pub fn unwrap_subshell_group(raw_segment: &str) -> Option<String> {
     let mut command_subst_depth = 0usize;
     let mut close_idx = None;
 
-    while i < chars.len() {
-        match chars[i] {
+    while let Some((idx, ch)) = chars.next() {
+        // A `case` arm's own `)` (e.g. `x)`) is arm grammar, not this
+        // wrapper's closing paren — without this a nested `case ... esac`
+        // used to close the subshell at the pattern's first `)` and drop
+        // everything from the arm body onward (issue #384).
+        if suspend.contains(idx) {
+            continue;
+        }
+        match ch {
             '\\' if !in_single_quote => {
-                i = (i + 2).min(chars.len());
+                chars.next();
             }
             '\'' if !in_double_quote && !in_backticks => {
                 in_single_quote = !in_single_quote;
-                i += 1;
             }
             '"' if !in_single_quote && !in_backticks => {
                 in_double_quote = !in_double_quote;
-                i += 1;
             }
             '`' if !in_single_quote => {
                 in_backticks = !in_backticks;
-                i += 1;
             }
-            '$' if !in_single_quote && !in_backticks && chars.get(i + 1) == Some(&'(') => {
+            '$' if !in_single_quote
+                && !in_backticks
+                && chars.peek().map(|&(_, c)| c) == Some('(') =>
+            {
                 command_subst_depth += 1;
-                i += 2;
+                chars.next();
             }
             '(' if !in_single_quote
                 && !in_double_quote
@@ -458,7 +481,6 @@ pub fn unwrap_subshell_group(raw_segment: &str) -> Option<String> {
                 && command_subst_depth == 0 =>
             {
                 paren_depth += 1;
-                i += 1;
             }
             ')' if !in_single_quote
                 && !in_backticks
@@ -469,21 +491,17 @@ pub fn unwrap_subshell_group(raw_segment: &str) -> Option<String> {
                 } else {
                     paren_depth -= 1;
                     if paren_depth == 0 {
-                        close_idx = Some(i);
+                        close_idx = Some(idx);
                         break;
                     }
                 }
-                i += 1;
             }
-            _ => {
-                i += 1;
-            }
+            _ => {}
         }
     }
 
     if let Some(close_idx) = close_idx {
-        let inner: String = chars[1..close_idx].iter().collect();
-        let inner = inner.trim();
+        let inner = trimmed[1..close_idx].trim();
         if !inner.is_empty() {
             return Some(inner.to_string());
         }
@@ -496,133 +514,151 @@ pub fn unwrap_subshell_group(raw_segment: &str) -> Option<String> {
 /// `raw_segment`, quote/nesting-aware, in the exact source bytes rather than
 /// a dequoted/normalized copy.
 pub fn extract_command_substitution_bodies(raw_segment: &str) -> Vec<String> {
-    let chars: Vec<char> = raw_segment.chars().collect();
+    let case_ranges = case_statement_suspend_ranges(raw_segment);
     let mut bodies = Vec::new();
-    let mut i = 0;
+    let mut idx = 0usize;
     let mut in_single_quote = false;
     let mut in_double_quote = false;
 
-    while i < chars.len() {
-        match chars[i] {
+    while idx < raw_segment.len() {
+        let Some(ch) = raw_segment[idx..].chars().next() else {
+            break;
+        };
+        let ch_len = ch.len_utf8();
+
+        match ch {
             '\\' if !in_single_quote => {
-                i = (i + 2).min(chars.len());
+                idx += ch_len;
+                if let Some(next) = raw_segment[idx..].chars().next() {
+                    idx += next.len_utf8();
+                }
+                continue;
             }
-            '\'' if !in_double_quote => {
-                in_single_quote = !in_single_quote;
-                i += 1;
-            }
-            '"' if !in_single_quote => {
-                in_double_quote = !in_double_quote;
-                i += 1;
-            }
-            '$' if !in_single_quote && chars.get(i + 1) == Some(&'(') => {
-                if let Some((body, end_idx)) = extract_dollar_paren_body(&chars, i) {
+            '\'' if !in_double_quote => in_single_quote = !in_single_quote,
+            '"' if !in_single_quote => in_double_quote = !in_double_quote,
+            '$' if !in_single_quote && raw_segment[idx + ch_len..].starts_with('(') => {
+                if let Some((body, end_idx)) =
+                    extract_dollar_paren_body(raw_segment, idx, &case_ranges)
+                {
                     bodies.push(body);
-                    i = end_idx + 1;
-                } else {
-                    i += 1;
+                    idx = end_idx;
+                    continue;
                 }
             }
             '`' if !in_single_quote => {
-                if let Some((body, end_idx)) = extract_backtick_body(&chars, i) {
+                if let Some((body, end_idx)) = extract_backtick_body(raw_segment, idx) {
                     bodies.push(body);
-                    i = end_idx + 1;
-                } else {
-                    i += 1;
+                    idx = end_idx;
+                    continue;
                 }
             }
-            _ => i += 1,
+            _ => {}
         }
+        idx += ch_len;
     }
 
     bodies
 }
 
-fn extract_dollar_paren_body(chars: &[char], start_idx: usize) -> Option<(String, usize)> {
-    let mut body = String::new();
-    let mut idx = start_idx + 2;
+/// `Some((body, end_idx))` when a `$(...)` command substitution starts at
+/// `raw_segment[start_idx..]`, `body` its trimmed inner text and `end_idx`
+/// the byte offset right past its closing `)`. `case_ranges` — precomputed
+/// once by the caller over the whole `raw_segment` — marks every top-level
+/// `case ... esac` span so its arms' own `)` (`x)`) never misreads as this
+/// substitution's close (issue #384).
+fn extract_dollar_paren_body(
+    raw_segment: &str,
+    start_idx: usize,
+    case_ranges: &[std::ops::Range<usize>],
+) -> Option<(String, usize)> {
+    let mut suspend = SuspendCursor::new(case_ranges);
+    let body_start = start_idx + 2;
+    let mut idx = body_start;
     let mut depth = 1usize;
     let mut in_single_quote = false;
     let mut in_double_quote = false;
     let mut in_backticks = false;
 
-    while idx < chars.len() {
-        match chars[idx] {
+    while idx < raw_segment.len() {
+        let ch = raw_segment[idx..].chars().next()?;
+        let ch_len = ch.len_utf8();
+
+        if suspend.contains(idx) {
+            idx += ch_len;
+            continue;
+        }
+
+        match ch {
             '\\' if !in_single_quote => {
-                body.push(chars[idx]);
-                idx += 1;
-                if let Some(next) = chars.get(idx) {
-                    body.push(*next);
-                    idx += 1;
+                idx += ch_len;
+                if let Some(next) = raw_segment[idx..].chars().next() {
+                    idx += next.len_utf8();
                 }
+                continue;
             }
-            '\'' if !in_double_quote && !in_backticks => {
-                in_single_quote = !in_single_quote;
-                body.push(chars[idx]);
-                idx += 1;
-            }
-            '"' if !in_single_quote && !in_backticks => {
-                in_double_quote = !in_double_quote;
-                body.push(chars[idx]);
-                idx += 1;
-            }
-            '`' if !in_single_quote => {
-                in_backticks = !in_backticks;
-                body.push(chars[idx]);
-                idx += 1;
-            }
-            '$' if !in_single_quote && !in_backticks && chars.get(idx + 1) == Some(&'(') => {
+            '\'' if !in_double_quote && !in_backticks => in_single_quote = !in_single_quote,
+            '"' if !in_single_quote && !in_backticks => in_double_quote = !in_double_quote,
+            '`' if !in_single_quote => in_backticks = !in_backticks,
+            '$' if !in_single_quote
+                && !in_backticks
+                && raw_segment[idx + ch_len..].starts_with('(') =>
+            {
                 depth += 1;
-                body.push(chars[idx]);
-                idx += 1;
-                if let Some(next) = chars.get(idx) {
-                    body.push(*next);
-                    idx += 1;
+                idx += ch_len;
+                if let Some(next) = raw_segment[idx..].chars().next() {
+                    idx += next.len_utf8();
                 }
+                continue;
             }
-            '(' if !in_single_quote && !in_double_quote && !in_backticks => {
-                depth += 1;
-                body.push(chars[idx]);
-                idx += 1;
-            }
+            '(' if !in_single_quote && !in_double_quote && !in_backticks => depth += 1,
             ')' if !in_single_quote && !in_backticks && !in_double_quote => {
                 depth -= 1;
                 if depth == 0 {
-                    return Some((body.trim().to_string(), idx));
+                    return Some((
+                        raw_segment[body_start..idx].trim().to_string(),
+                        idx + ch_len,
+                    ));
                 }
-                body.push(chars[idx]);
-                idx += 1;
             }
-            _ => {
-                body.push(chars[idx]);
-                idx += 1;
-            }
+            _ => {}
         }
+        idx += ch_len;
     }
 
     None
 }
 
-fn extract_backtick_body(chars: &[char], start_idx: usize) -> Option<(String, usize)> {
-    let mut body = String::new();
-    let mut idx = start_idx + 1;
+/// `Some((body, end_idx))` when a backtick command substitution starts at
+/// `raw_segment[start_idx..]`, `body` its trimmed inner text and `end_idx`
+/// the byte offset right past its closing backtick. No `case`-arm awareness
+/// needed here: unlike `$(...)`, a backtick body's end is the next
+/// unescaped backtick, not paren depth, so a case pattern's `)` cannot
+/// close it early.
+fn extract_backtick_body(raw_segment: &str, start_idx: usize) -> Option<(String, usize)> {
+    let body_start = start_idx + 1;
+    let mut idx = body_start;
 
-    while idx < chars.len() {
-        match chars[idx] {
+    while idx < raw_segment.len() {
+        let ch = raw_segment[idx..].chars().next()?;
+        let ch_len = ch.len_utf8();
+
+        match ch {
             '\\' => {
-                body.push(chars[idx]);
-                idx += 1;
-                if let Some(next) = chars.get(idx) {
-                    body.push(*next);
-                    idx += 1;
+                idx += ch_len;
+                if let Some(next) = raw_segment[idx..].chars().next() {
+                    idx += next.len_utf8();
                 }
+                continue;
             }
-            '`' => return Some((body.trim().to_string(), idx)),
-            _ => {
-                body.push(chars[idx]);
-                idx += 1;
+            '`' => {
+                return Some((
+                    raw_segment[body_start..idx].trim().to_string(),
+                    idx + ch_len,
+                ));
             }
+            _ => {}
         }
+        idx += ch_len;
     }
 
     None
