@@ -12,6 +12,7 @@
 //! `ScriptFile` route into an [`aegis_language::SourceTarget`], deferring to
 //! [`crate::analysis::source_reader`] for the bounded, catch-only read.
 
+use std::cell::Cell;
 use std::path::{Path, PathBuf};
 
 use aegis_language::{SourceLanguage, SourceTarget};
@@ -290,6 +291,24 @@ struct RouteContext<'a> {
     command: &'a str,
     /// See [`route`]'s own doc comment.
     trusted_aliases: &'a [(&'a str, &'a str)],
+    /// Byte offset into `command` marking the end of the top-level list
+    /// segment currently being routed — [`route`] advances this once per
+    /// segment, before recursing into it. An `alias` scan scopes itself to
+    /// `command[..alias_scope_end.get()]` instead of searching `command` for
+    /// the stage's own text (issue #437, F2): the same stage text can appear
+    /// in more than one top-level segment (`run x; alias run=python3; run
+    /// x`), and a text search always lands on the first occurrence — scoping
+    /// every call site to whichever alias was active *before the call it
+    /// happened to be built from* rather than the one at that call's own
+    /// position, silently missing a redefinition between two identical
+    /// calls. Segment granularity rather than the call's exact position: a
+    /// stage recursed into from inside a wrapper body is scoped to its
+    /// *enclosing* top-level segment, not its own narrower position within
+    /// it, since the router does not track a byte offset that fine-grained.
+    /// That is deliberately the conservative direction — it only ever widens
+    /// the scan window, so it can find an alias definition it should not
+    /// yet be entitled to, never miss one it should have found.
+    alias_scope_end: Cell<usize>,
 }
 
 /// Route analyzable source in `command`. `trusted_aliases` maps a trusted
@@ -308,13 +327,31 @@ pub fn route(command: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarge
     let ctx = RouteContext {
         command,
         trusted_aliases,
+        alias_scope_end: Cell::new(0),
     };
     let mut cwd = CwdState::Unset;
     let mut targets = Vec::new();
+    let mut search_from = 0;
     for segment in aegis_parser::list_segments(command) {
+        search_from = segment_text_end(command, search_from, &segment.pipeline.raw);
+        ctx.alias_scope_end.set(search_from);
         route_list_segment(&segment, &ctx, &mut cwd, &mut targets, 0);
     }
     targets
+}
+
+/// The byte offset right after `raw`'s own text in `command`, searching no
+/// earlier than `search_from`. `raw` is a top-level list segment's own raw
+/// text — a genuine substring of `command`, so this ordinarily finds it
+/// exactly; falls back to `command.len()` (the whole rest of the command) on
+/// the no-match case a malformed or already-desynced walk would produce,
+/// since that only ever widens a later `alias` scope rather than narrowing
+/// it (issue #437, F2).
+fn segment_text_end(command: &str, search_from: usize, raw: &str) -> usize {
+    command
+        .get(search_from..)
+        .and_then(|rest| rest.find(raw))
+        .map_or(command.len(), |idx| search_from + idx + raw.len())
 }
 
 /// A path with no substitution, expansion, or glob syntax.

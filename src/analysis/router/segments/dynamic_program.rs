@@ -17,8 +17,8 @@ pub(super) fn is_dynamic_program_word(word: &str) -> bool {
         || (word.starts_with('{') && word.ends_with('}') && word.contains(','))
 }
 
-/// The replacement text an `alias` invocation in `full_command` gives
-/// `name`, if one appears before `stage_raw`'s own text within it — `alias
+/// The replacement text an `alias` invocation gives `name` within `scope`,
+/// the caller-supplied text considered "before" the call site — `alias
 /// name=cmd`, `alias -- name=cmd` (`--` ends `alias`'s own option parsing,
 /// letting a name that itself starts with `-` through), several names in
 /// one call (`alias a=x b=y`), and a quoted name (the tokenizer strips the
@@ -31,20 +31,21 @@ pub(super) fn is_dynamic_program_word(word: &str) -> bool {
 /// standing in for *this particular* text is opaque (a known interpreter, a
 /// dynamic word) or as ordinary as any other program name (`alias
 /// ll='ls -l'`) — issue #384/#430, this function no longer makes
-/// that call itself. Falls back to scanning the whole of `full_command` when
-/// `stage_raw` cannot be located inside it verbatim (a body peeled out of a
-/// wrapper by [`super::wrappers`] may have been re-derived rather than kept
-/// as an exact substring) — the conservative direction, since a false match
-/// only costs an extra prompt rather than a missed one. `name` can be
-/// redefined by more than one `alias` call before the call site (`alias
-/// run=echo; alias run=python3; run ./evil.py`, review comment 4091038665);
-/// the shell honors whichever definition is active at the call site — the
-/// last one written before it — so this keeps scanning past a match instead
-/// of stopping at the first, and returns the last one seen.
-pub(super) fn alias_value(full_command: &str, stage_raw: &str, name: &str) -> Option<String> {
-    let scope = full_command
-        .find(stage_raw)
-        .map_or(full_command, |idx| &full_command[..idx]);
+/// that call itself.
+///
+/// `scope` is a byte range of the full command chosen by the caller, not
+/// derived here by searching for the call site's own text: the same stage
+/// text can appear more than once in one command (`run x; alias
+/// run=python3; run x`), so a text search cannot tell *which* occurrence is
+/// the one actually being routed and always lands on the first — silently
+/// scoping a later, aliased call to whatever was true before the earlier
+/// one (issue #437, F2). `name` can be redefined by more than one `alias`
+/// call within `scope` (`alias run=echo; alias run=python3; run ./evil.py`,
+/// review comment 4091038665); the shell honors whichever definition is
+/// active at the call site — the last one written before it — so this keeps
+/// scanning past a match instead of stopping at the first, and returns the
+/// last one seen.
+pub(super) fn alias_value(scope: &str, name: &str) -> Option<String> {
     let owned_tokens = aegis_parser::split_tokens(scope);
     let tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
 

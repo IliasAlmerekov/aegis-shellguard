@@ -747,6 +747,7 @@ fn unresolved_dynamic() -> RoutedTarget {
     }
 }
 
+mod alias_repeated_calls;
 mod command_string_prefix_words;
 mod cwd;
 mod env_launcher_shapes;

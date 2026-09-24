@@ -166,7 +166,11 @@ pub(super) fn unclaimed_interpreter_net(
         // catch, so it is left to the rest of routing below — the same
         // `NAME_ONLY_PROGRAMS` check, interpreter-naming-operand scan, and
         // path-like-operand candidate walk an ordinary program word gets.
-        if let Some(value) = alias_value(ctx.command, stage_raw, slice.program) {
+        let alias_scope = ctx
+            .command
+            .get(..ctx.alias_scope_end.get())
+            .unwrap_or(ctx.command);
+        if let Some(value) = alias_value(alias_scope, slice.program) {
             let replacement = value.trim();
             if replacement.is_empty()
                 || is_dynamic_program_word(replacement)
