@@ -30,7 +30,7 @@ pub(super) fn is_dynamic_program_word(word: &str) -> bool {
 /// back rather than a bare yes/no: [`super::unclaimed`] decides whether
 /// standing in for *this particular* text is opaque (a known interpreter, a
 /// dynamic word) or as ordinary as any other program name (`alias
-/// ll='ls -l'`) — issue #384/#430 round 6, this function no longer makes
+/// ll='ls -l'`) — issue #384/#430, this function no longer makes
 /// that call itself. Falls back to scanning the whole of `full_command` when
 /// `stage_raw` cannot be located inside it verbatim (a body peeled out of a
 /// wrapper by [`super::wrappers`] may have been re-derived rather than kept

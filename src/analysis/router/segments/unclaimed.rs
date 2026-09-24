@@ -159,7 +159,7 @@ pub(super) fn unclaimed_interpreter_net(
         }
         // A program word naming a shell `alias` defined earlier resolves
         // only as opaquely as its own replacement text does (issue
-        // #384/#430 round 6): standing in for a known interpreter (`alias
+        // #384/#430): standing in for a known interpreter (`alias
         // runpy=python3`), for a dynamic word (`alias n="$X"`), or for
         // nothing parseable at all is exactly as unreadable as an
         // unenumerated wrapper word. An alias for anything else (`alias
@@ -223,7 +223,7 @@ pub(super) fn unclaimed_interpreter_net(
     // not the value that follows it, so a path-like flag value is exactly
     // as much a candidate as the real target is. Routing cannot tell them
     // apart, so every distinct path-like operand becomes its own candidate
-    // (issue #384/#430 round 6) — stopping at the first one, as this used
+    // (issue #384/#430) — stopping at the first one, as this used
     // to, let a path-like flag value (`setsid -u ./notes.txt ./pyx`) shadow
     // the real script that followed it, resolving to nothing and leaving
     // the actual target unexamined. `resolve`/`resolve_for_analysis` still

@@ -134,7 +134,7 @@ fn effect_opaque_script_file_survives_in_a_compound_command() {
 
 #[test]
 fn inline_flag_after_script_file_still_marks_effect_opaque() {
-    // Standards #2: `-c` / `-e` only means "inline body" when it is the
+    // `-c` / `-e` only means "inline body" when it is the
     // interpreter's execution flag *before* the first positional argument.
     // Once a script file is the payload, a later `-c` is a script argument, so
     // the command stays effect-opaque — the file's effect is not visible in the
@@ -176,7 +176,7 @@ fn inline_body_with_later_script_token_stays_inline() {
 
 #[test]
 fn value_consuming_option_does_not_spoof_script_file_slot() {
-    // Standards #2: an interpreter option that takes a separate
+    // An interpreter option that takes a separate
     // argument (`--require <path>`, `-r <lib>`) must not let that argument
     // spoof the first-positional slot. `node --require ./preload.js -e "code"`
     // is a real Node idiom (preload + inline eval): the executed payload is the

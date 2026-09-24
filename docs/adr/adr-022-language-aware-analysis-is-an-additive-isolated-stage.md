@@ -239,7 +239,7 @@ literal directory resolves to no target and no degradation rather than
 prompting, since the net picked this operand out of an ordinary command's
 own arguments rather than the command naming it as the thing to run, and a
 missing or directory argument (`vim ./new.txt`, `du -sh ./srcdir`) is
-routine there (issue #384/#430 round 5).
+routine there (issue #384/#430).
 
 A fixed exclusion list holds the programs that legitimately name a command,
 or a filesystem path, as data rather than run it: `echo`, `printf`, `which`,

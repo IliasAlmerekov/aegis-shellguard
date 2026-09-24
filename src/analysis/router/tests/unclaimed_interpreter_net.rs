@@ -472,7 +472,7 @@ async fn setsid_launcher_operand_naming_a_symlink_still_degrades() {
 }
 
 // ── A path-like flag value does not shadow a real later target
-// (issue #384/#430 round 6) ─────────────────────────────────────────────────
+// (issue #384/#430) ─────────────────────────────────────────────────
 
 #[tokio::test]
 async fn flag_value_operand_does_not_shadow_the_real_script_that_follows() {
@@ -537,7 +537,7 @@ async fn missing_flag_value_operand_does_not_shadow_the_real_script_that_follows
     );
 }
 
-// ── Everyday multi-operand shapes stay unrouted (issue #384/#430 round 6) ──
+// ── Everyday multi-operand shapes stay unrouted (issue #384/#430) ──
 
 #[test]
 fn cp_of_two_plain_files_is_not_routed() {
@@ -648,8 +648,8 @@ fn alias_replacement_naming_a_variable_is_routed() {
 }
 
 // ── An alias standing in for an ordinary (non-interpreter) command is left
-// to the rest of routing, not degraded by name alone (issue #384/#430
-// round 6) ──────────────────────────────────────────────────────────────
+// to the rest of routing, not degraded by name alone (issue #384/#430)
+// ──────────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn alias_for_a_plain_command_naming_a_directory_operand_is_not_degraded() {
