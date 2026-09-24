@@ -17,7 +17,8 @@ fuzz_target!(|data: &[u8]| {
                 let _ = source.len();
             }
             router::RoutedTarget::ScriptFile { path, .. }
-            | router::RoutedTarget::DirectExec { path } => {
+            | router::RoutedTarget::DirectExec { path }
+            | router::RoutedTarget::LauncherOperand { path } => {
                 let _ = path.as_os_str().len();
             }
             router::RoutedTarget::Dynamic { reason, .. } => {
