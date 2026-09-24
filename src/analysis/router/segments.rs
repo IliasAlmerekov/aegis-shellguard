@@ -206,8 +206,7 @@ fn apply_cwd(target: RoutedTarget, cwd: &CwdState) -> RoutedTarget {
 /// exact same rules a top-level walk uses (issue #384).
 pub(super) fn route_list_segment(
     segment: &aegis_parser::ListSegment,
-    trusted_aliases: &[(&str, &str)],
-    full_command: &str,
+    ctx: &RouteContext<'_>,
     cwd: &mut CwdState,
     targets: &mut Vec<RoutedTarget>,
     depth: u32,
@@ -220,14 +219,7 @@ pub(super) fn route_list_segment(
             return;
         }
 
-        route_stage(
-            &stages[0].raw,
-            trusted_aliases,
-            full_command,
-            cwd,
-            targets,
-            depth,
-        );
+        route_stage(&stages[0].raw, ctx, cwd, targets, depth);
         let current = std::mem::replace(cwd, CwdState::Unset);
         *cwd = advance_across_separator(current, segment.separator);
         return;
@@ -255,8 +247,7 @@ pub(super) fn route_list_segment(
         let wrapped_before = wrapped_stage_targets.len();
         route_wrapped_stage(
             &stage.raw,
-            trusted_aliases,
-            full_command,
+            ctx,
             &mut scratch_cwd,
             &mut wrapped_stage_targets,
             depth,
@@ -266,7 +257,7 @@ pub(super) fn route_list_segment(
             pipeline_had_cd = true;
         }
 
-        let routed = route_direct_stage(&stage.raw, trusted_aliases);
+        let routed = route_direct_stage(&stage.raw, ctx.trusted_aliases);
         if !routed.is_empty() {
             // A stage with its own script file, inline flag, or direct-exec
             // path routes exactly as it would standalone (ADR-022 §6),
@@ -281,7 +272,7 @@ pub(super) fn route_list_segment(
         // previous stage writes to stdout — only meaningful past the first
         // stage, which has no preceding producer to read from.
         if index > 0
-            && let Some(bare_interp) = bare_stage_interpreter(&stage.raw, trusted_aliases)
+            && let Some(bare_interp) = bare_stage_interpreter(&stage.raw, ctx.trusted_aliases)
         {
             // Only the narrow, exactly-two-stage `printf '%s' <literal> |
             // <interp>` shape has a statically recoverable producer; every
@@ -306,11 +297,7 @@ pub(super) fn route_list_segment(
         // Nothing else claimed this stage: fall back to the fail-closed net
         // (issue #384/#430, ADR-022 §6 amendment) for a wrapper word the
         // launcher list does not enumerate.
-        stage_targets.extend(unclaimed_interpreter_net(
-            &stage.raw,
-            full_command,
-            trusted_aliases,
-        ));
+        stage_targets.extend(unclaimed_interpreter_net(&stage.raw, ctx));
     }
 
     if pipeline_had_cd {
@@ -346,27 +333,19 @@ fn push_unique(targets: &mut Vec<RoutedTarget>, target: RoutedTarget) {
 /// current `cwd` here.
 fn route_stage(
     stage_raw: &str,
-    trusted_aliases: &[(&str, &str)],
-    full_command: &str,
+    ctx: &RouteContext<'_>,
     cwd: &mut CwdState,
     targets: &mut Vec<RoutedTarget>,
     depth: u32,
 ) {
-    let direct = route_direct_stage(stage_raw, trusted_aliases);
+    let direct = route_direct_stage(stage_raw, ctx.trusted_aliases);
     let mut claimed = !direct.is_empty();
     for target in direct {
         push_unique(targets, apply_cwd(target, cwd));
     }
 
     let mut wrapped_targets = Vec::new();
-    route_wrapped_stage(
-        stage_raw,
-        trusted_aliases,
-        full_command,
-        cwd,
-        &mut wrapped_targets,
-        depth,
-    );
+    route_wrapped_stage(stage_raw, ctx, cwd, &mut wrapped_targets, depth);
     claimed |= !wrapped_targets.is_empty();
     for target in wrapped_targets {
         push_unique(targets, target);
@@ -376,7 +355,7 @@ fn route_stage(
     // (issue #384/#430, ADR-022 §6 amendment) for a wrapper word the
     // launcher list does not enumerate.
     if !claimed {
-        for net_target in unclaimed_interpreter_net(stage_raw, full_command, trusted_aliases) {
+        for net_target in unclaimed_interpreter_net(stage_raw, ctx) {
             push_unique(targets, apply_cwd(net_target, cwd));
         }
     }
@@ -468,8 +447,7 @@ fn heredoc_marker_line_tail(stage_raw: &str) -> Option<&str> {
 /// (ADR-022 §6, issue #384).
 fn route_wrapped_stage(
     stage_raw: &str,
-    trusted_aliases: &[(&str, &str)],
-    full_command: &str,
+    ctx: &RouteContext<'_>,
     cwd: &mut CwdState,
     targets: &mut Vec<RoutedTarget>,
     depth: u32,
@@ -494,18 +472,11 @@ fn route_wrapped_stage(
         return;
     }
 
-    for body in wrapper_bodies(stage_raw, trusted_aliases) {
+    for body in wrapper_bodies(stage_raw, ctx.trusted_aliases) {
         let mut body_cwd = cwd.clone();
         let mut body_targets = Vec::new();
         for segment in aegis_parser::list_segments(&body) {
-            route_list_segment(
-                &segment,
-                trusted_aliases,
-                full_command,
-                &mut body_cwd,
-                &mut body_targets,
-                depth + 1,
-            );
+            route_list_segment(&segment, ctx, &mut body_cwd, &mut body_targets, depth + 1);
         }
         for target in body_targets {
             push_unique(targets, target);

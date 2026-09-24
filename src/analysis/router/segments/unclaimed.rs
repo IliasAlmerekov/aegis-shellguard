@@ -111,8 +111,7 @@ fn basename(token: &str) -> &str {
 /// stage that already routed something is left alone.
 pub(super) fn unclaimed_interpreter_net(
     stage_raw: &str,
-    full_command: &str,
-    trusted_aliases: &[(&str, &str)],
+    ctx: &RouteContext<'_>,
 ) -> Vec<RoutedTarget> {
     // A trailing redirect (`{ echo ok; } 2>/dev/null`) is punctuation, not an
     // argument — stripped before tokenizing so its target never reads as a
@@ -130,7 +129,7 @@ pub(super) fn unclaimed_interpreter_net(
     // interpreter, regardless of what a later, separately routed stage on
     // the same line does with it — this stage alone has no target to
     // resolve `slice` against below (issue #384/#430).
-    if assignment_stage_names_an_interpreter(&raw_tokens, trusted_aliases) {
+    if assignment_stage_names_an_interpreter(&raw_tokens, ctx.trusted_aliases) {
         return vec![RoutedTarget::Unresolved {
             reason: DegradationReason::DynamicSource,
         }];
@@ -167,11 +166,11 @@ pub(super) fn unclaimed_interpreter_net(
         // catch, so it is left to the rest of routing below — the same
         // `NAME_ONLY_PROGRAMS` check, interpreter-naming-operand scan, and
         // path-like-operand candidate walk an ordinary program word gets.
-        if let Some(value) = alias_value(full_command, stage_raw, slice.program) {
+        if let Some(value) = alias_value(ctx.command, stage_raw, slice.program) {
             let replacement = value.trim();
             if replacement.is_empty()
                 || is_dynamic_program_word(replacement)
-                || token_names_an_interpreter(replacement, trusted_aliases)
+                || token_names_an_interpreter(replacement, ctx.trusted_aliases)
             {
                 return vec![RoutedTarget::Unresolved {
                     reason: DegradationReason::DynamicSource,
@@ -186,8 +185,8 @@ pub(super) fn unclaimed_interpreter_net(
     // `LESSOPEN=... less`, `man -P ...`, issue #384/#430). Checked ahead of
     // the exclusion list below so it applies even to a program that list
     // would otherwise wave through untouched.
-    if env_prefix_names_an_interpreter(&raw_tokens, trusted_aliases)
-        || option_value_names_an_interpreter(slice.program, &slice.tokens, trusted_aliases)
+    if env_prefix_names_an_interpreter(&raw_tokens, ctx.trusted_aliases)
+        || option_value_names_an_interpreter(slice.program, &slice.tokens, ctx.trusted_aliases)
     {
         return vec![RoutedTarget::Unresolved {
             reason: DegradationReason::DynamicSource,
@@ -200,7 +199,7 @@ pub(super) fn unclaimed_interpreter_net(
 
     let names_an_interpreter = slice.tokens[1..]
         .iter()
-        .any(|tok| token_names_an_interpreter(tok, trusted_aliases));
+        .any(|tok| token_names_an_interpreter(tok, ctx.trusted_aliases));
     if names_an_interpreter {
         return vec![RoutedTarget::Unresolved {
             reason: DegradationReason::DynamicSource,

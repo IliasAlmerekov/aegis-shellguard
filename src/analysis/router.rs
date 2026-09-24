@@ -278,6 +278,20 @@ const INTERPRETERS: &[Interpreter] = &[
     },
 ];
 
+/// The command text and trusted-alias table that list-segment, stage, and
+/// unclaimed-net routing thread together, unchanged, across the whole
+/// recursive walk (issue #384/#430 refactor): `unclaimed_interpreter_net`'s
+/// `alias_value` scan needs the original command text to look for an `alias`
+/// defined earlier in it, and `resolve_interpreter` needs the alias table as
+/// its last-resort lookup. Bundled into one reference-sized struct so a
+/// threading call site carries one parameter instead of two.
+struct RouteContext<'a> {
+    /// The full original command text passed to [`route`].
+    command: &'a str,
+    /// See [`route`]'s own doc comment.
+    trusted_aliases: &'a [(&'a str, &'a str)],
+}
+
 /// Route analyzable source in `command`. `trusted_aliases` maps a trusted
 /// global alias (e.g. a wrapper script name) to the canonical registry
 /// `program` name it stands in for (e.g. `"py"` → `"python3"`); a
@@ -291,17 +305,14 @@ const INTERPRETERS: &[Interpreter] = &[
 /// later relative target it cannot place correctly (#384).
 #[must_use]
 pub fn route(command: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarget> {
+    let ctx = RouteContext {
+        command,
+        trusted_aliases,
+    };
     let mut cwd = CwdState::Unset;
     let mut targets = Vec::new();
     for segment in aegis_parser::list_segments(command) {
-        route_list_segment(
-            &segment,
-            trusted_aliases,
-            command,
-            &mut cwd,
-            &mut targets,
-            0,
-        );
+        route_list_segment(&segment, &ctx, &mut cwd, &mut targets, 0);
     }
     targets
 }
