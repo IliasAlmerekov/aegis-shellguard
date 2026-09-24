@@ -40,10 +40,11 @@ cargo bench --bench scanner_bench
 cargo bench --bench no_source_bench -p aegis-language
 cargo bench --bench parse_latency_bench -p aegis-language
 cargo bench --bench startup_bench
+cargo bench --bench router_bench
 cargo run --bin aegis_benchcheck -- --baseline perf/scanner_bench_baseline.toml --criterion-root target/criterion
 ```
 
-All four `cargo bench` invocations write into the shared workspace
+All five `cargo bench` invocations write into the shared workspace
 `target/criterion` root, so a single `aegis_benchcheck` run evaluates every
 policy row. A policy row whose Criterion result is missing fails the job, so
 dropping a bench invocation from CI cannot silently drop its gate.
@@ -72,7 +73,7 @@ The machine-readable policy lives at:
 
 - `perf/scanner_bench_baseline.toml`
 
-It covers three surfaces.
+It covers four surfaces.
 
 ### Scanner hot path (`benches/scanner_bench.rs`)
 
@@ -382,6 +383,38 @@ runner variance, and can be tightened once CI-side variance is known.
 `no_source_does_not_start_worker` gets the widest relative headroom because it is
 the smallest absolute measurement in the file (sub-microsecond, ~95 ns per
 command) and therefore the most sensitive to host differences.
+
+### Router planning (`benches/router_bench.rs`)
+
+Four rows time one `PreparedPlanner::plan()` call, the work `aegis --output
+json -c` does once the runtime context exists. They were added when #437
+made the router walk every segment of a compound command instead of only the
+first one.
+
+- `evaluate_safe_single_git_status`: `git status`.
+- `evaluate_safe_compound_git_add_commit_push`: a three-segment `&&` chain.
+- `evaluate_safe_compound_gh_pr_create`: `gh pr create` whose body is a
+  20-line heredoc inside a command substitution.
+- `evaluate_long_chain_50_echo`: 50 `&&`-joined `echo` segments.
+
+Before the timing loop starts, the bench plans every fixture once and panics
+unless the result is `PlanningOutcome::Planned` with no language analysis. A
+fixture that starts a language worker would time process spawn, not routing.
+
+Like the Iteration 10 rows, these are padded ceilings, roughly 2x a local
+capture from 2026-09-24:
+
+| Row | Captured mean | `baseline_ns` | Effective ceiling |
+| --- | ---: | ---: | ---: |
+| `evaluate_safe_single_git_status` | 4.5 µs | 10,000 | 12.5 µs |
+| `evaluate_safe_compound_git_add_commit_push` | 21.7 µs | 45,000 | 56.3 µs |
+| `evaluate_safe_compound_gh_pr_create` | 589 µs | 1,200,000 | 1.5 ms |
+| `evaluate_long_chain_50_echo` | 317 µs | 650,000 | 813 µs |
+
+No row carries `budget_ns`. `plan()` includes one `assess()` call per routed
+command, but it has no published per-call budget of its own, so these rows
+gate regressions only. The bench also records `route_*` results and the
+remaining `evaluate_*` fixtures, which no policy row reads.
 
 ### Iteration 10 production qualification evidence
 

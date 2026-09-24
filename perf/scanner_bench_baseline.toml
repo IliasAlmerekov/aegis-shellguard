@@ -115,3 +115,36 @@ baseline_ns = 20_000_000
 regression_pct = 50.0
 budget_ns = 30_000_000
 description = "One full aegis process invocation, from process start to decision, on an evaluated safe command."
+
+# Router planning rows (benches/router_bench.rs), added with the #437 compound
+# command routing fix. Each row times one PreparedPlanner::plan() call, the
+# work `aegis --output json -c` does after construction. The bench asserts
+# before timing that every fixture plans without starting a language worker.
+# Like the Iteration 10 rows, these are padded ceilings: roughly 2x the local
+# mean captured on 2026-09-24. No row carries budget_ns, because plan() has no
+# published per-call budget of its own. See "Router planning" in
+# docs/performance-baseline.md.
+
+[[benchmarks]]
+name = "evaluate_safe_single_git_status"
+baseline_ns = 10_000
+regression_pct = 25.0
+description = "PreparedPlanner::plan() on `git status`, a single safe command."
+
+[[benchmarks]]
+name = "evaluate_safe_compound_git_add_commit_push"
+baseline_ns = 45_000
+regression_pct = 25.0
+description = "PreparedPlanner::plan() on a three-segment `git add && git commit && git push` chain."
+
+[[benchmarks]]
+name = "evaluate_safe_compound_gh_pr_create"
+baseline_ns = 1_200_000
+regression_pct = 25.0
+description = "PreparedPlanner::plan() on `gh pr create` with a 20-line heredoc body inside a command substitution."
+
+[[benchmarks]]
+name = "evaluate_long_chain_50_echo"
+baseline_ns = 650_000
+regression_pct = 25.0
+description = "PreparedPlanner::plan() on 50 `&&`-joined echo segments, the router's per-segment worst case in this bench."

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use aegis::analysis::router::route;
-use aegis::planning::{CwdState, PlanningRequest, PreparedPlanner};
+use aegis::planning::{CwdState, PlanningOutcome, PlanningRequest, PreparedPlanner};
 use aegis::runtime::RuntimeContext;
 use aegis_config::AegisConfig;
 use aegis_policy::ExecutionTransport;
@@ -166,13 +166,27 @@ fn make_prepared_planner() -> (Runtime, PreparedPlanner, TempDir) {
     (runtime, PreparedPlanner::Ready(Box::new(context)), cwd)
 }
 
-fn evaluate(prepared: &PreparedPlanner, cwd_state: &CwdState, cmd: &str) {
-    black_box(prepared.plan(PlanningRequest {
+fn planning_request<'a>(cwd_state: &CwdState, cmd: &'a str) -> PlanningRequest<'a> {
+    PlanningRequest {
         command: black_box(cmd),
         cwd_state: cwd_state.clone(),
         transport: ExecutionTransport::Evaluation,
         ci_detected: false,
-    }));
+    }
+}
+
+fn assert_worker_free_plan(prepared: &PreparedPlanner, cwd_state: &CwdState, cmd: &str) {
+    let PlanningOutcome::Planned(plan) = prepared.plan(planning_request(cwd_state, cmd)) else {
+        panic!("router benchmark command did not produce a plan: {cmd}");
+    };
+    assert!(
+        plan.assessment().analysis.is_none(),
+        "router benchmark command unexpectedly started language analysis: {cmd}"
+    );
+}
+
+fn evaluate(prepared: &PreparedPlanner, cwd_state: &CwdState, cmd: &str) {
+    black_box(prepared.plan(planning_request(cwd_state, cmd)));
 }
 
 fn bench_evaluate_safe_single(c: &mut Criterion) {
@@ -180,6 +194,7 @@ fn bench_evaluate_safe_single(c: &mut Criterion) {
     let cwd_state = CwdState::Resolved(cwd.path().to_path_buf());
 
     for (name, cmd) in SAFE_SINGLE {
+        assert_worker_free_plan(&prepared, &cwd_state, cmd);
         c.bench_function(&format!("evaluate_safe_single_{name}"), |b| {
             b.iter(|| evaluate(&prepared, &cwd_state, cmd))
         });
@@ -191,6 +206,7 @@ fn bench_evaluate_safe_compound(c: &mut Criterion) {
     let cwd_state = CwdState::Resolved(cwd.path().to_path_buf());
 
     for (name, cmd) in safe_compound_commands() {
+        assert_worker_free_plan(&prepared, &cwd_state, cmd.as_str());
         c.bench_function(&format!("evaluate_safe_compound_{name}"), |b| {
             b.iter(|| evaluate(&prepared, &cwd_state, cmd.as_str()))
         });
@@ -202,11 +218,13 @@ fn bench_evaluate_long_safe(c: &mut Criterion) {
     let cwd_state = CwdState::Resolved(cwd.path().to_path_buf());
 
     let chain = long_chain_command();
+    assert_worker_free_plan(&prepared, &cwd_state, chain.as_str());
     c.bench_function("evaluate_long_chain_50_echo", |b| {
         b.iter(|| evaluate(&prepared, &cwd_state, chain.as_str()))
     });
 
     let single = long_single_command();
+    assert_worker_free_plan(&prepared, &cwd_state, single.as_str());
     c.bench_function("evaluate_long_single_4kb", |b| {
         b.iter(|| evaluate(&prepared, &cwd_state, single.as_str()))
     });

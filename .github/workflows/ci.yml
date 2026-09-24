@@ -277,6 +277,12 @@ jobs:
       - name: cargo bench --bench scanner_bench
         run: cargo bench --bench scanner_bench
 
+      # Router planning rows (#437). Before timing, the bench checks that every
+      # planning fixture stays on the worker-free path; the checked-in policy
+      # gates four representative plan() costs.
+      - name: cargo bench --bench router_bench
+        run: cargo bench --bench router_bench
+
       # ADR-022 Iteration 0 RED #3: a no-source command must not start the
       # language worker or perform filesystem metadata calls. The bench asserts
       # Outcome::NotStarted inside its iteration body, so a regression that

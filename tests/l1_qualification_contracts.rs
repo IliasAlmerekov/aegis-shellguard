@@ -353,6 +353,7 @@ fn ci_keeps_safe_and_slow_path_qualification_benches_on_the_performance_gate() {
         "cargo bench --bench no_source_bench -p aegis-language",
         "cargo bench --bench parse_latency_bench -p aegis-language",
         "cargo bench --bench startup_bench",
+        "cargo bench --bench router_bench",
     ] {
         assert!(
             workflow.contains(&format!("run: {command}\n")),
@@ -410,6 +411,10 @@ fn ci_keeps_safe_and_slow_path_qualification_benches_on_the_performance_gate() {
         "runtime_context_construction",
         "runtime_context_custom_pattern_construction",
         "startup_safe_command",
+        "evaluate_safe_single_git_status",
+        "evaluate_safe_compound_git_add_commit_push",
+        "evaluate_safe_compound_gh_pr_create",
+        "evaluate_long_chain_50_echo",
     ] {
         assert!(
             baseline.contains(&format!("name = \"{benchmark}\"")),
