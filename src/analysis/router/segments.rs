@@ -306,11 +306,11 @@ pub(super) fn route_list_segment(
         // Nothing else claimed this stage: fall back to the fail-closed net
         // (issue #384/#430, ADR-022 §6 amendment) for a wrapper word the
         // launcher list does not enumerate.
-        if let Some(net_target) =
-            unclaimed_interpreter_net(&stage.raw, full_command, trusted_aliases)
-        {
-            stage_targets.push(net_target);
-        }
+        stage_targets.extend(unclaimed_interpreter_net(
+            &stage.raw,
+            full_command,
+            trusted_aliases,
+        ));
     }
 
     if pipeline_had_cd {
@@ -375,11 +375,10 @@ fn route_stage(
     // Nothing else claimed this stage: fall back to the fail-closed net
     // (issue #384/#430, ADR-022 §6 amendment) for a wrapper word the
     // launcher list does not enumerate.
-    if !claimed
-        && let Some(net_target) =
-            unclaimed_interpreter_net(stage_raw, full_command, trusted_aliases)
-    {
-        push_unique(targets, apply_cwd(net_target, cwd));
+    if !claimed {
+        for net_target in unclaimed_interpreter_net(stage_raw, full_command, trusted_aliases) {
+            push_unique(targets, apply_cwd(net_target, cwd));
+        }
     }
 }
 

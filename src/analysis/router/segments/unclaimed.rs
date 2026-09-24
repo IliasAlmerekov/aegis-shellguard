@@ -98,7 +98,7 @@ fn basename(token: &str) -> &str {
 /// word (`setsid`, `strace`, `ionice`, `taskset`, …), or a later positional
 /// argument a launcher form never inspects (`find … -exec python3 {} \;`).
 ///
-/// `None` when the stage's own effective program is on
+/// Returns an empty `Vec` when the stage's own effective program is on
 /// [`NAME_ONLY_PROGRAMS`] or is a `command -v`/`-V` lookup — those name a
 /// command without running it, so a mention of an interpreter there is data,
 /// not a hidden wrapper — or when no later token resolves to a registry
@@ -113,7 +113,7 @@ pub(super) fn unclaimed_interpreter_net(
     stage_raw: &str,
     full_command: &str,
     trusted_aliases: &[(&str, &str)],
-) -> Option<RoutedTarget> {
+) -> Vec<RoutedTarget> {
     // A trailing redirect (`{ echo ok; } 2>/dev/null`) is punctuation, not an
     // argument — stripped before tokenizing so its target never reads as a
     // path-like operand below (issue #384/#430), the same stripping
@@ -121,7 +121,7 @@ pub(super) fn unclaimed_interpreter_net(
     let owned_tokens = aegis_parser::split_tokens(strip_trailing_redirection(stage_raw));
     let raw_tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
     if is_command_lookup(&raw_tokens) {
-        return None;
+        return Vec::new();
     }
 
     // A stage that is nothing but a variable assignment (bare `NAME=value`,
@@ -131,16 +131,19 @@ pub(super) fn unclaimed_interpreter_net(
     // the same line does with it — this stage alone has no target to
     // resolve `slice` against below (issue #384/#430).
     if assignment_stage_names_an_interpreter(&raw_tokens, trusted_aliases) {
-        return Some(RoutedTarget::Unresolved {
+        return vec![RoutedTarget::Unresolved {
             reason: DegradationReason::DynamicSource,
-        });
+        }];
     }
 
-    let slice = aegis_parser::effective_token_slices(&raw_tokens)
+    let Some(slice) = aegis_parser::effective_token_slices(&raw_tokens)
         .into_iter()
-        .next()?;
+        .next()
+    else {
+        return Vec::new();
+    };
 
-    let mut operands = slice.tokens[1..].iter().filter(|tok| !tok.starts_with('-'));
+    let operands = slice.tokens[1..].iter().filter(|tok| !tok.starts_with('-'));
     // A program word reached only through expansion the router does not
     // perform — `$VAR`, `${X:-python3}`, `` `cmd` ``, `{python3,}` — or one
     // that names a shell `alias` defined earlier in the same command is
@@ -153,9 +156,9 @@ pub(super) fn unclaimed_interpreter_net(
         && (is_dynamic_program_word(slice.program)
             || alias_defines_program(full_command, stage_raw, slice.program))
     {
-        return Some(RoutedTarget::Unresolved {
+        return vec![RoutedTarget::Unresolved {
             reason: DegradationReason::DynamicSource,
-        });
+        }];
     }
 
     // A handful of `NAME_ONLY_PROGRAMS` members have their own escape hatch:
@@ -167,44 +170,56 @@ pub(super) fn unclaimed_interpreter_net(
     if env_prefix_names_an_interpreter(&raw_tokens, trusted_aliases)
         || option_value_names_an_interpreter(slice.program, &slice.tokens, trusted_aliases)
     {
-        return Some(RoutedTarget::Unresolved {
+        return vec![RoutedTarget::Unresolved {
             reason: DegradationReason::DynamicSource,
-        });
+        }];
     }
 
     if NAME_ONLY_PROGRAMS.contains(&slice.program) {
-        return None;
+        return Vec::new();
     }
 
     let names_an_interpreter = slice.tokens[1..]
         .iter()
         .any(|tok| token_names_an_interpreter(tok, trusted_aliases));
     if names_an_interpreter {
-        return Some(RoutedTarget::Unresolved {
+        return vec![RoutedTarget::Unresolved {
             reason: DegradationReason::DynamicSource,
-        });
+        }];
     }
 
     // Nothing named a known interpreter, but an unenumerated wrapper
     // (`setsid ./pyx`) may still hand a script its own path-like operand
     // straight through: `resolve` reads the file and only treats it as a
     // target with a verified shebang, so a non-script operand stays safe
-    // (issue #384/#430). Routed as `LauncherOperand`, not
-    // `DirectExec`, because this operand is a candidate the net itself
-    // picked out of an unclaimed stage's arguments — not a program the
-    // command named — so a missing path or a directory (an everyday shape
-    // for an ordinary command's argument) resolves speculatively instead of
-    // degrading like a user-typed `DirectExec` still does.
+    // (issue #384/#430). Routed as `LauncherOperand`, not `DirectExec`,
+    // because each candidate here is something the net itself picked out of
+    // an unclaimed stage's arguments — not a program the command named — so
+    // a missing path or a directory (an everyday shape for an ordinary
+    // command's argument) resolves speculatively instead of degrading like
+    // a user-typed `DirectExec` still does.
     //
-    // Walks every remaining operand rather than stopping at the first one:
-    // a second unenumerated wrapper word (`strace setsid ./pyx`) or a flag's
-    // own argument (`setsid -u user ./pyx`) is not path-like and is not the
-    // thing actually launched, so it is skipped in favor of the first
-    // operand that is (issue #384/#430).
-    let first_path_like_operand = operands.find(|tok| tok.contains('/') && is_literal_path(tok))?;
-    Some(RoutedTarget::LauncherOperand {
-        path: PathBuf::from(*first_path_like_operand),
-    })
+    // A flag's own argument (`setsid -u user ./pyx`) is not filtered out
+    // here: the `-`-prefix filter above only removes the flag token itself,
+    // not the value that follows it, so a path-like flag value is exactly
+    // as much a candidate as the real target is. Routing cannot tell them
+    // apart, so every distinct path-like operand becomes its own candidate
+    // (issue #384/#430 round 6) — stopping at the first one, as this used
+    // to, let a path-like flag value (`setsid -u ./notes.txt ./pyx`) shadow
+    // the real script that followed it, resolving to nothing and leaving
+    // the actual target unexamined. `resolve`/`resolve_for_analysis` still
+    // decide per candidate whether it is real (verified shebang) or nothing
+    // (missing, directory, no shebang), so a benign command with several
+    // path-like operands (`cp ./a.txt ./b.txt`, `tar -cf ./out.tar
+    // ./srcdir`) stays exactly as auto-approved as a single candidate was.
+    let mut seen = std::collections::HashSet::new();
+    operands
+        .filter(|tok| tok.contains('/') && !tok.contains("://") && is_literal_path(tok))
+        .filter(|tok| seen.insert(**tok))
+        .map(|tok| RoutedTarget::LauncherOperand {
+            path: PathBuf::from(*tok),
+        })
+        .collect()
 }
 
 /// `true` when `tok` itself names a known registry interpreter, or — for a

@@ -471,6 +471,107 @@ async fn setsid_launcher_operand_naming_a_symlink_still_degrades() {
     ));
 }
 
+// ── A path-like flag value does not shadow a real later target
+// (issue #384/#430 round 6) ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn flag_value_operand_does_not_shadow_the_real_script_that_follows() {
+    let dir = tempfile::tempdir().unwrap();
+    let notes = dir.path().join("notes.txt");
+    std::fs::write(&notes, "just notes, not a script\n").unwrap();
+    let script = dir.path().join("pyx");
+    std::fs::write(&script, "#!/usr/bin/env python3\nprint(1)\n").unwrap();
+
+    let command = format!("setsid -u {} {}", notes.display(), script.display());
+    let targets = route(&command, &[]);
+    assert_eq!(
+        targets,
+        vec![
+            RoutedTarget::LauncherOperand {
+                path: notes.clone()
+            },
+            RoutedTarget::LauncherOperand {
+                path: script.clone()
+            },
+        ]
+    );
+
+    let results = resolve(targets, 1024).await;
+    assert_eq!(
+        results,
+        vec![Ok(SourceTarget {
+            language: SourceLanguage::Python,
+            source: "#!/usr/bin/env python3\nprint(1)\n".to_owned(),
+        })]
+    );
+}
+
+#[tokio::test]
+async fn missing_flag_value_operand_does_not_shadow_the_real_script_that_follows() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("missing.txt");
+    let script = dir.path().join("pyx");
+    std::fs::write(&script, "#!/usr/bin/env python3\nprint(1)\n").unwrap();
+
+    let command = format!("setsid -u {} {}", missing.display(), script.display());
+    let targets = route(&command, &[]);
+    assert_eq!(
+        targets,
+        vec![
+            RoutedTarget::LauncherOperand {
+                path: missing.clone()
+            },
+            RoutedTarget::LauncherOperand {
+                path: script.clone()
+            },
+        ]
+    );
+
+    let results = resolve(targets, 1024).await;
+    assert_eq!(
+        results,
+        vec![Ok(SourceTarget {
+            language: SourceLanguage::Python,
+            source: "#!/usr/bin/env python3\nprint(1)\n".to_owned(),
+        })]
+    );
+}
+
+// ── Everyday multi-operand shapes stay unrouted (issue #384/#430 round 6) ──
+
+#[test]
+fn cp_of_two_plain_files_is_not_routed() {
+    assert_eq!(route("cp ./a.txt ./b.txt", &[]), Vec::new());
+}
+
+#[test]
+fn diff_of_two_plain_files_is_not_routed() {
+    assert_eq!(route("diff ./notes.txt ./file.txt", &[]), Vec::new());
+}
+
+#[tokio::test]
+async fn tar_create_of_a_plain_directory_is_not_degraded() {
+    let dir = tempfile::tempdir().unwrap();
+    let archive = dir.path().join("out.tar");
+    let src = dir.path().join("srcdir");
+    std::fs::create_dir(&src).unwrap();
+
+    let command = format!("tar -cf {} {}", archive.display(), src.display());
+    let targets = route(&command, &[]);
+    assert_eq!(
+        targets,
+        vec![
+            RoutedTarget::LauncherOperand {
+                path: archive.clone()
+            },
+            RoutedTarget::LauncherOperand { path: src.clone() },
+        ]
+    );
+
+    let results = resolve(targets, 1024).await;
+    assert_eq!(results, Vec::new());
+}
+
 // ── A program word reached only through expansion the router does not
 // perform still degrades when it carries an operand (issue #384/#430) ──────
 
