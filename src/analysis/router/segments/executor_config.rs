@@ -77,15 +77,53 @@ pub(super) fn option_value_names_an_interpreter(
 }
 
 /// git config keys whose value names a command git later runs rather than
-/// plain configuration data. `alias.*` covers every alias name
-/// (`alias.x=...`), not just a fixed list, since the name after `alias.` is
-/// user-chosen.
+/// plain configuration data. Matched per key family rather than as one flat
+/// list, since git lets the caller pick several of these families' own
+/// middle segment: `alias.*` covers every alias name (`alias.x=...`),
+/// `credential.*.helper` a URL-scoped credential helper alongside the
+/// top-level `credential.helper`, `gpg.*.program` a format-scoped signing
+/// program alongside the top-level `gpg.program`, and `filter.*.clean`/
+/// `.smudge`/`.process`, `diff.*.command`/`.textconv`, `merge.*.driver` a
+/// user-named filter, diff, or merge driver (issue #384/#430).
 fn is_executor_config_key(key: &str) -> bool {
     let lower = key.to_ascii_lowercase();
-    matches!(
+    let exact = matches!(
         lower.as_str(),
-        "core.pager" | "core.editor" | "core.sshcommand"
-    ) || lower.starts_with("alias.")
+        "core.pager"
+            | "core.editor"
+            | "core.sshcommand"
+            | "core.askpass"
+            | "core.gitproxy"
+            | "core.fsmonitor"
+            | "diff.external"
+            | "credential.helper"
+            | "sequence.editor"
+            | "gpg.program"
+            | "uploadpack.packobjectshook"
+            | "sendemail.sendmailcmd"
+    );
+    let family = lower.starts_with("alias.")
+        || family_middle_segment(&lower, "credential.", ".helper").is_some()
+        || family_middle_segment(&lower, "gpg.", ".program").is_some()
+        || [
+            ("filter.", ".clean"),
+            ("filter.", ".smudge"),
+            ("filter.", ".process"),
+            ("diff.", ".command"),
+            ("diff.", ".textconv"),
+            ("merge.", ".driver"),
+        ]
+        .into_iter()
+        .any(|(prefix, suffix)| family_middle_segment(&lower, prefix, suffix).is_some());
+    exact || family
+}
+
+/// The user-chosen middle segment of a `<prefix><name><suffix>` git config
+/// key family (`credential.<url>.helper`, `gpg.<format>.program`,
+/// `filter.<name>.clean`, ...), or `None` when `key` does not carry this
+/// family's own prefix and suffix (issue #384/#430).
+fn family_middle_segment<'a>(key: &'a str, prefix: &str, suffix: &str) -> Option<&'a str> {
+    key.strip_prefix(prefix)?.strip_suffix(suffix)
 }
 
 /// Scans for `-c <key>=<value>`, glued `-c<key>=<value>`, `--config-env

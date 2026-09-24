@@ -742,6 +742,7 @@ async fn resolve_degrades_an_oversized_script_file() {
 
 mod cwd;
 mod env_launcher_shapes;
+mod executor_config_keys;
 mod interpreter_stdin_redirect;
 mod redirection_placement;
 mod segments;
