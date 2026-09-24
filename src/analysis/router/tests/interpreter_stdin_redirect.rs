@@ -36,6 +36,26 @@ fn an_fd_prefixed_glued_trailing_stdin_redirect_routes_the_file() {
 }
 
 #[test]
+fn a_non_stdin_fd_glued_trailing_redirect_does_not_route_the_file() {
+    // `3<` opens descriptor 3, not the interpreter's stdin (descriptor 0) —
+    // only an omitted descriptor or an explicit `0` may stand in for a piped
+    // or redirected script source (#437 review comment 4091038714).
+    assert_eq!(route("python3 3<./evil.py", &[]), Vec::new());
+}
+
+#[test]
+fn a_non_stdin_fd_redirect_after_a_pipe_still_degrades_dynamically() {
+    // The fd-3 redirect carries no script source of its own, so the stage
+    // falls back to whatever the previous pipeline stage produced — same as
+    // a fully bare `python3` there — rather than silently dropping the
+    // pipeline's dynamic-stdin route.
+    assert_eq!(
+        route("cat ./evil.py | python3 3<./benign.py", &[]),
+        vec![evil_py_dynamic()]
+    );
+}
+
+#[test]
 fn a_glued_trailing_stdin_redirect_routes_a_shell_script() {
     assert_eq!(
         route("bash <./x.sh", &[]),

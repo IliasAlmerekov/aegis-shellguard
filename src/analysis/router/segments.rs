@@ -576,12 +576,18 @@ fn env_chdir_prefix(prefix: &[&str]) -> bool {
         .any(|tok| *tok == "-C" || *tok == "--chdir" || tok.starts_with("--chdir="))
 }
 
-/// Resolve `stage` to its interpreter only if it has no source of its own:
-/// either the bare program token alone, or its own flags followed by nothing
-/// but the POSIX stdin sentinel `-` (`python3 -`, `python3 -u -`) — a real
-/// interpreter reads its script from stdin in both shapes, the same as
-/// "reads piped stdin from the previous stage" rather than "has its own
-/// source" (issue #384, #437 review comment 4091038647).
+/// Resolve `stage` to its interpreter only if it has no source of its own —
+/// the bare program token alone, its own flags followed by nothing but the
+/// POSIX stdin sentinel `-` (`python3 -`, `python3 -u -`), or any other argv
+/// shape [`walk_interpreter_argv`] itself cannot find a source in (e.g. a
+/// redirection on a non-stdin descriptor, `python3 3<./benign.py`, #437
+/// review comment 4091038714) — a real interpreter reads its script from
+/// stdin in every such shape, the same as "reads piped stdin from the
+/// previous stage" rather than "has its own source" (issue #384, #437
+/// review comment 4091038647). Delegates to the same argv walk every other
+/// call site uses rather than a second, narrower "no args of its own" check,
+/// so a source [`walk_interpreter_argv`] would find (an inline body, a
+/// script file, a genuine stdin redirect) is never misread as bare here.
 fn bare_stage_interpreter(
     stage: &str,
     trusted_aliases: &[(&str, &str)],
@@ -590,13 +596,11 @@ fn bare_stage_interpreter(
     let (_tokens, slice) = effective_stage_slice(&owned_tokens);
     let slice = slice?;
     let rest = &slice.tokens[1..];
-    let reads_stdin = rest.is_empty()
-        || (rest.last() == Some(&"-")
-            && rest[..rest.len() - 1].iter().all(|tok| tok.starts_with('-')));
-    if !reads_stdin {
-        return None;
+    let interp = resolve_interpreter(slice.program, trusted_aliases)?;
+    match walk_interpreter_argv(interp, rest) {
+        ArgvWalk::NoMatch => Some(interp),
+        ArgvWalk::Routed(_) | ArgvWalk::NoSource => None,
     }
-    resolve_interpreter(slice.program, trusted_aliases)
 }
 
 /// The result of [`walk_interpreter_argv`] walking one interpreter
@@ -696,23 +700,40 @@ pub(super) fn walk_interpreter_argv(interp: &Interpreter, rest: &[&str]) -> Argv
     }
 }
 
-/// `true` for a standalone plain input redirection (`<`, `3<`, …) — an
-/// [`aegis_parser::is_redirection_operator`] token with no `>` and no
-/// fd-duplication `&`, the only shape whose target can mean "this file is
-/// the interpreter's stdin source" (issue #384).
+/// `true` when `tok`'s leading digit run (its redirected file descriptor, if
+/// any) names stdin: no digits at all, or exactly `0`. A redirection on any
+/// other descriptor (`3<file`) does not touch the process's stdin, so it
+/// must never be read as the interpreter's script source (#437 review
+/// comment 4091038714).
+fn redirects_stdin_fd(fd: &str) -> bool {
+    fd.is_empty() || fd == "0"
+}
+
+/// `true` for a standalone plain input redirection targeting stdin (`<`,
+/// `0<`, but not `3<`) — an [`aegis_parser::is_redirection_operator`] token
+/// with no `>`, no fd-duplication `&`, and a descriptor that is stdin itself
+/// or omitted, the only shape whose target can mean "this file is the
+/// interpreter's stdin source" (issue #384, #437 review comment 4091038714).
 fn is_plain_input_redirect(tok: &str) -> bool {
-    tok.trim_start_matches(|c: char| c.is_ascii_digit()) == "<"
+    let after_fd = tok.trim_start_matches(|c: char| c.is_ascii_digit());
+    let fd = &tok[..tok.len() - after_fd.len()];
+    after_fd == "<" && redirects_stdin_fd(fd)
 }
 
 /// The literal target of a plain input redirection glued to its own token
-/// with no separating space (`<file`, `0<file`) — the same shape
-/// [`is_plain_input_redirect`] recognizes when spaced out, but the
-/// tokenizer keeps this one glued because nothing splits it (issue #384).
-/// `None` for anything else: a duplication/dup-fd form (`<&3`), a
+/// with no separating space (`<file`, `0<file`, but not `3<file`) — the same
+/// stdin-only shape [`is_plain_input_redirect`] recognizes when spaced out,
+/// but the tokenizer keeps this one glued because nothing splits it (issue
+/// #384, #437 review comment 4091038714). `None` for anything else: a
+/// redirect on a non-stdin descriptor, a duplication/dup-fd form (`<&3`), a
 /// heredoc/here-string marker (`<<`, `<<<`, already excluded upstream by
 /// the marker-boundary scan), an output redirection, or an empty target.
 fn glued_plain_input_redirect_target(tok: &str) -> Option<&str> {
     let after_fd = tok.trim_start_matches(|c: char| c.is_ascii_digit());
+    let fd = &tok[..tok.len() - after_fd.len()];
+    if !redirects_stdin_fd(fd) {
+        return None;
+    }
     let target = after_fd.strip_prefix('<')?;
     (!target.is_empty() && !target.starts_with(['<', '&', '>'])).then_some(target)
 }
