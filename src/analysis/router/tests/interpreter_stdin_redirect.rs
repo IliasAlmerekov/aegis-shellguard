@@ -86,6 +86,25 @@ fn multiple_leading_stdin_redirects_use_the_last_one() {
 }
 
 #[test]
+fn a_pipe_into_an_interpreter_with_a_bare_stdin_sentinel_degrades_dynamically() {
+    // `-` alone tells a real interpreter to read its script from stdin, same
+    // as no argument at all — the piped-in `evil.py` content, not nothing
+    // (#437 review comment 4091038647).
+    assert_eq!(
+        route("cat ./evil.py | python3 -", &[]),
+        vec![evil_py_dynamic()]
+    );
+}
+
+#[test]
+fn a_pipe_into_an_interpreter_with_flags_before_the_stdin_sentinel_degrades_dynamically() {
+    assert_eq!(
+        route("cat ./evil.py | python3 -u -", &[]),
+        vec![evil_py_dynamic()]
+    );
+}
+
+#[test]
 fn a_dynamic_here_string_command_substitution_degrades() {
     assert_eq!(
         route(r#"python3 <<<"$(cat ./evil.py)""#, &[]),

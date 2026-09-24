@@ -576,9 +576,12 @@ fn env_chdir_prefix(prefix: &[&str]) -> bool {
         .any(|tok| *tok == "-C" || *tok == "--chdir" || tok.starts_with("--chdir="))
 }
 
-/// Resolve `stage` to its interpreter only if it is bare (program token
-/// only, no flags or arguments of its own) — the shape that means "reads
-/// piped stdin from the previous stage" rather than "has its own source".
+/// Resolve `stage` to its interpreter only if it has no source of its own:
+/// either the bare program token alone, or its own flags followed by nothing
+/// but the POSIX stdin sentinel `-` (`python3 -`, `python3 -u -`) — a real
+/// interpreter reads its script from stdin in both shapes, the same as
+/// "reads piped stdin from the previous stage" rather than "has its own
+/// source" (issue #384, #437 review comment 4091038647).
 fn bare_stage_interpreter(
     stage: &str,
     trusted_aliases: &[(&str, &str)],
@@ -586,7 +589,11 @@ fn bare_stage_interpreter(
     let owned_tokens = aegis_parser::split_tokens(stage);
     let (_tokens, slice) = effective_stage_slice(&owned_tokens);
     let slice = slice?;
-    if slice.tokens.len() > 1 {
+    let rest = &slice.tokens[1..];
+    let reads_stdin = rest.is_empty()
+        || (rest.last() == Some(&"-")
+            && rest[..rest.len() - 1].iter().all(|tok| tok.starts_with('-')));
+    if !reads_stdin {
         return None;
     }
     resolve_interpreter(slice.program, trusted_aliases)
