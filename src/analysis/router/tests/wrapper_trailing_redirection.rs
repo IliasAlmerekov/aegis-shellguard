@@ -7,6 +7,21 @@
 
 use super::*;
 
+#[test]
+fn route_does_not_panic_on_the_fuzzed_unicode_whitespace_command() {
+    // Fuzz crash from CI run 35987983871, kept byte for byte. U+0085 (NEL) is
+    // whitespace that takes two bytes in UTF-8, so slicing one byte past it
+    // lands inside the character. The same input is the
+    // `fuzz/corpus/router/unicode-next-line.txt` seed.
+    let command = concat!(
+        "ca \u{85}\u{18}stiprc\u{fffd}",
+        "||||||||||||||||||./scrip\n",
+        r"&\\\\\\\\\& pE",
+        "\nEO\n ",
+    );
+    let _ = route(command, &[("py", "python3")]);
+}
+
 fn evil_py_script_file() -> RoutedTarget {
     RoutedTarget::ScriptFile {
         language: SourceLanguage::Python,
