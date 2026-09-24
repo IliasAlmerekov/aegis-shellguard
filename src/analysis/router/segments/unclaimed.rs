@@ -275,7 +275,10 @@ fn skip_command_string_prefix_words(tok: &str) -> std::str::SplitWhitespace<'_> 
         let Some(word) = lookahead.next() else {
             break;
         };
-        if COMMAND_STRING_PREFIX_WORDS.contains(&word) || word.split_once('=').is_some_and(|(name, _)| is_shell_identifier(name))
+        if COMMAND_STRING_PREFIX_WORDS.contains(&word)
+            || word
+                .split_once('=')
+                .is_some_and(|(name, _)| is_shell_identifier(name))
         {
             words = lookahead;
         } else {

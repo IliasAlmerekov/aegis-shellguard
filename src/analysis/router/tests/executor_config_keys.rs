@@ -91,7 +91,10 @@ fn config_env_naming_an_unassigned_variable_fails_closed() {
 #[test]
 fn config_env_resolving_to_a_benign_value_is_not_routed() {
     assert_eq!(
-        route(r#"RUNNER=cat git --config-env=core.pager=RUNNER -p log"#, &[]),
+        route(
+            r#"RUNNER=cat git --config-env=core.pager=RUNNER -p log"#,
+            &[]
+        ),
         Vec::new()
     );
 }
