@@ -244,20 +244,68 @@ pub(super) fn unclaimed_interpreter_net(
         .collect()
 }
 
+/// Words a shell accepts ahead of the program it actually runs without
+/// changing what that program is: `exec` (replaces the shell with the
+/// program instead of forking it), `command`/`builtin` (force builtin/PATH
+/// resolution), `nohup`/`time`/`nice` (wrap execution, still run the word
+/// that follows), and a bare `NAME=value` assignment (sets the environment
+/// for the one command that follows it). A quoted multi-word command string
+/// handed to an unenumerated wrapper (`script -c "exec python3 ./evil.py"`,
+/// issue #384/#430, review comment 4091038690) can open with any number of
+/// these before the interpreter it actually runs.
+const COMMAND_STRING_PREFIX_WORDS: &[&str] =
+    &["exec", "command", "builtin", "nohup", "time", "nice", "env"];
+
+/// `tok`'s own words with a leading run of [`COMMAND_STRING_PREFIX_WORDS`]
+/// entries and bare `NAME=value` assignments skipped, so a caller reaches
+/// the word that actually runs (issue #384/#430, review comment
+/// 4091038690). `env NAME=value` — the launcher word immediately followed
+/// by its own assignment — is peeled one word at a time by the same loop
+/// that peels a bare assignment, since both leave `env`'s own remaining
+/// flags/assignments/program for the next iteration.
+fn skip_command_string_prefix_words(tok: &str) -> std::str::SplitWhitespace<'_> {
+    let mut words = tok.split_whitespace();
+    loop {
+        let mut lookahead = words.clone();
+        let Some(word) = lookahead.next() else {
+            break;
+        };
+        if COMMAND_STRING_PREFIX_WORDS.contains(&word) || word.split_once('=').is_some_and(|(name, _)| is_shell_identifier(name))
+        {
+            words = lookahead;
+        } else {
+            break;
+        }
+    }
+    words
+}
+
+/// `true` when `name` is a valid POSIX shell identifier: a leading letter or
+/// underscore, then only alphanumerics or underscores. Mirrors
+/// [`super::executor_config::is_shell_identifier`] — kept local rather than
+/// shared across a `pub(super)` boundary for one three-line predicate.
+fn is_shell_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 /// `true` when `tok` itself names a known registry interpreter, or — for a
 /// token that survived unquoting with embedded whitespace still in it (a
-/// quoted multi-word argument, e.g. `"python3 ./evil.py"` passed to `script
-/// -c`) — its first word does. `basename` alone mishandles the quoted case:
-/// run on the whole token it finds the last `/`-separated segment of the
-/// *last* word instead of the interpreter name that opens it (issue
-/// #384/#430).
+/// quoted multi-word argument, e.g. `"python3 ./evil.py"`, or
+/// `"exec python3 ./evil.py"`, passed to `script -c`) — the first word past
+/// any leading [`COMMAND_STRING_PREFIX_WORDS`]/assignment run does.
+/// `basename` alone mishandles the quoted case: run on the whole token it
+/// finds the last `/`-separated segment of the *last* word instead of the
+/// interpreter name that opens it (issue #384/#430).
 pub(super) fn token_names_an_interpreter(tok: &str, trusted_aliases: &[(&str, &str)]) -> bool {
     if resolve_interpreter(basename(tok), trusted_aliases).is_some() {
         return true;
     }
     tok.contains(char::is_whitespace)
-        && tok
-            .split_whitespace()
+        && skip_command_string_prefix_words(tok)
             .next()
             .is_some_and(|word| resolve_interpreter(basename(word), trusted_aliases).is_some())
 }
