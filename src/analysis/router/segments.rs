@@ -715,10 +715,14 @@ fn glued_plain_input_redirect_target(tok: &str) -> Option<&str> {
 /// resolves stdin from it the same way regardless of which side of the
 /// program name it sits on, but only the trailing form is visible to
 /// [`walk_interpreter_argv`], which only ever sees `rest` (the tokens
-/// *after* the program). Scans left to right and returns the first match,
-/// spaced or glued (issue #384).
+/// *after* the program). Scans left to right and keeps the *last* match,
+/// same as the shell itself: redirections apply in order, so a later `<`
+/// overwrites stdin as far as the exec'd program is concerned, matching the
+/// overwrite behavior [`walk_interpreter_argv`] already uses for redirects
+/// after the program (issue #384, #437 review comment 4091038705).
 fn leading_stdin_redirect_target<'a>(prefix: &[&'a str]) -> Option<&'a str> {
     let mut pos = 0;
+    let mut last_target = None;
     while pos < prefix.len() {
         let tok = prefix[pos];
         if aegis_parser::is_redirection_operator(tok) {
@@ -726,7 +730,7 @@ fn leading_stdin_redirect_target<'a>(prefix: &[&'a str]) -> Option<&'a str> {
                 && let Some(target) = prefix.get(pos + 1)
                 && is_literal_path(target)
             {
-                return Some(target);
+                last_target = Some(*target);
             }
             pos += 2;
             continue;
@@ -734,9 +738,9 @@ fn leading_stdin_redirect_target<'a>(prefix: &[&'a str]) -> Option<&'a str> {
         if let Some(target) = glued_plain_input_redirect_target(tok)
             && is_literal_path(target)
         {
-            return Some(target);
+            last_target = Some(target);
         }
         pos += 1;
     }
-    None
+    last_target
 }

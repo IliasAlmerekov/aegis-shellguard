@@ -74,6 +74,18 @@ fn a_spaced_leading_stdin_redirect_routes_the_file() {
 }
 
 #[test]
+fn multiple_leading_stdin_redirects_use_the_last_one() {
+    // Shell redirections apply left to right, so the second `<` here wins
+    // and becomes the interpreter's actual stdin (#437 review comment
+    // 4091038705) — matching the overwrite behavior already used for
+    // redirects placed after the program.
+    assert_eq!(
+        route("< ./benign.py < ./evil.py python3", &[]),
+        vec![evil_py_script_file()]
+    );
+}
+
+#[test]
 fn a_dynamic_here_string_command_substitution_degrades() {
     assert_eq!(
         route(r#"python3 <<<"$(cat ./evil.py)""#, &[]),
