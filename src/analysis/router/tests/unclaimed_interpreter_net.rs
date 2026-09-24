@@ -686,6 +686,17 @@ fn alias_replacement_naming_a_variable_is_routed() {
     );
 }
 
+#[test]
+fn a_redefined_alias_resolves_to_its_latest_definition() {
+    // review comment 4091038665: `run` is redefined from the benign `echo`
+    // to `python3` before its call site, so the definition active there —
+    // the last one before use — is the one that must be seen.
+    assert_eq!(
+        route("alias run=echo; alias run=python3; run ./evil.py", &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
 // ── An alias standing in for an ordinary (non-interpreter) command is left
 // to the rest of routing, not degraded by name alone (issue #384/#430)
 // ──────────────────────────────────────────────────────────────
@@ -707,6 +718,17 @@ async fn alias_for_a_plain_command_naming_a_directory_operand_is_not_degraded() 
 #[test]
 fn alias_for_a_plain_command_with_no_path_like_operand_is_not_routed() {
     assert_eq!(route("alias g=git; g status", &[]), Vec::new());
+}
+
+#[test]
+fn a_redefined_alias_naming_a_plain_command_last_is_not_routed() {
+    // The reverse of `a_redefined_alias_resolves_to_its_latest_definition`:
+    // redefined away from an interpreter, the latest definition must win
+    // just as much when it clears the flag as when it sets it.
+    assert_eq!(
+        route("alias run=python3; alias run=git; run status", &[]),
+        Vec::new()
+    );
 }
 
 // ── A static program word with a dynamic operand, or a bare dynamic word

@@ -35,7 +35,12 @@ pub(super) fn is_dynamic_program_word(word: &str) -> bool {
 /// `stage_raw` cannot be located inside it verbatim (a body peeled out of a
 /// wrapper by [`super::wrappers`] may have been re-derived rather than kept
 /// as an exact substring) — the conservative direction, since a false match
-/// only costs an extra prompt rather than a missed one.
+/// only costs an extra prompt rather than a missed one. `name` can be
+/// redefined by more than one `alias` call before the call site (`alias
+/// run=echo; alias run=python3; run ./evil.py`, review comment 4091038665);
+/// the shell honors whichever definition is active at the call site — the
+/// last one written before it — so this keeps scanning past a match instead
+/// of stopping at the first, and returns the last one seen.
 pub(super) fn alias_value(full_command: &str, stage_raw: &str, name: &str) -> Option<String> {
     let scope = full_command
         .find(stage_raw)
@@ -44,6 +49,7 @@ pub(super) fn alias_value(full_command: &str, stage_raw: &str, name: &str) -> Op
     let tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
 
     let mut index = 0;
+    let mut latest = None;
     while index < tokens.len() {
         if tokens[index] != "alias" {
             index += 1;
@@ -59,11 +65,11 @@ pub(super) fn alias_value(full_command: &str, stage_raw: &str, name: &str) -> Op
             if let Some((defined, value)) = arg.split_once('=')
                 && defined == name
             {
-                return Some(value.to_owned());
+                latest = Some(value.to_owned());
             }
         }
     }
-    None
+    latest
 }
 
 /// `true` for the separator tokens [`aegis_parser::split_tokens`] emits
