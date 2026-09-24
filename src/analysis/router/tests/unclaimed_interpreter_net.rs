@@ -11,12 +11,6 @@
 
 use super::*;
 
-fn unresolved_dynamic() -> RoutedTarget {
-    RoutedTarget::Unresolved {
-        reason: DegradationReason::DynamicSource,
-    }
-}
-
 // ── An unenumerated wrapper hiding an interpreter is degraded ──────────────
 
 #[test]

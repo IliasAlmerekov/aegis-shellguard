@@ -230,6 +230,8 @@ pub(super) fn unclaimed_interpreter_net(
     // (missing, directory, no shebang), so a benign command with several
     // path-like operands (`cp ./a.txt ./b.txt`, `tar -cf ./out.tar
     // ./srcdir`) stays exactly as auto-approved as a single candidate was.
+    // A URL operand (`wget -O out http://x/y`) contains a `/` but names no
+    // local file, so it is never a candidate.
     let mut seen = std::collections::HashSet::new();
     operands
         .filter(|tok| tok.contains('/') && !tok.contains("://") && is_literal_path(tok))

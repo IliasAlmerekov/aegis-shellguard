@@ -16,12 +16,6 @@
 
 use super::*;
 
-fn unresolved_dynamic() -> RoutedTarget {
-    RoutedTarget::Unresolved {
-        reason: DegradationReason::DynamicSource,
-    }
-}
-
 // ── A git config key documented as running a command is degraded, whether
 // it is a fixed name or a family with a user-chosen middle segment
 // (issue #384/#430) ─────────────────────────────────────────────────────

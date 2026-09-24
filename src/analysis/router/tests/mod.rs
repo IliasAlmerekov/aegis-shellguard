@@ -740,6 +740,13 @@ async fn resolve_degrades_an_oversized_script_file() {
     );
 }
 
+/// The degradation every unclaimed-interpreter net test expects.
+fn unresolved_dynamic() -> RoutedTarget {
+    RoutedTarget::Unresolved {
+        reason: DegradationReason::DynamicSource,
+    }
+}
+
 mod cwd;
 mod env_launcher_shapes;
 mod executor_config_keys;

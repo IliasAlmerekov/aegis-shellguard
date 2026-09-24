@@ -9,12 +9,6 @@
 
 use super::*;
 
-fn unresolved_dynamic() -> RoutedTarget {
-    RoutedTarget::Unresolved {
-        reason: DegradationReason::DynamicSource,
-    }
-}
-
 // ── An executor-carrying option value or environment-variable assignment is
 // degraded even when the stage's own program sits on `NAME_ONLY_PROGRAMS`
 // (issue #384/#430) ──────────────────────────────────────────────────────
