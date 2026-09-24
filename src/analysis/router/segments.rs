@@ -14,8 +14,10 @@
 
 use super::*;
 
+mod dynamic_program;
 mod unclaimed;
 mod wrappers;
+use dynamic_program::{alias_defines_program, is_dynamic_program_word};
 use unclaimed::unclaimed_interpreter_net;
 use wrappers::{posix_function_definition_body, wrapper_bodies};
 
@@ -200,6 +202,7 @@ fn apply_cwd(target: RoutedTarget, cwd: &CwdState) -> RoutedTarget {
 pub(super) fn route_list_segment(
     segment: &aegis_parser::ListSegment,
     trusted_aliases: &[(&str, &str)],
+    full_command: &str,
     cwd: &mut CwdState,
     targets: &mut Vec<RoutedTarget>,
     depth: u32,
@@ -212,7 +215,14 @@ pub(super) fn route_list_segment(
             return;
         }
 
-        route_stage(&stages[0].raw, trusted_aliases, cwd, targets, depth);
+        route_stage(
+            &stages[0].raw,
+            trusted_aliases,
+            full_command,
+            cwd,
+            targets,
+            depth,
+        );
         let current = std::mem::replace(cwd, CwdState::Unset);
         *cwd = advance_across_separator(current, segment.separator);
         return;
@@ -241,6 +251,7 @@ pub(super) fn route_list_segment(
         route_wrapped_stage(
             &stage.raw,
             trusted_aliases,
+            full_command,
             &mut scratch_cwd,
             &mut wrapped_stage_targets,
             depth,
@@ -290,7 +301,9 @@ pub(super) fn route_list_segment(
         // Nothing else claimed this stage: fall back to the fail-closed net
         // (issue #384/#430, ADR-022 §6 amendment) for a wrapper word the
         // launcher list does not enumerate.
-        if let Some(net_target) = unclaimed_interpreter_net(&stage.raw, trusted_aliases) {
+        if let Some(net_target) =
+            unclaimed_interpreter_net(&stage.raw, full_command, trusted_aliases)
+        {
             stage_targets.push(net_target);
         }
     }
@@ -329,6 +342,7 @@ fn push_unique(targets: &mut Vec<RoutedTarget>, target: RoutedTarget) {
 fn route_stage(
     stage_raw: &str,
     trusted_aliases: &[(&str, &str)],
+    full_command: &str,
     cwd: &mut CwdState,
     targets: &mut Vec<RoutedTarget>,
     depth: u32,
@@ -340,7 +354,14 @@ fn route_stage(
     }
 
     let mut wrapped_targets = Vec::new();
-    route_wrapped_stage(stage_raw, trusted_aliases, cwd, &mut wrapped_targets, depth);
+    route_wrapped_stage(
+        stage_raw,
+        trusted_aliases,
+        full_command,
+        cwd,
+        &mut wrapped_targets,
+        depth,
+    );
     claimed |= !wrapped_targets.is_empty();
     for target in wrapped_targets {
         push_unique(targets, target);
@@ -349,7 +370,10 @@ fn route_stage(
     // Nothing else claimed this stage: fall back to the fail-closed net
     // (issue #384/#430, ADR-022 §6 amendment) for a wrapper word the
     // launcher list does not enumerate.
-    if !claimed && let Some(net_target) = unclaimed_interpreter_net(stage_raw, trusted_aliases) {
+    if !claimed
+        && let Some(net_target) =
+            unclaimed_interpreter_net(stage_raw, full_command, trusted_aliases)
+    {
         push_unique(targets, apply_cwd(net_target, cwd));
     }
 }
@@ -441,6 +465,7 @@ fn heredoc_marker_line_tail(stage_raw: &str) -> Option<&str> {
 fn route_wrapped_stage(
     stage_raw: &str,
     trusted_aliases: &[(&str, &str)],
+    full_command: &str,
     cwd: &mut CwdState,
     targets: &mut Vec<RoutedTarget>,
     depth: u32,
@@ -472,6 +497,7 @@ fn route_wrapped_stage(
             route_list_segment(
                 &segment,
                 trusted_aliases,
+                full_command,
                 &mut body_cwd,
                 &mut body_targets,
                 depth + 1,

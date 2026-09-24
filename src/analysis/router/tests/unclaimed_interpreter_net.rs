@@ -471,6 +471,62 @@ async fn setsid_launcher_operand_naming_a_symlink_still_degrades() {
     ));
 }
 
+// ── A program word reached only through expansion the router does not
+// perform still degrades when it carries an operand (issue #384/#430) ──────
+
+#[test]
+fn variable_holding_an_interpreter_name_is_routed() {
+    assert_eq!(
+        route("VAR=python3; $VAR ./evil.py", &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn parameter_expansion_default_is_routed() {
+    assert_eq!(
+        route("${X:-python3} ./evil.py", &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn brace_list_program_word_is_routed() {
+    assert_eq!(
+        route("{python3,} ./evil.py", &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn alias_defined_earlier_on_the_line_is_routed() {
+    assert_eq!(
+        route("alias runpy=python3; runpy ./evil.py", &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+// ── A static program word with a dynamic operand, or a bare dynamic word
+// with no operand at all, stays exactly as auto-approved as before ─────────
+
+#[test]
+fn echo_of_a_variable_is_not_routed() {
+    assert_eq!(route("echo $HOME", &[]), Vec::new());
+}
+
+#[test]
+fn ls_of_a_brace_list_operand_is_not_routed() {
+    assert_eq!(route("ls {a,b}", &[]), Vec::new());
+}
+
+#[test]
+fn bare_variable_with_no_operand_is_not_routed() {
+    // `$EDITOR` alone opens an interactive editor with no arguments of its
+    // own — the same everyday shape as `vim` with no file — so there is no
+    // operand for this net to treat as a launched target (issue #384/#430).
+    assert_eq!(route("$EDITOR", &[]), Vec::new());
+}
+
 // ── A user-typed direct-exec target keeps its pre-existing behavior ────────
 
 #[tokio::test]

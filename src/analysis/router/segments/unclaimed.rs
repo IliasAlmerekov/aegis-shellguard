@@ -111,6 +111,7 @@ fn basename(token: &str) -> &str {
 /// stage that already routed something is left alone.
 pub(super) fn unclaimed_interpreter_net(
     stage_raw: &str,
+    full_command: &str,
     trusted_aliases: &[(&str, &str)],
 ) -> Option<RoutedTarget> {
     let owned_tokens = aegis_parser::split_tokens(stage_raw);
@@ -122,6 +123,25 @@ pub(super) fn unclaimed_interpreter_net(
     let slice = aegis_parser::effective_token_slices(&raw_tokens)
         .into_iter()
         .next()?;
+
+    let operands = slice.tokens[1..].iter().filter(|tok| !tok.starts_with('-'));
+    // A program word reached only through expansion the router does not
+    // perform — `$VAR`, `${X:-python3}`, `` `cmd` ``, `{python3,}` — or one
+    // that names a shell `alias` defined earlier in the same command is
+    // exactly as opaque as an unenumerated wrapper word: routing has no way
+    // to know what actually runs (issue #384/#430). Gated on having an
+    // operand at all so a bare `$EDITOR`/`$SHELL` with nothing to act on —
+    // an everyday interactive-launch shape — stays exactly as auto-approved
+    // as it was before this check existed.
+    if operands.clone().next().is_some()
+        && (is_dynamic_program_word(slice.program)
+            || alias_defines_program(full_command, stage_raw, slice.program))
+    {
+        return Some(RoutedTarget::Unresolved {
+            reason: DegradationReason::DynamicSource,
+        });
+    }
+
     if NAME_ONLY_PROGRAMS.contains(&slice.program) {
         return None;
     }
@@ -145,6 +165,7 @@ pub(super) fn unclaimed_interpreter_net(
     // command named — so a missing path or a directory (an everyday shape
     // for an ordinary command's argument) resolves speculatively instead of
     // degrading like a user-typed `DirectExec` still does.
+    //
     let first_operand = slice.tokens[1..].iter().find(|tok| !tok.starts_with('-'))?;
     (first_operand.contains('/') && is_literal_path(first_operand)).then(|| {
         RoutedTarget::LauncherOperand {
