@@ -275,6 +275,45 @@ struct HeredocMarker {
     delimiter_end: usize,
 }
 
+/// Byte index of the first `<<` in `line` that sits outside a single-quoted,
+/// double-quoted, or backticked span — tracking the same quote state and
+/// backslash escapes as [`split_top_level_segments`]. `echo '<<EOF'` has no
+/// heredoc operator; its `<<` is quoted data the shell prints literally, so a
+/// raw substring search would misread it as one and never find a terminator.
+fn find_unquoted_double_lt(line: &str) -> Option<usize> {
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut in_backticks = false;
+    let mut chars = line.char_indices().peekable();
+
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '\\' if !in_single_quote => {
+                chars.next();
+            }
+            '\'' if !in_double_quote && !in_backticks => {
+                in_single_quote = !in_single_quote;
+            }
+            '"' if !in_single_quote && !in_backticks => {
+                in_double_quote = !in_double_quote;
+            }
+            '`' if !in_single_quote => {
+                in_backticks = !in_backticks;
+            }
+            '<' if !in_single_quote
+                && !in_double_quote
+                && !in_backticks
+                && chars.peek().map(|&(_, c)| c) == Some('<') =>
+            {
+                return Some(idx);
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
 /// Scan one line for a heredoc operator (`<<`) and return the parsed marker.
 ///
 /// Recognises:
@@ -285,7 +324,7 @@ struct HeredocMarker {
 /// - `<<-WORD`         — heredoc with leading-tab stripping
 /// - `<<-'WORD'`       — nowdoc with leading-tab stripping
 fn find_heredoc_marker(line: &str) -> Option<HeredocMarker> {
-    let operator_start = line.find("<<")?;
+    let operator_start = find_unquoted_double_lt(line)?;
     let after_op = &line[operator_start + 2..];
     let (strip_tabs, after_dash) = match after_op.strip_prefix('-') {
         Some(stripped) => (true, stripped),

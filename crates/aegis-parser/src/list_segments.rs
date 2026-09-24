@@ -583,6 +583,19 @@ mod tests {
     }
 
     #[test]
+    fn a_quoted_heredoc_marker_does_not_suspend_splitting() {
+        // A `<<` inside a quoted argument is data, not a heredoc operator —
+        // the shell prints it literally. The suspend-range scan must not
+        // treat it as one, or it swallows the rest of the command (including
+        // the real `;` separator) looking for a terminator that never comes.
+        let cmd = "echo '<<EOF'; python3 ./evil.py";
+        assert_eq!(
+            raw_segments(cmd),
+            vec!["echo '<<EOF'", "python3 ./evil.py"]
+        );
+    }
+
+    #[test]
     fn case_used_as_a_filename_does_not_suspend_splitting() {
         let cmd = "cat case; python3 ./evil.py; cat esac";
         assert_eq!(
