@@ -7,6 +7,7 @@
 //! collected into a single assertion message so the next worker sees the full
 //! list at once.
 
+use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -27,11 +28,12 @@ const SKIP_DIRS: &[&str] = &[
     "node_modules",
 ];
 
-/// True if any path component of `path` is in the skip-list.
-fn is_skipped(path: &Path) -> bool {
-    path.components().any(|comp| {
-        matches!(comp, std::path::Component::Normal(name) if SKIP_DIRS.iter().any(|s| *s == name))
-    })
+/// True if the directory entry `name` is in the skip-list.
+///
+/// Only the entry's own name counts, never the ancestors of the workspace
+/// root: a checkout under `~/.claude/...` must still be walked.
+fn is_skipped(name: &OsStr) -> bool {
+    SKIP_DIRS.iter().any(|s| *s == name)
 }
 
 /// Recursively collect every `.rs` file under `dir` whose path is not skipped.
@@ -45,14 +47,11 @@ fn collect_rust_files(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()>
             continue;
         }
         if path.is_dir() {
-            if is_skipped(&path) {
+            if is_skipped(&entry.file_name()) {
                 continue;
             }
             collect_rust_files(&path, out)?;
-        } else if path.is_file()
-            && path.extension().and_then(|e| e.to_str()) == Some("rs")
-            && !is_skipped(&path)
-        {
+        } else if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("rs") {
             out.push(path);
         }
     }
