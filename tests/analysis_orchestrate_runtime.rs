@@ -493,3 +493,211 @@ async fn script_resolution_is_inside_total_deadline_and_preserves_original_byte_
         "BOM-prefixed spans must map back to original bytes"
     );
 }
+
+// ── PR #437 review comment 4091038726 (A5): a `LauncherOperand` that
+// resolves `NotApplicable` (missing path or directory) must not consume the
+// `max_script_files` budget as if it were a confirmed script. `du -sh ./d1
+// ./d2 ... ./d9` names nine plain directories through the unclaimed-launcher
+// net (`du` is not itself an interpreter or a claimed program); none of them
+// are scripts, so none should compete for the eight-file budget. ──────────
+
+#[tokio::test]
+async fn run_launcher_operand_directories_beyond_max_script_files_do_not_prompt() {
+    let workspace = tempfile::tempdir().unwrap();
+    let mut command = String::from("du -sh");
+    for n in 1..=9 {
+        let dir = workspace.path().join(format!("d{n}"));
+        std::fs::create_dir(&dir).unwrap();
+        command.push_str(&format!(" {}", dir.display()));
+    }
+    let baseline = safe_baseline();
+
+    let outcome = run_with_budget_in_cwd(
+        &command,
+        AnalysisCwd::Resolved(workspace.path()),
+        &baseline,
+        Some(env!("CARGO_BIN_EXE_aegis")),
+        &[],
+        OrchestrationBudget {
+            total_timeout: Duration::from_secs(5),
+            ..OrchestrationBudget::L1_DEFAULT
+        },
+        None,
+    )
+    .await;
+
+    let assessment = match outcome {
+        Outcome::Analyzed { assessment, .. } => assessment,
+        other => panic!("nine speculative directory operands must not fail closed: {other:?}"),
+    };
+    assert!(
+        !assessment.analysis.as_ref().is_some_and(|a| a
+            .degradation_reasons
+            .contains(&DegradationReason::LimitExceeded)),
+        "nine plain directories under the default 8-file budget must not report LimitExceeded: {assessment:?}"
+    );
+}
+
+#[tokio::test]
+async fn run_launcher_operand_candidates_beyond_the_pre_resolution_cap_fail_closed() {
+    let workspace = tempfile::tempdir().unwrap();
+    let mut command = String::from("du -sh");
+    for n in 1..=6 {
+        let dir = workspace.path().join(format!("d{n}"));
+        std::fs::create_dir(&dir).unwrap();
+        command.push_str(&format!(" {}", dir.display()));
+    }
+    let baseline = safe_baseline();
+
+    // max_script_files: 1 -> pre-resolution cap = 1 * 4 = 4 candidates.
+    // Candidates 5 and 6 must fail closed before resolution even runs, so
+    // only those two contribute a degraded per-target result: the first
+    // four resolve NotApplicable and contribute nothing (asserted below via
+    // target_count, since a pre-fix implementation that still budgets every
+    // candidate degrades starting at candidate 2 instead).
+    let outcome = run_with_budget_in_cwd(
+        &command,
+        AnalysisCwd::Resolved(workspace.path()),
+        &baseline,
+        Some(env!("CARGO_BIN_EXE_aegis")),
+        &[],
+        OrchestrationBudget {
+            max_script_files: 1,
+            total_timeout: Duration::from_secs(5),
+            ..OrchestrationBudget::L1_DEFAULT
+        },
+        None,
+    )
+    .await;
+
+    let (assessment, target_count) = match outcome {
+        Outcome::Analyzed {
+            assessment,
+            target_count,
+        } => (assessment, target_count),
+        other => panic!("candidates beyond the hard cap must fail closed: {other:?}"),
+    };
+    assert!(
+        assessment.analysis.as_ref().is_some_and(|a| a
+            .degradation_reasons
+            .contains(&DegradationReason::LimitExceeded)),
+        "{assessment:?}"
+    );
+    assert_eq!(
+        target_count, 2,
+        "only the two candidates past the pre-resolution cap (4) should be recorded; \
+         the other four are speculative directories that resolve NotApplicable: {assessment:?}"
+    );
+}
+
+#[tokio::test]
+async fn run_launcher_operand_real_script_files_beyond_max_script_files_still_limit_exceeded() {
+    let workspace = tempfile::tempdir().unwrap();
+    let mut command = String::from("du -sh");
+    for n in 1..=9 {
+        let path = workspace.path().join(format!("script{n}.py"));
+        std::fs::write(
+            &path,
+            "#!/usr/bin/env python3\nimport os\nos.remove('victim')\n",
+        )
+        .unwrap();
+        command.push_str(&format!(" {}", path.display()));
+    }
+    let baseline = safe_baseline();
+
+    let outcome = run_with_budget_in_cwd(
+        &command,
+        AnalysisCwd::Resolved(workspace.path()),
+        &baseline,
+        Some(env!("CARGO_BIN_EXE_aegis")),
+        &[],
+        OrchestrationBudget {
+            total_timeout: Duration::from_secs(10),
+            ..OrchestrationBudget::L1_DEFAULT
+        },
+        None,
+    )
+    .await;
+
+    let assessment = match outcome {
+        Outcome::Analyzed { assessment, .. } => assessment,
+        other => panic!("nine real scripts must still be budgeted: {other:?}"),
+    };
+    assert!(
+        assessment.analysis.as_ref().is_some_and(|a| a
+            .degradation_reasons
+            .contains(&DegradationReason::LimitExceeded)),
+        "the ninth confirmed script must still exceed max_script_files: {assessment:?}"
+    );
+    assert!(
+        assessment
+            .matched
+            .iter()
+            .any(|m| m.pattern.id.as_ref() == "LANG-FS-DEL"),
+        "the eight scripts under budget must still be analyzed: {assessment:?}"
+    );
+}
+
+#[tokio::test]
+async fn run_launcher_operand_mix_of_scripts_and_directories_only_budgets_real_scripts() {
+    let workspace = tempfile::tempdir().unwrap();
+    let mut command = String::from("du -sh");
+    // Distinct victim names keep the three script bodies distinct, so the
+    // parent's content-hash dedup (`AnalysisQueue::push`) analyzes all
+    // three instead of collapsing identical sources into one.
+    for n in 1..=3 {
+        let path = workspace.path().join(format!("script{n}.py"));
+        std::fs::write(
+            &path,
+            format!("#!/usr/bin/env python3\nimport os\nos.remove('victim{n}')\n"),
+        )
+        .unwrap();
+        command.push_str(&format!(" {}", path.display()));
+    }
+    for n in 1..=8 {
+        let dir = workspace.path().join(format!("d{n}"));
+        std::fs::create_dir(&dir).unwrap();
+        command.push_str(&format!(" {}", dir.display()));
+    }
+    let baseline = safe_baseline();
+
+    let outcome = run_with_budget_in_cwd(
+        &command,
+        AnalysisCwd::Resolved(workspace.path()),
+        &baseline,
+        Some(env!("CARGO_BIN_EXE_aegis")),
+        &[],
+        OrchestrationBudget {
+            total_timeout: Duration::from_secs(10),
+            ..OrchestrationBudget::L1_DEFAULT
+        },
+        None,
+    )
+    .await;
+
+    let (assessment, target_count) = match outcome {
+        Outcome::Analyzed {
+            assessment,
+            target_count,
+        } => (assessment, target_count),
+        other => panic!("a mix of scripts and directories must still be analyzed: {other:?}"),
+    };
+    assert!(
+        !assessment.analysis.as_ref().is_some_and(|a| a
+            .degradation_reasons
+            .contains(&DegradationReason::LimitExceeded)),
+        "3 real scripts + 8 plain directories must stay under the 8-file budget: {assessment:?}"
+    );
+    assert_eq!(
+        target_count, 3,
+        "only the 3 real scripts should be recorded; the 8 directories resolve \
+         NotApplicable and contribute nothing: {assessment:?}"
+    );
+    assert!(
+        assessment
+            .matched
+            .iter()
+            .any(|m| m.pattern.id.as_ref() == "LANG-FS-DEL"),
+        "{assessment:?}"
+    );
+}

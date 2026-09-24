@@ -192,6 +192,19 @@ pub async fn run_with_budget_in_cwd(
     });
     let mut per_target: Vec<LanguageAnalysisResult> = Vec::new();
     let mut script_files = 0usize;
+    // `LauncherOperand` candidates (an unclaimed launcher's own path-like
+    // arguments, e.g. every operand of `du -sh ./d1 ./d2 ...`) are
+    // speculative: most resolve NotApplicable (missing path or plain
+    // directory) below and are never scripts at all, so they must not
+    // compete with real scripts for `max_script_files` (PR #437 review
+    // comment 4091038726). Resolving each one still costs a stat and a
+    // bounded shebang read, so an unrelated cap bounds that work
+    // independently of `max_script_files`: 4x is a locally chosen margin,
+    // generous enough that an ordinary many-operand command (`du -sh
+    // ./d1.../d9`) never hits it, small enough to keep worst-case
+    // resolution I/O bounded without a new config field.
+    let mut launcher_operand_candidates = 0usize;
+    let max_launcher_operand_candidates = budget.max_script_files.saturating_mul(4);
 
     for target in routed {
         if let RoutedTarget::Unresolved { reason } = &target {
@@ -206,15 +219,26 @@ pub async fn run_with_budget_in_cwd(
             per_target.push(degraded(DegradationReason::LimitExceeded));
             continue;
         }
+        let is_launcher_operand = matches!(&target, RoutedTarget::LauncherOperand { .. });
         let (origin, file_path, is_script_file) = match &target {
             RoutedTarget::Inline { .. } => (SourceOrigin::Inline, None, false),
-            RoutedTarget::ScriptFile { path, .. }
-            | RoutedTarget::DirectExec { path }
-            | RoutedTarget::LauncherOperand { path } => (
+            RoutedTarget::ScriptFile { path, .. } | RoutedTarget::DirectExec { path } => (
                 SourceOrigin::ScriptFile,
                 Some(path.to_string_lossy().into_owned()),
                 true,
             ),
+            RoutedTarget::LauncherOperand { path } => {
+                launcher_operand_candidates += 1;
+                if launcher_operand_candidates > max_launcher_operand_candidates {
+                    per_target.push(degraded(DegradationReason::LimitExceeded));
+                    continue;
+                }
+                (
+                    SourceOrigin::ScriptFile,
+                    Some(path.to_string_lossy().into_owned()),
+                    false,
+                )
+            }
             RoutedTarget::Dynamic { .. } => (SourceOrigin::Stdin, None, false),
             RoutedTarget::Unresolved { reason } => {
                 per_target.push(degraded(*reason));
@@ -251,14 +275,26 @@ pub async fn run_with_budget_in_cwd(
                 source,
                 source_hash,
                 source_byte_offset,
-            } => push_with_degradation(
-                &mut queue,
-                QueueTarget::new(language, source, 0)
-                    .with_source_hash(source_hash)
-                    .with_source_byte_offset(source_byte_offset)
-                    .with_provenance(origin, file_path),
-                &mut per_target,
-            ),
+            } => {
+                // A launcher operand only proves itself a real script here
+                // (verified shebang); only now does it compete with
+                // ScriptFile/DirectExec for the same max_script_files budget.
+                if is_launcher_operand {
+                    script_files += 1;
+                    if script_files > budget.max_script_files {
+                        per_target.push(degraded(DegradationReason::LimitExceeded));
+                        continue;
+                    }
+                }
+                push_with_degradation(
+                    &mut queue,
+                    QueueTarget::new(language, source, 0)
+                        .with_source_hash(source_hash)
+                        .with_source_byte_offset(source_byte_offset)
+                        .with_provenance(origin, file_path),
+                    &mut per_target,
+                )
+            }
             Resolution::Degraded(reason) => per_target.push(degraded(reason)),
             // A direct executable without a verified shebang is not an
             // analyzable source target and does not claim safety.
