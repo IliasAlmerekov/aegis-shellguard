@@ -275,36 +275,81 @@ struct HeredocMarker {
     delimiter_end: usize,
 }
 
-/// Byte index of the first `<<` in `line` that sits outside a single-quoted,
-/// double-quoted, or backticked span — tracking the same quote state and
-/// backslash escapes as [`split_top_level_segments`]. `echo '<<EOF'` has no
-/// heredoc operator; its `<<` is quoted data the shell prints literally, so a
-/// raw substring search would misread it as one and never find a terminator.
+/// One nested command-substitution or backtick body still open, so a
+/// heredoc marker inside it is found. `$(`/backtick each start a fresh quote
+/// scope — even inside an outer double-quoted string — and `saved_quotes`
+/// restores the enclosing scope once the frame closes.
+struct SubstitutionFrame {
+    /// `Some(depth)` for `$( ... )`: counts unmatched `(` since opening
+    /// (starts at 1), so `$((` arithmetic just nests deeper. `None` for a
+    /// backtick frame, which closes on the next unescaped backtick.
+    command_sub_depth: Option<usize>,
+    saved_quotes: (bool, bool),
+}
+
+/// Byte index of the first `<<` in `line` outside a single- or
+/// double-quoted span, tracking quote state like
+/// [`split_top_level_segments`] — plus one refinement: `$(` and a backtick
+/// each open a fresh quote scope even inside an outer double-quoted string,
+/// since bash parses their contents as an independent command line. So
+/// `echo '<<EOF'` still has no heredoc operator, but the `<<` in `"$(cat
+/// <<'EOF'` — the shape behind `gh pr create --body "$(cat <<'EOF' ...)"` —
+/// is a real one.
 fn find_unquoted_double_lt(line: &str) -> Option<usize> {
-    let mut in_single_quote = false;
-    let mut in_double_quote = false;
-    let mut in_backticks = false;
+    let mut single_quote = false;
+    let mut double_quote = false;
+    let mut frames: Vec<SubstitutionFrame> = Vec::new();
     let mut chars = line.char_indices().peekable();
 
     while let Some((idx, ch)) = chars.next() {
         match ch {
-            '\\' if !in_single_quote => {
+            '\\' if !single_quote => {
                 chars.next();
             }
-            '\'' if !in_double_quote && !in_backticks => {
-                in_single_quote = !in_single_quote;
+            '\'' if !double_quote => single_quote = !single_quote,
+            '"' if !single_quote => double_quote = !double_quote,
+            '`' if !single_quote => {
+                if matches!(frames.last(), Some(f) if f.command_sub_depth.is_none()) {
+                    if let Some(frame) = frames.pop() {
+                        (single_quote, double_quote) = frame.saved_quotes;
+                    }
+                } else {
+                    frames.push(SubstitutionFrame {
+                        command_sub_depth: None,
+                        saved_quotes: (single_quote, double_quote),
+                    });
+                    single_quote = false;
+                    double_quote = false;
+                }
             }
-            '"' if !in_single_quote && !in_backticks => {
-                in_double_quote = !in_double_quote;
+            '$' if !single_quote && chars.peek().map(|&(_, c)| c) == Some('(') => {
+                chars.next();
+                frames.push(SubstitutionFrame {
+                    command_sub_depth: Some(1),
+                    saved_quotes: (single_quote, double_quote),
+                });
+                single_quote = false;
+                double_quote = false;
             }
-            '`' if !in_single_quote => {
-                in_backticks = !in_backticks;
+            '(' if !single_quote && !double_quote => {
+                if let Some(depth) = frames.last_mut().and_then(|f| f.command_sub_depth.as_mut()) {
+                    *depth += 1;
+                }
             }
-            '<' if !in_single_quote
-                && !in_double_quote
-                && !in_backticks
-                && chars.peek().map(|&(_, c)| c) == Some('<') =>
-            {
+            ')' if !single_quote && !double_quote => {
+                let closed = if let Some(depth) =
+                    frames.last_mut().and_then(|f| f.command_sub_depth.as_mut())
+                {
+                    *depth -= 1;
+                    *depth == 0
+                } else {
+                    false
+                };
+                if closed && let Some(frame) = frames.pop() {
+                    (single_quote, double_quote) = frame.saved_quotes;
+                }
+            }
+            '<' if !single_quote && !double_quote && chars.peek().map(|&(_, c)| c) == Some('<') => {
                 return Some(idx);
             }
             _ => {}
@@ -668,7 +713,44 @@ pub fn extract_inline_scripts(cmd: &str) -> Vec<InlineScript> {
 
 #[cfg(test)]
 mod tests {
-    use super::heredoc_suspend_ranges;
+    use super::{find_heredoc_marker, heredoc_suspend_ranges};
+
+    // Issue #437 review: `$(`/backtick open a fresh quote scope even inside
+    // an outer double-quoted string, so `gh pr create --body "$(cat <<'EOF'
+    // ...)"` still holds a real heredoc marker.
+
+    #[test]
+    fn a_double_lt_inside_dollar_paren_within_double_quotes_is_a_marker() {
+        let line = "\"$(cat <<'EOF'";
+        assert!(find_heredoc_marker(line).is_some());
+    }
+
+    #[test]
+    fn a_double_lt_inside_a_plain_double_quoted_string_is_not_a_marker() {
+        let line = "\"<<EOF\"";
+        assert!(find_heredoc_marker(line).is_none());
+    }
+
+    #[test]
+    fn a_double_lt_inside_a_backtick_body_is_a_marker() {
+        let line = "`cat <<EOF`";
+        assert!(find_heredoc_marker(line).is_some());
+    }
+
+    #[test]
+    fn a_double_lt_inside_nested_dollar_paren_command_substitutions_is_a_marker() {
+        let line = "\"$(echo \"$(cat <<EOF)\")\"";
+        assert!(find_heredoc_marker(line).is_some());
+    }
+
+    // `$((` arithmetic isn't special-cased: pre-f0a74e0 code did a raw
+    // `line.find("<<")`, so `<<` inside `$((1 << 2))` already (wrongly) read
+    // as a marker. This stays exactly that loose, not looser.
+    #[test]
+    fn a_double_lt_inside_dollar_paren_paren_arithmetic_matches_pre_fix_looseness() {
+        let line = "echo $((1 << 2))";
+        assert!(find_heredoc_marker(line).is_some());
+    }
 
     // Boundaries `heredoc_suspend_ranges`' byte-offset tracking must hold at
     // (issue #384): a heredoc with nothing between its marker and
