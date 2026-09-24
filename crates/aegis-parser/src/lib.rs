@@ -67,21 +67,23 @@ pub fn effective_token_slices<'a>(tokens: &[&'a str]) -> Vec<EffectiveTokenSlice
     if tokens.is_empty() {
         return Vec::new();
     }
-    if let Some(split) = env_split_string_tokens(tokens) {
-        return effective_token_slices(&split);
-    }
 
-    let starts = effective_program_indices(tokens);
-    let mut slices = Vec::with_capacity(starts.len());
+    let (starts, owned) = effective_program_indices(tokens);
+    let mut slices = Vec::with_capacity(starts.len() + owned.len());
     for start in starts {
-        let Some(program) = tokens.get(start).map(|token| program_basename(token)) else {
+        let Some(effective_tokens) = effective_tokens_at(tokens, start) else {
             continue;
         };
-
-        let mut effective_tokens = Vec::with_capacity(tokens.len().saturating_sub(start));
-        effective_tokens.push(program);
-        effective_tokens.extend(tokens[start + 1..].iter().copied());
-
+        let program = effective_tokens[0];
+        slices.push(EffectiveTokenSlice {
+            tokens: effective_tokens,
+            program,
+        });
+    }
+    for effective_tokens in owned {
+        let Some(&program) = effective_tokens.first() else {
+            continue;
+        };
         slices.push(EffectiveTokenSlice {
             tokens: effective_tokens,
             program,
@@ -95,13 +97,11 @@ pub fn effective_token_slices<'a>(tokens: &[&'a str]) -> Vec<EffectiveTokenSlice
 /// This is the allocation-free companion to [`effective_token_slices`] for call
 /// sites that only need the lookup key, not a rewritten token slice.
 pub fn effective_program<'a>(tokens: &[&'a str]) -> Option<&'a str> {
-    if let Some(split) = env_split_string_tokens(tokens) {
-        return effective_program(&split);
+    let (starts, owned) = effective_program_indices(tokens);
+    if let Some(&start) = starts.first() {
+        return tokens.get(start).map(|token| program_basename(token));
     }
-    effective_program_indices(tokens)
-        .into_iter()
-        .next()
-        .and_then(|start| tokens.get(start).map(|token| program_basename(token)))
+    owned.into_iter().next()?.into_iter().next()
 }
 
 /// `true` when `tok` *starts* with a redirection glyph (`<`, `>`, or one
@@ -157,15 +157,27 @@ fn redirection_token_len(tok: &str) -> usize {
     if is_redirection_operator(tok) { 2 } else { 1 }
 }
 
-fn effective_program_indices(tokens: &[&str]) -> Vec<usize> {
+/// Resolve effective-program candidates for `tokens` as two channels: `starts`
+/// are indices into `tokens` itself, and `owned` are fully-resolved token
+/// vectors produced by an `env -S`/`--split-string` expansion somewhere
+/// during recursive launcher-prefix stripping. A split's words are new
+/// tokens, not a sub-range of `tokens` (review 4091038674 on PR #437), so
+/// they cannot be expressed as an index back into it.
+fn effective_program_indices<'a>(tokens: &[&'a str]) -> (Vec<usize>, Vec<Vec<&'a str>>) {
     let mut starts = Vec::new();
-    collect_effective_program_indices(tokens, 0, &mut starts);
+    let mut owned = Vec::new();
+    collect_effective_program_indices(tokens, 0, &mut starts, &mut owned);
     starts.sort_unstable();
     starts.dedup();
-    starts
+    (starts, owned)
 }
 
-fn collect_effective_program_indices(tokens: &[&str], index: usize, starts: &mut Vec<usize>) {
+fn collect_effective_program_indices<'a>(
+    tokens: &[&'a str],
+    index: usize,
+    starts: &mut Vec<usize>,
+    owned: &mut Vec<Vec<&'a str>>,
+) {
     if index >= tokens.len() {
         return;
     }
@@ -177,13 +189,25 @@ fn collect_effective_program_indices(tokens: &[&str], index: usize, starts: &mut
     // only at index 0 (issue #384).
     if starts_with_redirection_glyph(tokens[index]) {
         let len = redirection_token_len(tokens[index]).min(tokens.len() - index);
-        collect_effective_program_indices(tokens, index + len, starts);
+        collect_effective_program_indices(tokens, index + len, starts, owned);
         return;
     }
 
     let assignment_prefix_len = leading_environment_assignment_prefix_len(&tokens[index..]);
     if assignment_prefix_len > 0 {
-        collect_effective_program_indices(tokens, index + assignment_prefix_len, starts);
+        collect_effective_program_indices(tokens, index + assignment_prefix_len, starts, owned);
+        return;
+    }
+
+    // `env -S`/`--split-string` must be checked at every recursive step, not
+    // only before recursion starts — a launcher word ahead of `env`
+    // (`FOO=1 env -S ...`, `sudo env -S ...`) reaches this point mid-
+    // recursion, and generic `env_prefix_lengths` does not know split-string
+    // semantics (review 4091038674 on PR #437). A split value that is itself
+    // `env -S ...` feeds back into `collect_effective_program_slices`, so
+    // nesting to any depth resolves without a fixed bound.
+    if let Some(split) = env_split_string_tokens(&tokens[index..]) {
+        collect_effective_program_slices(&split, owned);
         return;
     }
 
@@ -193,12 +217,37 @@ fn collect_effective_program_indices(tokens: &[&str], index: usize, starts: &mut
                 if len == 0 {
                     starts.push(index);
                 } else {
-                    collect_effective_program_indices(tokens, index + len, starts);
+                    collect_effective_program_indices(tokens, index + len, starts, owned);
                 }
             }
         }
         None => starts.push(index),
     }
+}
+
+/// Resolve `tokens` — already `env -S`-split argv, not a sub-range of any
+/// outer token array — into effective-program token vectors, continuing
+/// recursive launcher-prefix stripping (and a further split, should the
+/// split content itself start with another `env -S`) on the split content.
+fn collect_effective_program_slices<'a>(tokens: &[&'a str], owned: &mut Vec<Vec<&'a str>>) {
+    let mut starts = Vec::new();
+    collect_effective_program_indices(tokens, 0, &mut starts, owned);
+    for start in starts {
+        if let Some(effective_tokens) = effective_tokens_at(tokens, start) {
+            owned.push(effective_tokens);
+        }
+    }
+}
+
+/// Build the effective token vector for the program at `start` in `tokens`:
+/// the program's basename in position 0, followed by the remaining tokens
+/// unchanged. Shared by the index-based and `env -S`-split resolution paths.
+fn effective_tokens_at<'a>(tokens: &[&'a str], start: usize) -> Option<Vec<&'a str>> {
+    let program = program_basename(tokens.get(start)?);
+    let mut effective_tokens = Vec::with_capacity(tokens.len().saturating_sub(start));
+    effective_tokens.push(program);
+    effective_tokens.extend(tokens[start + 1..].iter().copied());
+    Some(effective_tokens)
 }
 
 /// Return the number of leading shell environment assignments.

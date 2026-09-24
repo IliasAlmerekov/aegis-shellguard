@@ -159,4 +159,49 @@ mod tests {
 
         assert!(programs.contains(&"git"));
     }
+
+    // Review 4091038674 on PR #437: `env -S` was only expanded before the
+    // recursion started, so a launcher word ahead of `env` (an assignment,
+    // `sudo`, ...) made the router miss it and fall through to generic
+    // `env_prefix_lengths`, which consumes `-S` and its value and leaves no
+    // program at all.
+
+    #[test]
+    fn effective_token_slices_split_env_dash_s_after_leading_assignment() {
+        let tokens = ["FOO=1", "env", "-S", "python3 ./evil.py"];
+        let slices = effective_token_slices(&tokens);
+
+        assert_eq!(slices.len(), 1);
+        assert_eq!(slices[0].program, "python3");
+        assert_eq!(slices[0].tokens, vec!["python3", "./evil.py"]);
+    }
+
+    #[test]
+    fn effective_token_slices_split_env_dash_s_after_sudo_prefix() {
+        let tokens = ["sudo", "env", "-S", "python3 ./evil.py"];
+        let slices = effective_token_slices(&tokens);
+
+        assert_eq!(slices.len(), 1);
+        assert_eq!(slices[0].program, "python3");
+        assert_eq!(slices[0].tokens, vec!["python3", "./evil.py"]);
+    }
+
+    #[test]
+    fn effective_program_splits_env_dash_s_after_sudo_prefix() {
+        let tokens = ["sudo", "env", "-S", "python3 ./evil.py"];
+        assert_eq!(effective_program(&tokens), Some("python3"));
+    }
+
+    #[test]
+    fn effective_token_slices_split_env_dash_s_nested_twice() {
+        // `sudo env -S 'env -S python3 ./evil.py'`: the split value is
+        // itself an `env -S` invocation. No fixed nesting bound — resolution
+        // recurses until the split content stops starting with `env`.
+        let tokens = ["sudo", "env", "-S", "env -S python3 ./evil.py"];
+        let slices = effective_token_slices(&tokens);
+
+        assert_eq!(slices.len(), 1);
+        assert_eq!(slices[0].program, "python3");
+        assert_eq!(slices[0].tokens, vec!["python3", "./evil.py"]);
+    }
 }
