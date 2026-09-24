@@ -176,7 +176,7 @@ fn inline_body_with_later_script_token_stays_inline() {
 
 #[test]
 fn value_consuming_option_does_not_spoof_script_file_slot() {
-    // Standards #2 round 2: an interpreter option that takes a separate
+    // Standards #2: an interpreter option that takes a separate
     // argument (`--require <path>`, `-r <lib>`) must not let that argument
     // spoof the first-positional slot. `node --require ./preload.js -e "code"`
     // is a real Node idiom (preload + inline eval): the executed payload is the

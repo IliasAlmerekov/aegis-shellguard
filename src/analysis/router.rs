@@ -70,7 +70,7 @@ pub enum RoutedTarget {
     },
     /// A path-like first operand of an unclaimed stage behind an
     /// unenumerated launcher (`setsid ./pyx`) — the unclaimed-interpreter
-    /// net's own candidate (issue #384/#430 round 5), not a program the
+    /// net's own candidate (issue #384/#430), not a program the
     /// command itself named. [`resolve`] reads it exactly like
     /// [`RoutedTarget::DirectExec`] (a verified shebang makes it a target;
     /// no shebang, nothing), except a path that does not exist or is itself
@@ -154,7 +154,7 @@ pub(super) async fn resolve_for_analysis(
             // ordinary command's argument (`vim ./new.txt`, `du -sh
             // ./srcdir`), not evidence of anything unsafe — unlike a
             // user-typed `RoutedTarget::DirectExec`, which keeps degrading
-            // on the same read failure (issue #384/#430 round 5).
+            // on the same read failure (issue #384/#430).
             if launcher_operand_is_missing_or_directory(&path).await {
                 return Resolution::NotApplicable;
             }
@@ -206,7 +206,7 @@ async fn resolve_verified_shebang_read(path: &Path, script_file_limit_bytes: u64
 /// no-follow stat [`source_reader::read_script_file`] performs internally,
 /// so a symlink (to a directory or anything else) is left to
 /// [`resolve_verified_shebang_read`]'s ordinary degrade path rather than
-/// silently dropped here (issue #384/#430 round 5).
+/// silently dropped here (issue #384/#430).
 async fn launcher_operand_is_missing_or_directory(path: &Path) -> bool {
     match tokio::fs::symlink_metadata(path).await {
         Ok(metadata) => metadata.is_dir(),
@@ -288,7 +288,7 @@ const INTERPRETERS: &[Interpreter] = &[
 /// reserved-word prefix — that would otherwise hide the real command (#430).
 /// A `cd`/`pushd`/`popd`/`source`/`.` found anywhere, including inside a
 /// wrapper body, is tracked with the same cwd-folding rules and degrades a
-/// later relative target it cannot place correctly (#384 R1).
+/// later relative target it cannot place correctly (#384).
 #[must_use]
 pub fn route(command: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarget> {
     let mut cwd = CwdState::Unset;
