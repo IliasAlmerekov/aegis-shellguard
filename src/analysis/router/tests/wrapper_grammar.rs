@@ -61,3 +61,28 @@ fn a_case_pattern_alternation_does_not_split_the_arm_body_as_a_pipe() {
 fn a_benign_case_arm_inside_a_subshell_stays_unrouted() {
     assert_eq!(route("( case x in x) echo ok;; esac )", &[]), Vec::new());
 }
+
+// ── a quoted `;;`/`;&` inside an arm's own argument is not a terminator ────
+
+#[test]
+fn a_quoted_terminator_lookalike_inside_an_arm_does_not_end_it_early() {
+    // `'x;;y'` is a single quoted argument to the benign call, not the end
+    // of the arm — the real terminator is the unquoted `;;` right before
+    // `esac`. A quote-unaware scan stops at the quoted `;;` instead, drops
+    // the rest of the arm (including `python3 evil.py`) on the floor, and
+    // the shell still runs it.
+    let command = "case x in x) python3 benign.py 'x;;y'; python3 evil.py;; esac";
+    assert_eq!(
+        route(command, &[]),
+        vec![
+            RoutedTarget::ScriptFile {
+                language: SourceLanguage::Python,
+                path: PathBuf::from("benign.py"),
+            },
+            RoutedTarget::ScriptFile {
+                language: SourceLanguage::Python,
+                path: PathBuf::from("evil.py"),
+            },
+        ]
+    );
+}

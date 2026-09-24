@@ -58,14 +58,35 @@ fn case_arm_bodies(rest: &str) -> Vec<String> {
 
 /// The earliest `case` arm terminator (`;;&`, `;;`, or `;&`, longest match
 /// first so `;;&` is never misread as `;;` followed by a stray `&`) in `s`,
-/// as a `(byte_index, terminator_len)` pair.
+/// as a `(byte_index, terminator_len)` pair. Tracks single/double-quote and
+/// backslash-escape state the same way `aegis_parser`'s own segment scanners
+/// do, so a terminator-lookalike inside a quoted argument (`'x;;y'`) cannot
+/// end the arm early and hide the rest of its body.
 fn find_case_arm_terminator(s: &str) -> Option<(usize, usize)> {
-    for (idx, _) in s.match_indices(';') {
-        if s[idx..].starts_with(";;&") {
-            return Some((idx, 3));
-        }
-        if s[idx..].starts_with(";;") || s[idx..].starts_with(";&") {
-            return Some((idx, 2));
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut chars = s.char_indices().peekable();
+
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '\\' if !in_single_quote => {
+                chars.next();
+            }
+            '\'' if !in_double_quote => {
+                in_single_quote = !in_single_quote;
+            }
+            '"' if !in_single_quote => {
+                in_double_quote = !in_double_quote;
+            }
+            ';' if !in_single_quote && !in_double_quote => {
+                if s[idx..].starts_with(";;&") {
+                    return Some((idx, 3));
+                }
+                if s[idx..].starts_with(";;") || s[idx..].starts_with(";&") {
+                    return Some((idx, 2));
+                }
+            }
+            _ => {}
         }
     }
     None
