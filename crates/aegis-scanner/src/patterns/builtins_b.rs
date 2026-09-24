@@ -216,6 +216,47 @@ pub(super) fn rules() -> Vec<PrefixRule> {
             match_examples: &["pkill -9 nginx"],
             not_match_examples: &["pkill -15 nginx"],
         },
+        // PS-008 is to PS-006 what FS-020 is to FS-001: it finds a recursive
+        // delete of `/` in any flag order (GHSA-7gcj-4f7x-7fxj). It also takes
+        // `//`, `/.`, and `/..`, which PS-006 misses. The pattern only feeds
+        // the program index; `matches_tokens` decides the match.
+        PrefixRule {
+            id: Cow::Borrowed("PS-008"),
+            category: Category::Process,
+            pattern: vec![s("rm"), any_star(), s("/")],
+            risk: RiskLevel::Block,
+            description: Cow::Borrowed(
+                "rm -r / — recursively deletes the root filesystem regardless of flag order; unrecoverable system destruction",
+            ),
+            safe_alt: Some(Cow::Borrowed(
+                "There is no safe alternative; this command must not be run",
+            )),
+            justification: Some(Cow::Borrowed(
+                "This recursively deletes everything on the root filesystem. Flag order and -f do not change the result: the machine stops working and the data is gone.",
+            )),
+            source: PatternSource::Builtin,
+            suppressed_by: &[],
+            match_examples: &[
+                "rm -v -rf /",
+                "rm / -rf",
+                "rm -r /",
+                "rm --no-preserve-root -rf /",
+                "rm -v -rf --no-preserve-root /",
+                "rm -r -- /",
+                "rm -rf //",
+                "rm -rf /.",
+                "rm -r /..",
+            ],
+            not_match_examples: &[
+                "rm file",
+                "rm -r /home",
+                "rm -rf /*",
+                "rm -- -r /",
+                "rm /",
+                "rm -rf //home",
+                "rm -rf /.git",
+            ],
+        },
         PrefixRule {
             id: Cow::Borrowed("PS-005"),
             category: Category::Filesystem,

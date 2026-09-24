@@ -109,3 +109,47 @@ fn regression_docker_compose_down_with_volume_flag_is_flagged() {
         "expected docker compose down -v to match DK-003"
     );
 }
+
+// GHSA-7gcj-4f7x-7fxj / #415: FS-001's regex only fired when the recursive
+// flag was the very first token after `rm`, so a flag trailing the operand
+// went undetected end to end. FS-020 (a token-prefix rule) closes this gap.
+#[test]
+fn regression_rm_recursive_flag_after_operand_is_flagged() {
+    let command = "rm /tmp/aegis-recursive-regression -r";
+
+    let assessment = assess(command).expect("assessment should not fail");
+    assert_eq!(
+        assessment.risk,
+        RiskLevel::Danger,
+        "expected rm with a trailing -r flag to be Danger: {command:?}"
+    );
+    assert!(
+        assessment
+            .matched
+            .iter()
+            .any(|m| m.pattern.id.as_ref() == "FS-020"),
+        "expected trailing-flag rm regression command to match FS-020"
+    );
+}
+
+// Same gap, root case: PS-006's regex has the same first-token-only shape,
+// so a recursive rm of `/` with a leading unrelated flag was Danger (via
+// FS-020) instead of Block. PS-008 closes it.
+#[test]
+fn regression_rm_recursive_root_with_leading_flag_is_blocked() {
+    let command = "rm -v -rf /";
+
+    let assessment = assess(command).expect("assessment should not fail");
+    assert_eq!(
+        assessment.risk,
+        RiskLevel::Block,
+        "expected rm -v -rf / to be Block: {command:?}"
+    );
+    assert!(
+        assessment
+            .matched
+            .iter()
+            .any(|m| m.pattern.id.as_ref() == "PS-008"),
+        "expected root regression command to match PS-008"
+    );
+}
