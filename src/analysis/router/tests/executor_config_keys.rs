@@ -78,7 +78,67 @@ fn new_executor_env_vars_running_a_script_are_routed() {
     }
 }
 
-// ── A config value naming no interpreter keeps today's auto-approve
+// ── An executor assignment past the stage's own leading-assignment prefix
+// is still degraded: through the `env` launcher, or as its own assignment
+// stage earlier on the same line (issue #384/#430) ──────────────────────
+
+#[test]
+fn env_launcher_wrapped_pager_assignment_running_a_script_is_routed() {
+    assert_eq!(
+        route(r#"env PAGER='python3 ./evil.py' man ls"#, &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn env_launcher_with_its_own_flag_before_the_assignment_is_routed() {
+    assert_eq!(
+        route(r#"env -i PAGER='python3 ./evil.py' man ls"#, &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn export_assignment_stage_naming_an_interpreter_is_routed() {
+    assert_eq!(
+        route(r#"export PAGER="python3 ./evil.py"; man ls"#, &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn bare_assignment_stage_naming_an_interpreter_is_routed() {
+    assert_eq!(
+        route(r#"PAGER="python3 ./evil.py"; man ls"#, &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn declare_dash_x_assignment_stage_naming_an_interpreter_is_routed() {
+    assert_eq!(
+        route(r#"declare -x PAGER="python3 ./evil.py"; man ls"#, &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn typeset_dash_x_assignment_stage_naming_an_interpreter_is_routed() {
+    assert_eq!(
+        route(r#"typeset -x PAGER="python3 ./evil.py"; man ls"#, &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn readonly_assignment_stage_naming_an_interpreter_is_routed() {
+    assert_eq!(
+        route(r#"readonly PAGER="python3 ./evil.py"; man ls"#, &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+// ── A value or assignment naming no interpreter keeps today's auto-approve
 // decision (issue #384/#430) ────────────────────────────────────────────
 
 #[test]
@@ -87,4 +147,14 @@ fn git_dash_c_of_an_unrelated_key_family_shape_is_not_routed() {
         route("git -c diff.algorithm=histogram diff", &[]),
         Vec::new()
     );
+}
+
+#[test]
+fn export_assignment_stage_naming_no_interpreter_is_not_routed() {
+    assert_eq!(route("export PAGER=less", &[]), Vec::new());
+}
+
+#[test]
+fn env_launcher_wrapped_plain_assignment_is_not_routed() {
+    assert_eq!(route("env LANG=C ls", &[]), Vec::new());
 }

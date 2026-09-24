@@ -124,6 +124,18 @@ pub(super) fn unclaimed_interpreter_net(
         return None;
     }
 
+    // A stage that is nothing but a variable assignment (bare `NAME=value`,
+    // or one introduced by `export`/`declare -x`/`typeset -x`/`readonly`)
+    // degrades on its own when it names an executor environment variable an
+    // interpreter, regardless of what a later, separately routed stage on
+    // the same line does with it — this stage alone has no target to
+    // resolve `slice` against below (issue #384/#430).
+    if assignment_stage_names_an_interpreter(&raw_tokens, trusted_aliases) {
+        return Some(RoutedTarget::Unresolved {
+            reason: DegradationReason::DynamicSource,
+        });
+    }
+
     let slice = aegis_parser::effective_token_slices(&raw_tokens)
         .into_iter()
         .next()?;

@@ -32,18 +32,19 @@ const EXECUTOR_ENV_VARS: &[&str] = &[
 ];
 
 /// `true` when `raw_tokens` opens with one or more `NAME=value` shell
-/// environment assignments and at least one assigns a name on
-/// [`EXECUTOR_ENV_VARS`] a value that names a known interpreter
-/// (`LESSOPEN='|python3 ./evil.py %s' less notes.txt`, issue #384/#430).
-/// Stops at the first token that is not itself an assignment — that token is
-/// the program, and nothing at or past it is a leading assignment any more,
-/// so a same-shaped positional operand after the program (`man ls
-/// PAGER=cat`) is left alone.
+/// environment assignments — directly, or past a leading `env` launcher and
+/// its own flags — and at least one assigns a name on [`EXECUTOR_ENV_VARS`]
+/// a value that names a known interpreter (`LESSOPEN='|python3 ./evil.py
+/// %s' less notes.txt`, `env PAGER="python3 ./evil.py" man ls`, issue
+/// #384/#430). Stops at the first token that is not itself an assignment —
+/// that token is the program, and nothing at or past it is a leading
+/// assignment any more, so a same-shaped positional operand after the
+/// program (`man ls PAGER=cat`) is left alone.
 pub(super) fn env_prefix_names_an_interpreter(
     raw_tokens: &[&str],
     trusted_aliases: &[(&str, &str)],
 ) -> bool {
-    for token in raw_tokens {
+    for token in env_launcher_tail(raw_tokens) {
         let Some((name, value)) = token.split_once('=') else {
             break;
         };
@@ -55,6 +56,81 @@ pub(super) fn env_prefix_names_an_interpreter(
         }
     }
     false
+}
+
+/// `raw_tokens` itself when its first token is not the `env` launcher, or
+/// the tokens past `env` and its own leading flags (`-i`/`--ignore-
+/// environment`, `-0`/`--null`, `-u`/`--unset NAME`, `-C`/`--chdir DIR`)
+/// otherwise — so an assignment `env` carries (`env PAGER="python3
+/// ./evil.py" man ls`, `env -i PAGER="python3 ./evil.py" man ls`) is scanned
+/// exactly like a bare leading assignment already is (issue #384/#430).
+/// Does not attempt `env -S`/`--split-string`'s own splitting — that shape
+/// resolves to its own effective program elsewhere in this crate, and a
+/// value it carries is out of scope here.
+fn env_launcher_tail<'a>(raw_tokens: &'a [&'a str]) -> &'a [&'a str] {
+    let Some((&first, rest)) = raw_tokens.split_first() else {
+        return raw_tokens;
+    };
+    if first.rsplit('/').next() != Some("env") {
+        return raw_tokens;
+    }
+    let mut index = 0;
+    while index < rest.len() {
+        let token = rest[index];
+        if matches!(token, "-i" | "-0" | "--ignore-environment" | "--null") {
+            index += 1;
+        } else if matches!(token, "-u" | "--unset" | "-C" | "--chdir") {
+            index += 2.min(rest.len() - index);
+        } else if token.starts_with("--chdir=") || token.starts_with("--unset=") {
+            index += 1;
+        } else {
+            break;
+        }
+    }
+    &rest[index..]
+}
+
+/// Bash's own "declare this as exported" keywords that can precede a plain
+/// `NAME=value` assignment stage without changing what the assignment means
+/// for an executor environment variable's value (issue #384/#430):
+/// `export`/`readonly` take a bare `NAME[=value]` list directly, while
+/// `declare`/`typeset` need their own `-x` flag to mean the same thing.
+fn skip_assignment_keyword<'a>(tokens: &'a [&'a str]) -> &'a [&'a str] {
+    match tokens {
+        [keyword, rest @ ..] if matches!(*keyword, "export" | "readonly") => rest,
+        [keyword, flag, rest @ ..]
+            if matches!(*keyword, "declare" | "typeset") && *flag == "-x" =>
+        {
+            rest
+        }
+        _ => tokens,
+    }
+}
+
+/// `true` when `raw_tokens` is nothing but a variable-assignment stage —
+/// bare `NAME=value`, or one introduced by `export`/`declare -x`/`typeset
+/// -x`/`readonly` — naming an [`EXECUTOR_ENV_VARS`] variable a value that
+/// names a known interpreter. Degrades the assignment stage itself rather
+/// than waiting to see whether a later, separately routed stage on the same
+/// line reads that variable (`export PAGER="python3 ./evil.py"; man ls`,
+/// `PAGER="python3 ./evil.py"; man ls`, issue #384/#430) — routing does not
+/// track a variable's value across stage boundaries to confirm one will, so
+/// the fail-closed call is to treat every such assignment as if it will be.
+pub(super) fn assignment_stage_names_an_interpreter(
+    raw_tokens: &[&str],
+    trusted_aliases: &[(&str, &str)],
+) -> bool {
+    let tokens = skip_assignment_keyword(raw_tokens);
+    !tokens.is_empty()
+        && tokens.iter().all(|token| token.split_once('=').is_some())
+        && tokens.iter().any(|token| {
+            let Some((name, value)) = token.split_once('=') else {
+                return false;
+            };
+            is_shell_identifier(name)
+                && EXECUTOR_ENV_VARS.contains(&name)
+                && value_names_an_interpreter(value, trusted_aliases)
+        })
 }
 
 /// `true` when `name` is a valid POSIX shell identifier: a leading letter or
