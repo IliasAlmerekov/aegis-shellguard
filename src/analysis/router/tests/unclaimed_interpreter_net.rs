@@ -506,6 +506,30 @@ fn alias_defined_earlier_on_the_line_is_routed() {
     );
 }
 
+#[test]
+fn alias_defined_with_a_double_dash_separator_is_routed() {
+    assert_eq!(
+        route("alias -- n=python3; n ./evil.py", &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn alias_defined_among_several_names_in_one_call_is_routed() {
+    assert_eq!(
+        route("alias a=ls b=python3; b ./evil.py", &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn quoted_alias_name_is_routed() {
+    assert_eq!(
+        route("alias 'n'=python3; n ./evil.py", &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
 // ── A static program word with a dynamic operand, or a bare dynamic word
 // with no operand at all, stays exactly as auto-approved as before ─────────
 
