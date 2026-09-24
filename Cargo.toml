@@ -115,3 +115,7 @@ harness = false
 [[bench]]
 name = "startup_bench"
 harness = false
+
+[[bench]]
+name = "router_bench"
+harness = false
