@@ -32,6 +32,7 @@ fuzz/corpus/router/*
 !fuzz/corpus/router/heredoc-tee-then-exec.txt
 !fuzz/corpus/router/heredoc-marker-glued-to-chain.txt
 !fuzz/corpus/router/cd-prefix-and-pipeline.txt
+!fuzz/corpus/router/unicode-next-line.txt
 fuzz/corpus/language_protocol/*
 !fuzz/corpus/language_protocol/invalid-frame.txt
 fuzz/corpus/language_python/*

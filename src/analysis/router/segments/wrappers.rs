@@ -191,10 +191,7 @@ fn coproc_body(rest: &str) -> Option<&str> {
 pub(super) fn strip_trailing_redirection(s: &str) -> &str {
     let mut rest = s.trim_end();
     loop {
-        let (before, last_word) = match rest.rfind(char::is_whitespace) {
-            Some(idx) => (&rest[..idx], &rest[idx + 1..]),
-            None => ("", rest),
-        };
+        let (before, last_word) = split_at_last_whitespace(rest).unwrap_or(("", rest));
         if last_word.is_empty() {
             return rest;
         }
@@ -206,16 +203,24 @@ pub(super) fn strip_trailing_redirection(s: &str) -> &str {
         // standalone redirection operator (`>`, `2>`, ...) whose target
         // `last_word` is, so the pair strips together.
         let before = before.trim_end();
-        let (before_before, prior_word) = match before.rfind(char::is_whitespace) {
-            Some(idx) => (&before[..idx], &before[idx + 1..]),
-            None => ("", before),
-        };
+        let (before_before, prior_word) = split_at_last_whitespace(before).unwrap_or(("", before));
         if aegis_parser::is_redirection_operator(prior_word) {
             rest = before_before.trim_end();
             continue;
         }
         return rest;
     }
+}
+
+/// Split `value` around its last whitespace character, dropping that
+/// character. Slices past the character's full UTF-8 width: Unicode whitespace
+/// such as U+0085 takes two bytes, so `index + 1` would land inside it.
+fn split_at_last_whitespace(value: &str) -> Option<(&str, &str)> {
+    let (index, whitespace) = value
+        .char_indices()
+        .rfind(|(_, character)| character.is_whitespace())?;
+    let after_whitespace = index + whitespace.len_utf8();
+    Some((&value[..index], &value[after_whitespace..]))
 }
 
 /// Every raw wrapper body found directly in `stage_raw`: a reserved-word
