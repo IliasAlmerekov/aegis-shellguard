@@ -188,7 +188,12 @@ pub(super) fn unclaimed_interpreter_net(
     // the exclusion list below so it applies even to a program that list
     // would otherwise wave through untouched.
     if env_prefix_names_an_interpreter(&raw_tokens, ctx.trusted_aliases)
-        || option_value_names_an_interpreter(slice.program, &slice.tokens, ctx.trusted_aliases)
+        || option_value_names_an_interpreter(
+            slice.program,
+            &raw_tokens,
+            &slice.tokens,
+            ctx.trusted_aliases,
+        )
     {
         return vec![RoutedTarget::Unresolved {
             reason: DegradationReason::DynamicSource,

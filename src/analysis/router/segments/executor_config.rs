@@ -152,14 +152,20 @@ fn is_shell_identifier(name: &str) -> bool {
 /// index 0) is a program-specific option whose value names a known
 /// interpreter (issue #384/#430): git's `-c`/`--config-env`, or man's
 /// `-P`/`--pager=`. `program` picks which syntax applies — the two share the
-/// "option value names a program" shape but nothing else.
+/// "option value names a program" shape but nothing else. `raw_tokens` — the
+/// stage's own tokens before launcher/assignment stripping — is threaded
+/// through to git's `--config-env` handling, which resolves its value
+/// against a leading assignment there rather than the stripped `tokens`
+/// (review comment 4091038640); man's `-P`/`--pager` carries no such
+/// indirection and ignores it.
 pub(super) fn option_value_names_an_interpreter(
     program: &str,
+    raw_tokens: &[&str],
     tokens: &[&str],
     trusted_aliases: &[(&str, &str)],
 ) -> bool {
     match program {
-        "git" => git_config_value_names_an_interpreter(tokens, trusted_aliases),
+        "git" => git_config_value_names_an_interpreter(raw_tokens, tokens, trusted_aliases),
         "man" => man_pager_value_names_an_interpreter(tokens, trusted_aliases),
         _ => false,
     }
@@ -218,28 +224,73 @@ fn family_middle_segment<'a>(key: &'a str, prefix: &str, suffix: &str) -> Option
 /// Scans for `-c <key>=<value>`, glued `-c<key>=<value>`, `--config-env
 /// <key>=<value>`, and glued `--config-env=<key>=<value>` — git accepts a
 /// short option's argument either attached or as the next token, and
-/// `--config-env` besides.
+/// `--config-env` besides. `-c`'s right-hand side is the config value
+/// itself, but `--config-env`'s right-hand side names an *environment
+/// variable* git reads the value from — `git --config-env=core.pager=RUNNER`
+/// runs whatever `$RUNNER` holds, not a literal program named `RUNNER`
+/// (locally inspected `git --help`, review comment 4091038640). Resolved
+/// against `raw_tokens`' own leading assignment prefix (`RUNNER='python3
+/// ./evil.py' git --config-env=core.pager=RUNNER -p log`); an executor key
+/// naming a variable that assignment prefix does not set is exactly as
+/// opaque as one this file cannot resolve at all — the value could be
+/// anything in the inherited environment — so it fails closed rather than
+/// passing the unresolved name through `value_names_an_interpreter`, which
+/// would read `RUNNER` as a literal (and non-matching) program name.
 fn git_config_value_names_an_interpreter(
+    raw_tokens: &[&str],
     tokens: &[&str],
     trusted_aliases: &[(&str, &str)],
 ) -> bool {
     let mut iter = tokens.iter();
     while let Some(&tok) = iter.next() {
-        let assignment = if tok == "-c" || tok == "--config-env" {
-            iter.next().copied()
+        let (assignment, names_an_env_var) = if tok == "-c" {
+            (iter.next().copied(), false)
+        } else if tok == "--config-env" {
+            (iter.next().copied(), true)
         } else if let Some(rest) = tok.strip_prefix("-c") {
-            Some(rest)
+            (Some(rest), false)
         } else {
-            tok.strip_prefix("--config-env=")
+            (tok.strip_prefix("--config-env="), true)
         };
         let Some((key, value)) = assignment.and_then(|a| a.split_once('=')) else {
             continue;
         };
-        if is_executor_config_key(key) && value_names_an_interpreter(value, trusted_aliases) {
+        if !is_executor_config_key(key) {
+            continue;
+        }
+        let names_an_interpreter = if names_an_env_var {
+            match assignment_prefix_value(raw_tokens, value) {
+                Some(resolved) => value_names_an_interpreter(resolved, trusted_aliases),
+                None => true,
+            }
+        } else {
+            value_names_an_interpreter(value, trusted_aliases)
+        };
+        if names_an_interpreter {
             return true;
         }
     }
     false
+}
+
+/// The value a leading `NAME=value` shell-environment assignment in
+/// `raw_tokens` gives `name` — directly, or past a leading `env` launcher
+/// and its own flags, the same reach [`env_prefix_names_an_interpreter`]
+/// uses — or `None` when `raw_tokens` assigns no such variable (issue
+/// #384/#430, review comment 4091038640).
+fn assignment_prefix_value<'a>(raw_tokens: &'a [&'a str], name: &str) -> Option<&'a str> {
+    for token in env_launcher_tail(raw_tokens) {
+        let Some((defined, value)) = token.split_once('=') else {
+            break;
+        };
+        if !is_shell_identifier(defined) {
+            break;
+        }
+        if defined == name {
+            return Some(value);
+        }
+    }
+    None
 }
 
 /// Scans for `-P <value>`, `--pager <value>`, and glued `--pager=<value>`.

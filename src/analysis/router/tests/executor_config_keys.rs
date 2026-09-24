@@ -53,6 +53,49 @@ fn git_dash_c_executor_key_families_with_a_user_chosen_middle_segment_are_routed
     }
 }
 
+// ── `--config-env` names an environment variable, not a value: its value
+// must be resolved from the command's own assignment prefix, or the key
+// fails closed when that assignment is missing (issue #384/#430, review
+// comment 4091038640) ────────────────────────────────────────────────────
+
+#[test]
+fn config_env_glued_form_resolves_its_named_variable_from_the_assignment_prefix() {
+    assert_eq!(
+        route(
+            r#"RUNNER='python3 ./evil.py' git --config-env=core.pager=RUNNER -p log"#,
+            &[]
+        ),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn config_env_two_token_form_resolves_its_named_variable_from_the_assignment_prefix() {
+    assert_eq!(
+        route(
+            r#"RUNNER='python3 ./evil.py' git --config-env core.pager=RUNNER -p log"#,
+            &[]
+        ),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn config_env_naming_an_unassigned_variable_fails_closed() {
+    assert_eq!(
+        route("git --config-env=core.pager=RUNNER -p log", &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn config_env_resolving_to_a_benign_value_is_not_routed() {
+    assert_eq!(
+        route(r#"RUNNER=cat git --config-env=core.pager=RUNNER -p log"#, &[]),
+        Vec::new()
+    );
+}
+
 // ── An environment variable git or another executor reads for a command to
 // run is degraded (issue #384/#430) ─────────────────────────────────────
 
