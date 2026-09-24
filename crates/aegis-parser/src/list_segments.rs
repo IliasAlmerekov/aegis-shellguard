@@ -589,10 +589,7 @@ mod tests {
         // treat it as one, or it swallows the rest of the command (including
         // the real `;` separator) looking for a terminator that never comes.
         let cmd = "echo '<<EOF'; python3 ./evil.py";
-        assert_eq!(
-            raw_segments(cmd),
-            vec!["echo '<<EOF'", "python3 ./evil.py"]
-        );
+        assert_eq!(raw_segments(cmd), vec!["echo '<<EOF'", "python3 ./evil.py"]);
     }
 
     #[test]
