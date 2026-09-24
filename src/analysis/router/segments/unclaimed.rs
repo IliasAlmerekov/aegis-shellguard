@@ -114,7 +114,11 @@ pub(super) fn unclaimed_interpreter_net(
     full_command: &str,
     trusted_aliases: &[(&str, &str)],
 ) -> Option<RoutedTarget> {
-    let owned_tokens = aegis_parser::split_tokens(stage_raw);
+    // A trailing redirect (`{ echo ok; } 2>/dev/null`) is punctuation, not an
+    // argument — stripped before tokenizing so its target never reads as a
+    // path-like operand below (issue #384/#430), the same stripping
+    // `wrapper_bodies` already applies before its own extraction.
+    let owned_tokens = aegis_parser::split_tokens(strip_trailing_redirection(stage_raw));
     let raw_tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
     if is_command_lookup(&raw_tokens) {
         return None;
@@ -124,7 +128,7 @@ pub(super) fn unclaimed_interpreter_net(
         .into_iter()
         .next()?;
 
-    let operands = slice.tokens[1..].iter().filter(|tok| !tok.starts_with('-'));
+    let mut operands = slice.tokens[1..].iter().filter(|tok| !tok.starts_with('-'));
     // A program word reached only through expansion the router does not
     // perform — `$VAR`, `${X:-python3}`, `` `cmd` ``, `{python3,}` — or one
     // that names a shell `alias` defined earlier in the same command is
@@ -166,11 +170,15 @@ pub(super) fn unclaimed_interpreter_net(
     // for an ordinary command's argument) resolves speculatively instead of
     // degrading like a user-typed `DirectExec` still does.
     //
-    let first_operand = slice.tokens[1..].iter().find(|tok| !tok.starts_with('-'))?;
-    (first_operand.contains('/') && is_literal_path(first_operand)).then(|| {
-        RoutedTarget::LauncherOperand {
-            path: PathBuf::from(*first_operand),
-        }
+    //
+    // Walks every remaining operand rather than stopping at the first one:
+    // a second unenumerated wrapper word (`strace setsid ./pyx`) or a flag's
+    // own argument (`setsid -u user ./pyx`) is not path-like and is not the
+    // thing actually launched, so it is skipped in favor of the first
+    // operand that is (issue #384/#430).
+    let first_path_like_operand = operands.find(|tok| tok.contains('/') && is_literal_path(tok))?;
+    Some(RoutedTarget::LauncherOperand {
+        path: PathBuf::from(*first_path_like_operand),
     })
 }
 

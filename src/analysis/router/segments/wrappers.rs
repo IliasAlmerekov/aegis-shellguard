@@ -167,7 +167,7 @@ fn coproc_body(rest: &str) -> Option<&str> {
 /// boundary word splitting only, the same raw-substring standard as this
 /// module's other wrapper-body extraction: a quoted redirect target is not
 /// unquoted or re-tokenized.
-fn strip_trailing_redirection(s: &str) -> &str {
+pub(super) fn strip_trailing_redirection(s: &str) -> &str {
     let mut rest = s.trim_end();
     loop {
         let (before, last_word) = match rest.rfind(char::is_whitespace) {

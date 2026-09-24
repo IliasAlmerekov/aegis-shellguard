@@ -19,7 +19,7 @@ mod unclaimed;
 mod wrappers;
 use dynamic_program::{alias_defines_program, is_dynamic_program_word};
 use unclaimed::unclaimed_interpreter_net;
-use wrappers::{posix_function_definition_body, wrapper_bodies};
+use wrappers::{posix_function_definition_body, strip_trailing_redirection, wrapper_bodies};
 
 /// Bound on wrapper-peeling recursion. Each level of
 /// [`route_wrapped_stage`] re-scans its own (shrinking) body with

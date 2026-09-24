@@ -527,6 +527,42 @@ fn bare_variable_with_no_operand_is_not_routed() {
     assert_eq!(route("$EDITOR", &[]), Vec::new());
 }
 
+// ── A second unenumerated wrapper word is walked past to reach the real
+// operand (issue #384/#430) ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn double_wrapped_interpreter_is_routed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pyx");
+    std::fs::write(&path, "#!/usr/bin/env python3\nprint(1)\n").unwrap();
+
+    let command = format!("strace setsid {}", path.display());
+    let targets = route(&command, &[]);
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::LauncherOperand { path: path.clone() }]
+    );
+
+    let results = resolve(targets, 1024).await;
+    assert_eq!(
+        results,
+        vec![Ok(SourceTarget {
+            language: SourceLanguage::Python,
+            source: "#!/usr/bin/env python3\nprint(1)\n".to_owned(),
+        })]
+    );
+}
+
+#[test]
+fn wrapper_flags_own_argument_is_not_mistaken_for_the_operand() {
+    assert_eq!(
+        route("setsid -u user ./pyx", &[]),
+        vec![RoutedTarget::LauncherOperand {
+            path: PathBuf::from("./pyx"),
+        }]
+    );
+}
+
 // ── A user-typed direct-exec target keeps its pre-existing behavior ────────
 
 #[tokio::test]
