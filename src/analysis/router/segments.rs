@@ -579,7 +579,8 @@ fn is_env_chdir_flag(tok: &str) -> bool {
 fn env_chdir_prefix(prefix: &[&str]) -> bool {
     prefix.iter().enumerate().any(|(idx, tok)| {
         let basename = tok.rsplit('/').next().unwrap_or(tok);
-        basename.eq_ignore_ascii_case("env") && prefix[idx + 1..].iter().any(|t| is_env_chdir_flag(t))
+        basename.eq_ignore_ascii_case("env")
+            && prefix[idx + 1..].iter().any(|t| is_env_chdir_flag(t))
     })
 }
 
