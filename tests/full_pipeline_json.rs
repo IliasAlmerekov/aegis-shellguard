@@ -502,3 +502,31 @@ fn missing_direct_exec_path_degrades_instead_of_auto_approving() {
     assert_eq!(json["risk"], "safe");
     assert_eq!(json["decision"], "prompt");
 }
+
+/// An `env -S` value that quotes its own spaces (`'import os; os.system
+/// ("id")'`) re-splits on plain whitespace into more words than the stage
+/// had tokens to begin with (PR #437 adversarial finding F3). The router
+/// used to compute the split's start position in the original tokens by
+/// subtracting the (now longer) split word count from the original token
+/// count, which underflowed and crashed the process instead of returning a
+/// verdict. It must instead degrade to a prompt, never auto-approve and
+/// never crash.
+#[test]
+fn env_split_string_value_that_re_splits_longer_than_the_original_tokens_prompts_instead_of_crashing()
+ {
+    let home = TempDir::new().unwrap();
+    let stage = "FOO=1 env -S \"python3 -c 'import os; os.system(\\\"id\\\")'\"";
+    let output = base_command(home.path())
+        .args(["-c", stage, "--output", "json"])
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "must exit with the ordinary prompt code, not crash: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["decision"], "prompt");
+}

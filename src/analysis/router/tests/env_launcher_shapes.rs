@@ -160,3 +160,51 @@ fn env_chdir_behind_a_command_launcher_degrades_the_relative_target() {
         vec![evil_py_dynamic()]
     );
 }
+
+/// `env_split_string_tokens` re-splits a `-S` value on plain whitespace,
+/// with no quote awareness of its own (issue #437 review, PR #437 adversarial
+/// finding F3) — a value that quotes its own spaces (`'import os; os.system
+/// ("id")'`) re-splits into more words than the original command had tokens
+/// to begin with. `route_direct_stage` used to compute the split's start
+/// position in the original tokens as `tokens.len() - slice.tokens.len()`,
+/// which assumes the split can only ever be as short as, or shorter than,
+/// what it replaced; here it is longer, and the subtraction underflowed
+/// (`attempt to subtract with overflow` in a debug build, an out-of-range
+/// slice index in release). The fix must fail closed instead of computing a
+/// bogus index: this exact stage degrades rather than panicking or auto-
+/// approving.
+#[test]
+fn env_split_string_value_that_re_splits_longer_than_the_original_tokens_degrades_instead_of_panicking()
+ {
+    let stage = "FOO=1 env -S \"python3 -c 'import os; os.system(\\\"id\\\")'\"";
+    assert_eq!(
+        route(stage, &[]),
+        vec![RoutedTarget::Unresolved {
+            reason: DegradationReason::DynamicSource
+        }]
+    );
+}
+
+/// Sweep of `env -S` shapes whose value re-splits into more words than the
+/// stage had tokens — nested quoting, embedded semicolons, extra leading
+/// assignments, and a doubly-nested `env -S` — asserting only that routing
+/// never panics (issue #437 review, PR #437 adversarial finding F3). Each
+/// shape is run through `std::panic::catch_unwind` so one failure still
+/// reports every other shape's outcome rather than aborting the sweep.
+#[test]
+fn env_split_string_re_split_sweep_never_panics() {
+    let stages = [
+        "FOO=1 env -S \"python3 -c 'import os; os.system(\\\"id\\\")'\"",
+        "env -S \"a b c d e f\"",
+        "env -S \"python3 -c 'import sys; sys.exit(1)'\"",
+        "FOO=1 BAR=2 env -S \"node -e 'console.log(1); console.log(2)'\"",
+        "env -S \"env -S 'perl -e \\\"print 1\\\"'\"",
+    ];
+    let panicked: Vec<&str> = stages
+        .into_iter()
+        .filter(|stage| {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| route(stage, &[]))).is_err()
+        })
+        .collect();
+    assert!(panicked.is_empty(), "these shapes panicked: {panicked:?}");
+}

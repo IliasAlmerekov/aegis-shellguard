@@ -514,7 +514,22 @@ fn route_direct_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<Rout
         return Vec::new();
     };
 
-    let effective_start = tokens.len() - slice.tokens.len();
+    // `slice.tokens` is a suffix of `tokens` when it came from an index into
+    // `tokens` itself, but an `env -S`/`--split-string` value re-splits on
+    // plain whitespace with no quote awareness (`aegis_parser::
+    // env_split_string_tokens`) — a value that quotes its own spaces can
+    // re-split into more words than the stage had tokens to begin with, so
+    // `slice.tokens` is longer than `tokens` and no such suffix index
+    // exists. Fail closed rather than let the subtraction underflow (#437
+    // review, adversarial finding F3): the stage's own prefix (an `env -C`
+    // chdir flag, a leading redirect) cannot be recovered without that
+    // index, so treat it exactly as unresolved as any other source routing
+    // cannot statically recover (CONVENTION.md §2).
+    let Some(effective_start) = tokens.len().checked_sub(slice.tokens.len()) else {
+        return vec![RoutedTarget::Unresolved {
+            reason: DegradationReason::DynamicSource,
+        }];
+    };
     // `env -C DIR`/`--chdir[=]DIR` changes the cwd for that one child
     // process only, not the shell's own — a relative target must degrade
     // rather than resolve against the shell's own cwd (issue #384).
