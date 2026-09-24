@@ -133,6 +133,14 @@ fn man_long_pager_flag_running_a_script_is_routed() {
     );
 }
 
+#[test]
+fn man_long_pager_flag_with_a_separate_value_running_a_script_is_routed() {
+    assert_eq!(
+        route("man --pager 'python3 ./evil.py' man", &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
 // ── A config value or env assignment naming no interpreter keeps today's
 // auto-approve decision (issue #384/#430) ──────────────────────────────────
 

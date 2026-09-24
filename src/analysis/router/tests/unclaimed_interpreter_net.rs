@@ -634,6 +634,14 @@ fn alias_replacement_carrying_interpreter_flags_is_routed() {
 }
 
 #[test]
+fn alias_replacement_with_a_leading_assignment_is_routed() {
+    assert_eq!(
+        route("alias n='X=1 python3'; n ./evil.py", &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
 fn alias_replacement_naming_a_variable_is_routed() {
     assert_eq!(
         route(r#"alias n="$X"; n ./evil.py"#, &[]),

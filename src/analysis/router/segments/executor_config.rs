@@ -93,15 +93,20 @@ fn env_launcher_tail<'a>(raw_tokens: &'a [&'a str]) -> &'a [&'a str] {
 /// Bash's own "declare this as exported" keywords that can precede a plain
 /// `NAME=value` assignment stage without changing what the assignment means
 /// for an executor environment variable's value (issue #384/#430):
-/// `export`/`readonly` take a bare `NAME[=value]` list directly, while
-/// `declare`/`typeset` need their own `-x` flag to mean the same thing.
+/// `export`, `readonly`, `declare`, `typeset`, and `local`, with any flags
+/// that follow them (`-x`, `-gx`, `-x -g`). A flag set that does not export
+/// the name still skips here: a later `export NAME` on the same line would,
+/// and routing does not track that, so the fail-closed call is to scan it.
 fn skip_assignment_keyword<'a>(tokens: &'a [&'a str]) -> &'a [&'a str] {
     match tokens {
-        [keyword, rest @ ..] if matches!(*keyword, "export" | "readonly") => rest,
-        [keyword, flag, rest @ ..]
-            if matches!(*keyword, "declare" | "typeset") && *flag == "-x" =>
+        [keyword, rest @ ..]
+            if matches!(
+                *keyword,
+                "export" | "readonly" | "declare" | "typeset" | "local"
+            ) =>
         {
-            rest
+            let flags = rest.iter().take_while(|tok| tok.starts_with('-')).count();
+            &rest[flags..]
         }
         _ => tokens,
     }
@@ -237,11 +242,11 @@ fn git_config_value_names_an_interpreter(
     false
 }
 
-/// Scans for `-P <value>` and glued `--pager=<value>`.
+/// Scans for `-P <value>`, `--pager <value>`, and glued `--pager=<value>`.
 fn man_pager_value_names_an_interpreter(tokens: &[&str], trusted_aliases: &[(&str, &str)]) -> bool {
     let mut iter = tokens.iter();
     while let Some(&tok) = iter.next() {
-        let value = if tok == "-P" {
+        let value = if tok == "-P" || tok == "--pager" {
             iter.next().copied()
         } else {
             tok.strip_prefix("--pager=")

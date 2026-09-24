@@ -158,8 +158,8 @@ pub(super) fn unclaimed_interpreter_net(
         }
         // A program word naming a shell `alias` defined earlier resolves
         // only as opaquely as its own replacement text does (issue
-        // #384/#430): standing in for a known interpreter (`alias
-        // runpy=python3`), for a dynamic word (`alias n="$X"`), or for
+        // #384/#430): standing in for a known interpreter anywhere in its
+        // words (`alias runpy=python3`, `alias n='X=1 python3'`), for a dynamic word (`alias n="$X"`), or for
         // nothing parseable at all is exactly as unreadable as an
         // unenumerated wrapper word. An alias for anything else (`alias
         // ll='ls -l'`, `alias g=git`) is not the shape this net exists to
@@ -170,7 +170,9 @@ pub(super) fn unclaimed_interpreter_net(
             let replacement = value.trim();
             if replacement.is_empty()
                 || is_dynamic_program_word(replacement)
-                || token_names_an_interpreter(replacement, ctx.trusted_aliases)
+                || replacement
+                    .split_whitespace()
+                    .any(|word| token_names_an_interpreter(word, ctx.trusted_aliases))
             {
                 return vec![RoutedTarget::Unresolved {
                     reason: DegradationReason::DynamicSource,

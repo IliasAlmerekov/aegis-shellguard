@@ -117,6 +117,18 @@ fn declare_dash_x_assignment_stage_naming_an_interpreter_is_routed() {
 }
 
 #[test]
+fn declare_with_combined_flags_assignment_stage_naming_an_interpreter_is_routed() {
+    for command in [
+        r#"declare -gx PAGER="python3 ./evil.py"; man ls"#,
+        r#"declare -xg PAGER="python3 ./evil.py"; man ls"#,
+        r#"declare -x -g PAGER="python3 ./evil.py"; man ls"#,
+        r#"typeset -gx PAGER="python3 ./evil.py"; man ls"#,
+    ] {
+        assert_eq!(route(command, &[]), vec![unresolved_dynamic()], "{command}");
+    }
+}
+
+#[test]
 fn typeset_dash_x_assignment_stage_naming_an_interpreter_is_routed() {
     assert_eq!(
         route(r#"typeset -x PAGER="python3 ./evil.py"; man ls"#, &[]),
