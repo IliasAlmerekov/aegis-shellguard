@@ -59,6 +59,25 @@ fn git_dash_c_executor_key_families_with_a_user_chosen_middle_segment_are_routed
     }
 }
 
+// ── An environment variable git or another executor reads for a command to
+// run is degraded (issue #384/#430) ─────────────────────────────────────
+
+#[test]
+fn new_executor_env_vars_running_a_script_are_routed() {
+    for command in [
+        r#"VISUAL='python3 ./evil.py' git commit"#,
+        r#"GIT_ASKPASS='python3 ./evil.py' git fetch"#,
+        r#"SSH_ASKPASS='python3 ./evil.py' git fetch"#,
+        r#"GIT_EXTERNAL_DIFF='python3 ./evil.py' git diff"#,
+        r#"GIT_SEQUENCE_EDITOR='python3 ./evil.py' git rebase -i HEAD~3"#,
+        r#"GIT_SSH='python3 ./evil.py' git fetch"#,
+        r#"GIT_PROXY_COMMAND='python3 ./evil.py' git fetch"#,
+        r#"BROWSER='python3 ./evil.py' git help status"#,
+    ] {
+        assert_eq!(route(command, &[]), vec![unresolved_dynamic()], "{command}");
+    }
+}
+
 // ── A config value naming no interpreter keeps today's auto-approve
 // decision (issue #384/#430) ────────────────────────────────────────────
 
