@@ -15,9 +15,11 @@
 use super::*;
 
 mod dynamic_program;
+mod executor_config;
 mod unclaimed;
 mod wrappers;
 use dynamic_program::{alias_defines_program, is_dynamic_program_word};
+use executor_config::{env_prefix_names_an_interpreter, option_value_names_an_interpreter};
 use unclaimed::unclaimed_interpreter_net;
 use wrappers::{posix_function_definition_body, strip_trailing_redirection, wrapper_bodies};
 

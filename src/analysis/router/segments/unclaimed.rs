@@ -6,7 +6,7 @@
 //! wrapper (`setsid`, `strace`, `ionice`, `taskset`, `find … -exec`, …)
 //! leaves its program token unrecognized and the interpreter it carries
 //! invisible to every other routing path, and patching that list one word
-//! at a time keeps leaking the next one (issue #384/#430 round 5). Once a
+//! at a time keeps leaking the next one (issue #384/#430). Once a
 //! stage reaches the end of routing with no target at all, a later token
 //! naming a known interpreter is reason enough to stop trusting the
 //! auto-approve path, even without knowing which wrapper carried it.
@@ -146,6 +146,20 @@ pub(super) fn unclaimed_interpreter_net(
         });
     }
 
+    // A handful of `NAME_ONLY_PROGRAMS` members have their own escape hatch:
+    // an option value or environment-variable assignment that *runs* a
+    // command instead of naming one as data (`git -c core.pager=...`,
+    // `LESSOPEN=... less`, `man -P ...`, issue #384/#430). Checked ahead of
+    // the exclusion list below so it applies even to a program that list
+    // would otherwise wave through untouched.
+    if env_prefix_names_an_interpreter(&raw_tokens, trusted_aliases)
+        || option_value_names_an_interpreter(slice.program, &slice.tokens, trusted_aliases)
+    {
+        return Some(RoutedTarget::Unresolved {
+            reason: DegradationReason::DynamicSource,
+        });
+    }
+
     if NAME_ONLY_PROGRAMS.contains(&slice.program) {
         return None;
     }
@@ -163,13 +177,12 @@ pub(super) fn unclaimed_interpreter_net(
     // (`setsid ./pyx`) may still hand a script its own path-like operand
     // straight through: `resolve` reads the file and only treats it as a
     // target with a verified shebang, so a non-script operand stays safe
-    // (issue #384/#430 round 5). Routed as `LauncherOperand`, not
+    // (issue #384/#430). Routed as `LauncherOperand`, not
     // `DirectExec`, because this operand is a candidate the net itself
     // picked out of an unclaimed stage's arguments — not a program the
     // command named — so a missing path or a directory (an everyday shape
     // for an ordinary command's argument) resolves speculatively instead of
     // degrading like a user-typed `DirectExec` still does.
-    //
     //
     // Walks every remaining operand rather than stopping at the first one:
     // a second unenumerated wrapper word (`strace setsid ./pyx`) or a flag's
@@ -188,8 +201,8 @@ pub(super) fn unclaimed_interpreter_net(
 /// -c`) — its first word does. `basename` alone mishandles the quoted case:
 /// run on the whole token it finds the last `/`-separated segment of the
 /// *last* word instead of the interpreter name that opens it (issue
-/// #384/#430 round 5).
-fn token_names_an_interpreter(tok: &str, trusted_aliases: &[(&str, &str)]) -> bool {
+/// #384/#430).
+pub(super) fn token_names_an_interpreter(tok: &str, trusted_aliases: &[(&str, &str)]) -> bool {
     if resolve_interpreter(basename(tok), trusted_aliases).is_some() {
         return true;
     }
