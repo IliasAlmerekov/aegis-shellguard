@@ -18,7 +18,7 @@ mod dynamic_program;
 mod executor_config;
 mod unclaimed;
 mod wrappers;
-use dynamic_program::{alias_defines_program, is_dynamic_program_word};
+use dynamic_program::{alias_value, is_dynamic_program_word};
 use executor_config::{
     assignment_stage_names_an_interpreter, env_prefix_names_an_interpreter,
     option_value_names_an_interpreter,

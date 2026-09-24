@@ -145,20 +145,39 @@ pub(super) fn unclaimed_interpreter_net(
 
     let operands = slice.tokens[1..].iter().filter(|tok| !tok.starts_with('-'));
     // A program word reached only through expansion the router does not
-    // perform — `$VAR`, `${X:-python3}`, `` `cmd` ``, `{python3,}` — or one
-    // that names a shell `alias` defined earlier in the same command is
-    // exactly as opaque as an unenumerated wrapper word: routing has no way
-    // to know what actually runs (issue #384/#430). Gated on having an
-    // operand at all so a bare `$EDITOR`/`$SHELL` with nothing to act on —
-    // an everyday interactive-launch shape — stays exactly as auto-approved
-    // as it was before this check existed.
-    if operands.clone().next().is_some()
-        && (is_dynamic_program_word(slice.program)
-            || alias_defines_program(full_command, stage_raw, slice.program))
-    {
-        return vec![RoutedTarget::Unresolved {
-            reason: DegradationReason::DynamicSource,
-        }];
+    // perform — `$VAR`, `${X:-python3}`, `` `cmd` `` — is exactly as opaque
+    // as an unenumerated wrapper word: routing has no way to know what
+    // actually runs (issue #384/#430). Gated on having an operand at all so
+    // a bare `$EDITOR`/`$SHELL` with nothing to act on — an everyday
+    // interactive-launch shape — stays exactly as auto-approved as it was
+    // before this check existed.
+    if operands.clone().next().is_some() {
+        if is_dynamic_program_word(slice.program) {
+            return vec![RoutedTarget::Unresolved {
+                reason: DegradationReason::DynamicSource,
+            }];
+        }
+        // A program word naming a shell `alias` defined earlier resolves
+        // only as opaquely as its own replacement text does (issue
+        // #384/#430 round 6): standing in for a known interpreter (`alias
+        // runpy=python3`), for a dynamic word (`alias n="$X"`), or for
+        // nothing parseable at all is exactly as unreadable as an
+        // unenumerated wrapper word. An alias for anything else (`alias
+        // ll='ls -l'`, `alias g=git`) is not the shape this net exists to
+        // catch, so it is left to the rest of routing below — the same
+        // `NAME_ONLY_PROGRAMS` check, interpreter-naming-operand scan, and
+        // path-like-operand candidate walk an ordinary program word gets.
+        if let Some(value) = alias_value(full_command, stage_raw, slice.program) {
+            let replacement = value.trim();
+            if replacement.is_empty()
+                || is_dynamic_program_word(replacement)
+                || token_names_an_interpreter(replacement, trusted_aliases)
+            {
+                return vec![RoutedTarget::Unresolved {
+                    reason: DegradationReason::DynamicSource,
+                }];
+            }
+        }
     }
 
     // A handful of `NAME_ONLY_PROGRAMS` members have their own escape hatch:

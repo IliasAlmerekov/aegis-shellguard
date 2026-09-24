@@ -17,8 +17,8 @@ pub(super) fn is_dynamic_program_word(word: &str) -> bool {
         || (word.starts_with('{') && word.ends_with('}') && word.contains(','))
 }
 
-/// `true` when an `alias` invocation appears in `full_command` before
-/// `stage_raw`'s own text within it and defines `name` — `alias
+/// The replacement text an `alias` invocation in `full_command` gives
+/// `name`, if one appears before `stage_raw`'s own text within it — `alias
 /// name=cmd`, `alias -- name=cmd` (`--` ends `alias`'s own option parsing,
 /// letting a name that itself starts with `-` through), several names in
 /// one call (`alias a=x b=y`), and a quoted name (the tokenizer strips the
@@ -26,14 +26,17 @@ pub(super) fn is_dynamic_program_word(word: &str) -> bool {
 /// stage's own words are walked instead of substring-matched against raw
 /// text — a literal `"alias {name}="` search misses `alias -- name=cmd`
 /// outright, since `--` sits between the two words (issue #384/#430). The
-/// router does not track shell aliases, so a stage naming one as its
-/// program is exactly as opaque as a variable reference. Falls back to
-/// scanning the whole of `full_command` when `stage_raw` cannot be located
-/// inside it verbatim (a body peeled out of a wrapper by [`super::wrappers`]
-/// may have been re-derived rather than kept as an exact substring) — the
-/// conservative direction, since a false match only costs an extra prompt
-/// rather than a missed one.
-pub(super) fn alias_defines_program(full_command: &str, stage_raw: &str, name: &str) -> bool {
+/// router does not track shell aliases, so it hands the replacement text
+/// back rather than a bare yes/no: [`super::unclaimed`] decides whether
+/// standing in for *this particular* text is opaque (a known interpreter, a
+/// dynamic word) or as ordinary as any other program name (`alias
+/// ll='ls -l'`) — issue #384/#430 round 6, this function no longer makes
+/// that call itself. Falls back to scanning the whole of `full_command` when
+/// `stage_raw` cannot be located inside it verbatim (a body peeled out of a
+/// wrapper by [`super::wrappers`] may have been re-derived rather than kept
+/// as an exact substring) — the conservative direction, since a false match
+/// only costs an extra prompt rather than a missed one.
+pub(super) fn alias_value(full_command: &str, stage_raw: &str, name: &str) -> Option<String> {
     let scope = full_command
         .find(stage_raw)
         .map_or(full_command, |idx| &full_command[..idx]);
@@ -53,15 +56,14 @@ pub(super) fn alias_defines_program(full_command: &str, stage_raw: &str, name: &
             if arg == "--" || arg == "-p" {
                 continue;
             }
-            if arg
-                .split_once('=')
-                .is_some_and(|(defined, _)| defined == name)
+            if let Some((defined, value)) = arg.split_once('=')
+                && defined == name
             {
-                return true;
+                return Some(value.to_owned());
             }
         }
     }
-    false
+    None
 }
 
 /// `true` for the separator tokens [`aegis_parser::split_tokens`] emits

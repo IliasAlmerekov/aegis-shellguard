@@ -631,6 +631,45 @@ fn quoted_alias_name_is_routed() {
     );
 }
 
+#[test]
+fn alias_replacement_carrying_interpreter_flags_is_routed() {
+    assert_eq!(
+        route("alias n='python3 -u'; n ./evil.py", &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn alias_replacement_naming_a_variable_is_routed() {
+    assert_eq!(
+        route(r#"alias n="$X"; n ./evil.py"#, &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+// ── An alias standing in for an ordinary (non-interpreter) command is left
+// to the rest of routing, not degraded by name alone (issue #384/#430
+// round 6) ──────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn alias_for_a_plain_command_naming_a_directory_operand_is_not_degraded() {
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir(&src).unwrap();
+
+    let command = format!("alias ll='ls -l'; ll {}", src.display());
+    let targets = route(&command, &[]);
+    assert_eq!(targets, vec![RoutedTarget::LauncherOperand { path: src }]);
+
+    let results = resolve(targets, 1024).await;
+    assert_eq!(results, Vec::new());
+}
+
+#[test]
+fn alias_for_a_plain_command_with_no_path_like_operand_is_not_routed() {
+    assert_eq!(route("alias g=git; g status", &[]), Vec::new());
+}
+
 // ── A static program word with a dynamic operand, or a bare dynamic word
 // with no operand at all, stays exactly as auto-approved as before ─────────
 
