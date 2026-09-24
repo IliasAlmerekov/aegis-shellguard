@@ -133,7 +133,7 @@ pub(crate) fn env_prefix_lengths(tokens: &[&str]) -> Vec<usize> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{effective_program, effective_token_slices};
+    use crate::{effective_program, effective_token_slices, effective_token_slices_checked};
 
     #[test]
     fn effective_token_slices_split_env_dash_s_string_into_the_real_program() {
@@ -195,13 +195,76 @@ mod tests {
     #[test]
     fn effective_token_slices_split_env_dash_s_nested_twice() {
         // `sudo env -S 'env -S python3 ./evil.py'`: the split value is
-        // itself an `env -S` invocation. No fixed nesting bound — resolution
-        // recurses until the split content stops starting with `env`.
+        // itself an `env -S` invocation. Resolution recurses until the
+        // split content stops starting with `env`, bounded by
+        // `ENV_SPLIT_MAX_DEPTH` (#437 review, adversarial finding F1) — two
+        // levels stays far under that bound.
         let tokens = ["sudo", "env", "-S", "env -S python3 ./evil.py"];
         let slices = effective_token_slices(&tokens);
 
         assert_eq!(slices.len(), 1);
         assert_eq!(slices[0].program, "python3");
         assert_eq!(slices[0].tokens, vec!["python3", "./evil.py"]);
+        assert!(!effective_token_slices_checked(&tokens).1);
+    }
+
+    /// Every level of `env -S 'env -S' 'env -S' ... 'true'` re-splits into
+    /// the same shape with one fewer repeat (`env_split_string_tokens`
+    /// appends the remaining operands as-is), so `repeats` here is exactly
+    /// the mutual-recursion depth between `collect_effective_program_indices`
+    /// and `collect_effective_program_slices`. Builds the token array
+    /// directly rather than through a real shell string, matching this
+    /// module's other tests and sidestepping `env -S`'s own naive
+    /// (non-quote-aware) `split_whitespace` re-splitting.
+    fn env_s_chain_tokens(repeats: usize) -> Vec<&'static str> {
+        let mut tokens = vec!["env", "-S"];
+        tokens.extend(std::iter::repeat_n("env -S", repeats));
+        tokens.push("true");
+        tokens
+    }
+
+    #[test]
+    fn effective_program_resolves_an_env_dash_s_chain_exactly_at_the_nesting_bound() {
+        // #437 review, adversarial finding F1: nesting at the bound must
+        // still resolve fully, not degrade — only nesting *past* it fails
+        // closed.
+        let tokens = env_s_chain_tokens(crate::ENV_SPLIT_MAX_DEPTH as usize - 1);
+        let refs: Vec<&str> = tokens.to_vec();
+
+        assert!(!effective_token_slices_checked(&refs).1);
+        assert_eq!(effective_program(&refs), Some("true"));
+    }
+
+    #[test]
+    fn effective_program_resolution_fails_closed_past_the_env_dash_s_nesting_bound() {
+        // One level deeper than the bound: resolution must record the stop
+        // rather than silently resolve to nothing (#437 review, finding
+        // F1) — callers that would otherwise treat an empty/partial result
+        // as an ordinary non-program stage need this to fail closed.
+        let tokens = env_s_chain_tokens(crate::ENV_SPLIT_MAX_DEPTH as usize);
+        let refs: Vec<&str> = tokens.to_vec();
+
+        assert!(effective_token_slices_checked(&refs).1);
+    }
+
+    #[test]
+    fn effective_program_resolution_of_a_deep_env_dash_s_chain_does_not_overflow_the_stack() {
+        // The exact adversarial shape (#437 review, finding F1): 3000
+        // repeats of `env -S 'env -S' ...` overflowed the stack under a
+        // 512 KiB `ulimit -s` before the nesting bound existed. Run in a
+        // thread with a small (256 KiB) stack so a regression aborts this
+        // one thread's join, loud and contained, rather than silently
+        // needing a constrained host `ulimit` to notice.
+        let handle = std::thread::Builder::new()
+            .stack_size(256 * 1024)
+            .spawn(|| {
+                let tokens = env_s_chain_tokens(3000);
+                let refs: Vec<&str> = tokens.to_vec();
+                effective_token_slices_checked(&refs).1
+            })
+            .expect("failed to spawn the small-stack test thread");
+
+        let truncated = handle.join().expect("resolution overflowed the stack");
+        assert!(truncated, "a 3000-deep chain must exceed the nesting bound");
     }
 }

@@ -64,11 +64,27 @@ pub struct EffectiveTokenSlice<'a> {
 /// `command` are skipped recursively so token-prefix rules see the program they
 /// are meant to protect.
 pub fn effective_token_slices<'a>(tokens: &[&'a str]) -> Vec<EffectiveTokenSlice<'a>> {
+    effective_token_slices_checked(tokens).0
+}
+
+/// [`effective_token_slices`]'s companion for a caller that must tell a
+/// depth-bounded stop apart from an ordinary "nothing resolved" result: the
+/// same slices, paired with `true` when [`ENV_SPLIT_MAX_DEPTH`] cut an
+/// `env -S`/`--split-string` chain short before it reached the real program
+/// (#437 review, adversarial finding F1). A caller that would otherwise
+/// treat an empty or partial slice list as a non-program stage must check
+/// the flag first and fail closed instead — see `CONVENTION.md` §2
+/// (classification and policy failures must be fail-closed). Computes both
+/// in one resolution walk rather than making the caller run
+/// [`effective_token_slices`] and a second truncation query separately.
+pub fn effective_token_slices_checked<'a>(
+    tokens: &[&'a str],
+) -> (Vec<EffectiveTokenSlice<'a>>, bool) {
     if tokens.is_empty() {
-        return Vec::new();
+        return (Vec::new(), false);
     }
 
-    let (starts, owned) = effective_program_indices(tokens);
+    let (starts, owned, truncated) = effective_program_resolution(tokens);
     let mut slices = Vec::with_capacity(starts.len() + owned.len());
     for start in starts {
         let Some(effective_tokens) = effective_tokens_at(tokens, start) else {
@@ -89,7 +105,7 @@ pub fn effective_token_slices<'a>(tokens: &[&'a str]) -> Vec<EffectiveTokenSlice
             program,
         });
     }
-    slices
+    (slices, truncated)
 }
 
 /// Resolve the basename-normalized program token used for detection matching.
@@ -97,7 +113,7 @@ pub fn effective_token_slices<'a>(tokens: &[&'a str]) -> Vec<EffectiveTokenSlice
 /// This is the allocation-free companion to [`effective_token_slices`] for call
 /// sites that only need the lookup key, not a rewritten token slice.
 pub fn effective_program<'a>(tokens: &[&'a str]) -> Option<&'a str> {
-    let (starts, owned) = effective_program_indices(tokens);
+    let (starts, owned, _truncated) = effective_program_resolution(tokens);
     if let Some(&start) = starts.first() {
         return tokens.get(start).map(|token| program_basename(token));
     }
@@ -157,19 +173,37 @@ fn redirection_token_len(tok: &str) -> usize {
     if is_redirection_operator(tok) { 2 } else { 1 }
 }
 
-/// Resolve effective-program candidates for `tokens` as two channels: `starts`
-/// are indices into `tokens` itself, and `owned` are fully-resolved token
-/// vectors produced by an `env -S`/`--split-string` expansion somewhere
-/// during recursive launcher-prefix stripping. A split's words are new
-/// tokens, not a sub-range of `tokens` (review 4091038674 on PR #437), so
-/// they cannot be expressed as an index back into it.
-fn effective_program_indices<'a>(tokens: &[&'a str]) -> (Vec<usize>, Vec<Vec<&'a str>>) {
+/// Ceiling on `env -S`/`--split-string` nesting (`env -S 'env -S ...'`, or
+/// the flat `env -S 'env -S' 'env -S' ... 'true'` shape that re-splits into
+/// the same form one repeat shorter each time): each level re-splits its own
+/// value and feeds it back into [`collect_effective_program_indices`], so
+/// without a bound a deep enough chain costs one stack frame per level with
+/// nothing else to stop it (#437 review, adversarial finding F1 — a 3000-deep
+/// chain overflowed the stack under a constrained `ulimit -s`). Matches the
+/// router's `MAX_WRAP_DEPTH` (`src/analysis/router/segments.rs`) and
+/// `OrchestrationBudget::L1_DEFAULT.max_depth` (ADR-022 §7's cross-language
+/// recursion-depth ceiling) in value; duplicated as its own constant rather
+/// than shared because this crate is a dependency-DAG leaf and may not
+/// depend on the root `aegis` binary crate that owns those (CONVENTION.md
+/// §3).
+const ENV_SPLIT_MAX_DEPTH: u32 = 8;
+
+/// Resolve effective-program candidates for `tokens` as two channels plus a
+/// truncation flag: `starts` are indices into `tokens` itself, `owned` are
+/// fully-resolved token vectors produced by an `env -S`/`--split-string`
+/// expansion somewhere during recursive launcher-prefix stripping, and the
+/// `bool` is `true` when [`ENV_SPLIT_MAX_DEPTH`] cut resolution short before
+/// it reached the real program (#437 review, finding F1). A split's words
+/// are new tokens, not a sub-range of `tokens` (review 4091038674 on PR
+/// #437), so they cannot be expressed as an index back into it.
+fn effective_program_resolution<'a>(tokens: &[&'a str]) -> (Vec<usize>, Vec<Vec<&'a str>>, bool) {
     let mut starts = Vec::new();
     let mut owned = Vec::new();
-    collect_effective_program_indices(tokens, 0, &mut starts, &mut owned);
+    let mut truncated = false;
+    collect_effective_program_indices(tokens, 0, &mut starts, &mut owned, 0, &mut truncated);
     starts.sort_unstable();
     starts.dedup();
-    (starts, owned)
+    (starts, owned, truncated)
 }
 
 fn collect_effective_program_indices<'a>(
@@ -177,6 +211,8 @@ fn collect_effective_program_indices<'a>(
     index: usize,
     starts: &mut Vec<usize>,
     owned: &mut Vec<Vec<&'a str>>,
+    depth: u32,
+    truncated: &mut bool,
 ) {
     if index >= tokens.len() {
         return;
@@ -189,13 +225,20 @@ fn collect_effective_program_indices<'a>(
     // only at index 0 (issue #384).
     if starts_with_redirection_glyph(tokens[index]) {
         let len = redirection_token_len(tokens[index]).min(tokens.len() - index);
-        collect_effective_program_indices(tokens, index + len, starts, owned);
+        collect_effective_program_indices(tokens, index + len, starts, owned, depth, truncated);
         return;
     }
 
     let assignment_prefix_len = leading_environment_assignment_prefix_len(&tokens[index..]);
     if assignment_prefix_len > 0 {
-        collect_effective_program_indices(tokens, index + assignment_prefix_len, starts, owned);
+        collect_effective_program_indices(
+            tokens,
+            index + assignment_prefix_len,
+            starts,
+            owned,
+            depth,
+            truncated,
+        );
         return;
     }
 
@@ -204,10 +247,15 @@ fn collect_effective_program_indices<'a>(
     // (`FOO=1 env -S ...`, `sudo env -S ...`) reaches this point mid-
     // recursion, and generic `env_prefix_lengths` does not know split-string
     // semantics (review 4091038674 on PR #437). A split value that is itself
-    // `env -S ...` feeds back into `collect_effective_program_slices`, so
-    // nesting to any depth resolves without a fixed bound.
+    // `env -S ...` feeds back into `collect_effective_program_slices`, one
+    // level deeper each time; past `ENV_SPLIT_MAX_DEPTH`, stop and record
+    // the truncation instead of recursing further (#437 review, finding F1).
     if let Some(split) = env_split_string_tokens(&tokens[index..]) {
-        collect_effective_program_slices(&split, owned);
+        if depth >= ENV_SPLIT_MAX_DEPTH {
+            *truncated = true;
+            return;
+        }
+        collect_effective_program_slices(&split, owned, depth + 1, truncated);
         return;
     }
 
@@ -217,7 +265,14 @@ fn collect_effective_program_indices<'a>(
                 if len == 0 {
                     starts.push(index);
                 } else {
-                    collect_effective_program_indices(tokens, index + len, starts, owned);
+                    collect_effective_program_indices(
+                        tokens,
+                        index + len,
+                        starts,
+                        owned,
+                        depth,
+                        truncated,
+                    );
                 }
             }
         }
@@ -229,9 +284,17 @@ fn collect_effective_program_indices<'a>(
 /// outer token array — into effective-program token vectors, continuing
 /// recursive launcher-prefix stripping (and a further split, should the
 /// split content itself start with another `env -S`) on the split content.
-fn collect_effective_program_slices<'a>(tokens: &[&'a str], owned: &mut Vec<Vec<&'a str>>) {
+/// `depth` is this split's own nesting level, checked against
+/// [`ENV_SPLIT_MAX_DEPTH`] by [`collect_effective_program_indices`] before
+/// it recurses back in here.
+fn collect_effective_program_slices<'a>(
+    tokens: &[&'a str],
+    owned: &mut Vec<Vec<&'a str>>,
+    depth: u32,
+    truncated: &mut bool,
+) {
     let mut starts = Vec::new();
-    collect_effective_program_indices(tokens, 0, &mut starts, owned);
+    collect_effective_program_indices(tokens, 0, &mut starts, owned, depth, truncated);
     for start in starts {
         if let Some(effective_tokens) = effective_tokens_at(tokens, start) {
             owned.push(effective_tokens);
