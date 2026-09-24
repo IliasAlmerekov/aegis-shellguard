@@ -4,6 +4,7 @@
 //! degradation (issue #384).
 
 use super::*;
+use std::time::Instant;
 
 fn evil_py_script_file() -> RoutedTarget {
     RoutedTarget::ScriptFile {
@@ -207,4 +208,34 @@ fn env_split_string_re_split_sweep_never_panics() {
         })
         .collect();
     assert!(panicked.is_empty(), "these shapes panicked: {panicked:?}");
+}
+
+/// The exact adversarial shape from #437 review finding F1: `env -S 'env
+/// -S' 'env -S' ... 'true'` nested 3000 levels deep, each level re-splitting
+/// into the same shape one repeat shorter (`env_split_string_tokens` appends
+/// the remaining operands as-is). Before `aegis-parser`'s `ENV_SPLIT_MAX_DEPTH`
+/// bound this overflowed the stack; now it must finish quickly and route to
+/// `Unresolved { reason: LimitExceeded }` rather than silently falling
+/// through to "no program" (which the caller would otherwise read as an
+/// ordinary safe/empty stage and auto-approve).
+#[test]
+fn env_dash_s_chain_past_the_nesting_bound_finishes_quickly_and_fails_closed() {
+    let command = format!("env -S {}'true'", "'env -S' ".repeat(3000));
+
+    let start = Instant::now();
+    let targets = route(&command, &[]);
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed.as_secs() < 5,
+        "3000-level env -S nesting must stay well within a generous bound, took {elapsed:?}"
+    );
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::Unresolved {
+            reason: DegradationReason::LimitExceeded
+        }],
+        "past the env -S nesting bound routing must degrade rather than silently \
+         treat the unresolved program as safe"
+    );
 }

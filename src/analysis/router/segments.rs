@@ -14,10 +14,15 @@
 
 use super::*;
 
+mod argv_walk;
 mod dynamic_program;
 mod executor_config;
 mod unclaimed;
 mod wrappers;
+use argv_walk::{
+    ArgvWalk, bare_stage_interpreter, env_chdir_prefix, leading_stdin_redirect_target,
+    walk_interpreter_argv,
+};
 use dynamic_program::{alias_value, is_dynamic_program_word};
 use executor_config::{
     assignment_stage_names_an_interpreter, env_prefix_names_an_interpreter,
@@ -66,22 +71,28 @@ pub(super) enum CwdState {
     Degraded,
 }
 
-/// Resolve already-tokenized `owned_tokens` to its `&str` view and its first
-/// effective-program slice — the `Vec<&str>` conversion plus
-/// `effective_token_slices().next()` idiom every stage-routing call site
-/// that resolves one program per stage repeats (issue #384/#430). Takes
-/// a borrow rather than calling `aegis_parser::split_tokens` itself so a
-/// caller that still needs the raw `&str` tokens afterward (an `env -C`/cwd
-/// scan past the program, say) can keep them; one that doesn't just ignores
-/// the first element of the pair.
+/// Resolve already-tokenized `owned_tokens` to its `&str` view, its first
+/// effective-program slice, and whether resolution ran into
+/// `aegis_parser`'s `env -S`/`--split-string` nesting bound before it got
+/// there — the `Vec<&str>` conversion plus
+/// `effective_token_slices_checked().0.next()` idiom every stage-routing
+/// call site that resolves one program per stage repeats (issue #384/#430;
+/// truncation flag added #437 review, finding F1). Takes a borrow rather
+/// than calling `aegis_parser::split_tokens` itself so a caller that still
+/// needs the raw `&str` tokens afterward (an `env -C`/cwd scan past the
+/// program, say) can keep them; a caller that needs neither the tokens nor
+/// the truncation flag just ignores them.
 fn effective_stage_slice<'a>(
     owned_tokens: &'a [String],
-) -> (Vec<&'a str>, Option<aegis_parser::EffectiveTokenSlice<'a>>) {
+) -> (
+    Vec<&'a str>,
+    Option<aegis_parser::EffectiveTokenSlice<'a>>,
+    bool,
+) {
     let tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
-    let slice = aegis_parser::effective_token_slices(&tokens)
-        .into_iter()
-        .next();
-    (tokens, slice)
+    let (slices, truncated) = aegis_parser::effective_token_slices_checked(&tokens);
+    let slice = slices.into_iter().next();
+    (tokens, slice, truncated)
 }
 
 /// Recognize a segment (or pipeline stage) as a construct that changes the
@@ -96,7 +107,7 @@ fn effective_stage_slice<'a>(
 /// [`route_wrapped_stage`] handles a wrapper's own cwd effect instead.
 fn parse_cd_like(stage_raw: &str) -> Option<CwdState> {
     let owned_tokens = aegis_parser::split_tokens(stage_raw);
-    let (_tokens, slice) = effective_stage_slice(&owned_tokens);
+    let (_tokens, slice, _truncated) = effective_stage_slice(&owned_tokens);
     let slice = slice?;
 
     match slice.program {
@@ -509,7 +520,20 @@ fn route_direct_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<Rout
     // — the shell strips it before argv0 resolution, so routing must too.
     // `aegis_parser::effective_token_slices` handles this at every step
     // (issue #384), not only a redirection at position 0.
-    let (tokens, slice) = effective_stage_slice(&owned_tokens);
+    let (tokens, slice, truncated) = effective_stage_slice(&owned_tokens);
+    if truncated {
+        // An `env -S`/`--split-string` chain nested past
+        // `aegis_parser`'s own bound: some program is still hidden behind
+        // an unexamined split, same shape as `route_wrapped_stage`'s
+        // `MAX_WRAP_DEPTH` block above. Degrade honestly instead of
+        // falling through to the `slice.is_none()` case below, which
+        // would otherwise read this exactly like an ordinary stage with
+        // no program at all (fail-closed, CONVENTION.md §2, #437 review
+        // finding F1).
+        return vec![RoutedTarget::Unresolved {
+            reason: DegradationReason::LimitExceeded,
+        }];
+    }
     let Some(slice) = slice else {
         return Vec::new();
     };
@@ -570,228 +594,4 @@ fn route_direct_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<Rout
         .into_iter()
         .map(|target| apply_cwd(target, &env_cwd))
         .collect()
-}
-
-/// `true` for an `env` `-C`/`--chdir` flag token: the spaced short form
-/// (`-C`, its directory in the next token), the glued short form (`-Cd1`),
-/// the spaced long form (`--chdir`), or the glued long form
-/// (`--chdir=d1`) — every shape GNU `env` accepts (#437 review comment
-/// 4091038686).
-fn is_env_chdir_flag(tok: &str) -> bool {
-    tok == "--chdir" || tok.starts_with("--chdir=") || tok.starts_with("-C")
-}
-
-/// `true` when `prefix` — the tokens routing consumed before the effective
-/// program (assignments, launcher words, redirections) — carries an `env`
-/// invocation with `-C`/`--chdir` anywhere in it, not only as its first
-/// token: a launcher word ahead of `env` (`command env -C d1 python3
-/// ./x.py`) still lets the chdir flag resolve the wrong cwd if routing only
-/// checked `prefix[0]` (issue #384, #437 review comment 4091038686). A
-/// cheap token-equality scan, not a full re-parse of `env`'s own option
-/// grammar: routing only needs to know an `env` word and a chdir flag are
-/// both present somewhere in the prefix it already resolved, not their
-/// exact positions relative to each other.
-fn env_chdir_prefix(prefix: &[&str]) -> bool {
-    prefix.iter().enumerate().any(|(idx, tok)| {
-        let basename = tok.rsplit('/').next().unwrap_or(tok);
-        basename.eq_ignore_ascii_case("env")
-            && prefix[idx + 1..].iter().any(|t| is_env_chdir_flag(t))
-    })
-}
-
-/// Resolve `stage` to its interpreter only if it has no source of its own —
-/// the bare program token alone, its own flags followed by nothing but the
-/// POSIX stdin sentinel `-` (`python3 -`, `python3 -u -`), or any other argv
-/// shape [`walk_interpreter_argv`] itself cannot find a source in (e.g. a
-/// redirection on a non-stdin descriptor, `python3 3<./benign.py`, #437
-/// review comment 4091038714) — a real interpreter reads its script from
-/// stdin in every such shape, the same as "reads piped stdin from the
-/// previous stage" rather than "has its own source" (issue #384, #437
-/// review comment 4091038647). Delegates to the same argv walk every other
-/// call site uses rather than a second, narrower "no args of its own" check,
-/// so a source [`walk_interpreter_argv`] would find (an inline body, a
-/// script file, a genuine stdin redirect) is never misread as bare here.
-fn bare_stage_interpreter(
-    stage: &str,
-    trusted_aliases: &[(&str, &str)],
-) -> Option<&'static Interpreter> {
-    let owned_tokens = aegis_parser::split_tokens(stage);
-    let (_tokens, slice) = effective_stage_slice(&owned_tokens);
-    let slice = slice?;
-    let rest = &slice.tokens[1..];
-    let interp = resolve_interpreter(slice.program, trusted_aliases)?;
-    match walk_interpreter_argv(interp, rest) {
-        ArgvWalk::NoMatch => Some(interp),
-        ArgvWalk::Routed(_) | ArgvWalk::NoSource => None,
-    }
-}
-
-/// The result of [`walk_interpreter_argv`] walking one interpreter
-/// invocation's own argv.
-pub(super) enum ArgvWalk {
-    /// An inline body or a script-file argument was found.
-    Routed(RoutedTarget),
-    /// The interpreter's inline flag was present but carried no body — a
-    /// definitive "not a source target", never falling back to stdin.
-    NoSource,
-    /// Nothing in argv itself routed; the caller decides its own stdin
-    /// (heredoc/here-string) fallback.
-    NoMatch,
-}
-
-/// Walk an interpreter's own argv (`rest`, the effective token slice after
-/// the program token) exactly as the interpreter itself would: it keeps
-/// consuming flags (including the inline `-c`/`-e` body, which wins
-/// immediately) and shell redirections (which the shell strips before exec —
-/// the interpreter never sees them) until it hits the first positional
-/// (non-flag, non-redirection) token, which is the script file and ends
-/// option parsing right there — any flag-shaped token *after* it belongs to
-/// the script's own argv, not the interpreter, and must not be misread as the
-/// interpreter's inline flag (ADR-022 §6).
-///
-/// The single interpreter-argv walk shared by every routing call site.
-pub(super) fn walk_interpreter_argv(interp: &Interpreter, rest: &[&str]) -> ArgvWalk {
-    // The tokenizer has no heredoc-boundary awareness, so tokens *after* a
-    // `<<WORD`/`<<<` marker are the heredoc/here-string *body*, not further
-    // command arguments. Both the inline-flag scan and the file-argument scan
-    // below must stop at the marker, or a crafted heredoc body could be
-    // misread as the interpreter's own flag/argument instead of being
-    // classified as stdin.
-    let marker_pos = rest.iter().position(|tok| tok.starts_with("<<"));
-    let before_marker = marker_pos.map_or(rest, |idx| &rest[..idx]);
-
-    // A standalone `< file` with a literal target means the interpreter
-    // reads its script from stdin, and stdin is exactly that file (issue
-    // #384): `python3 < ./evil.py` is the same source as `python3 - <
-    // ./evil.py`. Recorded here and only consulted if the walk below finds
-    // no inline body or positional script argument of its own — either of
-    // those wins outright, same as a real interpreter's own argv parsing.
-    let mut stdin_redirect_target: Option<&str> = None;
-
-    let mut pos = 0;
-    while pos < before_marker.len() {
-        let tok = before_marker[pos];
-        if let Some(source) = inline_body(tok, interp.inline_flag, before_marker, pos) {
-            if source.is_empty() {
-                // Flag present but no inline body to analyze — not a source target.
-                return ArgvWalk::NoSource;
-            }
-            return ArgvWalk::Routed(RoutedTarget::Inline {
-                language: interp.language,
-                source,
-            });
-        }
-        if aegis_parser::is_redirection_operator(tok) {
-            // A spaced-out redirection (`> file`, `2> file`, `>> file`) has
-            // its target in the *next* token, which the interpreter never
-            // sees either — skip both, not just the operator, or the target
-            // filename would be misread as the script argument.
-            if is_plain_input_redirect(tok)
-                && let Some(target) = before_marker.get(pos + 1)
-                && is_literal_path(target)
-            {
-                stdin_redirect_target = Some(target);
-            }
-            pos += 2;
-            continue;
-        }
-        if let Some(target) = glued_plain_input_redirect_target(tok)
-            && is_literal_path(target)
-        {
-            // A redirection with no space before its filename (`<file`,
-            // `0<file`) is the same stdin source as the spaced form above,
-            // just glued into one token by the tokenizer (issue #384).
-            stdin_redirect_target = Some(target);
-            pos += 1;
-            continue;
-        }
-        if !tok.starts_with('-') && !tok.contains('<') && !tok.contains('>') {
-            return ArgvWalk::Routed(RoutedTarget::ScriptFile {
-                language: interp.language,
-                path: PathBuf::from(tok),
-            });
-        }
-        pos += 1;
-    }
-
-    match stdin_redirect_target {
-        Some(path) => ArgvWalk::Routed(RoutedTarget::ScriptFile {
-            language: interp.language,
-            path: PathBuf::from(path),
-        }),
-        None => ArgvWalk::NoMatch,
-    }
-}
-
-/// `true` when `tok`'s leading digit run (its redirected file descriptor, if
-/// any) names stdin: no digits at all, or exactly `0`. A redirection on any
-/// other descriptor (`3<file`) does not touch the process's stdin, so it
-/// must never be read as the interpreter's script source (#437 review
-/// comment 4091038714).
-fn redirects_stdin_fd(fd: &str) -> bool {
-    fd.is_empty() || fd == "0"
-}
-
-/// `true` for a standalone plain input redirection targeting stdin (`<`,
-/// `0<`, but not `3<`) — an [`aegis_parser::is_redirection_operator`] token
-/// with no `>`, no fd-duplication `&`, and a descriptor that is stdin itself
-/// or omitted, the only shape whose target can mean "this file is the
-/// interpreter's stdin source" (issue #384, #437 review comment 4091038714).
-fn is_plain_input_redirect(tok: &str) -> bool {
-    let after_fd = tok.trim_start_matches(|c: char| c.is_ascii_digit());
-    let fd = &tok[..tok.len() - after_fd.len()];
-    after_fd == "<" && redirects_stdin_fd(fd)
-}
-
-/// The literal target of a plain input redirection glued to its own token
-/// with no separating space (`<file`, `0<file`, but not `3<file`) — the same
-/// stdin-only shape [`is_plain_input_redirect`] recognizes when spaced out,
-/// but the tokenizer keeps this one glued because nothing splits it (issue
-/// #384, #437 review comment 4091038714). `None` for anything else: a
-/// redirect on a non-stdin descriptor, a duplication/dup-fd form (`<&3`), a
-/// heredoc/here-string marker (`<<`, `<<<`, already excluded upstream by
-/// the marker-boundary scan), an output redirection, or an empty target.
-fn glued_plain_input_redirect_target(tok: &str) -> Option<&str> {
-    let after_fd = tok.trim_start_matches(|c: char| c.is_ascii_digit());
-    let fd = &tok[..tok.len() - after_fd.len()];
-    if !redirects_stdin_fd(fd) {
-        return None;
-    }
-    let target = after_fd.strip_prefix('<')?;
-    (!target.is_empty() && !target.starts_with(['<', '&', '>'])).then_some(target)
-}
-
-/// The literal target of a plain input redirection sitting *before* the
-/// program (`<./evil.py python3`, `< ./evil.py python3`) — the shell
-/// resolves stdin from it the same way regardless of which side of the
-/// program name it sits on, but only the trailing form is visible to
-/// [`walk_interpreter_argv`], which only ever sees `rest` (the tokens
-/// *after* the program). Scans left to right and keeps the *last* match,
-/// same as the shell itself: redirections apply in order, so a later `<`
-/// overwrites stdin as far as the exec'd program is concerned, matching the
-/// overwrite behavior [`walk_interpreter_argv`] already uses for redirects
-/// after the program (issue #384, #437 review comment 4091038705).
-fn leading_stdin_redirect_target<'a>(prefix: &[&'a str]) -> Option<&'a str> {
-    let mut pos = 0;
-    let mut last_target = None;
-    while pos < prefix.len() {
-        let tok = prefix[pos];
-        if aegis_parser::is_redirection_operator(tok) {
-            if is_plain_input_redirect(tok)
-                && let Some(target) = prefix.get(pos + 1)
-                && is_literal_path(target)
-            {
-                last_target = Some(*target);
-            }
-            pos += 2;
-            continue;
-        }
-        if let Some(target) = glued_plain_input_redirect_target(tok)
-            && is_literal_path(target)
-        {
-            last_target = Some(target);
-        }
-        pos += 1;
-    }
-    last_target
 }
