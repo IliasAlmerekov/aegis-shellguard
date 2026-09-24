@@ -304,10 +304,18 @@ A pipeline stage (or a single-stage `List segment`) that reaches the end of sour
 routing having produced no `RoutedTarget` from any other path — the condition that
 feeds the fail-closed `unclaimed_interpreter_net` (ADR-022 §6 amendment, issue
 #384/#430). It degrades to `Unresolved`/`Dynamic source` once a later token names a
-known registry interpreter, or resolves as a `Launcher operand` candidate when its own
-first operand is a path-like literal; a program on the net's `NAME_ONLY_PROGRAMS`
-exclusion list is exempt either way.
+known registry interpreter, or resolves as a `Launcher operand` candidate for each
+path-like operand it carries; a program on the net's `NAME_ONLY_PROGRAMS`
+exclusion list is exempt from both, but not from an `Executor value` it carries.
 _Avoid_: unrouted stage, unmatched stage
+
+**Executor value**:
+An option argument (git's `-c core.pager=...`, man's `-P`) or environment-variable
+assignment (`LESSOPEN`, `GIT_SSH_COMMAND`, and others in that family) that names a
+command a program runs rather than data it reads. Degrades the `Unclaimed stage`
+net even for a program on `NAME_ONLY_PROGRAMS`, since the value runs regardless of
+the program's other arguments (ADR-022 §6 amendment, issue #384/#430).
+_Avoid_: executor option, executor env var
 
 **Trusted global alias**:
 A wrapper program name (e.g. a `py` shim) that the trusted global config layer

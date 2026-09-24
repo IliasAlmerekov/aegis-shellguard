@@ -202,7 +202,7 @@ Interpreter stdin is analyzed only when source is statically recoverable: a quot
 heredoc, literal here-string, or a narrowly proven literal-only producer such as
 `printf '%s'`. Dynamic pipelines remain Effect-opaque and degrade honestly.
 
-#### Amendment (2026-09-23)
+#### Amendment (2026-09-23, extended 2026-09-24)
 
 Routing's launcher-prefix list (`launcher_prefix_lengths`) only recognizes a
 closed set of wrapper words — `sudo`, `env`, `timeout`, `nice`, `command`,
@@ -228,18 +228,32 @@ unquoting (`script -c "python3 ./evil.py"`), since a plain basename lookup
 on that whole token would instead find the trailing path segment of its
 *last* word.
 
-When no token names a known interpreter but the stage's own first operand
-(past any leading flags) is a path-like literal, routing instead emits a
-`Launcher operand` candidate for it (`setsid ./pyx`) rather than leaving the
-stage silent. This costs nothing beyond what `Direct exec` already does for
-a bare path-like program: `resolve` still reads the file and only treats it
-as a target with a verified shebang, so a non-script operand (`setsid
-./notes.txt`) stays unclaimed. Unlike `Direct exec`, a missing path or a
-literal directory resolves to no target and no degradation rather than
-prompting, since the net picked this operand out of an ordinary command's
-own arguments rather than the command naming it as the thing to run, and a
-missing or directory argument (`vim ./new.txt`, `du -sh ./srcdir`) is
-routine there (issue #384/#430).
+A program word routing can only read through shell expansion it does not
+evaluate (`$VAR`, `${X:-python3}`, a backtick or `$(...)` substitution, a
+brace list such as `{a,b}`) degrades the same way, but only once the stage
+also carries an operand for it to act on: a bare `$EDITOR`/`$SHELL` with
+nothing to act on is an everyday interactive launch and stays untouched. A
+program word that instead names a shell `alias` defined earlier in the same
+command (`alias runpy=python3`) resolves only as opaquely as its own
+replacement text: standing in for a known interpreter, for a dynamic word,
+or for nothing parseable at all degrades the same way an unenumerated
+wrapper word does; an alias for anything else (`alias ll='ls -l'`) is left
+to the rest of routing (issue #384/#430).
+
+When no token names a known interpreter, routing instead emits a `Launcher
+operand` candidate for every distinct path-like operand of the stage (past
+any leading flags), not only the first, rather than leaving the stage
+silent: `setsid ./pyx`, `strace setsid ./pyx`, and `setsid -u ./x ./pyx` (a
+path-like flag value) all produce one candidate per path-like operand. This
+costs nothing beyond what `Direct exec` already does for a bare path-like
+program: `resolve` still reads the file and only treats it as a target with
+a verified shebang, so a non-script operand (`setsid ./notes.txt`) stays
+unclaimed. Unlike `Direct exec`, a missing path or a literal directory
+resolves to no target and no degradation rather than prompting, since the
+net picked this operand out of an ordinary command's own arguments rather
+than the command naming it as the thing to run, and a missing or directory
+argument (`vim ./new.txt`, `du -sh ./srcdir`) is routine there (issue
+#384/#430).
 
 A fixed exclusion list holds the programs that legitimately name a command,
 or a filesystem path, as data rather than run it: `echo`, `printf`, `which`,
@@ -252,6 +266,18 @@ or a filesystem path, as data rather than run it: `echo`, `printf`, `which`,
 lookups. A stage whose own program is on that list stays unclaimed even when
 a later word spells an interpreter name (`echo python3`, `grep -r node
 src`, `apt install python3`, `mkdir python3`, `rm -f node`).
+
+A handful of option values and environment variables run a command instead
+of naming one as data, and degrade even for a program on the exclusion list
+above: git's `-c`/`--config-env` for a command-carrying config key (`core.pager`,
+`core.editor`, `core.sshCommand`, `alias.*`, `diff.external`,
+`credential.helper`, `sequence.editor`, `gpg.program`, `filter.*.clean`, and a
+handful more), and man's `-P`/`--pager=`. The same holds for an executor
+environment variable's assigned value (`PAGER`, `GIT_PAGER`, `MANPAGER`,
+`EDITOR`, `VISUAL`, `GIT_EDITOR`, `GIT_SSH_COMMAND`, `LESSOPEN`, `LESSCLOSE`,
+`GIT_ASKPASS`, and a handful more), whichever of three shapes it appears in on
+the same line: leading the stage, past a leading `env` launcher, or set in its
+own `export`/`declare -x`/bare assignment stage (issue #384/#430).
 
 This trades false positives for closing the false-negative gap: a program
 outside both the interpreter registry and the exclusion list that happens to
