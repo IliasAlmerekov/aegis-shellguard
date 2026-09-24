@@ -202,6 +202,93 @@ Interpreter stdin is analyzed only when source is statically recoverable: a quot
 heredoc, literal here-string, or a narrowly proven literal-only producer such as
 `printf '%s'`. Dynamic pipelines remain Effect-opaque and degrade honestly.
 
+#### Amendment (2026-09-23, extended 2026-09-24)
+
+Routing's launcher-prefix list (`launcher_prefix_lengths`) only recognizes a
+closed set of wrapper words — `sudo`, `env`, `timeout`, `nice`, `command`,
+and a handful more. A wrapper outside that list (`setsid`, `stdbuf`,
+`strace`, `ionice`, `taskset`, `exec -a`, `doas`, `time -p`, `find -exec`,
+and any word not yet added) hid the interpreter behind it from routing
+entirely: routing found no target, so the language-aware stage never ran,
+and the command auto-approved as if it carried no source at all. Adding each
+wrapper word by name to the launcher list only closes the specific gap
+reported that day; the next wrapper word leaks the same way (issue
+#384/#430).
+
+Routing now closes this class of gap once, structurally: when a command or
+pipeline stage reaches the end of routing having produced no target by any
+other path, and a token past its own program names a known registry
+interpreter (after unquoting, basename, and the same versioned-name
+normalization routing already applies), routing degrades that stage to
+`Unresolved`/`Dynamic source` instead of leaving it silent. This does not
+depend on recognizing the wrapper word itself — an interpreter name later in
+the command is enough on its own. The interpreter check also reads the
+opening word of a token that still carries embedded whitespace after
+unquoting (`script -c "python3 ./evil.py"`), since a plain basename lookup
+on that whole token would instead find the trailing path segment of its
+*last* word.
+
+A program word routing can only read through shell expansion it does not
+evaluate (`$VAR`, `${X:-python3}`, a backtick or `$(...)` substitution, a
+brace list such as `{a,b}`) degrades the same way, but only once the stage
+also carries an operand for it to act on: a bare `$EDITOR`/`$SHELL` with
+nothing to act on is an everyday interactive launch and stays untouched. A
+program word that instead names a shell `alias` defined earlier in the same
+command (`alias runpy=python3`) resolves only as opaquely as its own
+replacement text: standing in for a known interpreter, for a dynamic word,
+or for nothing parseable at all degrades the same way an unenumerated
+wrapper word does; an alias for anything else (`alias ll='ls -l'`) is left
+to the rest of routing (issue #384/#430).
+
+When no token names a known interpreter, routing instead emits a `Launcher
+operand` candidate for every distinct path-like operand of the stage (past
+any leading flags), not only the first, rather than leaving the stage
+silent: `setsid ./pyx`, `strace setsid ./pyx`, and `setsid -u ./x ./pyx` (a
+path-like flag value) all produce one candidate per path-like operand. This
+costs nothing beyond what `Direct exec` already does for a bare path-like
+program: `resolve` still reads the file and only treats it as a target with
+a verified shebang, so a non-script operand (`setsid ./notes.txt`) stays
+unclaimed. Unlike `Direct exec`, a missing path or a literal directory
+resolves to no target and no degradation rather than prompting, since the
+net picked this operand out of an ordinary command's own arguments rather
+than the command naming it as the thing to run, and a missing or directory
+argument (`vim ./new.txt`, `du -sh ./srcdir`) is routine there (issue
+#384/#430).
+
+A fixed exclusion list holds the programs that legitimately name a command,
+or a filesystem path, as data rather than run it: `echo`, `printf`, `which`,
+`type`, `whereis`, `man`, `info`, `help`, `apropos`, `grep`, `egrep`,
+`fgrep`, `rg`, `ag`, `ls`, `cat`, `head`, `tail`, `less`, `more`, `file`,
+`stat`, `wc`, `diff`, `apt`, `apt-get`, `apt-cache`, `dnf`, `yum`, `brew`,
+`pacman`, `git`, `update-alternatives`, `dpkg`, `mkdir`, `rmdir`, `touch`,
+`rm`, `cp`, `mv`, `ln`, `chmod`, `chown`, `chgrp`, `basename`, `dirname`,
+`realpath`, and `readlink`, plus `command -v`/`command -V` and `type`
+lookups. A stage whose own program is on that list stays unclaimed even when
+a later word spells an interpreter name (`echo python3`, `grep -r node
+src`, `apt install python3`, `mkdir python3`, `rm -f node`).
+
+A handful of option values and environment variables run a command instead
+of naming one as data, and degrade even for a program on the exclusion list
+above: git's `-c`/`--config-env` for a command-carrying config key (`core.pager`,
+`core.editor`, `core.sshCommand`, `alias.*`, `diff.external`,
+`credential.helper`, `sequence.editor`, `gpg.program`, `filter.*.clean`, and a
+handful more), and man's `-P`/`--pager=`. The same holds for an executor
+environment variable's assigned value (`PAGER`, `GIT_PAGER`, `MANPAGER`,
+`EDITOR`, `VISUAL`, `GIT_EDITOR`, `GIT_SSH_COMMAND`, `LESSOPEN`, `LESSCLOSE`,
+`GIT_ASKPASS`, and a handful more), whichever of three shapes it appears in on
+the same line: leading the stage, past a leading `env` launcher, or set in its
+own `export`/`declare -x`/bare assignment stage (issue #384/#430).
+
+This trades false positives for closing the false-negative gap: a program
+outside both the interpreter registry and the exclusion list that happens to
+take an interpreter name as an unrelated argument will now prompt even
+though it never runs that interpreter. Accepted cost, not a defect — routing
+already fails closed rather than silently trusting an unrecognized shape,
+and the exclusion list is free to grow as legitimate cases turn up. Parsing
+the full Bash grammar so routing understands every wrapper's own argument
+conventions precisely, instead of scanning tokens after the fact, is out of
+scope for this net and tracked separately (issue #434).
+
 ### 7. Bound recursive and encoded analysis
 
 Literal process or eval payloads become new targets in a bounded cross-language

@@ -378,9 +378,18 @@ fn heredoc_written_then_executed_with_variable_expansion_degrades_dynamically() 
 #[test]
 fn heredoc_written_then_executed_with_a_mismatched_path_is_not_reused() {
     // Written to `script.py` but a different file is executed — the router
-    // must not substitute the heredoc body as evidence for an unrelated file.
+    // must not substitute the heredoc body as evidence for `other.py`. It
+    // still routes `other.py` itself as an ordinary `ScriptFile` (read from
+    // disk at resolution time, issue #384): the chained exec on the
+    // marker's own line is real command text, not evidence about `script.py`.
     let command = "cat > script.py <<'EOF' && python3 other.py\nprint(1)\nEOF";
-    assert_eq!(route(command, &[]), Vec::new());
+    assert_eq!(
+        route(command, &[]),
+        vec![RoutedTarget::ScriptFile {
+            language: SourceLanguage::Python,
+            path: PathBuf::from("other.py"),
+        }]
+    );
 }
 
 #[test]
@@ -392,9 +401,18 @@ fn heredoc_written_to_a_file_with_no_chained_exec_falls_back_to_current_behavior
 #[test]
 fn heredoc_write_then_exec_with_a_third_chained_segment_is_not_reused() {
     // A further top-level segment after the exec means this is not the
-    // narrow exactly-two-segment shape this reuse is scoped to.
+    // narrow exactly-two-segment shape the heredoc-body reuse is scoped to,
+    // so the router falls back to routing `python3 script.py` as an ordinary
+    // `ScriptFile` (issue #384); the trailing `&& rm script.py` names no
+    // interpreter, so it stays unrouted, same as a bare `rm` anywhere else.
     let command = "cat > script.py <<'EOF' && python3 script.py && rm script.py\nprint(1)\nEOF";
-    assert_eq!(route(command, &[]), Vec::new());
+    assert_eq!(
+        route(command, &[]),
+        vec![RoutedTarget::ScriptFile {
+            language: SourceLanguage::Python,
+            path: PathBuf::from("script.py"),
+        }]
+    );
 }
 
 #[test]
@@ -578,7 +596,7 @@ fn direct_exec_of_a_relative_path_is_routed_pending_shebang_verification() {
 fn route_never_touches_the_filesystem_for_a_script_file_target() {
     // `route` decides *what* to analyze without any filesystem access — only
     // `resolve` (async, later) reads the file. This is structurally
-    // guaranteed (`route`/`route_after_cd` are synchronous and the module
+    // guaranteed (`route` and its helpers are synchronous and the module
     // imports no `fs`/I/O API — see the `resolve_one` boundary, the only
     // place `source_reader::read_script_file` is called). This test is a
     // black-box behavioral pin, not independent proof of zero syscalls: a
@@ -721,3 +739,25 @@ async fn resolve_degrades_an_oversized_script_file() {
         })]
     );
 }
+
+/// The degradation every unclaimed-interpreter net test expects.
+fn unresolved_dynamic() -> RoutedTarget {
+    RoutedTarget::Unresolved {
+        reason: DegradationReason::DynamicSource,
+    }
+}
+
+mod alias_repeated_calls;
+mod command_string_prefix_words;
+mod cwd;
+mod env_launcher_shapes;
+mod executor_config_keys;
+mod executor_option_values;
+mod interpreter_stdin_redirect;
+mod redirection_placement;
+mod segments;
+mod shell_grammar_and_launchers;
+mod unclaimed_interpreter_net;
+mod wrapped;
+mod wrapper_grammar;
+mod wrapper_trailing_redirection;

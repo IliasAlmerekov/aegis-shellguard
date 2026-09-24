@@ -118,10 +118,11 @@ fn heredoc_target_program(line: &str, marker_start: usize) -> Option<&str> {
     }
 }
 
-/// Extract process-substitution bodies from shell input forms like `<(...)`.
+/// Extract process-substitution bodies from shell forms like `<(...)` (input)
+/// and `>(...)` (output, issue #384) alike.
 ///
-/// The returned strings are the shell commands inside the substitution, without
-/// the surrounding `<(` and `)`.
+/// The returned strings are the shell commands inside the substitution,
+/// without the surrounding `<(`/`>(` and `)`.
 pub fn extract_process_substitution_bodies(cmd: &str) -> Vec<String> {
     let chars: Vec<char> = cmd.chars().collect();
     let mut bodies = Vec::new();
@@ -147,10 +148,11 @@ pub fn extract_process_substitution_bodies(cmd: &str) -> Vec<String> {
                 in_backticks = !in_backticks;
                 i += 1;
             }
-            '<' if !in_single_quote
-                && !in_double_quote
-                && !in_backticks
-                && chars.get(i + 1) == Some(&'(') =>
+            '<' | '>'
+                if !in_single_quote
+                    && !in_double_quote
+                    && !in_backticks
+                    && chars.get(i + 1) == Some(&'(') =>
             {
                 if let Some((body, end_idx)) = extract_angle_paren_body(&chars, i) {
                     bodies.push(body);
@@ -267,6 +269,94 @@ struct HeredocMarker {
     /// callers can locate the target-command token ahead of it without
     /// re-searching the line.
     operator_start: usize,
+    /// Byte offset immediately after the delimiter spec (past the closing
+    /// quote, or past the bare/escaped word) — the start of whatever else
+    /// shares this physical line with the marker (e.g. a `&&`-chained exec).
+    delimiter_end: usize,
+}
+
+/// One nested command-substitution or backtick body still open, so a
+/// heredoc marker inside it is found. `$(`/backtick each start a fresh quote
+/// scope — even inside an outer double-quoted string — and `saved_quotes`
+/// restores the enclosing scope once the frame closes.
+struct SubstitutionFrame {
+    /// `Some(depth)` for `$( ... )`: counts unmatched `(` since opening
+    /// (starts at 1), so `$((` arithmetic just nests deeper. `None` for a
+    /// backtick frame, which closes on the next unescaped backtick.
+    command_sub_depth: Option<usize>,
+    saved_quotes: (bool, bool),
+}
+
+/// Byte index of the first `<<` in `line` outside a single- or
+/// double-quoted span, tracking quote state like
+/// [`split_top_level_segments`] — plus one refinement: `$(` and a backtick
+/// each open a fresh quote scope even inside an outer double-quoted string,
+/// since bash parses their contents as an independent command line. So
+/// `echo '<<EOF'` still has no heredoc operator, but the `<<` in `"$(cat
+/// <<'EOF'` — the shape behind `gh pr create --body "$(cat <<'EOF' ...)"` —
+/// is a real one.
+fn find_unquoted_double_lt(line: &str) -> Option<usize> {
+    let mut single_quote = false;
+    let mut double_quote = false;
+    let mut frames: Vec<SubstitutionFrame> = Vec::new();
+    let mut chars = line.char_indices().peekable();
+
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '\\' if !single_quote => {
+                chars.next();
+            }
+            '\'' if !double_quote => single_quote = !single_quote,
+            '"' if !single_quote => double_quote = !double_quote,
+            '`' if !single_quote => {
+                if matches!(frames.last(), Some(f) if f.command_sub_depth.is_none()) {
+                    if let Some(frame) = frames.pop() {
+                        (single_quote, double_quote) = frame.saved_quotes;
+                    }
+                } else {
+                    frames.push(SubstitutionFrame {
+                        command_sub_depth: None,
+                        saved_quotes: (single_quote, double_quote),
+                    });
+                    single_quote = false;
+                    double_quote = false;
+                }
+            }
+            '$' if !single_quote && chars.peek().map(|&(_, c)| c) == Some('(') => {
+                chars.next();
+                frames.push(SubstitutionFrame {
+                    command_sub_depth: Some(1),
+                    saved_quotes: (single_quote, double_quote),
+                });
+                single_quote = false;
+                double_quote = false;
+            }
+            '(' if !single_quote && !double_quote => {
+                if let Some(depth) = frames.last_mut().and_then(|f| f.command_sub_depth.as_mut()) {
+                    *depth += 1;
+                }
+            }
+            ')' if !single_quote && !double_quote => {
+                let closed = if let Some(depth) =
+                    frames.last_mut().and_then(|f| f.command_sub_depth.as_mut())
+                {
+                    *depth -= 1;
+                    *depth == 0
+                } else {
+                    false
+                };
+                if closed && let Some(frame) = frames.pop() {
+                    (single_quote, double_quote) = frame.saved_quotes;
+                }
+            }
+            '<' if !single_quote && !double_quote && chars.peek().map(|&(_, c)| c) == Some('<') => {
+                return Some(idx);
+            }
+            _ => {}
+        }
+    }
+
+    None
 }
 
 /// Scan one line for a heredoc operator (`<<`) and return the parsed marker.
@@ -279,49 +369,131 @@ struct HeredocMarker {
 /// - `<<-WORD`         — heredoc with leading-tab stripping
 /// - `<<-'WORD'`       — nowdoc with leading-tab stripping
 fn find_heredoc_marker(line: &str) -> Option<HeredocMarker> {
-    let operator_start = line.find("<<")?;
-    let rest = &line[operator_start + 2..];
-    let mk = |delimiter: String, is_nowdoc: bool, strip_tabs: bool| HeredocMarker {
+    let operator_start = find_unquoted_double_lt(line)?;
+    let after_op = &line[operator_start + 2..];
+    let (strip_tabs, after_dash) = match after_op.strip_prefix('-') {
+        Some(stripped) => (true, stripped),
+        None => (false, after_op),
+    };
+    let trimmed = after_dash.trim_start();
+    let spec_start =
+        operator_start + 2 + (strip_tabs as usize) + (after_dash.len() - trimmed.len());
+
+    let mk = |delimiter: String, is_nowdoc: bool, delimiter_end: usize| HeredocMarker {
         delimiter,
         is_nowdoc,
         strip_tabs,
         operator_start,
+        delimiter_end,
     };
 
-    let (strip_tabs, rest) = if let Some(stripped) = rest.strip_prefix('-') {
-        (true, stripped)
-    } else {
-        (false, rest)
-    };
-
-    let rest = rest.trim_start();
-
-    if let Some(inner) = rest.strip_prefix('\'') {
+    if let Some(inner) = trimmed.strip_prefix('\'') {
         let close = inner.find('\'')?;
         let delim = &inner[..close];
-        return (!delim.is_empty()).then(|| mk(delim.to_string(), true, strip_tabs));
+        return (!delim.is_empty())
+            .then(|| mk(delim.to_string(), true, spec_start + 1 + close + 1));
     }
 
-    if let Some(inner) = rest.strip_prefix('"') {
+    if let Some(inner) = trimmed.strip_prefix('"') {
         let close = inner.find('"')?;
         let delim = &inner[..close];
-        return (!delim.is_empty()).then(|| mk(delim.to_string(), true, strip_tabs));
+        return (!delim.is_empty())
+            .then(|| mk(delim.to_string(), true, spec_start + 1 + close + 1));
     }
 
-    if let Some(inner) = rest.strip_prefix('\\') {
+    if let Some(inner) = trimmed.strip_prefix('\\') {
         let word: String = inner
             .chars()
             .take_while(|c| c.is_alphanumeric() || *c == '_')
             .collect();
-        return (!word.is_empty()).then(|| mk(word, true, strip_tabs));
+        let word_len = word.len();
+        return (!word.is_empty()).then(|| mk(word, true, spec_start + 1 + word_len));
     }
 
-    let word: String = rest
+    let word: String = trimmed
         .chars()
         .take_while(|c| c.is_alphanumeric() || *c == '_')
         .collect();
+    let word_len = word.len();
 
-    (!word.is_empty()).then(|| mk(word, false, strip_tabs))
+    (!word.is_empty()).then(|| mk(word, false, spec_start + word_len))
+}
+
+/// Split `line` at its first heredoc marker (`<<WORD`, `<<'WORD'`, or the
+/// `<<-` tab-stripping variants), returning the text before the marker and
+/// the text immediately after the delimiter spec (which, per shell grammar,
+/// is still part of the same command line — e.g. a `&&`-chained command).
+/// `None` when `line` carries no recognizable marker.
+pub fn split_at_heredoc_marker(line: &str) -> Option<(&str, &str)> {
+    let marker = find_heredoc_marker(line)?;
+    Some((
+        &line[..marker.operator_start],
+        &line[marker.delimiter_end..],
+    ))
+}
+
+/// Byte ranges in `cmd`, each spanning from a heredoc marker's `<<` operator
+/// through the end of its terminator line (or through the end of `cmd`, for
+/// a heredoc that never terminates) — the span list-segment splitting must
+/// treat as one opaque unit rather than further command text. This keeps a
+/// same-line `&&`-chained exec glued to the segment that owns the marker
+/// (mirroring how the body itself is data, not further segments), and never
+/// misreads a quoted delimiter's own quote characters as string quoting.
+pub(crate) fn heredoc_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
+    if !cmd.contains("<<") {
+        return Vec::new();
+    }
+
+    let indexed = indexed_lines(cmd);
+    let lines: Vec<&str> = indexed.iter().map(|&(line, _)| line).collect();
+    let mut ranges = Vec::new();
+
+    walk_heredocs(&lines, |marker, _interpreter, _redirects, body_range| {
+        // `body_range.start` is always the marker line's own index plus one
+        // (`walk_heredocs` never calls back before that increment), so this
+        // never underflows in practice; `checked_sub`/`.get()` make that a
+        // fact this can't panic on rather than one this merely relies on.
+        let Some(marker_line_index) = body_range.start.checked_sub(1) else {
+            return;
+        };
+        let Some(&(_, marker_line_start)) = indexed.get(marker_line_index) else {
+            return;
+        };
+        let start = marker_line_start + marker.operator_start;
+        let end = match indexed.get(body_range.end) {
+            Some(&(terminator_line, terminator_start)) => terminator_start + terminator_line.len(),
+            None => cmd.len(),
+        };
+        ranges.push(start..end);
+    });
+
+    ranges
+}
+
+/// `cmd` split the same way [`str::lines`] does — on `\n`, with one optional
+/// trailing `\r` stripped from each line and no phantom empty final line when
+/// `cmd` itself ends in `\n` — paired with each line's own byte offset into
+/// `cmd`. The byte-offset companion [`str::lines`] does not provide, computed
+/// by walking `cmd` once instead of recovering it from a line's pointer
+/// address (issue #384): pointer-offset recovery risks reading
+/// uninitialized/foreign memory if a caller ever passes a `lines` value that
+/// did not originate from this exact `cmd`, and no `unsafe` marks that risk
+/// at the call site the way it would for a raw pointer read.
+fn indexed_lines(cmd: &str) -> Vec<(&str, usize)> {
+    let mut lines = Vec::new();
+    let mut start = 0;
+    for (idx, ch) in cmd.char_indices() {
+        if ch == '\n' {
+            let raw = &cmd[start..idx];
+            lines.push((raw.strip_suffix('\r').unwrap_or(raw), start));
+            start = idx + 1;
+        }
+    }
+    if start < cmd.len() {
+        let raw = &cmd[start..];
+        lines.push((raw.strip_suffix('\r').unwrap_or(raw), start));
+    }
+    lines
 }
 
 /// Walk `lines` for heredoc/nowdoc markers, invoking `on_heredoc` once per
@@ -537,4 +709,88 @@ pub fn extract_inline_scripts(cmd: &str) -> Vec<InlineScript> {
     }
 
     scripts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{find_heredoc_marker, heredoc_suspend_ranges};
+
+    // Issue #437 review: `$(`/backtick open a fresh quote scope even inside
+    // an outer double-quoted string, so `gh pr create --body "$(cat <<'EOF'
+    // ...)"` still holds a real heredoc marker.
+
+    #[test]
+    fn a_double_lt_inside_dollar_paren_within_double_quotes_is_a_marker() {
+        let line = "\"$(cat <<'EOF'";
+        assert!(find_heredoc_marker(line).is_some());
+    }
+
+    #[test]
+    fn a_double_lt_inside_a_plain_double_quoted_string_is_not_a_marker() {
+        let line = "\"<<EOF\"";
+        assert!(find_heredoc_marker(line).is_none());
+    }
+
+    #[test]
+    fn a_double_lt_inside_a_backtick_body_is_a_marker() {
+        let line = "`cat <<EOF`";
+        assert!(find_heredoc_marker(line).is_some());
+    }
+
+    #[test]
+    fn a_double_lt_inside_nested_dollar_paren_command_substitutions_is_a_marker() {
+        let line = "\"$(echo \"$(cat <<EOF)\")\"";
+        assert!(find_heredoc_marker(line).is_some());
+    }
+
+    // `$((` arithmetic isn't special-cased: pre-f0a74e0 code did a raw
+    // `line.find("<<")`, so `<<` inside `$((1 << 2))` already (wrongly) read
+    // as a marker. This stays exactly that loose, not looser.
+    #[test]
+    fn a_double_lt_inside_dollar_paren_paren_arithmetic_matches_pre_fix_looseness() {
+        let line = "echo $((1 << 2))";
+        assert!(find_heredoc_marker(line).is_some());
+    }
+
+    // Boundaries `heredoc_suspend_ranges`' byte-offset tracking must hold at
+    // (issue #384): a heredoc with nothing between its marker and
+    // terminator, one that never terminates because `cmd` ends on the marker
+    // line itself, a CRLF-terminated command, and a terminated heredoc whose
+    // last line carries no trailing newline at all.
+
+    #[test]
+    fn a_heredoc_with_no_body_lines_suspends_marker_through_terminator() {
+        let cmd = "cat <<EOF\nEOF\n";
+        assert_eq!(
+            heredoc_suspend_ranges(cmd),
+            vec![cmd.find("<<").unwrap()..(cmd.rfind("EOF").unwrap() + "EOF".len())]
+        );
+    }
+
+    #[test]
+    fn a_heredoc_marker_with_nothing_after_it_suspends_to_the_end_of_cmd() {
+        let cmd = "cat <<EOF";
+        assert_eq!(
+            heredoc_suspend_ranges(cmd),
+            vec![cmd.find("<<").unwrap()..cmd.len()]
+        );
+    }
+
+    #[test]
+    fn a_crlf_heredoc_suspends_marker_through_terminator() {
+        let cmd = "cat <<EOF\r\nbody\r\nEOF\r\n";
+        assert_eq!(
+            heredoc_suspend_ranges(cmd),
+            vec![cmd.find("<<").unwrap()..(cmd.rfind("EOF").unwrap() + "EOF".len())]
+        );
+    }
+
+    #[test]
+    fn a_heredoc_terminator_with_no_trailing_newline_still_ends_the_suspend_range() {
+        let cmd = "cat <<EOF\nbody\nEOF";
+        assert_eq!(
+            heredoc_suspend_ranges(cmd),
+            vec![cmd.find("<<").unwrap()..(cmd.rfind("EOF").unwrap() + "EOF".len())]
+        );
+    }
 }

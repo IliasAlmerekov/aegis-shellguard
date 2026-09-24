@@ -39,16 +39,25 @@ pub fn heredoc_stdin(command: &str) -> Option<StdinRoute> {
     Some(classify(heredoc.body, heredoc.is_nowdoc))
 }
 
-/// Detect a here-string (`<<< 'literal'` / `<<<"literal"`) among the tokens
-/// following an interpreter invocation.
+/// Detect a here-string (`<<< 'literal'` / `<<<"literal"` / the glued
+/// `<<<'literal'` the tokenizer never puts a space in front of, issue #384)
+/// among the tokens following an interpreter invocation.
 #[must_use]
 pub fn here_string_stdin(rest_tokens: &[&str]) -> Option<StdinRoute> {
-    let pos = rest_tokens.iter().position(|tok| *tok == "<<<")?;
-    let body = rest_tokens.get(pos + 1)?;
+    let pos = rest_tokens.iter().position(|tok| tok.starts_with("<<<"))?;
     // The tokenizer already strips the surrounding quotes, so single- vs.
     // double-quoted here-strings are indistinguishable here; classify by
-    // expansion syntax alone, same as an unquoted heredoc.
-    Some(classify((*body).to_owned(), false))
+    // expansion syntax alone, same as an unquoted heredoc. A glued literal
+    // (`<<<"$X"` — no space, so the tokenizer keeps it one word) carries its
+    // body in the same token, past the `<<<` itself; the spaced form
+    // (`<<<`, `"$X"`) carries it in the next token instead.
+    let glued = &rest_tokens[pos][3..];
+    let body = if glued.is_empty() {
+        (*rest_tokens.get(pos + 1)?).to_owned()
+    } else {
+        glued.to_owned()
+    };
+    Some(classify(body, false))
 }
 
 /// Classify an already-extracted heredoc/here-string body (shared with

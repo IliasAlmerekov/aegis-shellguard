@@ -1,6 +1,8 @@
 use std::iter::Peekable;
 use std::str::Chars;
 
+use crate::segmentation::ends_with_redirect_target;
+
 /// Split a shell command string into tokens, respecting quoting and escaping rules.
 ///
 /// Rules:
@@ -49,6 +51,13 @@ pub fn split_tokens(cmd: &str) -> Vec<String> {
                 } else {
                     current.push(ch);
                 }
+            }
+            '|' if !in_single_quote && !in_double_quote && ends_with_redirect_target(&current) => {
+                // `>|`/`<|` (e.g. the noclobber-override redirect `>|out`)
+                // glues a `|` straight onto an unescaped `>`/`<` — that is
+                // redirection syntax glued to the token being built, not a
+                // pipe separator (issue #384).
+                current.push(ch);
             }
             '|' if !in_single_quote && !in_double_quote => {
                 if chars.peek() == Some(&'|') {

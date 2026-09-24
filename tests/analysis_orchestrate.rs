@@ -93,6 +93,52 @@ async fn run_analyzes_inline_python_and_merges_a_recursive_delete_match() {
 }
 
 #[tokio::test]
+async fn run_analyzes_inline_python_after_a_semicolon_the_same_as_leading() {
+    // Regression for issue #384: routing used to look only at the command's
+    // first effective token, so a leading no-op before the real command
+    // (`true; python3 -c ...`) routed nothing and the worker never started —
+    // the exact same payload one token earlier (the test right above this
+    // one) already caught the LANG-FS-DEL-R match, only the placement
+    // changed.
+    let baseline = safe_baseline();
+    let outcome = run(
+        "true; python3 -c \"shutil.rmtree('x')\"",
+        &baseline,
+        Some(env!("CARGO_BIN_EXE_aegis")),
+        &[],
+        Duration::from_secs(5),
+    )
+    .await;
+    let assessment = match outcome {
+        Outcome::Analyzed {
+            assessment,
+            target_count,
+        } => {
+            assert_eq!(target_count, 1, "one inline target must be analyzed");
+            assessment
+        }
+        other => panic!("python3 after `true;` must spawn the worker: {other:?}"),
+    };
+    assert!(
+        assessment.risk >= RiskLevel::Danger,
+        "risk must lift to Danger: {:?}",
+        assessment.risk
+    );
+    assert!(
+        assessment
+            .matched
+            .iter()
+            .any(|m| m.pattern.id.as_ref() == "LANG-FS-DEL-R"),
+        "must carry a LANG-FS-DEL-R match: {:?}",
+        assessment
+            .matched
+            .iter()
+            .map(|m| m.pattern.id.as_ref().to_string())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
 async fn run_analyzes_a_safe_inline_bash_body_without_degradation() {
     // A `bash -c` inline body routes to Bash. Iteration 8 wires the Bash
     // adapter into the worker (issue #383), so a body with no destructive
@@ -611,5 +657,93 @@ async fn run_analyzes_javascript_exec_and_surfaces_the_recursive_javascript_targ
             .contains(&DegradationReason::GrammarUnavailable),
         "a JS→JS recursive target must not record GrammarUnavailable: {:?}",
         summary.degradation_reasons
+    );
+}
+
+// ── #430: routing sees through a grammar wrapper ────────────────────────────
+
+async fn assert_recursive_delete_found(command: &str) {
+    let baseline = safe_baseline();
+    let outcome = run(
+        command,
+        &baseline,
+        Some(env!("CARGO_BIN_EXE_aegis")),
+        &[],
+        Duration::from_secs(5),
+    )
+    .await;
+    let assessment = match outcome {
+        Outcome::Analyzed { assessment, .. } => assessment,
+        other => panic!("{command} must spawn the worker: {other:?}"),
+    };
+    assert!(
+        assessment.risk >= RiskLevel::Danger,
+        "{command}: risk must lift to Danger: {:?}",
+        assessment.risk
+    );
+    assert!(
+        assessment
+            .matched
+            .iter()
+            .any(|m| m.pattern.id.as_ref() == "LANG-FS-DEL-R"),
+        "{command}: must carry a LANG-FS-DEL-R match: {:?}",
+        assessment
+            .matched
+            .iter()
+            .map(|m| m.pattern.id.as_ref().to_string())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[tokio::test]
+async fn run_finds_an_inline_python_delete_inside_an_if_then_wrapper() {
+    assert_recursive_delete_found("if true; then python3 -c \"shutil.rmtree('x')\"; fi").await;
+}
+
+#[tokio::test]
+async fn run_finds_an_inline_python_delete_inside_a_subshell() {
+    assert_recursive_delete_found("(true; python3 -c \"shutil.rmtree('x')\")").await;
+}
+
+#[tokio::test]
+async fn run_finds_an_inline_python_delete_inside_a_command_substitution() {
+    assert_recursive_delete_found("echo $(python3 -c \"shutil.rmtree('x')\")").await;
+}
+
+#[tokio::test]
+async fn run_finds_an_open_write_inside_a_subshell_with_a_trailing_redirect() {
+    // Issue #430 acceptance: a subshell around an inline Python write, with a
+    // trailing redirect on the subshell itself, must still reach the Python
+    // adapter and match LANG-FS-OVR-W — the same as the unwrapped command in
+    // `run_analyzes_inline_open_write_and_lifts_to_warn` above.
+    let baseline = safe_baseline();
+    let outcome = run(
+        "(python3 -c \"open('x','w')\") > out.txt",
+        &baseline,
+        Some(env!("CARGO_BIN_EXE_aegis")),
+        &[],
+        Duration::from_secs(5),
+    )
+    .await;
+    let assessment = match outcome {
+        Outcome::Analyzed { assessment, .. } => assessment,
+        other => panic!("subshell-wrapped python open-w must spawn the worker: {other:?}"),
+    };
+    assert!(
+        assessment.risk >= RiskLevel::Warn,
+        "open-w inside a subshell must lift Safe → Warn: {:?}",
+        assessment.risk
+    );
+    assert!(
+        assessment
+            .matched
+            .iter()
+            .any(|m| m.pattern.id.as_ref() == "LANG-FS-OVR-W"),
+        "must carry LANG-FS-OVR-W: {:?}",
+        assessment
+            .matched
+            .iter()
+            .map(|m| m.pattern.id.as_ref().to_string())
+            .collect::<Vec<_>>()
     );
 }
