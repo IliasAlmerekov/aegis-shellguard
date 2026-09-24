@@ -138,3 +138,25 @@ fn env_ignore_environment_with_assignment_stays_unrouted() {
 fn env_chdir_before_a_non_interpreter_program_stays_unrouted() {
     assert_eq!(route("env -C d1 ls", &[]), Vec::new());
 }
+
+#[test]
+fn env_chdir_glued_short_flag_degrades_the_relative_target() {
+    // `-Cd1` (no space between the flag and its directory) is the same
+    // chdir as the spaced `-C d1` form (#437 review comment 4091038686).
+    assert_eq!(
+        route("env -Cd1 python3 ./evil.py", &[]),
+        vec![evil_py_dynamic()]
+    );
+}
+
+#[test]
+fn env_chdir_behind_a_command_launcher_degrades_the_relative_target() {
+    // `command` wraps `env` here, so the `-C`-carrying `env` word is no
+    // longer `prefix[0]` — the whole consumed launcher prefix must be
+    // scanned for it, not just its first token, or the resolved target
+    // gets resolved against the wrong cwd (#437 review comment 4091038686).
+    assert_eq!(
+        route("command env -C d1 python3 ./evil.py", &[]),
+        vec![evil_py_dynamic()]
+    );
+}

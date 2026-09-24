@@ -557,23 +557,30 @@ fn route_direct_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<Rout
         .collect()
 }
 
+/// `true` for an `env` `-C`/`--chdir` flag token: the spaced short form
+/// (`-C`, its directory in the next token), the glued short form (`-Cd1`),
+/// the spaced long form (`--chdir`), or the glued long form
+/// (`--chdir=d1`) — every shape GNU `env` accepts (#437 review comment
+/// 4091038686).
+fn is_env_chdir_flag(tok: &str) -> bool {
+    tok == "--chdir" || tok.starts_with("--chdir=") || tok.starts_with("-C")
+}
+
 /// `true` when `prefix` — the tokens routing consumed before the effective
-/// program (assignments, launcher words, redirections) — is an `env`
-/// invocation carrying `-C`/`--chdir` (issue #384). A cheap token-
-/// equality scan, not a full re-parse of `env`'s own option grammar: routing
-/// only needs to know a chdir flag is present somewhere in the prefix it
-/// already resolved, not its exact position.
+/// program (assignments, launcher words, redirections) — carries an `env`
+/// invocation with `-C`/`--chdir` anywhere in it, not only as its first
+/// token: a launcher word ahead of `env` (`command env -C d1 python3
+/// ./x.py`) still lets the chdir flag resolve the wrong cwd if routing only
+/// checked `prefix[0]` (issue #384, #437 review comment 4091038686). A
+/// cheap token-equality scan, not a full re-parse of `env`'s own option
+/// grammar: routing only needs to know an `env` word and a chdir flag are
+/// both present somewhere in the prefix it already resolved, not their
+/// exact positions relative to each other.
 fn env_chdir_prefix(prefix: &[&str]) -> bool {
-    let Some(first) = prefix.first() else {
-        return false;
-    };
-    let basename = first.rsplit('/').next().unwrap_or(first);
-    if !basename.eq_ignore_ascii_case("env") {
-        return false;
-    }
-    prefix[1..]
-        .iter()
-        .any(|tok| *tok == "-C" || *tok == "--chdir" || tok.starts_with("--chdir="))
+    prefix.iter().enumerate().any(|(idx, tok)| {
+        let basename = tok.rsplit('/').next().unwrap_or(tok);
+        basename.eq_ignore_ascii_case("env") && prefix[idx + 1..].iter().any(|t| is_env_chdir_flag(t))
+    })
 }
 
 /// Resolve `stage` to its interpreter only if it has no source of its own —
