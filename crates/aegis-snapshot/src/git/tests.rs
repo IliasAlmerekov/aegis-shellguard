@@ -124,12 +124,12 @@ fn is_applicable_logs_spawn_failure_via_tracing() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let applicable = tracing::subscriber::with_default(subscriber, || {
         runtime.block_on(async {
-            // `tracing` caches each callsite's Interest globally. The sibling
-            // test `is_applicable_assumes_applicable_when_git_cannot_be_spawned`
-            // can fire this callsite first on a thread with no subscriber
-            // and cache `Interest::never` (#436). The warm-up call registers
-            // the callsite, and the rebuild then recomputes its Interest with
-            // this subscriber in place before the call under test.
+            // `tracing` caches each callsite's Interest globally. A sibling
+            // test above hits this same callsite on a thread with no
+            // subscriber and can cache `Interest::never` first (#436). The
+            // warm-up call registers the callsite, and the rebuild then
+            // recomputes its Interest with this subscriber in place before
+            // the call under test.
             let _ = GitPlugin.is_applicable(&missing_cwd).await;
             tracing::callsite::rebuild_interest_cache();
             GitPlugin.is_applicable(&missing_cwd).await
