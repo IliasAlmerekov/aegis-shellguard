@@ -1,5 +1,7 @@
 //! Integration tests for `aegis watch` — end-to-end via child process.
 
+mod support;
+
 use std::fs;
 use std::io::{ErrorKind, Write};
 use std::path::Path;
@@ -39,23 +41,20 @@ fn aegis_watch_in(home: &Path, cwd: &Path, input: &[u8]) -> std::process::Output
         .expect("failed to wait for aegis watch")
 }
 
-/// `true` when an audit `analysis` summary completed, or degraded only
-/// because the worker missed its deadline. The CLI clamps that deadline to
-/// 100 ms, and a loaded test run can miss it (#458). Any other degradation
-/// reason, such as a script that was not found, still fails the check.
-fn completed_or_missed_deadline(analysis: &serde_json::Value) -> bool {
-    match analysis["status"].as_str() {
-        Some("complete") => true,
-        Some("degraded") => analysis["degradation_reasons"]
-            .as_array()
-            .is_some_and(|reasons| {
-                !reasons.is_empty()
-                    && reasons.iter().all(|reason| {
-                        matches!(reason.as_str(), Some("worker_failure" | "limit_exceeded"))
-                    })
-            }),
-        _ => false,
-    }
+/// Runs one Watch frame in a fresh home until its audit records completed
+/// analysis. The CLI clamps the analysis deadline to 100 ms, and a loaded
+/// test run can miss it (#458). Callers pass frames that Watch denies without
+/// a TTY, so a repeat executes nothing.
+fn watch_until_analysis_completes(cwd: &Path, input: &[u8]) -> (TempDir, std::process::Output) {
+    support::until_analysis_completes(
+        "Watch",
+        || {
+            let home = TempDir::new().unwrap();
+            let output = aegis_watch_in(home.path(), cwd, input);
+            (home, output)
+        },
+        |(home, _)| support::audit_records_completed_analysis(home.path()),
+    )
 }
 
 fn write_disabled_toggle(home: &Path) {
@@ -214,7 +213,6 @@ fn watch_executes_effect_opaque_command_when_required_snapshot_is_ready() {
 
 #[test]
 fn watch_without_tty_denies_language_aware_match_before_execution() {
-    let home = TempDir::new().unwrap();
     let cwd = TempDir::new().unwrap();
     let target = cwd.path().join("artifact.txt");
     fs::write(&target, "keep").unwrap();
@@ -229,7 +227,7 @@ fn watch_without_tty_denies_language_aware_match_before_execution() {
     .to_string()
         + "\n";
 
-    let output = aegis_watch_in(home.path(), cwd.path(), input.as_bytes());
+    let (home, output) = watch_until_analysis_completes(cwd.path(), input.as_bytes());
 
     let frames = parse_frames(&output.stdout);
     let result = frames
@@ -243,12 +241,11 @@ fn watch_without_tty_denies_language_aware_match_before_execution() {
     let contents = fs::read_to_string(home.path().join(".aegis").join("audit.jsonl")).unwrap();
     let entry: serde_json::Value = serde_json::from_str(contents.trim()).unwrap();
     assert_eq!(entry["decision"], "Denied");
-    assert!(completed_or_missed_deadline(&entry["analysis"]), "{entry}");
+    assert_eq!(entry["analysis"]["status"], "complete");
 }
 
 #[test]
 fn watch_resolves_relative_script_file_against_frame_cwd() {
-    let home = TempDir::new().unwrap();
     let process_cwd = TempDir::new().unwrap();
     let frame_cwd = TempDir::new().unwrap();
     let target = frame_cwd.path().join("artifact.txt");
@@ -266,7 +263,7 @@ fn watch_resolves_relative_script_file_against_frame_cwd() {
     .to_string()
         + "\n";
 
-    let output = aegis_watch_in(home.path(), process_cwd.path(), input.as_bytes());
+    let (home, output) = watch_until_analysis_completes(process_cwd.path(), input.as_bytes());
 
     let frames = parse_frames(&output.stdout);
     let result = frames
@@ -280,7 +277,7 @@ fn watch_resolves_relative_script_file_against_frame_cwd() {
     let entry: serde_json::Value = serde_json::from_str(contents.trim()).unwrap();
     // A missing file also denies, so the analysis status is the proof that
     // `frame.cwd`, not the process cwd, resolved `run.py`.
-    assert!(completed_or_missed_deadline(&entry["analysis"]), "{entry}");
+    assert_eq!(entry["analysis"]["status"], "complete");
     assert!(target.exists(), "Watch must not execute without a TTY");
 }
 
