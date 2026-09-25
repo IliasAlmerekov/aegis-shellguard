@@ -750,3 +750,6 @@ async fn run_finds_an_open_write_inside_a_subshell_with_a_trailing_redirect() {
             .collect::<Vec<_>>()
     );
 }
+
+#[path = "analysis_orchestrate/runner.rs"]
+mod runner;

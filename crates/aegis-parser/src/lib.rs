@@ -13,6 +13,7 @@ mod env_launcher;
 mod list_segments;
 mod nested_shells;
 mod prefix_match;
+mod runner;
 mod segmentation;
 mod tokenizer;
 
@@ -28,6 +29,7 @@ use env_launcher::{env_prefix_lengths, env_split_string_tokens};
 pub use list_segments::{ListSegment, ListSeparator, list_segments};
 pub use nested_shells::extract_nested_commands;
 pub use prefix_match::{contains_any_token, matches_prefix};
+pub use runner::Runner;
 pub use segmentation::{
     extract_command_substitution_bodies, logical_segments, mask_command_substitutions,
     top_level_pipelines, unwrap_subshell_group,
@@ -375,6 +377,12 @@ fn launcher_prefix_lengths(tokens: &[&str]) -> Option<Vec<usize>> {
         return Some(vec![xargs_prefix_len(tokens)]);
     }
 
+    if let Some(prefix_len) =
+        Runner::from_program(launcher).and_then(|runner| runner.command_prefix_len(tokens))
+    {
+        return Some(vec![prefix_len]);
+    }
+
     None
 }
 
@@ -605,6 +613,7 @@ impl Parser {
 mod tests {
     use super::*;
     mod parsing_tests;
+    mod runner_tests;
     mod segments_logical_tests;
     mod tokenizer_tests;
 
