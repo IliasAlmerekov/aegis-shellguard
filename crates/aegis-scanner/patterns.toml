@@ -143,7 +143,7 @@ safe_alt = "Append instead of clobber ('>>'), or back up first: 'cp ~/.bashrc ~/
 justification = "A single '>' replaces the entire shell-rc file with the redirected content, discarding your existing aliases, exports, and PATH setup. The previous contents are gone unless backed up."
 
 # ─── Git ─────────────────────────────────────────────────────────────────────
-# NOTE: GIT-001..GIT-008 are now defined as token-prefix rules in
+# NOTE: GIT-001..GIT-009 are now defined as token-prefix rules in
 # builtin_prefix_rules() in crates/aegis-scanner/src/patterns.rs.
 # They are removed from this regex file to demonstrate the regex→token migration.
 

@@ -28,6 +28,11 @@ impl PrefixRule {
             return rm_recursive_flag_present(tokens);
         }
 
+        if self.id.as_ref() == "GIT-009" {
+            return aegis_parser::matches_prefix(&self.pattern, tokens)
+                && git_push_deletes_remote_refs(tokens);
+        }
+
         if self.id.as_ref() == "PS-008" {
             return rm_recursive_flag_present(tokens) && rm_root_operand_present(tokens);
         }
@@ -169,6 +174,41 @@ fn is_rm_recursive_flag(token: &str) -> bool {
     token
         .strip_prefix('-')
         .is_some_and(|short_flags| short_flags.contains('r') || short_flags.contains('R'))
+}
+
+/// Whether the arguments after `git push` delete refs on the remote (#431):
+/// `--delete`/`-d`, `--prune`, `--mirror`, or a refspec with an empty source
+/// such as `:old-branch`.
+///
+/// Git accepts unambiguous prefixes of long options, so `--del` is `--delete`.
+/// A lone `:` is the "matching branches" refspec and deletes nothing.
+fn git_push_deletes_remote_refs(tokens: &[&str]) -> bool {
+    tokens.iter().skip(2).any(|&token| {
+        if let Some(long) = token.strip_prefix("--") {
+            return is_git_long_option(long, "delete", 2)
+                || is_git_long_option(long, "prune", 3)
+                || is_git_long_option(long, "mirror", 1);
+        }
+
+        if let Some(short_flags) = token.strip_prefix('-') {
+            // `-o` takes its value from the rest of the bundle, so a `d` after
+            // it is part of the push option, not the delete flag.
+            return short_flags
+                .chars()
+                .take_while(|&flag| flag != 'o')
+                .any(|flag| flag == 'd');
+        }
+
+        let refspec = token.strip_prefix('+').unwrap_or(token);
+        refspec.len() > 1 && refspec.starts_with(':')
+    })
+}
+
+/// Whether `given` names the `git push` long option `full`, allowing any
+/// prefix at least `min_len` long (the shortest one git does not reject as
+/// ambiguous).
+fn is_git_long_option(given: &str, full: &str, min_len: usize) -> bool {
+    given.len() >= min_len && full.starts_with(given)
 }
 
 /// redis-cli flags that consume one following value token.
