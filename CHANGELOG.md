@@ -11,7 +11,9 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
-- Security: Close language-analysis gaps in launcher operands and executor values. ([GHSA-xj54-q8xw-w92r](https://github.com/IliasAlmerekov/aegis-shellguard/security/advisories/GHSA-xj54-q8xw-w92r))
+## [0.6.10] (2026-09-25)
+
+- Security: A script run through a command-carrying option value or environment variable now goes to language-aware analysis. Before this fix, `tar --use-compress-program`, `tar -I`, `tar --checkpoint-action=exec=`, `ssh`/`scp`/`sftp -o ProxyCommand` (with `=` or a space), `make SHELL=`, `rsync -e`, `man -P`, `PAGER`, `git -c core.pager`, `rg --pre`, and `ag --pager` could run an interpreter with a script, or a script path directly, and the command was auto-approved. The value is read whether it follows `=`, a space, is glued onto a short flag, or sits inside another `name=value`; when it has several words, its first word is routed. A home-relative operand (`setsid ~/x`) expands against the caller's home unless an earlier stage can write `HOME`, a `$` or glob operand degrades instead of being dropped, the list items of a `for`/`select` header route as launcher operands, unquoted ANSI-C quoting (`$'...'`) degrades its stage, and the cwd tracker degrades after `eval`. Accepted false positives that now prompt: a loop over paths whose body only reads them (`for f in dir/*; do echo "$f"; done`), a glued `$` or glob value (`gcc -I$HOME/inc`), `sed $'s/\t/ /' file`, and `export PATH=/x; setsid ~/x`. (ADR-022) ([GHSA-xj54-q8xw-w92r](https://github.com/IliasAlmerekov/aegis-shellguard/security/advisories/GHSA-xj54-q8xw-w92r))
 
 ## [0.6.9] (2026-09-24)
 
