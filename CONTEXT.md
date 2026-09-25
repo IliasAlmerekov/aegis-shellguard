@@ -55,6 +55,15 @@ the local `rtk` execution wrapper. Distinct from the `Wrapper` (`$SHELL` proxy) 
 from a `Hook`.
 _Avoid_: wrapper, command wrapper, exec prefix
 
+**Command runner**:
+A recognized `Launcher prefix` that names a child program in its visible argv,
+such as `uv run` or `npx` (`aegis_parser::Runner`). Its supported prefix exposes
+the child as the `Effective program` for scanner matching and source routing.
+It does not resolve package manifests or prove which package provides an
+executable; that uncertainty remains `Analysis degradation` even when visible
+source produces a `Match` (ADR-040).
+_Avoid_: package resolver, manifest expansion
+
 **Effective program**:
 The real program token a scan target resolves to after stripping launcher prefixes and
 taking the basename of an absolute path (`/usr/bin/git` → `git`, `sudo rtk git` → `git`).
@@ -62,6 +71,12 @@ Computed per scan target and used as the lookup key for `Token-prefix rule`s and
 by-program regex index — so prefixes and absolute paths cannot bypass a rule keyed on the
 first token. Distinct from `ParsedCommand.program`, which preserves the raw leading token.
 _Avoid_: real program, resolved command, normalized program
+
+**Git global option**:
+An option between `git` and its subcommand (`-C <path>`, `-c <name>=<value>`, `--git-dir`,
+`--no-pager`) that changes how git runs, not which subcommand runs. The scanner skips it
+before `GIT-*` rules match. Not a `Launcher prefix`: the `Effective program` stays `git`.
+_Avoid_: git flag, pre-subcommand option
 
 **Logical segment**:
 A scan-oriented command unit produced by `logical_segments` — the raw string cut at

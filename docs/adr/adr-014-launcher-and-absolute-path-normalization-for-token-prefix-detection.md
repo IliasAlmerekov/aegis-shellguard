@@ -71,4 +71,6 @@ This ADR is scoped to first-token normalization. Compound-command segmentation
 gaps are tracked separately (TASKS.md H1); `logical_segments` already splits on
 `&&`/`;`/`|` and `prefix_scan` runs per segment, so `cd dir && git reset --hard`
 is expected to already match and is ground-truthed by a regression test rather
-than folded into this change.
+than folded into this change. It is also scoped to what comes *before* the
+program token: git's own option grammar *after* it (`git -C . reset --hard`)
+is a separate gap, closed by [ADR-041](adr-041-the-scanner-skips-a-git-global-option-before-matching.md).

@@ -14,6 +14,10 @@ use super::{Scanner, highlighting, pipeline_semantics, recursive};
 /// steps aside once the regex has matched (GHSA-7gcj-4f7x-7fxj / #415).
 const REGEX_SUPERSEDED_PREFIXES: &[(&str, &str)] = &[("FS-001", "FS-020"), ("PS-006", "PS-008")];
 
+/// Synthetic pattern id for the GHSA-7564 candidate-cap Warn, alongside
+/// `SCAN-001`..`SCAN-003` below.
+const GIT_OPTION_CAP_EXCEEDED_ID: &str = "SCAN-004";
+
 /// Records that regex `id` matched the current target, for a later
 /// [`prefix_id_superseded`] check.
 fn note_regex_match(seen: &mut [bool; REGEX_SUPERSEDED_PREFIXES.len()], id: &str) {
@@ -37,9 +41,11 @@ impl Scanner {
     ///
     /// Pipeline:
     /// 1. Parse the command via [`aegis_parser::Parser::parse`] to preserve the original command contract.
-    /// 2. Run [`Scanner::quick_scan`] on the raw command — if no keyword hits, return `Safe` immediately.
+    /// 2. Run [`Scanner::quick_scan`] on the raw command. If no keyword hits, return `Safe` immediately.
     /// 3. Build the recursive scan path via nested parsing helpers.
     /// 4. Run [`Scanner::full_scan`] on each discovered target and merge unique pattern matches.
+    ///    Within the same target, a git slice with global options before its subcommand is
+    ///    rescanned from each possible subcommand position (GHSA-7564).
     /// 5. Compute the maximum [`RiskLevel`] across all matched patterns and return.
     pub fn assess(&self, cmd: &str) -> Assessment {
         if cmd.len() > super::MAX_SCAN_COMMAND_LEN {
@@ -96,7 +102,7 @@ impl Scanner {
         // effect-opaque, so it must be computed before the early return below.
         let effect_opaque = super::effect_opaque::detect(cmd, &command, maybe_pipelines.as_deref());
 
-        // Use the normalized form as the primary scan target — free of quoting noise.
+        // Use the normalized form as the primary scan target. It is free of quoting noise.
         if !self.quick_scan(&command.normalized) && !has_pipeline_chain {
             return Assessment {
                 risk: RiskLevel::Safe,
@@ -173,6 +179,12 @@ impl Scanner {
                     matched.push(result);
                 }
             }
+
+            self.scan_git_option_candidates(
+                &effective_slices,
+                &mut matched,
+                &mut regex_matched_for_target,
+            );
         }
 
         if let Some(pipelines) = maybe_pipelines {
@@ -200,6 +212,92 @@ impl Scanner {
             highlight_ranges,
             command,
             analysis: None,
+        }
+    }
+
+    /// Rescan each git candidate slice for a subcommand hidden behind a
+    /// global option (GHSA-7564): the option shifts the subcommand off
+    /// position 1, so no `GIT-*` rule above ever sees it. Resolves where the
+    /// subcommand actually starts and re-runs both scan mechanisms there,
+    /// pushing matches (and the `SCAN-004` cap warning) into `matched`.
+    fn scan_git_option_candidates(
+        &self,
+        effective_slices: &[aegis_parser::EffectiveTokenSlice<'_>],
+        matched: &mut Vec<MatchResult>,
+        regex_matched_for_target: &mut [bool; REGEX_SUPERSEDED_PREFIXES.len()],
+    ) {
+        for candidate in effective_slices {
+            if !candidate.program.eq_ignore_ascii_case("git") {
+                continue;
+            }
+
+            let starts = match aegis_parser::git_option_subcommand_starts(&candidate.tokens) {
+                aegis_parser::GitSubcommandStarts::Starts(starts) => starts,
+                aegis_parser::GitSubcommandStarts::TooMany => {
+                    // Too many unrecognized options to scan without the
+                    // quadratic cost the cap exists to avoid. Fail closed
+                    // with a Warn instead of scanning none of them.
+                    if !matched.iter().any(|existing: &MatchResult| {
+                        existing.pattern.id.as_ref() == GIT_OPTION_CAP_EXCEEDED_ID
+                    }) {
+                        matched.push(uncertain_match(
+                            GIT_OPTION_CAP_EXCEEDED_ID,
+                            format!(
+                                "git command has more than {} unrecognized global-option candidates before its subcommand",
+                                aegis_parser::MAX_GIT_OPTION_CANDIDATES
+                            ),
+                            Some(
+                                "Rewrite the command with fewer or recognized git global options before the subcommand",
+                            ),
+                        ));
+                    }
+                    continue;
+                }
+            };
+
+            for start in starts {
+                let git_tokens: Vec<&str> = std::iter::once(candidate.tokens[0])
+                    .chain(candidate.tokens[start..].iter().copied())
+                    .collect();
+                // The candidate string is synthetic, so a byte offset a
+                // regex found inside it does not point at the raw
+                // command. Report the subcommand-onward span instead: it
+                // is always a real substring of the raw command, or
+                // `sorted_highlight_ranges` skips the highlight rather
+                // than guessing.
+                let tail = candidate.tokens[start..].join(" ");
+                let joined = git_tokens.join(" ");
+
+                for mut pattern in self.full_scan(&joined, Some("git")) {
+                    note_regex_match(regex_matched_for_target, pattern.pattern.id.as_ref());
+                    if matched
+                        .iter()
+                        .any(|existing: &MatchResult| existing.pattern.id == pattern.pattern.id)
+                    {
+                        continue;
+                    }
+                    pattern.highlight_range = None;
+                    pattern.matched_text = tail.clone();
+                    matched.push(pattern);
+                }
+
+                if let Some(rules) = self.prefix_lookup("git") {
+                    for rule in rules {
+                        if prefix_id_superseded(regex_matched_for_target, rule.id.as_ref())
+                            || matched.iter().any(|existing: &MatchResult| {
+                                existing.pattern.id.as_ref() == rule.id.as_ref()
+                            })
+                        {
+                            continue;
+                        }
+                        if rule.matches_tokens(&git_tokens) {
+                            let mut result = rule.to_match_result(&git_tokens);
+                            result.matched_text = tail.clone();
+                            matched.push(result);
+                        }
+                    }
+                }
+            }
         }
     }
 }

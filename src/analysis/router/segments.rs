@@ -15,18 +15,25 @@
 use super::*;
 
 mod argv_walk;
+mod direct;
 mod dynamic_program;
 mod executor_config;
+mod runner;
 mod unclaimed;
 mod wrappers;
 use argv_walk::{
     ArgvWalk, bare_stage_interpreter, env_chdir_prefix, leading_stdin_redirect_target,
     walk_interpreter_argv,
 };
+use direct::route_direct_stage;
 use dynamic_program::{alias_value, is_dynamic_program_word};
 use executor_config::{
     assignment_stage_executor_routes, env_prefix_executor_route, option_value_executor_route,
     skip_assignment_keyword,
+};
+use runner::{
+    bare_python_script_route, opaque_runner_before_run, opaque_runner_option,
+    package_executable_uncertain,
 };
 use unclaimed::unclaimed_interpreter_net;
 use wrappers::{posix_function_definition_body, strip_trailing_redirection, wrapper_bodies};
@@ -691,102 +698,4 @@ fn route_wrapped_stage(
             *home = HomeState::Degraded;
         }
     }
-}
-
-/// Resolve `stage` (one pipeline stage's raw text) to its own route without
-/// looking through any grammar wrapper: the narrow heredoc-write-then-exec
-/// reuse shape first (when `stage` owns a heredoc marker), then explicit
-/// interpreter inline/file/redirection argv walk, then heredoc/here-string
-/// stdin fallback, then a bare path-like direct-exec candidate.
-fn route_direct_stage(stage: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarget> {
-    if command_has_heredoc(stage)
-        && let Some(targets) = heredoc_write_then_exec_reuse(stage, trusted_aliases)
-    {
-        return targets;
-    }
-
-    let owned_tokens = aegis_parser::split_tokens(stage);
-    if owned_tokens.is_empty() {
-        return Vec::new();
-    }
-    // A redirection anywhere before the program (`>out python3 x.py`,
-    // `FOO=1 >out python3 x.py`, `env >out python3 x.py`) is shell syntax
-    // attached to the stage, not an argument of the program that follows it
-    // — the shell strips it before argv0 resolution, so routing must too.
-    // `aegis_parser::effective_token_slices` handles this at every step
-    // (issue #384), not only a redirection at position 0.
-    let (tokens, slice, truncated) = effective_stage_slice(&owned_tokens);
-    if truncated {
-        // An `env -S`/`--split-string` chain nested past
-        // `aegis_parser`'s own bound: some program is still hidden behind
-        // an unexamined split, same shape as `route_wrapped_stage`'s
-        // `MAX_WRAP_DEPTH` block above. Degrade honestly instead of
-        // falling through to the `slice.is_none()` case below, which
-        // would otherwise read this exactly like an ordinary stage with
-        // no program at all (fail-closed, CONVENTION.md §2, #437 review
-        // finding F1).
-        return vec![RoutedTarget::Unresolved {
-            reason: DegradationReason::LimitExceeded,
-        }];
-    }
-    let Some(slice) = slice else {
-        return Vec::new();
-    };
-
-    // `slice.tokens` is a suffix of `tokens` when it came from an index into
-    // `tokens` itself, but an `env -S`/`--split-string` value re-splits on
-    // plain whitespace with no quote awareness (`aegis_parser::
-    // env_split_string_tokens`) — a value that quotes its own spaces can
-    // re-split into more words than the stage had tokens to begin with, so
-    // `slice.tokens` is longer than `tokens` and no such suffix index
-    // exists. Fail closed rather than let the subtraction underflow (#437
-    // review, adversarial finding F3): the stage's own prefix (an `env -C`
-    // chdir flag, a leading redirect) cannot be recovered without that
-    // index, so treat it exactly as unresolved as any other source routing
-    // cannot statically recover (CONVENTION.md §2).
-    let Some(effective_start) = tokens.len().checked_sub(slice.tokens.len()) else {
-        return vec![RoutedTarget::Unresolved {
-            reason: DegradationReason::DynamicSource,
-        }];
-    };
-    // `env -C DIR`/`--chdir[=]DIR` changes the cwd for that one child
-    // process only, not the shell's own — a relative target must degrade
-    // rather than resolve against the shell's own cwd (issue #384).
-    let env_cwd = if env_chdir_prefix(&tokens[..effective_start]) {
-        CwdState::Degraded
-    } else {
-        CwdState::Unset
-    };
-
-    let Some(interp) = resolve_interpreter(slice.program, trusted_aliases) else {
-        let routed = direct_exec_route(tokens[effective_start]);
-        return routed
-            .into_iter()
-            .map(|target| apply_cwd(target, &env_cwd))
-            .collect();
-    };
-
-    let rest = &slice.tokens[1..];
-    let routed = match walk_interpreter_argv(interp, rest) {
-        ArgvWalk::Routed(target) => vec![target],
-        ArgvWalk::NoSource => Vec::new(),
-        ArgvWalk::NoMatch => {
-            if let Some(stdin_route) =
-                heredoc::heredoc_stdin(stage).or_else(|| heredoc::here_string_stdin(rest))
-            {
-                vec![stdin_target(interp.language, stdin_route)]
-            } else if let Some(path) = leading_stdin_redirect_target(&tokens[..effective_start]) {
-                vec![RoutedTarget::ScriptFile {
-                    language: interp.language,
-                    path: PathBuf::from(path),
-                }]
-            } else {
-                Vec::new()
-            }
-        }
-    };
-    routed
-        .into_iter()
-        .map(|target| apply_cwd(target, &env_cwd))
-        .collect()
 }
