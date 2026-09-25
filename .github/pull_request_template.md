@@ -1,12 +1,15 @@
-## Summary
+Closes #
+<!-- No issue? Write "No issue: <reason>" instead, e.g. "No issue: maintainer request". -->
 
 <!-- 2-3 bullets: what changed, why, and the issue it closes. The commits carry the detail. -->
 
 -
 -
 
-## Checklist
+Evidence:
+- `cargo test --workspace`: N passed, 0 failed
+- `scripts/lint.sh`: clean
+- `cargo audit`: no new advisories
+- `cargo deny check`: ok
 
-- [ ] I ran tests locally (`cargo test`)
-- [ ] I ran rustfmt and clippy (`scripts/lint.sh`)
-- [ ] I reviewed relevant rules in `CONVENTION.md`
+Confidence: high | medium | low. <!-- One sentence: what would prove this wrong, or what is left unchecked. -->
