@@ -121,6 +121,11 @@ fn heredoc_data_consumer_inside_compound_command_is_not_flagged() {
         "if false; then :; else true; cat <<'EOF'\nsome text\nEOF\nfi | sh",
         "select x in a; do true; cat <<'EOF'\nsome text\nEOF\ndone | sh",
         "coproc true; cat <<'EOF'\nsome text\nEOF",
+        // A `}` or `)` in a comment closes nothing in the shell, so a comment
+        // before the marker must not close the group around it.
+        "{ true; # closed } here\ncat <<'EOF'\nsome text\nEOF\n} >&3",
+        "( true # closed ) here\ncat <<'EOF'\nsome text\nEOF\n) | sh",
+        "true # ; cat\ncat <<'EOF'\nsome text\nEOF",
     ];
     for cmd in cases {
         let bodies = extract_heredoc_bodies(cmd);

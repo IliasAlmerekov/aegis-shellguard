@@ -200,6 +200,10 @@ enum FrameKind {
     /// A `{ ...; }` group, which can pipe or redirect its output after the
     /// terminator line the same way a subshell can (`} | sh`, `} >&3`).
     Brace,
+    /// A `#` comment. The shell ignores the rest of its line, but this
+    /// scanner would still read a `}` or `)` there as a close, so a comment
+    /// before the marker never closes and keeps the context untrusted.
+    Comment,
 }
 
 /// One frame still open at the end of a scanned prefix, with where it
@@ -209,8 +213,8 @@ struct OpenFrame {
     kind: FrameKind,
 }
 
-/// Every `$(`, backtick, `(` and `{` group frame still open at the end of
-/// `text`, outermost first. `$(` and a backtick each open a fresh quote scope even
+/// Every `$(`, backtick, `(`, `{` group and `#` comment frame still open at
+/// the end of `text`, outermost first. A comment frame never closes. `$(` and a backtick each open a fresh quote scope even
 /// inside a double-quoted string, the same rule
 /// `embedded_scripts::find_unquoted_double_lt` follows, and restore the
 /// enclosing scope when they close.
@@ -268,7 +272,7 @@ fn open_frames(text: &str) -> Vec<OpenFrame> {
             ')' if !single_quote && !double_quote => {
                 if matches!(
                     frames.last(),
-                    Some(f) if !matches!(f.kind, FrameKind::Backtick | FrameKind::Brace)
+                    Some(f) if matches!(f.kind, FrameKind::Command | FrameKind::Paren)
                 ) && let Some(frame) = frames.pop()
                 {
                     (single_quote, double_quote) = frame.saved_quotes;
@@ -284,6 +288,13 @@ fn open_frames(text: &str) -> Vec<OpenFrame> {
                 frames.push(Frame {
                     start: idx,
                     kind: FrameKind::Brace,
+                    saved_quotes: (single_quote, double_quote),
+                });
+            }
+            '#' if !single_quote && !double_quote && starts_word(text, idx) => {
+                frames.push(Frame {
+                    start: idx,
+                    kind: FrameKind::Comment,
                     saved_quotes: (single_quote, double_quote),
                 });
             }
@@ -346,7 +357,7 @@ fn writes_to_open_descriptor(line: &str) -> bool {
 /// trusts only the first three (issue #396, #432).
 #[derive(Debug, PartialEq, Eq)]
 enum HeredocMarkerContext {
-    /// No `$(`, backtick, `(` or `{` frame is open before the marker.
+    /// No `$(`, backtick, `(`, `{` or comment frame is open before the marker.
     TopLevel,
     /// Inside exactly one `$(...)`, itself the right-hand side of a plain
     /// `NAME=` assignment.
@@ -355,7 +366,7 @@ enum HeredocMarkerContext {
     /// (see [`MESSAGE_FLAGS`]) of a `git` or `gh` invocation.
     TrustedCommandArg,
     /// Anything else: nested frames, a backtick, a subshell or process
-    /// substitution `(`, an open `{` group, a [`COMPOUND_KEYWORDS`] word
+    /// substitution `(`, an open `{` group, a `#` comment, a [`COMPOUND_KEYWORDS`] word
     /// before the marker, or a `$(...)` that is
     /// not a `git`/`gh` message value — a `bash -c
     /// "$(...)"`, `eval "$(...)"`, `ssh host "$(...)"`, `echo "$(...)" | sh`,
@@ -453,7 +464,8 @@ fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext {
 /// write to a descriptor above 2 or a `/dev/fd/`/`/proc/` path, and reached
 /// only through a context this predicate trusts (top level, an assignment's
 /// `$(...)`, or a `git`/`gh` message value's `$(...)`, with no subshell or
-/// process-substitution `(` or `{` group still open and no compound-command
+/// process-substitution `(` or `{` group still open and no `#` comment or
+/// compound-command
 /// keyword before the marker).
 /// `preceding_lines` holds the command lines before `line`, bodies left out.
 /// Ignorant of nowdoc-ness itself — callers already gate on that

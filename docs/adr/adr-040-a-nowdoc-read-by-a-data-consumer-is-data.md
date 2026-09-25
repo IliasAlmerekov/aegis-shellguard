@@ -64,7 +64,9 @@ into argv, so the router cannot drop body lines for every heredoc.
      (`(cat <<'EOF' ... EOF` then `) | sh`). The frames are read from every
      command line before the marker, not only the marker's own line. An open
      `{ ...; }` group counts as a frame too (`{ true; cat <<'EOF'` then
-     `} >&3`). A compound-command keyword anywhere before the marker (`case`,
+     `} >&3`). So does an unquoted `#` comment, which never closes: the shell
+     ignores a `}` or `)` after it, and the frame reader does not model that.
+     A compound-command keyword anywhere before the marker (`case`,
      `coproc`, `do`, `elif`, `else`, `for`, `function`, `if`, `select`,
      `then`, `until`, `while`) also makes it untrusted: `done | sh` or
      `fi >&3` after the terminator can take the output, and a `case`
