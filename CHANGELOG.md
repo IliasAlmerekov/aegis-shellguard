@@ -11,7 +11,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
-- Fixed: `git push` forms that delete refs on the remote now get a Warn from the new `GIT-009`. Before this fix, `git push <remote> --delete <ref>` (or `-d`), an empty-source refspec such as `:old-branch`, `--prune`, and `--mirror` ran as Safe with no prompt, while deleting a local branch with `git branch -D` already warned. Abbreviated long options (`--del`) and short-flag bundles (`-ud`) match too; a lone `:` refspec does not. (#431)
+- Fixed: `git push` forms that delete refs on the remote now get a Warn from the new `GIT-009`. Before this fix, `git push <remote> --delete <ref>` (or `-d`), an empty-source refspec such as `:old-branch`, `--prune`, and `--mirror` ran as Safe with no prompt, while deleting a local branch with `git branch -D` already warned. Abbreviated long options (`--del`) and short-flag bundles (`-ud`) match too. A lone `:` refspec, a dry run (`--dry-run` or `-n`, unless a later `--no-dry-run` undoes it), and a `-d` that is the value of `-o`/`--push-option` do not. (#431)
 
 ## [0.6.10] (2026-09-25)
 
