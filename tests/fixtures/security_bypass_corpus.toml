@@ -75,3 +75,31 @@ expected_risk = "block"
 expected_decision = "block"
 expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# Issue #396: a nowdoc captured into a variable via `$(cat <<'EOF' ... EOF)`
+# is data at capture time, but running that variable later — as a bare
+# command word or through `eval` — makes it code again. These two cases
+# guard the data-consumer widening in adr-042 item 5.
+name = "heredoc_capture_then_run_variable_block"
+command = """x=$(cat <<'EOF'
+rm -rf /
+EOF
+)
+$x"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+name = "heredoc_capture_then_eval_block"
+command = """x=$(cat <<'EOF'
+rm -rf /
+EOF
+)
+eval \"$x\""""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
