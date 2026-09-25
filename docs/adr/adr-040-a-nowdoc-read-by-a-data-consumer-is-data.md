@@ -30,8 +30,8 @@ command prompted.
 The body is not always inert, though. Probes and review found shapes where a
 naive "cat, tee or jq means data" rule lets a shell run the text:
 `jq -r .a <<'JSON' | sh`, `cat <<'EOF' > >(sh)`, a `$(` or `<(` opened on the
-line before the marker, a subshell piped to `sh` after the terminator,
-`cat <<'EOF' >&3`, and `git -c "alias.x=!$(cat <<'EOF' ...)"`, where git runs
+line before the marker, a subshell, `{ ...; }` group or loop piped to `sh`
+after the terminator, `cat <<'EOF' >&3`, and `git -c "alias.x=!$(cat <<'EOF' ...)"`, where git runs
 a `!` alias through the shell. `xargs <<'EOF'` also turns stdin
 into argv, so the router cannot drop body lines for every heredoc.
 
@@ -62,9 +62,14 @@ into argv, so the router cannot drop body lines for every heredoc.
      substitution `<(`/`>(`, a backtick, a second `$(`) makes it untrusted,
      because its output can reach a pipe or a shell after the terminator line
      (`(cat <<'EOF' ... EOF` then `) | sh`). The frames are read from every
-     command line before the marker, not only the marker's own line. A `case`
-     before the marker also makes it untrusted, because a pattern's `)`
-     would close the wrong frame.
+     command line before the marker, not only the marker's own line. An open
+     `{ ...; }` group counts as a frame too (`{ true; cat <<'EOF'` then
+     `} >&3`). A compound-command keyword anywhere before the marker (`case`,
+     `coproc`, `do`, `elif`, `else`, `for`, `function`, `if`, `select`,
+     `then`, `until`, `while`) also makes it untrusted: `done | sh` or
+     `fi >&3` after the terminator can take the output, and a `case`
+     pattern's `)` would close the wrong frame. The keyword check ignores
+     quotes, so a quoted keyword costs a scanned body, never a skipped one.
 3. When the predicate holds, the scanner blanks the body (line lengths kept)
    and the router masks it before tokenizing the stage. When it does not, both
    keep their previous behaviour. Unquoted heredocs and interpreter readers

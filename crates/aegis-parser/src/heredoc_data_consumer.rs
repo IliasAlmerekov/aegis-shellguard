@@ -197,6 +197,9 @@ enum FrameKind {
     /// arithmetic paren. Its output can reach a pipe or a shell after the
     /// heredoc's terminator line, where the marker line cannot see it.
     Paren,
+    /// A `{ ...; }` group, which can pipe or redirect its output after the
+    /// terminator line the same way a subshell can (`} | sh`, `} >&3`).
+    Brace,
 }
 
 /// One frame still open at the end of a scanned prefix, with where it
@@ -206,8 +209,8 @@ struct OpenFrame {
     kind: FrameKind,
 }
 
-/// Every `$(`, backtick and `(` frame still open at the end of `text`,
-/// outermost first. `$(` and a backtick each open a fresh quote scope even
+/// Every `$(`, backtick, `(` and `{` group frame still open at the end of
+/// `text`, outermost first. `$(` and a backtick each open a fresh quote scope even
 /// inside a double-quoted string, the same rule
 /// `embedded_scripts::find_unquoted_double_lt` follows, and restore the
 /// enclosing scope when they close.
@@ -263,10 +266,30 @@ fn open_frames(text: &str) -> Vec<OpenFrame> {
                 });
             }
             ')' if !single_quote && !double_quote => {
-                if matches!(frames.last(), Some(f) if f.kind != FrameKind::Backtick)
-                    && let Some(frame) = frames.pop()
+                if matches!(
+                    frames.last(),
+                    Some(f) if !matches!(f.kind, FrameKind::Backtick | FrameKind::Brace)
+                ) && let Some(frame) = frames.pop()
                 {
                     (single_quote, double_quote) = frame.saved_quotes;
+                }
+            }
+            // `{` and `}` are reserved words, so only a standalone one opens
+            // or closes a group: `a{b,c}` and `${x}` do neither.
+            '{' if !single_quote
+                && !double_quote
+                && starts_word(text, idx)
+                && chars.peek().is_none_or(|&(_, c)| c.is_whitespace()) =>
+            {
+                frames.push(Frame {
+                    start: idx,
+                    kind: FrameKind::Brace,
+                    saved_quotes: (single_quote, double_quote),
+                });
+            }
+            '}' if !single_quote && !double_quote && starts_word(text, idx) => {
+                if matches!(frames.last(), Some(f) if f.kind == FrameKind::Brace) {
+                    frames.pop();
                 }
             }
             _ => {}
@@ -281,6 +304,25 @@ fn open_frames(text: &str) -> Vec<OpenFrame> {
         })
         .collect()
 }
+
+/// `true` when the character at `idx` starts a shell word: it is the first
+/// character of `text` or follows whitespace or a command separator.
+fn starts_word(text: &str, idx: usize) -> bool {
+    text[..idx]
+        .chars()
+        .next_back()
+        .is_none_or(|c| c.is_whitespace() || matches!(c, ';' | '&' | '|' | '('))
+}
+
+/// Reserved words that open a compound command or a coprocess. The output of
+/// a command inside one can leave through a pipe or redirect written after
+/// the heredoc's terminator line (`done | sh`, `fi >&3`). A `case` pattern's
+/// `)` also closes nothing, so it would pop the frame that really encloses
+/// the marker.
+const COMPOUND_KEYWORDS: &[&str] = &[
+    "case", "coproc", "do", "elif", "else", "for", "function", "if", "select", "then", "until",
+    "while",
+];
 
 /// `true` when `line` sends the consumer's output somewhere other than a
 /// file, the terminal or stderr: a descriptor above 2 or a variable one
@@ -304,7 +346,7 @@ fn writes_to_open_descriptor(line: &str) -> bool {
 /// trusts only the first three (issue #396, #432).
 #[derive(Debug, PartialEq, Eq)]
 enum HeredocMarkerContext {
-    /// No `$(`, backtick or `(` frame is open before the marker.
+    /// No `$(`, backtick, `(` or `{` frame is open before the marker.
     TopLevel,
     /// Inside exactly one `$(...)`, itself the right-hand side of a plain
     /// `NAME=` assignment.
@@ -313,7 +355,8 @@ enum HeredocMarkerContext {
     /// (see [`MESSAGE_FLAGS`]) of a `git` or `gh` invocation.
     TrustedCommandArg,
     /// Anything else: nested frames, a backtick, a subshell or process
-    /// substitution `(`, a `case` before the marker, or a `$(...)` that is
+    /// substitution `(`, an open `{` group, a [`COMPOUND_KEYWORDS`] word
+    /// before the marker, or a `$(...)` that is
     /// not a `git`/`gh` message value — a `bash -c
     /// "$(...)"`, `eval "$(...)"`, `ssh host "$(...)"`, `echo "$(...)" | sh`,
     /// `git -c "alias.x=!$(...)"` or `gh alias set --shell x "$(...)"` shape
@@ -359,11 +402,11 @@ fn is_trusted_message_value(owning: &str) -> bool {
 /// `embedded_scripts::walk_heredocs`) followed by the marker line up to the
 /// `<<`, so a `$(` opened on an earlier line still counts as enclosing.
 fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext {
-    // A `case` pattern's `)` closes nothing, so it would pop the frame that
-    // really encloses the marker and make the context look trusted.
+    // The check ignores quotes on purpose: a quoted keyword only costs a
+    // scanned body, never a skipped one.
     if prefix
         .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-        .any(|word| word == "case")
+        .any(|word| COMPOUND_KEYWORDS.contains(&word))
     {
         return HeredocMarkerContext::Untrusted;
     }
@@ -410,7 +453,8 @@ fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext {
 /// write to a descriptor above 2 or a `/dev/fd/`/`/proc/` path, and reached
 /// only through a context this predicate trusts (top level, an assignment's
 /// `$(...)`, or a `git`/`gh` message value's `$(...)`, with no subshell or
-/// process-substitution `(` still open and no `case` before the marker).
+/// process-substitution `(` or `{` group still open and no compound-command
+/// keyword before the marker).
 /// `preceding_lines` holds the command lines before `line`, bodies left out.
 /// Ignorant of nowdoc-ness itself — callers already gate on that
 /// separately, matching how `embedded_scripts::heredoc_target_program`'s

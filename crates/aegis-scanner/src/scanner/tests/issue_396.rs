@@ -192,6 +192,11 @@ fn assess_data_consumer_bodies_that_reach_a_shell_still_fire() {
         // Output to a descriptor that may be a pipe opened earlier.
         "cat <<'EOF' >&3\nrm -rf /\nEOF",
         "cat <<'EOF' > /dev/fd/3\nrm -rf /\nEOF",
+        // A compound command whose output leaves after the terminator line.
+        "{ true; cat <<'EOF'\nrm -rf /\nEOF\n} | sh",
+        "exec 3> >(sh)\n{ true; cat <<'EOF'\nrm -rf /\nEOF\n} >&3",
+        "for i in 1; do true; cat <<'EOF'\nrm -rf /\nEOF\ndone | sh",
+        "if true; then true; cat <<'EOF'\nrm -rf /\nEOF\nfi | sh",
     ];
 
     for cmd in cases {

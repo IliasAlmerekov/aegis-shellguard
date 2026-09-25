@@ -617,6 +617,7 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod heredoc_data_consumer_tests;
     mod parsing_tests;
     mod runner_tests;
     mod segments_logical_tests;
