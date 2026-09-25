@@ -91,11 +91,27 @@ into argv, so the router cannot drop body lines for every heredoc.
    program, basename normalized, is `gh`, `git`, `curl`, `echo`, `printf`
    or `jq`; that command carries no pipe and no redirect other than
    `2>&1` or `>&2`; the reference is not laundered through a leading
-   `NAME=value` assignment ahead of the program; and, for `git`, the
-   reference is the value of a commit or tag message flag or an issue or
-   PR title or body flag (`-m`, `--message`, `-t`, `--title`, `-b`,
-   `--body`). `gh alias` and `gh extension` are excluded even though `gh`
-   is on the list, since both can run a shell through the reference.
+   `NAME=value` assignment ahead of the program; and the reference sits in
+   a position where that program treats it as data it sends or prints:
+
+   | Program  | Trusted positions for the reference |
+   |----------|-------------------------------------|
+   | `git`    | value of `-m`, `--message`, `-t`, `--title`, `-b`, `--body` |
+   | `gh`     | value of the same six flags, or of `-f`/`--raw-field` (`key="$x"`) |
+   | `curl`   | value of `--data-raw`; value of `-d`, `--data`, `--data-binary`, `--data-urlencode` or `--json` only when the captured body does not start with `@` |
+   | `jq`     | value of `--arg NAME` or `--argjson NAME` |
+   | `echo`   | any argument |
+   | `printf` | any argument except the first, which is the format string |
+
+   Positions outside the table read the value as a path, a URL, code or a
+   config: `gh api --input`, `gh -F`/`--field` (which reads `@file`),
+   `gh --body-file`, `curl -T`, `-K`, `--config`, `-o`, `-F`, a curl URL,
+   `jq -f`, `--rawfile`, `--slurpfile` and the positional jq filter
+   (`jq -n "$x"` runs the body as a jq program). A body that starts with
+   `@` turns a curl data flag into a file read (`-d @/etc/shadow`), so
+   `walk_heredocs` passes that fact to the check. `gh alias` and
+   `gh extension` are excluded even though `gh` is on the list, since both
+   can run a shell through the reference.
    Everything else keeps the body scanned: a wrapper (`sudo $x`, `env $x`,
    `command $x`, `nohup $x`, `time $x`, `find ... -exec $x \;`), a
    grouping or compound construct (`($x)`, `{ $x; }`, an
@@ -108,12 +124,9 @@ into argv, so the router cannot drop body lines for every heredoc.
    a program outside that six-name list, whatever it is.
    `assignment_variable_runs_later` in `heredoc_data_consumer.rs` checks
    the text after the heredoc's terminator line for all of this;
-   `walk_heredocs` in `embedded_scripts.rs` threads that text through. A
-   reference used only as a plain argument value of `echo`, `printf`,
-   `curl -d` or `jq`, or as a `gh api -f` value, still counts as
-   forwarding, so the `body=$(jq -c . <<'JSON' ...)` then
-   `gh api ... -f body="$body"` idiom from the Context list keeps its
-   trust.
+   `walk_heredocs` in `embedded_scripts.rs` threads that text through. The
+   `body=$(jq -c . <<'JSON' ...)` then `gh api ... -f body="$body"` idiom
+   from the Context list keeps its trust.
 
 ## Consequences
 
@@ -151,5 +164,6 @@ into argv, so the router cannot drop body lines for every heredoc.
   positives are the same shape: a captured value handed to a program
   outside `gh`, `git`, `curl`, `echo`, `printf` and `jq`, a `cp` writing it
   to a file among them, keeps the body scanned even though that program may
-  never run it as code, and a `git`/`gh` argument that is not a message
-  flag value does the same.
+  never run it as code. A listed program that gets the value outside the
+  item 5 table does the same, for example a `gh` positional argument or a
+  `printf` format string.
