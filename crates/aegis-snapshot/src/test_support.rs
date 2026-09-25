@@ -7,20 +7,13 @@ use std::process::{Command, Stdio};
 /// Write `contents` to `path` and make it executable, without this process
 /// ever holding an open write handle on `path`.
 ///
-/// A test thread that writes the file with `fs::write` (open, write, close)
-/// races every other test thread that spawns a child process: on Linux, a
-/// `fork()` between this process's `open()` and `close()` duplicates the
-/// still-open write file descriptor into the child, which then inherits it
-/// across its own `exec()` until it closes on exit. If a *different* test
-/// spawns a fake executable at the same path in that window, the kernel
-/// rejects the `execve` with `ETXTBSY` ("Text file busy") because a write fd
-/// on the file is still open somewhere in the process tree. Renaming the
-/// file after writing does not help: a rename does not change the inode a
-/// live fd points at.
-///
-/// Doing the write from a short-lived child process instead means no fd of
-/// *this* process ever refers to the file, so this process contributes
-/// nothing to another thread's `fork()` snapshot.
+/// With `fs::write`, another test thread can `fork()` while this process
+/// holds the write descriptor. The child keeps a copy of it until its own
+/// `exec()` closes it. If the test runs the fake executable inside that
+/// window, `execve` fails with `ETXTBSY` ("Text file busy") (#436). Renaming
+/// the file afterwards does not help, because the copied descriptor still
+/// points at the same inode. A short-lived child process does the write
+/// here, so no descriptor of this process ever refers to the file.
 pub(crate) fn write_executable(path: &Path, contents: &str) {
     let mut child = Command::new("/bin/sh")
         .arg("-c")

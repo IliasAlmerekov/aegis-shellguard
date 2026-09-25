@@ -307,21 +307,13 @@ esac"#,
 
 // ── async-safety regression tests ─────────────────────────────────────────
 
-/// Proves `is_applicable` does not block the Tokio thread, via a causal
-/// dependency instead of relative sleep durations (the prior version raced a
-/// 50ms mock-`ps` sleep against a 10ms background sleep, and flaked under
-/// load — issue #436).
+/// Proves `is_applicable` does not block the Tokio thread.
 ///
-/// The mock `ps` will not answer until a marker file exists on disk, bounded
-/// to 5s of 10ms polls so a genuine regression fails fast rather than
-/// hanging. The background task writes that marker only *after* incrementing
-/// the counter, so by the time `ps` (and therefore `is_applicable`) can
-/// return, the counter increment has already happened-before it on the
-/// filesystem — no timing assumption needed for the green case.
-///
-/// With a blocking `is_applicable` on a `current_thread` runtime, the single
-/// Tokio thread never yields to run the background task, so the marker is
-/// never written, `ps` exhausts its poll budget, and `counter_after` stays 0.
+/// The mock `ps` answers only after a marker file exists, polling for at
+/// most 5 s. The background task bumps the counter and then writes the
+/// marker, so the green case needs no timing assumption (#436). With a
+/// blocking `is_applicable` on a `current_thread` runtime, the background
+/// task never runs, `ps` gives up after 5 s, and the counter stays 0.
 #[tokio::test(flavor = "current_thread")]
 async fn is_applicable_does_not_block_tokio_runtime_v2() {
     use std::sync::Arc;
@@ -357,7 +349,7 @@ esac"#
         std::fs::write(&marker, b"").unwrap();
     });
 
-    // Async call — yields the Tokio thread while waiting for docker ps,
+    // Async call: yields the Tokio thread while waiting for docker ps,
     // which only exits once the background task has run.
     let _ = p.is_applicable(Path::new("/")).await;
 
