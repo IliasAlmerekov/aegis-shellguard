@@ -309,16 +309,25 @@ routing having produced no `RoutedTarget` from any other path — the condition 
 feeds the fail-closed `unclaimed_interpreter_net` (ADR-022 §6 amendment, issue
 #384/#430). It degrades to `Unresolved`/`Dynamic source` once a later token names a
 known registry interpreter, or resolves as a `Launcher operand` candidate for each
-path-like operand it carries; a program on the net's `NAME_ONLY_PROGRAMS`
+path-like operand it carries, including every split of a no-`=` short-flag
+token's own glued value; a program on the net's `NAME_ONLY_PROGRAMS`
 exclusion list is exempt from both, but not from an `Executor value` it carries.
+A `for`/`select` loop header's own list routes the same way, unconditionally,
+whatever the body does with the loop variable: each path-like list item is an
+operand of a stage whose program names no interpreter (GHSA-xj54).
 _Avoid_: unrouted stage, unmatched stage
 
 **Executor value**:
-An option argument (git's `-c core.pager=...`, man's `-P`) or environment-variable
+An option argument (git's `-c core.pager=...`, man's `-P`, ssh's `-o ProxyCommand`)
+or environment-variable
 assignment (`LESSOPEN`, `GIT_SSH_COMMAND`, and others in that family) that names a
 command a program runs rather than data it reads. Degrades the `Unclaimed stage`
 net even for a program on `NAME_ONLY_PROGRAMS`, since the value runs regardless of
-the program's other arguments (ADR-022 §6 amendment, issue #384/#430).
+the program's other arguments (ADR-022 §6 amendment, issue #384/#430). A path-like
+value that names no interpreter routes as its own `Launcher operand`, so `resolve`
+checks its shebang (`EDITOR=/dev/null setsid ./pyx`) the same way `setsid ./pyx`
+does; every distinct `Executor value` on a stage gets its own candidate this way,
+not only the first (GHSA-xj54).
 _Avoid_: executor option, executor env var
 
 **Trusted global alias**:

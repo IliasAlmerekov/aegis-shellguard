@@ -158,3 +158,112 @@ fn pager_env_prefix_of_a_plain_pager_is_not_routed() {
 fn git_dash_c_of_an_unrelated_key_is_not_routed() {
     assert_eq!(route("git -c user.name=x commit", &[]), Vec::new());
 }
+
+#[test]
+fn tar_compress_program_equals_running_a_script_is_routed() {
+    assert_eq!(
+        route(
+            "tar --use-compress-program='python3 ./evil.py' -cf out.tar dir",
+            &[]
+        ),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn tar_compress_program_equals_an_interpreter_is_routed() {
+    assert_eq!(
+        route("tar --use-compress-program=python3 -cf out.tar dir", &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn make_shell_assignment_running_a_script_is_routed() {
+    assert_eq!(
+        route("make SHELL='python3 ./evil.py'", &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn make_shell_assignment_an_interpreter_is_routed() {
+    assert_eq!(route("make SHELL=python3", &[]), vec![unresolved_dynamic()]);
+}
+
+#[test]
+fn make_python_assignment_an_interpreter_is_routed() {
+    assert_eq!(
+        route("make PYTHON=python3 test", &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn cargo_feature_value_is_not_routed() {
+    assert_eq!(route("cargo build --features=foo", &[]), Vec::new());
+}
+
+#[test]
+fn git_dash_c_of_an_unrelated_key_with_a_message_is_not_routed() {
+    assert_eq!(route("git -c user.name=x commit -m y", &[]), Vec::new());
+}
+
+#[test]
+fn name_only_program_mentioning_an_interpreter_assignment_is_not_routed() {
+    for command in ["echo SHELL=python3", "grep PYTHON=python3 Makefile"] {
+        assert_eq!(route(command, &[]), Vec::new(), "{command}");
+    }
+}
+
+// ── Rule B: an executor value that is path-like, but names no known
+// interpreter, routes as a LauncherOperand so `resolve` checks its shebang
+// (issue #384/#430) ─────────────────────────────────────────────────────
+
+#[test]
+fn d4_flag_value_that_is_path_like_is_a_launcher_operand() {
+    assert_eq!(
+        route("tar --use-compress-program=./evil.py -cf o.tar d", &[]),
+        vec![RoutedTarget::LauncherOperand {
+            path: PathBuf::from("./evil.py"),
+        }]
+    );
+}
+
+#[test]
+fn ssh_proxy_command_equals_form_that_is_path_like_is_a_launcher_operand() {
+    assert_eq!(
+        route("ssh -o ProxyCommand=./evil.py host", &[]),
+        vec![RoutedTarget::LauncherOperand {
+            path: PathBuf::from("./evil.py"),
+        }]
+    );
+}
+
+#[test]
+fn ssh_proxy_command_space_form_that_is_path_like_is_a_launcher_operand() {
+    assert_eq!(
+        route("ssh -o 'ProxyCommand ./evil.py %h' host", &[]),
+        vec![RoutedTarget::LauncherOperand {
+            path: PathBuf::from("./evil.py"),
+        }]
+    );
+}
+
+#[test]
+fn make_shell_assignment_that_is_path_like_is_a_launcher_operand() {
+    assert_eq!(
+        route("make SHELL=./evil.sh", &[]),
+        vec![RoutedTarget::LauncherOperand {
+            path: PathBuf::from("./evil.sh"),
+        }]
+    );
+}
+
+#[test]
+fn make_shell_assignment_with_a_dollar_bearing_path_degrades() {
+    assert_eq!(
+        route("make SHELL=$HOME/evil.sh", &[]),
+        vec![unresolved_dynamic()]
+    );
+}

@@ -25,8 +25,8 @@ use argv_walk::{
 };
 use dynamic_program::{alias_value, is_dynamic_program_word};
 use executor_config::{
-    assignment_stage_names_an_interpreter, env_prefix_names_an_interpreter,
-    option_value_names_an_interpreter,
+    assignment_stage_executor_routes, env_prefix_executor_route, option_value_executor_route,
+    skip_assignment_keyword,
 };
 use unclaimed::unclaimed_interpreter_net;
 use wrappers::{posix_function_definition_body, strip_trailing_redirection, wrapper_bodies};
@@ -71,6 +71,37 @@ pub(super) enum CwdState {
     Degraded,
 }
 
+/// The router's HOME-tracking state (decision D1, GHSA-xj54), threaded
+/// across list segments the same way [`CwdState`] is: `~/rest` in a later
+/// [`unclaimed_interpreter_net`] launcher operand may use `ctx.home` only
+/// while this stays `Trusted`. Unlike `CwdState`, there is no trusted "new
+/// home" for a later segment to resolve against — an assignment or an
+/// opaque construct only ever withholds the caller-supplied home, never
+/// substitutes a different one — so this carries no `Literal`-shaped
+/// variant and, once `Degraded`, never recovers, regardless of which
+/// `Command separator` follows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum HomeState {
+    /// No segment routed so far assigns, removes, or opaquely changes
+    /// `HOME`: a later `~/rest` launcher operand may trust `ctx.home`.
+    Trusted,
+    /// An earlier segment assigned or removed `HOME`, or ran something the
+    /// router cannot see inside (`eval`/`source`/`.`) — every later
+    /// `~/rest` launcher operand degrades instead of trusting `ctx.home`.
+    Degraded,
+}
+
+/// `true` when `tok` would itself assign or remove `HOME` if it ran as
+/// shell text: a bare `HOME=value` assignment, or the plain `HOME` name an
+/// `export`/`unset`/`read` argument list carries (decision D1, GHSA-xj54).
+/// Used by [`unclaimed_interpreter_net`]'s operand scan, so a wrapper handed
+/// this same shape as its own payload (`eval "HOME=/tmp/e"`) degrades
+/// instead of reading it as an ordinary path-like candidate just because it
+/// contains a `/`.
+pub(super) fn token_is_home_assignment(tok: &str) -> bool {
+    tok == "HOME" || tok.starts_with("HOME=")
+}
+
 /// Resolve already-tokenized `owned_tokens` to its `&str` view, its first
 /// effective-program slice, and whether resolution ran into
 /// `aegis_parser`'s `env -S`/`--split-string` nesting bound before it got
@@ -99,8 +130,9 @@ fn effective_stage_slice<'a>(
 /// cwd, through the same launcher/assignment stripping the router uses for
 /// programs (`builtin cd`, `command cd`, `X=1 cd` all resolve to `cd`), and
 /// report its effect: `Literal` only for the exact `cd -- <path>` shape,
-/// `Degraded` for every other `cd`/`pushd`/`popd` shape and for `source`/`.`
-/// (an opaque script may `cd` on its own). Deliberately does *not* look
+/// `Degraded` for every other `cd`/`pushd`/`popd` shape and for `source`/`.`/
+/// `eval` (an opaque script, or an arbitrary `eval`uated `cd`, may change the
+/// cwd on its own — GHSA-xj54). Deliberately does *not* look
 /// through a `{...}`/`(...)` wrapper — a wrapper that also routes to
 /// something else must still have that something routed, which this narrow
 /// token check cannot tell apart from a bare cwd change;
@@ -117,9 +149,138 @@ fn parse_cd_like(stage_raw: &str) -> Option<CwdState> {
             }
             _ => CwdState::Degraded,
         }),
-        "pushd" | "popd" | "source" | "." => Some(CwdState::Degraded),
+        "pushd" | "popd" | "source" | "." | "eval" => Some(CwdState::Degraded),
         _ => None,
     }
+}
+
+/// `true` when `name` is a valid POSIX shell identifier: a leading letter or
+/// underscore, then only alphanumerics or underscores. The one copy —
+/// `executor_config` and `unclaimed` reach it as `super::is_shell_identifier`
+/// rather than each keeping its own local copy of this three-line predicate,
+/// since a private item in a module is already visible to its descendants.
+fn is_shell_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// `true` when `tok` writes a shell variable: `NAME=value`, `NAME+=value`,
+/// or `NAME[idx]=value`. The `[idx]` and value text are read as opaque —
+/// only the name ahead of `=` (and an optional trailing `+` or `[...]`
+/// index) is validated.
+fn is_assignment_token(tok: &str) -> bool {
+    let Some((lhs, _value)) = tok.split_once('=') else {
+        return false;
+    };
+    let lhs = lhs.strip_suffix('+').unwrap_or(lhs);
+    let name = match lhs.split_once('[') {
+        Some((name, rest)) if rest.ends_with(']') => name,
+        Some(_) => return false,
+        None => lhs,
+    };
+    is_shell_identifier(name)
+}
+
+/// `true` when every non-redirection token in `tokens` is an
+/// [`is_assignment_token`] write, and at least one exists: a stage made only
+/// of variable assignments, with or without a redirection glued in among
+/// them (`HOME=/tmp/e 2>/dev/null`). The one "is this stage nothing but
+/// assignments" check [`stage_degrades_home_trust`],
+/// [`executor_config::assignment_stage_executor_routes`], and
+/// [`unclaimed::is_pure_assignment_stage`] each used to duplicate
+/// independently, none of them tolerating a redirection token (issue
+/// #384/#430, GHSA-xj54, Rule A).
+pub(super) fn is_assignment_only_stage(tokens: &[&str]) -> bool {
+    let mut saw_assignment = false;
+    let mut index = 0;
+    while index < tokens.len() {
+        let tok = tokens[index];
+        if aegis_parser::starts_with_redirection_glyph(tok) {
+            index += if aegis_parser::is_redirection_operator(tok) {
+                2
+            } else {
+                1
+            };
+            continue;
+        }
+        if !is_assignment_token(tok) {
+            return false;
+        }
+        saw_assignment = true;
+        index += 1;
+    }
+    saw_assignment
+}
+
+/// Programs whose stage degrades [`HomeState`] whatever their own arguments
+/// say (Rule A, GHSA-xj54): each can write, remove, or opaquely change shell
+/// state — including `HOME` — in a way this router cannot see inside.
+/// `printf` is handled separately in [`stage_degrades_home_trust`]: only
+/// `-v` writes a variable, so a plain `printf '%s' x` is left off this list.
+const HOME_OPAQUE_PROGRAMS: &[&str] = &[
+    "read",
+    "mapfile",
+    "readarray",
+    "getopts",
+    "declare",
+    "typeset",
+    "local",
+    "export",
+    "readonly",
+    "unset",
+    "let",
+    "eval",
+    "source",
+    ".",
+];
+
+/// `true` when `raw_tokens` opens a `for`/`select` loop header (`for HOME in
+/// ...`, `select HOME in ...`): the loop variable is as much a write as an
+/// assignment is (Rule A, GHSA-xj54). Checked on the stage's own first
+/// token rather than through launcher-prefix stripping — neither reserved
+/// word is itself a program a launcher would wrap.
+pub(super) fn is_for_or_select_header(raw_tokens: &[&str]) -> bool {
+    matches!(raw_tokens.first(), Some(&"for") | Some(&"select"))
+}
+
+/// Recognize a segment (or pipeline stage) whose effect on `HOME` a later
+/// `~/rest` launcher operand cannot trust (Rule A, GHSA-xj54): a stage made
+/// only of variable assignments ([`is_assignment_only_stage`]), a program
+/// from [`HOME_OPAQUE_PROGRAMS`] (or `printf` carrying `-v`), or a
+/// `for`/`select` loop header. Resolved through the same effective-program
+/// logic [`parse_cd_like`] uses, so `builtin eval`, `command source`, and
+/// `time export ...` all count.
+///
+/// This replaces the previous argument-level search for the literal name
+/// `HOME`: any earlier variable-writing stage now withholds trust, not only
+/// one that names `HOME` — routing cannot statically rule out an indirect
+/// effect (an accepted false positive: `export PATH=/x; setsid ~/pyx` now
+/// prompts even though `PATH` is not `HOME`).
+fn stage_degrades_home_trust(stage_raw: &str) -> bool {
+    let owned_tokens = aegis_parser::split_tokens(stage_raw);
+    let (raw_tokens, slice, _truncated) = effective_stage_slice(&owned_tokens);
+
+    if is_for_or_select_header(&raw_tokens) {
+        return true;
+    }
+
+    if let Some(slice) = &slice {
+        if slice.program == "printf" {
+            // `-vNAME` (glued) writes a variable exactly as `-v NAME`
+            // (spaced) does — getopts-style short-option gluing, round-3
+            // review finding 4 — so either shape counts, not only the exact
+            // `-v` token.
+            return slice.tokens[1..].iter().any(|tok| tok.starts_with("-v"));
+        }
+        if HOME_OPAQUE_PROGRAMS.contains(&slice.program) {
+            return true;
+        }
+    }
+
+    is_assignment_only_stage(&raw_tokens)
 }
 
 /// Fold a recognized cwd-changing segment's effect into the cwd state carried
@@ -214,23 +375,34 @@ fn apply_cwd(target: RoutedTarget, cwd: &CwdState) -> RoutedTarget {
 /// current cwd state) to `targets`, left to right, in order. Also the engine
 /// [`route_wrapped_stage`] recurses into for a wrapper's own body, so a `cd`
 /// nested behind a subshell, brace group, or reserved word folds with the
-/// exact same rules a top-level walk uses (issue #384).
+/// exact same rules a top-level walk uses (issue #384). Mutates `home`
+/// alongside `cwd`, left to right in the same pass, so a later segment's
+/// `~/rest` launcher operand sees whether an earlier one already put `HOME`
+/// out of reach (decision D1, GHSA-xj54).
 pub(super) fn route_list_segment(
     segment: &aegis_parser::ListSegment,
     ctx: &RouteContext<'_>,
     cwd: &mut CwdState,
+    home: &mut HomeState,
     targets: &mut Vec<RoutedTarget>,
     depth: u32,
 ) {
     let stages = &segment.pipeline.segments;
 
     if stages.len() == 1 {
+        // Checked ahead of, and independently from, the cd-like short
+        // circuit below: `source`/`.` matches both, and unlike a cd-like
+        // match this never skips the stage's own routing (decision D1,
+        // GHSA-xj54).
+        if stage_degrades_home_trust(&stages[0].raw) {
+            *home = HomeState::Degraded;
+        }
         if let Some(effect) = parse_cd_like(&stages[0].raw) {
             *cwd = fold_cd(cwd, effect, segment.separator);
             return;
         }
 
-        route_stage(&stages[0].raw, ctx, cwd, targets, depth);
+        route_stage(&stages[0].raw, ctx, cwd, home, targets, depth);
         let current = std::mem::replace(cwd, CwdState::Unset);
         *cwd = advance_across_separator(current, segment.separator);
         return;
@@ -249,23 +421,31 @@ pub(super) fn route_list_segment(
     let mut stage_targets = Vec::new();
     let mut wrapped_stage_targets = Vec::new();
     for (index, stage) in stages.iter().enumerate() {
+        if stage_degrades_home_trust(&stage.raw) {
+            *home = HomeState::Degraded;
+        }
         if parse_cd_like(&stage.raw).is_some() {
             pipeline_had_cd = true;
             continue;
         }
 
         let mut scratch_cwd = cwd.clone();
+        let mut scratch_home = *home;
         let wrapped_before = wrapped_stage_targets.len();
         route_wrapped_stage(
             &stage.raw,
             ctx,
             &mut scratch_cwd,
+            &mut scratch_home,
             &mut wrapped_stage_targets,
             depth,
         );
         let wrapped_produced = wrapped_stage_targets.len() > wrapped_before;
         if scratch_cwd != *cwd {
             pipeline_had_cd = true;
+        }
+        if scratch_home == HomeState::Degraded {
+            *home = HomeState::Degraded;
         }
 
         let routed = route_direct_stage(&stage.raw, ctx.trusted_aliases);
@@ -308,7 +488,7 @@ pub(super) fn route_list_segment(
         // Nothing else claimed this stage: fall back to the fail-closed net
         // (issue #384/#430, ADR-022 §6 amendment) for a wrapper word the
         // launcher list does not enumerate.
-        stage_targets.extend(unclaimed_interpreter_net(&stage.raw, ctx));
+        stage_targets.extend(unclaimed_interpreter_net(&stage.raw, ctx, *home));
     }
 
     if pipeline_had_cd {
@@ -346,6 +526,7 @@ fn route_stage(
     stage_raw: &str,
     ctx: &RouteContext<'_>,
     cwd: &mut CwdState,
+    home: &mut HomeState,
     targets: &mut Vec<RoutedTarget>,
     depth: u32,
 ) {
@@ -356,7 +537,7 @@ fn route_stage(
     }
 
     let mut wrapped_targets = Vec::new();
-    route_wrapped_stage(stage_raw, ctx, cwd, &mut wrapped_targets, depth);
+    route_wrapped_stage(stage_raw, ctx, cwd, home, &mut wrapped_targets, depth);
     claimed |= !wrapped_targets.is_empty();
     for target in wrapped_targets {
         push_unique(targets, target);
@@ -366,7 +547,7 @@ fn route_stage(
     // (issue #384/#430, ADR-022 §6 amendment) for a wrapper word the
     // launcher list does not enumerate.
     if !claimed {
-        for net_target in unclaimed_interpreter_net(stage_raw, ctx) {
+        for net_target in unclaimed_interpreter_net(stage_raw, ctx, *home) {
             push_unique(targets, apply_cwd(net_target, cwd));
         }
     }
@@ -455,11 +636,14 @@ fn heredoc_marker_line_tail(stage_raw: &str) -> Option<&str> {
 /// wrapper and the caller's `cwd` must degrade to match. A subshell's or
 /// `$(...)`'s cd does not persist, but degrading here anyway is the safe
 /// direction — one mechanism instead of a per-wrapper-kind special case
-/// (ADR-022 §6, issue #384).
+/// (ADR-022 §6, issue #384). `body_home` is seeded and folded back the same
+/// way: once anything inside the body degrades it, the caller's `home` never
+/// recovers either (decision D1, GHSA-xj54).
 fn route_wrapped_stage(
     stage_raw: &str,
     ctx: &RouteContext<'_>,
     cwd: &mut CwdState,
+    home: &mut HomeState,
     targets: &mut Vec<RoutedTarget>,
     depth: u32,
 ) {
@@ -485,15 +669,26 @@ fn route_wrapped_stage(
 
     for body in wrapper_bodies(stage_raw, ctx.trusted_aliases) {
         let mut body_cwd = cwd.clone();
+        let mut body_home = *home;
         let mut body_targets = Vec::new();
         for segment in aegis_parser::list_segments(&body) {
-            route_list_segment(&segment, ctx, &mut body_cwd, &mut body_targets, depth + 1);
+            route_list_segment(
+                &segment,
+                ctx,
+                &mut body_cwd,
+                &mut body_home,
+                &mut body_targets,
+                depth + 1,
+            );
         }
         for target in body_targets {
             push_unique(targets, target);
         }
         if body_cwd != *cwd {
             *cwd = CwdState::Degraded;
+        }
+        if body_home == HomeState::Degraded {
+            *home = HomeState::Degraded;
         }
     }
 }

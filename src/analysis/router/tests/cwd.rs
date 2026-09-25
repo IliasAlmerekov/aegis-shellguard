@@ -171,6 +171,21 @@ fn source_degrades_a_later_relative_target() {
 }
 
 #[test]
+fn eval_running_a_cd_degrades_a_later_relative_target() {
+    // `eval` can run an arbitrary `cd` the router cannot see into, the same
+    // way `source`/`.` can — a relative target right after it must not
+    // resolve against the pre-`eval` cwd (pre-existing gap, GHSA-xj54).
+    let targets = route(r#"eval "cd /tmp/evil"; ./pyx"#, &[]);
+    assert_eq!(targets, vec![unresolved_dynamic()]);
+}
+
+#[test]
+fn eval_after_a_literal_cd_still_degrades_a_later_relative_target() {
+    let targets = route("cd -- /a && eval x && ./pyx", &[]);
+    assert_eq!(targets, vec![unresolved_dynamic()]);
+}
+
+#[test]
 fn dot_source_stays_degraded_through_a_later_literal_cd() {
     // "Degraded never recovers": `.` runs an arbitrary script that might cd
     // anywhere, so a literal-looking `cd -- sub` right after it must not be

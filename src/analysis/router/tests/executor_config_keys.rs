@@ -210,3 +210,77 @@ fn export_assignment_stage_naming_no_interpreter_is_not_routed() {
 fn env_launcher_wrapped_plain_assignment_is_not_routed() {
     assert_eq!(route("env LANG=C ls", &[]), Vec::new());
 }
+
+// ── SSH-family `-o` command-valued options are routed ──────────────────
+
+#[test]
+fn ssh_command_options_running_an_interpreter_are_routed() {
+    for command in [
+        r#"ssh -o ProxyCommand='python3 ./evil.py' host"#,
+        r#"ssh -o 'ProxyCommand python3 ./evil.py' host"#,
+        r#"ssh -oProxyCommand='python3 ./evil.py' host"#,
+        r#"ssh -o proxycommand='python3 ./evil.py' host"#,
+        r#"ssh -oLocalCommand='python3 ./evil.py' host"#,
+    ] {
+        assert_eq!(route(command, &[]), vec![unresolved_dynamic()], "{command}");
+    }
+}
+
+#[test]
+fn scp_and_sftp_command_options_running_an_interpreter_are_routed() {
+    for command in [
+        r#"scp -o ProxyCommand='python3 ./evil.py' file host:/tmp"#,
+        r#"scp -o KnownHostsCommand='python3 ./evil.py' file host:/tmp"#,
+        r#"sftp -o ProxyCommand='python3 ./evil.py' host"#,
+    ] {
+        assert_eq!(route(command, &[]), vec![unresolved_dynamic()], "{command}");
+    }
+}
+
+#[test]
+fn ssh_family_command_option_spelling_matrix_is_routed() {
+    for command in [
+        r#"ssh -o 'proxycommand python3 ./evil.py' host"#,
+        r#"ssh -o'LocalCommand python3 ./evil.py' host"#,
+        r#"scp -o 'KnownHostsCommand python3 ./evil.py' file host:/tmp"#,
+        r#"sftp -o 'ProxyCommand python3 ./evil.py' host"#,
+    ] {
+        assert_eq!(route(command, &[]), vec![unresolved_dynamic()], "{command}");
+    }
+}
+
+#[test]
+fn ssh_family_command_option_in_a_short_flag_group_is_routed() {
+    for command in [
+        r#"ssh -vo 'ProxyCommand python3 ./evil.py' host"#,
+        r#"ssh -vo'ProxyCommand python3 ./evil.py' host"#,
+        r#"ssh -4vo ProxyCommand='python3 ./evil.py' host"#,
+        r#"scp -qo 'ProxyCommand python3 ./evil.py' file host:/tmp"#,
+        r#"sftp -vo 'ProxyCommand python3 ./evil.py' host"#,
+    ] {
+        assert_eq!(route(command, &[]), vec![unresolved_dynamic()], "{command}");
+    }
+}
+
+#[test]
+fn ssh_command_option_key_ends_at_the_first_space_or_equals() {
+    for command in [
+        r#"ssh -o 'ProxyCommand python3 ./evil.py a=b' host"#,
+        r#"ssh -o 'ProxyCommand python3 -c x=1' host"#,
+        r#"ssh -o 'ProxyCommand = python3 ./evil.py' host"#,
+        r#"ssh -o 'ProxyCommand =python3 ./evil.py' host"#,
+    ] {
+        assert_eq!(route(command, &[]), vec![unresolved_dynamic()], "{command}");
+    }
+}
+
+#[test]
+fn ssh_command_options_that_name_no_interpreter_are_not_routed() {
+    for command in [
+        "ssh -o StrictHostKeyChecking=yes host",
+        "ssh -o ProxyCommand='nc %h %p' host",
+        "ssh -o ProxyCommand=none host",
+    ] {
+        assert_eq!(route(command, &[]), Vec::new(), "{command}");
+    }
+}

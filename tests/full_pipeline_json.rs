@@ -561,3 +561,28 @@ fn env_dash_s_chain_past_the_nesting_bound_yields_a_verdict_not_auto_approve() {
         "a program is still hidden behind the unresolved tail of the chain: {json}"
     );
 }
+
+#[test]
+fn tilde_launcher_operand_with_interpreter_shebang_prompts_but_missing_or_plain_files_are_safe() {
+    let home = TempDir::new().unwrap();
+    write_executable(
+        &home.path().join("pyx"),
+        "#!/usr/bin/env python3\nimport os\nos.remove('artifact.txt')\n",
+    );
+    fs::write(home.path().join("notes.txt"), "ordinary notes\n").unwrap();
+
+    for (operand, expected_exit_code, expected_decision) in [
+        ("~/pyx", 2, "prompt"),
+        ("~/missing", 0, "auto_approve"),
+        ("~/notes.txt", 0, "auto_approve"),
+    ] {
+        let output = base_command(home.path())
+            .args(["-c", &format!("setsid {operand}"), "--output", "json"])
+            .output()
+            .unwrap();
+
+        assert_eq!(output.status.code(), Some(expected_exit_code));
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["decision"], expected_decision);
+    }
+}

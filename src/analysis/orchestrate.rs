@@ -16,7 +16,8 @@
 //! `Worker::analyze` closes stdin and reaps the child every session, so worker
 //! reuse across pops remains a deferred performance optimization.
 
-use std::path::Path;
+use std::env;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use aegis_language::SourceLanguage;
@@ -29,7 +30,7 @@ use aegis_types::{
 use super::AnalysisCwd;
 use super::mapping::map_adapter_result;
 use super::queue::{AnalysisQueue, QueueBudget, QueueTarget};
-use super::router::{Resolution, RoutedTarget, resolve_for_analysis, route};
+use super::router::{Resolution, RoutedTarget, resolve_for_analysis, route_with_home};
 use super::shell_scan::{fold_result, scan_shell_source};
 use super::worker_client::{RequestKind, TargetRequest, TargetResult, Worker, WorkerError};
 use aegis_scanner::Scanner;
@@ -177,7 +178,8 @@ pub async fn run_with_budget_in_cwd(
     shell_scanner: Option<&Scanner>,
 ) -> Outcome {
     let session_deadline = Instant::now() + budget.total_timeout;
-    let routed = route(command, trusted_aliases);
+    let home = home_dir_optional();
+    let routed = route_with_home(command, trusted_aliases, home.as_deref());
     if routed.is_empty() {
         return Outcome::NotStarted {
             baseline: baseline.clone(),
@@ -352,6 +354,13 @@ pub async fn run_with_budget_in_cwd(
         assessment: merge_analysis(baseline, &aggregated),
         target_count: per_target.len(),
     }
+}
+
+fn home_dir_optional() -> Option<PathBuf> {
+    env::var_os("HOME")
+        .or_else(|| env::var_os("USERPROFILE"))
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
 }
 
 fn degraded(reason: DegradationReason) -> LanguageAnalysisResult {

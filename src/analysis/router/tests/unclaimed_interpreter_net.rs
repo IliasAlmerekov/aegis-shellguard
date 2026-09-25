@@ -684,13 +684,13 @@ fn alias_for_a_plain_command_with_no_path_like_operand_is_not_routed() {
 }
 
 #[test]
-fn a_redefined_alias_naming_a_plain_command_last_is_not_routed() {
-    // The reverse of `a_redefined_alias_resolves_to_its_latest_definition`:
-    // redefined away from an interpreter, the latest definition must win
-    // just as much when it clears the flag as when it sets it.
+fn a_redefined_alias_naming_a_plain_command_last_is_degraded() {
+    // The initial alias definition still names an interpreter in an equals
+    // value. The router does not expand aliases, so it degrades instead of
+    // treating the later definition as proof that the command is safe.
     assert_eq!(
         route("alias run=python3; alias run=git; run status", &[]),
-        Vec::new()
+        vec![unresolved_dynamic()]
     );
 }
 

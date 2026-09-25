@@ -562,6 +562,70 @@ pub fn extract_command_substitution_bodies(raw_segment: &str) -> Vec<String> {
     bodies
 }
 
+/// Raw shell text with every top-level `$(...)`/backtick command substitution
+/// replaced by an empty `$()`, keeping the characters the shell writes around
+/// it (`"$(pwd)/x"` becomes `"$()/x"`). The scan is the same quote/nesting-aware
+/// one as [`extract_command_substitution_bodies`], so quoted or escaped
+/// substitution syntax (`'$(x)'`, `\$(x)`) stays literal text. Run it on raw
+/// text, before [`split_tokens`] removes the quotes that make that
+/// distinction. `None` when a substitution never closes or the text uses
+/// ANSI-C quoting (`$'...'`), so a caller can fall back to the unmasked text
+/// instead of trusting a mask that may have swallowed real characters.
+pub fn mask_command_substitutions(text: &str) -> Option<std::borrow::Cow<'_, str>> {
+    if !text.contains(['$', '`']) {
+        return Some(std::borrow::Cow::Borrowed(text));
+    }
+
+    let case_ranges = case_statement_suspend_ranges(text);
+    let mut kept = String::with_capacity(text.len());
+    let mut idx = 0usize;
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+
+    while let Some(ch) = text[idx..].chars().next() {
+        let ch_len = ch.len_utf8();
+
+        match ch {
+            '\\' if !in_single_quote => {
+                kept.push(ch);
+                idx += ch_len;
+                if let Some(next) = text[idx..].chars().next() {
+                    kept.push(next);
+                    idx += next.len_utf8();
+                }
+                continue;
+            }
+            '\'' if !in_double_quote => in_single_quote = !in_single_quote,
+            '"' if !in_single_quote => in_double_quote = !in_double_quote,
+            // ANSI-C quoting (`$'\''...'`) escapes its own quote, which this
+            // scan cannot follow; give up rather than misplace a quote edge.
+            '$' if !in_single_quote
+                && !in_double_quote
+                && text[idx + ch_len..].starts_with('\'') =>
+            {
+                return None;
+            }
+            '$' if !in_single_quote && text[idx + ch_len..].starts_with('(') => {
+                let (_, end_idx) = extract_dollar_paren_body(text, idx, &case_ranges)?;
+                kept.push_str("$()");
+                idx = end_idx;
+                continue;
+            }
+            '`' if !in_single_quote => {
+                let (_, end_idx) = extract_backtick_body(text, idx)?;
+                kept.push_str("$()");
+                idx = end_idx;
+                continue;
+            }
+            _ => {}
+        }
+        kept.push(ch);
+        idx += ch_len;
+    }
+
+    Some(std::borrow::Cow::Owned(kept))
+}
+
 /// `Some((body, end_idx))` when a `$(...)` command substitution starts at
 /// `raw_segment[start_idx..]`, `body` its trimmed inner text and `end_idx`
 /// the byte offset right past its closing `)`. `case_ranges` — precomputed

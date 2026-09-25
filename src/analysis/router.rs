@@ -23,7 +23,7 @@ use super::heredoc::{self, StdinRoute};
 use super::source_reader::{self, SourceReadError};
 
 mod segments;
-use segments::{CwdState, route_list_segment};
+use segments::{CwdState, HomeState, route_list_segment};
 
 /// A source-analysis route decided without (for `Inline`) or before (for
 /// `ScriptFile`) any filesystem access.
@@ -291,6 +291,9 @@ struct RouteContext<'a> {
     command: &'a str,
     /// See [`route`]'s own doc comment.
     trusted_aliases: &'a [(&'a str, &'a str)],
+    /// The caller-supplied home directory used only for `~/` launcher
+    /// operands. Routing does not read process environment itself.
+    home: Option<&'a Path>,
     /// Byte offset into `command` marking the end of the top-level list
     /// segment currently being routed — [`route`] advances this once per
     /// segment, before recursing into it. An `alias` scan scopes itself to
@@ -324,18 +327,39 @@ struct RouteContext<'a> {
 /// later relative target it cannot place correctly (#384).
 #[must_use]
 pub fn route(command: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarget> {
+    route_with_home(command, trusted_aliases, None)
+}
+
+/// Route analyzable source in `command` with a caller-supplied home directory.
+///
+/// `home` is used only to expand literal `~/` launcher operands. Pass `None`
+/// when the caller cannot establish a home directory; such an operand then
+/// degrades rather than being interpreted relative to the command directory.
+/// An earlier segment that assigns or removes `HOME`, or that can change
+/// shell state without this call seeing how (`eval`/`source`/`.`), withholds
+/// `home` from every later `~/rest` operand the same way (decision D1,
+/// GHSA-xj54): bash re-reads its own current `HOME` for every `~`
+/// expansion, not the value this function was called with.
+#[must_use]
+pub fn route_with_home(
+    command: &str,
+    trusted_aliases: &[(&str, &str)],
+    home: Option<&Path>,
+) -> Vec<RoutedTarget> {
     let ctx = RouteContext {
         command,
         trusted_aliases,
+        home,
         alias_scope_end: Cell::new(0),
     };
     let mut cwd = CwdState::Unset;
+    let mut home = HomeState::Trusted;
     let mut targets = Vec::new();
     let mut search_from = 0;
     for segment in aegis_parser::list_segments(command) {
         search_from = segment_text_end(command, search_from, &segment.pipeline.raw);
         ctx.alias_scope_end.set(search_from);
-        route_list_segment(&segment, &ctx, &mut cwd, &mut targets, 0);
+        route_list_segment(&segment, &ctx, &mut cwd, &mut home, &mut targets, 0);
     }
     targets
 }

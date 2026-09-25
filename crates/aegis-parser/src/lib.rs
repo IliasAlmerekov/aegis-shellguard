@@ -29,8 +29,8 @@ pub use list_segments::{ListSegment, ListSeparator, list_segments};
 pub use nested_shells::extract_nested_commands;
 pub use prefix_match::{contains_any_token, matches_prefix};
 pub use segmentation::{
-    extract_command_substitution_bodies, logical_segments, top_level_pipelines,
-    unwrap_subshell_group,
+    extract_command_substitution_bodies, logical_segments, mask_command_substitutions,
+    top_level_pipelines, unwrap_subshell_group,
 };
 pub use tokenizer::{extract_prefix, split_tokens};
 

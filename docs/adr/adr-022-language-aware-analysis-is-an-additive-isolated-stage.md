@@ -184,7 +184,10 @@ a shebang script at all (e.g. a compiled binary) carries no such certainty of
 imminent script execution to begin with.
 
 The parent tracks only a literal top-level `cd -- <path> &&` cwd change. Dynamic
-`cd`, `pushd`, substitutions, or otherwise unresolved cwd cause degradation.
+`cd`, `pushd`, `popd`, `source`/`.`, `eval`, substitutions, or otherwise unresolved
+cwd cause degradation. `eval` can run a `cd` the parent cannot see, as `source`/`.`
+can, so a relative target after it never resolves against the cwd known before it
+ran (GHSA-xj54).
 
 A relative `Direct exec` target under a dynamic cwd records `Dynamic source`
 without attempting a read. Its language is not known until a shebang can be read,
@@ -255,6 +258,62 @@ than the command naming it as the thing to run, and a missing or directory
 argument (`vim ./new.txt`, `du -sh ./srcdir`) is routine there (issue
 #384/#430).
 
+This walk also reaches a `for`/`select` loop header's own list (`for f in
+dir/*.py; do ...; done`): each path-like list item is an operand of a stage
+whose program names no interpreter, so it routes the same way `setsid`'s
+operand does, unconditionally, whatever the loop body does with the
+variable. This includes a list-only loop that never runs the variable
+(`for f in dir/*; do echo "$f"; done`), an accepted false positive: no
+static rule can prove the loop variable never executes (issue #384/#430,
+GHSA-xj54).
+
+For this candidate only, `~/rest` expands to an absolute path with a home
+directory supplied by the caller. Routing never reads the process environment
+for that value. Without a supplied home, with `~user/rest`, or when `rest`
+is dynamic, the stage degrades to `Unresolved`/`Dynamic source`. The same
+degradation applies when an earlier stage on the same command line writes a
+shell variable — bare or `export`/`declare`/`typeset`/`readonly`/`local`
+assignment (with or without a redirection attached), `read`, `printf -v`,
+`mapfile`, `readarray`, `getopts`, `unset`, `let`, `eval`, `source`/`.`, or a
+`for`/`select` loop header — resolved through the same effective-program
+stripping as everywhere else, so `builtin eval`, `command source`, and `time
+export ...` all count. Bash re-reads its own current `HOME` for every `~`
+expansion, so a stale caller-supplied value is no longer trustworthy once
+any of those runs first, whatever variable it names: routing cannot
+statically tell an unrelated write from one that reaches `HOME` (issue
+#384/#430, GHSA-xj54). This is a wider net than "did this stage touch
+`HOME`": `export PATH=/x; setsid ~/pyx` now prompts too, an accepted false
+positive. A path-like operand that contains shell expansion syntax or glob
+syntax also degrades; routing neither evaluates nor expands it. Thus no
+path-like operand is silently dropped. Operands without `/` remain out of
+scope: `setsid $SCRIPT` stays unclaimed, because treating it as dynamic
+would also catch routine argument values such as `kill $PID` and `make
+$TARGET`.
+
+Only a `/` written outside a command substitution makes an operand path-like.
+The text inside `$(...)` or backticks belongs to the substituted command, and
+routing handles that command on its own. So `--body "$(cat <<'EOF' ... EOF)"`
+stays unclaimed even when the body mentions `docs/x.md`, while `"$(pwd)/pyx"`
+keeps its outer `/` and degrades. Routing finds substitutions in the raw
+stage text, before the quotes are removed, so quoted or escaped substitution
+syntax such as `'$(x/pyx)'` stays a literal path. An operand whose only `/`
+sits inside a substitution, such as `setsid "$(echo ./pyx)"`, falls into the
+same gap as `setsid $SCRIPT`. When a substitution never closes, the unmasked
+tokens decide, so a quote the scan cannot pair degrades the stage instead of
+hiding a `/`. Extra slashes after the tilde (`~//pyx`) stay under the home.
+
+The tokenizer does not understand ANSI-C quoting (`$'...'`) either, and can
+glue a real operand into the garbage token that results (`strace -o
+$'\'$(echo x' ./pyx ')'` tokenizes to nonsense that still happens to contain
+a `/`). An unclaimed stage whose raw text carries `$'` outside single and
+double quotes degrades to `Unresolved`/`Dynamic source` rather than trusting
+whatever the tokenizer made of it. The rule does not wait for a surviving
+operand, because the same mis-tokenization can swallow the operand into a
+dash-prefixed token (`strace -o$'\'' ./pyx #'`). The check runs
+after the exclusion-list exemption above, so `printf $'a\n'`, `echo $'x'`,
+and `grep $'\t' file` are unaffected. `sed $'s/\t/ /' file` now prompts too,
+an accepted false positive (issue #384/#430, GHSA-xj54).
+
 A fixed exclusion list holds the programs that legitimately name a command,
 or a filesystem path, as data rather than run it: `echo`, `printf`, `which`,
 `type`, `whereis`, `man`, `info`, `help`, `apropos`, `grep`, `egrep`,
@@ -267,27 +326,114 @@ lookups. A stage whose own program is on that list stays unclaimed even when
 a later word spells an interpreter name (`echo python3`, `grep -r node
 src`, `apt install python3`, `mkdir python3`, `rm -f node`).
 
+A generic interpreter check also examines the value after the first `=` when
+the non-empty prefix contains no whitespace. It keeps its whole-token check,
+then applies the same basename and command-string rules to the value. This
+covers assignment, long-option, short-option, and dotted-key forms without
+assuming which program consumes them. When that value names no interpreter
+but is itself path-like, it becomes its own `LauncherOperand` candidate — the
+same shebang check `setsid ./pyx` gets — instead of the whole `prefix=value`
+token being read as one: `--use-compress-program=./evil.py` and
+`SHELL=./evil.sh` both candidate on `./evil.py`/`./evil.sh`, not the flag or
+the assignment as a whole. The check keeps unwrapping while the value it
+just peeled off still splits the same way into a non-empty, whitespace-free
+name and a value, so a nested value (`tar --checkpoint-action=exec=./pyx`)
+reads `./pyx`, not the intermediate `exec=./pyx`, which carries no `/` of
+its own and would otherwise stay unread (issue #384/#430, GHSA-xj54).
+
+A path-like candidate this walk finds through any of the D4, glued
+short-flag, or plain-operand channels reduces to its own leading word
+before it is read as a path (GHSA-xj54 follow-up). Without this, a quoted
+multi-word value such as `tar -I'./pyx -d' -cf out.tar dir` or `rsync -e
+'./pyx -p 22' a h:b` was read whole, spaces included, as one literal path
+that almost never exists on disk, so the stage silently auto-approved
+instead of candidating on `./pyx`. This is the same leading-word reduction
+a dispatched executor value already gets, described below. The reduction
+only runs once the whole, unreduced candidate is confirmed to carry a `/`:
+a candidate whose only slash sits past its first word, such as a quoted,
+literal `$(...)` string that reached here as data rather than a real
+substitution, still reaches the literal-path check on its full text
+instead of losing that word, and the danger it carries, to the reduction.
+
+A `-`-prefixed token with no `=` is no longer silently skipped. Nothing
+marks where a short-flag bundle's own letters end and a glued value begins
+(`tar -I./pyx`, `rsync -e./pyx`), so routing tries every split of the
+token's leading letter run as a possible glued value: `-cI./pyx` splits
+into `I./pyx` and `./pyx`. A split that names a known interpreter degrades
+the stage at once; any other split becomes its own path-like
+`LauncherOperand` candidate, the same as an ordinary operand. This
+interpreter check only counts a split whose value carries more than one
+word: a linker or include flag's own single-word argument (`-lpython3.12`,
+`-lnode`, `-Ipython3`) is not a match, since it never runs anything, but a
+quoted multi-word value glued the same way (`-I'python3 ./evil.py'`) still
+degrades, since its first word is a command line the flag hands to a real
+interpreter, not an inert compiler flag. A spurious earlier split from an
+ambiguous bundle costs nothing beyond an extra candidate that resolves to
+no target. `man`'s own `-P`/`--pager=` dispatch gets a matching glued form
+(`man -P./pyx ls`), since `man` sits on the exclusion list above and never
+reaches this generic walk. A glued value that carries `$` or glob syntax
+(`-I$HOME/inc`) still fails the literal-path check and degrades instead of
+resolving to a candidate, the same accepted false positive an ordinary
+operand gets (issue #384/#430, GHSA-xj54).
+
 A handful of option values and environment variables run a command instead
 of naming one as data, and degrade even for a program on the exclusion list
 above: git's `-c`/`--config-env` for a command-carrying config key (`core.pager`,
 `core.editor`, `core.sshCommand`, `alias.*`, `diff.external`,
 `credential.helper`, `sequence.editor`, `gpg.program`, `filter.*.clean`, and a
-handful more), and man's `-P`/`--pager=`. The same holds for an executor
-environment variable's assigned value (`PAGER`, `GIT_PAGER`, `MANPAGER`,
-`EDITOR`, `VISUAL`, `GIT_EDITOR`, `GIT_SSH_COMMAND`, `LESSOPEN`, `LESSCLOSE`,
-`GIT_ASKPASS`, and a handful more), whichever of three shapes it appears in on
-the same line: leading the stage, past a leading `env` launcher, or set in its
-own `export`/`declare -x`/bare assignment stage (issue #384/#430).
+handful more), man's `-P`/`--pager=`, and ssh-family `-o` options. For `ssh`,
+`scp`, and `sftp`, both `-o VALUE` and `-oVALUE` inspect case-insensitive
+`ProxyCommand`, `LocalCommand`, and `KnownHostsCommand` values in either
+`Key value` or `Key=value` form. Other ssh options remain data. `rg`'s
+`--pre` (its own preprocessor command) and `ag`'s `--pager` get the same
+dispatch, in a separate-token or glued `=` form only (`rg --pre ./pyx foo
+.`, `rg --pre=./pyx foo .`, `ag --pager=./pyx foo`); neither option has a
+short or no-`=` glued form to read, and a same-prefixed sibling such as
+`--pre-glob` is matched against the whole flag, never mistaken for it
+(GHSA-xj54 follow-up). The scan stops at the first bare `--`: both `rg`
+and `ag` treat everything past it as a positional pattern or path, not an
+option, so `rg -- --pre ./pyx foo .` reads `./pyx` as data, not as the
+`--pre` value (GHSA-xj54 follow-up). The same holds for an executor environment
+variable's assigned value (`PAGER`, `GIT_PAGER`,
+`MANPAGER`, `EDITOR`, `VISUAL`, `GIT_EDITOR`, `GIT_SSH_COMMAND`, `LESSOPEN`,
+`LESSCLOSE`, `GIT_ASKPASS`, and a handful more), whichever of three shapes it
+appears in on the same line: leading the stage, past a leading `env` launcher,
+or set in its own `export`/`declare -x`/bare assignment stage (issue #384/#430).
+Every one of these values gets the same interpreter-or-path-like treatment as
+the generic D4 check: `ssh -o ProxyCommand=./evil.py host` and `ssh -o
+'ProxyCommand ./evil.py %h' host` both resolve to a `LauncherOperand` for
+`./evil.py` — for a multi-word value, the candidate is the first word past
+any leading prefix words, same as the interpreter-name check reads it — while
+a value naming no interpreter and carrying no `/` (`ProxyCommand=none`,
+`ProxyCommand='nc %h %p'`) stays untouched, as before.
 
 This trades false positives for closing the false-negative gap: a program
 outside both the interpreter registry and the exclusion list that happens to
 take an interpreter name as an unrelated argument will now prompt even
-though it never runs that interpreter. Accepted cost, not a defect — routing
-already fails closed rather than silently trusting an unrecognized shape,
-and the exclusion list is free to grow as legitimate cases turn up. Parsing
-the full Bash grammar so routing understands every wrapper's own argument
-conventions precisely, instead of scanning tokens after the fact, is out of
-scope for this net and tracked separately (issue #434).
+though it never runs that interpreter. Glob arguments at such programs also
+prompt, including routine uses such as `du -sh ./build/*` and `tar -czf
+out.tar ./dist/*`. These are accepted costs, not defects. Routing fails closed
+rather than silently trusting an unrecognized shape, and the exclusion list
+can grow as legitimate cases turn up. Parsing the full Bash grammar so routing
+understands every wrapper's own argument conventions precisely, instead of
+scanning tokens after the fact, is out of scope for this net and tracked
+separately (issue #434).
+
+Known gaps this amendment deliberately leaves open:
+
+- Exotic `HOME` writers the parent does not track: a redirection whose target
+  names `HOME` through brace/indirect expansion (`{HOME}>file`), a `coproc`
+  named `HOME`, or a `trap` handler that assigns `HOME` on a signal (`DEBUG`,
+  `EXIT`). These reach `HOME` only through bash semantics the parent does
+  not model.
+- A multi-command `Executor value` (`PAGER='less; ./pyx'`,
+  `core.pager='cd /tmp && ./pyx'`). The value scan reads only the opening
+  word, so a later command joined by `;`, `&&`, or `|` stays unrouted. The
+  same gap exists in 0.6.9 (issue #434).
+- An accepted false positive: the `printf` HOME-write check counts any
+  `-v`-prefixed token after the program name, so `printf %s -v` withholds
+  HOME trust although `-v` after the format string is an argument, not an
+  option.
 
 ### 7. Bound recursive and encoded analysis
 

@@ -748,16 +748,21 @@ fn unresolved_dynamic() -> RoutedTarget {
 }
 
 mod alias_repeated_calls;
+mod ansi_c_quoting;
 mod command_string_prefix_words;
 mod cwd;
 mod env_launcher_shapes;
 mod executor_config_keys;
 mod executor_option_values;
+mod glued_option_values;
 mod interpreter_stdin_redirect;
+mod multi_word_executor_values;
 mod redirection_placement;
+mod search_tool_executor_values;
 mod segments;
 mod shell_grammar_and_launchers;
 mod unclaimed_interpreter_net;
+mod unclaimed_launcher_operands;
 mod wrapped;
 mod wrapper_grammar;
 mod wrapper_trailing_redirection;
