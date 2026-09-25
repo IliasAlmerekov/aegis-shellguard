@@ -515,4 +515,3 @@ pub(super) fn heredoc_target_is_data_consumer(
         HeredocMarkerContext::Untrusted => false,
     }
 }
-

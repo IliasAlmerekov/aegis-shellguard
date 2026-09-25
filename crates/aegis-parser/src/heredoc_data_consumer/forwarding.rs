@@ -95,7 +95,10 @@ fn find_variable_references(text: &str, name: &str) -> Vec<usize> {
         };
         if let Some(start) = name_start {
             let end = start + name.len();
-            let boundary_ok = text[end..].chars().next().is_none_or(|c| !is_identifier_char(c));
+            let boundary_ok = text[end..]
+                .chars()
+                .next()
+                .is_none_or(|c| !is_identifier_char(c));
             if boundary_ok {
                 positions.push(pos);
                 search_from = end;
@@ -207,7 +210,10 @@ fn segment_is_forwarding_only(segment: &str, name: &str) -> bool {
     }
     let args = &tokens[program_pos + 1..];
     if basename.eq_ignore_ascii_case("gh") {
-        return !matches!(args.first().map(String::as_str), Some("alias" | "extension"));
+        return !matches!(
+            args.first().map(String::as_str),
+            Some("alias" | "extension")
+        );
     }
     if basename.eq_ignore_ascii_case("git") {
         return args.iter().enumerate().all(|(i, token)| {
@@ -240,17 +246,19 @@ fn following_text_is_forwarding_only(name: &str, following_text: &str) -> bool {
     {
         return false;
     }
-    split_top_level_chains(following_text).into_iter().all(|chain| {
-        let segments = split_top_level_segments(chain);
-        let referenced_in_chain = !find_variable_references(chain, name).is_empty();
-        if segments.len() > 1 && referenced_in_chain {
-            return false;
-        }
-        segments.iter().all(|segment| {
-            find_variable_references(segment, name).is_empty()
-                || segment_is_forwarding_only(segment, name)
+    split_top_level_chains(following_text)
+        .into_iter()
+        .all(|chain| {
+            let segments = split_top_level_segments(chain);
+            let referenced_in_chain = !find_variable_references(chain, name).is_empty();
+            if segments.len() > 1 && referenced_in_chain {
+                return false;
+            }
+            segments.iter().all(|segment| {
+                find_variable_references(segment, name).is_empty()
+                    || segment_is_forwarding_only(segment, name)
+            })
         })
-    })
 }
 
 /// `true` when `following_text` can run `name`, the variable a
