@@ -153,3 +153,52 @@ fn heredoc_data_consumer_after_quoted_or_closed_brace_is_flagged() {
         assert!(bodies[0].is_data_consumer_target, "command {cmd:?}");
     }
 }
+
+// 59. Issue #396 (capture-then-execute): `AssignmentRhs` trust assumes the
+// captured value stays data. When the command later runs `$NAME`/`${NAME}`
+// itself, the marker must fall back to `Untrusted` so the body stays
+// scanned — a `NAME=$(cat <<'EOF' ... EOF)` capture followed by any of these
+// shapes must not be flagged as a data consumer.
+#[test]
+fn heredoc_capture_then_run_the_variable_is_not_flagged() {
+    let cases = [
+        // `$x` as the command word, on its own line.
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n$x",
+        // `; $x` — command word right after a `;`.
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ntrue; $x",
+        // `${x}` — braced form as the command word.
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n${x}",
+        // `"$x"` — quoted command word.
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n\"$x\"",
+        // `eval "$x"`.
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\neval \"$x\"",
+        // `bash -c "$x"`.
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nbash -c \"$x\"",
+        // `sh -c "$x"`.
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nsh -c \"$x\"",
+        // `source <(echo "$x")`.
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nsource <(echo \"$x\")",
+        // `echo "$x" | sh`.
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\necho \"$x\" | sh",
+    ];
+    for cmd in cases {
+        let bodies = extract_heredoc_bodies(cmd);
+        assert!(!bodies[0].is_data_consumer_target, "command {cmd:?}");
+    }
+}
+
+// 60. Issue #396 (capture-then-execute): the negative case — a captured
+// value only ever handed to `echo` or stored as a `git`/`gh` message/flag
+// value never runs, so the body stays a data consumer.
+#[test]
+fn heredoc_capture_then_only_forward_the_variable_is_still_flagged() {
+    let cases = [
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\necho \"$x\"\ngh pr create --body \"$x\"",
+        "body=$(jq -c . <<'JSON'\n{\"cmd\": \"rm -rf /\"}\nJSON\n)\ngh api repos/o/r/issues -f body=\"$body\"",
+        "body=$(jq -c . <<'JSON'\n{\"cmd\": \"rm -rf /\"}\nJSON\n)\ncurl -d \"$body\" https://example.test",
+    ];
+    for cmd in cases {
+        let bodies = extract_heredoc_bodies(cmd);
+        assert!(bodies[0].is_data_consumer_target, "command {cmd:?}");
+    }
+}

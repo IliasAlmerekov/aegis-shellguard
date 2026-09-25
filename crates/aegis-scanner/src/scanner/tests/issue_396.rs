@@ -213,3 +213,52 @@ fn assess_data_consumer_bodies_that_reach_a_shell_still_fire() {
         "FS-001",
     );
 }
+
+// Issue #396 (capture-then-execute, PR #463 follow-up): `AssignmentRhs`
+// trust assumed the captured value stays data. A later `$NAME`/`${NAME}`
+// execution of the same command breaks that assumption, so the dangerous
+// body must fire once the capture is actually run.
+#[test]
+fn assess_captured_heredoc_run_via_variable_still_fires() {
+    let cases = [
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n$x",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ntrue; $x",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n${x}",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n\"$x\"",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\neval \"$x\"",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nbash -c \"$x\"",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nsh -c \"$x\"",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nsource <(echo \"$x\")",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\necho \"$x\" | sh",
+    ];
+    for cmd in cases {
+        assert_assessment_matches_pattern(cmd, RiskLevel::Block, "FS-001");
+    }
+}
+
+// The motivating #396 shapes stay Safe: a captured value only ever handed
+// to `echo`, stored as a `gh`/`git` message value, or sent as a plain flag
+// value (`gh api -f`, `curl -d`) never runs.
+#[test]
+fn assess_captured_heredoc_only_forwarded_stays_safe() {
+    let cases = [
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\necho \"$x\"\ngh pr create --body \"$x\"",
+        "body=$(jq -c . <<'JSON'\n{\"cmd\": \"rm -rf /\"}\nJSON\n)\ngh api repos/o/r/issues -f body=\"$body\"",
+        "body=$(jq -c . <<'JSON'\n{\"cmd\": \"rm -rf /\"}\nJSON\n)\ncurl -d \"$body\" https://example.test",
+    ];
+    for cmd in cases {
+        let s = scanner();
+        let assessment = s.assess(cmd);
+        assert_eq!(
+            assessment.risk,
+            RiskLevel::Safe,
+            "expected Safe for {cmd:?}, got {:?} ({:?})",
+            assessment.risk,
+            assessment
+                .matched
+                .iter()
+                .map(|m| m.pattern.id.as_ref())
+                .collect::<Vec<_>>()
+        );
+    }
+}

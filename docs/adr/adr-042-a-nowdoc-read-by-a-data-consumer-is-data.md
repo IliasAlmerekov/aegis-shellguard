@@ -83,6 +83,18 @@ into argv, so the router cannot drop body lines for every heredoc.
    not a shell. The `heredoc_body_block` case in
    `tests/fixtures/security_bypass_corpus.toml` now uses `bash <<'EOF'`, which
    still runs its body.
+5. `AssignmentRhs` trust (rule 2's last bullet, the `NAME=$(...)` case) holds
+   only while nothing after the heredoc runs the captured variable. A later
+   `$NAME`/`${NAME}` reference counts as running it when it is the command
+   word of a simple command, an argument of `eval`, `source`, `.`, `exec`, or
+   an interpreter's `-c` flag, or fed into `<(...)`, `>(...)`, or a pipe
+   alongside another stage. `assignment_variable_runs_later` in
+   `heredoc_data_consumer.rs` checks the text after the heredoc's terminator
+   line for these shapes; `walk_heredocs` in `embedded_scripts.rs` threads
+   that text through. A reference used only as a plain argument value — a
+   `curl -d`, a `gh api -f`, a bare `echo`/`printf` — does not count, so the
+   `body=$(jq -c . <<'JSON' ...)` then `gh api ... -f body="$body"` idiom
+   from the Context list keeps its trust.
 
 ## Consequences
 
@@ -103,3 +115,11 @@ into argv, so the router cannot drop body lines for every heredoc.
   (`jq -r .a > f <<'JSON' && bash f`) now prompts instead of matching the
   body, because the router cannot read the file before it exists. It is not
   auto-approved.
+- Capturing a heredoc into a variable and then running that variable —
+  `x=$(cat <<'EOF' ...)` then `$x`, `eval "$x"`, `bash -c "$x"`, or `$x`
+  piped or fed into `<(...)`/`>(...)` — keeps the body scanned instead of
+  trusting the assignment, closing a bypass the `AssignmentRhs` rule alone
+  left open. The check is a text scan, not a shell parser: a chain that
+  merely contains both a pipe and a reference to the variable counts as
+  running it even when the two are in different pipeline stages, so this
+  side too can cost a false positive rather than a bypass.

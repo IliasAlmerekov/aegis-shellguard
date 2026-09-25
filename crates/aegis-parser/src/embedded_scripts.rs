@@ -36,7 +36,10 @@ pub struct HeredocBody {
 /// Programs that execute their stdin as code, independent of what bash's own
 /// heredoc expansion does. A nowdoc body handed to one of these must still be
 /// recursively scanned: the recipient interprets the raw text as a script.
-const STDIN_EXECUTING_PROGRAMS: &[&str] = &[
+/// `pub(super)` so [`heredoc_data_consumer`][crate::heredoc_data_consumer]
+/// can reuse it for the `NAME -c "$var"` shape of a capture-then-execute
+/// check (issue #396), instead of keeping a second, drifting copy.
+pub(super) const STDIN_EXECUTING_PROGRAMS: &[&str] = &[
     "bash", "sh", "zsh", "dash", "ash", "ksh", "python", "python3", "node", "nodejs", "ruby",
     "php", "lua", "perl",
 ];
@@ -472,19 +475,13 @@ fn walk_heredocs(
 
     while i < lines.len() {
         if let Some(marker) = find_heredoc_marker(lines[i]) {
-            let target_is_interpreter = heredoc_target_program(lines[i], marker.operator_start)
-                .is_some_and(|program| {
-                    STDIN_EXECUTING_PROGRAMS
-                        .iter()
-                        .any(|known| program.eq_ignore_ascii_case(known))
-                });
-            let is_data_consumer_target = heredoc_target_is_data_consumer(
-                &command_text,
-                lines[i],
-                marker.operator_start,
-                marker.delimiter_end,
-            );
-            command_text.push_str(lines[i]);
+            let marker_line = lines[i];
+            // Byte length of `command_text` right before the marker line is
+            // pushed onto it below — `command_text` only grows between here
+            // and the re-slice a few lines down (the body-scan loop leaves
+            // it untouched), so this stays a valid boundary into it.
+            let preceding_len = command_text.len();
+            command_text.push_str(marker_line);
             command_text.push('\n');
             i += 1;
             let body_start = i;
@@ -500,12 +497,36 @@ fn walk_heredocs(
                 }
                 i += 1;
             }
+            let body_end = i;
+            // The terminator line (if the heredoc closed) is skipped by the
+            // `i += 1` at the bottom of the outer loop, so the text after it
+            // starts one line further still.
+            let after_terminator = (body_end + 1).min(lines.len());
+
+            let target_is_interpreter = heredoc_target_program(marker_line, marker.operator_start)
+                .is_some_and(|program| {
+                    STDIN_EXECUTING_PROGRAMS
+                        .iter()
+                        .any(|known| program.eq_ignore_ascii_case(known))
+                });
+            // Everything after the heredoc's terminator line, so the
+            // data-consumer predicate can check whether the rest of the
+            // command runs the captured variable instead of just forwarding
+            // it (issue #396: `NAME=$(cat <<'EOF' ...)` then `$NAME`).
+            let following_text = lines[after_terminator..].join("\n");
+            let is_data_consumer_target = heredoc_target_is_data_consumer(
+                &command_text[..preceding_len],
+                marker_line,
+                marker.operator_start,
+                marker.delimiter_end,
+                &following_text,
+            );
 
             on_heredoc(
                 &marker,
                 target_is_interpreter,
                 is_data_consumer_target,
-                body_start..i,
+                body_start..body_end,
             );
         } else {
             command_text.push_str(lines[i]);
