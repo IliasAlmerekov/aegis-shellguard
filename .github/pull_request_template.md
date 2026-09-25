@@ -1,7 +1,10 @@
 Closes #
 <!-- No issue? Write "No issue: <reason>" instead, e.g. "No issue: maintainer request". -->
 
-<!-- One or two sentences: what changed and why. The diff shows the files. -->
+<!-- 2-3 bullets: what changed, why, and the issue it closes. The commits carry the detail. -->
+
+-
+-
 
 Evidence:
 - `cargo test --workspace`: N passed, 0 failed
