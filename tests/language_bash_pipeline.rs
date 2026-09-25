@@ -90,7 +90,9 @@ fn shell_script_hiding_a_risky_command_still_prompts() {
     // The GIT-003 Match needs completed analysis, so it is checked in
     // `analysis_orchestrate::cli_deadline_parity` (#458).
     assert_eq!(evaluation["decision"], "prompt", "{evaluation:#}");
-    // ADR-022 §10: script contents never leave the analysis stage.
+    // ADR-022 §10: script contents never leave the analysis stage. This
+    // passes even when analysis degraded, so the check that runs against a
+    // real Match is in `analysis_orchestrate::cli_deadline_parity`.
     assert!(
         !evaluation.to_string().contains("origin main"),
         "the evaluation must not disclose script source: {evaluation:#}"

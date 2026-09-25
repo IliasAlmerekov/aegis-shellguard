@@ -331,7 +331,7 @@ fn json_output_verbose_keeps_stderr_empty() {
 }
 
 #[test]
-fn json_output_uses_language_aware_assessment_before_policy() {
+fn json_output_prompts_for_inline_python_delete() {
     let home = TempDir::new().unwrap();
 
     let output = base_command(home.path())
@@ -354,7 +354,7 @@ fn json_output_uses_language_aware_assessment_before_policy() {
 }
 
 #[test]
-fn json_output_applies_ci_block_to_language_aware_warn() {
+fn json_output_applies_ci_block_to_inline_python_delete() {
     let home = TempDir::new().unwrap();
 
     let output = base_command(home.path())
@@ -426,9 +426,10 @@ canonical = "python3"
         .output()
         .unwrap();
 
-    // Only the prompt is reliable here. The Match that proves the alias
-    // reached routing is checked in `analysis_orchestrate::cli_deadline_parity`
-    // (#458).
+    // Without the alias, routing ignores `trusted-python` and the command
+    // auto-approves, so the prompt shows the alias reached routing. The Match
+    // itself needs completed analysis and is checked in
+    // `analysis_orchestrate::cli_deadline_parity` (#458).
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stderr.is_empty());
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
