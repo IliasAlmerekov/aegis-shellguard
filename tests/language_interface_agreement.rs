@@ -24,11 +24,16 @@ struct CanonicalOutcome {
 /// hooks). CI's default fail-closed posture is covered separately by
 /// `analysis_orchestrate_runtime.rs`; this suite is only about whether every
 /// transport reaches the same Assessment+Decision once that policy is neutral.
+///
+/// #458: `language_analysis.timeout_ms` clamps to 100ms at every config
+/// layer (ADR-022 §6/§7), so no config value here can raise the real budget
+/// — this suite can only run at the clamped ceiling, and can flake under a
+/// loaded `cargo test --workspace` run if one transport's worker completes
+/// while another's degrades. There is no analysis-seam substitute for the
+/// Shell/CI/Watch/hook-script cross-transport comparison itself; #458 tracks
+/// this as a known flake risk.
 fn configure_ci_allow(home: &Path) {
-    support::write_global_config(
-        home,
-        "ci_policy = \"Allow\"\n[language_analysis]\ntimeout_ms = 1000\n",
-    );
+    support::write_global_config(home, "ci_policy = \"Allow\"\n");
 }
 
 fn aegis(home: &Path, cwd: &Path, ci: bool) -> Command {

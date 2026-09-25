@@ -1,7 +1,5 @@
 //! End-to-end privacy regressions for Language-aware source analysis.
 
-mod support;
-
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -26,15 +24,15 @@ fn write_analyzed_script(cwd: &Path) -> String {
 
 /// Language analysis defaults to a 100ms budget (`LANGUAGE_ANALYSIS_TIMEOUT_MS`),
 /// which is tight enough that a loaded CI runner with a debug binary can miss it
-/// and degrade instead of producing a language-aware Match. Raise it for every
-/// fixture home so each privacy assertion below is exercised against a real
-/// Match rather than passing vacuously because analysis degraded.
-fn configure_generous_timeout(home: &Path) {
-    support::write_global_config(home, "[language_analysis]\ntimeout_ms = 2000\n");
-}
-
+/// and degrade instead of producing a language-aware Match.
+///
+/// #458: that ceiling clamps at every config layer (ADR-022 §6/§7), so no
+/// config value written from a test can raise it — the `assert_ran_language_analysis`
+/// checks below are a known flake risk under a loaded `cargo test --workspace`
+/// run, with no analysis-seam substitute (their purpose is proving these
+/// specific CLI/hook/Watch transports don't disclose source, which only a real
+/// process spawn can exercise). Left as-is rather than weakened, per #458.
 fn run_aegis(home: &Path, cwd: &Path, args: &[&str], input: Option<&[u8]>, ci: bool) -> Output {
-    configure_generous_timeout(home);
     let mut process = Command::new(env!("CARGO_BIN_EXE_aegis"));
     process
         .args(args)
@@ -199,7 +197,6 @@ async fn analyzed_script_source_is_absent_from_every_public_output_surface() {
 }
 
 fn run_interactive_aegis(home: &Path, cwd: &Path, command: &str) -> Output {
-    configure_generous_timeout(home);
     let mut process = Command::new(env!("CARGO_BIN_EXE_aegis"));
     process
         .args(["--command", command])

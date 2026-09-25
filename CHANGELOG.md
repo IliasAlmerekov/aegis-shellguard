@@ -11,6 +11,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Fixed: CLI-level tests could assert a completed language-aware analysis result (a Match, a risk, `decision_source`) that the clamped 100ms `language_analysis.timeout_ms` ceiling cannot guarantee under a loaded `cargo test --workspace` run, flaking when the worker degraded instead. Those assertions moved to `tests/analysis_orchestrate/cli_deadline_parity.rs`, which runs the same commands through a real multi-second budget; the CLI-level tests keep only the exit-code/decision properties that hold whether analysis completes or degrades. (#458)
 - Changed: Every PR body now follows one short template: the issue, one or two sentences, evidence, and a confidence level. The rule lives in `CONVENTION.md` §4. (#451)
 
 ## [0.6.10] (2026-09-25)
