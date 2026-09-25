@@ -84,17 +84,36 @@ into argv, so the router cannot drop body lines for every heredoc.
    `tests/fixtures/security_bypass_corpus.toml` now uses `bash <<'EOF'`, which
    still runs its body.
 5. `AssignmentRhs` trust (rule 2's last bullet, the `NAME=$(...)` case) holds
-   only while nothing after the heredoc runs the captured variable. A later
-   `$NAME`/`${NAME}` reference counts as running it when it is the command
-   word of a simple command, an argument of `eval`, `source`, `.`, `exec`, or
-   an interpreter's `-c` flag, or fed into `<(...)`, `>(...)`, or a pipe
-   alongside another stage. `assignment_variable_runs_later` in
-   `heredoc_data_consumer.rs` checks the text after the heredoc's terminator
-   line for these shapes; `walk_heredocs` in `embedded_scripts.rs` threads
-   that text through. A reference used only as a plain argument value — a
-   `curl -d`, a `gh api -f`, a bare `echo`/`printf` — does not count, so the
-   `body=$(jq -c . <<'JSON' ...)` then `gh api ... -f body="$body"` idiom
-   from the Context list keeps its trust.
+   only while every later reference to the captured variable is provably
+   forwarding only. This is an allowlist, not a blocklist of run shapes
+   (`crates/aegis-parser/src/heredoc_data_consumer/forwarding.rs`): a
+   reference forwards when it sits inside a top-level simple command whose
+   program, basename normalized, is `gh`, `git`, `curl`, `echo`, `printf`
+   or `jq`; that command carries no pipe and no redirect other than
+   `2>&1` or `>&2`; the reference is not laundered through a leading
+   `NAME=value` assignment ahead of the program; and, for `git`, the
+   reference is the value of a commit or tag message flag or an issue or
+   PR title or body flag (`-m`, `--message`, `-t`, `--title`, `-b`,
+   `--body`). `gh alias` and `gh extension` are excluded even though `gh`
+   is on the list, since both can run a shell through the reference.
+   Everything else keeps the body scanned: a wrapper (`sudo $x`, `env $x`,
+   `command $x`, `nohup $x`, `time $x`, `find ... -exec $x \;`), a
+   grouping or compound construct (`($x)`, `{ $x; }`, an
+   `if`/`for`/`while`/`until`/`select` body), a parameter expansion
+   (`${x:-}`, `${x%%foo}`), a second layer of capture (`z=$($x)`,
+   `` z=`$x` ``, `arr=($x)`), a nameref (`declare -n r=x` then `$r`), a
+   here-string (`bash <<< "$x"`), a store into `alias`, `trap` or
+   `PROMPT_COMMAND`, `eval`/`source`/a bare `.` re-parsing the text, a
+   write followed by a run of the file (`echo "$x" > f.sh; sh f.sh`), and
+   a program outside that six-name list, whatever it is.
+   `assignment_variable_runs_later` in `heredoc_data_consumer.rs` checks
+   the text after the heredoc's terminator line for all of this;
+   `walk_heredocs` in `embedded_scripts.rs` threads that text through. A
+   reference used only as a plain argument value of `echo`, `printf`,
+   `curl -d` or `jq`, or as a `gh api -f` value, still counts as
+   forwarding, so the `body=$(jq -c . <<'JSON' ...)` then
+   `gh api ... -f body="$body"` idiom from the Context list keeps its
+   trust.
 
 ## Consequences
 
@@ -115,11 +134,22 @@ into argv, so the router cannot drop body lines for every heredoc.
   (`jq -r .a > f <<'JSON' && bash f`) now prompts instead of matching the
   body, because the router cannot read the file before it exists. It is not
   auto-approved.
-- Capturing a heredoc into a variable and then running that variable —
-  `x=$(cat <<'EOF' ...)` then `$x`, `eval "$x"`, `bash -c "$x"`, or `$x`
-  piped or fed into `<(...)`/`>(...)` — keeps the body scanned instead of
-  trusting the assignment, closing a bypass the `AssignmentRhs` rule alone
-  left open. The check is a text scan, not a shell parser: a chain that
-  merely contains both a pipe and a reference to the variable counts as
-  running it even when the two are in different pipeline stages, so this
-  side too can cost a false positive rather than a bypass.
+- Capturing a heredoc into a variable and then running that variable, be it
+  `x=$(cat <<'EOF' ...)` then `$x`, `eval "$x"`, `bash -c "$x"`, `$x` piped
+  or fed into `<(...)`/`>(...)`, or any of the wrapper, grouping,
+  parameter-expansion, second-capture, nameref, here-string, alias/trap and
+  write-then-run shapes item 5 lists, keeps the body scanned instead of
+  trusting the assignment. A security review before this ADR's forwarding
+  allowlist found that an earlier blocklist of run shapes let `sudo $x`,
+  `($x)`, `{ $x; }`, `if`/`for`/`while` wrapping, `find -exec`, a nameref
+  via `declare -n`, `${x:-}` and other parameter-expansion forms, and more
+  slip through as auto-approved; the allowlist closes that gap by trusting
+  only the shapes item 5 names, not by naming the ways to bypass it. The
+  check is still a text scan, not a shell parser: a chain that merely
+  contains both a pipe and a reference to the variable counts as running it
+  even when the two are in different pipeline stages. The accepted false
+  positives are the same shape: a captured value handed to a program
+  outside `gh`, `git`, `curl`, `echo`, `printf` and `jq`, a `cp` writing it
+  to a file among them, keeps the body scanned even though that program may
+  never run it as code, and a `git`/`gh` argument that is not a message
+  flag value does the same.
