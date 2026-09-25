@@ -9,13 +9,9 @@ use super::manifest_io::write_manifest_atomically;
 use super::*;
 use tempfile::TempDir;
 
-mod hostile_overlay;
+use crate::test_support::stub_bin;
 
-fn stub_bin(dir: &TempDir, name: &str, body: &str) -> PathBuf {
-    let path = dir.path().join(name);
-    crate::test_support::write_executable(&path, &format!("#!/bin/sh\nset -eu\n{body}\n"));
-    path
-}
+mod hostile_overlay;
 
 fn manifest_path(temp_dir: &TempDir) -> PathBuf {
     temp_dir.path().join("bundle").join(MANIFEST_FILE_NAME)
@@ -141,8 +137,8 @@ fn recompute_rollback_denies_partial_and_degraded_manifests() {
 #[tokio::test]
 async fn is_applicable_requires_explicit_config_and_both_tools() {
     let temp_dir = TempDir::new().unwrap();
-    let pg_dump = stub_bin(&temp_dir, "pg_dump", "exit 0");
-    let pg_restore = stub_bin(&temp_dir, "pg_restore", "exit 0");
+    let pg_dump = stub_bin(temp_dir.path(), "pg_dump", "exit 0");
+    let pg_restore = stub_bin(temp_dir.path(), "pg_restore", "exit 0");
 
     let config = database_only_supabase_snapshot_config("postgres");
 
@@ -176,14 +172,14 @@ async fn snapshot_uses_pg_dump_and_writes_manifest_bundle() {
     let temp_dir = TempDir::new().unwrap();
     let log_path = temp_dir.path().join("pg_dump.args");
     let pg_dump = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "pg_dump",
         &format!(
             "log='{}'\nout=''\nprev=''\n: > \"$log\"\nfor arg in \"$@\"; do\n  printf '%s\\n' \"$arg\" >> \"$log\"\n  if [ \"$prev\" = '-f' ]; then out=\"$arg\"; fi\n  prev=\"$arg\"\ndone\nprintf 'dump-data' > \"$out\"",
             log_path.display()
         ),
     );
-    let pg_restore = stub_bin(&temp_dir, "pg_restore", "exit 0");
+    let pg_restore = stub_bin(temp_dir.path(), "pg_restore", "exit 0");
 
     let config = configured_supabase_snapshot_config(
         "proj_123",
@@ -284,11 +280,11 @@ async fn snapshot_uses_pg_dump_and_writes_manifest_bundle() {
 async fn snapshot_fails_when_manifest_commit_fails_and_removes_dump() {
     let temp_dir = TempDir::new().unwrap();
     let pg_dump = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "pg_dump",
         "out=''\nprev=''\nfor arg in \"$@\"; do\n  if [ \"$prev\" = '-f' ]; then out=\"$arg\"; fi\n  prev=\"$arg\"\ndone\nprintf 'dump-data' > \"$out\"",
     );
-    let pg_restore = stub_bin(&temp_dir, "pg_restore", "exit 0");
+    let pg_restore = stub_bin(temp_dir.path(), "pg_restore", "exit 0");
 
     let config = database_only_supabase_snapshot_config("postgres");
 
@@ -345,8 +341,8 @@ async fn snapshot_fails_when_manifest_commit_fails_and_removes_dump() {
 async fn rollback_denies_when_config_target_mismatch_is_required() {
     let temp_dir = TempDir::new().unwrap();
     let manifest_path = write_phase1_manifest_fixture(&temp_dir, &valid_db_dump_checksum());
-    let pg_dump = stub_bin(&temp_dir, "pg_dump", "exit 0");
-    let pg_restore = stub_bin(&temp_dir, "pg_restore", "exit 0");
+    let pg_dump = stub_bin(temp_dir.path(), "pg_dump", "exit 0");
+    let pg_restore = stub_bin(temp_dir.path(), "pg_restore", "exit 0");
 
     let config = configured_supabase_snapshot_config(
         "proj_123",
@@ -374,9 +370,9 @@ async fn rollback_ignores_project_ref_mismatch_for_target_match_checks() {
     let temp_dir = TempDir::new().unwrap();
     let manifest_path = write_phase1_manifest_fixture(&temp_dir, &valid_db_dump_checksum());
     let restore_log_path = temp_dir.path().join("pg_restore.args");
-    let pg_dump = stub_bin(&temp_dir, "pg_dump", "exit 0");
+    let pg_dump = stub_bin(temp_dir.path(), "pg_dump", "exit 0");
     let pg_restore = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "pg_restore",
         &format!(
             "log='{}'\n: > \"$log\"\nfor arg in \"$@\"; do\n  printf '%s\\n' \"$arg\" >> \"$log\"\ndone",
@@ -406,8 +402,8 @@ async fn rollback_ignores_project_ref_mismatch_for_target_match_checks() {
 #[tokio::test]
 async fn rollback_rejects_malformed_snapshot_id() {
     let temp_dir = TempDir::new().unwrap();
-    let pg_dump = stub_bin(&temp_dir, "pg_dump", "exit 0");
-    let pg_restore = stub_bin(&temp_dir, "pg_restore", "exit 0");
+    let pg_dump = stub_bin(temp_dir.path(), "pg_dump", "exit 0");
+    let pg_restore = stub_bin(temp_dir.path(), "pg_restore", "exit 0");
 
     let config = configured_supabase_snapshot_config(
         "proj_123",
@@ -436,8 +432,8 @@ async fn rollback_rejects_malformed_snapshot_id() {
 async fn rollback_denies_when_manifest_dump_is_missing() {
     let temp_dir = TempDir::new().unwrap();
     let manifest_path = write_phase1_manifest_fixture(&temp_dir, &valid_db_dump_checksum());
-    let pg_dump = stub_bin(&temp_dir, "pg_dump", "exit 0");
-    let pg_restore = stub_bin(&temp_dir, "pg_restore", "exit 0");
+    let pg_dump = stub_bin(temp_dir.path(), "pg_dump", "exit 0");
+    let pg_restore = stub_bin(temp_dir.path(), "pg_restore", "exit 0");
 
     let dump_path = manifest_path.parent().unwrap().join("artifacts/db.dump");
     fs::remove_file(&dump_path).unwrap();
@@ -469,8 +465,8 @@ async fn rollback_denies_when_manifest_dump_is_missing() {
 async fn rollback_denies_when_checksum_mismatch() {
     let temp_dir = TempDir::new().unwrap();
     let manifest_path = write_phase1_manifest_fixture(&temp_dir, &"0".repeat(64));
-    let pg_dump = stub_bin(&temp_dir, "pg_dump", "exit 0");
-    let pg_restore = stub_bin(&temp_dir, "pg_restore", "exit 0");
+    let pg_dump = stub_bin(temp_dir.path(), "pg_dump", "exit 0");
+    let pg_restore = stub_bin(temp_dir.path(), "pg_restore", "exit 0");
 
     let config = configured_supabase_snapshot_config(
         "proj_123",
@@ -505,8 +501,8 @@ async fn rollback_denies_when_checksum_mismatch() {
 async fn rollback_denies_when_recomputed_fields_disagree_with_manifest_summary() {
     let temp_dir = TempDir::new().unwrap();
     let manifest_path = write_phase1_manifest_fixture(&temp_dir, &valid_db_dump_checksum());
-    let pg_dump = stub_bin(&temp_dir, "pg_dump", "exit 0");
-    let pg_restore = stub_bin(&temp_dir, "pg_restore", "exit 0");
+    let pg_dump = stub_bin(temp_dir.path(), "pg_dump", "exit 0");
+    let pg_restore = stub_bin(temp_dir.path(), "pg_restore", "exit 0");
 
     let mut manifest: SupabaseManifest =
         serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
@@ -541,8 +537,8 @@ async fn rollback_denies_when_recomputed_fields_disagree_with_manifest_summary()
 async fn rollback_denies_when_persisted_db_supported_disagrees_with_recomputed_support() {
     let temp_dir = TempDir::new().unwrap();
     let manifest_path = write_phase1_manifest_fixture(&temp_dir, &valid_db_dump_checksum());
-    let pg_dump = stub_bin(&temp_dir, "pg_dump", "exit 0");
-    let pg_restore = stub_bin(&temp_dir, "pg_restore", "exit 0");
+    let pg_dump = stub_bin(temp_dir.path(), "pg_dump", "exit 0");
+    let pg_restore = stub_bin(temp_dir.path(), "pg_restore", "exit 0");
 
     let mut manifest: SupabaseManifest =
         serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
@@ -642,9 +638,9 @@ async fn rollback_uses_manifest_target_as_source_of_truth() {
     let temp_dir = TempDir::new().unwrap();
     let manifest_path = write_phase1_manifest_fixture(&temp_dir, &valid_db_dump_checksum());
     let restore_log_path = temp_dir.path().join("pg_restore.args");
-    let pg_dump = stub_bin(&temp_dir, "pg_dump", "exit 0");
+    let pg_dump = stub_bin(temp_dir.path(), "pg_dump", "exit 0");
     let pg_restore = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "pg_restore",
         &format!(
             "log='{}'\n: > \"$log\"\nfor arg in \"$@\"; do\n  printf '%s\\n' \"$arg\" >> \"$log\"\ndone",

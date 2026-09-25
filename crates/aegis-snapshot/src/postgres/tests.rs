@@ -6,6 +6,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::process::Command as StdCommand;
 use tempfile::TempDir;
 
+use crate::test_support::stub_bin;
+
 fn plugin_with_user(temp_dir: &TempDir, user: &str) -> PostgresPlugin {
     PostgresPlugin::new(
         "app".to_string(),
@@ -14,12 +16,6 @@ fn plugin_with_user(temp_dir: &TempDir, user: &str) -> PostgresPlugin {
         user.to_string(),
         temp_dir.path().join("snaps"),
     )
-}
-
-fn stub_bin(dir: &TempDir, name: &str, body: &str) -> PathBuf {
-    let path = dir.path().join(name);
-    crate::test_support::write_executable(&path, &format!("#!/bin/sh\nset -eu\n{body}\n"));
-    path
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -298,7 +294,7 @@ async fn snapshot_uses_pg_dump_and_creates_dump_file() {
     let temp_dir = TempDir::new().unwrap();
     let log_path = temp_dir.path().join("pg_dump.args");
     let pg_dump = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "pg_dump",
         &format!(
             "log='{}'\nout=''\nprev=''\n: > \"$log\"\nfor arg in \"$@\"; do\n  printf '%s\\n' \"$arg\" >> \"$log\"\n  if [ \"$prev\" = '-f' ]; then out=\"$arg\"; fi\n  prev=\"$arg\"\ndone\nprintf 'dump-data' > \"$out\"",
@@ -359,7 +355,7 @@ fn hold_file_open_for_writing(path: &Path) -> std::process::Child {
 #[tokio::test]
 async fn snapshot_retries_when_pg_dump_binary_is_temporarily_busy() {
     let temp_dir = TempDir::new().unwrap();
-    let pg_dump = stub_bin(&temp_dir, "pg_dump", "exit 0");
+    let pg_dump = stub_bin(temp_dir.path(), "pg_dump", "exit 0");
     let mut plugin = plugin_with_user(&temp_dir, "postgres");
     plugin.pg_dump_bin = pg_dump.display().to_string();
 
@@ -380,7 +376,7 @@ async fn snapshot_retries_when_pg_dump_binary_is_temporarily_busy() {
 async fn snapshot_returns_stderr_when_pg_dump_fails() {
     let temp_dir = TempDir::new().unwrap();
     let pg_dump = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "pg_dump",
         "printf 'pg_dump exploded' >&2\nexit 12",
     );
@@ -410,7 +406,7 @@ async fn rollback_uses_pg_restore_with_expected_arguments() {
     fs::create_dir_all(dump_path.parent().unwrap()).unwrap();
     fs::write(&dump_path, "dump-data").unwrap();
     let pg_restore = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "pg_restore",
         &format!(
             "log='{}'\n: > \"$log\"\nfor arg in \"$@\"; do\n  printf '%s\\n' \"$arg\" >> \"$log\"\ndone",
@@ -445,7 +441,7 @@ async fn rollback_retries_when_pg_restore_binary_is_temporarily_busy() {
     let dump_path = temp_dir.path().join("snaps").join("existing.dump");
     fs::create_dir_all(dump_path.parent().unwrap()).unwrap();
     fs::write(&dump_path, "dump-data").unwrap();
-    let pg_restore = stub_bin(&temp_dir, "pg_restore", "exit 0");
+    let pg_restore = stub_bin(temp_dir.path(), "pg_restore", "exit 0");
     let mut plugin = plugin_with_user(&temp_dir, "postgres");
     plugin.pg_restore_bin = pg_restore.display().to_string();
     let snapshot_id = snapshot_id_for("app", "localhost", 5_432, "postgres", &dump_path);
@@ -464,7 +460,7 @@ async fn rollback_restores_legacy_artifact_inside_snapshot_store() {
     let dump_path = temp_dir.path().join("snaps").join("legacy.dump");
     fs::create_dir_all(dump_path.parent().unwrap()).unwrap();
     fs::write(&dump_path, "dump-data").unwrap();
-    let pg_restore = stub_bin(&temp_dir, "pg_restore", "exit 0");
+    let pg_restore = stub_bin(temp_dir.path(), "pg_restore", "exit 0");
     let mut plugin = plugin_with_user(&temp_dir, "postgres");
     plugin.pg_restore_bin = pg_restore.display().to_string();
     let snapshot_id = format!(
@@ -483,7 +479,7 @@ async fn rollback_uses_snapshot_time_target_instead_of_current_config() {
     let dump_log_path = temp_dir.path().join("pg_dump.args");
     let restore_log_path = temp_dir.path().join("pg_restore.args");
     let pg_dump = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "pg_dump",
         &format!(
             "log='{}'\nout=''\nprev=''\n: > \"$log\"\nfor arg in \"$@\"; do\n  printf '%s\\n' \"$arg\" >> \"$log\"\n  if [ \"$prev\" = '-f' ]; then out=\"$arg\"; fi\n  prev=\"$arg\"\ndone\nprintf 'dump-data' > \"$out\"",
@@ -491,7 +487,7 @@ async fn rollback_uses_snapshot_time_target_instead_of_current_config() {
         ),
     );
     let pg_restore = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "pg_restore",
         &format!(
             "log='{}'\n: > \"$log\"\nfor arg in \"$@\"; do\n  printf '%s\\n' \"$arg\" >> \"$log\"\ndone",
@@ -558,7 +554,7 @@ async fn rollback_returns_stderr_when_pg_restore_fails() {
     fs::create_dir_all(dump_path.parent().unwrap()).unwrap();
     fs::write(&dump_path, "dump-data").unwrap();
     let pg_restore = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "pg_restore",
         "printf 'pg_restore exploded' >&2\nexit 23",
     );
@@ -588,7 +584,7 @@ async fn output_with_busy_retry_yields_to_tokio_runtime_during_sleep() {
     let temp_dir = TempDir::new().unwrap();
     // A stub binary that we will hold open for writing for the entire test,
     // so every call to output() returns ETXTBSY and the retry loop fires.
-    let pg_dump = stub_bin(&temp_dir, "pg_dump", "exit 0");
+    let pg_dump = stub_bin(temp_dir.path(), "pg_dump", "exit 0");
 
     // Keep the file open for writing from this process.  The kernel returns
     // ETXTBSY from execve() as long as any process holds the file open for
@@ -644,7 +640,7 @@ async fn output_with_busy_retry_yields_to_tokio_runtime_during_sleep() {
 async fn snapshot_generates_distinct_ids_for_back_to_back_calls() {
     let temp_dir = TempDir::new().unwrap();
     let pg_dump = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "pg_dump",
         "out=''\nprev=''\nfor arg in \"$@\"; do\n  if [ \"$prev\" = '-f' ]; then out=\"$arg\"; fi\n  prev=\"$arg\"\ndone\nprintf '%s' \"$out\" > \"$out\"",
     );
