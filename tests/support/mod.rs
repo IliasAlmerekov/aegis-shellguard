@@ -47,6 +47,39 @@ pub fn direct_shell_command(home: &Path) -> Command {
     command
 }
 
+/// How many times [`until_analysis_completes`] runs a CLI fixture.
+pub const ANALYSIS_ATTEMPTS: usize = 5;
+
+/// Runs `attempt` until `completed` holds for its result, at most
+/// [`ANALYSIS_ATTEMPTS`] times, and returns that result.
+///
+/// The CLI clamps the language-analysis deadline to 100 ms, and a loaded
+/// `cargo test --workspace` run can miss it (#458). Use this only for a
+/// fixture that never executes its command, so a repeat has no side effect.
+pub fn until_analysis_completes<T>(
+    label: &str,
+    mut attempt: impl FnMut() -> T,
+    completed: impl Fn(&T) -> bool,
+) -> T {
+    for _ in 0..ANALYSIS_ATTEMPTS {
+        let result = attempt();
+        if completed(&result) {
+            return result;
+        }
+    }
+    panic!("{label}: language analysis did not complete in {ANALYSIS_ATTEMPTS} attempts");
+}
+
+/// `true` when an audit entry in `home` records completed language analysis.
+pub fn audit_records_completed_analysis(home: &Path) -> bool {
+    fs::read_to_string(home.join(".aegis").join("audit.jsonl")).is_ok_and(|contents| {
+        contents.lines().any(|line| {
+            serde_json::from_str::<serde_json::Value>(line)
+                .is_ok_and(|entry| entry["analysis"]["status"] == "complete")
+        })
+    })
+}
+
 pub fn read_audit_entries(home: &Path) -> Vec<serde_json::Value> {
     let path = home.join(".aegis").join("audit.jsonl");
     let contents = fs::read_to_string(path).unwrap();
