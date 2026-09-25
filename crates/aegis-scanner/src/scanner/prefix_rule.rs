@@ -28,6 +28,11 @@ impl PrefixRule {
             return rm_recursive_flag_present(tokens);
         }
 
+        if self.id.as_ref() == "GIT-009" {
+            return aegis_parser::matches_prefix(&self.pattern, tokens)
+                && git_push_deletes_remote_refs(tokens);
+        }
+
         if self.id.as_ref() == "PS-008" {
             return rm_recursive_flag_present(tokens) && rm_root_operand_present(tokens);
         }
@@ -169,6 +174,75 @@ fn is_rm_recursive_flag(token: &str) -> bool {
     token
         .strip_prefix('-')
         .is_some_and(|short_flags| short_flags.contains('r') || short_flags.contains('R'))
+}
+
+/// Whether the arguments after `git push` delete refs on the remote (#431):
+/// `--delete`/`-d`, `--prune`, `--mirror`, or a refspec with an empty source
+/// such as `:old-branch`.
+///
+/// Git accepts unambiguous prefixes of long options, so `--del` is `--delete`.
+/// A lone `:` is the "matching branches" refspec and deletes nothing. A dry
+/// run (`--dry-run`/`-n`, unless a later `--no-dry-run` undoes it) deletes
+/// nothing either, and the value of an option such as `-o <value>` is data.
+///
+/// Recognition leans toward the warning: a spelling that suppresses the rule
+/// (a dry-run flag, an option whose value is skipped) must be exact, while a
+/// spelling that triggers it may be any prefix git accepts.
+fn git_push_deletes_remote_refs(tokens: &[&str]) -> bool {
+    let mut deletes = false;
+    let mut dry_run = false;
+    let mut args = tokens.iter().skip(2);
+
+    while let Some(&token) = args.next() {
+        if let Some(long) = token.strip_prefix("--") {
+            if GIT_PUSH_OPTIONS_WITH_VALUE.contains(&long) {
+                args.next();
+            } else if long == "dry-run" {
+                dry_run = true;
+            } else if is_git_long_option(long, "no-dry-run", 5) {
+                dry_run = false;
+            } else if is_git_long_option(long, "delete", 2)
+                || is_git_long_option(long, "prune", 3)
+                || is_git_long_option(long, "mirror", 1)
+            {
+                deletes = true;
+            }
+        } else if let Some(short_flags) = token.strip_prefix('-') {
+            // `-o` takes the rest of the bundle as its value, or the next
+            // token when nothing follows it in the bundle.
+            let (flags, push_option) = match short_flags.split_once('o') {
+                Some((flags, value)) => (flags, Some(value)),
+                None => (short_flags, None),
+            };
+            deletes |= flags.contains('d');
+            dry_run |= flags.contains('n');
+            if push_option == Some("") {
+                args.next();
+            }
+        } else {
+            let refspec = token.strip_prefix('+').unwrap_or(token);
+            deletes |= refspec.len() > 1 && refspec.starts_with(':');
+        }
+    }
+
+    deletes && !dry_run
+}
+
+/// `git push` long options whose value may be the next token
+/// (`git push -h`, git 2.43).
+const GIT_PUSH_OPTIONS_WITH_VALUE: &[&str] = &[
+    "exec",
+    "push-option",
+    "receive-pack",
+    "recurse-submodules",
+    "repo",
+];
+
+/// Whether `given` names the `git push` long option `full`, allowing any
+/// prefix at least `min_len` long (the shortest one git does not reject as
+/// ambiguous).
+fn is_git_long_option(given: &str, full: &str, min_len: usize) -> bool {
+    given.len() >= min_len && full.starts_with(given)
 }
 
 /// redis-cli flags that consume one following value token.
