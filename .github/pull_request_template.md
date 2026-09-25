@@ -1,6 +1,9 @@
 ## Summary
 
-Describe what changed and why.
+<!-- 2-3 bullets: what changed, why, and the issue it closes. The commits carry the detail. -->
+
+-
+-
 
 ## Checklist
 
