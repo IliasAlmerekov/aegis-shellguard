@@ -331,7 +331,7 @@ fn json_output_verbose_keeps_stderr_empty() {
 }
 
 #[test]
-fn json_output_uses_language_aware_assessment_before_policy() {
+fn json_output_prompts_for_inline_python_delete() {
     let home = TempDir::new().unwrap();
 
     let output = base_command(home.path())
@@ -344,22 +344,17 @@ fn json_output_uses_language_aware_assessment_before_policy() {
         .output()
         .unwrap();
 
+    // A missed 100 ms analysis deadline also prompts, so only the prompt is
+    // reliable here. `analysis_orchestrate::cli_deadline_parity` checks the
+    // Warn LANG-FS-DEL Match (#458).
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stderr.is_empty());
-
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(json["risk"], "warn");
     assert_eq!(json["decision"], "prompt");
-    assert!(
-        json["matched_patterns"]
-            .as_array()
-            .is_some_and(|matches| matches.iter().any(|item| item["id"] == "LANG-FS-DEL")),
-        "the JSON interface must expose the language-aware Match: {json}"
-    );
 }
 
 #[test]
-fn json_output_applies_ci_block_to_language_aware_warn() {
+fn json_output_applies_ci_block_to_inline_python_delete() {
     let home = TempDir::new().unwrap();
 
     let output = base_command(home.path())
@@ -376,8 +371,9 @@ fn json_output_applies_ci_block_to_language_aware_warn() {
     assert_eq!(output.status.code(), Some(3));
     assert!(output.stderr.is_empty());
 
+    // A missed 100 ms analysis deadline blocks with the same reason, so the
+    // Warn risk is not asserted here (#458).
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(json["risk"], "warn");
     assert_eq!(json["decision"], "block");
     assert_eq!(json["block_reason"], "protect_ci_policy");
 }
@@ -401,8 +397,9 @@ fn strict_json_output_uses_analysis_override_instead_of_unrelated_strict_block()
     assert!(output.stderr.is_empty());
 
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    // A missed 100 ms analysis deadline takes the same override, so the Warn
+    // risk is not asserted here (#458).
     assert_eq!(json["mode"], "strict");
-    assert_eq!(json["risk"], "warn");
     assert_eq!(json["decision"], "prompt");
     assert!(json.get("block_reason").is_none());
 }
@@ -429,16 +426,14 @@ canonical = "python3"
         .output()
         .unwrap();
 
+    // Without the alias, routing ignores `trusted-python` and the command
+    // auto-approves, so the prompt shows the alias reached routing. The Match
+    // itself needs completed analysis and is checked in
+    // `analysis_orchestrate::cli_deadline_parity` (#458).
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stderr.is_empty());
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(json["risk"], "warn");
-    assert!(
-        json["matched_patterns"]
-            .as_array()
-            .is_some_and(|matches| matches.iter().any(|item| item["id"] == "LANG-FS-DEL")),
-        "the effective trusted global alias must be forwarded into routing: {json}"
-    );
+    assert_eq!(json["decision"], "prompt");
 }
 
 #[test]

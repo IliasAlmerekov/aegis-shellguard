@@ -9,6 +9,9 @@ use std::time::Duration;
 use aegis::analysis::{Outcome, run};
 use aegis_types::{AnalysisStatus, Assessment, DegradationReason, ParsedCommand, RiskLevel};
 
+#[path = "analysis_orchestrate/cli_deadline_parity.rs"]
+mod cli_deadline_parity;
+
 fn safe_baseline() -> Assessment {
     Assessment {
         risk: RiskLevel::Safe,
