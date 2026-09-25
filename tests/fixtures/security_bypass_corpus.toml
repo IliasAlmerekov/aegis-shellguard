@@ -7,8 +7,13 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
+# Issue #396 widens what counts as an inert heredoc body: `cat`/`tee`/`jq`
+# never execute their stdin, so a bare `cat <<'EOF'` printing to the terminal
+# runs nothing and no longer belongs in a bypass-attempt corpus. `bash` still
+# executes its stdin as code regardless of quoting, so it stays the live
+# heredoc case this entry guards against.
 name = "heredoc_body_block"
-command = """cat <<'EOF'
+command = """bash <<'EOF'
 rm -rf /
 EOF"""
 expected_risk = "block"

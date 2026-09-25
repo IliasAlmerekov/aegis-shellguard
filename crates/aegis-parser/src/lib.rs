@@ -11,6 +11,7 @@
 mod embedded_scripts;
 mod env_launcher;
 mod git_options;
+mod heredoc_data_consumer;
 mod list_segments;
 mod nested_shells;
 mod prefix_match;

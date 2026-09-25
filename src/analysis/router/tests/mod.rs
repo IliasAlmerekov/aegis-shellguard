@@ -756,6 +756,7 @@ mod executor_config_keys;
 mod executor_option_values;
 mod glued_option_values;
 mod interpreter_stdin_redirect;
+mod issue_396;
 mod multi_word_executor_values;
 mod redirection_placement;
 mod search_tool_executor_values;
