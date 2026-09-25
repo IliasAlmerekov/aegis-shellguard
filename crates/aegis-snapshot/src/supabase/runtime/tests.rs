@@ -13,16 +13,7 @@ mod hostile_overlay;
 
 fn stub_bin(dir: &TempDir, name: &str, body: &str) -> PathBuf {
     let path = dir.path().join(name);
-    fs::write(&path, format!("#!/bin/sh\nset -eu\n{body}\n")).unwrap();
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = fs::metadata(&path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&path, permissions).unwrap();
-    }
-
+    crate::test_support::write_executable(&path, &format!("#!/bin/sh\nset -eu\n{body}\n"));
     path
 }
 

@@ -1,20 +1,12 @@
 use super::*;
 use std::fs;
-use std::io;
 use std::process::Command as StdCommand;
 use tempfile::TempDir;
 
 /// Write a shell script to `dir/docker` and make it executable.
 fn write_mock_docker(dir: &std::path::Path, script: &str) -> std::path::PathBuf {
     let path = dir.join("docker");
-    let temp_path = dir.join("docker.tmp");
-    fs::write(&temp_path, format!("#!/bin/sh\n{script}")).unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&temp_path, fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    fs::rename(&temp_path, &path).unwrap();
+    crate::test_support::write_executable(&path, &format!("#!/bin/sh\n{script}"));
     path
 }
 
@@ -25,26 +17,9 @@ fn write_mock_docker_rewrite_keeps_executable_and_updates_contents() {
 
     write_mock_docker(dir.path(), "printf 'updated\\n'\n");
 
-    let output = output_with_etxtbsy_retry(&path).unwrap();
+    let output = StdCommand::new(&path).output().unwrap();
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout), "updated\n");
-}
-
-fn output_with_etxtbsy_retry(path: &std::path::Path) -> io::Result<std::process::Output> {
-    const ATTEMPTS: usize = 20;
-    const DELAY_MS: u64 = 10;
-
-    for attempt in 0..ATTEMPTS {
-        match StdCommand::new(path).output() {
-            Ok(output) => return Ok(output),
-            Err(error) if is_executable_busy(&error) && attempt + 1 < ATTEMPTS => {
-                std::thread::sleep(Duration::from_millis(DELAY_MS));
-            }
-            Err(error) => return Err(error),
-        }
-    }
-
-    unreachable!("retry loop must return or error")
 }
 
 fn single_quote_for_shell(path: &std::path::Path) -> String {

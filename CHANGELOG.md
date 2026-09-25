@@ -11,6 +11,8 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Fixed: Three `aegis-snapshot` unit tests flaked under parallel execution: a stale `tracing` interest cache could drop the spawn-failure event before the test's own subscriber ever saw it, and writing a fake executable with `fs::write` raced concurrent test threads forking children, occasionally hitting `ETXTBSY`. The tracing test now forces a fresh interest computation after a warm-up call, and every fake-executable helper writes through a short-lived child process instead of holding this process's own write handle open. The Docker runtime-yield test no longer races two sleep durations against each other; it now gates on a marker file the background task writes only after incrementing its counter. (#436)
+
 - Changed: Every PR body now follows one short template: the issue, one or two sentences, evidence, and a confidence level. The rule lives in `CONVENTION.md` §4. (#451)
 
 ## [0.6.10] (2026-09-25)
