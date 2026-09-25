@@ -4,14 +4,12 @@
 //! [`heredoc_target_is_data_consumer`] trusts (ADR-042). Split out of
 //! [`super::embedded_scripts`] to keep that file under the 800-line budget
 //! in `tests/file_size_budget.rs`; `embedded_scripts` is this predicate's
-//! only caller, and this module borrows its process-substitution extractor
-//! and interpreter list back for the capture-then-execute check
-//! ([`assignment_variable_runs_later`]).
+//! only caller. The [`forwarding`] submodule holds the allowlist behind the
+//! capture-then-execute check for the same budget reason (ADR-042 item 5).
 
-use crate::embedded_scripts::STDIN_EXECUTING_PROGRAMS;
-use crate::extract_process_substitution_bodies;
-use crate::segmentation::split_top_level_segments;
 use crate::split_tokens;
+
+mod forwarding;
 
 /// Programs that never execute their stdin: `cat`/`tee` copy the bytes to
 /// stdout or a file, and `jq` parses them as JSON. Their output only reaches
@@ -512,154 +510,9 @@ pub(super) fn heredoc_target_is_data_consumer(
     match heredoc_marker_context(&prefix) {
         HeredocMarkerContext::TopLevel | HeredocMarkerContext::TrustedCommandArg => true,
         HeredocMarkerContext::AssignmentRhs(name) => {
-            !assignment_variable_runs_later(name, following_text)
+            !forwarding::assignment_variable_runs_later(name, following_text)
         }
         HeredocMarkerContext::Untrusted => false,
     }
 }
 
-/// `true` when `following_text` — every command line after a captured
-/// heredoc's terminator — runs `name`, the variable a `NAME=$(cat <<'EOF'
-/// ...)` capture just assigned (issue #396 capture-then-execute). Three
-/// shapes count as running it, matched against `$NAME`/`${NAME}` (quoted or
-/// not, per [`split_tokens`]'s own dequoting):
-///
-/// - the command word of a simple command, anywhere `following_text` starts
-///   one (line start, or after `;`, `&&`, `||`, `|`, `&`);
-/// - an argument of `eval`, `source`, `.`, `exec`, or a
-///   [`STDIN_EXECUTING_PROGRAMS`] interpreter invoked with `-c`;
-/// - fed into `<(...)`, `>(...)`, or a pipe stage together with any other
-///   stage in the same `;`/`&&`/`||`-delimited chain.
-///
-/// A reference used only as a plain argument value — `curl -d "$NAME"`,
-/// `gh api -f body="$NAME"`, a bare `echo`/`printf "$NAME"` — does not
-/// count: none of those runs the text, so the capture stays `Data consumer`
-/// territory. Conservative on purpose: a chain that merely contains both a
-/// pipe and a reference to `name` counts as running it even when the two
-/// are in different pipeline stages, since telling which stage feeds which
-/// would need a real shell parser this predicate does not have (ADR-042).
-fn assignment_variable_runs_later(name: &str, following_text: &str) -> bool {
-    if following_text.is_empty() {
-        return false;
-    }
-    let dollar = format!("${name}");
-    let braced = format!("${{{name}}}");
-    if !following_text.contains(dollar.as_str()) && !following_text.contains(braced.as_str()) {
-        return false;
-    }
-
-    if extract_process_substitution_bodies(following_text)
-        .iter()
-        .any(|body| body.contains(dollar.as_str()) || body.contains(braced.as_str()))
-    {
-        return true;
-    }
-
-    split_top_level_chains(following_text)
-        .into_iter()
-        .any(|chain| {
-            let segments = split_top_level_segments(chain);
-            let piped_alongside_the_variable = segments.len() > 1
-                && (chain.contains(dollar.as_str()) || chain.contains(braced.as_str()));
-            piped_alongside_the_variable
-                || segments
-                    .iter()
-                    .any(|segment| segment_runs_variable(segment, &dollar, &braced))
-        })
-}
-
-/// `true` when the simple command `segment` (already split off a `;`/`&&`/
-/// `||`/`|`/`&` boundary by [`split_top_level_segments`]) runs `dollar`
-/// (`$NAME`) or `braced` (`${NAME}`) as its own command word, or hands one
-/// of them to `eval`/`source`/`.`/`exec`/an interpreter's `-c` flag.
-fn segment_runs_variable(segment: &str, dollar: &str, braced: &str) -> bool {
-    let tokens = split_tokens(segment);
-    let Some(program_pos) = tokens.iter().position(|token| !is_bare_assignment(token)) else {
-        return false;
-    };
-    let program = &tokens[program_pos];
-    if program == dollar || program == braced {
-        return true;
-    }
-    let basename = program
-        .rsplit_once('/')
-        .map_or(program.as_str(), |(_, tail)| tail);
-    let runs_its_arguments_as_code = matches!(basename, "eval" | "source" | "." | "exec")
-        || (STDIN_EXECUTING_PROGRAMS
-            .iter()
-            .any(|known| basename.eq_ignore_ascii_case(known))
-            && tokens[program_pos..].iter().any(|token| token == "-c"));
-    runs_its_arguments_as_code
-        && tokens[program_pos + 1..]
-            .iter()
-            .any(|token| token == dollar || token == braced)
-}
-
-/// Byte-range groups of `text` split at an unquoted `;`, `\n`, `&&`, or
-/// `||`, honoring `$(`/backtick/`(`-nesting the same way
-/// [`owning_simple_command_start`] does. A `|` or standalone `&` stays glued
-/// to its group on purpose: [`assignment_variable_runs_later`] needs to tell
-/// a piped group (where a reference anywhere in it counts as running the
-/// variable) apart from a merely sequential one, and re-splitting a group
-/// with [`split_top_level_segments`] — which does split on those — is how it
-/// does that.
-fn split_top_level_chains(text: &str) -> Vec<&str> {
-    let chars: Vec<(usize, char)> = text.char_indices().collect();
-    let mut chains = Vec::new();
-    let mut start = 0usize;
-    let mut single_quote = false;
-    let mut double_quote = false;
-    let mut in_backticks = false;
-    let mut paren_depth = 0u32;
-    let mut command_sub_depth = 0u32;
-    let mut i = 0usize;
-
-    while i < chars.len() {
-        let (idx, ch) = chars[i];
-        match ch {
-            '\\' if !single_quote => i += 1,
-            '\'' if !double_quote && !in_backticks => single_quote = !single_quote,
-            '"' if !single_quote && !in_backticks => double_quote = !double_quote,
-            '`' if !single_quote => in_backticks = !in_backticks,
-            '$' if !single_quote && chars.get(i + 1).map(|&(_, c)| c) == Some('(') => {
-                command_sub_depth += 1;
-                i += 1;
-            }
-            '(' if !single_quote && !double_quote => paren_depth += 1,
-            ')' if !single_quote && !double_quote => {
-                if command_sub_depth > 0 {
-                    command_sub_depth -= 1;
-                } else {
-                    paren_depth = paren_depth.saturating_sub(1);
-                }
-            }
-            ';' | '\n'
-                if !single_quote
-                    && !double_quote
-                    && !in_backticks
-                    && paren_depth == 0
-                    && command_sub_depth == 0 =>
-            {
-                chains.push(&text[start..idx]);
-                start = idx + ch.len_utf8();
-            }
-            '&' | '|'
-                if !single_quote
-                    && !double_quote
-                    && !in_backticks
-                    && paren_depth == 0
-                    && command_sub_depth == 0
-                    && chars.get(i + 1).map(|&(_, c)| c) == Some(ch) =>
-            {
-                chains.push(&text[start..idx]);
-                let (next_idx, next_ch) = chars[i + 1];
-                start = next_idx + next_ch.len_utf8();
-                i += 1;
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    chains.push(&text[start..]);
-    chains
-}
