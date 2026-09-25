@@ -10,6 +10,7 @@
 
 mod embedded_scripts;
 mod env_launcher;
+mod git_options;
 mod list_segments;
 mod nested_shells;
 mod prefix_match;
@@ -26,6 +27,9 @@ pub use embedded_scripts::{
     split_at_heredoc_marker,
 };
 use env_launcher::{env_prefix_lengths, env_split_string_tokens};
+pub use git_options::{
+    GitSubcommandStarts, MAX_GIT_OPTION_CANDIDATES, git_option_subcommand_starts,
+};
 pub use list_segments::{ListSegment, ListSeparator, list_segments};
 pub use nested_shells::extract_nested_commands;
 pub use prefix_match::{contains_any_token, matches_prefix};

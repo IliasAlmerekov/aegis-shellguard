@@ -72,6 +72,12 @@ by-program regex index — so prefixes and absolute paths cannot bypass a rule k
 first token. Distinct from `ParsedCommand.program`, which preserves the raw leading token.
 _Avoid_: real program, resolved command, normalized program
 
+**Git global option**:
+An option between `git` and its subcommand (`-C <path>`, `-c <name>=<value>`, `--git-dir`,
+`--no-pager`) that changes how git runs, not which subcommand runs. The scanner skips it
+before `GIT-*` rules match. Not a `Launcher prefix`: the `Effective program` stays `git`.
+_Avoid_: git flag, pre-subcommand option
+
 **Logical segment**:
 A scan-oriented command unit produced by `logical_segments` — the raw string cut at
 top-level `Command separator`s and normalized, so each independent command is assessed

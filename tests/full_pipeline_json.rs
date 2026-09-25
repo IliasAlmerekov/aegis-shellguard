@@ -582,5 +582,30 @@ fn tilde_launcher_operand_with_interpreter_shebang_prompts_but_missing_or_plain_
     }
 }
 
+#[test]
+fn json_output_git_dash_capital_c_reset_hard_warns() {
+    // GHSA-7564: `-C .` shifted `reset --hard` off position 1, so GIT-001
+    // never fired through the CLI end-to-end.
+    let home = TempDir::new().unwrap();
+
+    let output = base_command(home.path())
+        .args(["-c", "git -C . reset --hard", "--output", "json"])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stderr.is_empty());
+
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["risk"], "warn");
+    assert_eq!(json["decision"], "prompt");
+    assert!(
+        json["matched_patterns"]
+            .as_array()
+            .is_some_and(|patterns| patterns.iter().any(|item| item["id"] == "GIT-001")),
+        "GIT-001 must be reported in json mode: {json}"
+    );
+}
+
 #[path = "full_pipeline_json/runner.rs"]
 mod runner;
