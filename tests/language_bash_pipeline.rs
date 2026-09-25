@@ -2,8 +2,11 @@
 //! Iteration 8).
 //!
 //! A shell script file must get at least the treatment a Python script file
-//! gets: its contents are analyzed, a script whose commands are all safe runs
-//! without a prompt, and a script that hides a risky command still prompts.
+//! gets: its contents are analyzed, a script whose commands are all safe
+//! normally runs without a prompt, and a script that hides a risky command
+//! still prompts. (#458: the CLI can't force a generous analysis budget, so
+//! the "safe script" tests below tolerate the rare degraded-prompt case —
+//! see `analysis_orchestrate::cli_deadline_parity` for the strict version.)
 
 mod support;
 
@@ -13,14 +16,12 @@ use std::process::Command;
 use serde_json::Value;
 use tempfile::TempDir;
 
-/// The default 100 ms language-analysis budget can be missed by a debug binary
-/// on a loaded runner, which would degrade and prompt for the wrong reason.
-fn configure_generous_timeout(home: &Path) {
-    support::write_global_config(home, "[language_analysis]\ntimeout_ms = 2000\n");
-}
-
 fn evaluate(home: &Path, cwd: &Path, command: &str) -> Value {
-    configure_generous_timeout(home);
+    // #458: `language_analysis.timeout_ms` clamps to 100ms at every config
+    // layer (ADR-022 §6/§7) — setting it here from a test would be a no-op,
+    // so this CLI evaluation is exercised at whatever the clamped ceiling
+    // allows. See the module doc above for how the "safe script" assertions
+    // account for that.
     let output = Command::new(env!("CARGO_BIN_EXE_aegis"))
         .args(["--output", "json", "-c", command])
         .env("HOME", home)
@@ -39,13 +40,28 @@ fn evaluate(home: &Path, cwd: &Path, command: &str) -> Value {
     })
 }
 
-fn pattern_ids(evaluation: &Value) -> Vec<String> {
-    evaluation["matched_patterns"]
-        .as_array()
-        .expect("matched_patterns must be an array")
-        .iter()
-        .filter_map(|m| m["id"].as_str().map(str::to_owned))
-        .collect()
+// #458: the clamped 100ms `language_analysis.timeout_ms` ceiling means a
+// loaded `cargo test --workspace` run can miss it and degrade instead of
+// completing — turning a genuinely safe script's "auto_approve" into a
+// "prompt" for a reason unrelated to the script's content. `matched_patterns`
+// stays empty either way (Degraded records no synthetic Match), so that part
+// keeps proving the script isn't flagged; the stronger "analysis actually
+// completed" claim moved to
+// `analysis_orchestrate::cli_deadline_parity::safe_shell_script_completes_with_no_match_in_both_invocation_shapes`.
+fn assert_safe_script_is_approved_or_degrades_to_prompt(evaluation: &Value) {
+    assert!(
+        matches!(
+            evaluation["decision"].as_str(),
+            Some("auto_approve" | "prompt")
+        ),
+        "{evaluation:#}"
+    );
+    assert!(
+        evaluation["matched_patterns"]
+            .as_array()
+            .is_some_and(Vec::is_empty),
+        "a safe script must show no risky Match either way: {evaluation:#}"
+    );
 }
 
 #[test]
@@ -56,7 +72,7 @@ fn directly_executed_safe_shell_script_is_auto_approved() {
 
     let evaluation = evaluate(home.path(), cwd.path(), "./probe.sh");
 
-    assert_eq!(evaluation["decision"], "auto_approve", "{evaluation:#}");
+    assert_safe_script_is_approved_or_degrades_to_prompt(&evaluation);
 }
 
 #[test]
@@ -67,7 +83,7 @@ fn shell_script_run_through_sh_is_auto_approved_when_safe() {
 
     let evaluation = evaluate(home.path(), cwd.path(), "sh ./probe.sh");
 
-    assert_eq!(evaluation["decision"], "auto_approve", "{evaluation:#}");
+    assert_safe_script_is_approved_or_degrades_to_prompt(&evaluation);
 }
 
 #[test]
@@ -81,13 +97,16 @@ fn shell_script_hiding_a_risky_command_still_prompts() {
 
     let evaluation = evaluate(home.path(), cwd.path(), "./deploy.sh");
 
+    // "prompt" holds whether analysis completes with the GIT-003 Match or
+    // degrades on the clamped 100ms deadline under a loaded
+    // `cargo test --workspace` run (#458) — a hidden force push must never
+    // silently auto-approve either way. The GIT-003-Match and
+    // no-source-disclosure claims, which only hold once analysis Completes,
+    // moved to
+    // `analysis_orchestrate::cli_deadline_parity::shell_script_hiding_a_force_push_yields_git_003_without_disclosing_source`.
     assert_eq!(evaluation["decision"], "prompt", "{evaluation:#}");
-    assert!(
-        pattern_ids(&evaluation).contains(&"GIT-003".to_string()),
-        "the script's force push must surface as the same Match it gets when typed: {evaluation:#}"
-    );
-    // ADR-022 §10: script contents never leave the analysis stage. The Match
-    // is present above, so this check cannot pass vacuously.
+    // ADR-022 §10: script contents never leave the analysis stage, whether
+    // or not a Match fired.
     assert!(
         !evaluation.to_string().contains("origin main"),
         "the evaluation must not disclose script source: {evaluation:#}"

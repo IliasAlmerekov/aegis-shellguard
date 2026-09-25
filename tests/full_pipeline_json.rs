@@ -344,18 +344,20 @@ fn json_output_uses_language_aware_assessment_before_policy() {
         .output()
         .unwrap();
 
+    // #458: `language_analysis.timeout_ms` clamps to 100ms at every config
+    // layer, so this CLI-spawned process cannot be given a generous budget.
+    // A loaded `cargo test --workspace` run can miss that deadline and
+    // degrade instead of completing analysis; Degraded forces the same
+    // prompt exit code as a completed Warn Match (aegis-policy's
+    // `analysis_requires_explicit_approval`), so the exit code and decision
+    // stay reliable either way. The Complete-analysis claim (risk "warn",
+    // the LANG-FS-DEL Match) moved to
+    // `analysis_orchestrate::cli_deadline_parity::inline_os_remove_yields_lang_fs_del_warn_given_a_real_budget`,
+    // which runs the identical command through a budget the CLI cannot obtain.
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stderr.is_empty());
-
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(json["risk"], "warn");
     assert_eq!(json["decision"], "prompt");
-    assert!(
-        json["matched_patterns"]
-            .as_array()
-            .is_some_and(|matches| matches.iter().any(|item| item["id"] == "LANG-FS-DEL")),
-        "the JSON interface must expose the language-aware Match: {json}"
-    );
 }
 
 #[test]
@@ -429,16 +431,15 @@ canonical = "python3"
         .output()
         .unwrap();
 
+    // #458: same clamp as `json_output_uses_language_aware_assessment_before_policy`
+    // above — the exit code stays reliable under degradation. The
+    // LANG-FS-DEL Match claim (proof the alias actually reached routing)
+    // moved to
+    // `analysis_orchestrate::cli_deadline_parity::trusted_alias_forwards_into_routing_and_yields_lang_fs_del`.
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stderr.is_empty());
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(json["risk"], "warn");
-    assert!(
-        json["matched_patterns"]
-            .as_array()
-            .is_some_and(|matches| matches.iter().any(|item| item["id"] == "LANG-FS-DEL")),
-        "the effective trusted global alias must be forwarded into routing: {json}"
-    );
+    assert_eq!(json["decision"], "prompt");
 }
 
 #[test]

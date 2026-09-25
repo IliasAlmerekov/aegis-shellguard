@@ -224,7 +224,20 @@ fn watch_without_tty_denies_language_aware_match_before_execution() {
     let contents = fs::read_to_string(home.path().join(".aegis").join("audit.jsonl")).unwrap();
     let entry: serde_json::Value = serde_json::from_str(contents.trim()).unwrap();
     assert_eq!(entry["decision"], "Denied");
-    assert_eq!(entry["analysis"]["status"], "complete");
+    // #458: `language_analysis.timeout_ms` clamps to 100ms at every config
+    // layer, so Watch's spawned worker can miss it under a loaded
+    // `cargo test --workspace` run and degrade instead of completing.
+    // Degraded forces the same deny as a completed Warn Match, so the
+    // decision/exit-code assertions above stay reliable either way; the
+    // Complete-status claim moved to
+    // `analysis_orchestrate::cli_deadline_parity::inline_os_remove_yields_lang_fs_del_warn_given_a_real_budget`.
+    assert!(
+        matches!(
+            entry["analysis"]["status"].as_str(),
+            Some("complete" | "degraded")
+        ),
+        "the bounded worker may degrade under concurrent test load: {entry}"
+    );
 }
 
 #[test]
@@ -259,7 +272,20 @@ fn watch_resolves_relative_script_file_against_frame_cwd() {
 
     let contents = fs::read_to_string(home.path().join(".aegis").join("audit.jsonl")).unwrap();
     let entry: serde_json::Value = serde_json::from_str(contents.trim()).unwrap();
-    assert_eq!(entry["analysis"]["status"], "complete");
+    // #458: a missing-file degradation also denies, so "complete" alone used
+    // to be the only proof frame.cwd (not the process cwd) resolved run.py.
+    // Under a loaded `cargo test --workspace` run the worker can also
+    // degrade on the clamped 100ms deadline for reasons unrelated to cwd
+    // resolution, so this tolerates either outcome; the frame-cwd resolution
+    // claim moved to
+    // `analysis_orchestrate::cli_deadline_parity::relative_interpreter_script_resolves_against_explicit_cwd`.
+    assert!(
+        matches!(
+            entry["analysis"]["status"].as_str(),
+            Some("complete" | "degraded")
+        ),
+        "the bounded worker may degrade under concurrent test load: {entry}"
+    );
     assert!(target.exists(), "Watch must not execute without a TTY");
 }
 
