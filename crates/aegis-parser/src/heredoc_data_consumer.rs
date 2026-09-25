@@ -480,6 +480,11 @@ fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext<'_> {
 /// (issue #396 capture-then-execute follow-up: `x=$(cat <<'EOF' ...)` then
 /// `$x` must stay scanned; see [`assignment_variable_runs_later`]).
 /// `preceding_lines` holds the command lines before `line`, bodies left out.
+/// `body_starts_with_at` is the heredoc's own first body line, trimmed of
+/// leading whitespace, starting with `@` — the fact
+/// [`forwarding::assignment_variable_runs_later`]'s `curl` check needs,
+/// since curl reads an `@`-prefixed data value as a file path instead of
+/// sending it literally (issue #396 review follow-up).
 /// Ignorant of nowdoc-ness itself — callers already gate on that
 /// separately, matching how `embedded_scripts::heredoc_target_program`'s
 /// interpreter check is computed unconditionally too.
@@ -489,6 +494,7 @@ pub(super) fn heredoc_target_is_data_consumer(
     marker_start: usize,
     delimiter_end: usize,
     following_text: &str,
+    body_starts_with_at: bool,
 ) -> bool {
     if !heredoc_owning_command_is_data_consumer(line, marker_start)
         || tail_has_pipe(&line[delimiter_end..])
@@ -510,7 +516,7 @@ pub(super) fn heredoc_target_is_data_consumer(
     match heredoc_marker_context(&prefix) {
         HeredocMarkerContext::TopLevel | HeredocMarkerContext::TrustedCommandArg => true,
         HeredocMarkerContext::AssignmentRhs(name) => {
-            !forwarding::assignment_variable_runs_later(name, following_text)
+            !forwarding::assignment_variable_runs_later(name, following_text, body_starts_with_at)
         }
         HeredocMarkerContext::Untrusted => false,
     }

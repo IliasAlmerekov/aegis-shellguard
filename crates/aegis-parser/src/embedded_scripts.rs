@@ -514,12 +514,20 @@ fn walk_heredocs(
             // command runs the captured variable instead of just forwarding
             // it (issue #396: `NAME=$(cat <<'EOF' ...)` then `$NAME`).
             let following_text = lines[after_terminator..].join("\n");
+            // A curl `-d`/`--data`* value that starts with `@` names a file
+            // to upload, not literal data (issue #396 review follow-up) —
+            // thread a bool, not the body text, to avoid allocating on the
+            // heredoc-free fast path.
+            let body_starts_with_at = lines[body_start..body_end]
+                .first()
+                .is_some_and(|first_line| first_line.trim_start().starts_with('@'));
             let is_data_consumer_target = heredoc_target_is_data_consumer(
                 &command_text[..preceding_len],
                 marker_line,
                 marker.operator_start,
                 marker.delimiter_end,
                 &following_text,
+                body_starts_with_at,
             );
 
             on_heredoc(

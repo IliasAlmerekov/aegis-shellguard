@@ -1,10 +1,15 @@
 //! The forwarding-only allowlist behind [`super::assignment_variable_runs_later`]
 //! (issue #396 capture-then-execute, ADR-042 item 5): once a nowdoc is
 //! captured into a shell variable (`NAME=$(cat <<'EOF' ...)`), this decides
-//! whether every later use of that variable is provably a forward — an
-//! argument to `gh`/`git`/`curl`/`echo`/`printf`/`jq`, never something that
-//! re-runs the text. Split out of [`super`] to keep it under the 800-line
-//! budget in `tests/file_size_budget.rs`.
+//! whether every later use of that variable is provably a forward — the
+//! value of a data flag on `gh`/`git`/`curl`/`jq`, or any argument of
+//! `echo`/`printf` (except printf's own format string) — never something
+//! that re-runs the text or hands it to a program that reads it as a file
+//! path or a script (issue #396 review follow-up: an "any argument" rule
+//! was too wide, since `jq -n`, `gh --input`/`-F`, and `curl -T`/`-K`/`-o`/a
+//! bare URL each turn a forwarded value into something other than inline
+//! data). Split out of [`super`] to keep it under the 800-line budget in
+//! `tests/file_size_budget.rs`.
 
 use crate::extract_process_substitution_bodies;
 use crate::segmentation::split_top_level_segments;
@@ -13,11 +18,35 @@ use crate::split_tokens;
 use super::{MESSAGE_FLAGS, is_bare_assignment, open_frames, starts_word};
 
 /// Programs whose only trusted use of a captured heredoc variable is
-/// forwarding it — as an argument, or (for `git`) as a commit/tag/issue
+/// forwarding it through a data flag ([`segment_is_forwarding_only`]'s
+/// per-program checks) — as an argument, or (for `git`) as a commit/tag/issue
 /// message value. Nothing else: not the program itself, not an interpreter,
 /// not a wrapper like `sudo`/`env`/`time`/`nohup`/`command`/`find -exec`
 /// (ADR-042 item 5, issue #396 allowlist replacing the old blocklist).
 const TRUSTED_FORWARDING_PROGRAMS: &[&str] = &["gh", "git", "curl", "echo", "printf", "jq"];
+
+/// `gh` flags whose value curl-style file semantics never apply to: a commit
+/// or tag message, an issue or PR title or body — reuses [`MESSAGE_FLAGS`],
+/// the same set `git` trusts, since `gh`'s `-m`/`--message`, `-t`/`--title`
+/// and `-b`/`--body` line up with it exactly.
+const GH_MESSAGE_FLAGS: &[&str] = MESSAGE_FLAGS;
+
+/// `curl` flags whose value is always inline data, whatever the captured
+/// heredoc body's first line looks like.
+const CURL_ALWAYS_TRUSTED_DATA_FLAGS: &[&str] = &["--data-raw"];
+
+/// `curl` flags whose value is inline data only while the captured heredoc
+/// body does not start with `@` — curl reads an `@`-prefixed value as a file
+/// path to upload instead (issue #396 review: `curl -d "$x" url` where `$x`
+/// captured `@/etc/shadow` would post that file's contents, not the
+/// heredoc's own text).
+const CURL_CONDITIONAL_DATA_FLAGS: &[&str] = &[
+    "-d",
+    "--data",
+    "--data-binary",
+    "--data-urlencode",
+    "--json",
+];
 
 /// Bare words that, anywhere in `following_text`, can run a captured
 /// heredoc variable through indirection an argument-position scan would
@@ -146,17 +175,129 @@ fn is_whole_reference(token: &str, name: &str) -> bool {
     token == format!("${name}") || token == format!("${{{name}}}")
 }
 
-/// `true` when `args[index]` (a token after `git`'s program word) is the
-/// value of a [`MESSAGE_FLAGS`] flag: standalone (`-m "$x"`, so the previous
-/// token is the flag) or glued (`--body=$x`).
-fn token_is_git_message_value(args: &[String], index: usize, name: &str) -> bool {
+/// `true` when `args[index]` is the value of a flag `trusted` accepts:
+/// standalone (`--flag "$x"`, so the previous token is the flag) or glued
+/// (`--flag=$x`). Shared by every [`TRUSTED_FORWARDING_PROGRAMS`] member
+/// whose data flags take the reference as their whole value — `git`'s
+/// message flags and `gh`'s [`GH_MESSAGE_FLAGS`]/curl's data flags alike.
+/// `gh`'s `-f`/`--raw-field` does not fit this shape (its value is a
+/// `key=value` pair, not the reference alone) and uses
+/// [`token_is_gh_raw_field_value`] instead.
+fn token_is_flag_value(
+    args: &[String],
+    index: usize,
+    name: &str,
+    trusted: impl Fn(&str) -> bool,
+) -> bool {
     let token = &args[index];
     if let Some((flag, value)) = token.split_once('=') {
-        return MESSAGE_FLAGS.contains(&flag) && is_whole_reference(value, name);
+        return trusted(flag) && is_whole_reference(value, name);
     }
-    is_whole_reference(token, name)
-        && index > 0
-        && MESSAGE_FLAGS.contains(&args[index - 1].as_str())
+    is_whole_reference(token, name) && index > 0 && trusted(args[index - 1].as_str())
+}
+
+/// `true` when `token` is `KEY=value` with a non-empty `KEY` and `value` the
+/// whole reference to `name` — the shape a `gh api -f KEY="$x"` value takes,
+/// since `-f`/`--raw-field`'s value is a `key=value` pair rather than the
+/// reference on its own.
+fn token_is_key_equals_reference(token: &str, name: &str) -> bool {
+    token
+        .split_once('=')
+        .is_some_and(|(key, value)| !key.is_empty() && is_whole_reference(value, name))
+}
+
+/// `true` when `args[index]` is the `key=$x` value of a `gh`
+/// `-f`/`--raw-field` flag: standalone (`-f key=$x`, previous token is the
+/// flag) or glued to the long form (`--raw-field=key=$x`). Never
+/// `-F`/`--field` — that flag's value can carry a `@filename` prefix gh
+/// resolves to a file's contents, which `-f`/`--raw-field` never does
+/// (issue #396 review).
+fn token_is_gh_raw_field_value(args: &[String], index: usize, name: &str) -> bool {
+    let token = &args[index];
+    if index > 0
+        && matches!(args[index - 1].as_str(), "-f" | "--raw-field")
+        && token_is_key_equals_reference(token, name)
+    {
+        return true;
+    }
+    token
+        .strip_prefix("--raw-field=")
+        .is_some_and(|rest| token_is_key_equals_reference(rest, name))
+}
+
+/// `true` when `args[index]` (a token after `git`'s program word) is the
+/// value of a [`MESSAGE_FLAGS`] flag.
+fn token_is_git_message_value(args: &[String], index: usize, name: &str) -> bool {
+    token_is_flag_value(args, index, name, |flag| MESSAGE_FLAGS.contains(&flag))
+}
+
+/// `true` when every reference to `name` in `gh`'s `args` is the value of
+/// [`GH_MESSAGE_FLAGS`] or a `-f`/`--raw-field` pair
+/// ([`token_is_gh_raw_field_value`]). Not `-F`/`--field` (typed, and its
+/// value can be a `@filename` gh reads instead of sending literally), not
+/// `--input`/`--body-file` (both name a file to read), not a positional
+/// argument.
+fn gh_args_are_forwarding_only(args: &[String], name: &str) -> bool {
+    if matches!(
+        args.first().map(String::as_str),
+        Some("alias" | "extension")
+    ) {
+        return false;
+    }
+    args.iter().enumerate().all(|(i, token)| {
+        find_variable_references(token, name).is_empty()
+            || token_is_flag_value(args, i, name, |flag| GH_MESSAGE_FLAGS.contains(&flag))
+            || token_is_gh_raw_field_value(args, i, name)
+    })
+}
+
+/// `true` when every reference to `name` in `curl`'s `args` is the value of
+/// [`CURL_ALWAYS_TRUSTED_DATA_FLAGS`] or, while `body_starts_with_at` is
+/// `false`, [`CURL_CONDITIONAL_DATA_FLAGS`]. Not `-T`, `-K`, `-o`,
+/// `--config`, `-F`/`--form`, or a URL position — each of those can turn a
+/// captured value into a file curl reads from or writes to, rather than data
+/// it sends as-is.
+fn curl_args_are_forwarding_only(args: &[String], name: &str, body_starts_with_at: bool) -> bool {
+    let trusted = |flag: &str| {
+        CURL_ALWAYS_TRUSTED_DATA_FLAGS.contains(&flag)
+            || (!body_starts_with_at && CURL_CONDITIONAL_DATA_FLAGS.contains(&flag))
+    };
+    args.iter().enumerate().all(|(i, token)| {
+        find_variable_references(token, name).is_empty()
+            || token_is_flag_value(args, i, name, trusted)
+    })
+}
+
+/// `true` when `args[index]` is the value token of a `--arg NAME value` or
+/// `--argjson NAME value` triple: the reference itself, two positions after
+/// the flag word.
+fn token_is_jq_arg_value(args: &[String], index: usize, name: &str) -> bool {
+    is_whole_reference(&args[index], name)
+        && index >= 2
+        && matches!(args[index - 2].as_str(), "--arg" | "--argjson")
+}
+
+/// `true` when every reference to `name` in `jq`'s `args` is the value token
+/// of a `--arg`/`--argjson` pair ([`token_is_jq_arg_value`]). Not a
+/// positional argument (jq's program text, run against the input), not
+/// `-f`/`--from-file` (reads the program from a file), not
+/// `--rawfile`/`--slurpfile` (both read a file's contents into a variable).
+fn jq_args_are_forwarding_only(args: &[String], name: &str) -> bool {
+    args.iter().enumerate().all(|(i, token)| {
+        find_variable_references(token, name).is_empty() || token_is_jq_arg_value(args, i, name)
+    })
+}
+
+/// `true` when every reference to `name` in `printf`'s `args` sits at index
+/// 1 or later — anywhere but `args[0]`, the format string that shapes how
+/// printf reads every argument after it rather than being forwarded as-is.
+/// A captured format string cannot run a shell command, only mis-format the
+/// output, but it is not a plain forwarded value either, so it stays on the
+/// untrusted side rather than being waved through by analogy with `echo`.
+fn printf_args_are_forwarding_only(args: &[String], name: &str) -> bool {
+    args.iter()
+        .enumerate()
+        .all(|(i, token)| find_variable_references(token, name).is_empty() || i != 0)
 }
 
 /// `true` when every use of `name`'s reference inside `segment` — already a
@@ -176,10 +317,20 @@ fn token_is_git_message_value(args: &[String], index: usize, name: &str) -> bool
 ///   never one, which is also how a bare `y=$x` (no program token at all)
 ///   and a segment whose *only* token is the reference itself
 ///   (`${x:-}` as a whole command) both fail here;
-/// - `git` additionally requires the reference to be a message-flag value
-///   ([`token_is_git_message_value`]); `gh` rejects an `alias`/`extension`
-///   subcommand and otherwise accepts the reference as any argument.
-fn segment_is_forwarding_only(segment: &str, name: &str) -> bool {
+/// - the reference must be the value of that program's own data flag, not
+///   just any argument ([`gh_args_are_forwarding_only`],
+///   [`curl_args_are_forwarding_only`], [`jq_args_are_forwarding_only`],
+///   [`printf_args_are_forwarding_only`], [`token_is_git_message_value`]).
+///   `echo` alone keeps the old "any argument" rule, since it has no flag
+///   that reads a file or another program's text instead of printing the
+///   value verbatim.
+///
+/// `body_starts_with_at` is the captured heredoc's own first body line,
+/// trimmed of leading whitespace, starting with `@` — the one fact
+/// [`curl_args_are_forwarding_only`] needs that isn't visible from
+/// `segment` alone, since curl reads an `@`-prefixed data value as a file
+/// path instead of sending it literally.
+fn segment_is_forwarding_only(segment: &str, name: &str, body_starts_with_at: bool) -> bool {
     for pos in find_variable_references(segment, name) {
         if !open_frames(&segment[..pos]).is_empty() {
             return false;
@@ -210,16 +361,22 @@ fn segment_is_forwarding_only(segment: &str, name: &str) -> bool {
     }
     let args = &tokens[program_pos + 1..];
     if basename.eq_ignore_ascii_case("gh") {
-        return !matches!(
-            args.first().map(String::as_str),
-            Some("alias" | "extension")
-        );
+        return gh_args_are_forwarding_only(args, name);
     }
     if basename.eq_ignore_ascii_case("git") {
         return args.iter().enumerate().all(|(i, token)| {
             find_variable_references(token, name).is_empty()
                 || token_is_git_message_value(args, i, name)
         });
+    }
+    if basename.eq_ignore_ascii_case("curl") {
+        return curl_args_are_forwarding_only(args, name, body_starts_with_at);
+    }
+    if basename.eq_ignore_ascii_case("jq") {
+        return jq_args_are_forwarding_only(args, name);
+    }
+    if basename.eq_ignore_ascii_case("printf") {
+        return printf_args_are_forwarding_only(args, name);
     }
     true
 }
@@ -231,12 +388,16 @@ fn segment_is_forwarding_only(segment: &str, name: &str) -> bool {
 /// blocklist: `following_text` counts as forwarding-only only when rule 1
 /// finds no indirection anywhere ([`following_text_has_indirection`]),
 /// no process-substitution body carries the reference, and every top-level
-/// simple command that does carry it passes
-/// [`segment_is_forwarding_only`]. A chain that pipes to another stage
-/// alongside the reference is rejected outright, conservatively — telling
-/// which stage feeds which would need a real shell parser this predicate
-/// does not have.
-fn following_text_is_forwarding_only(name: &str, following_text: &str) -> bool {
+/// simple command that does carry it passes [`segment_is_forwarding_only`]
+/// (`body_starts_with_at` threaded through for curl's data-flag check). A
+/// chain that pipes to another stage alongside the reference is rejected
+/// outright, conservatively — telling which stage feeds which would need a
+/// real shell parser this predicate does not have.
+fn following_text_is_forwarding_only(
+    name: &str,
+    following_text: &str,
+    body_starts_with_at: bool,
+) -> bool {
     if following_text_has_indirection(following_text) {
         return false;
     }
@@ -256,7 +417,7 @@ fn following_text_is_forwarding_only(name: &str, following_text: &str) -> bool {
             }
             segments.iter().all(|segment| {
                 find_variable_references(segment, name).is_empty()
-                    || segment_is_forwarding_only(segment, name)
+                    || segment_is_forwarding_only(segment, name, body_starts_with_at)
             })
         })
 }
@@ -266,8 +427,15 @@ fn following_text_is_forwarding_only(name: &str, following_text: &str) -> bool {
 /// capture-then-execute). Delegates to
 /// [`following_text_is_forwarding_only`]'s allowlist and inverts it: a shape
 /// that allowlist cannot clear falls on the untrusted side, matching
-/// ADR-042's "a parsing gap costs a false positive, not a bypass."
-pub(super) fn assignment_variable_runs_later(name: &str, following_text: &str) -> bool {
+/// ADR-042's "a parsing gap costs a false positive, not a bypass".
+/// `body_starts_with_at` is the captured heredoc's own first body line,
+/// trimmed of leading whitespace, starting with `@` — see
+/// [`segment_is_forwarding_only`] for why curl needs it.
+pub(super) fn assignment_variable_runs_later(
+    name: &str,
+    following_text: &str,
+    body_starts_with_at: bool,
+) -> bool {
     if following_text.is_empty() {
         return false;
     }
@@ -278,7 +446,7 @@ pub(super) fn assignment_variable_runs_later(name: &str, following_text: &str) -
     if !has_reference && !following_text_has_indirection(following_text) {
         return false;
     }
-    !following_text_is_forwarding_only(name, following_text)
+    !following_text_is_forwarding_only(name, following_text, body_starts_with_at)
 }
 
 /// Byte-range groups of `text` split at an unquoted `;`, `\n`, `&&`, or
@@ -456,17 +624,156 @@ mod tests {
 
     #[test]
     fn segment_is_forwarding_only_true_for_a_trusted_program_argument() {
-        assert!(segment_is_forwarding_only("echo \"$x\"", "x"));
+        assert!(segment_is_forwarding_only("echo \"$x\"", "x", false));
     }
 
     #[test]
     fn segment_is_forwarding_only_false_for_an_untrusted_program() {
-        assert!(!segment_is_forwarding_only("bash -c \"$x\"", "x"));
+        assert!(!segment_is_forwarding_only("bash -c \"$x\"", "x", false));
     }
 
     #[test]
     fn segment_is_forwarding_only_false_when_the_reference_is_not_a_git_message_value() {
-        assert!(!segment_is_forwarding_only("git -c \"alias.x=!$x\" x", "x"));
+        assert!(!segment_is_forwarding_only(
+            "git -c \"alias.x=!$x\" x",
+            "x",
+            false
+        ));
+    }
+
+    // ── Issue #396 review: per-program data-flag narrowing ─────────────────
+
+    #[test]
+    fn segment_is_forwarding_only_false_for_jq_positional_argument() {
+        assert!(!segment_is_forwarding_only("jq -n \"$x\"", "x", false));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_false_for_jq_from_file_flag() {
+        assert!(!segment_is_forwarding_only("jq -f \"$x\"", "x", false));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_true_for_jq_arg_value() {
+        assert!(segment_is_forwarding_only(
+            "jq --arg b \"$x\" '{b:$b}'",
+            "x",
+            false
+        ));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_true_for_jq_argjson_value() {
+        assert!(segment_is_forwarding_only(
+            "jq --argjson b \"$x\" '{b:$b}'",
+            "x",
+            false
+        ));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_false_for_gh_input_flag() {
+        assert!(!segment_is_forwarding_only(
+            "gh api --input \"$x\" /repos/x/y/issues",
+            "x",
+            false
+        ));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_false_for_gh_field_flag() {
+        assert!(!segment_is_forwarding_only(
+            "gh api -F body=\"$x\" /repos/x/y/issues",
+            "x",
+            false
+        ));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_true_for_gh_raw_field_value() {
+        assert!(segment_is_forwarding_only(
+            "gh api -f body=\"$x\" /repos/x/y/issues",
+            "x",
+            false
+        ));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_true_for_gh_raw_field_glued_long_form() {
+        assert!(segment_is_forwarding_only(
+            "gh api --raw-field=body=$x /repos/x/y/issues",
+            "x",
+            false
+        ));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_false_for_curl_data_flag_when_body_starts_with_at() {
+        assert!(!segment_is_forwarding_only(
+            "curl -d \"$x\" https://example.com",
+            "x",
+            true
+        ));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_true_for_curl_data_flag_when_body_does_not_start_with_at() {
+        assert!(segment_is_forwarding_only(
+            "curl -d \"$x\" https://example.com",
+            "x",
+            false
+        ));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_true_for_curl_data_raw_even_when_body_starts_with_at() {
+        assert!(segment_is_forwarding_only(
+            "curl --data-raw \"$x\" https://example.com",
+            "x",
+            true
+        ));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_false_for_curl_upload_file_flag() {
+        assert!(!segment_is_forwarding_only(
+            "curl -T \"$x\" https://example.com",
+            "x",
+            false
+        ));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_false_for_curl_config_flag() {
+        assert!(!segment_is_forwarding_only("curl -K \"$x\"", "x", false));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_false_for_curl_output_flag() {
+        assert!(!segment_is_forwarding_only(
+            "curl -o \"$x\" https://example.com",
+            "x",
+            false
+        ));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_false_for_curl_url_position() {
+        assert!(!segment_is_forwarding_only("curl \"$x\"", "x", false));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_false_for_printf_format_string() {
+        assert!(!segment_is_forwarding_only("printf \"$x\"", "x", false));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_true_for_printf_later_argument() {
+        assert!(segment_is_forwarding_only(
+            "printf \"%s\" \"$x\"",
+            "x",
+            false
+        ));
     }
 
     #[test]
