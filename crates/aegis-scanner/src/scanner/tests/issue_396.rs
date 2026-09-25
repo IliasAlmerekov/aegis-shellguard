@@ -262,3 +262,72 @@ fn assess_captured_heredoc_only_forwarded_stays_safe() {
         );
     }
 }
+
+// Commit c696273's forwarding allowlist (ADR-042 item 5, #396 follow-up):
+// once a nowdoc is captured into a variable, every later reference to it
+// must be provably a forward to a trusted program, or the body stays
+// scanned. Each shape below is a way a captured heredoc can still reach a
+// shell: a compound-command wrapper, a redirect target, a grouping
+// construct, a parameter expansion, a second layer of capture, an alias or
+// trap store, a nameref, a here-string, or a write-then-run.
+#[test]
+fn assess_captured_heredoc_forwarding_allowlist_blocks_indirection_shapes() {
+    let cases = [
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n($x)",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n{ $x; }",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nif true; then $x; fi",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nfor i in 1; do $x; done",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nsudo $x",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nenv $x",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncommand $x",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nnohup $x",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ntime $x",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nfind . -maxdepth 0 -exec $x \\;",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ny=$x; $y",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ny=x; ${!y}",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n${x:-}",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n${x%%foo}",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nz=$($x)",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nz=`$x`",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\narr=($x)",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ntrap \"$x\" EXIT",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nalias a=\"$x\"",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nPROMPT_COMMAND=$x",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ndeclare -n r=x; $r",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nbash <<< \"$x\"",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\necho \"$x\" > f.sh; sh f.sh",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nprintf \"%s\" \"$x\" | sh",
+    ];
+    for cmd in cases {
+        assert_assessment_matches_pattern(cmd, RiskLevel::Block, "FS-001");
+    }
+}
+
+// The allowlist's trusted side (ADR-042 item 5): a captured value handed to
+// `gh`/`git`/`curl` as a plain argument or message-flag value never runs,
+// so the body stays inert.
+#[test]
+fn assess_captured_heredoc_forwarding_allowlist_permits_listed_programs() {
+    let cases = [
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\necho \"$x\"",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh pr create --body \"$x\"",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh api repos/o/r/issues -f body=\"$x\"",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncurl -d \"$x\" https://example.com",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngit commit -m \"$x\"",
+    ];
+    for cmd in cases {
+        let s = scanner();
+        let assessment = s.assess(cmd);
+        assert_eq!(
+            assessment.risk,
+            RiskLevel::Safe,
+            "expected Safe for {cmd:?}, got {:?} ({:?})",
+            assessment.risk,
+            assessment
+                .matched
+                .iter()
+                .map(|m| m.pattern.id.as_ref())
+                .collect::<Vec<_>>()
+        );
+    }
+}

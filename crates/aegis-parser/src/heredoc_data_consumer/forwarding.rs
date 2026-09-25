@@ -341,3 +341,138 @@ fn split_top_level_chains(text: &str) -> Vec<&str> {
     chains.push(&text[start..]);
     chains
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        bare_dot_command, find_variable_references, following_text_has_indirection,
+        is_whole_reference, segment_has_disallowed_redirect, segment_is_forwarding_only,
+        split_top_level_chains,
+    };
+
+    #[test]
+    fn find_variable_references_matches_bare_dollar_name() {
+        assert_eq!(find_variable_references("echo $x", "x"), vec![5]);
+    }
+
+    #[test]
+    fn find_variable_references_skips_a_longer_name_sharing_the_prefix() {
+        // `$xy` names a different variable than `x`; a naive substring
+        // match would wrongly count it as a reference to `x`.
+        assert!(find_variable_references("echo $xy", "x").is_empty());
+    }
+
+    #[test]
+    fn find_variable_references_matches_braced_form() {
+        assert_eq!(find_variable_references("echo ${x}", "x"), vec![5]);
+    }
+
+    #[test]
+    fn find_variable_references_matches_braced_form_with_a_default() {
+        assert_eq!(find_variable_references("echo ${x:-a}", "x"), vec![5]);
+    }
+
+    #[test]
+    fn find_variable_references_skips_a_longer_braced_name() {
+        assert!(find_variable_references("echo ${xy}", "x").is_empty());
+    }
+
+    #[test]
+    fn find_variable_references_finds_every_occurrence() {
+        assert_eq!(find_variable_references("$x $x", "x"), vec![0, 3]);
+    }
+
+    #[test]
+    fn bare_dot_command_true_for_a_standalone_dot() {
+        assert!(bare_dot_command(". script.sh"));
+    }
+
+    #[test]
+    fn bare_dot_command_false_for_a_relative_script_path() {
+        assert!(!bare_dot_command("./script.sh"));
+    }
+
+    #[test]
+    fn bare_dot_command_false_for_a_filename_with_a_dot() {
+        assert!(!bare_dot_command("release.tar"));
+    }
+
+    #[test]
+    fn following_text_has_indirection_true_for_the_eval_word() {
+        assert!(following_text_has_indirection("eval \"$x\""));
+    }
+
+    #[test]
+    fn following_text_has_indirection_false_for_a_word_only_sharing_a_substring() {
+        // "resourceful" contains "source" as a substring but is not the
+        // `source` builtin, so the whole-word check must leave it alone.
+        assert!(!following_text_has_indirection("resourceful $x"));
+    }
+
+    #[test]
+    fn following_text_has_indirection_true_for_a_flagged_nameref_declare() {
+        assert!(following_text_has_indirection("declare -n r=x; $r"));
+    }
+
+    #[test]
+    fn following_text_has_indirection_false_for_declare_without_the_nameref_flag() {
+        assert!(!following_text_has_indirection("declare r=x; echo $r"));
+    }
+
+    #[test]
+    fn segment_has_disallowed_redirect_false_for_the_two_allowed_forms() {
+        assert!(!segment_has_disallowed_redirect(
+            "git commit -m \"$x\" 2>&1"
+        ));
+        assert!(!segment_has_disallowed_redirect("git commit -m \"$x\" >&2"));
+    }
+
+    #[test]
+    fn segment_has_disallowed_redirect_true_for_a_file_target() {
+        assert!(segment_has_disallowed_redirect(
+            "git commit -m \"$x\" > out.log"
+        ));
+    }
+
+    #[test]
+    fn is_whole_reference_true_for_bare_and_braced_forms() {
+        assert!(is_whole_reference("$x", "x"));
+        assert!(is_whole_reference("${x}", "x"));
+    }
+
+    #[test]
+    fn is_whole_reference_false_when_the_token_carries_more_than_the_reference() {
+        assert!(!is_whole_reference("\"$x\"", "x"));
+        assert!(!is_whole_reference("$xy", "x"));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_true_for_a_trusted_program_argument() {
+        assert!(segment_is_forwarding_only("echo \"$x\"", "x"));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_false_for_an_untrusted_program() {
+        assert!(!segment_is_forwarding_only("bash -c \"$x\"", "x"));
+    }
+
+    #[test]
+    fn segment_is_forwarding_only_false_when_the_reference_is_not_a_git_message_value() {
+        assert!(!segment_is_forwarding_only("git -c \"alias.x=!$x\" x", "x"));
+    }
+
+    #[test]
+    fn split_top_level_chains_splits_on_a_semicolon() {
+        assert_eq!(split_top_level_chains("true; $x"), vec!["true", " $x"]);
+    }
+
+    #[test]
+    fn split_top_level_chains_keeps_a_pipe_glued_to_its_chain() {
+        // A lone `|` stays part of the same chain so the caller can tell a
+        // piped reference apart from a merely sequential one.
+        assert_eq!(
+            split_top_level_chains("echo \"$x\" | sh"),
+            vec!["echo \"$x\" | sh"]
+        );
+    }
+}

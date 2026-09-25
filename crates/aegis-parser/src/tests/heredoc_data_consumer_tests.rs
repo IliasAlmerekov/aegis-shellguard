@@ -202,3 +202,61 @@ fn heredoc_capture_then_only_forward_the_variable_is_still_flagged() {
         assert!(bodies[0].is_data_consumer_target, "command {cmd:?}");
     }
 }
+
+// 61. Commit c696273's forwarding allowlist (ADR-042 item 5): a captured
+// heredoc variable run through a compound-command wrapper, a grouping
+// construct, a parameter expansion, a second capture layer, an alias/trap
+// store, a nameref, a here-string, or a write-then-run must not be flagged
+// as a data consumer — none of these is a provable forward.
+#[test]
+fn heredoc_capture_then_run_the_variable_via_allowlist_gaps_is_not_flagged() {
+    let cases = [
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n($x)",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n{ $x; }",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nif true; then $x; fi",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nfor i in 1; do $x; done",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nsudo $x",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nenv $x",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncommand $x",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nnohup $x",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ntime $x",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nfind . -maxdepth 0 -exec $x \\;",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ny=$x; $y",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ny=x; ${!y}",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n${x:-}",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n${x%%foo}",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nz=$($x)",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nz=`$x`",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\narr=($x)",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ntrap \"$x\" EXIT",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nalias a=\"$x\"",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nPROMPT_COMMAND=$x",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ndeclare -n r=x; $r",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nbash <<< \"$x\"",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\necho \"$x\" > f.sh; sh f.sh",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nprintf \"%s\" \"$x\" | sh",
+    ];
+    for cmd in cases {
+        let bodies = extract_heredoc_bodies(cmd);
+        assert!(!bodies[0].is_data_consumer_target, "command {cmd:?}");
+    }
+}
+
+// 62. Commit c696273's forwarding allowlist (ADR-042 item 5): a captured
+// heredoc variable handed to `gh`/`curl`/`git` as a plain argument or a
+// message-flag value is still flagged, whether standalone or alongside the
+// existing `echo`/`jq` idioms.
+#[test]
+fn heredoc_capture_then_forward_the_variable_via_allowlist_programs_is_still_flagged() {
+    let cases = [
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\necho \"$x\"",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh pr create --body \"$x\"",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh api repos/o/r/issues -f body=\"$x\"",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncurl -d \"$x\" https://example.com",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngit commit -m \"$x\"",
+    ];
+    for cmd in cases {
+        let bodies = extract_heredoc_bodies(cmd);
+        assert!(bodies[0].is_data_consumer_target, "command {cmd:?}");
+    }
+}

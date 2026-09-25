@@ -103,3 +103,34 @@ expected_risk = "block"
 expected_decision = "block"
 expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# Commit c696273 trusts a captured heredoc only when every later use
+# forwards it. Running the variable inside a subshell group is neither
+# forwarding nor one of the indirection words the parser scans for by
+# name, so this guards that the body still fires.
+name = "heredoc_capture_then_subshell_group_block"
+command = """x=$(cat <<'EOF'
+rm -rf /
+EOF
+)
+($x)"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# Same allowlist, a wrapper program this time: `sudo` is not on the
+# trusted-forwarding list, so handing it the captured variable still
+# runs the body as root.
+name = "heredoc_capture_then_sudo_block"
+command = """x=$(cat <<'EOF'
+rm -rf /
+EOF
+)
+sudo $x"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
