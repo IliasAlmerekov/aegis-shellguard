@@ -182,6 +182,16 @@ fn assess_data_consumer_bodies_that_reach_a_shell_still_fire() {
         "cat <<'EOF' \\\n| sh\nrm -rf /\nEOF",
         "git -c \"alias.x=!$(cat <<'EOF'\nrm -rf /\nEOF\n)\" x",
         "gh alias set --shell x \"$(cat <<'EOF'\nrm -rf /\nEOF\n)\"",
+        // A `(` frame opened before the marker: process substitution,
+        // subshell, or a subshell nested in an assignment's `$(...)`.
+        "exec 3< <(\ncat <<'EOF'\nrm -rf /\nEOF\n)",
+        "bash <(\ncat <<'EOF'\nrm -rf /\nEOF\n)",
+        "source <(\ncat <<'EOF'\nrm -rf /\nEOF\n)",
+        "(cat <<'EOF'\nrm -rf /\nEOF\n) | sh",
+        "x=$( (cat <<'EOF'\nrm -rf /\nEOF\n) | sh )",
+        // Output to a descriptor that may be a pipe opened earlier.
+        "cat <<'EOF' >&3\nrm -rf /\nEOF",
+        "cat <<'EOF' > /dev/fd/3\nrm -rf /\nEOF",
     ];
 
     for cmd in cases {

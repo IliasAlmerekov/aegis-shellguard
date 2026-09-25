@@ -1,9 +1,10 @@
 //! The `Data consumer` predicate for a nowdoc heredoc body (issue #396,
 //! #432): whether `cat`, `tee`, or `jq` owns the marker, whether anything
 //! pipes the consumer's own stdout, and whether the marker sits in a context
-//! [`heredoc_target_is_data_consumer`] trusts. Split out of
-//! [`super::embedded_scripts`] to keep that file under `CONVENTION.md`'s
-//! file-size gate; `embedded_scripts` is this predicate's only caller.
+//! [`heredoc_target_is_data_consumer`] trusts (ADR-040). Split out of
+//! [`super::embedded_scripts`] to keep that file under the 800-line budget
+//! in `tests/file_size_budget.rs`; `embedded_scripts` is this predicate's
+//! only caller.
 
 use crate::split_tokens;
 
@@ -45,7 +46,7 @@ fn is_plain_identifier(name: &str) -> bool {
 /// its own first token exactly as before.
 ///
 /// `$(`/backtick each open a fresh quote scope even inside an outer
-/// double-quoted string, mirroring [`open_substitutions`]'s own nesting
+/// double-quoted string, mirroring [`open_frames`]'s own nesting
 /// rules — required so `gh pr create --body "$(cat <<'EOF'` resolves its
 /// owning command to `cat`, not to a still-open outer double quote hiding
 /// every later boundary from view (issue #396).
@@ -185,24 +186,35 @@ fn tail_has_pipe(tail: &str) -> bool {
     false
 }
 
-/// One `$(...)`/backtick frame still open at the end of a scanned prefix,
-/// carrying where it started so a caller can inspect the text immediately
-/// ahead of it.
-struct OpenSubstitution {
-    start: usize,
-    is_backtick: bool,
+/// What opened a frame that is still open at a heredoc marker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FrameKind {
+    /// `$(`: command substitution.
+    Command,
+    /// A backtick command substitution.
+    Backtick,
+    /// Any other `(`: a subshell, a process substitution `<(`/`>(`, or an
+    /// arithmetic paren. Its output can reach a pipe or a shell after the
+    /// heredoc's terminator line, where the marker line cannot see it.
+    Paren,
 }
 
-/// Every `$(...)`/backtick frame still open at the end of `text`, outermost
-/// first. Mirrors `embedded_scripts::find_unquoted_double_lt`'s own
-/// quote/nesting scan (including the same fresh-quote-scope-per-frame and
-/// saved-quote-restore rules) but tracks each frame's start offset instead
-/// of hunting for `<<` — used to classify a heredoc marker's enclosing
-/// context (issue #396, #432).
-fn open_substitutions(text: &str) -> Vec<OpenSubstitution> {
+/// One frame still open at the end of a scanned prefix, with where it
+/// started so a caller can inspect the text right before it.
+struct OpenFrame {
+    start: usize,
+    kind: FrameKind,
+}
+
+/// Every `$(`, backtick and `(` frame still open at the end of `text`,
+/// outermost first. `$(` and a backtick each open a fresh quote scope even
+/// inside a double-quoted string, the same rule
+/// `embedded_scripts::find_unquoted_double_lt` follows, and restore the
+/// enclosing scope when they close.
+fn open_frames(text: &str) -> Vec<OpenFrame> {
     struct Frame {
         start: usize,
-        command_sub_depth: Option<usize>,
+        kind: FrameKind,
         saved_quotes: (bool, bool),
     }
 
@@ -219,14 +231,14 @@ fn open_substitutions(text: &str) -> Vec<OpenSubstitution> {
             '\'' if !double_quote => single_quote = !single_quote,
             '"' if !single_quote => double_quote = !double_quote,
             '`' if !single_quote => {
-                if matches!(frames.last(), Some(f) if f.command_sub_depth.is_none()) {
+                if matches!(frames.last(), Some(f) if f.kind == FrameKind::Backtick) {
                     if let Some(frame) = frames.pop() {
                         (single_quote, double_quote) = frame.saved_quotes;
                     }
                 } else {
                     frames.push(Frame {
                         start: idx,
-                        command_sub_depth: None,
+                        kind: FrameKind::Backtick,
                         saved_quotes: (single_quote, double_quote),
                     });
                     single_quote = false;
@@ -237,27 +249,23 @@ fn open_substitutions(text: &str) -> Vec<OpenSubstitution> {
                 chars.next();
                 frames.push(Frame {
                     start: idx,
-                    command_sub_depth: Some(1),
+                    kind: FrameKind::Command,
                     saved_quotes: (single_quote, double_quote),
                 });
                 single_quote = false;
                 double_quote = false;
             }
             '(' if !single_quote && !double_quote => {
-                if let Some(depth) = frames.last_mut().and_then(|f| f.command_sub_depth.as_mut()) {
-                    *depth += 1;
-                }
+                frames.push(Frame {
+                    start: idx,
+                    kind: FrameKind::Paren,
+                    saved_quotes: (single_quote, double_quote),
+                });
             }
             ')' if !single_quote && !double_quote => {
-                let closed = if let Some(depth) =
-                    frames.last_mut().and_then(|f| f.command_sub_depth.as_mut())
+                if matches!(frames.last(), Some(f) if f.kind != FrameKind::Backtick)
+                    && let Some(frame) = frames.pop()
                 {
-                    *depth -= 1;
-                    *depth == 0
-                } else {
-                    false
-                };
-                if closed && let Some(frame) = frames.pop() {
                     (single_quote, double_quote) = frame.saved_quotes;
                 }
             }
@@ -267,19 +275,36 @@ fn open_substitutions(text: &str) -> Vec<OpenSubstitution> {
 
     frames
         .into_iter()
-        .map(|f| OpenSubstitution {
+        .map(|f| OpenFrame {
             start: f.start,
-            is_backtick: f.command_sub_depth.is_none(),
+            kind: f.kind,
         })
         .collect()
 }
 
-/// The enclosing shape a heredoc marker's own line sits in, relative to a
-/// `$(...)` — the only two enclosing shapes [`heredoc_target_is_data_consumer`]
-/// trusts, alongside no enclosing substitution at all (issue #396, #432).
+/// `true` when `line` sends the consumer's output somewhere other than a
+/// file, the terminal or stderr: a descriptor above 2 or a variable one
+/// (`>&3`, `>&$fd`), or a `/dev/fd/` or `/proc/` path. Any of these can be a
+/// pipe to a shell opened earlier (`exec 3> >(sh)`).
+fn writes_to_open_descriptor(line: &str) -> bool {
+    if line.contains("/dev/fd/") || line.contains("/proc/") {
+        return true;
+    }
+    line.match_indices(">&").any(|(idx, _)| {
+        let rest = &line[idx + 2..];
+        if rest.starts_with('$') {
+            return true;
+        }
+        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        !digits.is_empty() && digits != "1" && digits != "2"
+    })
+}
+
+/// The frame a heredoc marker sits in. [`heredoc_target_is_data_consumer`]
+/// trusts only the first three (issue #396, #432).
 #[derive(Debug, PartialEq, Eq)]
 enum HeredocMarkerContext {
-    /// No enclosing `$(...)`/backtick on the marker's own line.
+    /// No `$(`, backtick or `(` frame is open before the marker.
     TopLevel,
     /// Inside exactly one `$(...)`, itself the right-hand side of a plain
     /// `NAME=` assignment.
@@ -287,8 +312,9 @@ enum HeredocMarkerContext {
     /// Inside exactly one `$(...)`, itself the whole value of a message flag
     /// (see [`MESSAGE_FLAGS`]) of a `git` or `gh` invocation.
     TrustedCommandArg,
-    /// Anything else: nested substitution, a backtick command position, or a
-    /// `$(...)` that is not a `git`/`gh` message value — a `bash -c
+    /// Anything else: nested frames, a backtick, a subshell or process
+    /// substitution `(`, a `case` before the marker, or a `$(...)` that is
+    /// not a `git`/`gh` message value — a `bash -c
     /// "$(...)"`, `eval "$(...)"`, `ssh host "$(...)"`, `echo "$(...)" | sh`,
     /// `git -c "alias.x=!$(...)"` or `gh alias set --shell x "$(...)"` shape
     /// among them.
@@ -333,13 +359,21 @@ fn is_trusted_message_value(owning: &str) -> bool {
 /// `embedded_scripts::walk_heredocs`) followed by the marker line up to the
 /// `<<`, so a `$(` opened on an earlier line still counts as enclosing.
 fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext {
-    let frames = open_substitutions(prefix);
+    // A `case` pattern's `)` closes nothing, so it would pop the frame that
+    // really encloses the marker and make the context look trusted.
+    if prefix
+        .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+        .any(|word| word == "case")
+    {
+        return HeredocMarkerContext::Untrusted;
+    }
+    let frames = open_frames(prefix);
     let frame = match frames.as_slice() {
         [] => return HeredocMarkerContext::TopLevel,
         [frame] => frame,
         _ => return HeredocMarkerContext::Untrusted,
     };
-    if frame.is_backtick {
+    if frame.kind != FrameKind::Command {
         return HeredocMarkerContext::Untrusted;
     }
 
@@ -372,9 +406,11 @@ fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext {
 /// as the program of the simple command that owns the marker, piped to
 /// nothing else, not continued onto the next line by a trailing `\`, with no
 /// process substitution on the marker line (`cat
-/// <<'EOF' > >(sh)`, `tee >(sh) <<'EOF'` hand the body to a shell), and
-/// reached only through a context this predicate trusts (top level, an
-/// assignment's `$(...)`, or a `git`/`gh` message value's `$(...)`).
+/// <<'EOF' > >(sh)`, `tee >(sh) <<'EOF'` hand the body to a shell), no
+/// write to a descriptor above 2 or a `/dev/fd/`/`/proc/` path, and reached
+/// only through a context this predicate trusts (top level, an assignment's
+/// `$(...)`, or a `git`/`gh` message value's `$(...)`, with no subshell or
+/// process-substitution `(` still open and no `case` before the marker).
 /// `preceding_lines` holds the command lines before `line`, bodies left out.
 /// Ignorant of nowdoc-ness itself — callers already gate on that
 /// separately, matching how `embedded_scripts::heredoc_target_program`'s
@@ -392,10 +428,16 @@ pub(super) fn heredoc_target_is_data_consumer(
         // A trailing `\` continues the command onto the next line (`cat
         // <<'EOF' \` then `| sh`), which this line walk would misread as body.
         || line.trim_end().ends_with('\\')
+        || writes_to_open_descriptor(line)
     {
         return false;
     }
-    let prefix = format!("{preceding_lines}{}", &line[..marker_start]);
+    let marker_prefix = &line[..marker_start];
+    let prefix = if preceding_lines.is_empty() {
+        std::borrow::Cow::Borrowed(marker_prefix)
+    } else {
+        std::borrow::Cow::Owned(format!("{preceding_lines}{marker_prefix}"))
+    };
     matches!(
         heredoc_marker_context(&prefix),
         HeredocMarkerContext::TopLevel

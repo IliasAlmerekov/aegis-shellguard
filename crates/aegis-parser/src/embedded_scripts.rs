@@ -459,6 +459,12 @@ fn walk_heredocs(
     lines: &[&str],
     mut on_heredoc: impl FnMut(&HeredocMarker, bool, bool, Range<usize>),
 ) {
+    // No marker anywhere: skip the walk, and with it the `command_text` copy
+    // below, for the common heredoc-free command (`CONVENTION.md` §8).
+    if !lines.iter().any(|line| line.contains("<<")) {
+        return;
+    }
+
     let mut i = 0;
     // Command lines seen so far, heredoc bodies and terminators left out, so
     // the data-consumer predicate sees a `$(` opened on an earlier line.

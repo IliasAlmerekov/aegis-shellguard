@@ -555,6 +555,8 @@ fn heredoc_cat_inside_git_gh_message_values_is_flagged() {
         "git tag -a v1 --message \"$(cat <<'EOF'\nsome text\nEOF\n)\"",
         "gh issue create --title \"$(cat <<'EOF'\nsome text\nEOF\n)\"",
         "gh pr create --body=\"$(cat <<'EOF'\nsome text\nEOF\n)\"",
+        "cat >&2 <<'EOF'\nsome text\nEOF",
+        "cat 2>&1 <<'EOF'\nsome text\nEOF",
     ];
     for cmd in cases {
         let bodies = extract_heredoc_bodies(cmd);
@@ -578,6 +580,14 @@ fn heredoc_data_consumer_output_reaching_a_shell_is_not_flagged() {
         "git config alias.y \"!$(cat <<'EOF'\nsome text\nEOF\n)\"",
         "gh alias set --shell x \"$(cat <<'EOF'\nsome text\nEOF\n)\"",
         "git commit -m \"prefix $(cat <<'EOF'\nsome text\nEOF\n)\"",
+        "exec 3< <(\ncat <<'EOF'\nsome text\nEOF\n)",
+        "(cat <<'EOF'\nsome text\nEOF\n) | sh",
+        "x=$( (cat <<'EOF'\nsome text\nEOF\n) | sh )",
+        "x=$(case a in a) cat <<'EOF'\nsome text\nEOF\n;; esac)",
+        "cat <<'EOF' >&3\nsome text\nEOF",
+        "cat <<'EOF' >&12\nsome text\nEOF",
+        "cat <<'EOF' >&$fd\nsome text\nEOF",
+        "cat <<'EOF' > /dev/fd/3\nsome text\nEOF",
     ];
     for cmd in cases {
         let bodies = extract_heredoc_bodies(cmd);

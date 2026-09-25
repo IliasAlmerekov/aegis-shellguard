@@ -27,11 +27,12 @@ unclaimed-interpreter net tokenized the heredoc body as if it were argv, so a
 JSON string such as `"python3 ./x"` read as an interpreter operand and the
 command prompted.
 
-The body is not always inert, though. Four probes showed shapes where a
+The body is not always inert, though. Probes and review found shapes where a
 naive "cat, tee or jq means data" rule lets a shell run the text:
-`jq -r .a <<'JSON' | sh`, `cat <<'EOF' > >(sh)`, a `$(` opened on the line
-before the marker in command position, and `git -c "alias.x=!$(cat <<'EOF' ...)"`,
-where git runs a `!` alias through the shell. `xargs <<'EOF'` also turns stdin
+`jq -r .a <<'JSON' | sh`, `cat <<'EOF' > >(sh)`, a `$(` or `<(` opened on the
+line before the marker, a subshell piped to `sh` after the terminator,
+`cat <<'EOF' >&3`, and `git -c "alias.x=!$(cat <<'EOF' ...)"`, where git runs
+a `!` alias through the shell. `xargs <<'EOF'` also turns stdin
 into argv, so the router cannot drop body lines for every heredoc.
 
 ## Decision
@@ -51,11 +52,19 @@ into argv, so the router cannot drop body lines for every heredoc.
      `system()`;
    - no `|` follows the delimiter on the marker line, the line has no `>(` or
      `<(`, and it does not end in a `\` continuation;
+   - the consumer does not write to a descriptor above 2 or a variable one
+     (`>&3`, `>&$fd`) or to a `/dev/fd/` or `/proc/` path, since an earlier
+     `exec 3> >(sh)` can make that descriptor a pipe to a shell;
    - the heredoc sits at top level, or inside exactly one `$(...)` that is
      either the right side of `NAME=` or the whole value of a `git`/`gh`
-     message flag (`-m`, `--message`, `-t`, `--title`, `-b`, `--body`). The
-     enclosing context is read from every command line before the marker, not
-     only the marker's own line.
+     message flag (`-m`, `--message`, `-t`, `--title`, `-b`, `--body`). Any
+     other open frame before the marker (a subshell `(`, a process
+     substitution `<(`/`>(`, a backtick, a second `$(`) makes it untrusted,
+     because its output can reach a pipe or a shell after the terminator line
+     (`(cat <<'EOF' ... EOF` then `) | sh`). The frames are read from every
+     command line before the marker, not only the marker's own line. A `case`
+     before the marker also makes it untrusted, because a pattern's `)`
+     would close the wrong frame.
 3. When the predicate holds, the scanner blanks the body (line lengths kept)
    and the router masks it before tokenizing the stage. When it does not, both
    keep their previous behaviour. Unquoted heredocs and interpreter readers
