@@ -25,10 +25,23 @@ struct CanonicalOutcome {
 /// `analysis_orchestrate_runtime.rs`; this suite is only about whether every
 /// transport reaches the same Assessment+Decision once that policy is neutral.
 fn configure_ci_allow(home: &Path) {
-    support::write_global_config(
-        home,
-        "ci_policy = \"Allow\"\n[language_analysis]\ntimeout_ms = 1000\n",
-    );
+    support::write_global_config(home, "ci_policy = \"Allow\"\n");
+}
+
+/// Runs one transport in a fresh home until its audit records completed
+/// analysis, so every transport is compared on a completed Assessment (#458).
+/// Every fixture here denies without a TTY, so a repeat executes nothing.
+fn completed_home(label: &str, mut run: impl FnMut(&Path)) -> TempDir {
+    support::until_analysis_completes(
+        label,
+        || {
+            let home = TempDir::new().expect("temporary fixture home");
+            configure_ci_allow(home.path());
+            run(home.path());
+            home
+        },
+        |home| support::audit_records_completed_analysis(home.path()),
+    )
 }
 
 fn aegis(home: &Path, cwd: &Path, ci: bool) -> Command {
@@ -134,64 +147,62 @@ fn run_forwarded_hook_command(home: &Path, cwd: &Path, hook_output: &Output) {
 fn language_analysis_agrees_across_shell_watch_hooks_and_ci() {
     let cwd = TempDir::new().expect("temporary command cwd");
 
-    let shell_home = TempDir::new().expect("temporary Shell home");
-    configure_ci_allow(shell_home.path());
-    let shell = aegis(shell_home.path(), cwd.path(), false)
-        .args(["--command", ANALYZED_COMMAND])
-        .output()
-        .expect("Shell evaluation");
-    assert_eq!(shell.status.code(), Some(2));
+    let shell_home = completed_home("Shell", |home| {
+        let shell = aegis(home, cwd.path(), false)
+            .args(["--command", ANALYZED_COMMAND])
+            .output()
+            .expect("Shell evaluation");
+        assert_eq!(shell.status.code(), Some(2));
+    });
     let expected = audit_outcome(shell_home.path());
 
-    let ci_home = TempDir::new().expect("temporary CI home");
-    configure_ci_allow(ci_home.path());
-    let ci = aegis(ci_home.path(), cwd.path(), true)
-        .args(["--command", ANALYZED_COMMAND])
-        .output()
-        .expect("CI evaluation");
-    assert_eq!(ci.status.code(), Some(2));
+    let ci_home = completed_home("CI", |home| {
+        let ci = aegis(home, cwd.path(), true)
+            .args(["--command", ANALYZED_COMMAND])
+            .output()
+            .expect("CI evaluation");
+        assert_eq!(ci.status.code(), Some(2));
+    });
     assert_eq!(audit_outcome(ci_home.path()), expected);
 
-    let watch_home = TempDir::new().expect("temporary Watch home");
-    configure_ci_allow(watch_home.path());
     let watch_input = format!(r#"{{"cmd":{ANALYZED_COMMAND:?},"id":"agreement"}}"#) + "\n";
-    let watch = aegis(watch_home.path(), cwd.path(), false)
-        .arg("watch")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("Watch must spawn");
-    // `Child` owns its stdin, so use a scoped mutable binding to send the sole frame.
-    let mut watch = watch;
-    watch
-        .stdin
-        .as_mut()
-        .expect("Watch stdin")
-        .write_all(watch_input.as_bytes())
-        .expect("Watch input");
-    let watch = watch.wait_with_output().expect("Watch must finish");
-    assert!(
-        watch.status.success(),
-        "Watch owns a long-running transport exit code"
-    );
-    let watch_result: Value = String::from_utf8_lossy(&watch.stdout)
-        .lines()
-        .map(|line| serde_json::from_str(line).expect("Watch NDJSON frame"))
-        .find(|frame: &Value| frame["type"] == "result")
-        .expect("Watch result frame");
-    assert_eq!(watch_result["decision"], "denied");
-    assert_eq!(watch_result["exit_code"], 2);
+    let watch_home = completed_home("Watch", |home| {
+        let mut watch = aegis(home, cwd.path(), false)
+            .arg("watch")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("Watch must spawn");
+        watch
+            .stdin
+            .as_mut()
+            .expect("Watch stdin")
+            .write_all(watch_input.as_bytes())
+            .expect("Watch input");
+        let watch = watch.wait_with_output().expect("Watch must finish");
+        assert!(
+            watch.status.success(),
+            "Watch owns a long-running transport exit code"
+        );
+        let watch_result: Value = String::from_utf8_lossy(&watch.stdout)
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("Watch NDJSON frame"))
+            .find(|frame: &Value| frame["type"] == "result")
+            .expect("Watch result frame");
+        assert_eq!(watch_result["decision"], "denied");
+        assert_eq!(watch_result["exit_code"], 2);
+    });
     assert_eq!(audit_outcome(watch_home.path()), expected);
 
     for script in ["hooks/claude-code.sh", "hooks/codex-pre-tool-use.sh"] {
-        let hook_home = TempDir::new().expect("temporary hook home");
-        configure_ci_allow(hook_home.path());
-        let hook = invoke_hook(hook_home.path(), script);
-        assert!(
-            hook.status.success(),
-            "{script} must return a hook response"
-        );
-        run_forwarded_hook_command(hook_home.path(), cwd.path(), &hook);
+        let hook_home = completed_home(script, |home| {
+            let hook = invoke_hook(home, script);
+            assert!(
+                hook.status.success(),
+                "{script} must return a hook response"
+            );
+            run_forwarded_hook_command(home, cwd.path(), &hook);
+        });
         assert_eq!(audit_outcome(hook_home.path()), expected, "{script}");
     }
 }

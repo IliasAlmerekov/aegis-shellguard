@@ -1,5 +1,7 @@
 //! Integration tests for `aegis watch` — end-to-end via child process.
 
+mod support;
+
 use std::fs;
 use std::io::{ErrorKind, Write};
 use std::path::Path;
@@ -37,6 +39,22 @@ fn aegis_watch_in(home: &Path, cwd: &Path, input: &[u8]) -> std::process::Output
     child
         .wait_with_output()
         .expect("failed to wait for aegis watch")
+}
+
+/// Runs one Watch frame in a fresh home until its audit records completed
+/// analysis. The CLI clamps the analysis deadline to 100 ms, and a loaded
+/// test run can miss it (#458). Callers pass frames that Watch denies without
+/// a TTY, so a repeat executes nothing.
+fn watch_until_analysis_completes(cwd: &Path, input: &[u8]) -> (TempDir, std::process::Output) {
+    support::until_analysis_completes(
+        "Watch",
+        || {
+            let home = TempDir::new().unwrap();
+            let output = aegis_watch_in(home.path(), cwd, input);
+            (home, output)
+        },
+        |(home, _)| support::audit_records_completed_analysis(home.path()),
+    )
 }
 
 fn write_disabled_toggle(home: &Path) {
@@ -195,7 +213,6 @@ fn watch_executes_effect_opaque_command_when_required_snapshot_is_ready() {
 
 #[test]
 fn watch_without_tty_denies_language_aware_match_before_execution() {
-    let home = TempDir::new().unwrap();
     let cwd = TempDir::new().unwrap();
     let target = cwd.path().join("artifact.txt");
     fs::write(&target, "keep").unwrap();
@@ -210,7 +227,7 @@ fn watch_without_tty_denies_language_aware_match_before_execution() {
     .to_string()
         + "\n";
 
-    let output = aegis_watch_in(home.path(), cwd.path(), input.as_bytes());
+    let (home, output) = watch_until_analysis_completes(cwd.path(), input.as_bytes());
 
     let frames = parse_frames(&output.stdout);
     let result = frames
@@ -229,7 +246,6 @@ fn watch_without_tty_denies_language_aware_match_before_execution() {
 
 #[test]
 fn watch_resolves_relative_script_file_against_frame_cwd() {
-    let home = TempDir::new().unwrap();
     let process_cwd = TempDir::new().unwrap();
     let frame_cwd = TempDir::new().unwrap();
     let target = frame_cwd.path().join("artifact.txt");
@@ -247,7 +263,7 @@ fn watch_resolves_relative_script_file_against_frame_cwd() {
     .to_string()
         + "\n";
 
-    let output = aegis_watch_in(home.path(), process_cwd.path(), input.as_bytes());
+    let (home, output) = watch_until_analysis_completes(process_cwd.path(), input.as_bytes());
 
     let frames = parse_frames(&output.stdout);
     let result = frames
@@ -259,6 +275,8 @@ fn watch_resolves_relative_script_file_against_frame_cwd() {
 
     let contents = fs::read_to_string(home.path().join(".aegis").join("audit.jsonl")).unwrap();
     let entry: serde_json::Value = serde_json::from_str(contents.trim()).unwrap();
+    // A missing file also denies, so the analysis status is the proof that
+    // `frame.cwd`, not the process cwd, resolved `run.py`.
     assert_eq!(entry["analysis"]["status"], "complete");
     assert!(target.exists(), "Watch must not execute without a TTY");
 }
