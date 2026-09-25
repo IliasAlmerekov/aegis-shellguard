@@ -25,7 +25,29 @@ fn bench_safe_command_assess(c: &mut Criterion) {
     });
 }
 
-// ── Benchmark 2: 100 dangerous commands with full regex scan ──────────────────
+// ── Benchmark 2: a git command with a few global options ahead of its
+// subcommand ────────────────────────────────────────────────────────────
+//
+// GHSA-7564's fix adds a second matching step for git slices: resolve every
+// position the subcommand could start at, once its own global options are
+// skipped, and re-run the token-prefix and regex mechanisms per candidate.
+// A short, listed option chain like this one stays a single candidate, so
+// this is the ordinary-case cost the fix adds to every git command, not the
+// capped worst case (that one is pinned by a test, not a benchmark: an
+// uncapped 2000-option chain would swing results by three orders of
+// magnitude and make the budget comparison meaningless).
+
+const GIT_GLOBAL_OPTION_COMMAND: &str = "git -C . --no-pager reset --hard";
+
+fn bench_git_global_option_reset_hard_assess(c: &mut Criterion) {
+    let scanner = make_scanner();
+
+    c.bench_function("git_global_option_reset_hard_assess", |b| {
+        b.iter(|| black_box(scanner.assess(black_box(GIT_GLOBAL_OPTION_COMMAND))))
+    });
+}
+
+// ── Benchmark 3: 100 dangerous commands with full regex scan ──────────────────
 //
 // Dangerous commands hit the Aho-Corasick quick pass and then run the full
 // regex scan over all patterns. We vary across all seven categories so every
@@ -52,6 +74,8 @@ fn bench_dangerous_commands(c: &mut Criterion) {
         "git push origin main --force",
         "git filter-branch --tree-filter 'rm -f secret.txt' HEAD",
         "git stash drop stash@{0}",
+        // Git with global options ahead of the subcommand (GHSA-7564)
+        "git -C . --no-pager reset --hard",
         // Database
         "DROP TABLE users;",
         "DROP DATABASE myapp_production;",
@@ -99,7 +123,7 @@ fn bench_dangerous_commands(c: &mut Criterion) {
     });
 }
 
-// ── Benchmark 3: worst-case heredoc — long inline Python script ───────────────
+// ── Benchmark 4: worst-case heredoc — long inline Python script ───────────────
 //
 // This exercises the full pipeline: quick scan hits (due to embedded dangerous
 // keyword), full regex scan runs, *and* the inline-script body is also scanned.
@@ -128,6 +152,6 @@ fn bench_heredoc_worst_case(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default().measurement_time(Duration::from_secs(8));
-    targets = bench_safe_command_assess, bench_dangerous_commands, bench_heredoc_worst_case
+    targets = bench_safe_command_assess, bench_git_global_option_reset_hard_assess, bench_dangerous_commands, bench_heredoc_worst_case
 }
 criterion_main!(benches);

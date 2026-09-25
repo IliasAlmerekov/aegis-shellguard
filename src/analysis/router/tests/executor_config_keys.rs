@@ -38,6 +38,20 @@ fn git_dash_c_new_top_level_executor_keys_running_a_script_are_routed() {
 }
 
 #[test]
+fn git_dash_c_executor_key_behind_a_leading_git_global_option_is_still_routed() {
+    // GHSA-7564: the scanner's git-option skip must not change what the
+    // router itself reads off `slice.tokens`; a global option ahead of
+    // `-c` still routes the same as the unprefixed case in
+    // `executor_option_values.rs`'s `git_dash_c_core_pager_running_a_script_is_routed`.
+    for command in [
+        r#"git -C . -c core.pager='python x.py' log"#,
+        r#"git --no-pager -c core.pager='python x.py' log"#,
+    ] {
+        assert_eq!(route(command, &[]), vec![unresolved_dynamic()], "{command}");
+    }
+}
+
+#[test]
 fn git_dash_c_executor_key_families_with_a_user_chosen_middle_segment_are_routed() {
     for command in [
         r#"git -c gpg.openpgp.program='python3 ./evil.py' commit -S"#,
