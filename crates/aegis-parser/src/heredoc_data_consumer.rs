@@ -1,7 +1,7 @@
 //! The `Data consumer` predicate for a nowdoc heredoc body (issue #396,
 //! #432): whether `cat`, `tee`, or `jq` owns the marker, whether anything
 //! pipes the consumer's own stdout, and whether the marker sits in a context
-//! [`heredoc_target_is_data_consumer`] trusts (ADR-040). Split out of
+//! [`heredoc_target_is_data_consumer`] trusts (ADR-042). Split out of
 //! [`super::embedded_scripts`] to keep that file under the 800-line budget
 //! in `tests/file_size_budget.rs`; `embedded_scripts` is this predicate's
 //! only caller.

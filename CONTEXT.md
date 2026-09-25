@@ -167,7 +167,7 @@ descriptor, or a `/dev/fd/` or `/proc/` path, no compound-command keyword
 marker, and the heredoc sits at top level, in `NAME=$(...)`, or in the `$(...)` value
 of a `git`/`gh` message flag (`-m`, `--message`, `-t`, `--title`, `-b`,
 `--body`) with no subshell, process-substitution `(` or `{ ...; }` group open
-around it. Any other shape keeps the body scanned (ADR-040).
+around it. Any other shape keeps the body scanned (ADR-042).
 _Avoid_: inert heredoc, safe heredoc target
 
 **Token-prefix rule**:
