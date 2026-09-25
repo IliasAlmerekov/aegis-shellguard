@@ -16,7 +16,6 @@ fn plugin_with_user(temp_dir: &TempDir, user: &str) -> MysqlPlugin {
     )
 }
 
-#[cfg(unix)]
 fn stub_bin(dir: &TempDir, name: &str, body: &str) -> PathBuf {
     let path = dir.path().join(name);
     crate::test_support::write_executable(&path, &format!("#!/bin/sh\nset -eu\n{body}\n"));
