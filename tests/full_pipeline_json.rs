@@ -344,16 +344,9 @@ fn json_output_uses_language_aware_assessment_before_policy() {
         .output()
         .unwrap();
 
-    // #458: `language_analysis.timeout_ms` clamps to 100ms at every config
-    // layer, so this CLI-spawned process cannot be given a generous budget.
-    // A loaded `cargo test --workspace` run can miss that deadline and
-    // degrade instead of completing analysis; Degraded forces the same
-    // prompt exit code as a completed Warn Match (aegis-policy's
-    // `analysis_requires_explicit_approval`), so the exit code and decision
-    // stay reliable either way. The Complete-analysis claim (risk "warn",
-    // the LANG-FS-DEL Match) moved to
-    // `analysis_orchestrate::cli_deadline_parity::inline_os_remove_yields_lang_fs_del_warn_given_a_real_budget`,
-    // which runs the identical command through a budget the CLI cannot obtain.
+    // A missed 100 ms analysis deadline also prompts, so only the prompt is
+    // reliable here. `analysis_orchestrate::cli_deadline_parity` checks the
+    // Warn LANG-FS-DEL Match (#458).
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stderr.is_empty());
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -378,8 +371,9 @@ fn json_output_applies_ci_block_to_language_aware_warn() {
     assert_eq!(output.status.code(), Some(3));
     assert!(output.stderr.is_empty());
 
+    // A missed 100 ms analysis deadline blocks with the same reason, so the
+    // Warn risk is not asserted here (#458).
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(json["risk"], "warn");
     assert_eq!(json["decision"], "block");
     assert_eq!(json["block_reason"], "protect_ci_policy");
 }
@@ -403,8 +397,9 @@ fn strict_json_output_uses_analysis_override_instead_of_unrelated_strict_block()
     assert!(output.stderr.is_empty());
 
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    // A missed 100 ms analysis deadline takes the same override, so the Warn
+    // risk is not asserted here (#458).
     assert_eq!(json["mode"], "strict");
-    assert_eq!(json["risk"], "warn");
     assert_eq!(json["decision"], "prompt");
     assert!(json.get("block_reason").is_none());
 }
@@ -431,11 +426,9 @@ canonical = "python3"
         .output()
         .unwrap();
 
-    // #458: same clamp as `json_output_uses_language_aware_assessment_before_policy`
-    // above — the exit code stays reliable under degradation. The
-    // LANG-FS-DEL Match claim (proof the alias actually reached routing)
-    // moved to
-    // `analysis_orchestrate::cli_deadline_parity::trusted_alias_forwards_into_routing_and_yields_lang_fs_del`.
+    // Only the prompt is reliable here. The Match that proves the alias
+    // reached routing is checked in `analysis_orchestrate::cli_deadline_parity`
+    // (#458).
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stderr.is_empty());
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();

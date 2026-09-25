@@ -1,5 +1,7 @@
 //! End-to-end privacy regressions for Language-aware source analysis.
 
+mod support;
+
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -22,16 +24,34 @@ fn write_analyzed_script(cwd: &Path) -> String {
     "python3 ./checked.py".to_string()
 }
 
-/// Language analysis defaults to a 100ms budget (`LANGUAGE_ANALYSIS_TIMEOUT_MS`),
-/// which is tight enough that a loaded CI runner with a debug binary can miss it
-/// and degrade instead of producing a language-aware Match.
-///
-/// #458: that ceiling clamps at every config layer (ADR-022 §6/§7), so no
-/// config value written from a test can raise it — the `assert_ran_language_analysis`
-/// checks below are a known flake risk under a loaded `cargo test --workspace`
-/// run, with no analysis-seam substitute (their purpose is proving these
-/// specific CLI/hook/Watch transports don't disclose source, which only a real
-/// process spawn can exercise). Left as-is rather than weakened, per #458.
+fn shows_match(bytes: &[u8]) -> bool {
+    String::from_utf8_lossy(bytes).contains("LANG-FS-DEL")
+}
+
+fn read_audit(home: &Path) -> Vec<u8> {
+    fs::read(home.join(".aegis/audit.jsonl")).unwrap_or_default()
+}
+
+/// Runs one surface in a fresh home until `ran` sees the fixture's Match, so
+/// each privacy check runs against real analysis output. The CLI clamps the
+/// analysis deadline to 100 ms, and a loaded test run can miss it (#458).
+/// Every fixture here denies, so a repeat executes nothing.
+fn until_match(
+    label: &str,
+    mut run: impl FnMut(&Path) -> Output,
+    ran: impl Fn(&TempDir, &Output) -> bool,
+) -> (TempDir, Output) {
+    support::until_analysis_completes(
+        label,
+        || {
+            let home = TempDir::new().expect("temporary fixture home");
+            let output = run(home.path());
+            (home, output)
+        },
+        |(home, output)| ran(home, output),
+    )
+}
+
 fn run_aegis(home: &Path, cwd: &Path, args: &[&str], input: Option<&[u8]>, ci: bool) -> Output {
     let mut process = Command::new(env!("CARGO_BIN_EXE_aegis"));
     process
@@ -127,13 +147,10 @@ async fn analyzed_script_source_is_absent_from_every_public_output_surface() {
             .as_bytes(),
     );
 
-    let shell_home = TempDir::new().expect("temporary Shell home");
-    let shell = run_aegis(
-        shell_home.path(),
-        cwd.path(),
-        &["--command", &command],
-        None,
-        false,
+    let (shell_home, shell) = until_match(
+        "Shell",
+        |home| run_aegis(home, cwd.path(), &["--command", &command], None, false),
+        |home, _| shows_match(&read_audit(home.path())),
     );
     // Shell's non-interactive text output only renders match detail with
     // `--verbose`; the audit log is the surface that proves language analysis
@@ -145,8 +162,11 @@ async fn analyzed_script_source_is_absent_from_every_public_output_surface() {
     assert_ran_language_analysis("audit JSONL", &shell_audit);
     assert_does_not_disclose_source("audit JSONL", &shell_audit);
 
-    let tui_home = TempDir::new().expect("temporary interactive TUI home");
-    let tui = run_interactive_aegis(tui_home.path(), cwd.path(), &command);
+    let (tui_home, tui) = until_match(
+        "interactive TUI",
+        |home| run_interactive_aegis(home, cwd.path(), &command),
+        |home, output| shows_match(&output.stderr) && shows_match(&read_audit(home.path())),
+    );
     assert_eq!(
         tui.status.code(),
         Some(2),
@@ -164,14 +184,19 @@ async fn analyzed_script_source_is_absent_from_every_public_output_surface() {
     assert_ran_language_analysis("interactive TUI audit JSONL", &tui_audit);
     assert_does_not_disclose_source("interactive TUI audit JSONL", &tui_audit);
 
-    let watch_home = TempDir::new().expect("temporary Watch home");
     let watch_input = format!(r#"{{"cmd":{command:?},"id":"privacy"}}"#) + "\n";
-    let watch = run_aegis(
-        watch_home.path(),
-        cwd.path(),
-        &["watch"],
-        Some(watch_input.as_bytes()),
-        false,
+    let (watch_home, watch) = until_match(
+        "Watch",
+        |home| {
+            run_aegis(
+                home,
+                cwd.path(),
+                &["watch"],
+                Some(watch_input.as_bytes()),
+                false,
+            )
+        },
+        |home, _| shows_match(&read_audit(home.path())),
     );
     // Watch's NDJSON result frame carries only `decision`/`exit_code` — it
     // structurally cannot echo match text — so the audit log is the surface
@@ -183,13 +208,18 @@ async fn analyzed_script_source_is_absent_from_every_public_output_surface() {
     assert_ran_language_analysis("Watch audit JSONL", &watch_audit);
     assert_does_not_disclose_source("Watch audit JSONL", &watch_audit);
 
-    let ci_home = TempDir::new().expect("temporary CI home");
-    let ci = run_aegis(
-        ci_home.path(),
-        cwd.path(),
-        &["--output", "json", "--command", &command],
-        None,
-        true,
+    let (_ci_home, ci) = until_match(
+        "non-interactive CI",
+        |home| {
+            run_aegis(
+                home,
+                cwd.path(),
+                &["--output", "json", "--command", &command],
+                None,
+                true,
+            )
+        },
+        |_, output| shows_match(&output.stdout),
     );
     assert_ran_language_analysis("non-interactive CI JSON", &ci.stdout);
     assert_does_not_disclose_source("non-interactive CI JSON", &ci.stdout);
