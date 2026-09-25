@@ -55,6 +55,15 @@ the local `rtk` execution wrapper. Distinct from the `Wrapper` (`$SHELL` proxy) 
 from a `Hook`.
 _Avoid_: wrapper, command wrapper, exec prefix
 
+**Command runner**:
+A recognized `Launcher prefix` that names a child program in its visible argv,
+such as `uv run` or `npx` (`aegis_parser::Runner`). Its supported prefix exposes
+the child as the `Effective program` for scanner matching and source routing.
+It does not resolve package manifests or prove which package provides an
+executable; that uncertainty remains `Analysis degradation` even when visible
+source produces a `Match` (ADR-040).
+_Avoid_: package resolver, manifest expansion
+
 **Effective program**:
 The real program token a scan target resolves to after stripping launcher prefixes and
 taking the basename of an absolute path (`/usr/bin/git` → `git`, `sudo rtk git` → `git`).

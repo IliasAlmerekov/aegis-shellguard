@@ -586,3 +586,6 @@ fn tilde_launcher_operand_with_interpreter_shebang_prompts_but_missing_or_plain_
         assert_eq!(json["decision"], expected_decision);
     }
 }
+
+#[path = "full_pipeline_json/runner.rs"]
+mod runner;

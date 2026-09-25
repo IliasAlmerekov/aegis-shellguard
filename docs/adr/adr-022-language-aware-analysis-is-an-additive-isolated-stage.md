@@ -166,9 +166,10 @@ executed file, then target extension for a file created by a visible heredoc.
 Explicit interpreter wins over extension. Routing uses a built-in canonical
 interpreter/runner registry, basename and versioned-name normalization, existing
 Launcher-prefix logic, and trusted global aliases only. It performs no `PATH`,
-`--version`, or content-guessing probes. Package/build runner expansion such as
-`npm run`, `go generate`, Make, Composer, Bundler, and framework CLIs is a v1
-non-goal.
+`--version`, or content-guessing probes. ADR-040 extends the built-in registry
+to command runners whose visible argv names an interpreter or script. Resolving
+package manifests or expanding build tasks such as `npm run`, `go generate`,
+Make, Composer, Bundler, and framework CLIs remains a v1 non-goal.
 
 The verified-shebang check is discovery, not committed analysis: routing does
 not yet know whether a directly executed file is a script at all. A read that
@@ -585,4 +586,5 @@ builds is not a supported language.
 - Successful Script source inspection never makes Script-file execution trusted.
 - Unsupported languages and unqualified adapters degrade rather than receiving a
   weaker best-effort parser.
-- Package/build runner expansion and dependency traversal require later decisions.
+- Package-manifest and build-task expansion, and dependency traversal, require
+  later decisions. Explicit child argv behind the runners in ADR-040 is covered.

@@ -11,6 +11,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Security: Explicit Python and Node source behind `uv run`, `uv tool run`, `uvx`, `poetry run`, `pipenv run`, `pipx run`, and `npx` now reaches scanner and language-aware analysis. Bare Python scripts under `uv run` and `pipx run` are inspected even without a shebang; package-selected executable identity (including `uv tool run`, the long form of `uvx`) and opaque runner options degrade instead of being treated as known. A direct-exec operand behind one of these package-selecting runners (`npx ./x`, `uvx ./x`, `pipx run ./x`, `uv tool run ./x`) degrades the same way even when its own content reads clean, since the runner may still hand off to a different package-provided binary. (#421, ADR-040)
 - Changed: Every PR body now follows one short template: the issue, one or two sentences, evidence, and a confidence level. The rule lives in `CONVENTION.md` §4. (#451)
 
 ## [0.6.10] (2026-09-25)
