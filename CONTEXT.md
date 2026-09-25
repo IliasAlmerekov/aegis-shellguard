@@ -163,8 +163,8 @@ the scanner nor the unclaimed-interpreter net reads it, only when no shell can
 reach the consumer's output: no pipe or process substitution on the marker
 line, no line continuation, no write to a descriptor above 2, a variable
 descriptor, or a `/dev/fd/` or `/proc/` path, no compound-command keyword
-(`case`, `do`, `if`, `while` and the like) or `#` comment before the marker,
-and the heredoc sits at top level, in `NAME=$(...)`, or in the `$(...)` value
+(`case`, `do`, `if`, `while` and the like), `exec` or `#` comment before the
+marker, and the heredoc sits at top level, in `NAME=$(...)`, or in the `$(...)` value
 of a `git`/`gh` message flag (`-m`, `--message`, `-t`, `--title`, `-b`,
 `--body`) with no subshell, process-substitution `(` or `{ ...; }` group open
 around it. Any other shape keeps the body scanned (ADR-040).

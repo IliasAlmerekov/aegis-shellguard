@@ -198,6 +198,7 @@ fn assess_data_consumer_bodies_that_reach_a_shell_still_fire() {
         "for i in 1; do true; cat <<'EOF'\nrm -rf /\nEOF\ndone | sh",
         "if true; then true; cat <<'EOF'\nrm -rf /\nEOF\nfi | sh",
         "exec 3> >(sh)\n{ true; # closed } here\ncat <<'EOF'\nrm -rf /\nEOF\n} >&3",
+        "exec > >(sh)\ncat <<'EOF'\nrm -rf /\nEOF",
     ];
 
     for cmd in cases {

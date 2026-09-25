@@ -126,6 +126,11 @@ fn heredoc_data_consumer_inside_compound_command_is_not_flagged() {
         "{ true; # closed } here\ncat <<'EOF'\nsome text\nEOF\n} >&3",
         "( true # closed ) here\ncat <<'EOF'\nsome text\nEOF\n) | sh",
         "true # ; cat\ncat <<'EOF'\nsome text\nEOF",
+        // An earlier `exec` can point stdout itself at a shell, so a plain
+        // consumer with no redirect of its own still feeds one.
+        "exec > >(sh)\ncat <<'EOF'\nsome text\nEOF",
+        "exec 1> >(sh)\ncat <<'EOF'\nsome text\nEOF",
+        "exec >&3\ncat <<'EOF'\nsome text\nEOF",
     ];
     for cmd in cases {
         let bodies = extract_heredoc_bodies(cmd);

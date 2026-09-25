@@ -325,14 +325,16 @@ fn starts_word(text: &str, idx: usize) -> bool {
         .is_none_or(|c| c.is_whitespace() || matches!(c, ';' | '&' | '|' | '('))
 }
 
-/// Reserved words that open a compound command or a coprocess. The output of
-/// a command inside one can leave through a pipe or redirect written after
-/// the heredoc's terminator line (`done | sh`, `fi >&3`). A `case` pattern's
-/// `)` also closes nothing, so it would pop the frame that really encloses
-/// the marker.
-const COMPOUND_KEYWORDS: &[&str] = &[
-    "case", "coproc", "do", "elif", "else", "for", "function", "if", "select", "then", "until",
-    "while",
+/// Words that make every later heredoc marker untrusted. Most are reserved
+/// words that open a compound command or a coprocess: the output of a
+/// command inside one can leave through a pipe or redirect written after the
+/// heredoc's terminator line (`done | sh`, `fi >&3`), and a `case` pattern's
+/// `)` closes nothing, so it would pop the frame that really encloses the
+/// marker. `exec` can point stdout itself at a shell (`exec > >(sh)`), so a
+/// later consumer with no redirect of its own still feeds one.
+const UNTRUSTED_PREFIX_WORDS: &[&str] = &[
+    "case", "coproc", "do", "elif", "else", "exec", "for", "function", "if", "select", "then",
+    "until", "while",
 ];
 
 /// `true` when `line` sends the consumer's output somewhere other than a
@@ -366,7 +368,7 @@ enum HeredocMarkerContext {
     /// (see [`MESSAGE_FLAGS`]) of a `git` or `gh` invocation.
     TrustedCommandArg,
     /// Anything else: nested frames, a backtick, a subshell or process
-    /// substitution `(`, an open `{` group, a `#` comment, a [`COMPOUND_KEYWORDS`] word
+    /// substitution `(`, an open `{` group, a `#` comment, an [`UNTRUSTED_PREFIX_WORDS`] word
     /// before the marker, or a `$(...)` that is
     /// not a `git`/`gh` message value — a `bash -c
     /// "$(...)"`, `eval "$(...)"`, `ssh host "$(...)"`, `echo "$(...)" | sh`,
@@ -417,7 +419,7 @@ fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext {
     // scanned body, never a skipped one.
     if prefix
         .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-        .any(|word| COMPOUND_KEYWORDS.contains(&word))
+        .any(|word| UNTRUSTED_PREFIX_WORDS.contains(&word))
     {
         return HeredocMarkerContext::Untrusted;
     }
@@ -465,8 +467,7 @@ fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext {
 /// only through a context this predicate trusts (top level, an assignment's
 /// `$(...)`, or a `git`/`gh` message value's `$(...)`, with no subshell or
 /// process-substitution `(` or `{` group still open and no `#` comment or
-/// compound-command
-/// keyword before the marker).
+/// [`UNTRUSTED_PREFIX_WORDS`] word before the marker).
 /// `preceding_lines` holds the command lines before `line`, bodies left out.
 /// Ignorant of nowdoc-ness itself — callers already gate on that
 /// separately, matching how `embedded_scripts::heredoc_target_program`'s

@@ -70,8 +70,11 @@ into argv, so the router cannot drop body lines for every heredoc.
      `coproc`, `do`, `elif`, `else`, `for`, `function`, `if`, `select`,
      `then`, `until`, `while`) also makes it untrusted: `done | sh` or
      `fi >&3` after the terminator can take the output, and a `case`
-     pattern's `)` would close the wrong frame. The keyword check ignores
-     quotes, so a quoted keyword costs a scanned body, never a skipped one.
+     pattern's `)` would close the wrong frame. An `exec` anywhere before
+     the marker does the same, because `exec > >(sh)` points stdout itself
+     at a shell and a later plain `cat <<'EOF'` then feeds it. The word
+     check ignores quotes, so a quoted keyword costs a scanned body, never a
+     skipped one.
 3. When the predicate holds, the scanner blanks the body (line lengths kept)
    and the router masks it before tokenizing the stage. When it does not, both
    keep their previous behaviour. Unquoted heredocs and interpreter readers
