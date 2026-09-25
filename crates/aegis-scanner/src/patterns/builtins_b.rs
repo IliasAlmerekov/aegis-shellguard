@@ -5,6 +5,39 @@ use aegis_types::RiskLevel;
 use super::{Category, PatternSource, PatternToken, PrefixRule, a, any_star, s};
 pub(super) fn rules() -> Vec<PrefixRule> {
     vec![
+        // ── Git (continued from builtins_a) ───────────────────────────────────
+        PrefixRule {
+            id: Cow::Borrowed("GIT-009"),
+            category: Category::Git,
+            // The prefix only admits `git push`; `matches_tokens` then looks for
+            // a deleting flag or a `:<ref>` refspec, which no prefix token can
+            // express (#431).
+            pattern: vec![s("git"), s("push")],
+            risk: RiskLevel::Warn,
+            description: Cow::Borrowed(
+                "git push --delete / :<ref> / --prune / --mirror — deletes branches or tags on the remote",
+            ),
+            safe_alt: Some(Cow::Borrowed(
+                "List the remote refs first with 'git ls-remote <remote>' and delete them one at a time",
+            )),
+            justification: Some(Cow::Borrowed(
+                "Deleted remote refs are gone for every collaborator. Commits reachable from no other ref remain only in local clones or the host's reflog.",
+            )),
+            source: PatternSource::Builtin,
+            suppressed_by: &[],
+            match_examples: &[
+                "git push origin --delete old-branch",
+                "git push origin -d old-branch",
+                "git push origin :old-branch",
+                "git push --prune origin",
+                "git push --mirror backup",
+            ],
+            not_match_examples: &[
+                "git push origin main",
+                "git push origin feature:feature",
+                "git push origin :",
+            ],
+        },
         // ── Docker ────────────────────────────────────────────────────────────
         PrefixRule {
             id: Cow::Borrowed("DK-001"),
