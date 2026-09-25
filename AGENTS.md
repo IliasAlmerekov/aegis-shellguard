@@ -41,7 +41,7 @@ After code passes all gates, update in this order:
 
 3. **Update `CONTEXT.md`** (if needed): If the task introduces or sharpens a domain term, update glossary in the same change.
 
-4. **Close the issue** (if applicable): when the work satisfies its acceptance criteria and verification is linked, close the issue. Put the session summary and verification results in the PR description or an issue comment, not in a tracked file.
+4. **Close the issue** (if applicable): when the work satisfies its acceptance criteria and verification is linked, close the issue. Write the PR description by the PR body rule in `CONVENTION.md` §4; longer session notes go in an issue comment, not in a tracked file.
 
 5. **Write ADR** (if needed): For significant architecture, API, or security model changes, write `docs/adr/adr-NNN-slug.md` (required sections: Status, Context, Decision, Consequences; update `docs/adr/README.md` index).
 
