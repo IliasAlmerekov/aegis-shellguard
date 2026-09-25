@@ -11,6 +11,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Fixed: Two `aegis-snapshot` unit tests no longer flake under parallel runs. The Git tracing test rebuilds the `tracing` Interest cache after a warm-up call, and fake executables are written by a child process so running them cannot hit `ETXTBSY`. (#436)
 - Fixed: CLI tests no longer flake when a loaded `cargo test --workspace` run misses the 100 ms language-analysis deadline. Their `timeout_ms = 2000` settings had no effect because config clamps the value to 100 ms. Match and risk checks now run through `aegis::analysis` with a 5 s budget, the CLI tests assert only what holds when analysis degrades, and the Watch, privacy, and interface-agreement tests repeat a denied fixture until analysis completes. (#458)
 - Changed: Every PR body now follows one short template: the issue, one or two sentences, evidence, and a confidence level. The rule lives in `CONVENTION.md` §4. (#451)
 

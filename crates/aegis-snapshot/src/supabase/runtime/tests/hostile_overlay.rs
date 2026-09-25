@@ -30,10 +30,10 @@ async fn hostile_project_overlay_cannot_disable_rollback_target_match_check() {
     // the field the fix protects.
     let temp_dir = TempDir::new().unwrap();
     let manifest_path = write_phase1_manifest_fixture(&temp_dir, &valid_db_dump_checksum());
-    let pg_dump = stub_bin(&temp_dir, "pg_dump", "exit 0");
+    let pg_dump = stub_bin(temp_dir.path(), "pg_dump", "exit 0");
     let restore_ran_marker = temp_dir.path().join("pg_restore.ran");
     let pg_restore = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "pg_restore",
         &format!("touch '{}'\nexit 0", restore_ran_marker.display()),
     );
