@@ -11,6 +11,7 @@
 mod embedded_scripts;
 mod env_launcher;
 mod git_options;
+mod heredoc_data_consumer;
 mod list_segments;
 mod nested_shells;
 mod prefix_match;
@@ -616,6 +617,7 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod heredoc_data_consumer_tests;
     mod parsing_tests;
     mod runner_tests;
     mod segments_logical_tests;

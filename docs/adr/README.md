@@ -105,6 +105,7 @@ the core classification / approval pipeline when enforcement is active.
 | ADR-039 | Docker snapshot scoping ignores `cwd` by design; the flake it looked like is a test-isolation gap | [`adr-039-docker-snapshot-scoping-ignores-cwd-by-design.md`](adr-039-docker-snapshot-scoping-ignores-cwd-by-design.md) |
 | ADR-040 | Explicit runner argv is visible source | [`adr-040-explicit-runner-argv-is-visible-source.md`](adr-040-explicit-runner-argv-is-visible-source.md) |
 | ADR-041 | The scanner skips a git global option before matching GIT-* rules (extends ADR-014) | [`adr-041-the-scanner-skips-a-git-global-option-before-matching.md`](adr-041-the-scanner-skips-a-git-global-option-before-matching.md) |
+| ADR-042 | A nowdoc read by a Data consumer (`cat`, `tee`, `jq`) is data (replaces the #357 file-write rule) | [`adr-042-a-nowdoc-read-by-a-data-consumer-is-data.md`](adr-042-a-nowdoc-read-by-a-data-consumer-is-data.md) |
 
 `ADR-009` is intentionally absent from the active set; numbering is preserved
 as-is so historical references do not drift.

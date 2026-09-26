@@ -1,6 +1,7 @@
 use std::ops::Range;
 
 use super::{segmentation::split_top_level_segments, split_tokens};
+use crate::heredoc_data_consumer::heredoc_target_is_data_consumer;
 
 use aegis_types::InlineScript;
 
@@ -22,73 +23,26 @@ pub struct HeredocBody {
     /// heredoc construction — they say nothing about what the recipient
     /// program does with the literal text afterward.
     pub target_is_interpreter: bool,
-    /// `true` when the heredoc feeds a command that copies stdin verbatim to
-    /// a file (`cat >> notes.txt <<'EOF'`, `tee out.txt <<'EOF'`) rather than
-    /// executing or displaying it. The body is pure data at rest once
-    /// written; nothing in the pipeline ever runs or echoes it back.
-    pub target_redirects_to_file: bool,
+    /// `true` when the heredoc's body is `Data consumer` territory: nowdoc,
+    /// fed only to `cat`, `tee`, or `jq` as the program of the simple
+    /// command that owns the marker, piped to nothing else, and reached only
+    /// through a context this predicate trusts (issue #396, #432). Set
+    /// whether the output goes to a file, the terminal, or a captured value:
+    /// none of `cat`/`tee`/`jq` executes its stdin, and none of those
+    /// destinations hands the output to a shell.
+    pub is_data_consumer_target: bool,
 }
 
 /// Programs that execute their stdin as code, independent of what bash's own
 /// heredoc expansion does. A nowdoc body handed to one of these must still be
 /// recursively scanned: the recipient interprets the raw text as a script.
-const STDIN_EXECUTING_PROGRAMS: &[&str] = &[
+/// `pub(super)` so [`heredoc_data_consumer`][crate::heredoc_data_consumer]
+/// can reuse it for the `NAME -c "$var"` shape of a capture-then-execute
+/// check (issue #396), instead of keeping a second, drifting copy.
+pub(super) const STDIN_EXECUTING_PROGRAMS: &[&str] = &[
     "bash", "sh", "zsh", "dash", "ash", "ksh", "python", "python3", "node", "nodejs", "ruby",
     "php", "lua", "perl",
 ];
-
-/// Programs that copy their stdin verbatim to a file destination rather than
-/// interpreting or echoing it back.
-const STDIN_TO_FILE_PROGRAMS: &[&str] = &["cat", "tee"];
-
-/// `true` when `line[..marker_start]` invokes `cat`/`tee` in a way whose
-/// destination is a file rather than the terminal: `cat >> path`, `cat >
-/// path`, or `tee path` (flags aside). Only the command token at the start
-/// of the line is recognized, so a heredoc target reached through a
-/// pipeline (`foo | cat >> out`) is intentionally not matched here.
-fn heredoc_target_writes_to_file(line: &str, marker_start: usize) -> bool {
-    let prefix = line[..marker_start].trim_end();
-    let tokens = split_tokens(prefix);
-    let Some(first) = tokens.first() else {
-        return false;
-    };
-    let basename = first
-        .rsplit_once('/')
-        .map_or(first.as_str(), |(_, tail)| tail);
-
-    if !STDIN_TO_FILE_PROGRAMS
-        .iter()
-        .any(|program| basename.eq_ignore_ascii_case(program))
-    {
-        return false;
-    }
-
-    match basename.to_ascii_lowercase().as_str() {
-        "cat" => tokens
-            .iter()
-            .enumerate()
-            .any(|(idx, token)| stdout_redirects_to_file(token, tokens.get(idx + 1))),
-        "tee" => tokens.iter().skip(1).any(|token| !token.starts_with('-')),
-        _ => false,
-    }
-}
-
-/// `true` when `token` (with `next`, the token right after it, for the
-/// bare-operator case) is an actual stdout-to-file redirect — `>`, `>>`, or
-/// either glued to a filename — rather than file-descriptor duplication
-/// like `2>&1` or `>&2`. Descriptor duplication never touches a file, so it
-/// must not exempt a heredoc body from scanning.
-fn stdout_redirects_to_file(token: &str, next: Option<&String>) -> bool {
-    let Some(rest) = token.strip_prefix(">>").or_else(|| token.strip_prefix('>')) else {
-        return false;
-    };
-
-    if !rest.is_empty() {
-        return !rest.starts_with('&');
-    }
-
-    next.is_some_and(|next| !next.is_empty() && !next.starts_with('&'))
-}
 
 /// Resolve the basename-normalized program token immediately preceding the
 /// heredoc operator on `line` (e.g. `bash` in `foo | bash <<'EOF'`).
@@ -508,18 +462,27 @@ fn walk_heredocs(
     lines: &[&str],
     mut on_heredoc: impl FnMut(&HeredocMarker, bool, bool, Range<usize>),
 ) {
+    // No marker anywhere: skip the walk, and with it the `command_text` copy
+    // below, for the common heredoc-free command (`CONVENTION.md` §8).
+    if !lines.iter().any(|line| line.contains("<<")) {
+        return;
+    }
+
     let mut i = 0;
+    // Command lines seen so far, heredoc bodies and terminators left out, so
+    // the data-consumer predicate sees a `$(` opened on an earlier line.
+    let mut command_text = String::new();
 
     while i < lines.len() {
         if let Some(marker) = find_heredoc_marker(lines[i]) {
-            let target_is_interpreter = heredoc_target_program(lines[i], marker.operator_start)
-                .is_some_and(|program| {
-                    STDIN_EXECUTING_PROGRAMS
-                        .iter()
-                        .any(|known| program.eq_ignore_ascii_case(known))
-                });
-            let target_redirects_to_file =
-                heredoc_target_writes_to_file(lines[i], marker.operator_start);
+            let marker_line = lines[i];
+            // Byte length of `command_text` right before the marker line is
+            // pushed onto it below — `command_text` only grows between here
+            // and the re-slice a few lines down (the body-scan loop leaves
+            // it untouched), so this stays a valid boundary into it.
+            let preceding_len = command_text.len();
+            command_text.push_str(marker_line);
+            command_text.push('\n');
             i += 1;
             let body_start = i;
 
@@ -534,13 +497,48 @@ fn walk_heredocs(
                 }
                 i += 1;
             }
+            let body_end = i;
+            // The terminator line (if the heredoc closed) is skipped by the
+            // `i += 1` at the bottom of the outer loop, so the text after it
+            // starts one line further still.
+            let after_terminator = (body_end + 1).min(lines.len());
+
+            let target_is_interpreter = heredoc_target_program(marker_line, marker.operator_start)
+                .is_some_and(|program| {
+                    STDIN_EXECUTING_PROGRAMS
+                        .iter()
+                        .any(|known| program.eq_ignore_ascii_case(known))
+                });
+            // Everything after the heredoc's terminator line, so the
+            // data-consumer predicate can check whether the rest of the
+            // command runs the captured variable instead of just forwarding
+            // it (issue #396: `NAME=$(cat <<'EOF' ...)` then `$NAME`).
+            let following_text = lines[after_terminator..].join("\n");
+            // A curl `-d`/`--data`* value that starts with `@` names a file
+            // to upload, not literal data (issue #396 review follow-up) —
+            // thread a bool, not the body text, to avoid allocating on the
+            // heredoc-free fast path.
+            let body_starts_with_at = lines[body_start..body_end]
+                .first()
+                .is_some_and(|first_line| first_line.trim_start().starts_with('@'));
+            let is_data_consumer_target = heredoc_target_is_data_consumer(
+                &command_text[..preceding_len],
+                marker_line,
+                marker.operator_start,
+                marker.delimiter_end,
+                &following_text,
+                body_starts_with_at,
+            );
 
             on_heredoc(
                 &marker,
                 target_is_interpreter,
-                target_redirects_to_file,
-                body_start..i,
+                is_data_consumer_target,
+                body_start..body_end,
             );
+        } else {
+            command_text.push_str(lines[i]);
+            command_text.push('\n');
         }
         i += 1;
     }
@@ -567,13 +565,13 @@ pub fn extract_heredoc_bodies(cmd: &str) -> Vec<HeredocBody> {
 
     walk_heredocs(
         &lines,
-        |marker, target_is_interpreter, target_redirects_to_file, body_range| {
+        |marker, target_is_interpreter, is_data_consumer_target, body_range| {
             bodies.push(HeredocBody {
                 delimiter: marker.delimiter.clone(),
                 body: lines[body_range].join("\n"),
                 is_nowdoc: marker.is_nowdoc,
                 target_is_interpreter,
-                target_redirects_to_file,
+                is_data_consumer_target,
             });
         },
     );
@@ -595,12 +593,14 @@ pub fn extract_heredoc_bodies(cmd: &str) -> Vec<HeredocBody> {
 /// <<'EOF'`) are left untouched — the interpreter will execute that text
 /// verbatim once it reads it from stdin, marker quoting or not.
 ///
-/// When the same nowdoc body is also handed to a command that writes stdin
-/// straight to a file (`cat >> notes.txt <<'EOF'`, `tee out.txt <<'EOF'`),
-/// the whole body is blanked rather than just its substitution markers: the
-/// text is never executed or displayed, only written to disk, so a
-/// dangerous-looking substring in it (a test fixture, a changelog entry) is
-/// as inert as the markers are.
+/// When the same nowdoc body is `Data consumer` territory —
+/// [`heredoc_target_is_data_consumer`]: fed only to `cat`, `tee`, or `jq`,
+/// piped nowhere else, in a trusted context — the whole body is blanked
+/// rather than just its substitution markers, regardless of where the
+/// consumer's own output goes (a file, the terminal, a captured value): no
+/// shell ever reads the text, so a dangerous-looking
+/// substring in it (a test fixture, a changelog entry, a JSON string) is as
+/// inert as the markers are (issue #396, #432).
 ///
 /// Only the returned copy is affected; the original command text used for
 /// audit logging and highlighting is untouched.
@@ -614,10 +614,10 @@ pub fn mask_inert_heredoc_substitution_markers(cmd: &str) -> String {
 
     walk_heredocs(
         &lines,
-        |marker, target_is_interpreter, target_redirects_to_file, body_range| {
+        |marker, target_is_interpreter, is_data_consumer_target, body_range| {
             if marker.is_nowdoc && !target_is_interpreter {
                 for idx in body_range {
-                    output_lines[idx] = if target_redirects_to_file {
+                    output_lines[idx] = if is_data_consumer_target {
                         " ".repeat(lines[idx].chars().count())
                     } else {
                         mask_substitution_markers(lines[idx])

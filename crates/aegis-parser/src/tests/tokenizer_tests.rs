@@ -395,16 +395,17 @@ fn mask_inert_heredoc_no_heredoc_is_noop() {
 fn heredoc_cat_redirected_to_file_is_flagged() {
     let cmd = "cat >> notes.txt <<'EOF'\nsome text\nEOF";
     let bodies = extract_heredoc_bodies(cmd);
-    assert!(bodies[0].target_redirects_to_file);
+    assert!(bodies[0].is_data_consumer_target);
 }
 
-// 41. `cat` with no output redirection prints to the terminal — not a file
-// write.
+// 41. Issue #396: `cat` prints to the terminal either way — the destination
+// never changes what `cat` does with its stdin, so a bare `cat <<'EOF'` with
+// no redirection is `Data consumer` territory too.
 #[test]
-fn heredoc_cat_without_redirection_is_not_flagged() {
+fn heredoc_cat_without_redirection_is_flagged_as_data_consumer() {
     let cmd = "cat <<'EOF'\nsome text\nEOF";
     let bodies = extract_heredoc_bodies(cmd);
-    assert!(!bodies[0].target_redirects_to_file);
+    assert!(bodies[0].is_data_consumer_target);
 }
 
 // 42. `tee` writes to its file argument directly, no shell redirection
@@ -413,22 +414,23 @@ fn heredoc_cat_without_redirection_is_not_flagged() {
 fn heredoc_tee_with_file_argument_is_flagged() {
     let cmd = "tee out.txt <<'EOF'\nsome text\nEOF";
     let bodies = extract_heredoc_bodies(cmd);
-    assert!(bodies[0].target_redirects_to_file);
+    assert!(bodies[0].is_data_consumer_target);
 }
 
-// 43. An interpreter's stdout being redirected to a file doesn't change what
-// it does with its stdin — it still executes the body.
+// 43. An interpreter executes its stdin as code regardless of where its own
+// stdout goes — never a `Data consumer`.
 #[test]
-fn heredoc_interpreter_redirected_to_file_is_not_flagged_as_file_write() {
+fn heredoc_interpreter_redirected_to_file_is_not_flagged_as_data_consumer() {
     let cmd = "bash > log.txt <<'EOF'\necho hi\nEOF";
     let bodies = extract_heredoc_bodies(cmd);
-    assert!(!bodies[0].target_redirects_to_file);
+    assert!(!bodies[0].is_data_consumer_target);
 }
 
-// 43b. Descriptor duplication (`2>&1`, `>&2`) never touches a file — the
-// bare `>` inside it must not be mistaken for a stdout-to-file redirect.
+// 43b. Descriptor duplication (`2>&1`, `>&2`) still leaves `cat` printing to
+// the terminal — a `Data consumer` exactly like the bare case above (issue
+// #396).
 #[test]
-fn heredoc_cat_with_fd_duplication_is_not_flagged() {
+fn heredoc_cat_with_fd_duplication_is_flagged_as_data_consumer() {
     let cases = [
         "cat 2>&1 <<'EOF'\nsome text\nEOF",
         "cat >&2 <<'EOF'\nsome text\nEOF",
@@ -436,14 +438,14 @@ fn heredoc_cat_with_fd_duplication_is_not_flagged() {
     for cmd in cases {
         let bodies = extract_heredoc_bodies(cmd);
         assert!(
-            !bodies[0].target_redirects_to_file,
-            "command {cmd:?}: expected target_redirects_to_file to be false"
+            bodies[0].is_data_consumer_target,
+            "command {cmd:?}: expected is_data_consumer_target to be true"
         );
     }
 }
 
 // 44. Masking blanks the entire nowdoc body — not just substitution markers
-// — when its target writes it straight to a file.
+// — for a `Data consumer` target.
 #[test]
 fn mask_inert_heredoc_blanks_full_body_for_file_redirected_cat() {
     let cmd = "cat >> notes.txt <<'EOF'\nrm -rf /\nEOF";
@@ -454,13 +456,40 @@ fn mask_inert_heredoc_blanks_full_body_for_file_redirected_cat() {
     assert_eq!(masked.lines().count(), cmd.lines().count());
 }
 
-// 45. Masking still only blanks substitution markers, not the whole body,
-// when the same nowdoc target has no output redirection.
+// 45. Issue #396: a bare `cat <<'EOF'` (no redirection) is now also blanked
+// in full, matching its `Data consumer` classification above.
 #[test]
-fn mask_inert_heredoc_keeps_literal_text_without_redirection() {
+fn mask_inert_heredoc_blanks_full_body_for_cat_without_redirection() {
     let cmd = "cat <<'EOF'\nrm -rf /\nEOF";
     let masked = mask_inert_heredoc_substitution_markers(cmd);
-    assert!(masked.contains("rm -rf"));
+    assert!(!masked.contains("rm -rf"));
+}
+
+// 46. Issue #396: `jq` parses its stdin as JSON, never as commands — a
+// nowdoc body handed to it is `Data consumer` territory too.
+#[test]
+fn heredoc_jq_is_flagged_as_data_consumer() {
+    let cmd = "jq -c . <<'JSON'\n{\"cmd\": \"python3 ./x\"}\nJSON";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(bodies[0].is_data_consumer_target);
+}
+
+// 47. Issue #432: the owning simple command is found after the last `;`,
+// not the line's own first token — `true; cat > f <<'EOF'` still resolves
+// to `cat`.
+#[test]
+fn heredoc_owning_command_after_semicolon_is_flagged() {
+    let cmd = "true; cat > /tmp/x.sh <<'EOF'\nsome text\nEOF";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(bodies[0].is_data_consumer_target);
+}
+
+// 48. Same fix, `&&`-chained instead of `;`-chained.
+#[test]
+fn heredoc_owning_command_after_and_and_is_flagged() {
+    let cmd = "true && cat > /tmp/x.sh <<'EOF'\nsome text\nEOF";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(bodies[0].is_data_consumer_target);
 }
 
 // 31. python -c "..." — inline Python script extracted

@@ -156,6 +156,20 @@ arrive embedded in `psql -c` / `mysql -e` / heredoc / stdin, not as a leading pr
 token (ADR-015).
 _Avoid_: rule, signature (reserve "rule" for prefix rules)
 
+**Data consumer**:
+`cat`, `tee`, or `jq` as the program that reads a quoted-delimiter heredoc
+(nowdoc). None of them executes its stdin. The body counts as data, and neither
+the scanner nor the unclaimed-interpreter net reads it, only when no shell can
+reach the consumer's output: no pipe or process substitution on the marker
+line, no line continuation, no write to a descriptor above 2, a variable
+descriptor, or a `/dev/fd/` or `/proc/` path, no compound-command keyword
+(`case`, `do`, `if`, `while` and the like), `exec` or `#` comment before the
+marker, and the heredoc sits at top level, in `NAME=$(...)`, or in the `$(...)` value
+of a `git`/`gh` message flag (`-m`, `--message`, `-t`, `--title`, `-b`,
+`--body`) with no subshell, process-substitution `(` or `{ ...; }` group open
+around it. Any other shape keeps the body scanned (ADR-042).
+_Avoid_: inert heredoc, safe heredoc target
+
 **Token-prefix rule**:
 A detection rule keyed on a command's `Effective program` token (e.g. `git`, `docker`) and
 matched against the token sequence — distinct from a regex `Pattern`. Git, Cloud,

@@ -58,11 +58,25 @@ fn assess_redirected_heredoc_does_not_mask_a_trailing_dangerous_command() {
 }
 
 // No output redirection at all: `cat <<'EOF' ... EOF` prints the body to the
-// terminal. This is the existing issue #344 guardrail and must keep firing —
-// #357 only changes behavior when the body's destination is a file.
+// terminal. Issue #396 widens #357's reasoning: `cat` never executes its
+// stdin, and the terminal is not a shell, so this is now a safe case rather
+// than the #344 guardrail it used to be.
 #[test]
-fn assess_nowdoc_to_cat_without_redirection_still_fires() {
-    assert_assessment_matches_pattern("cat <<'EOF'\nrm -rf /\nEOF", RiskLevel::Block, "FS-001");
+fn assess_nowdoc_to_cat_without_redirection_is_now_safe() {
+    let s = scanner();
+    let assessment = s.assess("cat <<'EOF'\nrm -rf /\nEOF");
+
+    assert_eq!(
+        assessment.risk,
+        RiskLevel::Safe,
+        "expected Safe for a bare nowdoc body handed to cat, got {:?} ({:?})",
+        assessment.risk,
+        assessment
+            .matched
+            .iter()
+            .map(|m| m.pattern.id.as_ref())
+            .collect::<Vec<_>>()
+    );
 }
 
 // A nowdoc handed to an interpreter, even with its own stdout redirected to
@@ -78,14 +92,24 @@ fn assess_nowdoc_to_interpreter_with_redirection_still_fires() {
 }
 
 // `2>&1` duplicates stderr onto stdout — stdout still prints to the
-// terminal, nothing is written to any file. The bare substring `>` inside
-// `2>&1` must not be mistaken for a stdout-to-file redirect.
+// terminal, same destination as the bare case above, so this is safe for
+// the same reason `assess_nowdoc_to_cat_without_redirection_is_now_safe` is
+// (issue #396).
 #[test]
-fn assess_nowdoc_to_cat_with_fd_duplication_still_fires() {
-    assert_assessment_matches_pattern(
-        "cat 2>&1 <<'EOF'\nrm -rf /\nEOF",
-        RiskLevel::Block,
-        "FS-001",
+fn assess_nowdoc_to_cat_with_fd_duplication_is_now_safe() {
+    let s = scanner();
+    let assessment = s.assess("cat 2>&1 <<'EOF'\nrm -rf /\nEOF");
+
+    assert_eq!(
+        assessment.risk,
+        RiskLevel::Safe,
+        "expected Safe for a fd-duplicated nowdoc body handed to cat, got {:?} ({:?})",
+        assessment.risk,
+        assessment
+            .matched
+            .iter()
+            .map(|m| m.pattern.id.as_ref())
+            .collect::<Vec<_>>()
     );
 }
 
