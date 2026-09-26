@@ -307,29 +307,40 @@ esac"#,
 
 // ── async-safety regression tests ─────────────────────────────────────────
 
-/// Checks counter before awaiting bg task to prove concurrent progress.
+/// Proves `is_applicable` does not block the Tokio thread while `docker ps`
+/// runs.
 ///
-/// With blocking `is_applicable` on a `current_thread` runtime:
-///   - The single Tokio thread is held for ~50ms by the blocking `std::process::Command`
-///   - The bg task cannot be scheduled during that time
-///   - `counter_after` == 0  → assertion fails (as desired for a red test)
-///
-/// After the fix (async `is_applicable` with `tokio::process::Command`):
-///   - The Tokio thread is yielded at each `.await` point
-///   - The bg task wakes after 10ms and increments the counter
-///   - `counter_after` == 1  → assertion passes
+/// The gate works in both directions, so the green case needs no timing
+/// assumption (#466). The mock `ps` first creates `ps-started`, then waits
+/// for `bg-task-ran` (500 polls of 10 ms, about 5 s). The background task
+/// waits for `ps-started`, bumps the counter, and writes `bg-task-ran`. The
+/// counter can only move while `ps` is running, so a blocking
+/// `is_applicable` leaves it at 0 even if it yields once before blocking.
 #[tokio::test(flavor = "current_thread")]
 async fn is_applicable_does_not_block_tokio_runtime_v2() {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     let dir = TempDir::new().unwrap();
+    let started = dir.path().join("ps-started");
+    let ran = dir.path().join("bg-task-ran");
+    let started_path = single_quote_for_shell(&started);
+    let ran_path = single_quote_for_shell(&ran);
     write_mock_docker(
         dir.path(),
-        r#"case "$1" in
-  ps) sleep 0.05; printf "abc123\n"; exit 0 ;;
+        &format!(
+            r#"case "$1" in
+  ps)
+    : > '{started_path}'
+    i=0
+    while [ ! -f '{ran_path}' ] && [ "$i" -lt 500 ]; do
+      sleep 0.01
+      i=$((i + 1))
+    done
+    printf "abc123\n"; exit 0 ;;
   *) exit 1 ;;
-esac"#,
+esac"#
+        ),
     );
 
     let p = plugin(&dir.path().join("docker"));
@@ -337,24 +348,34 @@ esac"#,
     let counter_bg = Arc::clone(&counter);
 
     let bg = tokio::task::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        counter_bg.fetch_add(1, Ordering::SeqCst);
+        // Wait until `ps` is running. The cap only keeps `bg.await` from
+        // hanging if `ps` never starts; the assertion fails in that case.
+        let seen = tokio::time::timeout(Duration::from_secs(10), async {
+            while !tokio::fs::try_exists(&started).await.unwrap() {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .is_ok();
+        if seen {
+            // Bump before writing the marker, so `ps` seeing the marker
+            // implies the counter is already updated.
+            counter_bg.fetch_add(1, Ordering::SeqCst);
+            tokio::fs::write(&ran, b"").await.unwrap();
+        }
     });
 
-    // Async call — yields the Tokio thread while waiting for docker ps.
     let _ = p.is_applicable(Path::new("/")).await;
 
-    // Read counter *before* awaiting bg. With blocking is_applicable the bg task
-    // was never polled while is_applicable ran, so counter is still 0 here.
+    // Read the counter before awaiting `bg`. A blocking `is_applicable` held
+    // the only Tokio thread for the whole `ps` run, so it is still 0 here.
     let counter_after = counter.load(Ordering::SeqCst);
 
     bg.await.unwrap();
 
-    // This assertion FAILS with the current blocking implementation:
-    // counter_after == 0, not 1.
     assert_eq!(
         counter_after, 1,
-        "is_applicable blocked the Tokio thread — background task could not progress \
+        "is_applicable blocked the Tokio thread while docker ps ran \
          (counter={counter_after}, expected 1). Fix: make is_applicable async and use \
          tokio::process::Command."
     );
