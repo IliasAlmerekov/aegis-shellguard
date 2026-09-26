@@ -1,4 +1,4 @@
-# ADR-040: A nowdoc read by a Data consumer is data
+# ADR-042: A nowdoc read by a Data consumer is data
 
 ## Status
 
