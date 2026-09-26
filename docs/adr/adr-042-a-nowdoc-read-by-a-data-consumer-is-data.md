@@ -56,8 +56,10 @@ into argv, so the router cannot drop body lines for every heredoc.
      (`>&3`, `>&$fd`) or to a `/dev/fd/` or `/proc/` path, since an earlier
      `exec 3> >(sh)` can make that descriptor a pipe to a shell;
    - the heredoc sits at top level, or inside exactly one `$(...)` that is
-     either the right side of `NAME=` or the whole value of a `git`/`gh`
-     message flag (`-m`, `--message`, `-t`, `--title`, `-b`, `--body`). Any
+     either the right side of `NAME=` or the whole value of a `git` or `gh`
+     message flag in a position item 5's table trusts for that program
+     (`git commit -m`, `gh pr create --body`; one gate in `forwarding.rs`
+     serves both this rule and item 5, so they cannot disagree). Any
      other open frame before the marker (a subshell `(`, a process
      substitution `<(`/`>(`, a backtick, a second `$(`) makes it untrusted,
      because its output can reach a pipe or a shell after the terminator line
@@ -96,8 +98,8 @@ into argv, so the router cannot drop body lines for every heredoc.
 
    | Program  | Trusted positions for the reference |
    |----------|-------------------------------------|
-   | `git`    | value of `-m`, `--message`, `-t`, `--title`, `-b`, `--body` |
-   | `gh`     | value of the same six flags, only under `gh pr create`, `edit`, `comment`, `review` or `merge`, or `gh issue create`, `edit` or `comment`; value of `-f`/`--raw-field` (`key="$x"`), only under `gh api` |
+   | `git`    | value of `-m` or `--message`, only under `git commit`, `tag`, `merge` or `notes` with no global option before the subcommand |
+   | `gh`     | value of `-m`, `--message`, `-t`, `--title`, `-b` or `--body`, only under `gh pr create`, `edit`, `comment`, `review` or `merge`, or `gh issue create`, `edit` or `comment`; value of `-f`/`--raw-field` (`key="$x"`), only under `gh api` |
    | `curl`   | value of `--data-raw`; value of `-d`, `--data`, `--data-binary`, `--data-urlencode` or `--json` only when the captured body does not start with `@` |
    | `jq`     | value of `--arg NAME` or `--argjson NAME` |
    | `echo`   | any argument |
@@ -114,9 +116,12 @@ into argv, so the router cannot drop body lines for every heredoc.
    `gh` subcommand outside the table's list (`gh pr checkout`, `gh repo
    create`, `gh workflow run`, ...) are excluded even though `gh` is on
    the list, since a message flag or `-f` can mean something other than a
-   stored message there, or nothing at all; `gh`'s subcommand is read from
-   the first two words after `gh` that do not start with `-`, and a `gh`
-   call this cannot resolve to two such words is untrusted. `printf -v`,
+   stored message there, or nothing at all. `gh`'s subcommand is the two
+   words right after `gh`, so a flag before them (`gh -R o/r pr create`)
+   makes the call untrusted: a value-taking flag would otherwise shift which
+   word reads as the action. For `git`, `-t` is `--template=<file>` and
+   `-b` names a branch, so neither is trusted, and a global option such as
+   `-c` or `-C` before the subcommand makes the call untrusted. `printf -v`,
    `printf --`, or any other leading option makes the whole call
    untrusted too, since an option shifts where the format string actually
    falls and `-v` sends the value to a second variable this check does not
