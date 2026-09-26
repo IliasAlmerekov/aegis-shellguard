@@ -168,6 +168,31 @@ fn assess_cat_inside_git_commit_message_substitution_stays_safe() {
     );
 }
 
+// The `git tag -m`/`gh issue comment --body` idioms: message flags trusted
+// under the subcommands this gate lists.
+#[test]
+fn assess_cat_inside_git_tag_and_gh_issue_comment_message_substitutions_stay_safe() {
+    let cases = [
+        "git tag -a v1 -m \"$(cat <<'EOF'\nfix: mentions rm -rf in prose only\nEOF\n)\"",
+        "gh issue comment 1 --body \"$(cat <<'EOF'\nfix: mentions rm -rf in prose only\nEOF\n)\"",
+    ];
+    for cmd in cases {
+        let s = scanner();
+        let assessment = s.assess(cmd);
+        assert_eq!(
+            assessment.risk,
+            RiskLevel::Safe,
+            "expected Safe for {cmd:?}, got {:?} ({:?})",
+            assessment.risk,
+            assessment
+                .matched
+                .iter()
+                .map(|m| m.pattern.id.as_ref())
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
 // Bodies that reach a shell through a shape the data-consumer predicate must
 // reject: a `$(` opened on an earlier line, a process substitution, a line
 // continuation into a pipe, and `git`/`gh` arguments that are not message
@@ -182,6 +207,18 @@ fn assess_data_consumer_bodies_that_reach_a_shell_still_fire() {
         "cat <<'EOF' \\\n| sh\nrm -rf /\nEOF",
         "git -c \"alias.x=!$(cat <<'EOF'\nrm -rf /\nEOF\n)\" x",
         "gh alias set --shell x \"$(cat <<'EOF'\nrm -rf /\nEOF\n)\"",
+        // Issue #396 review (finding 1): `git`'s message flag is only
+        // `-m`/`--message` — `-t` is `--template=<file>` and `-b` names a
+        // branch, neither a message.
+        "git commit -t \"$(cat <<'EOF'\nrm -rf /\nEOF\n)\"",
+        "git checkout -b \"$(cat <<'EOF'\nrm -rf /\nEOF\n)\"",
+        // Issue #396 review (finding 1): a global option before the
+        // subcommand occupies the position the gate reads as the
+        // subcommand.
+        "git -c alias.x=y commit -m \"$(cat <<'EOF'\nrm -rf /\nEOF\n)\"",
+        // Issue #396 review (finding 2): `gh`'s message-flag trust is
+        // gated by subcommand for a heredoc-as-whole-value too.
+        "gh pr checkout 1 -b \"$(cat <<'EOF'\nrm -rf /\nEOF\n)\"",
         // A `(` frame opened before the marker: process substitution,
         // subshell, or a subshell nested in an assignment's `$(...)`.
         "exec 3< <(\ncat <<'EOF'\nrm -rf /\nEOF\n)",
@@ -367,6 +404,12 @@ fn assess_captured_heredoc_narrow_data_flag_violations_still_fire() {
         // Same review (MAJOR): `-f` takes a `key=value` pair only under
         // `gh api`.
         "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh workflow run w -f a=\"$x\"",
+        // Issue #396 review (finding 3): `-R`'s own value shifts the
+        // action word off position 1, so it must not resolve to `create`.
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh issue -R create delete --body \"$x\"",
+        // Issue #396 review (finding 2 and 3): a flag before `pr` makes
+        // both subcommand slots unresolved.
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh -R o/r pr create -b \"$x\"",
     ];
     for cmd in cases {
         assert_assessment_matches_pattern(cmd, RiskLevel::Block, "FS-001");

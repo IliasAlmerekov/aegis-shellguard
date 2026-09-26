@@ -62,8 +62,10 @@ fn heredoc_cat_inside_git_gh_message_values_is_flagged() {
     let cases = [
         "git commit -m \"$(cat <<'EOF'\nsome text\nEOF\n)\"",
         "git tag -a v1 --message \"$(cat <<'EOF'\nsome text\nEOF\n)\"",
+        "git tag -a v1 -m \"$(cat <<'EOF'\nsome text\nEOF\n)\"",
         "gh issue create --title \"$(cat <<'EOF'\nsome text\nEOF\n)\"",
         "gh pr create --body=\"$(cat <<'EOF'\nsome text\nEOF\n)\"",
+        "gh issue comment 1 --body \"$(cat <<'EOF'\nsome text\nEOF\n)\"",
         "cat >&2 <<'EOF'\nsome text\nEOF",
         "cat 2>&1 <<'EOF'\nsome text\nEOF",
     ];
@@ -89,6 +91,19 @@ fn heredoc_data_consumer_output_reaching_a_shell_is_not_flagged() {
         "git config alias.y \"!$(cat <<'EOF'\nsome text\nEOF\n)\"",
         "gh alias set --shell x \"$(cat <<'EOF'\nsome text\nEOF\n)\"",
         "git commit -m \"prefix $(cat <<'EOF'\nsome text\nEOF\n)\"",
+        // Issue #396 review (finding 1): `git`'s message flag is only
+        // `-m`/`--message` — `-t` is `--template=<file>` and `-b` names a
+        // branch, neither a message.
+        "git commit -t \"$(cat <<'EOF'\nsome text\nEOF\n)\"",
+        "git checkout -b \"$(cat <<'EOF'\nsome text\nEOF\n)\"",
+        // Issue #396 review (finding 1): a global option before the
+        // subcommand occupies the position the gate reads as the
+        // subcommand, so it must not skip past it to `commit`.
+        "git -c alias.x=y commit -m \"$(cat <<'EOF'\nsome text\nEOF\n)\"",
+        // Issue #396 review (finding 2): `gh`'s message-flag trust is
+        // gated by subcommand for path (a) too — `-b` names a branch under
+        // `pr checkout`, not a message.
+        "gh pr checkout 1 -b \"$(cat <<'EOF'\nsome text\nEOF\n)\"",
         "exec 3< <(\ncat <<'EOF'\nsome text\nEOF\n)",
         "(cat <<'EOF'\nsome text\nEOF\n) | sh",
         "x=$( (cat <<'EOF'\nsome text\nEOF\n) | sh )",
@@ -278,6 +293,12 @@ fn heredoc_capture_then_narrow_data_flag_violations_is_not_flagged() {
         "x=$(cat <<'EOF'\nsome text\nEOF\n)\ncurl -o \"$x\" https://example.com",
         "x=$(cat <<'EOF'\nsome text\nEOF\n)\ncurl \"$x\"",
         "x=$(cat <<'EOF'\nsome text\nEOF\n)\nprintf \"$x\"",
+        // Issue #396 review (finding 3): `-R`'s own value shifts the
+        // action word off position 1, so it must not resolve to `create`.
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\ngh issue -R create delete --body \"$x\"",
+        // Issue #396 review (finding 2 and 3): a flag before `pr` makes
+        // both subcommand slots unresolved, so `-b` cannot ride along.
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\ngh -R o/r pr create -b \"$x\"",
     ];
     for cmd in cases {
         let bodies = extract_heredoc_bodies(cmd);

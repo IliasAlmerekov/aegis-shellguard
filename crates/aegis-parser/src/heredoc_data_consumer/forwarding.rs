@@ -18,7 +18,7 @@ use crate::extract_process_substitution_bodies;
 use crate::segmentation::split_top_level_segments;
 use crate::split_tokens;
 
-use super::{MESSAGE_FLAGS, is_bare_assignment, open_frames, starts_word};
+use super::{is_bare_assignment, open_frames, starts_word};
 
 #[cfg(test)]
 mod tests;
@@ -31,13 +31,46 @@ mod tests;
 /// (ADR-042 item 5, issue #396 allowlist replacing the old blocklist).
 const TRUSTED_FORWARDING_PROGRAMS: &[&str] = &["gh", "git", "curl", "echo", "printf", "jq"];
 
+/// `git` flags whose value is only ever a commit, tag, merge or notes
+/// message. `-t`/`--title` and `-b`/`--body` are deliberately not here: for
+/// `git`, `-t` is `--template=<file>` (a file `git` reads) and `-b` names a
+/// branch, neither a message (issue #396 review). Trusted only under the
+/// subcommands [`GIT_MESSAGE_SUBCOMMANDS`] names.
+const GIT_MESSAGE_FLAGS: &[&str] = &["-m", "--message"];
+
+/// `git` subcommands whose `-m`/`--message` value ([`GIT_MESSAGE_FLAGS`]) is
+/// stored as text: a commit, tag, merge or notes message. `stash` is left
+/// out on purpose: `stash push -m`/`stash save` also take a message, but
+/// telling that shape apart from `stash`'s many other forms needs more care
+/// than this gate spends, so a stash message stays untrusted rather than
+/// risk trusting the wrong one.
+const GIT_MESSAGE_SUBCOMMANDS: &[&str] = &["commit", "tag", "merge", "notes"];
+
+/// `true` when `flag` is a [`GIT_MESSAGE_FLAGS`] member and `args` (the
+/// tokens right after `git` — a whole argument list, or just the words
+/// before a later flag, since only `args[0]` matters here) resolves a
+/// [`GIT_MESSAGE_SUBCOMMANDS`] member at position 0. A global option ahead
+/// of the subcommand (`git -c alias.x=y commit -m`) occupies that position
+/// instead, so it reads as "no subcommand" and the call is untrusted. Shared
+/// by [`super::is_trusted_message_value`] (path (a): the heredoc is the
+/// flag's whole value) and [`token_is_git_message_value`] (path (b): a
+/// captured variable forwarded as the flag's value), so the two paths
+/// cannot disagree on what a `git` message flag trusts (issue #396 review).
+pub(super) fn git_message_flag_trusted(args: &[String], flag: &str) -> bool {
+    if !GIT_MESSAGE_FLAGS.contains(&flag) {
+        return false;
+    }
+    matches!(
+        args.first(),
+        Some(word) if !word.starts_with('-') && GIT_MESSAGE_SUBCOMMANDS.contains(&word.as_str())
+    )
+}
+
 /// `gh` flags whose value curl-style file semantics never apply to: a commit
-/// or tag message, an issue or PR title or body — reuses [`MESSAGE_FLAGS`],
-/// the same set `git` trusts, since `gh`'s `-m`/`--message`, `-t`/`--title`
-/// and `-b`/`--body` line up with it exactly. Trusted only under the `gh`
-/// subcommands [`gh_message_flags_trusted`] names: `-b` means something else
-/// entirely under, say, `gh pr checkout` (a branch, not a message).
-const GH_MESSAGE_FLAGS: &[&str] = MESSAGE_FLAGS;
+/// or tag message, an issue or PR title or body. Trusted only under the
+/// `gh` subcommands [`gh_message_flags_trusted`] names: `-b` means something
+/// else entirely under, say, `gh pr checkout` (a branch, not a message).
+const GH_MESSAGE_FLAGS: &[&str] = &["-m", "--message", "-t", "--title", "-b", "--body"];
 
 /// `gh pr` actions whose message flag ([`GH_MESSAGE_FLAGS`]) value is stored
 /// or sent as text. `pr checkout`, `pr list`, `pr diff` and the rest are not
@@ -243,23 +276,42 @@ fn token_is_gh_raw_field_value(args: &[String], index: usize, name: &str) -> boo
 }
 
 /// `true` when `args[index]` (a token after `git`'s program word) is the
-/// value of a [`MESSAGE_FLAGS`] flag.
+/// value of a [`GIT_MESSAGE_FLAGS`] flag [`git_message_flag_trusted`]
+/// approves for `args`' own subcommand (`args[0]`).
 fn token_is_git_message_value(args: &[String], index: usize, name: &str) -> bool {
-    token_is_flag_value(args, index, name, |flag| MESSAGE_FLAGS.contains(&flag))
+    token_is_flag_value(args, index, name, |flag| {
+        git_message_flag_trusted(args, flag)
+    })
 }
 
-/// The first two tokens of `args` that do not start with `-` — `gh`'s
-/// subcommand and, where it has one, its action (`pr`, `create`; `issue`,
-/// `comment`). `None` in either slot when `args` has fewer than that many
-/// non-flag words. [`gh_message_flags_trusted`] and [`gh_raw_field_trusted`]
-/// both read an unresolved slot as untrusted, matching the rule that a
-/// subcommand this predicate cannot read falls on the untrusted side.
+/// `gh`'s subcommand and, where it has one, its action (`pr`, `create`;
+/// `issue`, `comment`) — read from the two fixed positions right after `gh`,
+/// `args[0]` and `args[1]`, not the first two non-flag words found anywhere
+/// in `args`. A flag occupying either position makes that slot (and, for a
+/// flag at position 0, both slots) `None`: a value-taking flag before the
+/// subcommand shifts every later word by however many tokens its own value
+/// takes, and a fixed-position reader has no way to tell a flag's value
+/// apart from the next subcommand word, so it must not guess (issue #396
+/// review: `gh issue -R create delete --body "$x"` used to resolve to
+/// `issue create` — `-R`'s own value, standing in for the real action word
+/// `delete` — and `gh -R o/r pr create` used to resolve to `pr create` by
+/// skipping `-R` and its value outright). [`gh_message_flags_trusted`] and
+/// [`gh_raw_field_trusted`] both read an unresolved slot as untrusted,
+/// matching the rule that a subcommand this predicate cannot read falls on
+/// the untrusted side — accepting `gh -R o/r pr create` as a false positive
+/// rather than resolve it wrong.
 fn gh_subcommand_words(args: &[String]) -> (Option<&str>, Option<&str>) {
-    let mut words = args
-        .iter()
-        .filter(|token| !token.starts_with('-'))
+    let is_word = |token: &String| !token.starts_with('-');
+    let primary = args
+        .first()
+        .filter(|token| is_word(token))
         .map(String::as_str);
-    (words.next(), words.next())
+    let secondary = primary.and(
+        args.get(1)
+            .filter(|token| is_word(token))
+            .map(String::as_str),
+    );
+    (primary, secondary)
 }
 
 /// `true` when `gh`'s resolved `(primary, secondary)` subcommand words
@@ -273,6 +325,22 @@ fn gh_message_flags_trusted(primary: Option<&str>, secondary: Option<&str>) -> b
         Some("issue") => secondary.is_some_and(|action| GH_ISSUE_MESSAGE_ACTIONS.contains(&action)),
         _ => false,
     }
+}
+
+/// `true` when `flag` is a [`GH_MESSAGE_FLAGS`] member and `args` (the
+/// tokens right after `gh` — a whole argument list, or just the words
+/// before a later flag, since [`gh_subcommand_words`] only ever looks at
+/// the first two) resolve to a subcommand [`gh_message_flags_trusted`]
+/// approves. [`git_message_flag_trusted`]'s sibling for `gh`: shared by
+/// [`super::is_trusted_message_value`] (path (a)) and
+/// [`gh_args_are_forwarding_only`] (path (b)), so the two paths read one
+/// gate instead of two that could drift apart (issue #396 review).
+pub(super) fn gh_message_flag_trusted(args: &[String], flag: &str) -> bool {
+    if !GH_MESSAGE_FLAGS.contains(&flag) {
+        return false;
+    }
+    let (primary, secondary) = gh_subcommand_words(args);
+    gh_message_flags_trusted(primary, secondary)
 }
 
 /// `true` when `gh`'s resolved primary subcommand word is `api` — the only
@@ -294,13 +362,10 @@ fn gh_raw_field_trusted(primary: Option<&str>) -> bool {
 /// (issue #396 review: the old check trusted `-b`/`-t`/`-m` under every `gh`
 /// subcommand and `-f` under every subcommand too).
 fn gh_args_are_forwarding_only(args: &[String], name: &str) -> bool {
-    let (primary, secondary) = gh_subcommand_words(args);
-    let message_flags_trusted = gh_message_flags_trusted(primary, secondary);
-    let raw_field_trusted = gh_raw_field_trusted(primary);
+    let raw_field_trusted = gh_raw_field_trusted(gh_subcommand_words(args).0);
     args.iter().enumerate().all(|(i, token)| {
         find_variable_references(token, name).is_empty()
-            || (message_flags_trusted
-                && token_is_flag_value(args, i, name, |flag| GH_MESSAGE_FLAGS.contains(&flag)))
+            || token_is_flag_value(args, i, name, |flag| gh_message_flag_trusted(args, flag))
             || (raw_field_trusted && token_is_gh_raw_field_value(args, i, name))
     })
 }

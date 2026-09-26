@@ -372,7 +372,7 @@ enum HeredocMarkerContext<'a> {
     /// later part of the same command runs it.
     AssignmentRhs(&'a str),
     /// Inside exactly one `$(...)`, itself the whole value of a message flag
-    /// (see [`MESSAGE_FLAGS`]) of a `git` or `gh` invocation.
+    /// (see [`is_trusted_message_value`]) of a `git` or `gh` invocation.
     TrustedCommandArg,
     /// Anything else: nested frames, a backtick, a subshell or process
     /// substitution `(`, an open `{` group, a `#` comment, an [`UNTRUSTED_PREFIX_WORDS`] word
@@ -384,37 +384,55 @@ enum HeredocMarkerContext<'a> {
     Untrusted,
 }
 
-/// Flags whose value `git` and `gh` only ever store or send as text: a commit
-/// or tag message, an issue or PR title or body. Any other `git`/`gh`
-/// argument may name something they run (`git -c alias.x=!cmd`, `gh alias
-/// set --shell`), so it is not trusted.
-const MESSAGE_FLAGS: &[&str] = &["-m", "--message", "-t", "--title", "-b", "--body"];
-
 /// `true` when `owning` (the simple command text right before an enclosing
 /// `$(`, its opening quote already stripped) is a `git` or `gh` invocation
-/// whose last word is a [`MESSAGE_FLAGS`] member, either standalone
-/// (`git commit -m `) or glued to its value (`gh pr create --body=`).
+/// whose last word is a message flag [`forwarding::git_message_flag_trusted`]
+/// or [`forwarding::gh_message_flag_trusted`] approves for that
+/// invocation's own subcommand, either standalone (`git commit -m `) or
+/// glued to its value (`gh pr create --body=`). Both gates also back path
+/// (b), the captured-then-forwarded shape in [`forwarding`], so the two
+/// paths can never trust a flag one of them denies (issue #396 review: the
+/// old single `MESSAGE_FLAGS` list trusted `git`'s `-t`/`--title` and
+/// `-b`/`--body` too — for `git`, `-t` is `--template=<file>` and `-b`
+/// names a branch, neither a message — and trusted every `git`/`gh` message
+/// flag under any subcommand at all, `gh pr checkout`'s `-b` branch
+/// argument among them).
 fn is_trusted_message_value(owning: &str) -> bool {
     let tokens = split_tokens(owning);
-    let Some(program) = tokens.iter().find(|token| !is_bare_assignment(token)) else {
+    let Some(program_pos) = tokens.iter().position(|token| !is_bare_assignment(token)) else {
         return false;
     };
+    // At least one more token — the flag itself — must follow the program.
+    if tokens.len() < program_pos + 2 {
+        return false;
+    }
+    let program = &tokens[program_pos];
     let basename = program
         .rsplit_once('/')
         .map_or(program.as_str(), |(_, tail)| tail);
-    if !basename.eq_ignore_ascii_case("git") && !basename.eq_ignore_ascii_case("gh") {
+    let is_git = basename.eq_ignore_ascii_case("git");
+    let is_gh = basename.eq_ignore_ascii_case("gh");
+    if !is_git && !is_gh {
         return false;
     }
-    let Some(last) = tokens.last() else {
+    let last = &tokens[tokens.len() - 1];
+    let context_args = &tokens[program_pos + 1..tokens.len() - 1];
+    let flag = if owning.ends_with('=') {
+        let stripped = last.strip_suffix('=').unwrap_or(last.as_str());
+        if !stripped.starts_with("--") {
+            return false;
+        }
+        stripped
+    } else if owning.ends_with(char::is_whitespace) {
+        last.as_str()
+    } else {
         return false;
     };
-    if owning.ends_with('=') {
-        let flag = last.strip_suffix('=').unwrap_or(last);
-        return flag.starts_with("--") && MESSAGE_FLAGS.contains(&flag);
+    if is_git {
+        forwarding::git_message_flag_trusted(context_args, flag)
+    } else {
+        forwarding::gh_message_flag_trusted(context_args, flag)
     }
-    // A standalone flag must be followed by the substitution itself, not
-    // glued to it: `owning` then ends in whitespace after the flag.
-    owning.ends_with(char::is_whitespace) && MESSAGE_FLAGS.contains(&last.as_str())
 }
 
 /// Classify a heredoc marker by [`HeredocMarkerContext`]. `prefix` is every
