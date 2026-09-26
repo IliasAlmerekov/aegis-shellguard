@@ -23,46 +23,24 @@ fn assess_jq_nowdoc_body_with_dangerous_looking_json_stays_safe() {
     );
 }
 
-// Issue #432: the heredoc's owning command is found after the last `;`, not
-// the line's own first token — `true; cat > f <<'EOF'` must resolve to
-// `cat`, so the body is treated as data at rest exactly like a bare
-// `cat > f <<'EOF'` already is.
+// A file can run implicitly later, so a dangerous body stays scanned even
+// when an earlier command is separated by `;`.
 #[test]
-fn assess_heredoc_owning_command_after_semicolon_stays_safe() {
-    let s = scanner();
-    let cmd = "true; cat > /tmp/aegis-396-x.sh <<'EOF'\nrm -rf /\nEOF";
-    let assessment = s.assess(cmd);
-
-    assert_eq!(
-        assessment.risk,
-        RiskLevel::Safe,
-        "expected Safe for a heredoc owned by a chained cat, got {:?} ({:?})",
-        assessment.risk,
-        assessment
-            .matched
-            .iter()
-            .map(|m| m.pattern.id.as_ref())
-            .collect::<Vec<_>>()
+fn assess_file_write_after_semicolon_scans_body() {
+    assert_assessment_matches_pattern(
+        "true; cat > /tmp/aegis-396-x.sh <<'EOF'\nrm -rf /\nEOF",
+        RiskLevel::Block,
+        "PS-006",
     );
 }
 
-// Same fix, `&&`-chained instead of `;`-chained.
+// The same rule holds for an `&&` chain.
 #[test]
-fn assess_heredoc_owning_command_after_and_and_stays_safe() {
-    let s = scanner();
-    let cmd = "true && cat > /tmp/aegis-396-x.sh <<'EOF'\nrm -rf /\nEOF";
-    let assessment = s.assess(cmd);
-
-    assert_eq!(
-        assessment.risk,
-        RiskLevel::Safe,
-        "expected Safe for a heredoc owned by an &&-chained cat, got {:?} ({:?})",
-        assessment.risk,
-        assessment
-            .matched
-            .iter()
-            .map(|m| m.pattern.id.as_ref())
-            .collect::<Vec<_>>()
+fn assess_file_write_after_and_and_scans_body() {
+    assert_assessment_matches_pattern(
+        "true && cat > /tmp/aegis-396-x.sh <<'EOF'\nrm -rf /\nEOF",
+        RiskLevel::Block,
+        "PS-006",
     );
 }
 

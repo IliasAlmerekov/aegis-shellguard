@@ -12,7 +12,8 @@ use crate::split_tokens;
 mod forwarding;
 
 /// Programs that never execute their stdin: `cat`/`tee` copy the bytes to
-/// stdout or a file, and `jq` parses them as JSON. Their output only reaches
+/// stdout or a file, and `jq` parses them as JSON. A file write is not
+/// trusted, since that file may run implicitly later. Other output only reaches
 /// a shell through a pipe, a process substitution, or an enclosing
 /// substitution, which the rest of the predicate rules out. A nowdoc body
 /// fed only to one of these is `Data consumer` territory (issue #396, #432)
@@ -493,37 +494,6 @@ fn consumer_writes_file(command: &str, program: Option<&str>) -> bool {
     false
 }
 
-/// `true` when `tail` (a marker line past its delimiter spec) ends the
-/// consumer and starts another command with `;` or `&`. A `&` that is part
-/// of a redirection (`>&2`, `&>f`) does not count. Quotes are ignored, so a
-/// quoted `;` only costs a scanned body.
-fn tail_starts_another_command(tail: &str) -> bool {
-    let bytes = tail.as_bytes();
-    bytes.iter().enumerate().any(|(idx, &byte)| match byte {
-        b';' => true,
-        b'&' => {
-            let after_gt = idx > 0 && bytes[idx - 1] == b'>';
-            let before_gt = bytes.get(idx + 1) == Some(&b'>');
-            !after_gt && !before_gt
-        }
-        _ => false,
-    })
-}
-
-/// `true` when `text` has a single `&` that puts a command in the
-/// background. `&&`, `|&`, and the `&` of a redirection (`>&2`, `&>f`) do
-/// not count. Quotes are ignored, so a quoted `&` only costs a scanned body.
-fn has_background_job(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    bytes.iter().enumerate().any(|(idx, &byte)| {
-        let prev = idx.checked_sub(1).map(|prev_idx| bytes[prev_idx]);
-        let next = bytes.get(idx + 1).copied();
-        byte == b'&'
-            && !matches!(prev, Some(b'&' | b'|' | b'>'))
-            && !matches!(next, Some(b'&' | b'>'))
-    })
-}
-
 /// The frame a heredoc marker sits in. [`heredoc_target_is_data_consumer`]
 /// trusts only the first three (issue #396, #432) — and, for `AssignmentRhs`,
 /// only while nothing after the heredoc actually runs the captured variable
@@ -661,7 +631,8 @@ fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext<'_> {
 /// piped to nothing else, not continued onto the next line by a trailing `\`, with no
 /// process substitution on the marker line (`cat
 /// <<'EOF' > >(sh)`, `tee >(sh) <<'EOF'` hand the body to a shell), no
-/// write to a descriptor above 2 or a `/dev/fd/`/`/proc/` path, and reached
+/// write to a descriptor above 2 or a `/dev/fd/`/`/proc/` path, without
+/// writing a file, and reached
 /// only through a context this predicate trusts (top level, an assignment's
 /// `$(...)`, or a `git`/`gh` message value's `$(...)`, with no subshell or
 /// process-substitution `(` or `{` group still open and no `#` comment or
@@ -705,17 +676,9 @@ pub(super) fn heredoc_target_is_data_consumer(
     {
         return false;
     }
-    // A written file can be run by a later part of the same command (`sh
-    // f`, a glob, a variable holding the path) before analysis could read
-    // it, or by a background reader started earlier (`sh f &` on a FIFO).
-    // Trust the write only when nothing follows it and nothing before it
-    // runs in the background (PR #463 review, ADR-042).
-    if consumer_writes_file(&line[owning_start..], program.as_deref())
-        && (!following_text.trim().is_empty()
-            || tail_starts_another_command(&line[delimiter_end..])
-            || has_background_job(preceding_lines)
-            || has_background_job(&marker_prefix[..owning_start]))
-    {
+    // A written file may run implicitly on a later invocation (for example,
+    // a git hook or shell startup file). Its path cannot prove it is inert.
+    if consumer_writes_file(&line[owning_start..], program.as_deref()) {
         return false;
     }
     let prefix = if preceding_lines.is_empty() {

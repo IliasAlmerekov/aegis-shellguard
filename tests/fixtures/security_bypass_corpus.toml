@@ -7,6 +7,28 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
+# A hook written now can run during a later git command without naming the file.
+name = "heredoc_data_consumer_git_hook_write_block"
+command = """cat > .git/hooks/pre-commit <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# A shell startup file can also execute without being named in a later command.
+name = "heredoc_data_consumer_shell_startup_write_block"
+command = """tee -a ~/.bashrc <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
 # Issue #396 widens what counts as an inert heredoc body: `cat`/`tee`/`jq`
 # never execute their stdin, so a bare `cat <<'EOF'` printing to the terminal
 # runs nothing and no longer belongs in a bypass-attempt corpus. `bash` still
@@ -170,6 +192,28 @@ expected_block_reason = "intrinsic_risk_block"
 # a copied shell, so only the bare word `cat`, `tee`, or `jq` is trusted.
 name = "heredoc_data_consumer_relative_path_block"
 command = """./cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+# A Danger-tier body under `./cat` keeps its ordinary risk: the untrusted
+# consumer is scanned, not relabeled to Block. Strict mode blocks Danger.
+[[cases]]
+name = "heredoc_data_consumer_relative_path_danger_strict_block"
+command = """./cat <<'EOF'
+rm -rf ~
+EOF"""
+expected_risk = "danger"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "strict_policy"
+
+[[cases]]
+name = "heredoc_data_consumer_relative_path_file_write_block"
+command = """./cat > f <<'EOF'
 rm -rf /
 EOF"""
 expected_risk = "block"
@@ -341,6 +385,62 @@ command = """cat > /tmp/aegis-z/x.sh <<'EOF'
 rm -rf /
 EOF
 for s in /tmp/aegis-z/*; do sh "$s"; done"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review: a heredoc body with no line that exactly equals the
+# delimiter runs to the end of the command, the same way bash's own
+# recovery inside $(...) ends the heredoc at a delimiter-prefixed line
+# (EOF)) and keeps parsing the rest as a new command. Neither shape earns
+# Data consumer trust.
+name = "heredoc_data_consumer_unterminated_body_block"
+command = """x=$(cat <<'EOF'
+hi
+EOF)
+rm -rf /"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review: a later line that happens to equal the delimiter does not
+# undo the loss of trust from the earlier EOF) line. bash already ended the
+# heredoc and closed the substitution there, so the stray EOF below just
+# runs as its own harmless command alongside the real payload.
+name = "heredoc_data_consumer_delimiter_prefixed_then_stray_terminator_block"
+command = """x=$(cat <<'EOF'
+hi
+EOF)
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+name = "heredoc_data_consumer_delimiter_space_paren_block"
+command = """x=$(cat <<'EOF'
+hi
+EOF )
+rm -rf /"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review: the same EOF) recovery happens inside a git commit
+# message capture, not just a plain assignment.
+name = "heredoc_data_consumer_delimiter_prefixed_git_commit_message_block"
+command = """git commit -m "$(cat <<'EOF'
+hi
+EOF)"
+rm -rf /"""
 expected_risk = "block"
 expected_decision = "block"
 expected_exit_code = 3

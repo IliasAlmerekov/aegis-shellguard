@@ -161,8 +161,9 @@ _Avoid_: rule, signature (reserve "rule" for prefix rules)
 `/usr/bin/<name>` with no leading assignment, as the program that reads a
 quoted-delimiter heredoc (nowdoc). Any other path (`./cat`, `/usr/local/bin/cat`)
 stays untrusted. None of them executes its stdin. Nothing before the marker may change which program the
-name runs (a function, `alias`, `hash`, `PATH` write and the like), and a
-consumer that writes a file must be the last thing in the command. The body counts as data, and neither
+name runs (a function, `alias`, `hash`, `PATH` write and the like). A consumer
+that writes a file never earns data trust, because that file may run implicitly
+later. The body counts as data, and neither
 the scanner nor the unclaimed-interpreter net reads it, only when no shell can
 reach the consumer's output: no pipe or process substitution on the marker
 line, no line continuation, no write to a descriptor above 2, a variable
@@ -171,7 +172,8 @@ descriptor, or a `/dev/fd/` or `/proc/` path, no compound-command keyword
 marker, and the heredoc sits at top level, in `NAME=$(...)`, or in the `$(...)` value
 of a `git`/`gh` message flag (`-m`, `--message`, `-t`, `--title`, `-b`,
 `--body`) with no subshell, process-substitution `(` or `{ ...; }` group open
-around it. Any other shape keeps the body scanned (ADR-042).
+around it. The body also needs an exact closing delimiter with no earlier
+delimiter-prefixed line. Any other shape keeps the body scanned (ADR-042).
 _Avoid_: inert heredoc, safe heredoc target
 
 **Token-prefix rule**:

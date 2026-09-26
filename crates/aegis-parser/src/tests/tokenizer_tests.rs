@@ -279,6 +279,27 @@ fn heredoc_multiline_body() {
     assert_eq!(bodies[0].body, "echo hello\nrm -rf /tmp/foo");
 }
 
+#[test]
+fn heredoc_delimiter_prefix_remains_in_interpreter_body() {
+    let cmd = "bash <<'EOF'\nEOFx\necho still in body\nEOF";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert_eq!(bodies[0].body, "EOFx\necho still in body");
+}
+
+#[test]
+fn heredoc_delimiter_prefix_keeps_later_substitution_visible() {
+    let cmd = "x=$(cat <<'EOF'\ntext\nEOF)\n$(rm -rf /)";
+    let masked = mask_inert_heredoc_substitution_markers(cmd);
+    assert!(masked.contains("$(rm -rf /)"));
+}
+
+#[test]
+fn heredoc_delimiter_prefix_does_not_hide_later_list_segment() {
+    let cmd = "x=$(cat <<'EOF'\ntext\nEOF)\necho later";
+    let segments = list_segments(cmd);
+    assert_eq!(segments.len(), 2);
+}
+
 // 29. Heredoc with tab-stripping (<<-) — leading tabs removed from delimiter line
 #[test]
 fn heredoc_strip_tabs_delimiter() {
@@ -388,14 +409,13 @@ fn mask_inert_heredoc_no_heredoc_is_noop() {
     assert_eq!(mask_inert_heredoc_substitution_markers(cmd), cmd);
 }
 
-// 40. Issue #357: a heredoc handed to `cat` whose stdout is redirected into
-// a file is a data write, not a display or execution — the target is
-// flagged accordingly.
+// A file can run implicitly on a later command, so writing one never earns
+// Data consumer trust even when cat itself only copies bytes.
 #[test]
-fn heredoc_cat_redirected_to_file_is_flagged() {
+fn heredoc_cat_redirected_to_file_is_not_trusted() {
     let cmd = "cat >> notes.txt <<'EOF'\nsome text\nEOF";
     let bodies = extract_heredoc_bodies(cmd);
-    assert!(bodies[0].is_data_consumer_target);
+    assert!(!bodies[0].is_data_consumer_target);
 }
 
 // 41. Issue #396: `cat` prints to the terminal either way — the destination
@@ -408,13 +428,12 @@ fn heredoc_cat_without_redirection_is_flagged_as_data_consumer() {
     assert!(bodies[0].is_data_consumer_target);
 }
 
-// 42. `tee` writes to its file argument directly, no shell redirection
-// needed.
+// `tee` writes its file argument without shell redirection.
 #[test]
-fn heredoc_tee_with_file_argument_is_flagged() {
+fn heredoc_tee_with_file_argument_is_not_trusted() {
     let cmd = "tee out.txt <<'EOF'\nsome text\nEOF";
     let bodies = extract_heredoc_bodies(cmd);
-    assert!(bodies[0].is_data_consumer_target);
+    assert!(!bodies[0].is_data_consumer_target);
 }
 
 // 43. An interpreter executes its stdin as code regardless of where its own
@@ -444,13 +463,12 @@ fn heredoc_cat_with_fd_duplication_is_flagged_as_data_consumer() {
     }
 }
 
-// 44. Masking blanks the entire nowdoc body — not just substitution markers
-// — for a `Data consumer` target.
+// A file write keeps its dangerous-looking body visible to the scanner.
 #[test]
-fn mask_inert_heredoc_blanks_full_body_for_file_redirected_cat() {
+fn mask_inert_heredoc_keeps_file_write_body_visible() {
     let cmd = "cat >> notes.txt <<'EOF'\nrm -rf /\nEOF";
     let masked = mask_inert_heredoc_substitution_markers(cmd);
-    assert!(!masked.contains("rm -rf"));
+    assert!(masked.contains("rm -rf"));
     // Line structure (line count) is preserved so unrelated line-oriented
     // logic downstream isn't affected.
     assert_eq!(masked.lines().count(), cmd.lines().count());
@@ -474,26 +492,22 @@ fn heredoc_jq_is_flagged_as_data_consumer() {
     assert!(bodies[0].is_data_consumer_target);
 }
 
-// 47. Issue #432: the owning simple command is found after the last `;`,
-// not the line's own first token — `true; cat > f <<'EOF'` still resolves
-// to `cat`.
+// Chaining before the write does not make its output file inert.
 #[test]
-fn heredoc_owning_command_after_semicolon_is_flagged() {
+fn heredoc_file_write_after_semicolon_is_not_trusted() {
     let cmd = "true; cat > /tmp/x.sh <<'EOF'\nsome text\nEOF";
     let bodies = extract_heredoc_bodies(cmd);
-    assert!(bodies[0].is_data_consumer_target);
+    assert!(!bodies[0].is_data_consumer_target);
 }
 
-// 48. Same fix, `&&`-chained instead of `;`-chained.
 #[test]
-fn heredoc_owning_command_after_and_and_is_flagged() {
+fn heredoc_file_write_after_and_and_is_not_trusted() {
     let cmd = "true && cat > /tmp/x.sh <<'EOF'\nsome text\nEOF";
     let bodies = extract_heredoc_bodies(cmd);
-    assert!(bodies[0].is_data_consumer_target);
+    assert!(!bodies[0].is_data_consumer_target);
 }
 
-// 49. PR #463 review: a file write followed by another command is not
-// trusted, since that command could run the file before analysis sees it.
+// PR #463 review: a file write is never trusted, whatever follows it.
 #[test]
 fn heredoc_file_write_followed_by_another_command_is_not_flagged() {
     let cmd = "cat > /tmp/x.sh <<'EOF'\nsome text\nEOF\ntrue";

@@ -2,8 +2,9 @@
 
 ## Status
 
-Accepted. Adds the `Data consumer` entry to `CONTEXT.md`. Fixes issues #396
-and #432 and replaces the file-write-only rule from #357.
+Accepted. Adds the `Data consumer` entry to `CONTEXT.md`. Fixes issue #396.
+File writes from #357 and #432 remain scanned because written files can run
+without an explicit command naming them.
 
 ## Context
 
@@ -62,14 +63,16 @@ into argv, so the router cannot drop body lines for every heredoc.
    - the consumer does not write to a descriptor above 2 or a variable one
      (`>&3`, `>&$fd`) or to a `/dev/fd/` or `/proc/` path, since an earlier
      `exec 3> >(sh)` can make that descriptor a pipe to a shell;
-   - a consumer that writes a file (`tee`, or any unquoted `>` other than
-     `>&1`/`>&2`) has nothing after it: no `;`, `&&` or `&` on the rest of
-     the marker line and no command line after the terminator. A later part
-     of the same command can run the file (`sh f`, a glob, a variable
-     holding the path) before analysis could read it. Nothing before it may
-     run in the background either (`sh f &` reading a FIFO). Commands before
-     the write stay allowed, so #432's `cargo build; cat > f <<'EOF'` keeps
-     its trust;
+   - the consumer does not write a file (`tee`, or an unquoted `>` other than
+     `>&1`/`>&2`). A written file may run implicitly on a later command,
+     such as a Git hook during `git commit` or a startup file when a shell
+     starts. No path-based exception can prove that a file is inert, so all
+     file writes keep their bodies scanned. This reverses #357 and #432's
+     data treatment by explicit request during PR #463 review;
+   - an exact delimiter line closes the body, with no earlier line merely
+     starting with the delimiter. An ambiguous line keeps the body scanned
+     and stops heredoc suspension there, so bash's `EOF)` recovery cannot
+     hide later commands;
    - the heredoc sits at top level, or inside exactly one `$(...)` that is
      either the right side of `NAME=` or the whole value of a `git` or `gh`
      message flag in a position item 5's table trusts for that program
@@ -171,8 +174,9 @@ into argv, so the router cannot drop body lines for every heredoc.
 
 ## Consequences
 
-- The #396, #432 and #357 shapes, and the `git commit -m` / `gh --body`
-  idioms, are auto-approved whatever their text says.
+- The #396 `jq` capture shape, a bare `cat` that only prints to stdout, and
+  the `git commit -m` / `gh --body` idioms are auto-approved whatever their
+  body text says. File-writing #357 and #432 shapes are scanned instead.
 - Every shape in the Context list, plus `bash -c "$(cat <<'EOF' ...)"`,
   `eval "$(...)"`, `ssh host "$(...)"`, `echo "$(...)" | sh` and
   `gh alias set --shell`, keeps the body scanned. Tests in
@@ -180,29 +184,35 @@ into argv, so the router cannot drop body lines for every heredoc.
   `crates/aegis-parser/src/tests/tokenizer_tests.rs` and
   `src/analysis/router/tests/issue_396.rs` pin both sides.
 - The predicate reads lines, not a shell AST. A shape it cannot classify falls
-  on the scanned side, so a parsing gap costs a false positive, not a bypass.
+  on the scanned side, so most parsing gaps cost a false positive, not a
+  bypass. One kind does not: a line walk can disagree with bash about where a
+  heredoc body ends, and when the walker's body runs longer than bash's, the
+  extra text bash actually runs gets blanked as inert data instead of
+  scanned. PR #463 review found this in bash's own `$(...)` heredoc
+  recovery: a body with no line exactly equal to the delimiter, or a line
+  that merely starts with it (`EOF)`), lets bash close the heredoc there and
+  run whatever follows. The fix drops Data consumer trust for both shapes
+  (no exact terminator line, and a delimiter-prefixed non-exact line)
+  rather than modeling bash's recovery rule outright. Any other body-end
+  disagreement between this walk and bash is the same kind of bypass, not a
+  false positive, until it gets the same guard.
   Adding a program to the `Data consumer` list or a flag to the message list
   is a security decision and needs a test for each way its output could reach
   a shell.
-- Writing a file and running it in the same command (`cat > f <<'EOF'
-  ... EOF` then `sh f`, `jq -r .a > f <<'JSON' && bash f`) keeps the body
-  scanned. Any command after a file write does the same, so `cat > f
-  <<'EOF' ... EOF` then `chmod +x f` with a dangerous-looking body prompts
-  where 0.6.10 auto-approved it. That cost buys a rule with no path
-  matching to get around.
-- Two runs of a written file stay out of reach, as they were on 0.6.10. A
-  reader started by an earlier, separate Aegis invocation — a previous
-  agent command such as `sh /tmp/f &` left running from a prior turn, on a
-  FIFO — cannot be seen from the command that writes: nothing links one
-  invocation's background jobs to the next one Aegis is asked to assess. A
-  reader in the same command that detaches without `&` (`setsid sh /tmp/f;
-  cat > /tmp/f <<'EOF'`) is not detected either. A plain file written by one
-  command and run by the next is covered, since the router reads the file
-  when the second command arrives. The background-job check that does cover
-  the same-command case is not tied to the file this heredoc writes: any `&`
-  job anywhere earlier in the command (`sleep 5 &`) already trips it, so a
-  dangerous-looking body stays scanned even when that job never touches the
-  write target. That false positive is accepted.
+- Any file write keeps the body scanned, including `cat > f <<'EOF'` and
+  `tee -a ~/.bashrc <<'EOF'`. A dangerous-looking body in #432's `cargo
+  build; cat > loop.sh <<'EOF'` now prompts or blocks even though the write
+  itself does not execute it. This false positive is accepted so implicit
+  execution of a written file cannot inherit Data consumer trust.
+- Who reads a written file no longer matters. On 0.6.10 two readers stayed
+  out of reach: one started by an earlier Aegis invocation, such as
+  `sh /tmp/f &` left waiting on a FIFO from a prior turn, and one in the same
+  command that detaches without `&` (`setsid sh /tmp/f; cat > /tmp/f
+  <<'EOF'`). The write rule scans the body before the file exists, so both
+  readers, and a file that runs implicitly such as
+  `cat > .git/hooks/pre-commit <<'EOF'`, get the scanned body. A file
+  assembled through other writes or later edits still needs separate
+  analysis. This rule does not prove the file will be safe when it runs.
 - Capturing a heredoc into a variable and then running that variable, be it
   `x=$(cat <<'EOF' ...)` then `$x`, `eval "$x"`, `bash -c "$x"`, `$x` piped
   or fed into `<(...)`/`>(...)`, or any of the wrapper, grouping,

@@ -1,19 +1,17 @@
 use super::*;
 
-// Issue #357: a heredoc body handed to `cat`/`tee` whose own output is
-// redirected into a file is pure data at rest — nothing in the pipeline ever
-// runs or displays it. A dangerous-looking substring inside it (a Rust test
-// fixture, a changelog entry) must not be treated as a live command.
+// A written file may run implicitly later, so even a quoted heredoc body
+// with a dangerous-looking test fixture stays visible to the scanner.
 #[test]
-fn assess_nowdoc_redirected_into_file_with_dangerous_text_stays_safe() {
+fn assess_nowdoc_redirected_into_file_with_dangerous_text_stays_scanned() {
     let s = scanner();
     let cmd = "cat >> notes.txt <<'EOF'\nlet cmd = \"rm -rf .\";\nEOF";
     let assessment = s.assess(cmd);
 
     assert_eq!(
         assessment.risk,
-        RiskLevel::Safe,
-        "expected Safe for a nowdoc body written to a file, got {:?} ({:?})",
+        RiskLevel::Danger,
+        "expected Danger for a nowdoc body written to a file, got {:?} ({:?})",
         assessment.risk,
         assessment
             .matched
@@ -23,9 +21,9 @@ fn assess_nowdoc_redirected_into_file_with_dangerous_text_stays_safe() {
     );
 }
 
-// Same shape with `>` instead of `>>`, and with `tee` instead of `cat`.
+// `>` and `tee` writes follow the same rule.
 #[test]
-fn assess_nowdoc_redirected_into_file_variants_stay_safe() {
+fn assess_nowdoc_redirected_into_file_variants_stay_scanned() {
     let cases = [
         "cat > notes.txt <<'EOF'\nrm -rf /\nEOF",
         "tee notes.txt <<'EOF'\nrm -rf /\nEOF",
@@ -37,17 +35,14 @@ fn assess_nowdoc_redirected_into_file_variants_stay_safe() {
         let assessment = s.assess(cmd);
         assert_eq!(
             assessment.risk,
-            RiskLevel::Safe,
-            "command {cmd:?}: expected Safe, got {:?}",
+            RiskLevel::Block,
+            "command {cmd:?}: expected Block, got {:?}",
             assessment.risk
         );
     }
 }
 
-// The exact repro from the issue: an unrelated command chained after the
-// heredoc write must still be evaluated on its own merits — masking the
-// heredoc body must not blind the scanner to a genuinely dangerous command
-// elsewhere on the line.
+// A trailing dangerous command is still evaluated on its own merits.
 #[test]
 fn assess_redirected_heredoc_does_not_mask_a_trailing_dangerous_command() {
     assert_assessment_matches_pattern(
