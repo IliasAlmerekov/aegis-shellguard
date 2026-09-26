@@ -66,6 +66,28 @@ fn assess_heredoc_owning_command_after_and_and_stays_safe() {
     );
 }
 
+// Issue #396 review: the owning program can be spelled by its absolute path
+// too, not just the bare word — `/usr/bin/cat` is still the same `Data
+// consumer`, just written out in full.
+#[test]
+fn assess_heredoc_owning_command_absolute_path_stays_safe() {
+    let s = scanner();
+    let cmd = "/usr/bin/cat <<'EOF'\nrm -rf /\nEOF";
+    let assessment = s.assess(cmd);
+
+    assert_eq!(
+        assessment.risk,
+        RiskLevel::Safe,
+        "expected Safe for a heredoc owned by /usr/bin/cat, got {:?} ({:?})",
+        assessment.risk,
+        assessment
+            .matched
+            .iter()
+            .map(|m| m.pattern.id.as_ref())
+            .collect::<Vec<_>>()
+    );
+}
+
 // A same-line pipe out of `jq` means `sh` reads whatever `jq` prints — never
 // inert, whatever the JSON body says.
 #[test]

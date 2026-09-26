@@ -151,3 +151,197 @@ expected_risk = "block"
 expected_decision = "block"
 expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review (BLOCKER): a leading assignment can change which program
+# runs. `PATH=/tmp/p cat` finds a planted `/tmp/p/cat` that is really a
+# shell, so any assignment ahead of the consumer drops the data trust.
+name = "heredoc_data_consumer_path_prefix_assignment_block"
+command = """PATH=/tmp/p cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review: a consumer named by path (`./cat`, `/tmp/p/cat`) can be
+# a copied shell, so only the bare word `cat`, `tee`, or `jq` is trusted.
+name = "heredoc_data_consumer_relative_path_block"
+command = """./cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review: a case-folded name is a different program on a
+# case-sensitive filesystem, so `CAT` gets no data trust either.
+name = "heredoc_data_consumer_case_folded_name_block"
+command = """CAT <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review: a POSIX function named `cat` defined earlier in the
+# command replaces the program, so its heredoc body reaches a shell.
+name = "heredoc_data_consumer_shadowed_by_function_block"
+command = """cat() { sh; }; cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review: an alias named `cat` makes the consumer a shell.
+name = "heredoc_data_consumer_shadowed_by_alias_block"
+command = """shopt -s expand_aliases; alias cat=sh
+cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review follow-up: a standalone `PATH=` statement changes which
+# `cat` runs just like a prefix assignment does.
+name = "heredoc_data_consumer_path_statement_block"
+command = """PATH=/tmp/p; cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review follow-up: quotes inside a word do not hide it, so
+# `PA""TH` is still the PATH variable.
+name = "heredoc_data_consumer_quote_split_path_block"
+command = """export PA""TH=/tmp/p; cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review follow-up: `hash -p` pins the path bash runs for `cat`.
+name = "heredoc_data_consumer_hash_pinned_block"
+command = """hash -p /bin/sh cat; cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review follow-up: a sourced file can define a `cat` function.
+name = "heredoc_data_consumer_after_dot_source_block"
+command = """. /tmp/p/lib.sh; cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review follow-up: a nameref can write PATH without naming it.
+name = "heredoc_data_consumer_after_nameref_block"
+command = """declare -n r="${x}TH"; r=/tmp/p; cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review follow-up: arithmetic can assign to a computed name,
+# which makes PATH a relative directory.
+name = "heredoc_data_consumer_after_arithmetic_assignment_block"
+command = """(( $n = 5 )); cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review: a file written by a consumer and run later in the same
+# command executes the body, so a file write is trusted only when it is
+# the whole command.
+name = "heredoc_data_consumer_file_then_run_block"
+command = """cat <<'EOF' > /tmp/aegis-f
+rm -rf /
+EOF
+sh /tmp/aegis-f"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review: same as above with the redirect before the marker, a
+# gap 0.6.10 already had.
+name = "heredoc_data_consumer_redirect_first_then_run_block"
+command = """cat > /tmp/aegis-f <<'EOF'
+rm -rf /
+EOF
+sh /tmp/aegis-f"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review: the run can sit on the marker line itself.
+name = "heredoc_data_consumer_same_line_run_block"
+command = """cat <<'EOF' > /tmp/aegis-f; sh /tmp/aegis-f
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review: a background reader started before the write (a FIFO
+# fed to `sh`) runs the body too.
+name = "heredoc_data_consumer_fifo_reader_before_block"
+command = """sh /tmp/aegis-f &
+cat <<'EOF' > /tmp/aegis-f
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review follow-up: matching the target path is not enough, a
+# glob can run the written file without naming it.
+name = "heredoc_data_consumer_glob_run_block"
+command = """cat > /tmp/aegis-z/x.sh <<'EOF'
+rm -rf /
+EOF
+for s in /tmp/aegis-z/*; do sh "$s"; done"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"

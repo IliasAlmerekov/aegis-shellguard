@@ -20,7 +20,24 @@ mod forwarding;
 /// including the pipe and context checks a bare program match alone doesn't
 /// cover. `sed` (`e` command) and `awk` (`system()`) are deliberately not on
 /// this list: both can run shell commands from their own script argument.
-const DATA_CONSUMER_PROGRAMS: &[&str] = &["cat", "tee", "jq"];
+///
+/// Each program also gets its two most common absolute-path spellings,
+/// `/bin/<name>` and `/usr/bin/<name>`, alongside the bare word. Both are
+/// where a stock install actually puts the binary, so trusting them costs
+/// nothing a bare `cat` didn't already cost. Any other path — `./cat`,
+/// `/tmp/p/cat`, `/usr/local/bin/cat` — can still name a copied shell, so
+/// only these two prefixes count (issue #396 review).
+const DATA_CONSUMER_PROGRAMS: &[&str] = &[
+    "cat",
+    "tee",
+    "jq",
+    "/bin/cat",
+    "/bin/tee",
+    "/bin/jq",
+    "/usr/bin/cat",
+    "/usr/bin/tee",
+    "/usr/bin/jq",
+];
 
 /// `true` when `token` is a bare `NAME=value` shell-variable assignment —
 /// used to skip a leading assignment run ahead of a heredoc's owning program
@@ -142,29 +159,40 @@ fn owning_simple_command_start(text: &str) -> usize {
     start
 }
 
-/// The basename-normalized program of the simple command that owns the
-/// heredoc marker at `marker_start` on `line`, skipping a leading run of
-/// bare `NAME=value` assignments. `None` when the owning text has no
-/// program token at all (an empty prefix, or one made only of assignments).
-fn heredoc_owning_command_program(line: &str, marker_start: usize) -> Option<String> {
-    let prefix = &line[..marker_start];
-    let command_start = owning_simple_command_start(prefix);
-    let tokens = split_tokens(prefix[command_start..].trim());
-    let program = tokens.iter().find(|token| !is_bare_assignment(token))?;
-    let basename = program
-        .rsplit_once('/')
-        .map_or(program.as_str(), |(_, tail)| tail);
-    Some(basename.to_string())
+/// The program word of the simple command that starts at `owning_start` and
+/// ends at `marker_start` on `line`, exactly as written. `None` when the
+/// owning text has no program token, or when it starts with a `NAME=value`
+/// assignment: `PATH=/tmp/p cat` runs whatever `cat` sits in `/tmp/p`, so an
+/// assigned environment can make the consumer a shell (PR #463 review).
+/// Takes `owning_start` rather than recomputing it, since
+/// [`heredoc_target_is_data_consumer`] already needs
+/// [`owning_simple_command_start`]'s result for its own file-write check
+/// (issue #396 review).
+fn owning_command_program(line: &str, owning_start: usize, marker_start: usize) -> Option<String> {
+    let tokens = split_tokens(line[owning_start..marker_start].trim());
+    tokens
+        .into_iter()
+        .next()
+        .filter(|token| !is_bare_assignment(token))
 }
 
-/// `true` when the simple command that owns the heredoc marker at
-/// `marker_start` on `line` invokes a [`DATA_CONSUMER_PROGRAMS`] member.
-fn heredoc_owning_command_is_data_consumer(line: &str, marker_start: usize) -> bool {
-    heredoc_owning_command_program(line, marker_start).is_some_and(|program| {
-        DATA_CONSUMER_PROGRAMS
-            .iter()
-            .any(|candidate| program.eq_ignore_ascii_case(candidate))
-    })
+/// `true` when `program` — a heredoc's owning program word, exactly as
+/// written — is a [`DATA_CONSUMER_PROGRAMS`] member: the bare, case-exact
+/// name `cat`, `tee`, or `jq`, or one of their two trusted absolute paths.
+/// Any other path (`./cat`, `/tmp/p/cat`) can name a copied shell, and `CAT`
+/// is a different file on a case-sensitive filesystem, so neither is trusted
+/// (PR #463 review, issue #396 review).
+fn is_data_consumer_program(program: &str) -> bool {
+    DATA_CONSUMER_PROGRAMS.contains(&program)
+}
+
+/// `true` when `program` is one of [`DATA_CONSUMER_PROGRAMS`]'s three `tee`
+/// spellings — the bare word or one of its two trusted absolute paths. Used
+/// by [`consumer_writes_file`] so a `/bin/tee`/`/usr/bin/tee` heredoc target
+/// is recognized as writing a file exactly like a bare `tee` already is
+/// (issue #396 review).
+fn is_tee_program(program: &str) -> bool {
+    matches!(program, "tee" | "/bin/tee" | "/usr/bin/tee")
 }
 
 /// `true` when `tail` (the text on a heredoc marker's own line, past its
@@ -340,6 +368,77 @@ const UNTRUSTED_PREFIX_WORDS: &[&str] = &[
     "until", "while",
 ];
 
+/// Words that can change which program a bare `cat`, `tee`, or `jq` runs
+/// (PR #463 review). `PATH` catches every direct write to the search path.
+/// `alias`, `hash`, and `enable` rebind the name itself. `eval` and `source`
+/// run text this check cannot see. The declare family, the read family,
+/// and `getopts` can write a variable whose name is computed (`declare -n
+/// r="${x}TH"`), so they can write `PATH` without naming it.
+const PROGRAM_RESOLUTION_WORDS: &[&str] = &[
+    "PATH",
+    "alias",
+    "declare",
+    "enable",
+    "eval",
+    "export",
+    "getopts",
+    "hash",
+    "local",
+    "mapfile",
+    "read",
+    "readarray",
+    "readonly",
+    "source",
+    "typeset",
+];
+
+/// Every maximal run of ASCII letters, digits, and `_` in `text` — the same
+/// notion of a shell word [`is_plain_identifier`] validates one word at a
+/// time, applied here so a caller can search a whole line for a specific
+/// reserved word or builtin name (`printf`, `PATH`, ...) without also
+/// matching it as a substring of something else (`PATHS`, `unprintf`).
+fn shell_words(text: &str) -> impl Iterator<Item = &str> {
+    text.split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+}
+
+/// `true` when `unquoted` (a prefix with its quote characters dropped) has a
+/// program-resolution change that [`PROGRAM_RESOLUTION_WORDS`] cannot spot
+/// by word: a `.` source command in command position, a `printf -v` write to a computed name, or
+/// arithmetic (`((`, `$((`), which can assign to a computed name too
+/// (`(( $n = 5 ))` makes `PATH` the relative directory `5`).
+fn may_change_program_resolution(unquoted: &str) -> bool {
+    // Only a `.` in command position sources a file; `jq .` is a filter.
+    let dot_source = unquoted.char_indices().any(|(idx, ch)| {
+        ch == '.'
+            && unquoted[..idx]
+                .trim_end_matches([' ', '\t'])
+                .chars()
+                .next_back()
+                .is_none_or(|prev| matches!(prev, '\n' | ';' | '&' | '|' | '(' | '{'))
+            && unquoted[idx + 1..]
+                .chars()
+                .next()
+                .is_some_and(char::is_whitespace)
+    });
+    let printf_v = shell_words(unquoted).any(|word| word == "printf") && unquoted.contains("-v");
+    dot_source || printf_v || unquoted.contains("((")
+}
+
+/// `true` when `prefix` may define a POSIX shell function (`cat() { sh; }`,
+/// `cat ( ) ...`). A function named like a consumer replaces the program,
+/// so its heredoc body would reach whatever the function runs (PR #463
+/// review). Like the [`UNTRUSTED_PREFIX_WORDS`] check it ignores quotes, so
+/// a quoted `()` only costs a scanned body.
+fn defines_function(prefix: &str) -> bool {
+    let mut compact = prefix.chars().filter(|c| !c.is_whitespace()).peekable();
+    while let Some(ch) = compact.next() {
+        if ch == '(' && compact.peek() == Some(&')') {
+            return true;
+        }
+    }
+    false
+}
+
 /// `true` when `line` sends the consumer's output somewhere other than a
 /// file, the terminal or stderr: a descriptor above 2 or a variable one
 /// (`>&3`, `>&$fd`), or a `/dev/fd/` or `/proc/` path. Any of these can be a
@@ -355,6 +454,73 @@ fn writes_to_open_descriptor(line: &str) -> bool {
         }
         let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
         !digits.is_empty() && digits != "1" && digits != "2"
+    })
+}
+
+/// `true` when `command` (the owning simple command through the end of its
+/// marker line) writes a file: its program is `tee` (bare word or one of its
+/// two trusted absolute paths), or it has an unquoted `>` that is not a
+/// `>&1`/`>&2` duplication. `program` is the already-resolved owning program
+/// word, so this check does not re-tokenize `command` just to test it
+/// against `tee`'s spellings (issue #396 review). Descriptors above 2 are
+/// already refused by [`writes_to_open_descriptor`].
+fn consumer_writes_file(command: &str, program: Option<&str>) -> bool {
+    if program.is_some_and(is_tee_program) {
+        return true;
+    }
+    let mut single_quote = false;
+    let mut double_quote = false;
+    let mut chars = command.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' if !single_quote => {
+                chars.next();
+            }
+            '\'' if !double_quote => single_quote = !single_quote,
+            '"' if !single_quote => double_quote = !double_quote,
+            '>' if !single_quote && !double_quote => {
+                if chars.peek() != Some(&'&') {
+                    return true;
+                }
+                chars.next();
+                if !chars.peek().is_some_and(char::is_ascii_digit) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// `true` when `tail` (a marker line past its delimiter spec) ends the
+/// consumer and starts another command with `;` or `&`. A `&` that is part
+/// of a redirection (`>&2`, `&>f`) does not count. Quotes are ignored, so a
+/// quoted `;` only costs a scanned body.
+fn tail_starts_another_command(tail: &str) -> bool {
+    let bytes = tail.as_bytes();
+    bytes.iter().enumerate().any(|(idx, &byte)| match byte {
+        b';' => true,
+        b'&' => {
+            let after_gt = idx > 0 && bytes[idx - 1] == b'>';
+            let before_gt = bytes.get(idx + 1) == Some(&b'>');
+            !after_gt && !before_gt
+        }
+        _ => false,
+    })
+}
+
+/// `true` when `text` has a single `&` that puts a command in the
+/// background. `&&`, `|&`, and the `&` of a redirection (`>&2`, `&>f`) do
+/// not count. Quotes are ignored, so a quoted `&` only costs a scanned body.
+fn has_background_job(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    bytes.iter().enumerate().any(|(idx, &byte)| {
+        let prev = idx.checked_sub(1).map(|prev_idx| bytes[prev_idx]);
+        let next = bytes.get(idx + 1).copied();
+        byte == b'&'
+            && !matches!(prev, Some(b'&' | b'|' | b'>'))
+            && !matches!(next, Some(b'&' | b'>'))
     })
 }
 
@@ -441,10 +607,16 @@ fn is_trusted_message_value(owning: &str) -> bool {
 /// `<<`, so a `$(` opened on an earlier line still counts as enclosing.
 fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext<'_> {
     // The check ignores quotes on purpose: a quoted keyword only costs a
-    // scanned body, never a skipped one.
-    if prefix
-        .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-        .any(|word| UNTRUSTED_PREFIX_WORDS.contains(&word))
+    // scanned body, never a skipped one. Dropping the quote characters
+    // first also joins a word split by them (`PA""TH`, `al'ias'`).
+    let unquoted: String = prefix
+        .chars()
+        .filter(|c| !matches!(c, '\'' | '"' | '\\'))
+        .collect();
+    if shell_words(&unquoted).any(|word| {
+        UNTRUSTED_PREFIX_WORDS.contains(&word) || PROGRAM_RESOLUTION_WORDS.contains(&word)
+    }) || defines_function(prefix)
+        || may_change_program_resolution(&unquoted)
     {
         return HeredocMarkerContext::Untrusted;
     }
@@ -484,8 +656,9 @@ fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext<'_> {
 /// `true` when the nowdoc body at the marker whose `<<` sits at
 /// `marker_start`/ends its spec at `delimiter_end` on `line` is `Data
 /// consumer` territory (issue #396, #432): fed only to `cat`, `tee`, or `jq`
-/// as the program of the simple command that owns the marker, piped to
-/// nothing else, not continued onto the next line by a trailing `\`, with no
+/// — by the bare word or one of their two trusted absolute paths (issue
+/// #396 review) — as the program of the simple command that owns the marker,
+/// piped to nothing else, not continued onto the next line by a trailing `\`, with no
 /// process substitution on the marker line (`cat
 /// <<'EOF' > >(sh)`, `tee >(sh) <<'EOF'` hand the body to a shell), no
 /// write to a descriptor above 2 or a `/dev/fd/`/`/proc/` path, and reached
@@ -514,7 +687,14 @@ pub(super) fn heredoc_target_is_data_consumer(
     following_text: &str,
     body_starts_with_at: bool,
 ) -> bool {
-    if !heredoc_owning_command_is_data_consumer(line, marker_start)
+    let marker_prefix = &line[..marker_start];
+    // Computed once and threaded through both the program check right below
+    // and the file-write check further down, instead of re-deriving the
+    // owning command's start and its program word for each (issue #396 review).
+    let owning_start = owning_simple_command_start(marker_prefix);
+    let program = owning_command_program(line, owning_start, marker_start);
+
+    if !program.as_deref().is_some_and(is_data_consumer_program)
         || tail_has_pipe(&line[delimiter_end..])
         || line.contains(">(")
         || line.contains("<(")
@@ -525,7 +705,19 @@ pub(super) fn heredoc_target_is_data_consumer(
     {
         return false;
     }
-    let marker_prefix = &line[..marker_start];
+    // A written file can be run by a later part of the same command (`sh
+    // f`, a glob, a variable holding the path) before analysis could read
+    // it, or by a background reader started earlier (`sh f &` on a FIFO).
+    // Trust the write only when nothing follows it and nothing before it
+    // runs in the background (PR #463 review, ADR-042).
+    if consumer_writes_file(&line[owning_start..], program.as_deref())
+        && (!following_text.trim().is_empty()
+            || tail_starts_another_command(&line[delimiter_end..])
+            || has_background_job(preceding_lines)
+            || has_background_job(&marker_prefix[..owning_start]))
+    {
+        return false;
+    }
     let prefix = if preceding_lines.is_empty() {
         std::borrow::Cow::Borrowed(marker_prefix)
     } else {

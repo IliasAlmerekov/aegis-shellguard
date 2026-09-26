@@ -45,16 +45,31 @@ into argv, so the router cannot drop body lines for every heredoc.
    cannot disagree.
 2. The body is data only when every condition holds:
    - the delimiter is quoted, so bash expands nothing in the body;
-   - the program of the simple command that owns `<<` is `cat`, `tee` or `jq`.
+   - the program of the simple command that owns `<<` is the bare word
+     `cat`, `tee` or `jq`, or one of their two absolute-path spellings,
+     `/bin/<name>` or `/usr/bin/<name>` — both spelled exactly so, and both
+     the paths a stock install actually puts the binary at (issue #396 review).
      The owning command starts after the last `;`, `&&`, `||`, `(`, `$(`,
-     backtick or newline, not at the line's first word (#432). `sed` and `awk`
-     are left out on purpose: `sed` has the `e` command and `awk` has
+     backtick or newline, not at the line's first word (#432). Any other
+     path (`./cat`, `/tmp/p/cat`, `/usr/local/bin/cat`) can name a copied
+     shell and `CAT` is another file on a case-sensitive filesystem, so
+     neither counts. A leading assignment (`PATH=/tmp/p cat`) drops the
+     trust too, since it can change which `cat` runs. `sed` and `awk` are
+     left out on purpose: `sed` has the `e` command and `awk` has
      `system()`;
    - no `|` follows the delimiter on the marker line, the line has no `>(` or
      `<(`, and it does not end in a `\` continuation;
    - the consumer does not write to a descriptor above 2 or a variable one
      (`>&3`, `>&$fd`) or to a `/dev/fd/` or `/proc/` path, since an earlier
      `exec 3> >(sh)` can make that descriptor a pipe to a shell;
+   - a consumer that writes a file (`tee`, or any unquoted `>` other than
+     `>&1`/`>&2`) has nothing after it: no `;`, `&&` or `&` on the rest of
+     the marker line and no command line after the terminator. A later part
+     of the same command can run the file (`sh f`, a glob, a variable
+     holding the path) before analysis could read it. Nothing before it may
+     run in the background either (`sh f &` reading a FIFO). Commands before
+     the write stay allowed, so #432's `cargo build; cat > f <<'EOF'` keeps
+     its trust;
    - the heredoc sits at top level, or inside exactly one `$(...)` that is
      either the right side of `NAME=` or the whole value of a `git` or `gh`
      message flag in a position item 5's table trusts for that program
@@ -74,9 +89,21 @@ into argv, so the router cannot drop body lines for every heredoc.
      `fi >&3` after the terminator can take the output, and a `case`
      pattern's `)` would close the wrong frame. An `exec` anywhere before
      the marker does the same, because `exec > >(sh)` points stdout itself
-     at a shell and a later plain `cat <<'EOF'` then feeds it. The word
-     check ignores quotes, so a quoted keyword costs a scanned body, never a
-     skipped one.
+     at a shell and a later plain `cat <<'EOF'` then feeds it. Anything
+     before the marker that can change which program `cat`, `tee` or `jq`
+     names makes it untrusted as well: a function definition (`cat() { sh;
+     }`), `alias`, `hash`, `enable`, `eval`, `source` or a `.` in command
+     position, the word `PATH`, the declare and read families and `getopts`
+     (which can write a computed name such as `declare -n r="${x}TH"`),
+     `printf -v`, and arithmetic `((` (`(( $n = 5 ))` makes `PATH` the
+     relative directory `5`). The word check ignores quotes and drops the
+     quote characters first, so `PA""TH` still reads as `PATH`, and a quoted
+     keyword costs a scanned body, never a skipped one. The function and
+     alias checks are deliberately not scoped to the names `cat`, `tee` or
+     `jq`: a script can build the name through quoting (`c""at`) or `eval`
+     before defining or aliasing it, so narrowing the check to those three
+     names would just move the gap there; the only cost of checking every
+     name is a body that gets scanned instead of trusted.
 3. When the predicate holds, the scanner blanks the body (line lengths kept)
    and the router masks it before tokenizing the stage. When it does not, both
    keep their previous behaviour. Unquoted heredocs and interpreter readers
@@ -157,10 +184,25 @@ into argv, so the router cannot drop body lines for every heredoc.
   Adding a program to the `Data consumer` list or a flag to the message list
   is a security decision and needs a test for each way its output could reach
   a shell.
-- Writing a script to disk with `jq` and running it in the same command
-  (`jq -r .a > f <<'JSON' && bash f`) now prompts instead of matching the
-  body, because the router cannot read the file before it exists. It is not
-  auto-approved.
+- Writing a file and running it in the same command (`cat > f <<'EOF'
+  ... EOF` then `sh f`, `jq -r .a > f <<'JSON' && bash f`) keeps the body
+  scanned. Any command after a file write does the same, so `cat > f
+  <<'EOF' ... EOF` then `chmod +x f` with a dangerous-looking body prompts
+  where 0.6.10 auto-approved it. That cost buys a rule with no path
+  matching to get around.
+- Two runs of a written file stay out of reach, as they were on 0.6.10. A
+  reader started by an earlier, separate Aegis invocation — a previous
+  agent command such as `sh /tmp/f &` left running from a prior turn, on a
+  FIFO — cannot be seen from the command that writes: nothing links one
+  invocation's background jobs to the next one Aegis is asked to assess. A
+  reader in the same command that detaches without `&` (`setsid sh /tmp/f;
+  cat > /tmp/f <<'EOF'`) is not detected either. A plain file written by one
+  command and run by the next is covered, since the router reads the file
+  when the second command arrives. The background-job check that does cover
+  the same-command case is not tied to the file this heredoc writes: any `&`
+  job anywhere earlier in the command (`sleep 5 &`) already trips it, so a
+  dangerous-looking body stays scanned even when that job never touches the
+  write target. That false positive is accepted.
 - Capturing a heredoc into a variable and then running that variable, be it
   `x=$(cat <<'EOF' ...)` then `$x`, `eval "$x"`, `bash -c "$x"`, `$x` piped
   or fed into `<(...)`/`>(...)`, or any of the wrapper, grouping,

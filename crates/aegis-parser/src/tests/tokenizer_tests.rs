@@ -492,6 +492,15 @@ fn heredoc_owning_command_after_and_and_is_flagged() {
     assert!(bodies[0].is_data_consumer_target);
 }
 
+// 49. PR #463 review: a file write followed by another command is not
+// trusted, since that command could run the file before analysis sees it.
+#[test]
+fn heredoc_file_write_followed_by_another_command_is_not_flagged() {
+    let cmd = "cat > /tmp/x.sh <<'EOF'\nsome text\nEOF\ntrue";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(!bodies[0].is_data_consumer_target);
+}
+
 // 31. python -c "..." — inline Python script extracted
 #[test]
 fn inline_script_python() {
