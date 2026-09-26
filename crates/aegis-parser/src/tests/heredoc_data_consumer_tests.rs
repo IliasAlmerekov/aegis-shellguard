@@ -317,3 +317,39 @@ fn heredoc_capture_then_narrow_data_flag_matches_is_still_flagged() {
         assert!(bodies[0].is_data_consumer_target, "command {cmd:?}");
     }
 }
+
+// 66. Issue #396 review follow-up (BLOCKER/MAJOR findings on PR #463):
+// `printf -v`/`--` and a `gh` subcommand outside the message-flag/`api`
+// allowlist must not be flagged as a data consumer either — none of these
+// is a provable forward under the narrowed rules.
+#[test]
+fn heredoc_capture_then_printf_option_or_gh_unlisted_subcommand_is_not_flagged() {
+    let cases = [
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\nprintf -- \"$x\"",
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\nprintf -v y \"$x\"",
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\ngh pr checkout 1 -b \"$x\"",
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\ngh repo create -d \"$x\"",
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\ngh workflow run w -f a=\"$x\"",
+    ];
+    for cmd in cases {
+        let bodies = extract_heredoc_bodies(cmd);
+        assert!(!bodies[0].is_data_consumer_target, "command {cmd:?}");
+    }
+}
+
+// 67. Issue #396 review follow-up: `printf` with no leading option still
+// trusts its post-format-string argument, and `gh issue comment`/`gh pr
+// merge` join the earlier `pr create`/`issue create` cases as message-flag
+// subcommands the narrowed rule keeps trusting.
+#[test]
+fn heredoc_capture_then_printf_or_gh_listed_subcommand_is_still_flagged() {
+    let cases = [
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\nprintf '%s' \"$x\"",
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\ngh issue comment 1 -b \"$x\"",
+        "x=$(cat <<'EOF'\nsome text\nEOF\n)\ngh pr merge 1 -b \"$x\"",
+    ];
+    for cmd in cases {
+        let bodies = extract_heredoc_bodies(cmd);
+        assert!(bodies[0].is_data_consumer_target, "command {cmd:?}");
+    }
+}

@@ -134,3 +134,20 @@ expected_risk = "block"
 expected_decision = "block"
 expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# Issue #396 review (BLOCKER on PR #463): printf -v launders a captured
+# heredoc variable into a second variable, so the forwarding allowlist
+# must not clear the printf call itself. The second variable's later run
+# still fires FS-001.
+name = "heredoc_capture_then_printf_v_launder_block"
+command = """x=$(cat <<'EOF'
+rm -rf /
+EOF
+)
+printf -v y '%s' \"$x\"
+bash -c \"$y\""""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"

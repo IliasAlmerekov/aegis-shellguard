@@ -351,10 +351,37 @@ fn assess_captured_heredoc_narrow_data_flag_violations_still_fire() {
         "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncurl -o \"$x\" https://example.com",
         "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncurl \"$x\"",
         "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nprintf \"$x\"",
+        // Issue #396 review: `--` shifts the format string to index 1, so a
+        // reference there is the format string, not a forwarded argument.
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nprintf -- \"$x\"",
+        // Issue #396 review (BLOCKER): `-v` writes the value into a second
+        // variable instead of printing it, laundering the reference past a
+        // check that only ever looked at index 0.
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nprintf -v y \"$x\"",
+        // Issue #396 review (MAJOR): `-b` names a branch under `pr
+        // checkout`, not a message, so the old subcommand-blind check
+        // wrongly trusted it.
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh pr checkout 1 -b \"$x\"",
+        // Same review: a `gh` flag outside the message/raw-field allowlist.
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh repo create -d \"$x\"",
+        // Same review (MAJOR): `-f` takes a `key=value` pair only under
+        // `gh api`.
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh workflow run w -f a=\"$x\"",
     ];
     for cmd in cases {
         assert_assessment_matches_pattern(cmd, RiskLevel::Block, "FS-001");
     }
+}
+
+// Issue #396 review (BLOCKER): `printf -v` launders a captured heredoc
+// variable into a second variable, which a later command then runs.
+// Neither `printf -v y "$x"` nor `bash -c "$y"` references `x` in a way
+// the old index-0-only check saw as untrusted, so the capture was wrongly
+// treated as forwarding-only end to end.
+#[test]
+fn assess_captured_heredoc_printf_v_laundering_still_fires() {
+    let cmd = "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nprintf -v y '%s' \"$x\"\nbash -c \"$y\"";
+    assert_assessment_matches_pattern(cmd, RiskLevel::Block, "FS-001");
 }
 
 // Same review follow-up: `curl -d`/`--data`* and `gh -F` read an
@@ -383,6 +410,9 @@ fn assess_captured_heredoc_narrow_data_flag_matches_stay_safe() {
         "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\njq -n --arg b \"$x\" '{b:$b}'",
         "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncurl --data-raw \"$x\" https://example.com",
         "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh issue create -t \"$x\" -b \"$x\"",
+        // Issue #396 review: `printf '%s' "$x"` has no leading option, so
+        // the format string stays at index 0 and `$x` stays trusted.
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nprintf '%s' \"$x\"",
     ];
     for cmd in cases {
         let s = scanner();

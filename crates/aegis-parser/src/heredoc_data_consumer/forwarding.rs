@@ -1,13 +1,16 @@
 //! The forwarding-only allowlist behind [`super::assignment_variable_runs_later`]
 //! (issue #396 capture-then-execute, ADR-042 item 5): once a nowdoc is
 //! captured into a shell variable (`NAME=$(cat <<'EOF' ...)`), this decides
-//! whether every later use of that variable is provably a forward — the
-//! value of a data flag on `gh`/`git`/`curl`/`jq`, or any argument of
-//! `echo`/`printf` (except printf's own format string) — never something
+//! whether every later use of that variable is provably a forward: the
+//! value of a data flag on `gh`/`git`/`curl`/`jq`, gated to the specific
+//! subcommands and flags that only ever store or send the value as text,
+//! or an argument of `echo`, or of `printf` when no earlier argument is an
+//! option and the reference sits after the format string. Never something
 //! that re-runs the text or hands it to a program that reads it as a file
 //! path or a script (issue #396 review follow-up: an "any argument" rule
-//! was too wide, since `jq -n`, `gh --input`/`-F`, and `curl -T`/`-K`/`-o`/a
-//! bare URL each turn a forwarded value into something other than inline
+//! was too wide, since `jq -n`, `gh --input`/`-F`, `curl -T`/`-K`/`-o`/a
+//! bare URL, a `gh` subcommand outside the message-flag list, and `printf
+//! -v`/`--` each turn a forwarded value into something other than inline
 //! data). Split out of [`super`] to keep it under the 800-line budget in
 //! `tests/file_size_budget.rs`.
 
@@ -16,6 +19,9 @@ use crate::segmentation::split_top_level_segments;
 use crate::split_tokens;
 
 use super::{MESSAGE_FLAGS, is_bare_assignment, open_frames, starts_word};
+
+#[cfg(test)]
+mod tests;
 
 /// Programs whose only trusted use of a captured heredoc variable is
 /// forwarding it through a data flag ([`segment_is_forwarding_only`]'s
@@ -28,8 +34,19 @@ const TRUSTED_FORWARDING_PROGRAMS: &[&str] = &["gh", "git", "curl", "echo", "pri
 /// `gh` flags whose value curl-style file semantics never apply to: a commit
 /// or tag message, an issue or PR title or body — reuses [`MESSAGE_FLAGS`],
 /// the same set `git` trusts, since `gh`'s `-m`/`--message`, `-t`/`--title`
-/// and `-b`/`--body` line up with it exactly.
+/// and `-b`/`--body` line up with it exactly. Trusted only under the `gh`
+/// subcommands [`gh_message_flags_trusted`] names: `-b` means something else
+/// entirely under, say, `gh pr checkout` (a branch, not a message).
 const GH_MESSAGE_FLAGS: &[&str] = MESSAGE_FLAGS;
+
+/// `gh pr` actions whose message flag ([`GH_MESSAGE_FLAGS`]) value is stored
+/// or sent as text. `pr checkout`, `pr list`, `pr diff` and the rest are not
+/// on this list, since none of them reads `-b`/`-t`/`-m` as a message.
+const GH_PR_MESSAGE_ACTIONS: &[&str] = &["create", "edit", "comment", "review", "merge"];
+
+/// `gh issue` actions with the same property as [`GH_PR_MESSAGE_ACTIONS`],
+/// for `gh issue`.
+const GH_ISSUE_MESSAGE_ACTIONS: &[&str] = &["create", "edit", "comment"];
 
 /// `curl` flags whose value is always inline data, whatever the captured
 /// heredoc body's first line looks like.
@@ -231,23 +248,60 @@ fn token_is_git_message_value(args: &[String], index: usize, name: &str) -> bool
     token_is_flag_value(args, index, name, |flag| MESSAGE_FLAGS.contains(&flag))
 }
 
-/// `true` when every reference to `name` in `gh`'s `args` is the value of
-/// [`GH_MESSAGE_FLAGS`] or a `-f`/`--raw-field` pair
-/// ([`token_is_gh_raw_field_value`]). Not `-F`/`--field` (typed, and its
-/// value can be a `@filename` gh reads instead of sending literally), not
-/// `--input`/`--body-file` (both name a file to read), not a positional
-/// argument.
-fn gh_args_are_forwarding_only(args: &[String], name: &str) -> bool {
-    if matches!(
-        args.first().map(String::as_str),
-        Some("alias" | "extension")
-    ) {
-        return false;
+/// The first two tokens of `args` that do not start with `-` — `gh`'s
+/// subcommand and, where it has one, its action (`pr`, `create`; `issue`,
+/// `comment`). `None` in either slot when `args` has fewer than that many
+/// non-flag words. [`gh_message_flags_trusted`] and [`gh_raw_field_trusted`]
+/// both read an unresolved slot as untrusted, matching the rule that a
+/// subcommand this predicate cannot read falls on the untrusted side.
+fn gh_subcommand_words(args: &[String]) -> (Option<&str>, Option<&str>) {
+    let mut words = args
+        .iter()
+        .filter(|token| !token.starts_with('-'))
+        .map(String::as_str);
+    (words.next(), words.next())
+}
+
+/// `true` when `gh`'s resolved `(primary, secondary)` subcommand words
+/// ([`gh_subcommand_words`]) are `pr` with a [`GH_PR_MESSAGE_ACTIONS`]
+/// member, or `issue` with a [`GH_ISSUE_MESSAGE_ACTIONS`] member — the only
+/// shapes where `-b`/`-t`/`-m` name a message rather than something `gh`
+/// reads differently, such as `pr checkout`'s branch argument.
+fn gh_message_flags_trusted(primary: Option<&str>, secondary: Option<&str>) -> bool {
+    match primary {
+        Some("pr") => secondary.is_some_and(|action| GH_PR_MESSAGE_ACTIONS.contains(&action)),
+        Some("issue") => secondary.is_some_and(|action| GH_ISSUE_MESSAGE_ACTIONS.contains(&action)),
+        _ => false,
     }
+}
+
+/// `true` when `gh`'s resolved primary subcommand word is `api` — the only
+/// `gh` subcommand where `-f`/`--raw-field` takes a `key=value` pair rather
+/// than meaning something else (or nothing at all).
+fn gh_raw_field_trusted(primary: Option<&str>) -> bool {
+    primary == Some("api")
+}
+
+/// `true` when every reference to `name` in `gh`'s `args` is the value of
+/// [`GH_MESSAGE_FLAGS`] under a subcommand [`gh_message_flags_trusted`]
+/// approves, or a `-f`/`--raw-field` pair ([`token_is_gh_raw_field_value`])
+/// under `gh api` ([`gh_raw_field_trusted`]). Not `-F`/`--field` (typed, and
+/// its value can be a `@filename` gh reads instead of sending literally),
+/// not `--input`/`--body-file` (both name a file to read), not a positional
+/// argument, and not a message flag under any other subcommand — `gh pr
+/// checkout 123 -b "$x"` sends `-b` a branch name, not a message, and `gh
+/// alias`/`gh extension` can run a shell through the reference the same way
+/// (issue #396 review: the old check trusted `-b`/`-t`/`-m` under every `gh`
+/// subcommand and `-f` under every subcommand too).
+fn gh_args_are_forwarding_only(args: &[String], name: &str) -> bool {
+    let (primary, secondary) = gh_subcommand_words(args);
+    let message_flags_trusted = gh_message_flags_trusted(primary, secondary);
+    let raw_field_trusted = gh_raw_field_trusted(primary);
     args.iter().enumerate().all(|(i, token)| {
         find_variable_references(token, name).is_empty()
-            || token_is_flag_value(args, i, name, |flag| GH_MESSAGE_FLAGS.contains(&flag))
-            || token_is_gh_raw_field_value(args, i, name)
+            || (message_flags_trusted
+                && token_is_flag_value(args, i, name, |flag| GH_MESSAGE_FLAGS.contains(&flag)))
+            || (raw_field_trusted && token_is_gh_raw_field_value(args, i, name))
     })
 }
 
@@ -288,16 +342,20 @@ fn jq_args_are_forwarding_only(args: &[String], name: &str) -> bool {
     })
 }
 
-/// `true` when every reference to `name` in `printf`'s `args` sits at index
-/// 1 or later — anywhere but `args[0]`, the format string that shapes how
-/// printf reads every argument after it rather than being forwarded as-is.
-/// A captured format string cannot run a shell command, only mis-format the
-/// output, but it is not a plain forwarded value either, so it stays on the
-/// untrusted side rather than being waved through by analogy with `echo`.
+/// `true` when `args`' first token does not start with `-` (so it is the
+/// format string, not an option) and every reference to `name` sits at
+/// index 1 or later. A leading option — `-v NAME`, which writes the value
+/// into a second variable instead of printing it, `--`, which shifts the
+/// format string to index 1, or any future flag — makes the whole call
+/// untrusted, since this predicate does not track where the format string
+/// falls once one is present, nor follow a value `-v` hands to another
+/// variable (issue #396 review: `printf -v y "$x"` then a later `bash -c
+/// "$y"` ran the value, and the old check only ever looked at index 0).
 fn printf_args_are_forwarding_only(args: &[String], name: &str) -> bool {
-    args.iter()
-        .enumerate()
-        .all(|(i, token)| find_variable_references(token, name).is_empty() || i != 0)
+    let starts_with_option = args.first().is_some_and(|first| first.starts_with('-'));
+    args.iter().enumerate().all(|(i, token)| {
+        find_variable_references(token, name).is_empty() || (!starts_with_option && i != 0)
+    })
 }
 
 /// `true` when every use of `name`'s reference inside `segment` — already a
@@ -516,278 +574,4 @@ fn split_top_level_chains(text: &str) -> Vec<&str> {
     }
     chains.push(&text[start..]);
     chains
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        bare_dot_command, find_variable_references, following_text_has_indirection,
-        is_whole_reference, segment_has_disallowed_redirect, segment_is_forwarding_only,
-        split_top_level_chains,
-    };
-
-    #[test]
-    fn find_variable_references_matches_bare_dollar_name() {
-        assert_eq!(find_variable_references("echo $x", "x"), vec![5]);
-    }
-
-    #[test]
-    fn find_variable_references_skips_a_longer_name_sharing_the_prefix() {
-        // `$xy` names a different variable than `x`; a naive substring
-        // match would wrongly count it as a reference to `x`.
-        assert!(find_variable_references("echo $xy", "x").is_empty());
-    }
-
-    #[test]
-    fn find_variable_references_matches_braced_form() {
-        assert_eq!(find_variable_references("echo ${x}", "x"), vec![5]);
-    }
-
-    #[test]
-    fn find_variable_references_matches_braced_form_with_a_default() {
-        assert_eq!(find_variable_references("echo ${x:-a}", "x"), vec![5]);
-    }
-
-    #[test]
-    fn find_variable_references_skips_a_longer_braced_name() {
-        assert!(find_variable_references("echo ${xy}", "x").is_empty());
-    }
-
-    #[test]
-    fn find_variable_references_finds_every_occurrence() {
-        assert_eq!(find_variable_references("$x $x", "x"), vec![0, 3]);
-    }
-
-    #[test]
-    fn bare_dot_command_true_for_a_standalone_dot() {
-        assert!(bare_dot_command(". script.sh"));
-    }
-
-    #[test]
-    fn bare_dot_command_false_for_a_relative_script_path() {
-        assert!(!bare_dot_command("./script.sh"));
-    }
-
-    #[test]
-    fn bare_dot_command_false_for_a_filename_with_a_dot() {
-        assert!(!bare_dot_command("release.tar"));
-    }
-
-    #[test]
-    fn following_text_has_indirection_true_for_the_eval_word() {
-        assert!(following_text_has_indirection("eval \"$x\""));
-    }
-
-    #[test]
-    fn following_text_has_indirection_false_for_a_word_only_sharing_a_substring() {
-        // "resourceful" contains "source" as a substring but is not the
-        // `source` builtin, so the whole-word check must leave it alone.
-        assert!(!following_text_has_indirection("resourceful $x"));
-    }
-
-    #[test]
-    fn following_text_has_indirection_true_for_a_flagged_nameref_declare() {
-        assert!(following_text_has_indirection("declare -n r=x; $r"));
-    }
-
-    #[test]
-    fn following_text_has_indirection_false_for_declare_without_the_nameref_flag() {
-        assert!(!following_text_has_indirection("declare r=x; echo $r"));
-    }
-
-    #[test]
-    fn segment_has_disallowed_redirect_false_for_the_two_allowed_forms() {
-        assert!(!segment_has_disallowed_redirect(
-            "git commit -m \"$x\" 2>&1"
-        ));
-        assert!(!segment_has_disallowed_redirect("git commit -m \"$x\" >&2"));
-    }
-
-    #[test]
-    fn segment_has_disallowed_redirect_true_for_a_file_target() {
-        assert!(segment_has_disallowed_redirect(
-            "git commit -m \"$x\" > out.log"
-        ));
-    }
-
-    #[test]
-    fn is_whole_reference_true_for_bare_and_braced_forms() {
-        assert!(is_whole_reference("$x", "x"));
-        assert!(is_whole_reference("${x}", "x"));
-    }
-
-    #[test]
-    fn is_whole_reference_false_when_the_token_carries_more_than_the_reference() {
-        assert!(!is_whole_reference("\"$x\"", "x"));
-        assert!(!is_whole_reference("$xy", "x"));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_true_for_a_trusted_program_argument() {
-        assert!(segment_is_forwarding_only("echo \"$x\"", "x", false));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_false_for_an_untrusted_program() {
-        assert!(!segment_is_forwarding_only("bash -c \"$x\"", "x", false));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_false_when_the_reference_is_not_a_git_message_value() {
-        assert!(!segment_is_forwarding_only(
-            "git -c \"alias.x=!$x\" x",
-            "x",
-            false
-        ));
-    }
-
-    // ── Issue #396 review: per-program data-flag narrowing ─────────────────
-
-    #[test]
-    fn segment_is_forwarding_only_false_for_jq_positional_argument() {
-        assert!(!segment_is_forwarding_only("jq -n \"$x\"", "x", false));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_false_for_jq_from_file_flag() {
-        assert!(!segment_is_forwarding_only("jq -f \"$x\"", "x", false));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_true_for_jq_arg_value() {
-        assert!(segment_is_forwarding_only(
-            "jq --arg b \"$x\" '{b:$b}'",
-            "x",
-            false
-        ));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_true_for_jq_argjson_value() {
-        assert!(segment_is_forwarding_only(
-            "jq --argjson b \"$x\" '{b:$b}'",
-            "x",
-            false
-        ));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_false_for_gh_input_flag() {
-        assert!(!segment_is_forwarding_only(
-            "gh api --input \"$x\" /repos/x/y/issues",
-            "x",
-            false
-        ));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_false_for_gh_field_flag() {
-        assert!(!segment_is_forwarding_only(
-            "gh api -F body=\"$x\" /repos/x/y/issues",
-            "x",
-            false
-        ));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_true_for_gh_raw_field_value() {
-        assert!(segment_is_forwarding_only(
-            "gh api -f body=\"$x\" /repos/x/y/issues",
-            "x",
-            false
-        ));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_true_for_gh_raw_field_glued_long_form() {
-        assert!(segment_is_forwarding_only(
-            "gh api --raw-field=body=$x /repos/x/y/issues",
-            "x",
-            false
-        ));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_false_for_curl_data_flag_when_body_starts_with_at() {
-        assert!(!segment_is_forwarding_only(
-            "curl -d \"$x\" https://example.com",
-            "x",
-            true
-        ));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_true_for_curl_data_flag_when_body_does_not_start_with_at() {
-        assert!(segment_is_forwarding_only(
-            "curl -d \"$x\" https://example.com",
-            "x",
-            false
-        ));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_true_for_curl_data_raw_even_when_body_starts_with_at() {
-        assert!(segment_is_forwarding_only(
-            "curl --data-raw \"$x\" https://example.com",
-            "x",
-            true
-        ));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_false_for_curl_upload_file_flag() {
-        assert!(!segment_is_forwarding_only(
-            "curl -T \"$x\" https://example.com",
-            "x",
-            false
-        ));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_false_for_curl_config_flag() {
-        assert!(!segment_is_forwarding_only("curl -K \"$x\"", "x", false));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_false_for_curl_output_flag() {
-        assert!(!segment_is_forwarding_only(
-            "curl -o \"$x\" https://example.com",
-            "x",
-            false
-        ));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_false_for_curl_url_position() {
-        assert!(!segment_is_forwarding_only("curl \"$x\"", "x", false));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_false_for_printf_format_string() {
-        assert!(!segment_is_forwarding_only("printf \"$x\"", "x", false));
-    }
-
-    #[test]
-    fn segment_is_forwarding_only_true_for_printf_later_argument() {
-        assert!(segment_is_forwarding_only(
-            "printf \"%s\" \"$x\"",
-            "x",
-            false
-        ));
-    }
-
-    #[test]
-    fn split_top_level_chains_splits_on_a_semicolon() {
-        assert_eq!(split_top_level_chains("true; $x"), vec!["true", " $x"]);
-    }
-
-    #[test]
-    fn split_top_level_chains_keeps_a_pipe_glued_to_its_chain() {
-        // A lone `|` stays part of the same chain so the caller can tell a
-        // piped reference apart from a merely sequential one.
-        assert_eq!(
-            split_top_level_chains("echo \"$x\" | sh"),
-            vec!["echo \"$x\" | sh"]
-        );
-    }
 }
