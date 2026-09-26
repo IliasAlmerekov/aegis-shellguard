@@ -97,21 +97,30 @@ into argv, so the router cannot drop body lines for every heredoc.
    | Program  | Trusted positions for the reference |
    |----------|-------------------------------------|
    | `git`    | value of `-m`, `--message`, `-t`, `--title`, `-b`, `--body` |
-   | `gh`     | value of the same six flags, or of `-f`/`--raw-field` (`key="$x"`) |
+   | `gh`     | value of the same six flags, only under `gh pr create`, `edit`, `comment`, `review` or `merge`, or `gh issue create`, `edit` or `comment`; value of `-f`/`--raw-field` (`key="$x"`), only under `gh api` |
    | `curl`   | value of `--data-raw`; value of `-d`, `--data`, `--data-binary`, `--data-urlencode` or `--json` only when the captured body does not start with `@` |
    | `jq`     | value of `--arg NAME` or `--argjson NAME` |
    | `echo`   | any argument |
-   | `printf` | any argument except the first, which is the format string |
+   | `printf` | any argument from index 1 onward, and only when the first argument does not start with `-` |
 
    Positions outside the table read the value as a path, a URL, code or a
-   config: `gh api --input`, `gh -F`/`--field` (which reads `@file`),
-   `gh --body-file`, `curl -T`, `-K`, `--config`, `-o`, `-F`, a curl URL,
-   `jq -f`, `--rawfile`, `--slurpfile` and the positional jq filter
-   (`jq -n "$x"` runs the body as a jq program). A body that starts with
-   `@` turns a curl data flag into a file read (`-d @/etc/shadow`), so
-   `walk_heredocs` passes that fact to the check. `gh alias` and
-   `gh extension` are excluded even though `gh` is on the list, since both
-   can run a shell through the reference.
+   config, or give a flag a meaning the table does not cover: `gh api
+   --input`, `gh -F`/`--field` (which reads `@file`), `gh --body-file`,
+   `curl -T`, `-K`, `--config`, `-o`, `-F`, a curl URL, `jq -f`,
+   `--rawfile`, `--slurpfile` and the positional jq filter (`jq -n "$x"`
+   runs the body as a jq program). A body that starts with `@` turns a
+   curl data flag into a file read (`-d @/etc/shadow`), so `walk_heredocs`
+   passes that fact to the check. `gh alias`, `gh extension`, and every
+   `gh` subcommand outside the table's list (`gh pr checkout`, `gh repo
+   create`, `gh workflow run`, ...) are excluded even though `gh` is on
+   the list, since a message flag or `-f` can mean something other than a
+   stored message there, or nothing at all; `gh`'s subcommand is read from
+   the first two words after `gh` that do not start with `-`, and a `gh`
+   call this cannot resolve to two such words is untrusted. `printf -v`,
+   `printf --`, or any other leading option makes the whole call
+   untrusted too, since an option shifts where the format string actually
+   falls and `-v` sends the value to a second variable this check does not
+   follow.
    Everything else keeps the body scanned: a wrapper (`sudo $x`, `env $x`,
    `command $x`, `nohup $x`, `time $x`, `find ... -exec $x \;`), a
    grouping or compound construct (`($x)`, `{ $x; }`, an
