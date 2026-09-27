@@ -47,7 +47,7 @@ into argv, so the router cannot drop body lines for every heredoc.
 2. The body is data only when every condition holds:
    - the delimiter is quoted, so bash expands nothing in the body;
    - the program of the simple command that owns `<<` is the bare word
-     `cat`, `tee` or `jq`, or one of their two absolute-path spellings,
+     `cat` or `jq`, or one of their two absolute-path spellings,
      `/bin/<name>` or `/usr/bin/<name>` — both spelled exactly so, and both
      the paths a stock install actually puts the binary at (issue #396 review).
      The owning command starts after the last `;`, `&&`, `||`, `(`, `$(`,
@@ -57,13 +57,18 @@ into argv, so the router cannot drop body lines for every heredoc.
      neither counts. A leading assignment (`PATH=/tmp/p cat`) drops the
      trust too, since it can change which `cat` runs. `sed` and `awk` are
      left out on purpose: `sed` has the `e` command and `awk` has
-     `system()`;
-   - no `|` follows the delimiter on the marker line, the line has no `>(` or
-     `<(`, and it does not end in a `\` continuation;
+     `system()`. `tee` is left out because it always writes a file, which
+     the file-write condition below never trusts (PR #463 review);
+   - the marker line has no `|`, quote, backtick or `$` after the delimiter,
+     no `>(` or `<(`, and it does not end in a `\` continuation. A quote or
+     substitution left open there (`cat <<'EOF' "`, `$(`, `${`) keeps the
+     command going past the newline, so bash starts the body on a later
+     line than this walk does and runs the lines in between (PR #463
+     review);
    - the consumer does not write to a descriptor above 2 or a variable one
      (`>&3`, `>&$fd`) or to a `/dev/fd/` or `/proc/` path, since an earlier
      `exec 3> >(sh)` can make that descriptor a pipe to a shell;
-   - the consumer does not write a file (`tee`, or an unquoted `>` other than
+   - the consumer does not write a file (an unquoted `>` other than
      `>&1`/`>&2`). A written file may run implicitly on a later command,
      such as a Git hook during `git commit` or a startup file when a shell
      starts. No path-based exception can prove that a file is inert, so all
@@ -93,7 +98,7 @@ into argv, so the router cannot drop body lines for every heredoc.
      pattern's `)` would close the wrong frame. An `exec` anywhere before
      the marker does the same, because `exec > >(sh)` points stdout itself
      at a shell and a later plain `cat <<'EOF'` then feeds it. Anything
-     before the marker that can change which program `cat`, `tee` or `jq`
+     before the marker that can change which program `cat` or `jq`
      names makes it untrusted as well: a function definition (`cat() { sh;
      }`), `alias`, `hash`, `enable`, `eval`, `source` or a `.` in command
      position, the word `PATH`, the declare and read families and `getopts`
@@ -102,10 +107,9 @@ into argv, so the router cannot drop body lines for every heredoc.
      relative directory `5`). The word check ignores quotes and drops the
      quote characters first, so `PA""TH` still reads as `PATH`, and a quoted
      keyword costs a scanned body, never a skipped one. The function and
-     alias checks are deliberately not scoped to the names `cat`, `tee` or
-     `jq`: a script can build the name through quoting (`c""at`) or `eval`
-     before defining or aliasing it, so narrowing the check to those three
-     names would just move the gap there; the only cost of checking every
+     alias checks are deliberately not scoped to the names `cat` or `jq`: a
+     script can build the name through quoting (`c""at`) or `eval` before
+     defining or aliasing it, so narrowing the check to those two names would just move the gap there; the only cost of checking every
      name is a body that gets scanned instead of trusted.
 3. When the predicate holds, the scanner blanks the body (line lengths kept)
    and the router masks it before tokenizing the stage. When it does not, both

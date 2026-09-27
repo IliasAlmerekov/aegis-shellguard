@@ -29,7 +29,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# Issue #396 widens what counts as an inert heredoc body: `cat`/`tee`/`jq`
+# Issue #396 widens what counts as an inert heredoc body: `cat` and `jq`
 # never execute their stdin, so a bare `cat <<'EOF'` printing to the terminal
 # runs nothing and no longer belongs in a bypass-attempt corpus. `bash` still
 # executes its stdin as code regardless of quoting, so it stays the live
@@ -189,7 +189,7 @@ expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
 # PR #463 review: a consumer named by path (`./cat`, `/tmp/p/cat`) can be
-# a copied shell, so only the bare word `cat`, `tee`, or `jq` is trusted.
+# a copied shell, so only the bare word `cat` or `jq` is trusted.
 name = "heredoc_data_consumer_relative_path_block"
 command = """./cat <<'EOF'
 rm -rf /
@@ -441,6 +441,93 @@ command = """git commit -m "$(cat <<'EOF'
 hi
 EOF)"
 rm -rf /"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+# PR #463 review: a quote or substitution left open on the marker line
+# makes bash start the body later than the line walk, so the lines in
+# between run as commands.
+[[cases]]
+name = "heredoc_data_consumer_open_double_quote_on_marker_line_block"
+command = """cat <<'EOF' "
+"; rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+name = "heredoc_data_consumer_open_single_quote_on_marker_line_block"
+command = """cat <<'EOF' '
+'; rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+name = "heredoc_data_consumer_open_ansi_c_quote_on_marker_line_block"
+command = """cat <<'EOF' $'
+'; rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+name = "heredoc_data_consumer_open_command_substitution_on_marker_line_block"
+command = """cat <<'EOF' $(
+rm -rf /
+)
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+name = "heredoc_data_consumer_open_backtick_on_marker_line_block"
+command = """cat <<'EOF' `
+rm -rf /
+`
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+name = "heredoc_data_consumer_open_parameter_expansion_on_marker_line_block"
+command = """cat <<'EOF' ${x:-
+}; rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+name = "heredoc_data_consumer_open_capture_double_quote_on_marker_line_block"
+command = """x=$(cat <<'EOF' "
+"; rm -rf /
+EOF
+)"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+name = "heredoc_data_consumer_open_git_message_double_quote_on_marker_line_block"
+command = """git commit -m "$(cat <<'EOF' "
+"; rm -rf /
+EOF
+)""""
 expected_risk = "block"
 expected_decision = "block"
 expected_exit_code = 3

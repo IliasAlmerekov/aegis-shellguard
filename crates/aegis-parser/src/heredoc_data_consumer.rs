@@ -1,5 +1,5 @@
 //! The `Data consumer` predicate for a nowdoc heredoc body (issue #396,
-//! #432): whether `cat`, `tee`, or `jq` owns the marker, whether anything
+//! #432): whether `cat` or `jq` owns the marker, whether anything
 //! pipes the consumer's own stdout, and whether the marker sits in a context
 //! [`heredoc_target_is_data_consumer`] trusts (ADR-042). Split out of
 //! [`super::embedded_scripts`] to keep that file under the 800-line budget
@@ -11,9 +11,10 @@ use crate::split_tokens;
 
 mod forwarding;
 
-/// Programs that never execute their stdin: `cat`/`tee` copy the bytes to
+/// Programs that never execute their stdin: `cat` copies the bytes to
 /// stdout or a file, and `jq` parses them as JSON. A file write is not
-/// trusted, since that file may run implicitly later. Other output only reaches
+/// trusted, since that file may run implicitly later. `tee` is left out
+/// because it always writes a file (PR #463 review). Other output only reaches
 /// a shell through a pipe, a process substitution, or an enclosing
 /// substitution, which the rest of the predicate rules out. A nowdoc body
 /// fed only to one of these is `Data consumer` territory (issue #396, #432)
@@ -30,13 +31,10 @@ mod forwarding;
 /// only these two prefixes count (issue #396 review).
 const DATA_CONSUMER_PROGRAMS: &[&str] = &[
     "cat",
-    "tee",
     "jq",
     "/bin/cat",
-    "/bin/tee",
     "/bin/jq",
     "/usr/bin/cat",
-    "/usr/bin/tee",
     "/usr/bin/jq",
 ];
 
@@ -179,7 +177,7 @@ fn owning_command_program(line: &str, owning_start: usize, marker_start: usize) 
 
 /// `true` when `program` — a heredoc's owning program word, exactly as
 /// written — is a [`DATA_CONSUMER_PROGRAMS`] member: the bare, case-exact
-/// name `cat`, `tee`, or `jq`, or one of their two trusted absolute paths.
+/// name `cat` or `jq`, or one of their two trusted absolute paths.
 /// Any other path (`./cat`, `/tmp/p/cat`) can name a copied shell, and `CAT`
 /// is a different file on a case-sensitive filesystem, so neither is trusted
 /// (PR #463 review, issue #396 review).
@@ -187,35 +185,16 @@ fn is_data_consumer_program(program: &str) -> bool {
     DATA_CONSUMER_PROGRAMS.contains(&program)
 }
 
-/// `true` when `program` is one of [`DATA_CONSUMER_PROGRAMS`]'s three `tee`
-/// spellings — the bare word or one of its two trusted absolute paths. Used
-/// by [`consumer_writes_file`] so a `/bin/tee`/`/usr/bin/tee` heredoc target
-/// is recognized as writing a file exactly like a bare `tee` already is
-/// (issue #396 review).
-fn is_tee_program(program: &str) -> bool {
-    matches!(program, "tee" | "/bin/tee" | "/usr/bin/tee")
-}
-
 /// `true` when `tail` (the text on a heredoc marker's own line, past its
-/// delimiter spec) carries an unquoted `|` — a same-line pipe out of the
-/// heredoc's consumer (issue #396: `jq -r .a <<'JSON' | sh` must not be
-/// treated as inert, since `sh` reads whatever `jq` prints).
-fn tail_has_pipe(tail: &str) -> bool {
-    let mut in_single_quote = false;
-    let mut in_double_quote = false;
-    let mut chars = tail.chars();
-    while let Some(ch) = chars.next() {
-        match ch {
-            '\\' if !in_single_quote => {
-                chars.next();
-            }
-            '\'' if !in_double_quote => in_single_quote = !in_single_quote,
-            '"' if !in_single_quote => in_double_quote = !in_double_quote,
-            '|' if !in_single_quote && !in_double_quote => return true,
-            _ => {}
-        }
-    }
-    false
+/// delimiter spec) could send the body anywhere but plain output. A `|`
+/// pipes the consumer's output on (issue #396: `jq -r .a <<'JSON' | sh`).
+/// A quote, backtick, or `$` can open a construct that runs past the
+/// newline (`cat <<'EOF' "`, `$(`, `${`), so bash starts the body later
+/// than this line walk does and runs the lines in between (PR #463 review).
+/// The check does not track quote state: any of these characters in the
+/// tail costs a scanned body, never a skipped one.
+fn tail_may_leave_plain_output(tail: &str) -> bool {
+    tail.contains(['|', '\'', '"', '`', '$'])
 }
 
 /// What opened a frame that is still open at a heredoc marker.
@@ -369,7 +348,7 @@ const UNTRUSTED_PREFIX_WORDS: &[&str] = &[
     "until", "while",
 ];
 
-/// Words that can change which program a bare `cat`, `tee`, or `jq` runs
+/// Words that can change which program a bare `cat` or `jq` runs
 /// (PR #463 review). `PATH` catches every direct write to the search path.
 /// `alias`, `hash`, and `enable` rebind the name itself. `eval` and `source`
 /// run text this check cannot see. The declare family, the read family,
@@ -459,16 +438,10 @@ fn writes_to_open_descriptor(line: &str) -> bool {
 }
 
 /// `true` when `command` (the owning simple command through the end of its
-/// marker line) writes a file: its program is `tee` (bare word or one of its
-/// two trusted absolute paths), or it has an unquoted `>` that is not a
-/// `>&1`/`>&2` duplication. `program` is the already-resolved owning program
-/// word, so this check does not re-tokenize `command` just to test it
-/// against `tee`'s spellings (issue #396 review). Descriptors above 2 are
-/// already refused by [`writes_to_open_descriptor`].
-fn consumer_writes_file(command: &str, program: Option<&str>) -> bool {
-    if program.is_some_and(is_tee_program) {
-        return true;
-    }
+/// marker line) writes a file: it has an unquoted `>` that is not a
+/// `>&1`/`>&2` duplication. Descriptors above 2 are already refused by
+/// [`writes_to_open_descriptor`].
+fn consumer_writes_file(command: &str) -> bool {
     let mut single_quote = false;
     let mut double_quote = false;
     let mut chars = command.chars().peekable();
@@ -625,12 +598,13 @@ fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext<'_> {
 
 /// `true` when the nowdoc body at the marker whose `<<` sits at
 /// `marker_start`/ends its spec at `delimiter_end` on `line` is `Data
-/// consumer` territory (issue #396, #432): fed only to `cat`, `tee`, or `jq`
+/// consumer` territory (issue #396, #432): fed only to `cat` or `jq`
 /// — by the bare word or one of their two trusted absolute paths (issue
 /// #396 review) — as the program of the simple command that owns the marker,
-/// piped to nothing else, not continued onto the next line by a trailing `\`, with no
+/// piped to nothing else, not continued onto the next line by a trailing `\`
+/// or by a quote or substitution the marker line leaves open, with no
 /// process substitution on the marker line (`cat
-/// <<'EOF' > >(sh)`, `tee >(sh) <<'EOF'` hand the body to a shell), no
+/// <<'EOF' > >(sh)` hands the body to a shell), no
 /// write to a descriptor above 2 or a `/dev/fd/`/`/proc/` path, without
 /// writing a file, and reached
 /// only through a context this predicate trusts (top level, an assignment's
@@ -666,7 +640,7 @@ pub(super) fn heredoc_target_is_data_consumer(
     let program = owning_command_program(line, owning_start, marker_start);
 
     if !program.as_deref().is_some_and(is_data_consumer_program)
-        || tail_has_pipe(&line[delimiter_end..])
+        || tail_may_leave_plain_output(&line[delimiter_end..])
         || line.contains(">(")
         || line.contains("<(")
         // A trailing `\` continues the command onto the next line (`cat
@@ -678,7 +652,7 @@ pub(super) fn heredoc_target_is_data_consumer(
     }
     // A written file may run implicitly on a later invocation (for example,
     // a git hook or shell startup file). Its path cannot prove it is inert.
-    if consumer_writes_file(&line[owning_start..], program.as_deref()) {
+    if consumer_writes_file(&line[owning_start..]) {
         return false;
     }
     let prefix = if preceding_lines.is_empty() {

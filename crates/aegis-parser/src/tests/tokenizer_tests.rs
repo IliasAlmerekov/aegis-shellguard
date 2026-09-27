@@ -515,6 +515,25 @@ fn heredoc_file_write_followed_by_another_command_is_not_flagged() {
     assert!(!bodies[0].is_data_consumer_target);
 }
 
+// PR #463 review: a quote or substitution left open on the marker line keeps
+// the marker's command running past the newline, so bash starts the body
+// later than this line walk does and runs the lines in between.
+#[test]
+fn heredoc_open_construct_on_marker_line_is_not_flagged() {
+    for cmd in [
+        "cat <<'EOF' \"\n\"; rm -rf /\nEOF",
+        "cat <<'EOF' '\n'; rm -rf /\nEOF",
+        "cat <<'EOF' $'\n'; rm -rf /\nEOF",
+        "cat <<'EOF' $(\nrm -rf /\n)\nEOF",
+        "cat <<'EOF' `\nrm -rf /\n`\nEOF",
+        "cat <<'EOF' ${x:-\n}; rm -rf /\nEOF",
+        "x=$(cat <<'EOF' \"\n\"; rm -rf /\nEOF\n)",
+    ] {
+        let bodies = extract_heredoc_bodies(cmd);
+        assert!(!bodies[0].is_data_consumer_target, "{cmd:?}");
+    }
+}
+
 // 31. python -c "..." — inline Python script extracted
 #[test]
 fn inline_script_python() {

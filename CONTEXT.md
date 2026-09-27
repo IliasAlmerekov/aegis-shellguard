@@ -157,16 +157,16 @@ token (ADR-015).
 _Avoid_: rule, signature (reserve "rule" for prefix rules)
 
 **Data consumer**:
-`cat`, `tee`, or `jq`, written as that bare word or as `/bin/<name>` or
+`cat` or `jq`, written as that bare word or as `/bin/<name>` or
 `/usr/bin/<name>` with no leading assignment, as the program that reads a
 quoted-delimiter heredoc (nowdoc). Any other path (`./cat`, `/usr/local/bin/cat`)
 stays untrusted. None of them executes its stdin. Nothing before the marker may change which program the
 name runs (a function, `alias`, `hash`, `PATH` write and the like). A consumer
 that writes a file never earns data trust, because that file may run implicitly
-later. The body counts as data, and neither
+later. `tee` always writes a file, so it is not a Data consumer. The body counts as data, and neither
 the scanner nor the unclaimed-interpreter net reads it, only when no shell can
 reach the consumer's output: no pipe or process substitution on the marker
-line, no line continuation, no write to a descriptor above 2, a variable
+line, no quote, backtick or `$` after the delimiter, no line continuation, no write to a descriptor above 2, a variable
 descriptor, or a `/dev/fd/` or `/proc/` path, no compound-command keyword
 (`case`, `do`, `if`, `while` and the like), `exec` or `#` comment before the
 marker, and the heredoc sits at top level, in `NAME=$(...)`, or in the `$(...)` value
