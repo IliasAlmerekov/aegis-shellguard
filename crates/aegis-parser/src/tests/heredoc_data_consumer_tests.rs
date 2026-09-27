@@ -491,3 +491,80 @@ fn heredoc_after_balanced_quote_prefix_line_stays_flagged() {
     let bodies = extract_heredoc_bodies(cmd);
     assert!(bodies[0].is_data_consumer_target);
 }
+
+// PR #463 review (round 3): a word denylist always lags the shell. Each
+// prefix below rebinds `cat` through a shell table, a computed command word,
+// or an expansion that assigns, and none of them names a denylisted word.
+// Only prefixes built from known inert commands keep the body trusted.
+#[test]
+fn heredoc_after_prefix_that_can_rebind_the_consumer_is_not_flagged() {
+    let prefixes = [
+        "BASH_CMDS[cat]=/bin/bash",
+        "shopt -s expand_aliases; BASH_ALIASES[cat]=bash",
+        "functions[cat]=sh",
+        "commands[cat]=/bin/sh",
+        "BASH_CMDS+=([cat]=/bin/bash)",
+        "path=(/tmp/p $path)",
+        "set -A path /tmp/p",
+        "print -v path /tmp/p",
+        "autoload -Uz cat",
+        "$(echo eval) git '; BASH_CMDS[cat]=/bin/bash'",
+        "\"$(echo eval)\" git '; BASH_CMDS[cat]=/bin/bash'",
+        "git log ${PATH::=/tmp/p}",
+        "git log $[PATH=0]",
+        "git log $a[PATH=0]",
+        "git log && BASH_CMDS[cat]=/bin/bash",
+        "echo x | BASH_CMDS[cat]=/bin/bash",
+        "{ BASH_CMDS[cat]=/bin/bash; }",
+        ": <<X\n$((PATH=0))\nX",
+    ];
+    for prefix in prefixes {
+        let cmd = format!("{prefix}\ncat <<'EOF'\nrm -rf /\nEOF");
+        let bodies = extract_heredoc_bodies(&cmd);
+        let body = bodies.last().expect("heredoc body");
+        assert!(!body.is_data_consumer_target, "trusted after {prefix:?}");
+    }
+}
+
+// Same gap inside the trusted `$(...)` of a message flag or an assignment:
+// the command before `cat` inside the substitution must be inert too.
+#[test]
+fn heredoc_after_rebinding_inside_trusted_substitution_is_not_flagged() {
+    for cmd in [
+        "git commit -m \"$(BASH_CMDS[cat]=/bin/sh; cat <<'EOF'\nrm -rf /\nEOF\n)\"",
+        "x=$(functions[cat]=sh; cat <<'EOF'\nrm -rf /\nEOF\n)",
+        "BASH_CMDS[cat]=/bin/sh\nx=$(cat <<'EOF'\nrm -rf /\nEOF\n)",
+    ] {
+        let bodies = extract_heredoc_bodies(cmd);
+        assert!(!bodies[0].is_data_consumer_target, "trusted: {cmd:?}");
+    }
+}
+
+// Safe idioms: a prefix made only of inert commands keeps the trust,
+// including a second message heredoc after a first one.
+#[test]
+fn heredoc_after_inert_command_prefix_stays_flagged() {
+    for cmd in [
+        "git add -A && git commit -m \"$(cat <<'EOF'\nmsg\nEOF\n)\"",
+        "cd /repo && gh pr create --title \"t\" --body \"$(cat <<'EOF'\nbody\nEOF\n)\"",
+        "git commit -m \"$(cat <<'EOF'\nmsg\nEOF\n)\"\ngit push 2>&1\ngh pr create --body \"$(cat <<'EOF'\nbody\nEOF\n)\"",
+        "cd \"$HOME/repo\"; cat <<'EOF'\ntext\nEOF",
+    ] {
+        let bodies = extract_heredoc_bodies(cmd);
+        let body = bodies.last().expect("heredoc body");
+        assert!(body.is_data_consumer_target, "untrusted: {cmd:?}");
+    }
+}
+
+// `set` stays trusted only as a plain error-handling option list.
+#[test]
+fn heredoc_after_set_that_can_assign_is_not_flagged() {
+    for prefix in ["set -A path /tmp/p", "set -k", "set -o posix", "set -e $x"] {
+        let cmd = format!("{prefix}\ncat <<'EOF'\nrm -rf /\nEOF");
+        let bodies = extract_heredoc_bodies(&cmd);
+        assert!(
+            !bodies[0].is_data_consumer_target,
+            "trusted after {prefix:?}"
+        );
+    }
+}

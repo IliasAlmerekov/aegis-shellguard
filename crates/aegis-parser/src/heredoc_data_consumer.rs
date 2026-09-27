@@ -11,6 +11,7 @@ use crate::split_tokens;
 
 mod environment;
 mod forwarding;
+mod inert_prefix;
 mod quotes;
 
 /// Programs that never execute their stdin: `cat` copies the bytes to
@@ -350,30 +351,6 @@ const UNTRUSTED_PREFIX_WORDS: &[&str] = &[
     "until", "while",
 ];
 
-/// Words that can change which program a bare `cat` or `jq` runs
-/// (PR #463 review). `PATH` catches every direct write to the search path.
-/// `alias`, `hash`, and `enable` rebind the name itself. `eval` and `source`
-/// run text this check cannot see. The declare family, the read family,
-/// and `getopts` can write a variable whose name is computed (`declare -n
-/// r="${x}TH"`), so they can write `PATH` without naming it.
-const PROGRAM_RESOLUTION_WORDS: &[&str] = &[
-    "PATH",
-    "alias",
-    "declare",
-    "enable",
-    "eval",
-    "export",
-    "getopts",
-    "hash",
-    "local",
-    "mapfile",
-    "read",
-    "readarray",
-    "readonly",
-    "source",
-    "typeset",
-];
-
 /// Every maximal run of ASCII letters, digits, and `_` in `text` — the same
 /// notion of a shell word [`is_plain_identifier`] validates one word at a
 /// time, applied here so a caller can search a whole line for a specific
@@ -381,29 +358,6 @@ const PROGRAM_RESOLUTION_WORDS: &[&str] = &[
 /// matching it as a substring of something else (`PATHS`, `unprintf`).
 fn shell_words(text: &str) -> impl Iterator<Item = &str> {
     text.split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-}
-
-/// `true` when `unquoted` (a prefix with its quote characters dropped) has a
-/// program-resolution change that [`PROGRAM_RESOLUTION_WORDS`] cannot spot
-/// by word: a `.` source command in command position, a `printf -v` write to a computed name, or
-/// arithmetic (`((`, `$((`), which can assign to a computed name too
-/// (`(( $n = 5 ))` makes `PATH` the relative directory `5`).
-fn may_change_program_resolution(unquoted: &str) -> bool {
-    // Only a `.` in command position sources a file; `jq .` is a filter.
-    let dot_source = unquoted.char_indices().any(|(idx, ch)| {
-        ch == '.'
-            && unquoted[..idx]
-                .trim_end_matches([' ', '\t'])
-                .chars()
-                .next_back()
-                .is_none_or(|prev| matches!(prev, '\n' | ';' | '&' | '|' | '(' | '{'))
-            && unquoted[idx + 1..]
-                .chars()
-                .next()
-                .is_some_and(char::is_whitespace)
-    });
-    let printf_v = shell_words(unquoted).any(|word| word == "printf") && unquoted.contains("-v");
-    dot_source || printf_v || unquoted.contains("((")
 }
 
 /// `true` when `prefix` may define a POSIX shell function (`cat() { sh; }`,
@@ -569,10 +523,10 @@ fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext<'_> {
         .chars()
         .filter(|c| !matches!(c, '\'' | '"' | '\\'))
         .collect();
-    if shell_words(&unquoted).any(|word| {
-        UNTRUSTED_PREFIX_WORDS.contains(&word) || PROGRAM_RESOLUTION_WORDS.contains(&word)
-    }) || defines_function(prefix)
-        || may_change_program_resolution(&unquoted)
+    if shell_words(&unquoted).any(|word| UNTRUSTED_PREFIX_WORDS.contains(&word))
+        || defines_function(prefix)
+        || inert_prefix::has_assigning_expansion(prefix)
+        || inert_prefix::has_expanding_heredoc(prefix)
     {
         return HeredocMarkerContext::Untrusted;
     }
@@ -585,6 +539,11 @@ fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext<'_> {
         // `quotes::quote_open_at_end`'s own doc comment has the worked
         // example).
         [] if quotes::quote_open_at_end(prefix) => return HeredocMarkerContext::Untrusted,
+        // Which program `cat` runs depends on every command before it
+        // (ADR-042), so each one must be a known inert command.
+        [] if !inert_prefix::every_command_is_inert(prefix) => {
+            return HeredocMarkerContext::Untrusted;
+        }
         [] => return HeredocMarkerContext::TopLevel,
         [frame] => frame,
         _ => return HeredocMarkerContext::Untrusted,
@@ -606,10 +565,18 @@ fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext<'_> {
     if let Some(name) = owning.strip_suffix('=')
         && is_plain_identifier(name)
     {
+        // The assignment word itself is not a command: check the commands
+        // before it and the ones inside its `$(` up to the marker.
+        let inner = &prefix[frame.start + "$(".len()..];
+        if !inert_prefix::every_command_is_inert(&preceding[..command_start])
+            || !inert_prefix::every_command_is_inert(inner)
+        {
+            return HeredocMarkerContext::Untrusted;
+        }
         return HeredocMarkerContext::AssignmentRhs(name);
     }
 
-    if is_trusted_message_value(owning) {
+    if is_trusted_message_value(owning) && inert_prefix::every_command_is_inert(prefix) {
         return HeredocMarkerContext::TrustedCommandArg;
     }
 

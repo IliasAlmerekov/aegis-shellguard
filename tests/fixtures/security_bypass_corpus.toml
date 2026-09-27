@@ -258,6 +258,96 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
+# PR #463 review (round 3): bash's command hash table rebinds `cat`
+# without any denylisted word. Only a prefix of known inert commands keeps
+# the heredoc body trusted (ADR-042).
+name = "heredoc_data_consumer_bash_cmds_table_block"
+command = """BASH_CMDS[cat]=/bin/bash
+cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review (round 3): the alias table, written by subscript.
+name = "heredoc_data_consumer_bash_aliases_table_block"
+command = """shopt -s expand_aliases; BASH_ALIASES[cat]=bash
+cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review (round 3): zsh's function table, written by subscript.
+name = "heredoc_data_consumer_zsh_functions_table_block"
+command = """functions[cat]=sh
+cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review (round 3): zsh's command hash table.
+name = "heredoc_data_consumer_zsh_commands_table_block"
+command = """commands[cat]=/bin/sh
+cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review (round 3): zsh's `path` array is tied to `PATH`.
+name = "heredoc_data_consumer_zsh_path_array_block"
+command = """path=(/tmp/p $path)
+cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review (round 3): a command word built by an expansion runs
+# `eval`, so the literal `git` after it is only an argument.
+name = "heredoc_data_consumer_computed_command_word_block"
+command = """$(echo eval) git '; BASH_CMDS[cat]=/bin/bash'
+cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review (round 3): an unquoted heredoc body fed to a builtin is
+# expanded in the current shell, and the prefix never sees that body.
+name = "heredoc_data_consumer_builtin_heredoc_expansion_block"
+command = """: <<X
+$((PATH=0))
+X
+cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
 # PR #463 review follow-up: a standalone `PATH=` statement changes which
 # `cat` runs just like a prefix assignment does.
 name = "heredoc_data_consumer_path_statement_block"

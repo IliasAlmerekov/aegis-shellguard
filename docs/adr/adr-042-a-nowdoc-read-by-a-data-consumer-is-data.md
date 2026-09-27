@@ -109,18 +109,25 @@ into argv, so the router cannot drop body lines for every heredoc.
      the marker does the same, because `exec > >(sh)` points stdout itself
      at a shell and a later plain `cat <<'EOF'` then feeds it. Anything
      before the marker that can change which program `cat` or `jq`
-     names makes it untrusted as well: a function definition (`cat() { sh;
-     }`), `alias`, `hash`, `enable`, `eval`, `source` or a `.` in command
-     position, the word `PATH`, the declare and read families and `getopts`
-     (which can write a computed name such as `declare -n r="${x}TH"`),
-     `printf -v`, and arithmetic `((` (`(( $n = 5 ))` makes `PATH` the
-     relative directory `5`). The word check ignores quotes and drops the
-     quote characters first, so `PA""TH` still reads as `PATH`, and a quoted
-     keyword costs a scanned body, never a skipped one. The function and
-     alias checks are deliberately not scoped to the names `cat` or `jq`: a
-     script can build the name through quoting (`c""at`) or `eval` before
-     defining or aliasing it, so narrowing the check to those two names would just move the gap there; the only cost of checking every
-     name is a body that gets scanned instead of trusted.
+     names makes it untrusted as well. This check is an allowlist, not a
+     word search: every simple command before the marker, on earlier lines
+     and inside the trusted `$(...)`, must start with a literal command word
+     from a fixed inert set (`cd`, `echo`, `false`, `gh`, `git`, `ls`,
+     `mkdir`, `pwd`, `true`, and the Data consumer names), or be `set` with
+     only `-e`, `-u`, `-v`, `-x` and `-o errexit|nounset|pipefail|verbose|xtrace`
+     style options. An assignment, any other builtin, a command word built by
+     an expansion (`$(echo eval) git '; ...'`, `$c`), and a word the walk
+     cannot read all fail it. The prefix also may not hold a `${...}`,
+     `$((...))`, `$[...]`, `$"..."` or subscripted (`$a[i]`) expansion, since
+     each can assign a variable from an argument position, nor a heredoc with
+     an unquoted delimiter, whose body the prefix leaves out and the shell
+     expands (`: <<X` with `$((PATH=0))` in the body runs in the current
+     shell). A function definition (`cat() { sh; }`) stays refused as well.
+     An earlier version searched the prefix for denylisted words (`alias`,
+     `hash`, `PATH`, `eval`, ...). PR #463 review showed that such a list
+     trails the shell: `BASH_CMDS[cat]=/bin/bash`, `BASH_ALIASES[cat]=bash`,
+     zsh `functions[cat]=sh`, `commands[cat]=/bin/sh` and `path=(...)` all
+     rebind `cat` without a listed word.
 3. When the predicate holds, the scanner blanks the body (line lengths kept)
    and the router masks it before tokenizing the stage. When it does not, both
    keep their previous behaviour. Unquoted heredocs and interpreter readers
@@ -234,6 +241,14 @@ into argv, so the router cannot drop body lines for every heredoc.
   Adding a program to the `Data consumer` list or a flag to the message list
   is a security decision and needs a test for each way its output could reach
   a shell.
+- The inert-command allowlist costs a scanned body whenever the prefix
+  holds any other command, such as an earlier capture
+  (`title=$(cat <<'EOF' ...)` then `body=$(cat <<'EOF' ...)` scans the
+  second body), `cargo build; cat <<'EOF'`, or `git log ${x}`. This false
+  positive is accepted: a command outside the set can rebind the consumer
+  through a shell table this ADR does not list. Adding a word to the set is
+  a security decision and needs a test that it cannot change the shell's
+  own state.
 - Any file write keeps the body scanned, including `cat > f <<'EOF'` and
   `tee -a ~/.bashrc <<'EOF'`. A dangerous-looking body in #432's `cargo
   build; cat > loop.sh <<'EOF'` now prompts or blocks even though the write

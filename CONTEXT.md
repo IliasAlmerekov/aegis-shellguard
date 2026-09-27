@@ -160,8 +160,9 @@ _Avoid_: rule, signature (reserve "rule" for prefix rules)
 `cat` or `jq`, written as that bare word or as `/bin/<name>` or
 `/usr/bin/<name>` with no leading assignment, as the program that reads a
 quoted-delimiter heredoc (nowdoc). Any other path (`./cat`, `/usr/local/bin/cat`)
-stays untrusted. None of them executes its stdin. Nothing before the marker may change which program the
-name runs (a function, `alias`, `hash`, `PATH` write and the like). A consumer
+stays untrusted. None of them executes its stdin. Every command before the marker must come from a
+fixed inert set (`git`, `gh`, `cd`, `echo` and a few more), so nothing there can
+change which program the name runs. A consumer
 that writes a file never earns data trust, because that file may run implicitly
 later. `tee` always writes a file, so it is not a Data consumer. The body counts as data, and neither
 the scanner nor the unclaimed-interpreter net reads it, only when no shell can
