@@ -419,3 +419,75 @@ fn heredoc_capture_that_stays_in_the_shell_is_flagged_as_data_consumer() {
         assert!(bodies[0].is_data_consumer_target, "{cmd:?}");
     }
 }
+
+// PR #463 review (BLOCKER 1): `$'\''` is bash's ANSI-C escape for an
+// embedded `'`, not a quote toggle. `open_frames` and
+// `owning_simple_command_start` both toggle a quote on every `'`, so this
+// line reads as `cat`, a closed nowdoc marker `<<'EOF'`, and nothing else —
+// while bash actually reads two ANSI-C strings and a bare word, with no
+// heredoc operator in the text at all. The body must stay scanned.
+#[test]
+fn heredoc_ansi_c_quote_escape_before_marker_is_not_flagged() {
+    let cmd = "cat $'\\'' ' <<'EOF'\nx'; rm -rf /; : '\nEOF\n'";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(!bodies[0].is_data_consumer_target);
+}
+
+// PR #463 review (BLOCKER 2): a quote opened on an earlier physical line and
+// never closed on it carries into the marker line. `open_frames` only
+// tracks `$(`/backtick/paren/brace/comment frames, so it sees an empty
+// frame list here and `heredoc_marker_context` read that as `TopLevel` —
+// but bash actually closes the pending quote at the delimiter's own opening
+// `'` and reopens a fresh one at its closing `'`, so the `<<'EOF'` this walk
+// finds is not a heredoc operator to bash at all.
+#[test]
+fn heredoc_quote_left_open_from_earlier_line_is_not_flagged() {
+    let cmd = "echo 'start\ncat <<'EOF'\n'; rm -rf /; : '\nEOF\n'";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(!bodies[0].is_data_consumer_target);
+}
+
+// Same shape, a double quote left open instead of a single one.
+#[test]
+fn heredoc_double_quote_left_open_from_earlier_line_is_not_flagged() {
+    let cmd = "echo \"start\ncat <<'EOF'\n\"; rm -rf /; : \"\nEOF\n\"";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(!bodies[0].is_data_consumer_target);
+}
+
+// Same shape again, a backtick command substitution left open.
+#[test]
+fn heredoc_backtick_left_open_from_earlier_line_is_not_flagged() {
+    let cmd = "echo `start\ncat <<'EOF'\n`; rm -rf /; : `\nEOF\n`";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(!bodies[0].is_data_consumer_target);
+}
+
+// PR #463 review: the same `$'` toggle bug reaches an `AssignmentRhs`
+// capture's forwarding check through `following_text`, so a reference can
+// splice a keyword past it: `e$'x'ec "$x"` reads as `exec "$x"` to bash.
+#[test]
+fn heredoc_capture_then_run_variable_via_ansi_c_quote_splice_is_not_flagged() {
+    let cmd = "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ne$'x'ec \"$x\"";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(!bodies[0].is_data_consumer_target);
+}
+
+// Safe idiom: an apostrophe inside the body itself never reaches any of the
+// prefix/following-text checks above, since heredoc bodies are excluded
+// from both (`embedded_scripts::walk_heredocs`'s `command_text`).
+#[test]
+fn heredoc_body_with_apostrophe_stays_flagged_as_data_consumer() {
+    let cmd = "cat <<'EOF'\ndon't rm -rf /\nEOF";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(bodies[0].is_data_consumer_target);
+}
+
+// Safe idiom: a prefix line with a quote opened and closed on the same line
+// leaves no quote open at the marker, so the fix above must not flag it.
+#[test]
+fn heredoc_after_balanced_quote_prefix_line_stays_flagged() {
+    let cmd = "echo 'a'; cat <<'EOF'\nrm -rf /\nEOF";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(bodies[0].is_data_consumer_target);
+}

@@ -527,3 +527,105 @@ fn assess_captured_heredoc_lowercase_unexported_name_stays_safe() {
         );
     }
 }
+
+// PR #463 review (BLOCKER 1): `$'\''` is bash's ANSI-C escape for an
+// embedded `'`, not a quote toggle, so this line reads as a closed nowdoc
+// marker `<<'EOF'` to the naive toggle but as two ANSI-C strings and a bare
+// word to bash — no heredoc operator at all, and `rm -rf /` runs live.
+#[test]
+fn assess_ansi_c_quote_escape_before_marker_still_fires() {
+    assert_assessment_matches_pattern(
+        "cat $'\\'' ' <<'EOF'\nx'; rm -rf /; : '\nEOF\n'",
+        RiskLevel::Block,
+        "FS-001",
+    );
+}
+
+// PR #463 review (BLOCKER 2): a quote opened on one line and never closed on
+// it carries into the marker line. Bash closes the pending quote at the
+// delimiter's own opening `'` and reopens a fresh one at its closing `'`, so
+// the `<<'EOF'` this line walk finds is not a heredoc operator to bash —
+// `rm -rf /` runs live between the two.
+#[test]
+fn assess_quote_left_open_from_earlier_line_still_fires() {
+    assert_assessment_matches_pattern(
+        "echo 'start\ncat <<'EOF'\n'; rm -rf /; : '\nEOF\n'",
+        RiskLevel::Block,
+        "FS-001",
+    );
+}
+
+// Same shape, a double quote left open instead of a single one.
+#[test]
+fn assess_double_quote_left_open_from_earlier_line_still_fires() {
+    assert_assessment_matches_pattern(
+        "echo \"start\ncat <<'EOF'\n\"; rm -rf /; : \"\nEOF\n\"",
+        RiskLevel::Block,
+        "FS-001",
+    );
+}
+
+// Same shape again, a backtick command substitution left open.
+#[test]
+fn assess_backtick_left_open_from_earlier_line_still_fires() {
+    assert_assessment_matches_pattern(
+        "echo `start\ncat <<'EOF'\n`; rm -rf /; : `\nEOF\n`",
+        RiskLevel::Block,
+        "FS-001",
+    );
+}
+
+// PR #463 review: the same `$'` toggle bug reaches an `AssignmentRhs`
+// capture's forwarding check through `following_text`, so `e$'x'ec "$x"`
+// (spelling `exec "$x"` to bash) must not clear the capture.
+#[test]
+fn assess_captured_heredoc_ansi_c_quote_splice_still_fires() {
+    assert_assessment_matches_pattern(
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ne$'x'ec \"$x\"",
+        RiskLevel::Block,
+        "FS-001",
+    );
+}
+
+// Safe idiom: an apostrophe inside the body itself must not be read as an
+// unbalanced quote by the fix above — the body stays out of every prefix and
+// following-text check.
+#[test]
+fn assess_cat_body_with_apostrophe_stays_safe() {
+    let s = scanner();
+    let cmd = "cat <<'EOF'\ndon't rm -rf /\nEOF";
+    let assessment = s.assess(cmd);
+
+    assert_eq!(
+        assessment.risk,
+        RiskLevel::Safe,
+        "expected Safe for a heredoc body with an apostrophe, got {:?} ({:?})",
+        assessment.risk,
+        assessment
+            .matched
+            .iter()
+            .map(|m| m.pattern.id.as_ref())
+            .collect::<Vec<_>>()
+    );
+}
+
+// Safe idiom: a prefix line with a quote opened and closed on the same line
+// leaves no quote open at the marker, so the fix above must not flag it.
+#[test]
+fn assess_cat_after_balanced_quote_prefix_stays_safe() {
+    let s = scanner();
+    let cmd = "echo 'a'; cat <<'EOF'\nrm -rf /\nEOF";
+    let assessment = s.assess(cmd);
+
+    assert_eq!(
+        assessment.risk,
+        RiskLevel::Safe,
+        "expected Safe for cat after a balanced-quote prefix line, got {:?} ({:?})",
+        assessment.risk,
+        assessment
+            .matched
+            .iter()
+            .map(|m| m.pattern.id.as_ref())
+            .collect::<Vec<_>>()
+    );
+}

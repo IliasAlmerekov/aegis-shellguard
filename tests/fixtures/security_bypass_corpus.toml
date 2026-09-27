@@ -619,3 +619,75 @@ expected_risk = "block"
 expected_decision = "block"
 expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review (BLOCKER 1): `$'\''` is bash's ANSI-C escape for an embedded
+# `'`, not a quote toggle, so this reads as a closed nowdoc marker to a naive
+# toggle but as two ANSI-C strings and a bare word to bash — no heredoc
+# operator at all.
+name = "heredoc_data_consumer_ansi_c_quote_escape_block"
+command = """cat $'\\'' ' <<'EOF'
+x'; rm -rf /; : '
+EOF
+'"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review (BLOCKER 2): a quote opened on one line and never closed on
+# it carries into the marker line. Bash closes the pending quote at the
+# delimiter's own opening `'` and reopens a fresh one at its closing `'`, so
+# the `<<'EOF'` this line walk finds is not a heredoc operator to bash.
+name = "heredoc_data_consumer_quote_left_open_block"
+command = """echo 'start
+cat <<'EOF'
+'; rm -rf /; : '
+EOF
+'"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# Same shape, a double quote left open instead of a single one.
+name = "heredoc_data_consumer_double_quote_left_open_block"
+command = """echo \"start
+cat <<'EOF'
+\"; rm -rf /; : \"
+EOF
+\""""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# Same shape again, a backtick command substitution left open.
+name = "heredoc_data_consumer_backtick_left_open_block"
+command = """echo `start
+cat <<'EOF'
+`; rm -rf /; : `
+EOF
+`"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# PR #463 review: the same `$'` toggle bug reaches an `AssignmentRhs`
+# capture's forwarding check through the text after the terminator, so
+# `e$'x'ec "$x"` (spelling `exec "$x"` to bash) must not clear the capture.
+name = "heredoc_data_consumer_ansi_c_quote_splice_block"
+command = """x=$(cat <<'EOF'
+rm -rf /
+EOF
+)
+e$'x'ec \"$x\""""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"

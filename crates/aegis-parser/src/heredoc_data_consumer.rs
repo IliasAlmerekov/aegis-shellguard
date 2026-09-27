@@ -11,6 +11,7 @@ use crate::split_tokens;
 
 mod environment;
 mod forwarding;
+mod quotes;
 
 /// Programs that never execute their stdin: `cat` copies the bytes to
 /// stdout or a file, and `jq` parses them as JSON. A file write is not
@@ -550,6 +551,17 @@ fn is_trusted_message_value(owning: &str) -> bool {
 /// `embedded_scripts::walk_heredocs`) followed by the marker line up to the
 /// `<<`, so a `$(` opened on an earlier line still counts as enclosing.
 fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext<'_> {
+    // Bash's `$'...'` ANSI-C quoting escapes an embedded quote as `\'`, but
+    // every quote-tracking walk below (here, `open_frames`,
+    // `owning_simple_command_start`) toggles a quote on every `'` it sees,
+    // `$'` included: `cat $'\'' ' <<'EOF'` reads as a closed nowdoc marker to
+    // the toggle but as two ANSI-C strings and a plain word to bash (PR #463
+    // review). Teaching every walk ANSI-C escaping would still leave the next
+    // one; bailing here instead costs the body a scan whenever `$'` merely
+    // looks unrelated to the marker, never a bypass.
+    if prefix.contains("$'") {
+        return HeredocMarkerContext::Untrusted;
+    }
     // The check ignores quotes on purpose: a quoted keyword only costs a
     // scanned body, never a skipped one. Dropping the quote characters
     // first also joins a word split by them (`PA""TH`, `al'ias'`).
@@ -566,6 +578,13 @@ fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext<'_> {
     }
     let frames = open_frames(prefix);
     let frame = match frames.as_slice() {
+        // `open_frames` only tracks bracket-shaped frames, so a bare quote
+        // left open on an earlier physical line and never closed before the
+        // marker's own `<<` reads as an empty list here even though bash
+        // read the marker line as the inside of that quote (PR #463 review,
+        // `quotes::quote_open_at_end`'s own doc comment has the worked
+        // example).
+        [] if quotes::quote_open_at_end(prefix) => return HeredocMarkerContext::Untrusted,
         [] => return HeredocMarkerContext::TopLevel,
         [frame] => frame,
         _ => return HeredocMarkerContext::Untrusted,
@@ -664,7 +683,15 @@ pub(super) fn heredoc_target_is_data_consumer(
     match heredoc_marker_context(&prefix) {
         HeredocMarkerContext::TopLevel | HeredocMarkerContext::TrustedCommandArg => true,
         HeredocMarkerContext::AssignmentRhs(name) => {
-            !environment::captured_variable_may_run_unnamed(name, &prefix, following_text)
+            // `following_text` gets scanned for `$NAME`/indirection words by
+            // the same raw quote-toggle rules as the prefix check above
+            // (`owning_simple_command_start`, `may_export`, and the
+            // `forwarding` helpers), so a captured variable's later
+            // reference can splice a keyword past them with the same `$'`
+            // trick: `e$'x'ec "$x"` reads as `exec "$x"` to bash (PR #463
+            // review).
+            !following_text.contains("$'")
+                && !environment::captured_variable_may_run_unnamed(name, &prefix, following_text)
                 && !forwarding::assignment_variable_runs_later(
                     name,
                     following_text,
