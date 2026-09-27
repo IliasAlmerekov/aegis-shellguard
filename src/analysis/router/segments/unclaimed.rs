@@ -156,6 +156,23 @@ pub(super) fn unclaimed_interpreter_net(
     ctx: &RouteContext<'_>,
     home: HomeState,
 ) -> Vec<RoutedTarget> {
+    // A `Data consumer` heredoc body (`jq -c . <<'JSON'`, issue #396) is data
+    // at rest, not argv — blanked the same way the scanner blanks it
+    // (`aegis_parser::mask_inert_heredoc_substitution_markers`) before this
+    // stage's own text is tokenized below, so a JSON string that happens to
+    // read like an interpreter invocation is never mistaken for one. A body
+    // fed to a non-consumer (`xargs <<'EOF'`) is untouched and still
+    // tokenized as before — `xargs` turns its stdin into argv for real.
+    // Skips the mask call's own allocation on the overwhelmingly common
+    // heredoc-free stage (`CONVENTION.md` §8).
+    let masked_stage_raw;
+    let stage_raw = if stage_raw.contains("<<") {
+        masked_stage_raw = aegis_parser::mask_inert_heredoc_substitution_markers(stage_raw);
+        masked_stage_raw.as_str()
+    } else {
+        stage_raw
+    };
+
     // A trailing redirect (`{ echo ok; } 2>/dev/null`) is punctuation, not an
     // argument — stripped before tokenizing so its target never reads as a
     // path-like operand below (issue #384/#430), the same stripping
