@@ -5,7 +5,7 @@
 Accepted. Adds the `Data consumer` entry to `CONTEXT.md`. Fixes issue #396.
 File writes from #357 and #432 remain scanned because written files can run
 without an explicit command naming them. A heredoc inside a `NAME=$(...)`
-capture is not trusted here; that case is deferred to a follow-up issue
+capture is not trusted here; that case is deferred to issue #469
 (item 5).
 
 ## Context
@@ -155,7 +155,7 @@ into argv, so the router cannot drop body lines for every heredoc.
    in it can hold a command substitution. `${x@P}` expands it as a prompt,
    and zsh `${(e)x}` expands it again. A name computed at run time
    (`n=$(printf '\170'); echo $(( $n ))`) never spells `$x` at all. A line
-   walk cannot rule these out, so capture trust moves to a follow-up issue.
+   walk cannot rule these out, so capture trust moves to issue #469.
 
 ## Consequences
 
