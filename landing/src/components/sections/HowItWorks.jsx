@@ -29,7 +29,7 @@ const STEPS = [
     held: false,
     lines: [
       { who: 'you', text: 'npm i -g @iliasalmerekov/aegis' },
-      { mark: '+', text: '@iliasalmerekov/aegis@0.6.10' },
+      { mark: '+', text: '@iliasalmerekov/aegis@0.6.11' },
     ],
   },
   {
