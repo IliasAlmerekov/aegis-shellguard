@@ -65,6 +65,16 @@ into argv, so the router cannot drop body lines for every heredoc.
      command going past the newline, so bash starts the body on a later
      line than this walk does and runs the lines in between (PR #463
      review);
+   - the command text before the `<<`, earlier lines included, has no
+     ANSI-C quoting (`$'...'`) and leaves no `'`, `"` or backtick open.
+     Inside `$'...'` bash reads `\'` as an escaped quote, while the quote
+     tracking here reads it as a close, so `cat $'\'' ' <<'EOF'` looks
+     like a marker that bash reads as quoted text. A quote opened on an
+     earlier line (`echo 'start` then `cat <<'EOF'`) makes the marker line
+     part of a string for bash, and the lines this walk takes for a body
+     run as commands (PR #463 review). For a `NAME=$(...)` capture, a
+     `$'` in the text after the terminator keeps the body scanned too,
+     since `e$'x'ec "$x"` is `exec "$x"` to bash;
    - the consumer does not write to a descriptor above 2 or a variable one
      (`>&3`, `>&$fd`) or to a `/dev/fd/` or `/proc/` path, since an earlier
      `exec 3> >(sh)` can make that descriptor a pipe to a shell;
