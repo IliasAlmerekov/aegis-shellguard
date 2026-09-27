@@ -6,6 +6,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::process::Command as StdCommand;
 use tempfile::TempDir;
 
+use crate::test_support::stub_bin;
+
 fn plugin_with_user(temp_dir: &TempDir, user: &str) -> MysqlPlugin {
     MysqlPlugin::new(
         "app".to_string(),
@@ -14,16 +16,6 @@ fn plugin_with_user(temp_dir: &TempDir, user: &str) -> MysqlPlugin {
         user.to_string(),
         temp_dir.path().join("snaps"),
     )
-}
-
-#[cfg(unix)]
-fn stub_bin(dir: &TempDir, name: &str, body: &str) -> PathBuf {
-    let path = dir.path().join(name);
-    fs::write(&path, format!("#!/bin/sh\nset -eu\n{body}\n")).unwrap();
-    let mut permissions = fs::metadata(&path).unwrap().permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&path, permissions).unwrap();
-    path
 }
 
 #[cfg(unix)]
@@ -315,7 +307,7 @@ async fn snapshot_uses_mysqldump_and_creates_dump_file() {
     let temp_dir = TempDir::new().unwrap();
     let log_path = temp_dir.path().join("mysqldump.args");
     let mysqldump = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "mysqldump",
         &format!(
             "log='{}'\n: > \"$log\"\nfor arg in \"$@\"; do\n  printf '%s\\n' \"$arg\" >> \"$log\"\ndone\nprintf 'dump-data'",
@@ -365,7 +357,7 @@ async fn snapshot_uses_mysqldump_and_creates_dump_file() {
 #[tokio::test]
 async fn snapshot_retries_when_mysqldump_binary_is_temporarily_busy() {
     let temp_dir = TempDir::new().unwrap();
-    let mysqldump = stub_bin(&temp_dir, "mysqldump", "exit 0");
+    let mysqldump = stub_bin(temp_dir.path(), "mysqldump", "exit 0");
     let mut plugin = plugin_with_user(&temp_dir, "root");
     plugin.mysqldump_bin = mysqldump.display().to_string();
 
@@ -386,7 +378,7 @@ async fn snapshot_retries_when_mysqldump_binary_is_temporarily_busy() {
 async fn snapshot_returns_stderr_when_mysqldump_fails() {
     let temp_dir = TempDir::new().unwrap();
     let mysqldump = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "mysqldump",
         "printf 'mysqldump exploded' >&2\nexit 12",
     );
@@ -436,7 +428,7 @@ async fn snapshot_removes_reserved_dump_when_mysqldump_spawn_fails() {
 async fn snapshot_drains_large_stderr_without_deadlocking() {
     let temp_dir = TempDir::new().unwrap();
     let mysqldump = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "mysqldump",
         "i=0\nwhile [ \"$i\" -lt 5000 ]; do\n  printf '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\n' >&2\n  i=$((i + 1))\ndone\nprintf 'dump-data'",
     );
@@ -463,7 +455,7 @@ async fn rollback_uses_mysql_with_expected_arguments_and_dump_on_stdin() {
     fs::create_dir_all(dump_path.parent().unwrap()).unwrap();
     fs::write(&dump_path, "dump-data").unwrap();
     let mysql = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "mysql",
         &format!(
             "log='{}'\nstdin_file='{}'\n: > \"$log\"\nfor arg in \"$@\"; do\n  printf '%s\\n' \"$arg\" >> \"$log\"\ndone\ncat > \"$stdin_file\"",
@@ -492,7 +484,7 @@ async fn rollback_retries_when_mysql_binary_is_temporarily_busy() {
     let dump_path = temp_dir.path().join("snaps").join("existing.sql");
     fs::create_dir_all(dump_path.parent().unwrap()).unwrap();
     fs::write(&dump_path, "dump-data").unwrap();
-    let mysql = stub_bin(&temp_dir, "mysql", "cat > /dev/null");
+    let mysql = stub_bin(temp_dir.path(), "mysql", "cat > /dev/null");
     let mut plugin = plugin_with_user(&temp_dir, "root");
     plugin.mysql_bin = mysql.display().to_string();
     let snapshot_id = snapshot_id_for("app", "localhost", 3_306, "root", &dump_path);
@@ -511,7 +503,7 @@ async fn rollback_restores_legacy_artifact_inside_snapshot_store() {
     let dump_path = temp_dir.path().join("snaps").join("legacy.sql");
     fs::create_dir_all(dump_path.parent().unwrap()).unwrap();
     fs::write(&dump_path, "dump-data").unwrap();
-    let mysql = stub_bin(&temp_dir, "mysql", "cat > /dev/null");
+    let mysql = stub_bin(temp_dir.path(), "mysql", "cat > /dev/null");
     let mut plugin = plugin_with_user(&temp_dir, "root");
     plugin.mysql_bin = mysql.display().to_string();
     let snapshot_id = format!(
@@ -529,9 +521,9 @@ async fn rollback_uses_snapshot_time_target_and_dump_path_instead_of_current_con
     let temp_dir = TempDir::new().unwrap();
     let stdin_path = temp_dir.path().join("mysql.stdin");
     let restore_log_path = temp_dir.path().join("mysql.args");
-    let mysqldump = stub_bin(&temp_dir, "mysqldump", "printf 'dump-data'");
+    let mysqldump = stub_bin(temp_dir.path(), "mysqldump", "printf 'dump-data'");
     let mysql = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "mysql",
         &format!(
             "log='{}'\nstdin_file='{}'\n: > \"$log\"\nfor arg in \"$@\"; do\n  printf '%s\\n' \"$arg\" >> \"$log\"\ndone\ncat > \"$stdin_file\"",
@@ -599,7 +591,7 @@ async fn rollback_returns_stderr_when_mysql_fails() {
     fs::create_dir_all(dump_path.parent().unwrap()).unwrap();
     fs::write(&dump_path, "dump-data").unwrap();
     let mysql = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "mysql",
         "cat > /dev/null\nprintf 'mysql exploded' >&2\nexit 23",
     );
@@ -625,7 +617,7 @@ async fn rollback_errors_when_mysql_stdin_streaming_fails() {
     let dump_path = temp_dir.path().join("snaps").join("existing.sql");
     fs::create_dir_all(dump_path.parent().unwrap()).unwrap();
     fs::write(&dump_path, vec![b'x'; 512 * 1024]).unwrap();
-    let mysql = stub_bin(&temp_dir, "mysql", "exit 0");
+    let mysql = stub_bin(temp_dir.path(), "mysql", "exit 0");
     let mut plugin = plugin_with_user(&temp_dir, "root");
     plugin.mysql_bin = mysql.display().to_string();
     let snapshot_id = snapshot_id_for("app", "localhost", 3_306, "root", &dump_path);
@@ -646,7 +638,7 @@ async fn rollback_drains_large_stderr_without_deadlocking() {
     fs::create_dir_all(dump_path.parent().unwrap()).unwrap();
     fs::write(&dump_path, "dump-data").unwrap();
     let mysql = stub_bin(
-        &temp_dir,
+        temp_dir.path(),
         "mysql",
         "i=0\nwhile [ \"$i\" -lt 5000 ]; do\n  printf '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\\n' >&2\n  i=$((i + 1))\ndone\ncat > /dev/null",
     );
@@ -668,7 +660,7 @@ async fn spawn_with_busy_retry_yields_to_tokio_runtime_during_sleep() {
     let temp_dir = TempDir::new().unwrap();
     // A stub binary that we will hold open for writing for the entire test,
     // so every call to spawn() returns ETXTBSY and the retry loop fires.
-    let mysqldump = stub_bin(&temp_dir, "mysqldump", "exit 0");
+    let mysqldump = stub_bin(temp_dir.path(), "mysqldump", "exit 0");
 
     // Keep the file open for writing from this process.  The kernel returns
     // ETXTBSY from execve() as long as any process holds the file open for
@@ -722,7 +714,7 @@ async fn spawn_with_busy_retry_yields_to_tokio_runtime_during_sleep() {
 #[tokio::test]
 async fn snapshot_generates_distinct_ids_for_back_to_back_calls() {
     let temp_dir = TempDir::new().unwrap();
-    let mysqldump = stub_bin(&temp_dir, "mysqldump", "printf 'dump-data'");
+    let mysqldump = stub_bin(temp_dir.path(), "mysqldump", "printf 'dump-data'");
     let mut plugin = plugin_with_user(&temp_dir, "root");
     plugin.mysqldump_bin = mysqldump.display().to_string();
 
