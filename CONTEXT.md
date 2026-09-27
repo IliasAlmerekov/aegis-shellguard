@@ -156,6 +156,28 @@ arrive embedded in `psql -c` / `mysql -e` / heredoc / stdin, not as a leading pr
 token (ADR-015).
 _Avoid_: rule, signature (reserve "rule" for prefix rules)
 
+**Data consumer**:
+`cat` or `jq`, written as that bare word or as `/bin/<name>` or
+`/usr/bin/<name>` with no leading assignment, as the program that reads a
+quoted-delimiter heredoc (nowdoc). Any other path (`./cat`, `/usr/local/bin/cat`)
+stays untrusted. None of them executes its stdin. Every command before the marker must come from a
+fixed inert set (`git`, `gh`, `cd`, `echo` and a few more), so nothing there can
+change which program the name runs. A consumer
+that writes a file never earns data trust, because that file may run implicitly
+later. `tee` always writes a file, so it is not a Data consumer. The body counts as data, and neither
+the scanner nor the unclaimed-interpreter net reads it, only when no shell can
+reach the consumer's output: no pipe or process substitution on the marker
+line, no quote, backtick or `$` after the delimiter, no line continuation, no write to a descriptor above 2, a variable
+descriptor, or a `/dev/fd/` or `/proc/` path, no compound-command keyword
+(`case`, `do`, `if`, `while` and the like), `exec`, `#` comment, ANSI-C `$'...'` quote
+or still-open quote before the marker, and the heredoc sits at top level or in
+the `$(...)` value of a `git`/`gh` message flag (`-m`, `--message`, `-t`,
+`--title`, `-b`, `--body`) with no subshell, process-substitution `(` or
+`{ ...; }` group open around it. A heredoc captured into a variable
+(`name=$(...)`) is not a Data consumer target. The body also needs an exact closing delimiter with no earlier
+delimiter-prefixed line. Any other shape keeps the body scanned (ADR-042).
+_Avoid_: inert heredoc, safe heredoc target
+
 **Token-prefix rule**:
 A detection rule keyed on a command's `Effective program` token (e.g. `git`, `docker`) and
 matched against the token sequence — distinct from a regex `Pattern`. Git, Cloud,

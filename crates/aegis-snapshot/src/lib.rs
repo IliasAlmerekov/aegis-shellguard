@@ -46,6 +46,9 @@ mod registry;
 mod retention;
 /// Owner-only filesystem creation helpers for snapshot artifacts.
 mod secure_fs;
+/// Shared fake-executable helpers for the snapshot plugins' own tests.
+#[cfg(test)]
+mod test_support;
 /// Test hooks for observing snapshot registry materialization.
 pub mod testing;
 

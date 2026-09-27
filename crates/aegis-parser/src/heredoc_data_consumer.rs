@@ -1,0 +1,623 @@
+//! The `Data consumer` predicate for a nowdoc heredoc body (issue #396,
+//! #432): whether `cat` or `jq` owns the marker, whether anything
+//! pipes the consumer's own stdout, and whether the marker sits in a context
+//! [`heredoc_target_is_data_consumer`] trusts (ADR-042). Split out of
+//! [`super::embedded_scripts`] to keep that file under the 800-line budget
+//! in `tests/file_size_budget.rs`; `embedded_scripts` is this predicate's
+//! only caller. The [`message_flags`] submodule holds the `git`/`gh`
+//! message-flag gates for the same budget reason.
+
+use crate::split_tokens;
+
+mod inert_prefix;
+mod message_flags;
+mod quotes;
+
+/// Programs that never execute their stdin: `cat` copies the bytes to
+/// stdout or a file, and `jq` parses them as JSON. A file write is not
+/// trusted, since that file may run implicitly later. `tee` is left out
+/// because it always writes a file (PR #463 review). Other output only reaches
+/// a shell through a pipe, a process substitution, or an enclosing
+/// substitution, which the rest of the predicate rules out. A nowdoc body
+/// fed only to one of these is `Data consumer` territory (issue #396, #432)
+/// — see [`heredoc_target_is_data_consumer`] for the full predicate,
+/// including the pipe and context checks a bare program match alone doesn't
+/// cover. `sed` (`e` command) and `awk` (`system()`) are deliberately not on
+/// this list: both can run shell commands from their own script argument.
+///
+/// Each program also gets its two most common absolute-path spellings,
+/// `/bin/<name>` and `/usr/bin/<name>`, alongside the bare word. Both are
+/// where a stock install actually puts the binary, so trusting them costs
+/// nothing a bare `cat` didn't already cost. Any other path — `./cat`,
+/// `/tmp/p/cat`, `/usr/local/bin/cat` — can still name a copied shell, so
+/// only these two prefixes count (issue #396 review).
+const DATA_CONSUMER_PROGRAMS: &[&str] = &[
+    "cat",
+    "jq",
+    "/bin/cat",
+    "/bin/jq",
+    "/usr/bin/cat",
+    "/usr/bin/jq",
+];
+
+/// `true` when `token` is a bare `NAME=value` shell-variable assignment —
+/// used to skip a leading assignment run ahead of a heredoc's owning program
+/// (`FOO=1 cat <<'EOF'` still resolves to `cat`).
+fn is_bare_assignment(token: &str) -> bool {
+    token
+        .split_once('=')
+        .is_some_and(|(name, _)| is_plain_identifier(name))
+}
+
+/// `true` when `name` is a non-empty ASCII shell identifier: a leading
+/// letter or underscore, then only alphanumerics or underscores.
+fn is_plain_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Byte index in `text` right after the last unquoted occurrence of `;`,
+/// `&&`, `||`, `(`, `$(`, or a backtick — the boundary the simple command
+/// that owns a same-line heredoc marker starts at (issue #432: `true; cat >
+/// f <<'EOF'` must resolve to the command after `;`, not the line's own
+/// first token). `0` when none exists, so an unbroken line still resolves to
+/// its own first token exactly as before.
+///
+/// `$(`/backtick each open a fresh quote scope even inside an outer
+/// double-quoted string, mirroring [`open_frames`]'s own nesting
+/// rules — required so `gh pr create --body "$(cat <<'EOF'` resolves its
+/// owning command to `cat`, not to a still-open outer double quote hiding
+/// every later boundary from view (issue #396).
+///
+/// A single `|` is deliberately not a boundary here: a heredoc's own
+/// redirection overrides whatever a preceding pipe stage would have fed its
+/// stdin, so the consumer is still the word right after the marker's owning
+/// command — but leaving `|` unrecognized as a boundary means a lone pipe
+/// stays glued to whatever precedes it, which is the conservative
+/// (not-inert) outcome whenever that combination cannot otherwise be told
+/// apart (issue #396).
+fn owning_simple_command_start(text: &str) -> usize {
+    struct Frame {
+        command_sub_depth: Option<usize>,
+        saved_quotes: (bool, bool),
+    }
+
+    let mut single_quote = false;
+    let mut double_quote = false;
+    let mut frames: Vec<Frame> = Vec::new();
+    let mut start = 0;
+    let mut chars = text.char_indices().peekable();
+
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '\\' if !single_quote => {
+                chars.next();
+            }
+            '\'' if !double_quote => single_quote = !single_quote,
+            '"' if !single_quote => double_quote = !double_quote,
+            '`' if !single_quote => {
+                if matches!(frames.last(), Some(f) if f.command_sub_depth.is_none()) {
+                    if let Some(frame) = frames.pop() {
+                        (single_quote, double_quote) = frame.saved_quotes;
+                    }
+                } else {
+                    frames.push(Frame {
+                        command_sub_depth: None,
+                        saved_quotes: (single_quote, double_quote),
+                    });
+                    single_quote = false;
+                    double_quote = false;
+                    start = idx + ch.len_utf8();
+                }
+            }
+            '$' if !single_quote && chars.peek().map(|&(_, c)| c) == Some('(') => {
+                if let Some((paren_idx, paren_ch)) = chars.next() {
+                    frames.push(Frame {
+                        command_sub_depth: Some(1),
+                        saved_quotes: (single_quote, double_quote),
+                    });
+                    single_quote = false;
+                    double_quote = false;
+                    start = paren_idx + paren_ch.len_utf8();
+                }
+            }
+            '(' if !single_quote && !double_quote => {
+                if let Some(depth) = frames.last_mut().and_then(|f| f.command_sub_depth.as_mut()) {
+                    *depth += 1;
+                } else {
+                    start = idx + ch.len_utf8();
+                }
+            }
+            ')' if !single_quote && !double_quote => {
+                let closed = if let Some(depth) =
+                    frames.last_mut().and_then(|f| f.command_sub_depth.as_mut())
+                {
+                    *depth -= 1;
+                    *depth == 0
+                } else {
+                    false
+                };
+                if closed && let Some(frame) = frames.pop() {
+                    (single_quote, double_quote) = frame.saved_quotes;
+                }
+            }
+            ';' | '\n' if !single_quote && !double_quote => {
+                start = idx + ch.len_utf8();
+            }
+            '&' | '|'
+                if !single_quote && !double_quote && chars.peek().map(|&(_, c)| c) == Some(ch) =>
+            {
+                if let Some((next_idx, next_ch)) = chars.next() {
+                    start = next_idx + next_ch.len_utf8();
+                }
+            }
+            _ => {}
+        }
+    }
+    start
+}
+
+/// The program word of the simple command that starts at `owning_start` and
+/// ends at `marker_start` on `line`, exactly as written. `None` when the
+/// owning text has no program token, or when it starts with a `NAME=value`
+/// assignment: `PATH=/tmp/p cat` runs whatever `cat` sits in `/tmp/p`, so an
+/// assigned environment can make the consumer a shell (PR #463 review).
+/// Takes `owning_start` rather than recomputing it, since
+/// [`heredoc_target_is_data_consumer`] already needs
+/// [`owning_simple_command_start`]'s result for its own file-write check
+/// (issue #396 review).
+fn owning_command_program(line: &str, owning_start: usize, marker_start: usize) -> Option<String> {
+    let tokens = split_tokens(line[owning_start..marker_start].trim());
+    tokens
+        .into_iter()
+        .next()
+        .filter(|token| !is_bare_assignment(token))
+}
+
+/// `true` when `program` — a heredoc's owning program word, exactly as
+/// written — is a [`DATA_CONSUMER_PROGRAMS`] member: the bare, case-exact
+/// name `cat` or `jq`, or one of their two trusted absolute paths.
+/// Any other path (`./cat`, `/tmp/p/cat`) can name a copied shell, and `CAT`
+/// is a different file on a case-sensitive filesystem, so neither is trusted
+/// (PR #463 review, issue #396 review).
+fn is_data_consumer_program(program: &str) -> bool {
+    DATA_CONSUMER_PROGRAMS.contains(&program)
+}
+
+/// `true` when `tail` (the text on a heredoc marker's own line, past its
+/// delimiter spec) could send the body anywhere but plain output. A `|`
+/// pipes the consumer's output on (issue #396: `jq -r .a <<'JSON' | sh`).
+/// A quote, backtick, or `$` can open a construct that runs past the
+/// newline (`cat <<'EOF' "`, `$(`, `${`), so bash starts the body later
+/// than this line walk does and runs the lines in between (PR #463 review).
+/// The check does not track quote state: any of these characters in the
+/// tail costs a scanned body, never a skipped one.
+fn tail_may_leave_plain_output(tail: &str) -> bool {
+    tail.contains(['|', '\'', '"', '`', '$'])
+}
+
+/// What opened a frame that is still open at a heredoc marker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FrameKind {
+    /// `$(`: command substitution.
+    Command,
+    /// A backtick command substitution.
+    Backtick,
+    /// Any other `(`: a subshell, a process substitution `<(`/`>(`, or an
+    /// arithmetic paren. Its output can reach a pipe or a shell after the
+    /// heredoc's terminator line, where the marker line cannot see it.
+    Paren,
+    /// A `{ ...; }` group, which can pipe or redirect its output after the
+    /// terminator line the same way a subshell can (`} | sh`, `} >&3`).
+    Brace,
+    /// A `#` comment. The shell ignores the rest of its line, but this
+    /// scanner would still read a `}` or `)` there as a close, so a comment
+    /// before the marker never closes and keeps the context untrusted.
+    Comment,
+}
+
+/// One frame still open at the end of a scanned prefix, with where it
+/// started so a caller can inspect the text right before it.
+struct OpenFrame {
+    start: usize,
+    kind: FrameKind,
+}
+
+/// Every `$(`, backtick, `(`, `{` group and `#` comment frame still open at
+/// the end of `text`, outermost first. A comment frame never closes. `$(` and a backtick each open a fresh quote scope even
+/// inside a double-quoted string, the same rule
+/// `embedded_scripts::find_unquoted_double_lt` follows, and restore the
+/// enclosing scope when they close.
+fn open_frames(text: &str) -> Vec<OpenFrame> {
+    struct Frame {
+        start: usize,
+        kind: FrameKind,
+        saved_quotes: (bool, bool),
+    }
+
+    let mut single_quote = false;
+    let mut double_quote = false;
+    let mut frames: Vec<Frame> = Vec::new();
+    let mut chars = text.char_indices().peekable();
+
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '\\' if !single_quote => {
+                chars.next();
+            }
+            '\'' if !double_quote => single_quote = !single_quote,
+            '"' if !single_quote => double_quote = !double_quote,
+            '`' if !single_quote => {
+                if matches!(frames.last(), Some(f) if f.kind == FrameKind::Backtick) {
+                    if let Some(frame) = frames.pop() {
+                        (single_quote, double_quote) = frame.saved_quotes;
+                    }
+                } else {
+                    frames.push(Frame {
+                        start: idx,
+                        kind: FrameKind::Backtick,
+                        saved_quotes: (single_quote, double_quote),
+                    });
+                    single_quote = false;
+                    double_quote = false;
+                }
+            }
+            '$' if !single_quote && chars.peek().map(|&(_, c)| c) == Some('(') => {
+                chars.next();
+                frames.push(Frame {
+                    start: idx,
+                    kind: FrameKind::Command,
+                    saved_quotes: (single_quote, double_quote),
+                });
+                single_quote = false;
+                double_quote = false;
+            }
+            '(' if !single_quote && !double_quote => {
+                frames.push(Frame {
+                    start: idx,
+                    kind: FrameKind::Paren,
+                    saved_quotes: (single_quote, double_quote),
+                });
+            }
+            ')' if !single_quote && !double_quote => {
+                if matches!(
+                    frames.last(),
+                    Some(f) if matches!(f.kind, FrameKind::Command | FrameKind::Paren)
+                ) && let Some(frame) = frames.pop()
+                {
+                    (single_quote, double_quote) = frame.saved_quotes;
+                }
+            }
+            // `{` and `}` are reserved words, so only a standalone one opens
+            // or closes a group: `a{b,c}` and `${x}` do neither.
+            '{' if !single_quote
+                && !double_quote
+                && starts_word(text, idx)
+                && chars.peek().is_none_or(|&(_, c)| c.is_whitespace()) =>
+            {
+                frames.push(Frame {
+                    start: idx,
+                    kind: FrameKind::Brace,
+                    saved_quotes: (single_quote, double_quote),
+                });
+            }
+            '#' if !single_quote && !double_quote && starts_word(text, idx) => {
+                frames.push(Frame {
+                    start: idx,
+                    kind: FrameKind::Comment,
+                    saved_quotes: (single_quote, double_quote),
+                });
+            }
+            '}' if !single_quote && !double_quote && starts_word(text, idx) => {
+                if matches!(frames.last(), Some(f) if f.kind == FrameKind::Brace) {
+                    frames.pop();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    frames
+        .into_iter()
+        .map(|f| OpenFrame {
+            start: f.start,
+            kind: f.kind,
+        })
+        .collect()
+}
+
+/// `true` when the character at `idx` starts a shell word: it is the first
+/// character of `text` or follows whitespace or a command separator.
+fn starts_word(text: &str, idx: usize) -> bool {
+    text[..idx]
+        .chars()
+        .next_back()
+        .is_none_or(|c| c.is_whitespace() || matches!(c, ';' | '&' | '|' | '('))
+}
+
+/// Words that make every later heredoc marker untrusted. Most are reserved
+/// words that open a compound command or a coprocess: the output of a
+/// command inside one can leave through a pipe or redirect written after the
+/// heredoc's terminator line (`done | sh`, `fi >&3`), and a `case` pattern's
+/// `)` closes nothing, so it would pop the frame that really encloses the
+/// marker. `exec` can point stdout itself at a shell (`exec > >(sh)`), so a
+/// later consumer with no redirect of its own still feeds one.
+const UNTRUSTED_PREFIX_WORDS: &[&str] = &[
+    "case", "coproc", "do", "elif", "else", "exec", "for", "function", "if", "select", "then",
+    "until", "while",
+];
+
+/// Every maximal run of ASCII letters, digits, and `_` in `text` — the same
+/// notion of a shell word [`is_plain_identifier`] validates one word at a
+/// time, applied here so a caller can search a whole line for a specific
+/// reserved word or builtin name (`printf`, `PATH`, ...) without also
+/// matching it as a substring of something else (`PATHS`, `unprintf`).
+fn shell_words(text: &str) -> impl Iterator<Item = &str> {
+    text.split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+}
+
+/// `true` when `prefix` may define a POSIX shell function (`cat() { sh; }`,
+/// `cat ( ) ...`). A function named like a consumer replaces the program,
+/// so its heredoc body would reach whatever the function runs (PR #463
+/// review). Like the [`UNTRUSTED_PREFIX_WORDS`] check it ignores quotes, so
+/// a quoted `()` only costs a scanned body.
+fn defines_function(prefix: &str) -> bool {
+    let mut compact = prefix.chars().filter(|c| !c.is_whitespace()).peekable();
+    while let Some(ch) = compact.next() {
+        if ch == '(' && compact.peek() == Some(&')') {
+            return true;
+        }
+    }
+    false
+}
+
+/// `true` when `line` sends the consumer's output somewhere other than a
+/// file, the terminal or stderr: a descriptor above 2 or a variable one
+/// (`>&3`, `>&$fd`), or a `/dev/fd/` or `/proc/` path. Any of these can be a
+/// pipe to a shell opened earlier (`exec 3> >(sh)`).
+fn writes_to_open_descriptor(line: &str) -> bool {
+    if line.contains("/dev/fd/") || line.contains("/proc/") {
+        return true;
+    }
+    line.match_indices(">&").any(|(idx, _)| {
+        let rest = &line[idx + 2..];
+        if rest.starts_with('$') {
+            return true;
+        }
+        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        !digits.is_empty() && digits != "1" && digits != "2"
+    })
+}
+
+/// `true` when `command` (the owning simple command through the end of its
+/// marker line) writes a file: it has an unquoted `>` that is not a
+/// `>&1`/`>&2` duplication. Descriptors above 2 are already refused by
+/// [`writes_to_open_descriptor`].
+fn consumer_writes_file(command: &str) -> bool {
+    let mut single_quote = false;
+    let mut double_quote = false;
+    let mut chars = command.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' if !single_quote => {
+                chars.next();
+            }
+            '\'' if !double_quote => single_quote = !single_quote,
+            '"' if !single_quote => double_quote = !double_quote,
+            '>' if !single_quote && !double_quote => {
+                if chars.peek() != Some(&'&') {
+                    return true;
+                }
+                chars.next();
+                if !chars.peek().is_some_and(char::is_ascii_digit) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// The frame a heredoc marker sits in. [`heredoc_target_is_data_consumer`]
+/// trusts only the first two (issue #396, #432).
+#[derive(Debug, PartialEq, Eq)]
+enum HeredocMarkerContext {
+    /// No `$(`, backtick, `(`, `{` or comment frame is open before the marker.
+    TopLevel,
+    /// Inside exactly one `$(...)`, itself the whole value of a message flag
+    /// (see [`is_trusted_message_value`]) of a `git` or `gh` invocation.
+    TrustedCommandArg,
+    /// Anything else: nested frames, a backtick, a subshell or process
+    /// substitution `(`, an open `{` group, a `#` comment, an [`UNTRUSTED_PREFIX_WORDS`] word
+    /// before the marker, or a `$(...)` that is
+    /// not a `git`/`gh` message value — a `bash -c
+    /// "$(...)"`, `eval "$(...)"`, `ssh host "$(...)"`, `echo "$(...)" | sh`,
+    /// `git -c "alias.x=!$(...)"` or `gh alias set --shell x "$(...)"` shape
+    /// among them. A `NAME=$(...)` capture is untrusted too: later text can
+    /// run the variable in more ways than a line scan can rule out
+    /// (`$((x))`, `${x@P}`, zsh `${(e)x}`), so capture trust waits for a
+    /// follow-up issue (ADR-042).
+    Untrusted,
+}
+
+/// `true` when `owning` (the simple command text right before an enclosing
+/// `$(`, its opening quote already stripped) is a `git` or `gh` invocation
+/// whose last word is a message flag [`message_flags::git_message_flag_trusted`]
+/// or [`message_flags::gh_message_flag_trusted`] approves for that
+/// invocation's own subcommand, either standalone (`git commit -m `) or
+/// glued to its value (`gh pr create --body=`) (issue #396 review: the
+/// old single `MESSAGE_FLAGS` list trusted `git`'s `-t`/`--title` and
+/// `-b`/`--body` too — for `git`, `-t` is `--template=<file>` and `-b`
+/// names a branch, neither a message — and trusted every `git`/`gh` message
+/// flag under any subcommand at all, `gh pr checkout`'s `-b` branch
+/// argument among them).
+fn is_trusted_message_value(owning: &str) -> bool {
+    let tokens = split_tokens(owning);
+    let Some(program_pos) = tokens.iter().position(|token| !is_bare_assignment(token)) else {
+        return false;
+    };
+    // At least one more token — the flag itself — must follow the program.
+    if tokens.len() < program_pos + 2 {
+        return false;
+    }
+    let program = &tokens[program_pos];
+    let basename = program
+        .rsplit_once('/')
+        .map_or(program.as_str(), |(_, tail)| tail);
+    let is_git = basename.eq_ignore_ascii_case("git");
+    let is_gh = basename.eq_ignore_ascii_case("gh");
+    if !is_git && !is_gh {
+        return false;
+    }
+    let last = &tokens[tokens.len() - 1];
+    let context_args = &tokens[program_pos + 1..tokens.len() - 1];
+    let flag = if owning.ends_with('=') {
+        let stripped = last.strip_suffix('=').unwrap_or(last.as_str());
+        if !stripped.starts_with("--") {
+            return false;
+        }
+        stripped
+    } else if owning.ends_with(char::is_whitespace) {
+        last.as_str()
+    } else {
+        return false;
+    };
+    if is_git {
+        message_flags::git_message_flag_trusted(context_args, flag)
+    } else {
+        message_flags::gh_message_flag_trusted(context_args, flag)
+    }
+}
+
+/// Classify a heredoc marker by [`HeredocMarkerContext`]. `prefix` is every
+/// command line before the marker's own line (heredoc bodies left out, see
+/// `embedded_scripts::walk_heredocs`) followed by the marker line up to the
+/// `<<`, so a `$(` opened on an earlier line still counts as enclosing.
+fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext {
+    // Bash's `$'...'` ANSI-C quoting escapes an embedded quote as `\'`, but
+    // every quote-tracking walk below (here, `open_frames`,
+    // `owning_simple_command_start`) toggles a quote on every `'` it sees,
+    // `$'` included: `cat $'\'' ' <<'EOF'` reads as a closed nowdoc marker to
+    // the toggle but as two ANSI-C strings and a plain word to bash (PR #463
+    // review). Teaching every walk ANSI-C escaping would still leave the next
+    // one; bailing here instead costs the body a scan whenever `$'` merely
+    // looks unrelated to the marker, never a bypass.
+    if prefix.contains("$'") {
+        return HeredocMarkerContext::Untrusted;
+    }
+    // The check ignores quotes on purpose: a quoted keyword only costs a
+    // scanned body, never a skipped one. Dropping the quote characters
+    // first also joins a word split by them (`PA""TH`, `al'ias'`).
+    let unquoted: String = prefix
+        .chars()
+        .filter(|c| !matches!(c, '\'' | '"' | '\\'))
+        .collect();
+    if shell_words(&unquoted).any(|word| UNTRUSTED_PREFIX_WORDS.contains(&word))
+        || defines_function(prefix)
+        || inert_prefix::has_assigning_expansion(prefix)
+        || inert_prefix::has_expanding_heredoc(prefix)
+    {
+        return HeredocMarkerContext::Untrusted;
+    }
+    let frames = open_frames(prefix);
+    let frame = match frames.as_slice() {
+        // `open_frames` only tracks bracket-shaped frames, so a bare quote
+        // left open on an earlier physical line and never closed before the
+        // marker's own `<<` reads as an empty list here even though bash
+        // read the marker line as the inside of that quote (PR #463 review,
+        // `quotes::quote_open_at_end`'s own doc comment has the worked
+        // example).
+        [] if quotes::quote_open_at_end(prefix) => return HeredocMarkerContext::Untrusted,
+        // Which program `cat` runs depends on every command before it
+        // (ADR-042), so each one must be a known inert command.
+        [] if !inert_prefix::every_command_is_inert(prefix) => {
+            return HeredocMarkerContext::Untrusted;
+        }
+        [] => return HeredocMarkerContext::TopLevel,
+        [frame] => frame,
+        _ => return HeredocMarkerContext::Untrusted,
+    };
+    if frame.kind != FrameKind::Command {
+        return HeredocMarkerContext::Untrusted;
+    }
+
+    let mut preceding = &prefix[..frame.start];
+    if let Some(stripped) = preceding
+        .strip_suffix('"')
+        .or_else(|| preceding.strip_suffix('\''))
+    {
+        preceding = stripped;
+    }
+    let command_start = owning_simple_command_start(preceding);
+    let owning = preceding[command_start..].trim_start();
+
+    if is_trusted_message_value(owning) && inert_prefix::every_command_is_inert(prefix) {
+        return HeredocMarkerContext::TrustedCommandArg;
+    }
+
+    HeredocMarkerContext::Untrusted
+}
+
+/// `true` when the nowdoc body at the marker whose `<<` sits at
+/// `marker_start`/ends its spec at `delimiter_end` on `line` is `Data
+/// consumer` territory (issue #396, #432): fed only to `cat` or `jq`
+/// — by the bare word or one of their two trusted absolute paths (issue
+/// #396 review) — as the program of the simple command that owns the marker,
+/// piped to nothing else, not continued onto the next line by a trailing `\`
+/// or by a quote or substitution the marker line leaves open, with no
+/// process substitution on the marker line (`cat
+/// <<'EOF' > >(sh)` hands the body to a shell), no
+/// write to a descriptor above 2 or a `/dev/fd/`/`/proc/` path, without
+/// writing a file, and reached
+/// only through a context this predicate trusts (top level or a `git`/`gh`
+/// message value's `$(...)`, with no subshell or process-substitution `(`
+/// or `{` group still open and no `#` comment or [`UNTRUSTED_PREFIX_WORDS`]
+/// word before the marker). A `NAME=$(...)` capture is never trusted (see
+/// [`HeredocMarkerContext::Untrusted`]).
+/// `preceding_lines` holds the command lines before `line`, bodies left out.
+/// Ignorant of nowdoc-ness itself — callers already gate on that
+/// separately, matching how `embedded_scripts::heredoc_target_program`'s
+/// interpreter check is computed unconditionally too.
+pub(super) fn heredoc_target_is_data_consumer(
+    preceding_lines: &str,
+    line: &str,
+    marker_start: usize,
+    delimiter_end: usize,
+) -> bool {
+    let marker_prefix = &line[..marker_start];
+    // Computed once and threaded through both the program check right below
+    // and the file-write check further down, instead of re-deriving the
+    // owning command's start and its program word for each (issue #396 review).
+    let owning_start = owning_simple_command_start(marker_prefix);
+    let program = owning_command_program(line, owning_start, marker_start);
+
+    if !program.as_deref().is_some_and(is_data_consumer_program)
+        || tail_may_leave_plain_output(&line[delimiter_end..])
+        || line.contains(">(")
+        || line.contains("<(")
+        // A trailing `\` continues the command onto the next line (`cat
+        // <<'EOF' \` then `| sh`), which this line walk would misread as body.
+        || line.trim_end().ends_with('\\')
+        || writes_to_open_descriptor(line)
+    {
+        return false;
+    }
+    // A written file may run implicitly on a later invocation (for example,
+    // a git hook or shell startup file). Its path cannot prove it is inert.
+    if consumer_writes_file(&line[owning_start..]) {
+        return false;
+    }
+    let prefix = if preceding_lines.is_empty() {
+        std::borrow::Cow::Borrowed(marker_prefix)
+    } else {
+        std::borrow::Cow::Owned(format!("{preceding_lines}{marker_prefix}"))
+    };
+    match heredoc_marker_context(&prefix) {
+        HeredocMarkerContext::TopLevel | HeredocMarkerContext::TrustedCommandArg => true,
+        HeredocMarkerContext::Untrusted => false,
+    }
+}

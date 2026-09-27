@@ -123,7 +123,17 @@ fn is_applicable_logs_spawn_failure_via_tracing() {
 
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let applicable = tracing::subscriber::with_default(subscriber, || {
-        runtime.block_on(GitPlugin.is_applicable(&missing_cwd))
+        runtime.block_on(async {
+            // `tracing` caches each callsite's Interest globally. A sibling test
+            // above can cache `Interest::never` for this callsite first (#436). The
+            // warm-up call registers it, and the rebuild recomputes its Interest with
+            // this subscriber in place. The rebuild is process-wide, but every
+            // subscriber in this binary enables everything, so it only widens
+            // Interest. A test that needs a callsite disabled must allow for this.
+            let _ = GitPlugin.is_applicable(&missing_cwd).await;
+            tracing::callsite::rebuild_interest_cache();
+            GitPlugin.is_applicable(&missing_cwd).await
+        })
     });
     assert!(applicable);
 
