@@ -125,9 +125,10 @@ pub(super) fn every_command_is_inert(text: &str) -> bool {
                 word = CommandWord::Checked;
             }
             '#' if matches!(word, CommandWord::Pending) => return false,
-            // `>&2`, `<&0`, `&>f` and `>|f` are redirections, not separators.
+            // `>&2`, `<&0` and `>|f` are redirections, not separators. `&>f`
+            // stays a separator: dash reads `a &>f b` as `a &` and then a
+            // second command `>f b`.
             '&' | '|' if matches!(prev, Some('>' | '<')) => {}
-            '&' if chars.peek().map(|&(_, c)| c) == Some('>') => {}
             ';' | '\n' | '&' | '|' => {
                 if !finish_command(text, &mut word, idx) {
                     return false;
