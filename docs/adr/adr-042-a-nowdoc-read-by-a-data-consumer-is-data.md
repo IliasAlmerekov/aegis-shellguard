@@ -4,7 +4,9 @@
 
 Accepted. Adds the `Data consumer` entry to `CONTEXT.md`. Fixes issue #396.
 File writes from #357 and #432 remain scanned because written files can run
-without an explicit command naming them.
+without an explicit command naming them. A heredoc inside a `NAME=$(...)`
+capture is not trusted here; that case is deferred to a follow-up issue
+(item 5).
 
 ## Context
 
@@ -48,7 +50,7 @@ into argv, so the router cannot drop body lines for every heredoc.
    - the delimiter is quoted, so bash expands nothing in the body;
    - the program of the simple command that owns `<<` is the bare word
      `cat` or `jq`, or one of their two absolute-path spellings,
-     `/bin/<name>` or `/usr/bin/<name>` — both spelled exactly so, and both
+     `/bin/<name>` or `/usr/bin/<name>`, both spelled exactly so, and both
      the paths a stock install actually puts the binary at (issue #396 review).
      The owning command starts after the last `;`, `&&`, `||`, `(`, `$(`,
      backtick or newline, not at the line's first word (#432). Any other
@@ -72,9 +74,7 @@ into argv, so the router cannot drop body lines for every heredoc.
      like a marker that bash reads as quoted text. A quote opened on an
      earlier line (`echo 'start` then `cat <<'EOF'`) makes the marker line
      part of a string for bash, and the lines this walk takes for a body
-     run as commands (PR #463 review). For a `NAME=$(...)` capture, a
-     `$'` in the text after the terminator keeps the body scanned too,
-     since `e$'x'ec "$x"` is `exec "$x"` to bash;
+     run as commands (PR #463 review);
    - the consumer does not write to a descriptor above 2 or a variable one
      (`>&3`, `>&$fd`) or to a `/dev/fd/` or `/proc/` path, since an earlier
      `exec 3> >(sh)` can make that descriptor a pipe to a shell;
@@ -89,10 +89,18 @@ into argv, so the router cannot drop body lines for every heredoc.
      and stops heredoc suspension there, so bash's `EOF)` recovery cannot
      hide later commands;
    - the heredoc sits at top level, or inside exactly one `$(...)` that is
-     either the right side of `NAME=` or the whole value of a `git` or `gh`
-     message flag in a position item 5's table trusts for that program
-     (`git commit -m`, `gh pr create --body`; one gate in `forwarding.rs`
-     serves both this rule and item 5, so they cannot disagree). Any
+     the whole value of a `git` or `gh` message flag (`git commit -m`,
+     `gh pr create --body`). The gates in
+     `heredoc_data_consumer/message_flags.rs` decide which flag counts
+     under which subcommand. For `git` that is `-m` or `--message` under
+     `commit`, `tag`, `merge` or `notes`, with no global option such as
+     `-c` or `-C` before the subcommand; `-t` is `--template=<file>` and
+     `-b` names a branch, so neither counts. For `gh` it is `-m`,
+     `--message`, `-t`, `--title`, `-b` or `--body` under `gh pr create`,
+     `edit`, `comment`, `review` or `merge`, or `gh issue create`, `edit`
+     or `comment`, read from the two words right after `gh`, so a flag
+     before them (`gh -R o/r pr create`) makes the call untrusted. A
+     `NAME=$(...)` capture is not a trusted frame (item 5). Any
      other open frame before the marker (a subshell `(`, a process
      substitution `<(`/`>(`, a backtick, a second `$(`) makes it untrusted,
      because its output can reach a pipe or a shell after the terminator line
@@ -136,89 +144,25 @@ into argv, so the router cannot drop body lines for every heredoc.
    not a shell. The `heredoc_body_block` case in
    `tests/fixtures/security_bypass_corpus.toml` now uses `bash <<'EOF'`, which
    still runs its body.
-5. `AssignmentRhs` trust (rule 2's last bullet, the `NAME=$(...)` case) holds
-   only while every later reference to the captured variable is provably
-   forwarding only. This is an allowlist, not a blocklist of run shapes
-   (`crates/aegis-parser/src/heredoc_data_consumer/forwarding.rs`): a
-   reference forwards when it sits inside a top-level simple command whose
-   program, basename normalized, is `gh`, `git`, `curl`, `echo`, `printf`
-   or `jq`; that command carries no pipe and no redirect other than
-   `2>&1` or `>&2`; the reference is not laundered through a leading
-   `NAME=value` assignment ahead of the program; and the reference sits in
-   a position where that program treats it as data it sends or prints:
-
-   | Program  | Trusted positions for the reference |
-   |----------|-------------------------------------|
-   | `git`    | value of `-m` or `--message`, only under `git commit`, `tag`, `merge` or `notes` with no global option before the subcommand |
-   | `gh`     | value of `-m`, `--message`, `-t`, `--title`, `-b` or `--body`, only under `gh pr create`, `edit`, `comment`, `review` or `merge`, or `gh issue create`, `edit` or `comment`; value of `-f`/`--raw-field` (`key="$x"`), only under `gh api` |
-   | `curl`   | value of `--data-raw`; value of `-d`, `--data`, `--data-binary`, `--data-urlencode` or `--json` only when the captured body does not start with `@` |
-   | `jq`     | value of `--arg NAME` or `--argjson NAME` |
-   | `echo`   | any argument |
-   | `printf` | any argument from index 1 onward, and only when the first argument does not start with `-` |
-
-   Positions outside the table read the value as a path, a URL, code or a
-   config, or give a flag a meaning the table does not cover: `gh api
-   --input`, `gh -F`/`--field` (which reads `@file`), `gh --body-file`,
-   `curl -T`, `-K`, `--config`, `-o`, `-F`, a curl URL, `jq -f`,
-   `--rawfile`, `--slurpfile` and the positional jq filter (`jq -n "$x"`
-   runs the body as a jq program). A body that starts with `@` turns a
-   curl data flag into a file read (`-d @/etc/shadow`), so `walk_heredocs`
-   passes that fact to the check. `gh alias`, `gh extension`, and every
-   `gh` subcommand outside the table's list (`gh pr checkout`, `gh repo
-   create`, `gh workflow run`, ...) are excluded even though `gh` is on
-   the list, since a message flag or `-f` can mean something other than a
-   stored message there, or nothing at all. `gh`'s subcommand is the two
-   words right after `gh`, so a flag before them (`gh -R o/r pr create`)
-   makes the call untrusted: a value-taking flag would otherwise shift which
-   word reads as the action. For `git`, `-t` is `--template=<file>` and
-   `-b` names a branch, so neither is trusted, and a global option such as
-   `-c` or `-C` before the subcommand makes the call untrusted. `printf -v`,
-   `printf --`, or any other leading option makes the whole call
-   untrusted too, since an option shifts where the format string actually
-   falls and `-v` sends the value to a second variable this check does not
-   follow.
-   Everything else keeps the body scanned: a wrapper (`sudo $x`, `env $x`,
-   `command $x`, `nohup $x`, `time $x`, `find ... -exec $x \;`), a
-   grouping or compound construct (`($x)`, `{ $x; }`, an
-   `if`/`for`/`while`/`until`/`select` body), a parameter expansion
-   (`${x:-}`, `${x%%foo}`), a second layer of capture (`z=$($x)`,
-   `` z=`$x` ``, `arr=($x)`), a nameref (`declare -n r=x` then `$r`), a
-   here-string (`bash <<< "$x"`), a store into `alias`, `trap` or
-   `PROMPT_COMMAND`, `eval`/`source`/a bare `.` re-parsing the text, a
-   write followed by a run of the file (`echo "$x" > f.sh; sh f.sh`), and
-   a program outside that six-name list, whatever it is.
-   `assignment_variable_runs_later` in `heredoc_data_consumer.rs` checks
-   the text after the heredoc's terminator line for all of this;
-   `walk_heredocs` in `embedded_scripts.rs` threads that text through. The
-   `body=$(jq -c . <<'JSON' ...)` then `gh api ... -f body="$body"` idiom
-   from the Context list keeps its trust.
-
-   A variable can also run with no `$NAME` in the text at all, because
-   git, bash and editors read some variables themselves:
-   `GIT_SSH_COMMAND` and `GIT_EDITOR` from the environment, `PS4` under
-   `set -x`, `BASH_ENV` in a child bash (PR #463 review). A list of such
-   names would miss the next one, so trust further needs three facts,
-   checked by `captured_variable_may_run_unnamed` in
-   `heredoc_data_consumer/environment.rs`. The name has no uppercase
-   letter, since the variables bash and common tools read as code are
-   all uppercase, and it is not one of the lowercase names zsh reads
-   itself (`path`, `fpath`, `cdpath`, `manpath` and `module_path`, tied
-   to their uppercase forms, `prompt`, and the hook arrays such as
-   `precmd_functions`). The line that closes the `$(...)` ends there or goes on
-   with `;`, `&&` or `||`, so the assignment is not an env prefix
-   (`x="$(cat <<'EOF' ...)" git fetch`). The text before the marker and
-   after the terminator has no `export`, `declare`, `typeset` or `local`
-   word, no `allexport`, and no `set` with an `a` in a short option
-   cluster (`set -a`, `set -ea`) or with a `$` or backtick in its
-   arguments (`set${IFS}-a`), so the name does not reach a child's
-   environment. `OUT=$(cat <<'EOF' ...)` is scanned under this rule, and
-   that false positive is accepted.
+5. A heredoc inside a `NAME=$(...)` capture is not trusted in this ADR,
+   and its body stays scanned as it was before #396. A draft of PR #463
+   trusted the capture while every later use of the variable looked like a
+   forward to `gh`, `git`, `curl`, `echo`, `printf` or `jq`, and while the
+   name looked out of reach of programs that read variables from the
+   environment (`GIT_SSH_COMMAND`, `PS4`, `BASH_ENV`). Each review round
+   found another way for later text to run the value. Bash arithmetic
+   (`echo $((x))`) evaluates the text as an expression, and an array index
+   in it can hold a command substitution. `${x@P}` expands it as a prompt,
+   and zsh `${(e)x}` expands it again. A name computed at run time
+   (`n=$(printf '\170'); echo $(( $n ))`) never spells `$x` at all. A line
+   walk cannot rule these out, so capture trust moves to a follow-up issue.
 
 ## Consequences
 
-- The #396 `jq` capture shape, a bare `cat` that only prints to stdout, and
-  the `git commit -m` / `gh --body` idioms are auto-approved whatever their
-  body text says. File-writing #357 and #432 shapes are scanned instead.
+- A bare `cat` that only prints to stdout and the `git commit -m` /
+  `gh --body` idioms are auto-approved whatever their body text says.
+  File-writing #357 and #432 shapes are scanned instead, and so is the
+  #396 `body=$(jq -c . <<'JSON' ...)` capture (item 5).
 - Every shape in the Context list, plus `bash -c "$(cat <<'EOF' ...)"`,
   `eval "$(...)"`, `ssh host "$(...)"`, `echo "$(...)" | sh` and
   `gh alias set --shell`, keeps the body scanned. Tests in
@@ -242,9 +186,8 @@ into argv, so the router cannot drop body lines for every heredoc.
   is a security decision and needs a test for each way its output could reach
   a shell.
 - The inert-command allowlist costs a scanned body whenever the prefix
-  holds any other command, such as an earlier capture
-  (`title=$(cat <<'EOF' ...)` then `body=$(cat <<'EOF' ...)` scans the
-  second body), `cargo build; cat <<'EOF'`, or `git log ${x}`. This false
+  holds any other command, such as an earlier assignment,
+  `cargo build; cat <<'EOF'`, or `git log ${x}`. This false
   positive is accepted: a command outside the set can rebind the consumer
   through a shell table this ADR does not list. Adding a word to the set is
   a security decision and needs a test that it cannot change the shell's
@@ -263,23 +206,10 @@ into argv, so the router cannot drop body lines for every heredoc.
   `cat > .git/hooks/pre-commit <<'EOF'`, get the scanned body. A file
   assembled through other writes or later edits still needs separate
   analysis. This rule does not prove the file will be safe when it runs.
-- Capturing a heredoc into a variable and then running that variable, be it
-  `x=$(cat <<'EOF' ...)` then `$x`, `eval "$x"`, `bash -c "$x"`, `$x` piped
-  or fed into `<(...)`/`>(...)`, or any of the wrapper, grouping,
-  parameter-expansion, second-capture, nameref, here-string, alias/trap and
-  write-then-run shapes item 5 lists, keeps the body scanned instead of
-  trusting the assignment. A security review before this ADR's forwarding
-  allowlist found that an earlier blocklist of run shapes let `sudo $x`,
-  `($x)`, `{ $x; }`, `if`/`for`/`while` wrapping, `find -exec`, a nameref
-  via `declare -n`, `${x:-}` and other parameter-expansion forms, and more
-  slip through as auto-approved; the allowlist closes that gap by trusting
-  only the shapes item 5 names, not by naming the ways to bypass it. The
-  check is still a text scan, not a shell parser: a chain that merely
-  contains both a pipe and a reference to the variable counts as running it
-  even when the two are in different pipeline stages. The accepted false
-  positives are the same shape: a captured value handed to a program
-  outside `gh`, `git`, `curl`, `echo`, `printf` and `jq`, a `cp` writing it
-  to a file among them, keeps the body scanned even though that program may
-  never run it as code. A listed program that gets the value outside the
-  item 5 table does the same, for example a `gh` positional argument or a
-  `printf` format string.
+- Capturing a heredoc into a variable keeps the body scanned, whether later
+  text runs the variable or only forwards it. `body=$(jq -c . <<'JSON' ...)`
+  followed by `gh api ... -f body="$body"` still prompts or blocks when the
+  body mentions a dangerous command. This false positive is accepted until
+  the follow-up issue lands. The same text passed as
+  `gh pr create --body "$(cat <<'EOF' ...)"` or
+  `git commit -m "$(cat <<'EOF' ...)"` stays trusted.

@@ -4,14 +4,13 @@
 //! [`heredoc_target_is_data_consumer`] trusts (ADR-042). Split out of
 //! [`super::embedded_scripts`] to keep that file under the 800-line budget
 //! in `tests/file_size_budget.rs`; `embedded_scripts` is this predicate's
-//! only caller. The [`forwarding`] submodule holds the allowlist behind the
-//! capture-then-execute check for the same budget reason (ADR-042 item 5).
+//! only caller. The [`message_flags`] submodule holds the `git`/`gh`
+//! message-flag gates for the same budget reason.
 
 use crate::split_tokens;
 
-mod environment;
-mod forwarding;
 mod inert_prefix;
+mod message_flags;
 mod quotes;
 
 /// Programs that never execute their stdin: `cat` copies the bytes to
@@ -424,18 +423,11 @@ fn consumer_writes_file(command: &str) -> bool {
 }
 
 /// The frame a heredoc marker sits in. [`heredoc_target_is_data_consumer`]
-/// trusts only the first three (issue #396, #432) — and, for `AssignmentRhs`,
-/// only while nothing after the heredoc actually runs the captured variable
-/// (issue #396 capture-then-execute follow-up; see
-/// [`assignment_variable_runs_later`]).
+/// trusts only the first two (issue #396, #432).
 #[derive(Debug, PartialEq, Eq)]
-enum HeredocMarkerContext<'a> {
+enum HeredocMarkerContext {
     /// No `$(`, backtick, `(`, `{` or comment frame is open before the marker.
     TopLevel,
-    /// Inside exactly one `$(...)`, itself the right-hand side of a plain
-    /// `NAME=` assignment. Carries `NAME`, so a caller can check whether a
-    /// later part of the same command runs it.
-    AssignmentRhs(&'a str),
     /// Inside exactly one `$(...)`, itself the whole value of a message flag
     /// (see [`is_trusted_message_value`]) of a `git` or `gh` invocation.
     TrustedCommandArg,
@@ -445,18 +437,19 @@ enum HeredocMarkerContext<'a> {
     /// not a `git`/`gh` message value — a `bash -c
     /// "$(...)"`, `eval "$(...)"`, `ssh host "$(...)"`, `echo "$(...)" | sh`,
     /// `git -c "alias.x=!$(...)"` or `gh alias set --shell x "$(...)"` shape
-    /// among them.
+    /// among them. A `NAME=$(...)` capture is untrusted too: later text can
+    /// run the variable in more ways than a line scan can rule out
+    /// (`$((x))`, `${x@P}`, zsh `${(e)x}`), so capture trust waits for a
+    /// follow-up issue (ADR-042).
     Untrusted,
 }
 
 /// `true` when `owning` (the simple command text right before an enclosing
 /// `$(`, its opening quote already stripped) is a `git` or `gh` invocation
-/// whose last word is a message flag [`forwarding::git_message_flag_trusted`]
-/// or [`forwarding::gh_message_flag_trusted`] approves for that
+/// whose last word is a message flag [`message_flags::git_message_flag_trusted`]
+/// or [`message_flags::gh_message_flag_trusted`] approves for that
 /// invocation's own subcommand, either standalone (`git commit -m `) or
-/// glued to its value (`gh pr create --body=`). Both gates also back path
-/// (b), the captured-then-forwarded shape in [`forwarding`], so the two
-/// paths can never trust a flag one of them denies (issue #396 review: the
+/// glued to its value (`gh pr create --body=`) (issue #396 review: the
 /// old single `MESSAGE_FLAGS` list trusted `git`'s `-t`/`--title` and
 /// `-b`/`--body` too — for `git`, `-t` is `--template=<file>` and `-b`
 /// names a branch, neither a message — and trusted every `git`/`gh` message
@@ -494,9 +487,9 @@ fn is_trusted_message_value(owning: &str) -> bool {
         return false;
     };
     if is_git {
-        forwarding::git_message_flag_trusted(context_args, flag)
+        message_flags::git_message_flag_trusted(context_args, flag)
     } else {
-        forwarding::gh_message_flag_trusted(context_args, flag)
+        message_flags::gh_message_flag_trusted(context_args, flag)
     }
 }
 
@@ -504,7 +497,7 @@ fn is_trusted_message_value(owning: &str) -> bool {
 /// command line before the marker's own line (heredoc bodies left out, see
 /// `embedded_scripts::walk_heredocs`) followed by the marker line up to the
 /// `<<`, so a `$(` opened on an earlier line still counts as enclosing.
-fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext<'_> {
+fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext {
     // Bash's `$'...'` ANSI-C quoting escapes an embedded quote as `\'`, but
     // every quote-tracking walk below (here, `open_frames`,
     // `owning_simple_command_start`) toggles a quote on every `'` it sees,
@@ -562,20 +555,6 @@ fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext<'_> {
     let command_start = owning_simple_command_start(preceding);
     let owning = preceding[command_start..].trim_start();
 
-    if let Some(name) = owning.strip_suffix('=')
-        && is_plain_identifier(name)
-    {
-        // The assignment word itself is not a command: check the commands
-        // before it and the ones inside its `$(` up to the marker.
-        let inner = &prefix[frame.start + "$(".len()..];
-        if !inert_prefix::every_command_is_inert(&preceding[..command_start])
-            || !inert_prefix::every_command_is_inert(inner)
-        {
-            return HeredocMarkerContext::Untrusted;
-        }
-        return HeredocMarkerContext::AssignmentRhs(name);
-    }
-
     if is_trusted_message_value(owning) && inert_prefix::every_command_is_inert(prefix) {
         return HeredocMarkerContext::TrustedCommandArg;
     }
@@ -594,20 +573,12 @@ fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext<'_> {
 /// <<'EOF' > >(sh)` hands the body to a shell), no
 /// write to a descriptor above 2 or a `/dev/fd/`/`/proc/` path, without
 /// writing a file, and reached
-/// only through a context this predicate trusts (top level, an assignment's
-/// `$(...)`, or a `git`/`gh` message value's `$(...)`, with no subshell or
-/// process-substitution `(` or `{` group still open and no `#` comment or
-/// [`UNTRUSTED_PREFIX_WORDS`] word before the marker). For an assignment's
-/// `$(...)`, trust further requires that `following_text` — every command
-/// line after the heredoc's terminator — never runs the assigned variable
-/// (issue #396 capture-then-execute follow-up: `x=$(cat <<'EOF' ...)` then
-/// `$x` must stay scanned; see [`assignment_variable_runs_later`]).
+/// only through a context this predicate trusts (top level or a `git`/`gh`
+/// message value's `$(...)`, with no subshell or process-substitution `(`
+/// or `{` group still open and no `#` comment or [`UNTRUSTED_PREFIX_WORDS`]
+/// word before the marker). A `NAME=$(...)` capture is never trusted (see
+/// [`HeredocMarkerContext::Untrusted`]).
 /// `preceding_lines` holds the command lines before `line`, bodies left out.
-/// `body_starts_with_at` is the heredoc's own first body line, trimmed of
-/// leading whitespace, starting with `@` — the fact
-/// [`forwarding::assignment_variable_runs_later`]'s `curl` check needs,
-/// since curl reads an `@`-prefixed data value as a file path instead of
-/// sending it literally (issue #396 review follow-up).
 /// Ignorant of nowdoc-ness itself — callers already gate on that
 /// separately, matching how `embedded_scripts::heredoc_target_program`'s
 /// interpreter check is computed unconditionally too.
@@ -616,8 +587,6 @@ pub(super) fn heredoc_target_is_data_consumer(
     line: &str,
     marker_start: usize,
     delimiter_end: usize,
-    following_text: &str,
-    body_starts_with_at: bool,
 ) -> bool {
     let marker_prefix = &line[..marker_start];
     // Computed once and threaded through both the program check right below
@@ -649,22 +618,6 @@ pub(super) fn heredoc_target_is_data_consumer(
     };
     match heredoc_marker_context(&prefix) {
         HeredocMarkerContext::TopLevel | HeredocMarkerContext::TrustedCommandArg => true,
-        HeredocMarkerContext::AssignmentRhs(name) => {
-            // `following_text` gets scanned for `$NAME`/indirection words by
-            // the same raw quote-toggle rules as the prefix check above
-            // (`owning_simple_command_start`, `may_export`, and the
-            // `forwarding` helpers), so a captured variable's later
-            // reference can splice a keyword past them with the same `$'`
-            // trick: `e$'x'ec "$x"` reads as `exec "$x"` to bash (PR #463
-            // review).
-            !following_text.contains("$'")
-                && !environment::captured_variable_may_run_unnamed(name, &prefix, following_text)
-                && !forwarding::assignment_variable_runs_later(
-                    name,
-                    following_text,
-                    body_starts_with_at,
-                )
-        }
         HeredocMarkerContext::Untrusted => false,
     }
 }

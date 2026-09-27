@@ -1,5 +1,5 @@
 //! Router unit tests for issue #396/#432: a nowdoc body fed to a `Data
-//! consumer` (`cat`, `tee`, `jq`) must not be tokenized as argv by the
+//! consumer` (`cat`, `jq`) must not be tokenized as argv by the
 //! fail-closed unclaimed-interpreter net (`unclaimed.rs`), the same way the
 //! scanner no longer scans it as live command text
 //! (`crates/aegis-scanner/src/scanner/tests/issue_396.rs`). `use super::*`

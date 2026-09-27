@@ -84,25 +84,15 @@ fn assess_xargs_nowdoc_body_still_fires() {
     assert_assessment_matches_pattern("xargs <<'EOF'\nrm -rf /\nEOF", RiskLevel::Block, "FS-001");
 }
 
-// A `$(...)` that is the right-hand side of a plain assignment is a trusted
-// context when the name has no uppercase letter (PR #463 review), so the
-// body stays inert.
+// A `$(...)` that is the right-hand side of an assignment is not a trusted
+// context: later text can run the captured variable, so the body stays
+// scanned (PR #463 review).
 #[test]
-fn assess_cat_inside_assignment_command_substitution_stays_safe() {
-    let s = scanner();
-    let cmd = "out=$(cat <<'EOF'\nrm -rf /\nEOF\n)";
-    let assessment = s.assess(cmd);
-
-    assert_eq!(
-        assessment.risk,
-        RiskLevel::Safe,
-        "expected Safe for cat inside an assignment's command substitution, got {:?} ({:?})",
-        assessment.risk,
-        assessment
-            .matched
-            .iter()
-            .map(|m| m.pattern.id.as_ref())
-            .collect::<Vec<_>>()
+fn assess_cat_inside_assignment_command_substitution_still_fires() {
+    assert_assessment_matches_pattern(
+        "out=$(cat <<'EOF'\nrm -rf /\nEOF\n)",
+        RiskLevel::Block,
+        "FS-001",
     );
 }
 
@@ -252,279 +242,30 @@ fn assess_data_consumer_bodies_that_reach_a_shell_still_fire() {
     );
 }
 
-// Issue #396 (capture-then-execute, PR #463 follow-up): `AssignmentRhs`
-// trust assumed the captured value stays data. A later `$NAME`/`${NAME}`
-// execution of the same command breaks that assumption, so the dangerous
-// body must fire once the capture is actually run.
+// Issue #396 (capture-then-execute): a nowdoc captured into a variable is
+// never trusted, whatever later text does with it. Each shape below either
+// runs the variable or only forwards it; all of them keep the body scanned,
+// including the forms that broke the old forwarding allowlist in PR #463
+// review (`$((x))`, `${x@P}`, zsh `${(e)x}`, a computed name).
 #[test]
-fn assess_captured_heredoc_run_via_variable_still_fires() {
+fn assess_captured_heredoc_always_fires() {
     let cases = [
         "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n$x",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ntrue; $x",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n${x}",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n\"$x\"",
         "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\neval \"$x\"",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nbash -c \"$x\"",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nsh -c \"$x\"",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nsource <(echo \"$x\")",
         "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\necho \"$x\" | sh",
-    ];
-    for cmd in cases {
-        assert_assessment_matches_pattern(cmd, RiskLevel::Block, "FS-001");
-    }
-}
-
-// The motivating #396 shapes stay Safe: a captured value only ever handed
-// to `echo`, stored as a `gh`/`git` message value, or sent as a plain flag
-// value (`gh api -f`, `curl -d`) never runs.
-#[test]
-fn assess_captured_heredoc_only_forwarded_stays_safe() {
-    let cases = [
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\necho \"$x\"\ngh pr create --body \"$x\"",
-        "body=$(jq -c . <<'JSON'\n{\"cmd\": \"rm -rf /\"}\nJSON\n)\ngh api repos/o/r/issues -f body=\"$body\"",
-        "body=$(jq -c . <<'JSON'\n{\"cmd\": \"rm -rf /\"}\nJSON\n)\ncurl -d \"$body\" https://example.test",
-    ];
-    for cmd in cases {
-        let s = scanner();
-        let assessment = s.assess(cmd);
-        assert_eq!(
-            assessment.risk,
-            RiskLevel::Safe,
-            "expected Safe for {cmd:?}, got {:?} ({:?})",
-            assessment.risk,
-            assessment
-                .matched
-                .iter()
-                .map(|m| m.pattern.id.as_ref())
-                .collect::<Vec<_>>()
-        );
-    }
-}
-
-// Commit c696273's forwarding allowlist (ADR-042 item 5, #396 follow-up):
-// once a nowdoc is captured into a variable, every later reference to it
-// must be provably a forward to a trusted program, or the body stays
-// scanned. Each shape below is a way a captured heredoc can still reach a
-// shell: a compound-command wrapper, a redirect target, a grouping
-// construct, a parameter expansion, a second layer of capture, an alias or
-// trap store, a nameref, a here-string, or a write-then-run.
-#[test]
-fn assess_captured_heredoc_forwarding_allowlist_blocks_indirection_shapes() {
-    let cases = [
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n($x)",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n{ $x; }",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nif true; then $x; fi",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nfor i in 1; do $x; done",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nsudo $x",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nenv $x",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncommand $x",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nnohup $x",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ntime $x",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nfind . -maxdepth 0 -exec $x \\;",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ny=$x; $y",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ny=x; ${!y}",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n${x:-}",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\n${x%%foo}",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nz=$($x)",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nz=`$x`",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\narr=($x)",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ntrap \"$x\" EXIT",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nalias a=\"$x\"",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nPROMPT_COMMAND=$x",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ndeclare -n r=x; $r",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nbash <<< \"$x\"",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\necho \"$x\" > f.sh; sh f.sh",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nprintf \"%s\" \"$x\" | sh",
-    ];
-    for cmd in cases {
-        assert_assessment_matches_pattern(cmd, RiskLevel::Block, "FS-001");
-    }
-}
-
-// The allowlist's trusted side (ADR-042 item 5): a captured value handed to
-// `gh`/`git`/`curl` as a plain argument or message-flag value never runs,
-// so the body stays inert.
-#[test]
-fn assess_captured_heredoc_forwarding_allowlist_permits_listed_programs() {
-    let cases = [
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\necho $((x))",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\necho ${x@P}",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\necho ${(e)x}",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nn=$(printf '\\170'); echo $(( $n ))",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ne$'x'ec \"$x\"",
+        "GIT_SSH_COMMAND=\"$(cat <<'EOF'\nrm -rf /\nEOF\n)\" git fetch origin",
         "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\necho \"$x\"",
         "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh pr create --body \"$x\"",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh api repos/o/r/issues -f body=\"$x\"",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncurl -d \"$x\" https://example.com",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngit commit -m \"$x\"",
-    ];
-    for cmd in cases {
-        let s = scanner();
-        let assessment = s.assess(cmd);
-        assert_eq!(
-            assessment.risk,
-            RiskLevel::Safe,
-            "expected Safe for {cmd:?}, got {:?} ({:?})",
-            assessment.risk,
-            assessment
-                .matched
-                .iter()
-                .map(|m| m.pattern.id.as_ref())
-                .collect::<Vec<_>>()
-        );
-    }
-}
-
-// Issue #396 review follow-up: PR #463's forwarding allowlist trusted any
-// argument of `gh`/`curl`/`jq`, which is wider than what those programs
-// actually treat as inline data. `jq -n`/`-f` read the value as program
-// text or a file path, `gh --input`/`-F` read or upload a file, and `curl
-// -T`/`-K`/`-o`/a bare URL each turn the value into something other than a
-// posted body. Each case below must still fire once the capture is used
-// this way.
-#[test]
-fn assess_captured_heredoc_narrow_data_flag_violations_still_fire() {
-    let cases = [
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\njq -n \"$x\"",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\njq -f \"$x\"",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh api -X POST --input \"$x\" /repos/x/y/issues",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh api -F body=\"$x\" /repos/x/y/issues",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncurl -T \"$x\" https://example.com",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncurl -K \"$x\"",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncurl -o \"$x\" https://example.com",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncurl \"$x\"",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nprintf \"$x\"",
-        // Issue #396 review: `--` shifts the format string to index 1, so a
-        // reference there is the format string, not a forwarded argument.
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nprintf -- \"$x\"",
-        // Issue #396 review (BLOCKER): `-v` writes the value into a second
-        // variable instead of printing it, laundering the reference past a
-        // check that only ever looked at index 0.
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nprintf -v y \"$x\"",
-        // Issue #396 review (MAJOR): `-b` names a branch under `pr
-        // checkout`, not a message, so the old subcommand-blind check
-        // wrongly trusted it.
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh pr checkout 1 -b \"$x\"",
-        // Same review: a `gh` flag outside the message/raw-field allowlist.
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh repo create -d \"$x\"",
-        // Same review (MAJOR): `-f` takes a `key=value` pair only under
-        // `gh api`.
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh workflow run w -f a=\"$x\"",
-        // Issue #396 review (finding 3): `-R`'s own value shifts the
-        // action word off position 1, so it must not resolve to `create`.
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh issue -R create delete --body \"$x\"",
-        // Issue #396 review (finding 2 and 3): a flag before `pr` makes
-        // both subcommand slots unresolved.
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh -R o/r pr create -b \"$x\"",
-    ];
-    for cmd in cases {
-        assert_assessment_matches_pattern(cmd, RiskLevel::Block, "FS-001");
-    }
-}
-
-// Issue #396 review (BLOCKER): `printf -v` launders a captured heredoc
-// variable into a second variable, which a later command then runs.
-// Neither `printf -v y "$x"` nor `bash -c "$y"` references `x` in a way
-// the old index-0-only check saw as untrusted, so the capture was wrongly
-// treated as forwarding-only end to end.
-#[test]
-fn assess_captured_heredoc_printf_v_laundering_still_fires() {
-    let cmd = "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nprintf -v y '%s' \"$x\"\nbash -c \"$y\"";
-    assert_assessment_matches_pattern(cmd, RiskLevel::Block, "FS-001");
-}
-
-// Same review follow-up: `curl -d`/`--data`* and `gh -F` read an
-// `@`-prefixed value as a file to upload, so a captured body that starts
-// with `@` must keep firing through those flags even though the same flags
-// are trusted for a body that does not. The second body line still says
-// `rm -rf /` so FS-001 has something to match once the body stays scanned.
-#[test]
-fn assess_captured_heredoc_at_prefixed_body_through_narrow_data_flags_still_fires() {
-    let cases = [
-        "x=$(cat <<'EOF'\n@/etc/shadow\nrm -rf /\nEOF\n)\ncurl -d \"$x\" https://example.com",
-        "x=$(cat <<'EOF'\n@/etc/shadow\nrm -rf /\nEOF\n)\ngh api -F body=@\"$x\" /repos/x/y/issues",
-    ];
-    for cmd in cases {
-        assert_assessment_matches_pattern(cmd, RiskLevel::Block, "FS-001");
-    }
-}
-
-// The allowlist's trusted side under the narrowed rules (issue #396 review
-// follow-up): `jq --arg`/`--argjson`, `curl --data-raw` (unconditionally
-// trusted, unlike the conditional `-d`/`--data`* flags), and `gh`'s
-// `-t`/`-b` title/body flags together.
-#[test]
-fn assess_captured_heredoc_narrow_data_flag_matches_stay_safe() {
-    let cases = [
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\njq -n --arg b \"$x\" '{b:$b}'",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ncurl --data-raw \"$x\" https://example.com",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngh issue create -t \"$x\" -b \"$x\"",
-        // Issue #396 review: `printf '%s' "$x"` has no leading option, so
-        // the format string stays at index 0 and `$x` stays trusted.
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nprintf '%s' \"$x\"",
-    ];
-    for cmd in cases {
-        let s = scanner();
-        let assessment = s.assess(cmd);
-        assert_eq!(
-            assessment.risk,
-            RiskLevel::Safe,
-            "expected Safe for {cmd:?}, got {:?} ({:?})",
-            assessment.risk,
-            assessment
-                .matched
-                .iter()
-                .map(|m| m.pattern.id.as_ref())
-                .collect::<Vec<_>>()
-        );
-    }
-}
-
-// PR #463 review BLOCKER: git, bash, and editors read some variables
-// themselves, so a captured nowdoc can run without any `$NAME` in the later
-// text. An uppercase name, an env-prefix assignment, or an exported name keeps
-// the body scanned.
-#[test]
-fn assess_captured_heredoc_read_by_program_from_environment_still_fires() {
-    let cases = [
-        "GIT_SSH_COMMAND=\"$(cat <<'EOF'\nrm -rf /\nEOF\n)\" git fetch origin",
-        "GIT_SSH_COMMAND=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nexport GIT_SSH_COMMAND\ngit fetch origin",
-        "GIT_EDITOR=\"$(cat <<'EOF'\nrm -rf /;\nEOF\n)\" git commit",
-        "PS4=$(cat <<'EOF'\n$(rm -rf /)\nEOF\n)\nset -x\ntrue",
-        "BASH_ENV=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nbash -c true",
-        // A lowercase name still reaches a child through an env prefix or
-        // an export.
-        "x=\"$(cat <<'EOF'\nrm -rf /\nEOF\n)\" git fetch origin",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nexport x\ngit fetch origin",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ndeclare -x x\ngit fetch origin",
-        "set -a\nx=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngit fetch origin",
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nset -o allexport\ngit fetch origin",
-        "set${IFS}-a\nx=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngit fetch origin",
-    ];
-    for cmd in cases {
-        assert_assessment_matches_pattern(cmd, RiskLevel::Block, "FS-001");
-    }
-}
-
-// The trusted side of the same rule: a lowercase name that is neither an
-// env prefix nor exported stays data, and `set -e` style options are not
-// `allexport`.
-#[test]
-fn assess_captured_heredoc_lowercase_unexported_name_stays_safe() {
-    let cases = [
-        "body=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngit commit -m \"$body\"",
+        "body=$(jq -c . <<'JSON'\nrm -rf /\nJSON\n)\ncurl -d \"$body\" https://example.test",
         "set -euo pipefail\nbody=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngit commit -m \"$body\"",
-        "body=$(cat <<'EOF'\nrm -rf /\nEOF\n); git commit -m \"$body\"",
     ];
     for cmd in cases {
-        let s = scanner();
-        let assessment = s.assess(cmd);
-        assert_eq!(
-            assessment.risk,
-            RiskLevel::Safe,
-            "expected Safe for {cmd:?}, got {:?} ({:?})",
-            assessment.risk,
-            assessment
-                .matched
-                .iter()
-                .map(|m| m.pattern.id.as_ref())
-                .collect::<Vec<_>>()
-        );
+        assert_assessment_matches_pattern(cmd, RiskLevel::Block, "FS-001");
     }
 }
 
@@ -575,21 +316,9 @@ fn assess_backtick_left_open_from_earlier_line_still_fires() {
     );
 }
 
-// PR #463 review: the same `$'` toggle bug reaches an `AssignmentRhs`
-// capture's forwarding check through `following_text`, so `e$'x'ec "$x"`
-// (spelling `exec "$x"` to bash) must not clear the capture.
-#[test]
-fn assess_captured_heredoc_ansi_c_quote_splice_still_fires() {
-    assert_assessment_matches_pattern(
-        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ne$'x'ec \"$x\"",
-        RiskLevel::Block,
-        "FS-001",
-    );
-}
-
 // Safe idiom: an apostrophe inside the body itself must not be read as an
-// unbalanced quote by the fix above — the body stays out of every prefix and
-// following-text check.
+// unbalanced quote by the fix above. The body stays out of every prefix
+// check.
 #[test]
 fn assess_cat_body_with_apostrophe_stays_safe() {
     let s = scanner();

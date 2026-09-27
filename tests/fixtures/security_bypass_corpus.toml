@@ -781,9 +781,9 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# PR #463 review: the same `$'` toggle bug reaches an `AssignmentRhs`
-# capture's forwarding check through the text after the terminator, so
-# `e$'x'ec "$x"` (spelling `exec "$x"` to bash) must not clear the capture.
+# PR #463 review: `e$'x'ec "$x"` spells `exec "$x"` to bash, so a captured
+# nowdoc run this way must block. Captures are never trusted now, which
+# keeps this body scanned.
 name = "heredoc_data_consumer_ansi_c_quote_splice_block"
 command = """x=$(cat <<'EOF'
 rm -rf /

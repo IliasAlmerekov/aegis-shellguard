@@ -32,10 +32,7 @@ pub struct HeredocBody {
 /// Programs that execute their stdin as code, independent of what bash's own
 /// heredoc expansion does. A nowdoc body handed to one of these must still be
 /// recursively scanned: the recipient interprets the raw text as a script.
-/// `pub(super)` so [`heredoc_data_consumer`][crate::heredoc_data_consumer]
-/// can reuse it for the `NAME -c "$var"` shape of a capture-then-execute
-/// check (issue #396), instead of keeping a second, drifting copy.
-pub(super) const STDIN_EXECUTING_PROGRAMS: &[&str] = &[
+const STDIN_EXECUTING_PROGRAMS: &[&str] = &[
     "bash", "sh", "zsh", "dash", "ash", "ksh", "python", "python3", "node", "nodejs", "ruby",
     "php", "lua", "perl",
 ];
@@ -507,7 +504,6 @@ fn walk_heredocs(
             }
             let body_end = i;
             let suspend_end = first_prefixed.unwrap_or(body_end);
-            let after_terminator = (body_end + 1).min(lines.len());
 
             let target_is_interpreter = heredoc_target_program(marker_line, marker.operator_start)
                 .is_some_and(|program| {
@@ -515,14 +511,6 @@ fn walk_heredocs(
                         .iter()
                         .any(|known| program.eq_ignore_ascii_case(known))
                 });
-            let following_text = lines[after_terminator..].join("\n");
-            // A curl `-d`/`--data`* value that starts with `@` names a file
-            // to upload, not literal data (issue #396 review follow-up) —
-            // thread a bool, not the body text, to avoid allocating on the
-            // heredoc-free fast path.
-            let body_starts_with_at = lines[body_start..body_end]
-                .first()
-                .is_some_and(|first_line| first_line.trim_start().starts_with('@'));
             let is_data_consumer_target = terminator_exact
                 && first_prefixed.is_none()
                 && heredoc_target_is_data_consumer(
@@ -530,8 +518,6 @@ fn walk_heredocs(
                     marker_line,
                     marker.operator_start,
                     marker.delimiter_end,
-                    &following_text,
-                    body_starts_with_at,
                 );
 
             on_heredoc(
