@@ -1,6 +1,7 @@
 use std::ops::Range;
 
 use super::{segmentation::split_top_level_segments, split_tokens};
+use crate::heredoc_data_consumer::heredoc_target_is_data_consumer;
 
 use aegis_types::InlineScript;
 
@@ -22,11 +23,10 @@ pub struct HeredocBody {
     /// heredoc construction — they say nothing about what the recipient
     /// program does with the literal text afterward.
     pub target_is_interpreter: bool,
-    /// `true` when the heredoc feeds a command that copies stdin verbatim to
-    /// a file (`cat >> notes.txt <<'EOF'`, `tee out.txt <<'EOF'`) rather than
-    /// executing or displaying it. The body is pure data at rest once
-    /// written; nothing in the pipeline ever runs or echoes it back.
-    pub target_redirects_to_file: bool,
+    /// `true` when a quoted heredoc is read by a trusted data consumer and
+    /// neither its output nor a written file can reach a shell (ADR-042).
+    /// An exact delimiter is required, with no earlier ambiguous prefix.
+    pub is_data_consumer_target: bool,
 }
 
 /// Programs that execute their stdin as code, independent of what bash's own
@@ -36,59 +36,6 @@ const STDIN_EXECUTING_PROGRAMS: &[&str] = &[
     "bash", "sh", "zsh", "dash", "ash", "ksh", "python", "python3", "node", "nodejs", "ruby",
     "php", "lua", "perl",
 ];
-
-/// Programs that copy their stdin verbatim to a file destination rather than
-/// interpreting or echoing it back.
-const STDIN_TO_FILE_PROGRAMS: &[&str] = &["cat", "tee"];
-
-/// `true` when `line[..marker_start]` invokes `cat`/`tee` in a way whose
-/// destination is a file rather than the terminal: `cat >> path`, `cat >
-/// path`, or `tee path` (flags aside). Only the command token at the start
-/// of the line is recognized, so a heredoc target reached through a
-/// pipeline (`foo | cat >> out`) is intentionally not matched here.
-fn heredoc_target_writes_to_file(line: &str, marker_start: usize) -> bool {
-    let prefix = line[..marker_start].trim_end();
-    let tokens = split_tokens(prefix);
-    let Some(first) = tokens.first() else {
-        return false;
-    };
-    let basename = first
-        .rsplit_once('/')
-        .map_or(first.as_str(), |(_, tail)| tail);
-
-    if !STDIN_TO_FILE_PROGRAMS
-        .iter()
-        .any(|program| basename.eq_ignore_ascii_case(program))
-    {
-        return false;
-    }
-
-    match basename.to_ascii_lowercase().as_str() {
-        "cat" => tokens
-            .iter()
-            .enumerate()
-            .any(|(idx, token)| stdout_redirects_to_file(token, tokens.get(idx + 1))),
-        "tee" => tokens.iter().skip(1).any(|token| !token.starts_with('-')),
-        _ => false,
-    }
-}
-
-/// `true` when `token` (with `next`, the token right after it, for the
-/// bare-operator case) is an actual stdout-to-file redirect — `>`, `>>`, or
-/// either glued to a filename — rather than file-descriptor duplication
-/// like `2>&1` or `>&2`. Descriptor duplication never touches a file, so it
-/// must not exempt a heredoc body from scanning.
-fn stdout_redirects_to_file(token: &str, next: Option<&String>) -> bool {
-    let Some(rest) = token.strip_prefix(">>").or_else(|| token.strip_prefix('>')) else {
-        return false;
-    };
-
-    if !rest.is_empty() {
-        return !rest.starts_with('&');
-    }
-
-    next.is_some_and(|next| !next.is_empty() && !next.starts_with('&'))
-}
 
 /// Resolve the basename-normalized program token immediately preceding the
 /// heredoc operator on `line` (e.g. `bash` in `foo | bash <<'EOF'`).
@@ -448,24 +395,27 @@ pub(crate) fn heredoc_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
     let lines: Vec<&str> = indexed.iter().map(|&(line, _)| line).collect();
     let mut ranges = Vec::new();
 
-    walk_heredocs(&lines, |marker, _interpreter, _redirects, body_range| {
-        // `body_range.start` is always the marker line's own index plus one
-        // (`walk_heredocs` never calls back before that increment), so this
-        // never underflows in practice; `checked_sub`/`.get()` make that a
-        // fact this can't panic on rather than one this merely relies on.
-        let Some(marker_line_index) = body_range.start.checked_sub(1) else {
-            return;
-        };
-        let Some(&(_, marker_line_start)) = indexed.get(marker_line_index) else {
-            return;
-        };
-        let start = marker_line_start + marker.operator_start;
-        let end = match indexed.get(body_range.end) {
-            Some(&(terminator_line, terminator_start)) => terminator_start + terminator_line.len(),
-            None => cmd.len(),
-        };
-        ranges.push(start..end);
-    });
+    walk_heredocs(
+        &lines,
+        |marker, _interpreter, _redirects, body_range, suspend_end| {
+            // The marker precedes the body; checked access avoids a panic if that changes.
+            let Some(marker_line_index) = body_range.start.checked_sub(1) else {
+                return;
+            };
+            let Some(&(_, marker_line_start)) = indexed.get(marker_line_index) else {
+                return;
+            };
+            let start = marker_line_start + marker.operator_start;
+            let end = match indexed.get(suspend_end) {
+                Some(&(_, line_start)) if suspend_end < body_range.end => line_start,
+                Some(&(terminator_line, terminator_start)) => {
+                    terminator_start + terminator_line.len()
+                }
+                None => cmd.len(),
+            };
+            ranges.push(start..end);
+        },
+    );
 
     ranges
 }
@@ -499,6 +449,8 @@ fn indexed_lines(cmd: &str) -> Vec<(&str, usize)> {
 /// Walk `lines` for heredoc/nowdoc markers, invoking `on_heredoc` once per
 /// occurrence with the parsed marker, whether its target reads stdin as
 /// executable code, and the `[start, end)` line-index range of its body.
+/// The final callback argument is the first line not safe to suspend or mask:
+/// a delimiter-prefixed non-exact line may end a heredoc during bash recovery.
 ///
 /// Centralizes the line-walking (marker detection, tab-stripped delimiter
 /// matching, target-program resolution) shared by every heredoc-body
@@ -506,41 +458,78 @@ fn indexed_lines(cmd: &str) -> Vec<(&str, usize)> {
 /// given body's line range.
 fn walk_heredocs(
     lines: &[&str],
-    mut on_heredoc: impl FnMut(&HeredocMarker, bool, bool, Range<usize>),
+    mut on_heredoc: impl FnMut(&HeredocMarker, bool, bool, Range<usize>, usize),
 ) {
+    // No marker anywhere: skip the walk, and with it the `command_text` copy
+    // below, for the common heredoc-free command (`CONVENTION.md` §8).
+    if !lines.iter().any(|line| line.contains("<<")) {
+        return;
+    }
+
     let mut i = 0;
+    // Command lines seen so far, heredoc bodies and terminators left out, so
+    // the data-consumer predicate sees a `$(` opened on an earlier line.
+    let mut command_text = String::new();
 
     while i < lines.len() {
         if let Some(marker) = find_heredoc_marker(lines[i]) {
-            let target_is_interpreter = heredoc_target_program(lines[i], marker.operator_start)
-                .is_some_and(|program| {
-                    STDIN_EXECUTING_PROGRAMS
-                        .iter()
-                        .any(|known| program.eq_ignore_ascii_case(known))
-                });
-            let target_redirects_to_file =
-                heredoc_target_writes_to_file(lines[i], marker.operator_start);
+            let marker_line = lines[i];
+            // Keep the prefix boundary before appending the marker line.
+            let preceding_len = command_text.len();
+            command_text.push_str(marker_line);
+            command_text.push('\n');
             i += 1;
             let body_start = i;
 
+            // A non-exact prefix may close the body during bash's recovery
+            // inside `$(`, but ordinary heredocs keep it as body text.
+            // Preserve exact-delimiter extraction while stopping suspension
+            // at the first ambiguous line so later commands stay visible.
+            let mut first_prefixed = None;
+            let mut terminator_exact = false;
             while i < lines.len() {
                 let candidate = if marker.strip_tabs {
                     lines[i].trim_start_matches('\t')
                 } else {
                     lines[i]
                 };
-                if candidate == marker.delimiter {
+                terminator_exact = candidate == marker.delimiter;
+                if terminator_exact {
                     break;
+                }
+                if first_prefixed.is_none() && candidate.starts_with(marker.delimiter.as_str()) {
+                    first_prefixed = Some(i);
                 }
                 i += 1;
             }
+            let body_end = i;
+            let suspend_end = first_prefixed.unwrap_or(body_end);
+
+            let target_is_interpreter = heredoc_target_program(marker_line, marker.operator_start)
+                .is_some_and(|program| {
+                    STDIN_EXECUTING_PROGRAMS
+                        .iter()
+                        .any(|known| program.eq_ignore_ascii_case(known))
+                });
+            let is_data_consumer_target = terminator_exact
+                && first_prefixed.is_none()
+                && heredoc_target_is_data_consumer(
+                    &command_text[..preceding_len],
+                    marker_line,
+                    marker.operator_start,
+                    marker.delimiter_end,
+                );
 
             on_heredoc(
                 &marker,
                 target_is_interpreter,
-                target_redirects_to_file,
-                body_start..i,
+                is_data_consumer_target,
+                body_start..body_end,
+                suspend_end,
             );
+        } else {
+            command_text.push_str(lines[i]);
+            command_text.push('\n');
         }
         i += 1;
     }
@@ -567,13 +556,13 @@ pub fn extract_heredoc_bodies(cmd: &str) -> Vec<HeredocBody> {
 
     walk_heredocs(
         &lines,
-        |marker, target_is_interpreter, target_redirects_to_file, body_range| {
+        |marker, target_is_interpreter, is_data_consumer_target, body_range, _suspend_end| {
             bodies.push(HeredocBody {
                 delimiter: marker.delimiter.clone(),
                 body: lines[body_range].join("\n"),
                 is_nowdoc: marker.is_nowdoc,
                 target_is_interpreter,
-                target_redirects_to_file,
+                is_data_consumer_target,
             });
         },
     );
@@ -595,12 +584,10 @@ pub fn extract_heredoc_bodies(cmd: &str) -> Vec<HeredocBody> {
 /// <<'EOF'`) are left untouched — the interpreter will execute that text
 /// verbatim once it reads it from stdin, marker quoting or not.
 ///
-/// When the same nowdoc body is also handed to a command that writes stdin
-/// straight to a file (`cat >> notes.txt <<'EOF'`, `tee out.txt <<'EOF'`),
-/// the whole body is blanked rather than just its substitution markers: the
-/// text is never executed or displayed, only written to disk, so a
-/// dangerous-looking substring in it (a test fixture, a changelog entry) is
-/// as inert as the markers are.
+/// When the same nowdoc body is `Data consumer` territory —
+/// [`heredoc_target_is_data_consumer`]: read by `cat` or `jq` without a
+/// pipe, file write, or other route to a shell — the whole body is blanked.
+/// File writes stay scanned because the file may run implicitly later.
 ///
 /// Only the returned copy is affected; the original command text used for
 /// audit logging and highlighting is untouched.
@@ -614,10 +601,10 @@ pub fn mask_inert_heredoc_substitution_markers(cmd: &str) -> String {
 
     walk_heredocs(
         &lines,
-        |marker, target_is_interpreter, target_redirects_to_file, body_range| {
+        |marker, target_is_interpreter, is_data_consumer_target, body_range, suspend_end| {
             if marker.is_nowdoc && !target_is_interpreter {
-                for idx in body_range {
-                    output_lines[idx] = if target_redirects_to_file {
+                for idx in body_range.start..suspend_end {
+                    output_lines[idx] = if is_data_consumer_target {
                         " ".repeat(lines[idx].chars().count())
                     } else {
                         mask_substitution_markers(lines[idx])

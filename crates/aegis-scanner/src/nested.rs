@@ -36,7 +36,7 @@ pub fn recursive_scan_targets(cmd: &str) -> RecursiveScanReport {
         }
 
         // Masking (not just the substitution-marker pass but the full-body
-        // blanking for heredocs redirected to a file — see
+        // blanking for trusted data consumers — see
         // `mask_inert_heredoc_substitution_markers`) must apply here too:
         // `candidate` is what full_scan actually pattern-matches against,
         // and the very first candidate popped off the queue is `cmd` itself

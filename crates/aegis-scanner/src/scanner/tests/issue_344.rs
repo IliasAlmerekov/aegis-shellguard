@@ -82,10 +82,24 @@ fn assess_nowdoc_to_interpreter_still_scans_body() {
     assert_assessment_matches_pattern("bash <<'EOF'\nrm -rf /\nEOF", RiskLevel::Block, "FS-001");
 }
 
-// A nowdoc body that is itself dangerous text (not hidden behind backticks)
-// must still be caught — masking only neutralizes command-substitution
-// markers, it does not exempt the body from direct pattern matching.
+// A nowdoc body handed to `cat` is `Data consumer` territory regardless of
+// whether its text happens to look like a dangerous command (issue #396
+// widens this beyond #344's backtick-only masking): `cat` never executes its
+// stdin, and with no pipe out of it no shell reads the body either.
 #[test]
-fn assess_nowdoc_to_cat_direct_dangerous_command_still_fires() {
-    assert_assessment_matches_pattern("cat <<'EOF'\nrm -rf /\nEOF", RiskLevel::Block, "FS-001");
+fn assess_nowdoc_to_cat_direct_dangerous_text_stays_safe() {
+    let s = scanner();
+    let assessment = s.assess("cat <<'EOF'\nrm -rf /\nEOF");
+
+    assert_eq!(
+        assessment.risk,
+        RiskLevel::Safe,
+        "expected Safe for a nowdoc body handed to cat, got {:?} ({:?})",
+        assessment.risk,
+        assessment
+            .matched
+            .iter()
+            .map(|m| m.pattern.id.as_ref())
+            .collect::<Vec<_>>()
+    );
 }
