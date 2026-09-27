@@ -134,19 +134,20 @@ pub(super) fn every_command_is_inert(text: &str) -> bool {
                 }
                 word = CommandWord::Pending;
             }
-            // A standalone `{` opens a group whose first word is a command;
-            // a standalone `}` closes one.
+            // A standalone `{` opens a group whose first word is a command.
+            // A standalone `}` closes one, and the next word is a command
+            // again: zsh reads `} always { ... }` as a second group.
             '{' | '}'
                 if matches!(word, CommandWord::Pending | CommandWord::Checked)
                     && chars
                         .peek()
-                        .is_none_or(|&(_, c)| c.is_whitespace() || matches!(c, ';' | ')')) =>
+                        .is_none_or(|&(_, c)| matches!(c, ' ' | '\t' | '\n' | ';' | ')')) =>
             {
-                if ch == '}' {
-                    word = CommandWord::Checked;
-                }
+                word = CommandWord::Pending;
             }
-            _ if ch.is_whitespace() => {
+            // Only a blank separates words; bash and zsh do not split on
+            // other Unicode whitespace.
+            ' ' | '\t' => {
                 if !finish_word(text, &mut word, idx) {
                     return false;
                 }

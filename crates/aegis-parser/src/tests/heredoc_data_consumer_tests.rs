@@ -517,6 +517,7 @@ fn heredoc_after_prefix_that_can_rebind_the_consumer_is_not_flagged() {
         "echo x | BASH_CMDS[cat]=/bin/bash",
         "{ BASH_CMDS[cat]=/bin/bash; }",
         ": <<X\n$((PATH=0))\nX",
+        "{ true; } always { functions[cat]=sh; }",
     ];
     for prefix in prefixes {
         let cmd = format!("{prefix}\ncat <<'EOF'\nrm -rf /\nEOF");

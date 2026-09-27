@@ -348,6 +348,19 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
+# PR #463 review (round 3): zsh reads `} always { ... }` as a second group,
+# so the word after a closing `}` is a command word again.
+name = "heredoc_data_consumer_zsh_always_block"
+command = """{ true; } always { functions[cat]=sh; }
+cat <<'EOF'
+rm -rf /
+EOF"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
 # PR #463 review follow-up: a standalone `PATH=` statement changes which
 # `cat` runs just like a prefix assignment does.
 name = "heredoc_data_consumer_path_statement_block"
