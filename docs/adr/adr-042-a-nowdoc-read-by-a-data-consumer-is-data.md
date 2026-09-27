@@ -176,6 +176,23 @@ into argv, so the router cannot drop body lines for every heredoc.
    `body=$(jq -c . <<'JSON' ...)` then `gh api ... -f body="$body"` idiom
    from the Context list keeps its trust.
 
+   A variable can also run with no `$NAME` in the text at all, because
+   git, bash and editors read some variables themselves:
+   `GIT_SSH_COMMAND` and `GIT_EDITOR` from the environment, `PS4` under
+   `set -x`, `BASH_ENV` in a child bash (PR #463 review). A list of such
+   names would miss the next one, so trust further needs three facts,
+   checked by `captured_variable_may_run_unnamed` in
+   `heredoc_data_consumer/environment.rs`. The name has no uppercase
+   letter, since the variables bash and common tools read as code are
+   all uppercase. The line that closes the `$(...)` ends there or goes on
+   with `;`, `&&` or `||`, so the assignment is not an env prefix
+   (`x="$(cat <<'EOF' ...)" git fetch`). The text before the marker and
+   after the terminator has no `export`, `declare`, `typeset` or `local`
+   word, no `allexport`, and no `set` with an `a` in a short option
+   cluster (`set -a`, `set -ea`), so the name does not reach a child's
+   environment. `OUT=$(cat <<'EOF' ...)` is scanned under this rule, and
+   that false positive is accepted.
+
 ## Consequences
 
 - The #396 `jq` capture shape, a bare `cat` that only prints to stdout, and

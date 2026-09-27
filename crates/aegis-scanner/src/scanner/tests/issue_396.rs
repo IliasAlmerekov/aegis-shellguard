@@ -85,11 +85,12 @@ fn assess_xargs_nowdoc_body_still_fires() {
 }
 
 // A `$(...)` that is the right-hand side of a plain assignment is a trusted
-// context — the body stays inert.
+// context when the name has no uppercase letter (PR #463 review), so the
+// body stays inert.
 #[test]
 fn assess_cat_inside_assignment_command_substitution_stays_safe() {
     let s = scanner();
-    let cmd = "OUT=$(cat <<'EOF'\nrm -rf /\nEOF\n)";
+    let cmd = "out=$(cat <<'EOF'\nrm -rf /\nEOF\n)";
     let assessment = s.assess(cmd);
 
     assert_eq!(
@@ -456,6 +457,58 @@ fn assess_captured_heredoc_narrow_data_flag_matches_stay_safe() {
         // Issue #396 review: `printf '%s' "$x"` has no leading option, so
         // the format string stays at index 0 and `$x` stays trusted.
         "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nprintf '%s' \"$x\"",
+    ];
+    for cmd in cases {
+        let s = scanner();
+        let assessment = s.assess(cmd);
+        assert_eq!(
+            assessment.risk,
+            RiskLevel::Safe,
+            "expected Safe for {cmd:?}, got {:?} ({:?})",
+            assessment.risk,
+            assessment
+                .matched
+                .iter()
+                .map(|m| m.pattern.id.as_ref())
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+// PR #463 review BLOCKER: git, bash, and editors read some variables
+// themselves, so a captured nowdoc can run without any `$NAME` in the later
+// text. An uppercase name, an env-prefix assignment, or an exported name keeps
+// the body scanned.
+#[test]
+fn assess_captured_heredoc_read_by_program_from_environment_still_fires() {
+    let cases = [
+        "GIT_SSH_COMMAND=\"$(cat <<'EOF'\nrm -rf /\nEOF\n)\" git fetch origin",
+        "GIT_SSH_COMMAND=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nexport GIT_SSH_COMMAND\ngit fetch origin",
+        "GIT_EDITOR=\"$(cat <<'EOF'\nrm -rf /;\nEOF\n)\" git commit",
+        "PS4=$(cat <<'EOF'\n$(rm -rf /)\nEOF\n)\nset -x\ntrue",
+        "BASH_ENV=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nbash -c true",
+        // A lowercase name still reaches a child through an env prefix or
+        // an export.
+        "x=\"$(cat <<'EOF'\nrm -rf /\nEOF\n)\" git fetch origin",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nexport x\ngit fetch origin",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ndeclare -x x\ngit fetch origin",
+        "set -a\nx=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngit fetch origin",
+        "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nset -o allexport\ngit fetch origin",
+    ];
+    for cmd in cases {
+        assert_assessment_matches_pattern(cmd, RiskLevel::Block, "FS-001");
+    }
+}
+
+// The trusted side of the same rule: a lowercase name that is neither an
+// env prefix nor exported stays data, and `set -e` style options are not
+// `allexport`.
+#[test]
+fn assess_captured_heredoc_lowercase_unexported_name_stays_safe() {
+    let cases = [
+        "body=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngit commit -m \"$body\"",
+        "set -euo pipefail\nbody=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngit commit -m \"$body\"",
+        "body=$(cat <<'EOF'\nrm -rf /\nEOF\n); git commit -m \"$body\"",
     ];
     for cmd in cases {
         let s = scanner();

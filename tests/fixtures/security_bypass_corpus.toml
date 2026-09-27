@@ -532,3 +532,77 @@ expected_risk = "block"
 expected_decision = "block"
 expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
+
+# PR #463 review BLOCKER: git, bash, and editors read some variables
+# themselves, so a captured nowdoc runs with no `$NAME` in the later text.
+[[cases]]
+name = "heredoc_data_consumer_git_ssh_command_env_prefix_block"
+command = """GIT_SSH_COMMAND="$(cat <<'EOF'
+rm -rf /
+EOF
+)" git fetch origin"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+name = "heredoc_data_consumer_git_ssh_command_exported_block"
+command = """GIT_SSH_COMMAND=$(cat <<'EOF'
+rm -rf /
+EOF
+)
+export GIT_SSH_COMMAND
+git fetch origin"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+name = "heredoc_data_consumer_git_editor_env_prefix_block"
+command = """GIT_EDITOR="$(cat <<'EOF'
+rm -rf /;
+EOF
+)" git commit"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+name = "heredoc_data_consumer_ps4_xtrace_block"
+command = """PS4=$(cat <<'EOF'
+$(rm -rf /)
+EOF
+)
+set -x
+true"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+name = "heredoc_data_consumer_lowercase_env_prefix_block"
+command = """x="$(cat <<'EOF'
+rm -rf /
+EOF
+)" git fetch origin"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+name = "heredoc_data_consumer_lowercase_allexport_block"
+command = """set -a
+x=$(cat <<'EOF'
+rm -rf /
+EOF
+)
+git fetch origin"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"

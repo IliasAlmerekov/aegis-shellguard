@@ -169,7 +169,8 @@ reach the consumer's output: no pipe or process substitution on the marker
 line, no quote, backtick or `$` after the delimiter, no line continuation, no write to a descriptor above 2, a variable
 descriptor, or a `/dev/fd/` or `/proc/` path, no compound-command keyword
 (`case`, `do`, `if`, `while` and the like), `exec` or `#` comment before the
-marker, and the heredoc sits at top level, in `NAME=$(...)`, or in the `$(...)` value
+marker, and the heredoc sits at top level, in `name=$(...)` (a name with no uppercase
+letter, not an env prefix, never exported), or in the `$(...)` value
 of a `git`/`gh` message flag (`-m`, `--message`, `-t`, `--title`, `-b`,
 `--body`) with no subshell, process-substitution `(` or `{ ...; }` group open
 around it. The body also needs an exact closing delimiter with no earlier

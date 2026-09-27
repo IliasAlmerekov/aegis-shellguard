@@ -9,6 +9,7 @@
 
 use crate::split_tokens;
 
+mod environment;
 mod forwarding;
 
 /// Programs that never execute their stdin: `cat` copies the bytes to
@@ -663,7 +664,12 @@ pub(super) fn heredoc_target_is_data_consumer(
     match heredoc_marker_context(&prefix) {
         HeredocMarkerContext::TopLevel | HeredocMarkerContext::TrustedCommandArg => true,
         HeredocMarkerContext::AssignmentRhs(name) => {
-            !forwarding::assignment_variable_runs_later(name, following_text, body_starts_with_at)
+            !environment::captured_variable_may_run_unnamed(name, &prefix, following_text)
+                && !forwarding::assignment_variable_runs_later(
+                    name,
+                    following_text,
+                    body_starts_with_at,
+                )
         }
         HeredocMarkerContext::Untrusted => false,
     }

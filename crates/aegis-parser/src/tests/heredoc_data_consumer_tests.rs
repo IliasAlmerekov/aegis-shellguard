@@ -20,10 +20,10 @@ fn heredoc_xargs_is_not_flagged_as_data_consumer() {
 }
 
 // 51. Issue #396: a `$(...)` that is the right-hand side of a plain
-// assignment is a trusted context.
+// assignment to a name with no uppercase letter is a trusted context.
 #[test]
 fn heredoc_cat_inside_assignment_command_substitution_is_flagged() {
-    let cmd = "OUT=$(cat <<'EOF'\nsome text\nEOF\n)";
+    let cmd = "out=$(cat <<'EOF'\nsome text\nEOF\n)";
     let bodies = extract_heredoc_bodies(cmd);
     assert!(bodies[0].is_data_consumer_target);
 }
@@ -372,5 +372,45 @@ fn heredoc_capture_then_printf_or_gh_listed_subcommand_is_still_flagged() {
     for cmd in cases {
         let bodies = extract_heredoc_bodies(cmd);
         assert!(bodies[0].is_data_consumer_target, "command {cmd:?}");
+    }
+}
+
+// PR #463 review: git, bash, and editors read some variables without a
+// `$NAME` in the command, so the capture stays scanned when the name has an
+// uppercase letter, when the assignment is an env prefix, or when the name
+// may be exported.
+#[test]
+fn heredoc_capture_that_may_run_unnamed_is_not_flagged_as_data_consumer() {
+    let cases = [
+        "GIT_SSH_COMMAND=$(cat <<'EOF'\nsome text\nEOF\n)",
+        "Out=$(cat <<'EOF'\nsome text\nEOF\n)",
+        "out=\"$(cat <<'EOF'\nsome text\nEOF\n)\" git fetch",
+        "out=$(cat <<'EOF'\nsome text\nEOF\n) other=1 git fetch",
+        "out=$(cat <<'EOF'\nsome text\nEOF\n)\nexport out",
+        "out=$(cat <<'EOF'\nsome text\nEOF\n)\nex''port out",
+        "out=$(cat <<'EOF'\nsome text\nEOF\n)\ntypeset -x out",
+        "set -ea\nout=$(cat <<'EOF'\nsome text\nEOF\n)",
+        "builtin set -a\nout=$(cat <<'EOF'\nsome text\nEOF\n)",
+        "out=$(cat <<'EOF'\nsome text\nEOF\n)\nset -o allexport",
+    ];
+    for cmd in cases {
+        let bodies = extract_heredoc_bodies(cmd);
+        assert!(!bodies[0].is_data_consumer_target, "{cmd:?}");
+    }
+}
+
+// The trusted side: a separator after the `)` ends the assignment, and a
+// `set` option cluster without `a` does not export.
+#[test]
+fn heredoc_capture_that_stays_in_the_shell_is_flagged_as_data_consumer() {
+    let cases = [
+        "out=$(cat <<'EOF'\nsome text\nEOF\n); true",
+        "out=\"$(cat <<'EOF'\nsome text\nEOF\n)\" && true",
+        "set -euo pipefail\nout=$(cat <<'EOF'\nsome text\nEOF\n)",
+        "out=$(cat <<'EOF'\nsome text\nEOF\n)\nset -- a b",
+    ];
+    for cmd in cases {
+        let bodies = extract_heredoc_bodies(cmd);
+        assert!(bodies[0].is_data_consumer_target, "{cmd:?}");
     }
 }
