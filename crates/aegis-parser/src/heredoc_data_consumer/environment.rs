@@ -3,13 +3,34 @@
 //! some variables themselves: `GIT_SSH_COMMAND`, `GIT_EDITOR`, `PS4` under
 //! `set -x`, `BASH_ENV` in a child bash. A denylist of such names would miss
 //! the next one, so trust is limited to names with no uppercase letter,
-//! which no shell or common tool reads as code, and that never reach a
-//! child's environment through an env prefix or an export.
+//! which bash and common tools never read as code, and that never reach a
+//! child's environment through an env prefix or an export. zsh is the one
+//! exception: it ties a few lowercase names to uppercase ones
+//! ([`ZSH_SPECIAL_NAMES`]).
 
 /// Builtins that can export a variable or give it an attribute. Any of them
 /// in the text around the capture keeps the body scanned, whatever flags
 /// follow, since `declare -x` and `local -x` export as `export` does.
 const EXPORT_WORDS: &[&str] = &["declare", "export", "local", "typeset"];
+
+/// Lowercase names zsh reads itself. `path`, `fpath`, `cdpath`, `manpath`
+/// and `module_path` are tied to their uppercase forms, so `path=...`
+/// changes which program the next bare word runs (PR #463 review). The
+/// hook arrays name functions zsh calls on its own, and `prompt` is `PS1`.
+const ZSH_SPECIAL_NAMES: &[&str] = &[
+    "cdpath",
+    "chpwd_functions",
+    "fpath",
+    "manpath",
+    "module_path",
+    "path",
+    "periodic_functions",
+    "precmd_functions",
+    "preexec_functions",
+    "prompt",
+    "zshaddhistory_functions",
+    "zshexit_functions",
+];
 
 /// `true` when `name`, just assigned from a captured nowdoc, may reach a
 /// program that reads it as code without `following_text` naming it.
@@ -22,6 +43,7 @@ pub(super) fn captured_variable_may_run_unnamed(
     following_text: &str,
 ) -> bool {
     name.bytes().any(|byte| byte.is_ascii_uppercase())
+        || ZSH_SPECIAL_NAMES.contains(&name)
         || assignment_prefixes_command(following_text)
         || may_export(prefix)
         || may_export(following_text)
@@ -51,6 +73,9 @@ fn assignment_prefixes_command(following_text: &str) -> bool {
 /// or runs `set` with a short option cluster holding `a` (`set -a`,
 /// `set -ea`, `set +a` is a false positive the check accepts). Quote
 /// characters are dropped first, so a split word (`ex''port`) still counts.
+/// A `set` whose arguments hold a `$` or a backtick counts too, since an
+/// expansion such as `set${IFS}-a` becomes `set -a` only after bash splits
+/// it (PR #463 review).
 fn may_export(text: &str) -> bool {
     let unquoted: String = text
         .chars()
@@ -63,17 +88,23 @@ fn may_export(text: &str) -> bool {
     {
         return true;
     }
-    unquoted
-        .split(['\n', ';', '&', '|', '(', ')', '{', '}', '`'])
-        .any(|command| {
-            let mut words = command
+    unquoted.match_indices("set").any(|(start, _)| {
+        let is_word_char = |c: char| c.is_ascii_alphanumeric() || c == '_';
+        let before = unquoted[..start].chars().next_back();
+        let rest = &unquoted[start + "set".len()..];
+        if before.is_some_and(is_word_char) || rest.starts_with(is_word_char) {
+            return false;
+        }
+        let arguments = rest
+            .split(['\n', ';', '&', '|', '(', ')'])
+            .next()
+            .unwrap_or_default();
+        arguments.contains(['$', '`'])
+            || arguments
                 .split_whitespace()
-                .skip_while(|word| matches!(*word, "builtin" | "command"));
-            words.next() == Some("set")
-                && words
-                    .take_while(|word| *word != "--")
-                    .any(is_short_option_cluster_with_a)
-        })
+                .take_while(|word| *word != "--")
+                .any(is_short_option_cluster_with_a)
+    })
 }
 
 /// `true` for `-a`, `-ea`, `+a` and similar: one `-` or `+`, then letters

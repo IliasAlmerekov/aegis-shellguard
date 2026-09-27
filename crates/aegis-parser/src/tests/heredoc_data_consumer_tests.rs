@@ -392,6 +392,10 @@ fn heredoc_capture_that_may_run_unnamed_is_not_flagged_as_data_consumer() {
         "set -ea\nout=$(cat <<'EOF'\nsome text\nEOF\n)",
         "builtin set -a\nout=$(cat <<'EOF'\nsome text\nEOF\n)",
         "out=$(cat <<'EOF'\nsome text\nEOF\n)\nset -o allexport",
+        "set${IFS}-a\nout=$(cat <<'EOF'\nsome text\nEOF\n)",
+        "set -$flags\nout=$(cat <<'EOF'\nsome text\nEOF\n)",
+        "path=$(cat <<'EOF'\n/tmp/bin\nEOF\n)\nls",
+        "fpath=$(cat <<'EOF'\n/tmp/fn\nEOF\n)",
     ];
     for cmd in cases {
         let bodies = extract_heredoc_bodies(cmd);
@@ -408,6 +412,7 @@ fn heredoc_capture_that_stays_in_the_shell_is_flagged_as_data_consumer() {
         "out=\"$(cat <<'EOF'\nsome text\nEOF\n)\" && true",
         "set -euo pipefail\nout=$(cat <<'EOF'\nsome text\nEOF\n)",
         "out=$(cat <<'EOF'\nsome text\nEOF\n)\nset -- a b",
+        "out=$(cat <<'EOF'\nsome text\nEOF\n)\nreset; ls -la",
     ];
     for cmd in cases {
         let bodies = extract_heredoc_bodies(cmd);

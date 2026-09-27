@@ -494,6 +494,7 @@ fn assess_captured_heredoc_read_by_program_from_environment_still_fires() {
         "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ndeclare -x x\ngit fetch origin",
         "set -a\nx=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngit fetch origin",
         "x=$(cat <<'EOF'\nrm -rf /\nEOF\n)\nset -o allexport\ngit fetch origin",
+        "set${IFS}-a\nx=$(cat <<'EOF'\nrm -rf /\nEOF\n)\ngit fetch origin",
     ];
     for cmd in cases {
         assert_assessment_matches_pattern(cmd, RiskLevel::Block, "FS-001");

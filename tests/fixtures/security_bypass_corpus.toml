@@ -606,3 +606,16 @@ expected_risk = "block"
 expected_decision = "block"
 expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+name = "heredoc_data_consumer_ifs_split_allexport_block"
+command = """set${IFS}-a
+x=$(cat <<'EOF'
+rm -rf /
+EOF
+)
+git fetch origin"""
+expected_risk = "block"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "intrinsic_risk_block"

@@ -184,12 +184,16 @@ into argv, so the router cannot drop body lines for every heredoc.
    checked by `captured_variable_may_run_unnamed` in
    `heredoc_data_consumer/environment.rs`. The name has no uppercase
    letter, since the variables bash and common tools read as code are
-   all uppercase. The line that closes the `$(...)` ends there or goes on
+   all uppercase, and it is not one of the lowercase names zsh reads
+   itself (`path`, `fpath`, `cdpath`, `manpath` and `module_path`, tied
+   to their uppercase forms, `prompt`, and the hook arrays such as
+   `precmd_functions`). The line that closes the `$(...)` ends there or goes on
    with `;`, `&&` or `||`, so the assignment is not an env prefix
    (`x="$(cat <<'EOF' ...)" git fetch`). The text before the marker and
    after the terminator has no `export`, `declare`, `typeset` or `local`
    word, no `allexport`, and no `set` with an `a` in a short option
-   cluster (`set -a`, `set -ea`), so the name does not reach a child's
+   cluster (`set -a`, `set -ea`) or with a `$` or backtick in its
+   arguments (`set${IFS}-a`), so the name does not reach a child's
    environment. `OUT=$(cat <<'EOF' ...)` is scanned under this rule, and
    that false positive is accepted.
 
