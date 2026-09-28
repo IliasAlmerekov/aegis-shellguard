@@ -11,6 +11,16 @@
 
 use std::path::Path;
 
+fn sha256_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        let _ = write!(encoded, "{byte:02x}");
+    }
+    encoded
+}
+
 /// Working-directory state used to resolve relative language-analysis sources.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnalysisCwd<'a> {

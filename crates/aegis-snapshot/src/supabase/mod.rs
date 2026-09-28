@@ -468,7 +468,13 @@ fn sha256_hex(path: &Path) -> Result<String> {
         hasher.update(&buffer[..bytes_read]);
     }
 
-    Ok(format!("{:x}", hasher.finalize()))
+    let digest = hasher.finalize();
+    let mut checksum = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        use std::fmt::Write as _;
+        let _ = write!(checksum, "{byte:02x}");
+    }
+    Ok(checksum)
 }
 
 fn sync_parent_directory(path: &Path) -> Result<()> {

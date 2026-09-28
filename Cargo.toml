@@ -92,7 +92,7 @@ regex = "1.11"
 aho-corasick = "1.1"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 flate2 = "1"
-sha2 = "0.10"
+sha2 = "0.11"
 schemars = "1"
 semver = "1"
 
