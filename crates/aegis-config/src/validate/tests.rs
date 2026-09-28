@@ -189,13 +189,10 @@ fn validate_config_layers_pins_the_config_error_prefix_for_a_malformed_layer() {
 
     // The TOML parser's own text is a fact about the `toml` crate, not about
     // this refactor; only the "config error: " prefix belongs to it.
-    let expected_message = format!(
-        "config error: failed to parse {}: TOML parse error at line 1, column 6\n  |\n1 | this is not valid toml [[[\n  |      ^\nexpected `.`, `=`\n",
-        config_path.display()
-    );
+    let expected_prefix = format!("config error: failed to parse {}:", config_path.display());
 
     assert_eq!(report.errors.len(), 1);
-    assert_eq!(report.errors[0].message, expected_message);
+    assert!(report.errors[0].message.starts_with(&expected_prefix));
     assert_eq!(
         report.errors[0].code, "config_parse_error",
         "the machine-readable code must stay stable even though the message text changed"
