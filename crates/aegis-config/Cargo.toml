@@ -13,7 +13,7 @@ description = "Configuration model, layered loader, validation, JSON schema, and
 aegis-types.workspace = true
 aegis-scanner.workspace = true
 serde = { version = "1", features = ["derive"] }
-toml = "0.8"
+toml = "1.1"
 schemars = "1"
 thiserror = "1"
 tracing = "0.1"
