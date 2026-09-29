@@ -183,7 +183,7 @@ Approved dependency categories currently include:
   build; **only** `aegis-sandbox` may depend on it (ADR-029 §3–§4).
 - `pkg-config` (build-dependency) — locates `libcap` for the vendored bubblewrap
   build; **only** `aegis-sandbox` may depend on it (ADR-029 §3–§4).
-- `tree-sitter` (0.26.11) — Tree-sitter runtime; **only** `aegis-language` may
+- `tree-sitter` (0.26.13) — Tree-sitter runtime; **only** `aegis-language` may
   depend on it (ADR-022 §8). It is the first sanctioned native-C build input.
 - `tree-sitter-python` (0.25.0), `tree-sitter-javascript` (0.25.0),
   `tree-sitter-typescript` (0.23.2), `tree-sitter-bash` (0.25.1) — the four
