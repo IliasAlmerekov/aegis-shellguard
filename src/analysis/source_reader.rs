@@ -115,7 +115,7 @@ pub async fn read_script_file(
     let byte_len = bytes.len() as u64;
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
-    let source_hash = format!("{:x}", hasher.finalize());
+    let source_hash = super::sha256_hex(&hasher.finalize());
 
     let source_byte_offset = usize::from(bytes.starts_with(&UTF8_BOM)) * UTF8_BOM.len();
     let content = bytes.strip_prefix(&UTF8_BOM).unwrap_or(bytes.as_slice());
