@@ -220,12 +220,12 @@ fn toolchain_tokens(text: &str) -> Vec<String> {
 
 /// Places in `text` that pick a floating release channel instead of a pinned
 /// toolchain: a `+stable`, `+beta` or `+nightly` override, or a bare channel
-/// name after `rustup toolchain install`, `rustup default` or
-/// `rustup override set`. Prose such as "the pinned nightly Rust" is not a
-/// toolchain selection and does not count.
+/// name anywhere on a line that runs `rustup` (`rustup toolchain install`,
+/// `rustup update`, `rustup run` and so on). Each use is reported with the
+/// word before it. Prose such as "the pinned nightly Rust" on a line without
+/// `rustup` is not a toolchain selection and does not count.
 fn floating_toolchain_uses(text: &str) -> Vec<String> {
     const CHANNELS: [&str; 3] = ["stable", "beta", "nightly"];
-    const SELECTORS: [&str; 3] = ["install", "default", "set"];
 
     let mut uses = Vec::new();
     for line in text.lines() {
@@ -245,11 +245,10 @@ fn floating_toolchain_uses(text: &str) -> Vec<String> {
                 uses.push((*word).to_string());
             }
             if words.contains(&"rustup")
-                && SELECTORS.contains(word)
-                && let Some(next) = words.get(index + 1)
-                && CHANNELS.contains(next)
+                && CHANNELS.contains(word)
+                && let Some(previous) = index.checked_sub(1).and_then(|i| words.get(i))
             {
-                uses.push(format!("{word} {next}"));
+                uses.push(format!("{previous} {word}"));
             }
         }
     }
@@ -316,13 +315,22 @@ fn floating_toolchain_uses_catches_channel_aliases() {
                 rustup toolchain install stable\n\
                 `rustup default beta`\n\
                 rustup override set nightly\n\
+                rustup toolchain install nightly --profile minimal\n\
+                rustup update stable\n\
                 cargo +1.94.0 clippy\n\
                 rustup toolchain install nightly-2026-06-15\n\
                 the pinned nightly Rust is stable enough";
 
     assert_eq!(
         floating_toolchain_uses(text),
-        ["+nightly", "install stable", "default beta", "set nightly"]
+        [
+            "+nightly",
+            "install stable",
+            "default beta",
+            "set nightly",
+            "install nightly",
+            "update stable",
+        ]
     );
 }
 
