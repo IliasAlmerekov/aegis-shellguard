@@ -18,7 +18,7 @@ fn manifest_path(temp_dir: &TempDir) -> PathBuf {
 }
 
 fn valid_db_dump_checksum() -> String {
-    format!("{:x}", Sha256::digest(b"dump-data"))
+    "676c62985393e848e2180df0f80cc1e2027cff00b42bf6c4b152701c17397591".to_string()
 }
 
 fn configured_supabase_snapshot_config(
@@ -208,7 +208,7 @@ async fn snapshot_uses_pg_dump_and_writes_manifest_bundle() {
         serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
     let logged_args = fs::read_to_string(&log_path).unwrap();
     let logged_args: Vec<_> = logged_args.lines().map(str::to_string).collect();
-    let expected_checksum = format!("{:x}", Sha256::digest(b"dump-data"));
+    let expected_checksum = valid_db_dump_checksum();
 
     assert_eq!(manifest.provider, "supabase");
     assert_eq!(manifest.target.project_ref, "proj_123");
