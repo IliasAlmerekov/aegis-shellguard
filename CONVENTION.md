@@ -270,7 +270,7 @@ Minimum expectations:
 Quality gates:
 
 - `scripts/lint.sh` (rustfmt and clippy, the same commands CI runs)
-- `cargo test`
+- `cargo test --workspace`
 - `cargo audit`
 - `cargo deny check`
 

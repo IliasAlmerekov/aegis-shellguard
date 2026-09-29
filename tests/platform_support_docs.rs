@@ -47,6 +47,54 @@ fn platform_support_doc_exists_and_declares_unix_only_matrix() {
 }
 
 #[test]
+fn platform_support_doc_states_confinement_per_platform() {
+    let contents = fs::read_to_string(repo_path("docs/platform-support.md")).unwrap_or_default();
+    for needle in [
+        // Section and per-platform rows.
+        "## Sandbox confinement",
+        "| Linux | bubblewrap",
+        "| macOS | Seatbelt",
+        "| Windows host via WSL2 terminal | bubblewrap",
+        "| Windows | None",
+        // Linux mechanism and known gaps.
+        "Landlock",
+        "embedded bubblewrap",
+        "WSL1",
+        "user namespaces",
+        "memfd",
+        // macOS mechanism and known gaps.
+        "`/usr/bin/sandbox-exec`",
+        "no process namespace isolation",
+        "no second layer",
+        // Shared honesty claim (ADR-029 decision 7).
+        "not a confidentiality boundary",
+        "not a privilege boundary",
+        // Unsupported platforms.
+        "no Sandbox implementation",
+        "`Unavailable`",
+        // Nested Seatbelt on macOS (ADR-029 amendment).
+        "### Nested Seatbelt on macOS",
+        "outer Seatbelt profile",
+        "sandbox_apply",
+        "blocks every command",
+        "sandbox_required_nested_unavailable",
+        "/sandbox",
+        "ADR-029",
+        // Build prerequisites per platform.
+        "## Build prerequisites",
+        "libcap",
+        "libcap-dev",
+        "pkg-config",
+        "AEGIS_SKIP_BWRAP_BUILD",
+    ] {
+        assert!(
+            contents.contains(needle),
+            "platform support doc must mention `{needle}`; contents:\n{contents}"
+        );
+    }
+}
+
+#[test]
 fn readme_links_to_platform_support_policy() {
     let readme = fs::read_to_string(repo_path("README.md")).unwrap();
     assert!(

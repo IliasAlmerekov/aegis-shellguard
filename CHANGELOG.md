@@ -11,6 +11,14 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Added: A `Live snapshot/rollback (SQLite, macOS)` CI job runs the live SQLite snapshot and rollback lifecycle test on the macOS runner. The Docker live test stays Linux-only because hosted macOS runners have no Docker daemon; `docs/ci.md` records the decision and what stays untested. `tests/snapshot_rollback_ci.rs` checks both. (#411)
+- Fixed: `docs/platform-support.md` now states the Sandbox confinement mechanism and known gaps for each platform (bubblewrap and Landlock on Linux, Seatbelt on macOS, none on native Windows), describes the macOS nested-Seatbelt block from the ADR-029 amendment, and lists the build prerequisites per platform, including `libcap`. `tests/platform_support_docs.rs` checks those statements. (#304)
+- Fixed: `SECURITY.md` now lists Sandbox confinement escape, a false `Active` Sandbox status, and the vendored bubblewrap build as in scope, states the ADR-029 wording that the Sandbox is not a confidentiality or privilege boundary, points design limitations at the threat model and ADR-029, and describes the current `eval` coverage. (#303)
+- Added: A drift test in `tests/supply_chain_ci.rs` fails when CONTRIBUTING.md disagrees with `.github/versions.env` on `RUST_TOOLCHAIN` or `FUZZ_NIGHTLY_TOOLCHAIN`, states an MSRV other than `rust-version` in `Cargo.toml`, or names any other toolchain version, including a floating `stable`, `beta` or `nightly` channel in a `+toolchain` override or a `rustup` command. `docs/ci.md` and `.github/versions.env` say a toolchain bump updates CONTRIBUTING.md too. (#302)
+- Fixed: The pre-push hook now runs `cargo test --workspace` like CI, instead of bare `cargo test`, which skipped every member crate under `crates/`. CONTRIBUTING.md and the CONVENTION.md quality gates list the same command. (#302)
+- Fixed: CONTRIBUTING.md now lists the libcap prerequisite, the MSRV and CI toolchain, `cargo test --workspace`, the nine fuzz targets and the split `full_pipeline_*` test targets. (#302)
+- Changed: Upgrade SHA-2 to 0.11 across the workspace while preserving lowercase SHA-256 hashes in source provenance, Supabase Snapshot artifacts, and installer checksums. (#477)
+- Changed: Upgrade the qualified Tree-sitter runtime to 0.26.13 and refresh its bundled-license attribution. (#476)
 - Fixed: Update every TOML consumer to 1.1 and keep config validation tests independent of parser diagnostic wording. (#475)
 - Fixed: `tests/file_size_budget.rs` sorts offenders with `sort_by_key` and `Reverse`, so `clippy::unnecessary_sort_by` on Clippy 1.98 no longer fails `cargo clippy --all-targets`. (#410)
 - Fixed: Root integration tests write fake executables through a short-lived `sh` child, so a concurrent `fork()` can no longer leave a copied write descriptor that makes running them fail with `ETXTBSY` ("Text file busy"). (#468)
