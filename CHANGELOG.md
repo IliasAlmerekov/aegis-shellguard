@@ -11,6 +11,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Fixed: `SECURITY.md` now lists Sandbox confinement escape, a false `Active` Sandbox status, and the vendored bubblewrap build as in scope, states the ADR-029 wording that the Sandbox is not a confidentiality or privilege boundary, points design limitations at the threat model and ADR-029, and describes the current `eval` coverage. (#303)
 - Added: A drift test in `tests/supply_chain_ci.rs` fails when CONTRIBUTING.md disagrees with `.github/versions.env` on `RUST_TOOLCHAIN` or `FUZZ_NIGHTLY_TOOLCHAIN`, states an MSRV other than `rust-version` in `Cargo.toml`, or names any other toolchain version, including a floating `stable`, `beta` or `nightly` channel in a `+toolchain` override or a `rustup` command. `docs/ci.md` and `.github/versions.env` say a toolchain bump updates CONTRIBUTING.md too. (#302)
 - Fixed: The pre-push hook now runs `cargo test --workspace` like CI, instead of bare `cargo test`, which skipped every member crate under `crates/`. CONTRIBUTING.md and the CONVENTION.md quality gates list the same command. (#302)
 - Fixed: CONTRIBUTING.md now lists the libcap prerequisite, the MSRV and CI toolchain, `cargo test --workspace`, the nine fuzz targets and the split `full_pipeline_*` test targets. (#302)
