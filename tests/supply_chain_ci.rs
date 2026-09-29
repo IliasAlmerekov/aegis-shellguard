@@ -175,17 +175,20 @@ fn docs_ci_documents_the_pinned_versions() {
 }
 
 /// `rust-version` from the `[workspace.package]` table of the root
-/// `Cargo.toml`. The root package inherits it with `rust-version.workspace`,
-/// which this exact-key match skips.
+/// `Cargo.toml`. Only lines inside that table count, so a `rust-version` key
+/// in any other table cannot be picked up by mistake.
 fn workspace_msrv() -> String {
     let manifest =
         fs::read_to_string(repo_path("Cargo.toml")).expect("Cargo.toml should be readable");
 
     manifest
         .lines()
-        .filter_map(|line| line.trim().strip_prefix("rust-version = "))
+        .map(str::trim)
+        .skip_while(|line| *line != "[workspace.package]")
+        .skip(1)
+        .take_while(|line| !line.starts_with('['))
+        .find_map(|line| line.strip_prefix("rust-version = "))
         .map(|value| value.trim_matches('"').to_string())
-        .next()
         .expect("Cargo.toml should set rust-version in [workspace.package]")
 }
 
@@ -196,7 +199,7 @@ fn contributing() -> String {
 /// Words of `text` that look like a Rust toolchain version (`1.NN` or
 /// `1.NN.N`) or a pinned nightly (`nightly-YYYY-MM-DD`).
 fn toolchain_tokens(text: &str) -> Vec<String> {
-    let is_stable = |token: &str| {
+    let looks_like_rust_version = |token: &str| {
         let mut parts = token.split('.');
         parts.next() == Some("1")
             && parts
@@ -210,7 +213,7 @@ fn toolchain_tokens(text: &str) -> Vec<String> {
 
     text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '-'))
         .map(|word| word.trim_matches(|c| c == '.' || c == '-'))
-        .filter(|word| is_stable(word) || word.starts_with("nightly-"))
+        .filter(|word| looks_like_rust_version(word) || word.starts_with("nightly-"))
         .map(str::to_string)
         .collect()
 }

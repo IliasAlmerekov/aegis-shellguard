@@ -6,7 +6,10 @@ Every version below is written once, in `.github/versions.env`. Both workflows
 read that file through the `.github/actions/load-versions` composite action and
 re-export it as job outputs, so a bump is a one-line change that reaches every
 job in both workflows. `tests/supply_chain_ci.rs` fails when a workflow writes
-a version a second time, and when this list disagrees with the file.
+a version a second time, and when this list disagrees with the file. It also
+fails when `CONTRIBUTING.md` names a Rust toolchain other than
+`RUST_TOOLCHAIN` or `FUZZ_NIGHTLY_TOOLCHAIN`, so a toolchain bump updates
+`CONTRIBUTING.md` too.
 
 - Rust toolchain: `1.94.0`
 - `cargo-audit`: `0.22.1`
