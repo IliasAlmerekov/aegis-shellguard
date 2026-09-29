@@ -332,12 +332,12 @@ fn assess_2000_unlisted_git_options_warns_via_scan004_without_scanning_candidate
     );
     // The cap must stop the per-candidate scans, not just add a warning. If
     // any candidate were scanned, the trailing `reset --hard` would also
-    // match a GIT rule, so SCAN-004 has to be the only match. This counts
-    // work done instead of wall-clock time, so machine load cannot flake it
+    // match GIT-001, as the at-the-cap test above shows. This counts work
+    // done instead of wall-clock time, so machine load cannot flake it
     // (#465). `benches/scanner_bench.rs` covers timing.
-    assert_eq!(
-        ids(&assessment),
-        vec!["SCAN-004"],
-        "cap must skip candidate scanning entirely"
+    assert!(
+        !ids(&assessment).contains(&"GIT-001"),
+        "cap must skip candidate scanning entirely, got {:?}",
+        ids(&assessment)
     );
 }

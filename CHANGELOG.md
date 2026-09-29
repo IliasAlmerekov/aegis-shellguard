@@ -11,6 +11,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Fixed: Update every TOML consumer to 1.1 and keep config validation tests independent of parser diagnostic wording. (#475)
 - Fixed: `tests/file_size_budget.rs` sorts offenders with `sort_by_key` and `Reverse`, so `clippy::unnecessary_sort_by` on Clippy 1.98 no longer fails `cargo clippy --all-targets`. (#410)
 - Fixed: Root integration tests write fake executables through a short-lived `sh` child, so a concurrent `fork()` can no longer leave a copied write descriptor that makes running them fail with `ETXTBSY` ("Text file busy"). (#468)
 - Fixed: The SCAN-004 cap test checks that no candidate is scanned instead of timing one `assess` call, so a loaded machine can no longer fail it. (#465)
