@@ -402,6 +402,34 @@ jobs:
           AEGIS_SQLITE_SNAPSHOT_TESTS: "1"
         run: cargo test --test snapshot_rollback_live sqlite_snapshot_rollback_restores_database_file_through_aegis_cli -- --exact --nocapture
 
+  # macOS half of the live snapshot/rollback coverage. Hosted macOS runners
+  # ship no Docker daemon, so only the SQLite lifecycle test runs here; the
+  # Docker test stays Linux-only (docs/ci.md). macOS ships /usr/bin/sqlite3,
+  # so no install step. libcap is a Linux-only prerequisite.
+  snapshot-rollback-live-macos:
+    name: Live snapshot/rollback (SQLite, macOS)
+    runs-on: ${{ needs.gate.outputs.macos_runner }}
+    timeout-minutes: 20
+    needs: gate
+    if: needs.gate.outputs.heavy == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ needs.gate.outputs.rust_toolchain }}
+          cache-key-prefix: snapshot-rollback-macos-
+
+      - name: Check SQLite CLI
+        run: sqlite3 --version
+
+      - name: Run live SQLite snapshot rollback test
+        env:
+          AEGIS_SQLITE_SNAPSHOT_TESTS: "1"
+        run: cargo test --test snapshot_rollback_live sqlite_snapshot_rollback_restores_database_file_through_aegis_cli -- --exact --nocapture
+
   # 900k total fuzz iterations across the parser/scanner/router/protocol/heredoc and
   # four production-qualified language adapters. This is the most expensive
   # Linux job in this workflow. Same cost/coverage tradeoff as build-macos
@@ -495,13 +523,14 @@ jobs:
       - performance
       - live-installer
       - snapshot-rollback-live
+      - snapshot-rollback-live-macos
       - fuzz
     steps:
       - name: Check every job result
         shell: bash
         env:
           NEEDS: ${{ toJSON(needs) }}
-          HEAVY_JOBS: build-macos cross-matrix performance live-installer snapshot-rollback-live fuzz
+          HEAVY_JOBS: build-macos cross-matrix performance live-installer snapshot-rollback-live snapshot-rollback-live-macos fuzz
         run: |
           set -euo pipefail
           heavy=$(jq -r '.gate.outputs.heavy // ""' <<<"$NEEDS")

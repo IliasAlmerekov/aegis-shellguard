@@ -41,6 +41,7 @@ each event. A Heavy job is one behind the `heavy` output of the gate job.
 | `Performance baseline (scanner bench)` (Heavy job) | yes | no | yes | yes | yes |
 | `Live installer validation` (Heavy job) | yes | no | yes | yes | yes |
 | `Live snapshot/rollback (Docker + SQLite)` (Heavy job) | yes | no | yes | yes | yes |
+| `Live snapshot/rollback (SQLite, macOS)` (Heavy job) | yes | no | yes | yes | yes |
 | `Fuzzing (parser, scanner, routing, protocol, adapters)` (Heavy job) | yes | no | yes | yes | yes |
 | `Merge admission (all CI jobs)` | yes | yes | yes | yes | yes |
 
@@ -55,6 +56,7 @@ What each job runs:
 - `Performance baseline (scanner bench)`: `scanner_bench` plus benchmark policy evaluation
 - `Live installer validation`: downloads the latest GitHub Release asset for the host platform, verifies the SHA-256 sidecar, installs to a temporary `BINDIR`, and asserts `aegis --version` succeeds. Runs on `ubuntu-latest` and `macos-26`; gated in the test suite by `AEGIS_TEST_LIVE_INSTALL=1` so default `cargo test` stays network-free.
 - `Live snapshot/rollback (Docker + SQLite)`: runs on `ubuntu-latest`, pulls the real `alpine` Docker fixture image, installs the real `sqlite3` CLI, then runs the gated Docker and SQLite snapshot/rollback integration tests with `AEGIS_DOCKER_TESTS=1` and `AEGIS_SQLITE_SNAPSHOT_TESTS=1`.
+- `Live snapshot/rollback (SQLite, macOS)`: runs on the pinned macOS runner and executes the same gated SQLite lifecycle test as the Linux job (`AEGIS_SQLITE_SNAPSHOT_TESTS=1`) against the `/usr/bin/sqlite3` the OS ships. It skips the Docker test: hosted macOS runners have no Docker daemon preinstalled, so `docker pull alpine` and `docker_integration` cannot run there. Docker snapshot and rollback therefore stay untested on macOS in CI; only Linux covers the Docker plugin against a live daemon. Revisit if a hosted macOS runner gains a Docker daemon (#411).
 - `Fuzzing (parser, scanner, routing, protocol, adapters)`: corpus-backed
   parser, scanner, heredoc, router, language-protocol, Python, JavaScript,
   TypeScript, and Bash fuzz targets with bounded `-runs`, on the pinned
@@ -81,7 +83,7 @@ means the gate job itself failed, and the check fails.
 The job is the only required status context on `main`, with "require branches
 to be up to date" on. Its `name:` must stay unchanged, because branch
 protection requires it by name. A test fails when a job is added to `ci.yml`
-without being listed in its `needs:`.
+without being listed in its `needs:`. Because the check needs every job, the macOS live snapshot/rollback job blocks merge like the rest.
 
 ### Concurrency
 
