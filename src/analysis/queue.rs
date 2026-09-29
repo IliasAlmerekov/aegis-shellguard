@@ -84,7 +84,7 @@ impl QueueTarget {
     /// Construct a target, computing its hex SHA-256 `source_hash`.
     #[must_use]
     pub fn new(language: SourceLanguage, source: String, depth: u32) -> Self {
-        let source_hash = format!("{:x}", Sha256::digest(source.as_bytes()));
+        let source_hash = super::sha256_hex(&Sha256::digest(source.as_bytes()));
         Self {
             language,
             source,
