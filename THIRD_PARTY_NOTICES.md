@@ -60,7 +60,7 @@ pinned by the contract test.
 
 | Component | Version | Upstream | SPDX license | Copyright notice |
 |---|---:|---|---|---|
-| `tree-sitter` | `0.26.11` | <https://github.com/tree-sitter/tree-sitter> | MIT AND Unicode-DFS-2016 | Copyright (c) 2018 Max Brunsfeld |
+| `tree-sitter` | `0.26.13` | <https://github.com/tree-sitter/tree-sitter> | MIT AND Unicode-DFS-2016 | Copyright (c) 2018 Max Brunsfeld |
 | `tree-sitter-python` | `0.25.0` | <https://github.com/tree-sitter/tree-sitter-python> | MIT | Copyright (c) 2016 Max Brunsfeld |
 | `tree-sitter-javascript` | `0.25.0` | <https://github.com/tree-sitter/tree-sitter-javascript> | MIT | Copyright (c) 2014 Max Brunsfeld |
 | `tree-sitter-typescript` | `0.23.2` | <https://github.com/tree-sitter/tree-sitter-typescript> | MIT | Copyright (c) 2017 Max Brunsfeld |
@@ -636,7 +636,7 @@ of that file cover ICU's dictionary, time-zone, and double-conversion data, none
 of which is vendored here.
 
 The full license as shipped by the crate is `src/unicode/LICENSE` in
-`tree-sitter 0.26.11`. Its governing notice is reproduced verbatim below.
+`tree-sitter 0.26.13`. Its governing notice is reproduced verbatim below.
 
 **When bumping `tree-sitter`, re-verify this whole section, not just the version
 row.** The contract test pins the version, the header filenames, and the two
