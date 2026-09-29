@@ -11,6 +11,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Fixed: CONTRIBUTING.md now lists the libcap prerequisite, the MSRV and CI toolchain, `cargo test --workspace`, the nine fuzz targets and the split `full_pipeline_*` test targets, and states what the pre-push hook skips. (#302)
 - Fixed: Update every TOML consumer to 1.1 and keep config validation tests independent of parser diagnostic wording. (#475)
 - Fixed: The Docker non-blocking snapshot test waits on a marker file instead of racing two sleeps, so a busy machine can no longer fail it. (#466)
 - Security: The heredoc data trust from #396 now needs every command before the `<<` to come from a fixed inert set (`cd`, `echo`, `false`, `gh`, `git`, `ls`, `mkdir`, `pwd`, `true`, `cat`, `jq`, and `set` with only error-handling options), instead of searching that text for denylisted words. The word list missed shell tables that rebind `cat`: `BASH_CMDS[cat]=/bin/bash`, `BASH_ALIASES[cat]=bash`, zsh `functions[cat]=sh`, `commands[cat]=/bin/sh`, `path=(...)` and a `} always { ... }` group, so the body ran in a shell while the command scored Safe. A command word built by an expansion, a `${...}`, `$((...))`, `$[...]` or subscripted expansion, and an earlier heredoc with an unquoted delimiter also keep the body scanned. Found in review of PR #463. (ADR-042) (#396)
