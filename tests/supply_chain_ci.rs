@@ -174,6 +174,90 @@ fn docs_ci_documents_the_pinned_versions() {
     }
 }
 
+/// `rust-version` from the `[workspace.package]` table of the root
+/// `Cargo.toml`. The root package inherits it with `rust-version.workspace`,
+/// which this exact-key match skips.
+fn workspace_msrv() -> String {
+    let manifest =
+        fs::read_to_string(repo_path("Cargo.toml")).expect("Cargo.toml should be readable");
+
+    manifest
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("rust-version = "))
+        .map(|value| value.trim_matches('"').to_string())
+        .next()
+        .expect("Cargo.toml should set rust-version in [workspace.package]")
+}
+
+fn contributing() -> String {
+    fs::read_to_string(repo_path("CONTRIBUTING.md")).expect("CONTRIBUTING.md should be readable")
+}
+
+/// Words of `text` that look like a Rust toolchain version (`1.NN` or
+/// `1.NN.N`) or a pinned nightly (`nightly-YYYY-MM-DD`).
+fn toolchain_tokens(text: &str) -> Vec<String> {
+    let is_stable = |token: &str| {
+        let mut parts = token.split('.');
+        parts.next() == Some("1")
+            && parts
+                .next()
+                .is_some_and(|minor| minor.len() == 2 && minor.chars().all(|c| c.is_ascii_digit()))
+            && parts
+                .next()
+                .is_none_or(|patch| !patch.is_empty() && patch.chars().all(|c| c.is_ascii_digit()))
+            && parts.next().is_none()
+    };
+
+    text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '-'))
+        .map(|word| word.trim_matches(|c| c == '.' || c == '-'))
+        .filter(|word| is_stable(word) || word.starts_with("nightly-"))
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn contributing_documents_the_pinned_toolchains() {
+    let docs = contributing();
+
+    for key in ["RUST_TOOLCHAIN", "FUZZ_NIGHTLY_TOOLCHAIN"] {
+        let value = pinned_version(key);
+        assert!(
+            docs.contains(&value),
+            "CONTRIBUTING.md must mention {key} = {value} from .github/versions.env; \
+             update CONTRIBUTING.md to the pinned value"
+        );
+    }
+}
+
+#[test]
+fn contributing_states_the_workspace_msrv() {
+    let msrv = workspace_msrv();
+
+    assert!(
+        contributing().contains(&format!("Rust {msrv} or newer")),
+        "CONTRIBUTING.md must say \"Rust {msrv} or newer\", matching rust-version in \
+         the root Cargo.toml [workspace.package]; update CONTRIBUTING.md"
+    );
+}
+
+#[test]
+fn contributing_names_no_other_toolchain_version() {
+    let allowed = [
+        pinned_version("RUST_TOOLCHAIN"),
+        pinned_version("FUZZ_NIGHTLY_TOOLCHAIN"),
+        workspace_msrv(),
+    ];
+
+    for token in toolchain_tokens(&contributing()) {
+        assert!(
+            allowed.contains(&token),
+            "CONTRIBUTING.md names toolchain version {token}, which matches none of \
+             RUST_TOOLCHAIN and FUZZ_NIGHTLY_TOOLCHAIN in .github/versions.env or \
+             rust-version in Cargo.toml; update CONTRIBUTING.md"
+        );
+    }
+}
+
 #[test]
 fn docs_ci_documents_every_release_target() {
     let targets = fs::read_to_string(repo_path(".github/build-targets.json"))
