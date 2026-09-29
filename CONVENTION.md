@@ -170,7 +170,7 @@ Approved dependency categories currently include:
 - `crossterm` (0.29) — terminal UI, confirmation dialog.
 - `aho-corasick` (1.1) — fast multi-pattern quick scan.
 - `regex` (1.11) — full pattern scan, second pass only.
-- `serde` + `toml` (0.8) — config model and parsing.
+- `serde` + `toml` (1.1) — config model and parsing.
 - `thiserror` — typed errors in library crates.
 - `anyhow` — error propagation in CLI glue.
 - `tokio` (features: process, fs, rt, rt-multi-thread, io-util, io-std, sync, time) — async subprocess and snapshot work.
