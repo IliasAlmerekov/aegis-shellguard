@@ -156,11 +156,10 @@ Install the repository-managed Git hooks once per clone:
 ./scripts/setup-git-hooks.sh
 ```
 
-The pre-push hook covers part of the CI quality gate. It does not run
-`cargo test --workspace`, so run that yourself before you push:
+The pre-push hook runs these steps from the CI quality gate:
 
 - `scripts/lint.sh` (rustfmt and clippy on the pinned toolchain)
-- `cargo test`, which runs the root package only, not the member crates
+- `cargo test --workspace`, which covers the root package and every member crate
 - `cargo audit` when `cargo-audit` is installed locally
 - `cargo deny check bans licenses sources` when `cargo-deny` is installed locally
 

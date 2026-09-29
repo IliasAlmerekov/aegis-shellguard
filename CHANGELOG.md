@@ -11,6 +11,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Fixed: The pre-push hook now runs `cargo test --workspace` like CI, instead of bare `cargo test`, which skipped every member crate under `crates/`. CONTRIBUTING.md describes the hook accordingly. (#302)
 - Fixed: CONTRIBUTING.md now lists the libcap prerequisite, the MSRV and CI toolchain, `cargo test --workspace`, the nine fuzz targets and the split `full_pipeline_*` test targets, and states what the pre-push hook skips. (#302)
 - Fixed: Update every TOML consumer to 1.1 and keep config validation tests independent of parser diagnostic wording. (#475)
 - Fixed: The Docker non-blocking snapshot test waits on a marker file instead of racing two sleeps, so a busy machine can no longer fail it. (#466)
