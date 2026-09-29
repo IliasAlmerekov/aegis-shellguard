@@ -218,6 +218,44 @@ fn toolchain_tokens(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// Places in `text` that pick a floating release channel instead of a pinned
+/// toolchain: a `+stable`, `+beta` or `+nightly` override, or a bare channel
+/// name after `rustup toolchain install`, `rustup default` or
+/// `rustup override set`. Prose such as "the pinned nightly Rust" is not a
+/// toolchain selection and does not count.
+fn floating_toolchain_uses(text: &str) -> Vec<String> {
+    const CHANNELS: [&str; 3] = ["stable", "beta", "nightly"];
+    const SELECTORS: [&str; 3] = ["install", "default", "set"];
+
+    let mut uses = Vec::new();
+    for line in text.lines() {
+        let words: Vec<&str> = line
+            .split_whitespace()
+            .map(|word| word.trim_matches('`'))
+            .collect();
+        if !words.contains(&"rustup") && !line.contains('+') {
+            continue;
+        }
+
+        for (index, word) in words.iter().enumerate() {
+            if word
+                .strip_prefix('+')
+                .is_some_and(|name| CHANNELS.contains(&name))
+            {
+                uses.push((*word).to_string());
+            }
+            if words.contains(&"rustup")
+                && SELECTORS.contains(word)
+                && let Some(next) = words.get(index + 1)
+                && CHANNELS.contains(next)
+            {
+                uses.push(format!("{word} {next}"));
+            }
+        }
+    }
+    uses
+}
+
 #[test]
 fn contributing_documents_the_pinned_toolchains() {
     let docs = contributing();
@@ -259,6 +297,33 @@ fn contributing_names_no_other_toolchain_version() {
              rust-version in Cargo.toml; update CONTRIBUTING.md"
         );
     }
+}
+
+#[test]
+fn contributing_names_no_floating_toolchain() {
+    let uses = floating_toolchain_uses(&contributing());
+
+    assert!(
+        uses.is_empty(),
+        "CONTRIBUTING.md selects a floating toolchain ({uses:?}); name RUST_TOOLCHAIN or \
+         FUZZ_NIGHTLY_TOOLCHAIN from .github/versions.env instead"
+    );
+}
+
+#[test]
+fn floating_toolchain_uses_catches_channel_aliases() {
+    let text = "cargo +nightly fuzz run parser\n\
+                rustup toolchain install stable\n\
+                `rustup default beta`\n\
+                rustup override set nightly\n\
+                cargo +1.94.0 clippy\n\
+                rustup toolchain install nightly-2026-06-15\n\
+                the pinned nightly Rust is stable enough";
+
+    assert_eq!(
+        floating_toolchain_uses(text),
+        ["+nightly", "install stable", "default beta", "set nightly"]
+    );
 }
 
 #[test]
