@@ -80,7 +80,13 @@ pub fn copy_release_binary(source: &Path, target: &Path) {
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
-    format!("{digest:x}")
+    use std::fmt::Write as _;
+
+    let mut encoded = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        let _ = write!(encoded, "{byte:02x}");
+    }
+    encoded
 }
 
 pub fn host_asset_name() -> Option<&'static str> {
