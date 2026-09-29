@@ -83,7 +83,7 @@ means the gate job itself failed, and the check fails.
 The job is the only required status context on `main`, with "require branches
 to be up to date" on. Its `name:` must stay unchanged, because branch
 protection requires it by name. A test fails when a job is added to `ci.yml`
-without being listed in its `needs:`. Because the check needs every job, the macOS live snapshot/rollback job blocks merge like the rest.
+without being listed in its `needs:`. Because the check needs every job, the macOS live snapshot/rollback job blocks merge like the rest. If that job turns flaky and blocks every PR, the rollback is to delete the job, drop it from the `needs:` list and `HEAVY_JOBS`, and remove its assertions in `tests/snapshot_rollback_ci.rs` in the same change; the Linux job keeps the SQLite coverage.
 
 ### Concurrency
 
