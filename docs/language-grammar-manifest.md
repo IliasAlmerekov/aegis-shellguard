@@ -41,7 +41,7 @@ recorded ABI against drift from the live grammar.
 
 | Crate           | Version  | Upstream                                   | License |
 |-----------------|----------|--------------------------------------------|---------|
-| `tree-sitter`   | `0.26.11`| <https://github.com/tree-sitter/tree-sitter> | MIT     |
+| `tree-sitter`   | `0.26.13`| <https://github.com/tree-sitter/tree-sitter> | MIT AND Unicode-DFS-2016 |
 | `tree-sitter-language` | `0.1.7` | (crates.io, MIT)                     | MIT     |
 
 Grammar crates depend on `tree-sitter-language` (a C-ABI `LanguageFn`
@@ -59,7 +59,7 @@ dependency. This is that inventory, as resolved in `Cargo.lock`.
 ### Build scripts and the C toolchain
 
 Every crate below compiles bundled C at build time via the `cc` build-time
-driver (`cc 1.2.64`); there is no runtime code generation and no runtime grammar
+driver (`cc 1.5.1`); there is no runtime code generation and no runtime grammar
 download. The build scripts are vendored inside each crate:
 
 | Crate            | Build script                | Native C compiled                                                        |
@@ -81,19 +81,21 @@ The crates added to the **default-feature** graph by `aegis-language`
 
 | Crate                    | Version   | License | Notes                                             |
 |--------------------------|-----------|---------|---------------------------------------------------|
-| `tree-sitter`            | `0.26.11` | MIT     | runtime; deps: `cc`, `regex`, `regex-syntax`, `serde_json`, `streaming-iterator`, `tree-sitter-language` |
+| `tree-sitter`            | `0.26.13` | MIT AND Unicode-DFS-2016 | runtime; deps: `cc`, `regex`, `regex-syntax`, `serde_json`, `streaming-iterator`, `tree-sitter-language` |
 | `tree-sitter-language`   | `0.1.7`   | MIT     | C-ABI `LanguageFn` wrapper; no further deps       |
 | `tree-sitter-python`     | `0.25.0`  | MIT     | deps: `cc`, `tree-sitter-language`                |
 | `tree-sitter-javascript` | `0.25.0`  | MIT     | deps: `cc`, `tree-sitter-language`                |
 | `tree-sitter-typescript` | `0.23.2`  | MIT     | deps: `cc`, `tree-sitter-language`                |
 | `tree-sitter-bash`       | `0.25.1`  | MIT     | deps: `cc`, `tree-sitter-language`                |
-| `cc`                     | `1.2.64`  | MIT OR Apache-2.0 | build-dependency; the C compiler driver   |
+| `cc`                     | `1.5.1`  | MIT OR Apache-2.0 | build-dependency; the C compiler driver   |
 | `streaming-iterator`     | `0.1.9`   | MIT OR Apache-2.0 | new leaf pulled in by the runtime         |
 
 `regex`, `regex-syntax`, and `serde_json` are runtime deps of `tree-sitter` but
 were already in the workspace graph before this crate, so they are not new
-native/link inputs. All licenses are on the `deny.toml` permissive allow-list;
+native/link inputs. The crate-declared licenses are on the `deny.toml` allow-list;
 `cargo deny check` is green (see `docs/performance-baseline.md` REVIEW GATE).
+`cargo deny` cannot see Tree-sitter's vendored ICU license; `THIRD_PARTY_NOTICES.md`
+records and attributes it separately.
 
 ## Rejected grammars and targets (evidence)
 
