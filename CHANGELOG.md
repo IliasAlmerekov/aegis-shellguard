@@ -12,7 +12,6 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 ## [Unreleased]
 
 - Security: Unresolved shell words, dynamic ripgrep executor values, stateful `printf` arguments, and `IFS` assignments behind launcher options now require approval and a recovery plan instead of automatic execution. (ADR-043)
-- Fixed: The live Snapshot CI contract test accepts CRLF worktree checkouts instead of reporting the macOS job missing. (#411)
 - Added: A `Live snapshot/rollback (SQLite, macOS)` CI job runs the live SQLite snapshot and rollback lifecycle test on the macOS runner. The Docker live test stays Linux-only because hosted macOS runners have no Docker daemon; `docs/ci.md` records the decision and what stays untested. `tests/snapshot_rollback_ci.rs` checks both. (#411)
 - Fixed: `docs/platform-support.md` now states the Sandbox confinement mechanism and known gaps for each platform (bubblewrap and Landlock on Linux, Seatbelt on macOS, none on native Windows), describes the macOS nested-Seatbelt block from the ADR-029 amendment, and lists the build prerequisites per platform, including `libcap`. `tests/platform_support_docs.rs` checks those statements. (#304)
 - Fixed: `SECURITY.md` now lists Sandbox confinement escape, a false `Active` Sandbox status, and the vendored bubblewrap build as in scope, states the ADR-029 wording that the Sandbox is not a confidentiality or privilege boundary, points design limitations at the threat model and ADR-029, and describes the current `eval` coverage. (#303)
