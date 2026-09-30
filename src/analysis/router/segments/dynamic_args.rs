@@ -5,10 +5,7 @@ use std::borrow::Cow;
 
 /// An unresolved program or state-bearing argv needs approval even when
 /// another routing path found a nested source in the same stage.
-pub(super) fn dynamic_stage_net(
-    stage_raw: &str,
-    ctx: &RouteContext<'_>,
-) -> Option<RoutedTarget> {
+pub(super) fn dynamic_stage_net(stage_raw: &str, ctx: &RouteContext<'_>) -> Option<RoutedTarget> {
     if !stage_raw.contains('$')
         && !stage_raw.contains('`')
         && !stage_raw.contains('{')
@@ -213,9 +210,10 @@ fn command_writes_shell_name(command: &str, name: &str) -> bool {
                 if matches!(
                     program,
                     "export" | "read" | "declare" | "typeset" | "local" | "readonly"
-                ) && slice.tokens[1..].iter().any(|token| {
-                    *token == name || token_assigns_name(token, name)
-                }) {
+                ) && slice.tokens[1..]
+                    .iter()
+                    .any(|token| *token == name || token_assigns_name(token, name))
+                {
                     return true;
                 }
             }
@@ -450,8 +448,7 @@ fn dynamic_rg_executor(argv: &[&str], trusted_nowdoc_argument: bool) -> bool {
 
 fn rg_short_option_has_glued_value(word: &str) -> bool {
     const OPTIONS: &[&str] = &[
-        "-e", "-f", "-E", "-m", "-j", "-g", "-d", "-t", "-T", "-A", "-B", "-C", "-M",
-        "-r",
+        "-e", "-f", "-E", "-m", "-j", "-g", "-d", "-t", "-T", "-A", "-B", "-C", "-M", "-r",
     ];
     OPTIONS
         .iter()
@@ -461,8 +458,7 @@ fn rg_short_option_has_glued_value(word: &str) -> bool {
 fn rg_option_takes_value(word: &str) -> bool {
     matches!(
         word,
-        "-e"
-            | "--regexp"
+        "-e" | "--regexp"
             | "-f"
             | "--file"
             | "--pre"
