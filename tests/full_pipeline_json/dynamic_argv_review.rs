@@ -195,6 +195,23 @@ fn dynamic_interpreter_stdin_requests_recovery() {
 }
 
 #[test]
+fn dynamic_interpreter_input_redirect_requests_recovery() {
+    let home = TempDir::new().unwrap();
+    let output = base_command(home.path())
+        .args([
+            "-c",
+            "script=./generated.py; python3 < \"$script\"",
+            "--output",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["decision"], "prompt");
+    assert_eq!(json["snapshot_plan"]["requested"], true);
+}
+
+#[test]
 fn shell_comment_expansion_marker_is_inert() {
     let home = TempDir::new().unwrap();
     let output = base_command(home.path())
@@ -300,6 +317,23 @@ fn dynamic_ripgrep_path_after_literal_pattern_remains_safe() {
         .args([
             "-c",
             "dir=.; rg needle \"$dir\"",
+            "--output",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["decision"], "auto_approve");
+    assert_eq!(json["snapshot_plan"]["requested"], false);
+}
+
+#[test]
+fn dynamic_ripgrep_data_option_value_remains_safe() {
+    let home = TempDir::new().unwrap();
+    let output = base_command(home.path())
+        .args([
+            "-c",
+            "glob='*.rs'; rg --glob \"$glob\" needle .",
             "--output",
             "json",
         ])
