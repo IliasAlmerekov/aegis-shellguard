@@ -315,12 +315,9 @@ fn assess_one_past_the_candidate_cap_warns_via_scan004_instead_of_scanning() {
 }
 
 #[test]
-fn assess_2000_unlisted_git_options_warns_via_scan004_and_finishes_fast() {
+fn assess_2000_unlisted_git_options_warns_via_scan004_without_scanning_candidates() {
     let cmd = alternating_unlisted_option_command(2000);
-
-    let started = std::time::Instant::now();
     let assessment = scanner().assess(&cmd);
-    let elapsed = started.elapsed();
 
     assert_eq!(
         assessment.risk,
@@ -333,14 +330,14 @@ fn assess_2000_unlisted_git_options_warns_via_scan004_and_finishes_fast() {
         "got {:?}",
         ids(&assessment)
     );
-    // Parsing and the one whole-command regex pass already cost a debug
-    // build ~180ms regardless of this fix; the bug this cap closes was
-    // ~2000 further per-candidate scans on top of that, which would push
-    // this well past a second. 1500ms catches that blowup without being
-    // sensitive to the fixed one-time cost. `benches/scanner_bench.rs`
-    // carries the release-mode, apples-to-apples comparison.
+    // The cap must stop the per-candidate scans, not just add a warning. If
+    // any candidate were scanned, the trailing `reset --hard` would also
+    // match GIT-001, as the at-the-cap test above shows. This counts work
+    // done instead of wall-clock time, so machine load cannot flake it
+    // (#465). `benches/scanner_bench.rs` covers timing.
     assert!(
-        elapsed < std::time::Duration::from_millis(1500),
-        "must fail closed at the cap, not scan all 2000 candidates: took {elapsed:?}"
+        !ids(&assessment).contains(&"GIT-001"),
+        "cap must skip candidate scanning entirely, got {:?}",
+        ids(&assessment)
     );
 }

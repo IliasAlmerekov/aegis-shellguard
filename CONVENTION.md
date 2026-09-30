@@ -167,7 +167,7 @@ Architectural constraints:
 Approved dependency categories currently include:
 
 - `clap` (4.5, derive API) — CLI parsing.
-- `crossterm` (0.28) — terminal UI, confirmation dialog.
+- `crossterm` (0.29) — terminal UI, confirmation dialog.
 - `aho-corasick` (1.1) — fast multi-pattern quick scan.
 - `regex` (1.11) — full pattern scan, second pass only.
 - `serde` + `toml` (1.1) — config model and parsing.
@@ -270,7 +270,7 @@ Minimum expectations:
 Quality gates:
 
 - `scripts/lint.sh` (rustfmt and clippy, the same commands CI runs)
-- `cargo test`
+- `cargo test --workspace`
 - `cargo audit`
 - `cargo deny check`
 
