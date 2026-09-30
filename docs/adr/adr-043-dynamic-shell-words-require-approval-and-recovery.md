@@ -44,8 +44,14 @@ treated as dynamic even when shell quoting prevents the outer shell from
 expanding them. Markers in shell comments are not expansion.
 
 Dynamic stdin is also treated as unresolved when it can become executable
-input, including `xargs` here-strings and dynamic plain input redirection for
-`xargs` or a recognized interpreter.
+input, including `xargs` here-strings, dynamic plain input redirection for
+`xargs` or a recognized interpreter, and active expansion in a pipeline
+producer feeding `xargs`.
+
+A write redirection target built by active expansion also degrades before
+redirection syntax is stripped from argv. This includes `>`, `>>`, `>|`,
+and fd-prefixed write redirects. A single-quoted or escaped marker remains a
+literal target.
 
 An unresolved execution, including a dynamically sourced interpreter, sets
 Effect-opaque execution on the Assessment.
