@@ -234,12 +234,7 @@ fn dynamic_write_redirect_targets_require_confirmation_and_recovery() {
 fn single_quoted_write_redirect_target_stays_literal() {
     let home = TempDir::new().unwrap();
     let output = base_command(home.path())
-        .args([
-            "-c",
-            "echo \"$DATA\" > '$F'",
-            "--output",
-            "json",
-        ])
+        .args(["-c", "echo \"$DATA\" > '$F'", "--output", "json"])
         .output()
         .unwrap();
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
