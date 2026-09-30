@@ -27,7 +27,7 @@ use argv_walk::{
     walk_interpreter_argv,
 };
 use direct::route_direct_stage;
-use dynamic_args::dynamic_stage_net;
+use dynamic_args::{dynamic_pipeline_input, dynamic_stage_net, xargs_pipeline_consumer};
 use dynamic_program::{alias_value, is_dynamic_program_word};
 use executor_config::{
     assignment_stage_executor_routes, env_prefix_executor_route, option_value_executor_route,
@@ -433,6 +433,14 @@ pub(super) fn route_list_segment(
     let mut stage_targets = Vec::new();
     let mut wrapped_stage_targets = Vec::new();
     for (index, stage) in stages.iter().enumerate() {
+        if index > 0
+            && xargs_pipeline_consumer(&stage.raw)
+            && dynamic_pipeline_input(&stages[index - 1].raw)
+        {
+            stage_targets.push(RoutedTarget::Unresolved {
+                reason: DegradationReason::DynamicSource,
+            });
+        }
         let dynamic_target = dynamic_stage_net(&stage.raw, ctx);
         if let Some(target) = dynamic_target {
             stage_targets.push(target);
