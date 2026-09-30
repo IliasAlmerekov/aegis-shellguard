@@ -407,7 +407,7 @@ pub(super) fn route_list_segment(
             *home = HomeState::Degraded;
         }
         if let Some(effect) = parse_cd_like(&stages[0].raw) {
-            if let Some(target) = dynamic_stage_net(&stages[0].raw) {
+            if let Some(target) = dynamic_stage_net(&stages[0].raw, ctx) {
                 push_unique(targets, target);
             }
             *cwd = fold_cd(cwd, effect, segment.separator);
@@ -433,7 +433,7 @@ pub(super) fn route_list_segment(
     let mut stage_targets = Vec::new();
     let mut wrapped_stage_targets = Vec::new();
     for (index, stage) in stages.iter().enumerate() {
-        let dynamic_target = dynamic_stage_net(&stage.raw);
+        let dynamic_target = dynamic_stage_net(&stage.raw, ctx);
         if let Some(target) = dynamic_target {
             stage_targets.push(target);
         }
@@ -546,7 +546,7 @@ fn route_stage(
     targets: &mut Vec<RoutedTarget>,
     depth: u32,
 ) {
-    let dynamic_target = dynamic_stage_net(stage_raw);
+    let dynamic_target = dynamic_stage_net(stage_raw, ctx);
     if let Some(target) = dynamic_target {
         push_unique(targets, target);
     }
