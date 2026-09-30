@@ -314,12 +314,7 @@ fn dynamic_ripgrep_leading_word_requires_confirmation_and_recovery() {
 fn dynamic_ripgrep_path_after_literal_pattern_remains_safe() {
     let home = TempDir::new().unwrap();
     let output = base_command(home.path())
-        .args([
-            "-c",
-            "dir=.; rg needle \"$dir\"",
-            "--output",
-            "json",
-        ])
+        .args(["-c", "dir=.; rg needle \"$dir\"", "--output", "json"])
         .output()
         .unwrap();
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
