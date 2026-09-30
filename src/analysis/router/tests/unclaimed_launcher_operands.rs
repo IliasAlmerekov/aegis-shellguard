@@ -265,10 +265,14 @@ fn a_for_loop_header_routes_its_list_whatever_the_body_does_with_the_variable() 
         r#"for x in ./pyx; do printf -v y %s "$x"; "$y"; done"#,
         r#"for x in ./pyx; do man -P "$x" ls; done"#,
     ] {
-        assert!(
-            route(command, &[]).contains(&RoutedTarget::LauncherOperand {
-                path: PathBuf::from("./pyx"),
-            }),
+        assert_eq!(
+            route(command, &[]),
+            vec![
+                RoutedTarget::LauncherOperand {
+                    path: PathBuf::from("./pyx"),
+                },
+                unresolved_dynamic()
+            ],
             "{command}"
         );
     }

@@ -25,12 +25,21 @@ also degrades. This check runs for every stage, including one whose nested
 source already produced another routed target. An `IFS` assignment degrades
 because it changes how later shell words split. The router does not evaluate
 the variable, infer its value from earlier assignments, or execute shell code.
-The read-only exception does not cover a dynamic `rg --pre` value because
-that option runs a subprocess. Both separate and `=` option forms are checked;
-an ordinary dynamic search pattern remains read-only. An `IFS` assignment
-inside a launcher prefix also degrades, including after `sudo` options.
+The read-only exception for `printf` covers dynamic data arguments only when
+its format is a fixed, non-state-writing string. A dynamic leading option,
+format, `-v` target, or `%n` target degrades because `printf` can write shell
+state. Dynamic `rg --pre` or `rg --hostname-bin` values also degrade because
+those options run another program. Both separate and `=` option forms are
+checked; an ordinary dynamic search pattern remains read-only. Every plausible
+effective program behind an ambiguous launcher option is checked. An `IFS`
+assignment inside a launcher prefix also degrades, including after `sudo`
+options, but a same-shaped
+operand after the program does not. Variables in an `env -S` split string are
+treated as dynamic even when shell quoting prevents the outer shell from
+expanding them. Markers in shell comments are not expansion.
 
-An unresolved execution sets Effect-opaque execution on the Assessment.
+An unresolved execution, including a dynamically sourced interpreter, sets
+Effect-opaque execution on the Assessment.
 Policy therefore requires confirmation and requests recovery under the
 existing Snapshot policy. This is independent of RiskLevel and does not turn
 a known Block into an approvable command. A stage containing only single-quoted
@@ -41,6 +50,9 @@ word in the same stage has active expansion.
 ## Consequences
 
 Some safe commands with dynamic argv now require approval and a Snapshot.
+An ANSI-C quoted `printf` argument can also degrade conservatively because
+the current tokenizer does not preserve that quote form; it may encode a
+state-writing option or format.
 The narrow read-only command set preserves common data-reading commands on
 the fast path. Runtime shell expansion remains a non-goal under ADR-010;
 uncertainty is recorded instead of claiming to know the expanded command.

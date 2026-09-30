@@ -725,7 +725,12 @@ fn strict_analysis_override_approves_exactly_once_from_shell() {
     let workspace = TempDir::new().unwrap();
     let target = workspace.path().join("artifact.txt");
     fs::write(&target, "delete").unwrap();
-    write_global_config(home.path(), "mode = \"Strict\"\n");
+    // This test isolates the one-time Analysis override. Dynamic stdin now
+    // requests recovery, so opt out of Snapshot separately for this case.
+    write_global_config(
+        home.path(),
+        "mode = \"Strict\"\nsnapshot_policy = \"None\"\n",
+    );
     let command = "printf '%s' \"$PAYLOAD\" | python3";
     let payload = format!("import os\nos.remove({:?})\n", target.display().to_string());
 

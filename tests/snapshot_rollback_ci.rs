@@ -10,7 +10,7 @@ fn read_repo_file(path: &str) -> String {
 }
 
 fn workflow() -> String {
-    read_repo_file(".github/workflows/ci.yml")
+    read_repo_file(".github/workflows/ci.yml").replace("\r\n", "\n")
 }
 
 #[test]
