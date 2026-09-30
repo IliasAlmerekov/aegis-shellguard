@@ -5,7 +5,10 @@ use std::borrow::Cow;
 
 /// An unresolved program or state-bearing argv needs approval even when
 /// another routing path found a nested source in the same stage.
-pub(super) fn dynamic_stage_net(stage_raw: &str) -> Option<RoutedTarget> {
+pub(super) fn dynamic_stage_net(
+    stage_raw: &str,
+    ctx: &RouteContext<'_>,
+) -> Option<RoutedTarget> {
     if !stage_raw.contains('$')
         && !stage_raw.contains('`')
         && !stage_raw.contains('{')
@@ -66,7 +69,7 @@ pub(super) fn dynamic_stage_net(stage_raw: &str) -> Option<RoutedTarget> {
             && (active_expansion || slice.program.starts_with('{'))
         {
             if slice.tokens.len() == 1
-                && matches!(slice.program, "$EDITOR" | "$VISUAL" | "$PAGER" | "$SHELL")
+                && interactive_program_exception_allowed(slice.program, ctx.command)
             {
                 continue;
             }
@@ -78,6 +81,15 @@ pub(super) fn dynamic_stage_net(stage_raw: &str) -> Option<RoutedTarget> {
         ];
         let program = slice.program.rsplit('/').next().unwrap_or(slice.program);
         let argv = &slice.tokens[1..];
+        let stdin_exec_consumer =
+            program == "xargs" || resolve_interpreter(program, ctx.trusted_aliases).is_some();
+        if stdin_exec_consumer
+            && (dynamic_plain_stdin_redirect(stage_raw)
+                || (program == "xargs" && dynamic_here_string(stage_raw)))
+            && active_expansion
+        {
+            return Some(unresolved());
+        }
         if ((!READ_ONLY.contains(&program)
             && argv
                 .iter()
@@ -175,6 +187,105 @@ fn env_split_string_expands_variable(words: &[&str], program: &str) -> bool {
         }
         false
     })
+}
+
+fn interactive_program_exception_allowed(program: &str, command: &str) -> bool {
+    let name = match program {
+        "$EDITOR" => "EDITOR",
+        "$VISUAL" => "VISUAL",
+        "$PAGER" => "PAGER",
+        "$SHELL" => "SHELL",
+        _ => return false,
+    };
+    !command_writes_shell_name(command, name) && !command_writes_shell_name(command, "IFS")
+}
+
+fn command_writes_shell_name(command: &str, name: &str) -> bool {
+    for segment in aegis_parser::list_segments(command) {
+        for stage in &segment.pipeline.segments {
+            let owned_tokens = aegis_parser::split_tokens(&stage.raw);
+            let words: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
+            if words.iter().any(|token| token_assigns_name(token, name)) {
+                return true;
+            }
+            for slice in aegis_parser::effective_token_slices(&words) {
+                let program = slice.program.rsplit('/').next().unwrap_or(slice.program);
+                if matches!(
+                    program,
+                    "export" | "read" | "declare" | "typeset" | "local" | "readonly"
+                ) && slice.tokens[1..].iter().any(|token| {
+                    *token == name || token_assigns_name(token, name)
+                }) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn token_assigns_name(token: &str, name: &str) -> bool {
+    let Some((lhs, _value)) = token.split_once('=') else {
+        return false;
+    };
+    let lhs = lhs.strip_suffix('+').unwrap_or(lhs);
+    let assigned_name = match lhs.split_once('[') {
+        Some((candidate, rest)) if rest.ends_with(']') => candidate,
+        Some(_) => return false,
+        None => lhs,
+    };
+    assigned_name == name
+}
+
+fn dynamic_here_string(stage_raw: &str) -> bool {
+    let tokens = aegis_parser::split_tokens(stage_raw);
+    let words: Vec<&str> = tokens.iter().map(String::as_str).collect();
+    words.iter().enumerate().any(|(index, token)| {
+        let after_fd = token.trim_start_matches(|ch: char| ch.is_ascii_digit());
+        let Some(glued_body) = after_fd.strip_prefix("<<<") else {
+            return false;
+        };
+        let body = if glued_body.is_empty() {
+            words.get(index + 1).copied()
+        } else {
+            Some(glued_body)
+        };
+        body.is_some_and(|body| has_dynamic_argv(body, false))
+    })
+}
+
+fn dynamic_plain_stdin_redirect(stage_raw: &str) -> bool {
+    let tokens = aegis_parser::split_tokens(stage_raw);
+    let words: Vec<&str> = tokens.iter().map(String::as_str).collect();
+    let mut index = 0;
+    while index < words.len() {
+        let token = words[index];
+        let after_fd = token.trim_start_matches(|ch: char| ch.is_ascii_digit());
+        let fd = &token[..token.len() - after_fd.len()];
+        if !fd.is_empty() && fd != "0" {
+            index += 1;
+            continue;
+        }
+        if after_fd == "<" {
+            if words
+                .get(index + 1)
+                .is_some_and(|target| has_dynamic_argv(target, false))
+            {
+                return true;
+            }
+            index += 2;
+            continue;
+        }
+        if let Some(target) = after_fd.strip_prefix('<')
+            && !target.is_empty()
+            && !target.starts_with(['<', '&', '>'])
+            && has_dynamic_argv(target, false)
+        {
+            return true;
+        }
+        index += 1;
+    }
+    false
 }
 
 fn dynamic_printf_state(argv: &[&str], trusted_nowdoc_argument: bool) -> bool {
@@ -289,27 +400,115 @@ fn env_split_string_assigns_ifs(words: &[&str]) -> bool {
 }
 
 fn dynamic_rg_executor(argv: &[&str], trusted_nowdoc_argument: bool) -> bool {
-    let mut words = argv.iter().copied();
-    while let Some(word) = words.next() {
+    let mut index = 0;
+    while index < argv.len() {
+        let word = argv[index];
         if word == "--" {
             break;
         }
-        if matches!(word, "--pre" | "--hostname-bin") {
-            if words
-                .next()
-                .is_some_and(|value| has_dynamic_argv(value, trusted_nowdoc_argument))
+
+        if let Some((option, value)) = word.split_once('=') {
+            if has_dynamic_argv(option, trusted_nowdoc_argument) {
+                return true;
+            }
+            if matches!(option, "--pre" | "--hostname-bin")
+                && has_dynamic_argv(value, trusted_nowdoc_argument)
             {
                 return true;
             }
-        } else if let Some(value) = word
-            .strip_prefix("--pre=")
-            .or_else(|| word.strip_prefix("--hostname-bin="))
-            && has_dynamic_argv(value, trusted_nowdoc_argument)
+            index += 1;
+            continue;
+        }
+
+        if rg_short_option_has_glued_value(word) {
+            index += 1;
+            continue;
+        }
+
+        if has_dynamic_argv(word, trusted_nowdoc_argument) {
+            return true;
+        }
+
+        if !word.starts_with('-') || word == "-" {
+            break;
+        }
+
+        if matches!(word, "--pre" | "--hostname-bin")
+            && argv
+                .get(index + 1)
+                .is_some_and(|value| has_dynamic_argv(value, trusted_nowdoc_argument))
         {
             return true;
         }
+
+        index += if rg_option_takes_value(word) { 2 } else { 1 };
     }
     false
+}
+
+fn rg_short_option_has_glued_value(word: &str) -> bool {
+    const OPTIONS: &[&str] = &[
+        "-e", "-f", "-E", "-m", "-j", "-g", "-d", "-t", "-T", "-A", "-B", "-C", "-M",
+        "-r",
+    ];
+    OPTIONS
+        .iter()
+        .any(|option| word.starts_with(option) && word.len() > option.len())
+}
+
+fn rg_option_takes_value(word: &str) -> bool {
+    matches!(
+        word,
+        "-e"
+            | "--regexp"
+            | "-f"
+            | "--file"
+            | "--pre"
+            | "--pre-glob"
+            | "--dfa-size-limit"
+            | "-E"
+            | "--encoding"
+            | "--engine"
+            | "-m"
+            | "--max-count"
+            | "--regex-size-limit"
+            | "-j"
+            | "--threads"
+            | "-g"
+            | "--glob"
+            | "--iglob"
+            | "--ignore-file"
+            | "-d"
+            | "--max-depth"
+            | "--max-filesize"
+            | "-t"
+            | "--type"
+            | "-T"
+            | "--type-not"
+            | "--type-add"
+            | "--type-clear"
+            | "-A"
+            | "--after-context"
+            | "-B"
+            | "--before-context"
+            | "--color"
+            | "--colors"
+            | "-C"
+            | "--context"
+            | "--context-separator"
+            | "--field-context-separator"
+            | "--field-match-separator"
+            | "--hostname-bin"
+            | "--hyperlink-format"
+            | "-M"
+            | "--max-columns"
+            | "--path-separator"
+            | "-r"
+            | "--replace"
+            | "--sort"
+            | "--sortr"
+            | "--generate"
+    )
 }
 
 fn unresolved() -> RoutedTarget {
