@@ -42,6 +42,9 @@ pub(super) fn dynamic_stage_net(stage_raw: &str, ctx: &RouteContext<'_>) -> Opti
     } else {
         unmasked_stage_raw
     };
+    if dynamic_output_redirect_target(stage_raw) {
+        return Some(unresolved());
+    }
     let tokens = aegis_parser::split_tokens(strip_trailing_redirection(stage_raw));
     let words: Vec<&str> = tokens.iter().map(String::as_str).collect();
     let assignments = skip_assignment_keyword(&words);
@@ -246,6 +249,129 @@ fn xargs_in_launcher_prefix(words: &[&str], program: &str) -> bool {
     words[..program_index]
         .iter()
         .any(|word| word.rsplit('/').next() == Some("xargs"))
+}
+
+pub(super) fn dynamic_pipeline_input(stage_raw: &str) -> bool {
+    let without_comments = strip_shell_comments(stage_raw);
+    let masked;
+    let stage_raw = if without_comments.contains("<<") {
+        masked = aegis_parser::mask_inert_heredoc_substitution_markers(without_comments.as_ref());
+        masked.as_str()
+    } else {
+        without_comments.as_ref()
+    };
+    has_active_expansion(stage_raw)
+}
+
+pub(super) fn xargs_pipeline_consumer(stage_raw: &str) -> bool {
+    let tokens = aegis_parser::split_tokens(strip_trailing_redirection(stage_raw));
+    let words: Vec<&str> = tokens.iter().map(String::as_str).collect();
+    aegis_parser::effective_token_slices(&words)
+        .iter()
+        .any(|slice| xargs_in_launcher_prefix(&words, slice.program))
+}
+
+fn dynamic_output_redirect_target(stage_raw: &str) -> bool {
+    let bytes = stage_raw.as_bytes();
+    let mut index = 0;
+    let mut single_quoted = false;
+    let mut double_quoted = false;
+
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' if !single_quoted => {
+                index += 1;
+                if index < bytes.len() {
+                    index += utf8_char_width(bytes[index]);
+                }
+            }
+            b'\'' if !double_quoted => {
+                single_quoted = !single_quoted;
+                index += 1;
+            }
+            b'"' if !single_quoted => {
+                double_quoted = !double_quoted;
+                index += 1;
+            }
+            b'>' if !single_quoted && !double_quoted => {
+                let mut target_start = index + 1;
+                if bytes.get(target_start) == Some(&b'>') {
+                    target_start += 1;
+                }
+                if bytes.get(target_start) == Some(&b'|') {
+                    target_start += 1;
+                }
+                if bytes.get(target_start) == Some(&b'&') {
+                    index = target_start + 1;
+                    continue;
+                }
+                while bytes
+                    .get(target_start)
+                    .is_some_and(|byte| byte.is_ascii_whitespace())
+                {
+                    target_start += 1;
+                }
+                if target_start >= bytes.len() {
+                    return false;
+                }
+                let target_end = shell_word_end(stage_raw, target_start);
+                if target_end > target_start
+                    && has_active_expansion(&stage_raw[target_start..target_end])
+                {
+                    return true;
+                }
+                index = target_end.max(index + 1);
+            }
+            byte => {
+                index += utf8_char_width(byte);
+            }
+        }
+    }
+    false
+}
+
+fn shell_word_end(text: &str, start: usize) -> usize {
+    let bytes = text.as_bytes();
+    let mut index = start;
+    let mut single_quoted = false;
+    let mut double_quoted = false;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' if !single_quoted => {
+                index += 1;
+                if index < bytes.len() {
+                    index += utf8_char_width(bytes[index]);
+                }
+            }
+            b'\'' if !double_quoted => {
+                single_quoted = !single_quoted;
+                index += 1;
+            }
+            b'"' if !single_quoted => {
+                double_quoted = !double_quoted;
+                index += 1;
+            }
+            byte if !single_quoted
+                && !double_quoted
+                && (byte.is_ascii_whitespace() || matches!(byte, b';' | b'|' | b'&')) =>
+            {
+                break;
+            }
+            byte => {
+                index += utf8_char_width(byte);
+            }
+        }
+    }
+    index
+}
+
+fn utf8_char_width(first: u8) -> usize {
+    match first {
+        0x00..=0x7f => 1,
+        0xc0..=0xdf => 2,
+        0xe0..=0xef => 3,
+        _ => 4,
+    }
 }
 
 fn dynamic_here_string(stage_raw: &str) -> bool {
