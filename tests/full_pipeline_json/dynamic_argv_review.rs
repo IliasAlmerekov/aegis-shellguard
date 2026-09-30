@@ -212,6 +212,59 @@ fn dynamic_interpreter_input_redirect_requests_recovery() {
 }
 
 #[test]
+fn dynamic_write_redirect_targets_require_confirmation_and_recovery() {
+    for command in [
+        "echo x >> $HOME/.bashrc",
+        "F=/tmp/aegis-target; cat /dev/null > $F",
+        "F=/tmp/aegis-target; echo x 2> $F",
+        "F=/tmp/aegis-target; echo x >| $F",
+    ] {
+        let home = TempDir::new().unwrap();
+        let output = base_command(home.path())
+            .args(["-c", command, "--output", "json"])
+            .output()
+            .unwrap();
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["decision"], "prompt", "{command}");
+        assert_eq!(json["snapshot_plan"]["requested"], true, "{command}");
+    }
+}
+
+#[test]
+fn single_quoted_write_redirect_target_stays_literal() {
+    let home = TempDir::new().unwrap();
+    let output = base_command(home.path())
+        .args([
+            "-c",
+            "echo \"$DATA\" > '$F'",
+            "--output",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["decision"], "auto_approve");
+    assert_eq!(json["snapshot_plan"]["requested"], false);
+}
+
+#[test]
+fn dynamic_pipe_input_to_xargs_requests_recovery() {
+    let home = TempDir::new().unwrap();
+    let output = base_command(home.path())
+        .args([
+            "-c",
+            "CMD='echo ok'; printf '%s\\n' \"$CMD\" | xargs -I{} sh -c {}",
+            "--output",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["decision"], "prompt");
+    assert_eq!(json["snapshot_plan"]["requested"], true);
+}
+
+#[test]
 fn shell_comment_expansion_marker_is_inert() {
     let home = TempDir::new().unwrap();
     let output = base_command(home.path())
