@@ -1,6 +1,40 @@
 use super::*;
 
 #[test]
+fn reassigned_interactive_program_variables_require_confirmation_and_recovery() {
+    for name in ["EDITOR", "VISUAL", "PAGER", "SHELL"] {
+        let home = TempDir::new().unwrap();
+        let command = format!("{name}=echo; ${name}");
+        let output = base_command(home.path())
+            .args(["-c", &command, "--output", "json"])
+            .output()
+            .unwrap();
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["decision"], "prompt", "{command}");
+        assert_eq!(json["snapshot_plan"]["requested"], true, "{command}");
+    }
+}
+
+#[test]
+fn interactive_program_variable_mutators_disable_the_exception() {
+    for command in [
+        "export EDITOR; $EDITOR",
+        "read VISUAL; $VISUAL",
+        "declare PAGER; $PAGER",
+        "IFS=:; $SHELL",
+    ] {
+        let home = TempDir::new().unwrap();
+        let output = base_command(home.path())
+            .args(["-c", command, "--output", "json"])
+            .output()
+            .unwrap();
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["decision"], "prompt", "{command}");
+        assert_eq!(json["snapshot_plan"]["requested"], true, "{command}");
+    }
+}
+
+#[test]
 fn ambiguous_sudo_option_checks_the_executed_candidate() {
     let home = TempDir::new().unwrap();
     let output = base_command(home.path())
@@ -115,6 +149,40 @@ fn dynamic_ripgrep_hostname_program_requires_confirmation_and_recovery() {
 }
 
 #[test]
+fn dynamic_xargs_here_string_requires_confirmation_and_recovery() {
+    let home = TempDir::new().unwrap();
+    let output = base_command(home.path())
+        .args([
+            "-c",
+            "x=\"-rf src\"; xargs rm <<< \"$x\"",
+            "--output",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["decision"], "prompt");
+    assert_eq!(json["snapshot_plan"]["requested"], true);
+}
+
+#[test]
+fn dynamic_xargs_input_redirect_requires_confirmation_and_recovery() {
+    let home = TempDir::new().unwrap();
+    let output = base_command(home.path())
+        .args([
+            "-c",
+            "input=./args.txt; xargs rm < \"$input\"",
+            "--output",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["decision"], "prompt");
+    assert_eq!(json["snapshot_plan"]["requested"], true);
+}
+
+#[test]
 fn dynamic_interpreter_stdin_requests_recovery() {
     let home = TempDir::new().unwrap();
     let output = base_command(home.path())
@@ -183,6 +251,20 @@ fn dynamic_ripgrep_preprocessor_requires_confirmation_and_recovery() {
 }
 
 #[test]
+fn dynamic_ripgrep_option_word_requires_confirmation_and_recovery() {
+    for command in ["x=--pre; rg $x sh foo", "OPTS=--pre; rg $OPTS foo"] {
+        let home = TempDir::new().unwrap();
+        let output = base_command(home.path())
+            .args(["-c", command, "--output", "json"])
+            .output()
+            .unwrap();
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["decision"], "prompt", "{command}");
+        assert_eq!(json["snapshot_plan"]["requested"], true, "{command}");
+    }
+}
+
+#[test]
 fn glued_dynamic_ripgrep_preprocessor_requires_confirmation_and_recovery() {
     let home = TempDir::new().unwrap();
     let output = base_command(home.path())
@@ -195,12 +277,29 @@ fn glued_dynamic_ripgrep_preprocessor_requires_confirmation_and_recovery() {
 }
 
 #[test]
-fn dynamic_ripgrep_search_pattern_remains_safe() {
+fn dynamic_ripgrep_leading_word_requires_confirmation_and_recovery() {
     let home = TempDir::new().unwrap();
     let output = base_command(home.path())
         .args([
             "-c",
             "pattern=needle; rg \"$pattern\" .",
+            "--output",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["decision"], "prompt");
+    assert_eq!(json["snapshot_plan"]["requested"], true);
+}
+
+#[test]
+fn dynamic_ripgrep_path_after_literal_pattern_remains_safe() {
+    let home = TempDir::new().unwrap();
+    let output = base_command(home.path())
+        .args([
+            "-c",
+            "dir=.; rg needle \"$dir\"",
             "--output",
             "json",
         ])
