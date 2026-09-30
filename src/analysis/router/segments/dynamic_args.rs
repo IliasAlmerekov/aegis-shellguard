@@ -407,7 +407,9 @@ fn dynamic_rg_executor(argv: &[&str], trusted_nowdoc_argument: bool) -> bool {
             break;
         }
 
-        if let Some((option, value)) = word.split_once('=') {
+        if word.starts_with('-')
+            && let Some((option, value)) = word.split_once('=')
+        {
             if has_dynamic_argv(option, trusted_nowdoc_argument) {
                 return true;
             }
