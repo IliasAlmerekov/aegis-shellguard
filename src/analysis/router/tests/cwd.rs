@@ -28,10 +28,13 @@ fn a_dynamic_cd_followed_by_a_literal_cd_stays_degraded() {
     let targets = route(r#"cd "$D" && cd -- sub && python3 ./evil.py"#, &[]);
     assert_eq!(
         targets,
-        vec![RoutedTarget::Dynamic {
-            language: SourceLanguage::Python,
-            reason: DegradationReason::DynamicSource,
-        }]
+        vec![
+            unresolved_dynamic(),
+            RoutedTarget::Dynamic {
+                language: SourceLanguage::Python,
+                reason: DegradationReason::DynamicSource,
+            },
+        ]
     );
 }
 
@@ -149,10 +152,15 @@ fn a_cd_inside_a_for_loop_body_degrades_a_later_relative_target() {
     let targets = route("for d in d1; do cd $d; done; python3 ./sub/evil.py", &[]);
     assert_eq!(
         targets,
-        vec![RoutedTarget::Dynamic {
-            language: SourceLanguage::Python,
-            reason: DegradationReason::DynamicSource,
-        }]
+        vec![
+            RoutedTarget::Unresolved {
+                reason: DegradationReason::DynamicSource,
+            },
+            RoutedTarget::Dynamic {
+                language: SourceLanguage::Python,
+                reason: DegradationReason::DynamicSource,
+            },
+        ]
     );
 }
 

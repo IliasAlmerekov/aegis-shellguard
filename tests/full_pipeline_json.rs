@@ -13,6 +13,88 @@ use tempfile::TempDir;
 
 use support::*;
 
+#[path = "full_pipeline_json/dynamic_argv_review.rs"]
+mod dynamic_argv_review;
+
+#[test]
+fn dynamic_command_and_argv_require_confirmation_and_recovery() {
+    let cases = [
+        "x=\"-rf .\"; rm $x",
+        "x=-rf; rm $x /",
+        "x=\"reset --hard\"; git $x",
+        "x=\"push --force\"; git $x",
+        "c=rm; $c -rf",
+        "c=kill; $c -9 -1",
+        "c=crontab; $c -r",
+        "c=iptables; $c -F",
+        "c=reboot; $c",
+        "IFS=,; c=rm,-rf,src; $c",
+        "c=rm; $c -rf /",
+        "c=rm; $c -rf ~",
+        "x=-rf; rm $x / \"$(python3 crates/aegis-language/tests/corpora/python/negatives.py)\"",
+        "c=rm; $c -rf / \"$(python3 crates/aegis-language/tests/corpora/python/negatives.py)\"",
+        "psql -c \"$q\"",
+        "IFS=, python3 -c 'print(1)'",
+        "rm \"$(cat /tmp/flags)\"",
+        "sudo env IFS=, ls",
+        "IFS=, cd .",
+        "x=/tmp/victim; sort -o $x /etc/passwd",
+        "x=/tmp/victim; diff --output=$x /etc/passwd /etc/group",
+        "x=/tmp/victim; uniq /etc/passwd $x",
+    ];
+
+    for command in cases {
+        let home = TempDir::new().unwrap();
+        let output = base_command(home.path())
+            .args(["-c", command, "--output", "json"])
+            .output()
+            .unwrap();
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_ne!(json["decision"], "auto_approve", "{command}");
+        if json["decision"] != "block" {
+            assert_eq!(json["snapshot_plan"]["requested"], true, "{command}");
+        }
+        assert_eq!(json["execution"]["will_execute"], false);
+    }
+}
+
+#[test]
+fn bare_interactive_program_variables_remain_safe() {
+    for command in ["$EDITOR", "$VISUAL", "$PAGER", "$SHELL"] {
+        let home = TempDir::new().unwrap();
+        let output = base_command(home.path())
+            .args(["-c", command, "--output", "json"])
+            .output()
+            .unwrap();
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["decision"], "auto_approve", "{command}");
+    }
+}
+
+#[test]
+fn dynamic_program_with_benign_assignment_still_needs_approval() {
+    let home = TempDir::new().unwrap();
+    let output = base_command(home.path())
+        .args(["-c", "c=ls; $c -la", "--output", "json"])
+        .output()
+        .unwrap();
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["decision"], "prompt");
+    assert_eq!(json["snapshot_plan"]["requested"], true);
+}
+
+#[test]
+fn visible_inline_execution_keeps_its_danger_assessment() {
+    let home = TempDir::new().unwrap();
+    let output = base_command(home.path())
+        .args(["-c", "x=bash; $x -c \"rm -rf .\"", "--output", "json"])
+        .output()
+        .unwrap();
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["risk"], "danger");
+    assert_eq!(json["decision"], "prompt");
+}
+
 #[test]
 fn json_output_safe_command_returns_single_evaluation_object_without_exec_or_audit() {
     let home = TempDir::new().unwrap();

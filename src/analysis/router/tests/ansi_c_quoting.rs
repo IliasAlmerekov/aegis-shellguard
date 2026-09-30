@@ -37,12 +37,8 @@ fn unquoted_ansi_c_quoting_that_mistokenizes_away_the_operand_still_degrades() {
 
 #[test]
 fn ansi_c_quoting_on_a_name_only_program_or_with_no_operand_is_not_routed() {
-    for command in [
-        r#"printf $'a\n'"#,
-        r#"echo $'x'"#,
-        r#"grep $'\t' file"#,
-        r#"IFS=$'\n'"#,
-    ] {
+    for command in [r#"printf $'a\n'"#, r#"echo $'x'"#, r#"grep $'\t' file"#] {
         assert_eq!(route(command, &[]), Vec::new(), "{command}");
     }
+    assert_eq!(route(r#"IFS=$'\n'"#, &[]), vec![unresolved_dynamic()]);
 }

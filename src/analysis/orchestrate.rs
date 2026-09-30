@@ -185,6 +185,14 @@ pub async fn run_with_budget_in_cwd(
             baseline: baseline.clone(),
         };
     }
+    let unresolved_execution = routed.iter().any(|target| {
+        matches!(
+            target,
+            RoutedTarget::Unresolved {
+                reason: DegradationReason::DynamicSource
+            }
+        )
+    });
 
     let mut queue = AnalysisQueue::new(QueueBudget {
         max_depth: budget.max_depth,
@@ -350,8 +358,10 @@ pub async fn run_with_budget_in_cwd(
     // the latest status/reasons, so a per-target merge would clobber earlier
     // reasons (D3).
     let aggregated = aggregate(&per_target);
+    let mut assessment = merge_analysis(baseline, &aggregated);
+    assessment.effect_opaque |= unresolved_execution;
     Outcome::Analyzed {
-        assessment: merge_analysis(baseline, &aggregated),
+        assessment,
         target_count: per_target.len(),
     }
 }

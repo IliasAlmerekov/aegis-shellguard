@@ -228,14 +228,9 @@ pub(super) fn unclaimed_interpreter_net(
     };
 
     let operands = slice.tokens[1..].iter().filter(|tok| !tok.starts_with('-'));
-    // A program word reached only through expansion the router does not
-    // perform — `$VAR`, `${X:-python3}`, `` `cmd` `` — is exactly as opaque
-    // as an unenumerated wrapper word: routing has no way to know what
-    // actually runs (issue #384/#430). Gated on having an operand at all so
-    // a bare `$EDITOR`/`$SHELL` with nothing to act on — an everyday
-    // interactive-launch shape — stays exactly as auto-approved as it was
-    // before this check existed.
     if operands.clone().next().is_some() {
+        // Keep the conservative program-word fallback, including quoted or
+        // escaped forms. The caller deduplicates any stage-level result.
         if is_dynamic_program_word(slice.program) {
             return vec![RoutedTarget::Unresolved {
                 reason: DegradationReason::DynamicSource,
