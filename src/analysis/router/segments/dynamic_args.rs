@@ -30,17 +30,17 @@ pub(super) fn dynamic_stage_net(stage_raw: &str, ctx: &RouteContext<'_>) -> Opti
     } else {
         strip_shell_comments(stage_raw)
     };
-    let stage_raw = without_comments.as_ref();
+    let unmasked_stage_raw = without_comments.as_ref();
     let masked;
     let mut trusted_nowdoc_argument = false;
-    let stage_raw = if stage_raw.contains("<<") {
-        let bodies = aegis_parser::extract_heredoc_bodies(stage_raw);
+    let stage_raw = if unmasked_stage_raw.contains("<<") {
+        let bodies = aegis_parser::extract_heredoc_bodies(unmasked_stage_raw);
         trusted_nowdoc_argument =
             bodies.len() == 1 && bodies[0].is_nowdoc && bodies[0].is_data_consumer_target;
-        masked = aegis_parser::mask_inert_heredoc_substitution_markers(stage_raw);
+        masked = aegis_parser::mask_inert_heredoc_substitution_markers(unmasked_stage_raw);
         masked.as_str()
     } else {
-        stage_raw
+        unmasked_stage_raw
     };
     let tokens = aegis_parser::split_tokens(strip_trailing_redirection(stage_raw));
     let words: Vec<&str> = tokens.iter().map(String::as_str).collect();
@@ -78,12 +78,12 @@ pub(super) fn dynamic_stage_net(stage_raw: &str, ctx: &RouteContext<'_>) -> Opti
         ];
         let program = slice.program.rsplit('/').next().unwrap_or(slice.program);
         let argv = &slice.tokens[1..];
+        let xargs_stdin = xargs_in_launcher_prefix(&words, slice.program);
         let stdin_exec_consumer =
-            program == "xargs" || resolve_interpreter(program, ctx.trusted_aliases).is_some();
+            xargs_stdin || resolve_interpreter(program, ctx.trusted_aliases).is_some();
         if stdin_exec_consumer
-            && (dynamic_plain_stdin_redirect(stage_raw)
-                || (program == "xargs" && dynamic_here_string(stage_raw)))
-            && active_expansion
+            && (dynamic_plain_stdin_redirect(unmasked_stage_raw)
+                || (xargs_stdin && dynamic_here_string(unmasked_stage_raw)))
         {
             return Some(unresolved());
         }
@@ -233,6 +233,19 @@ fn token_assigns_name(token: &str, name: &str) -> bool {
         None => lhs,
     };
     assigned_name == name
+}
+
+fn xargs_in_launcher_prefix(words: &[&str], program: &str) -> bool {
+    let Some(program_index) = words.iter().position(|word| {
+        word.rsplit('/')
+            .next()
+            .is_some_and(|basename| std::ptr::eq(basename, program))
+    }) else {
+        return false;
+    };
+    words[..program_index]
+        .iter()
+        .any(|word| word.rsplit('/').next() == Some("xargs"))
 }
 
 fn dynamic_here_string(stage_raw: &str) -> bool {
