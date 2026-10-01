@@ -85,7 +85,7 @@ fn rust_source_files_should_stay_under_800_lines() -> Result<(), Box<dyn std::er
     }
 
     if !offenders.is_empty() {
-        offenders.sort_by(|a, b| b.1.cmp(&a.1));
+        offenders.sort_by_key(|o| std::cmp::Reverse(o.1));
         let mut msg = String::from(
             "The following Rust source files exceed the 800-line budget \
              (quality gate):\n",
