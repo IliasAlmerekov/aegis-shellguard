@@ -197,112 +197,8 @@ fn env_split_string_expands_variable(words: &[&str], program: &str) -> bool {
 }
 
 fn interactive_program_exception_allowed(program: &str, command: &str) -> bool {
-    let name = match program {
-        "$EDITOR" => "EDITOR",
-        "$VISUAL" => "VISUAL",
-        "$PAGER" => "PAGER",
-        _ => return false,
-    };
-    !command_writes_shell_name(command, name) && !command_writes_shell_name(command, "IFS")
-}
-
-fn command_writes_shell_name(command: &str, name: &str) -> bool {
-    for segment in aegis_parser::list_segments(command) {
-        for stage in &segment.pipeline.segments {
-            let owned_tokens = aegis_parser::split_tokens(&stage.raw);
-            let words: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();
-            if words.iter().any(|token| token_assigns_name(token, name)) {
-                return true;
-            }
-            for slice in aegis_parser::effective_token_slices(&words) {
-                let program = slice.program.rsplit('/').next().unwrap_or(slice.program);
-                // Opaque shell code can change any variable. Do not try to
-                // infer which names it writes from its visible arguments.
-                if matches!(program, "source" | "." | "eval") {
-                    return true;
-                }
-                let argv = &slice.tokens[1..];
-                // Array-reader callbacks run in the current shell too.
-                if matches!(program, "mapfile" | "readarray")
-                    && argv.iter().take_while(|word| **word != "--").any(|word| {
-                        word.strip_prefix('-')
-                            .is_some_and(|options| options.contains('C'))
-                    })
-                {
-                    return true;
-                }
-                if program == "printf" && printf_writes_shell_name(argv, name) {
-                    return true;
-                }
-                if matches!(
-                    program,
-                    "export"
-                        | "read"
-                        | "declare"
-                        | "typeset"
-                        | "local"
-                        | "readonly"
-                        | "mapfile"
-                        | "readarray"
-                ) && slice.tokens[1..].iter().any(|token| {
-                    token_names_variable(token, name) || token_assigns_name(token, name)
-                }) {
-                    return true;
-                }
-            }
-        }
-    }
-    false
-}
-
-fn printf_writes_shell_name(argv: &[&str], name: &str) -> bool {
-    let mut index = 0;
-    while let Some(&option) = argv.get(index) {
-        if option == "--" {
-            index += 1;
-            break;
-        }
-        let target = if option == "-v" {
-            index += 1;
-            argv.get(index).copied()
-        } else {
-            option.strip_prefix("-v")
-        };
-        let Some(target) = target else {
-            break;
-        };
-        if token_names_variable(target, name) {
-            return true;
-        }
-        index += 1;
-    }
-    let format_and_args = &argv[index..];
-    format_and_args
-        .first()
-        .is_some_and(|format| printf_writes_variable(format))
-        && format_and_args[1..]
-            .iter()
-            .any(|target| token_names_variable(target, name))
-}
-
-fn token_names_variable(token: &str, name: &str) -> bool {
-    token == name
-        || token
-            .split_once('[')
-            .is_some_and(|(candidate, index)| candidate == name && index.ends_with(']'))
-}
-
-fn token_assigns_name(token: &str, name: &str) -> bool {
-    let Some((lhs, _value)) = token.split_once('=') else {
-        return false;
-    };
-    let lhs = lhs.strip_suffix('+').unwrap_or(lhs);
-    let assigned_name = match lhs.split_once('[') {
-        Some((candidate, rest)) if rest.ends_with(']') => candidate,
-        Some(_) => return false,
-        None => lhs,
-    };
-    assigned_name == name
+    // ADR-043: do not infer shell state writes from earlier words or stages.
+    matches!(program, "$EDITOR" | "$VISUAL" | "$PAGER") && command.trim() == program
 }
 
 fn xargs_in_launcher_prefix(words: &[&str], program: &str) -> bool {
@@ -369,8 +265,8 @@ fn dynamic_output_redirect_target(stage_raw: &str) -> bool {
                     target_start += 1;
                 }
                 if bytes.get(target_start) == Some(&b'&') {
-                    index = target_start + 1;
-                    continue;
+                    // Bash can interpret a non-fd target after >& as a filename.
+                    target_start += 1;
                 }
                 while bytes
                     .get(target_start)

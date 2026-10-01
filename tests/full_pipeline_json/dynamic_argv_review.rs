@@ -1,6 +1,106 @@
 use super::*;
 
 #[test]
+fn whitespace_around_bare_interactive_program_preserves_the_exception() {
+    for command in ["  $EDITOR  ", "\t$VISUAL\n", "\n $PAGER \t"] {
+        let home = TempDir::new().unwrap();
+        let output = base_command(home.path())
+            .args(["-c", command, "--output", "json"])
+            .output()
+            .unwrap();
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["decision"], "auto_approve", "{command}");
+        assert_eq!(json["snapshot_plan"]["requested"], false, "{command}");
+        assert_eq!(json["execution"]["will_execute"], false, "{command}");
+    }
+}
+
+#[test]
+fn interactive_program_exception_requires_one_bare_command_word() {
+    for command in [
+        "$EDITOR; echo hi",
+        "echo hi | $VISUAL",
+        "$PAGER < input",
+        "$EDITOR > output",
+        "env $EDITOR",
+        "OTHER=hello $VISUAL",
+        "\"$EDITOR\"",
+        "$PAGER;",
+        "$EDITOR # interactive",
+    ] {
+        let home = TempDir::new().unwrap();
+        let output = base_command(home.path())
+            .args(["-c", command, "--output", "json"])
+            .output()
+            .unwrap();
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["decision"], "prompt", "{command}");
+        assert_eq!(json["snapshot_plan"]["requested"], true, "{command}");
+        assert_eq!(json["execution"]["will_execute"], false, "{command}");
+    }
+}
+
+#[test]
+fn literal_fd_output_targets_preserve_read_only_commands() {
+    for command in [
+        "echo \"$DATA\" >&2",
+        "echo \"$DATA\" 2>&1",
+        "echo \"$DATA\" >&-",
+        "echo \"$DATA\" >&'$F'",
+        "echo \"$DATA\" >&\\$F",
+    ] {
+        let home = TempDir::new().unwrap();
+        let output = base_command(home.path())
+            .args(["-c", command, "--output", "json"])
+            .output()
+            .unwrap();
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["decision"], "auto_approve", "{command}");
+        assert_eq!(json["snapshot_plan"]["requested"], false, "{command}");
+        assert_eq!(json["execution"]["will_execute"], false, "{command}");
+    }
+}
+
+#[test]
+fn dynamic_fd_output_targets_require_confirmation_and_recovery() {
+    for command in [
+        "cat /dev/null >&$F",
+        "cat /dev/null >& $F",
+        "cat /dev/null >&\"$F\"",
+        "cat /dev/null 2>&$FD",
+        "echo hi >&${F:=out}",
+    ] {
+        let home = TempDir::new().unwrap();
+        let output = base_command(home.path())
+            .args(["-c", command, "--output", "json"])
+            .output()
+            .unwrap();
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["decision"], "prompt", "{command}");
+        assert_eq!(json["snapshot_plan"]["requested"], true, "{command}");
+        assert_eq!(json["execution"]["will_execute"], false, "{command}");
+    }
+}
+
+#[test]
+fn indirect_variable_writes_require_confirmation_and_recovery() {
+    for command in [
+        "declare -n r=EDITOR; r=reboot; $EDITOR",
+        "echo ${EDITOR:=reboot}; $EDITOR",
+    ] {
+        let home = TempDir::new().unwrap();
+        let output = base_command(home.path())
+            .args(["-c", command, "--output", "json"])
+            .output()
+            .unwrap();
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["decision"], "prompt", "{command}");
+        assert_eq!(json["snapshot_plan"]["requested"], true, "{command}");
+        assert_eq!(json["execution"]["will_execute"], false, "{command}");
+    }
+}
+
+#[test]
 fn array_reader_callbacks_disable_interactive_program_exceptions() {
     for command in [
         "mapfile -c 1 -C 'printf -v EDITOR harmless' OTHER <<< hello; $EDITOR",
@@ -20,7 +120,7 @@ fn array_reader_callbacks_disable_interactive_program_exceptions() {
 }
 
 #[test]
-fn unrelated_variable_writes_preserve_interactive_program_exceptions() {
+fn additional_segments_disable_interactive_program_exceptions() {
     for command in [
         "printf -v OTHER %s EDITOR; $EDITOR",
         "printf -vOTHER %s VISUAL; $VISUAL",
@@ -35,8 +135,8 @@ fn unrelated_variable_writes_preserve_interactive_program_exceptions() {
             .output()
             .unwrap();
         let json: Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(json["decision"], "auto_approve", "{command}");
-        assert_eq!(json["snapshot_plan"]["requested"], false, "{command}");
+        assert_eq!(json["decision"], "prompt", "{command}");
+        assert_eq!(json["snapshot_plan"]["requested"], true, "{command}");
         assert_eq!(json["execution"]["will_execute"], false, "{command}");
     }
 }

@@ -17,16 +17,13 @@ not by itself request a Snapshot.
 The router records DynamicSource degradation for a program word built by
 expansion even when it has no operand or only flags. Exact, argument-less
 `$EDITOR`, `$VISUAL`, and `$PAGER` remain interactive-launch
-exceptions only while the same command does not write that variable through an
-assignment, `export`, `read`, `declare`, `typeset`, `local`, or
-`readonly`, `printf -v`, `printf` with `%n`, `mapfile`, or `readarray`, and
-does not write `IFS`. The `printf` check covers separate, glued, and repeated
-`-v` options, array targets, and `%n` operands after `-v`. A visible `source`,
-`.`, or `eval`, or an array-reader callback option `-C`, revokes every
-interactive-launch exception because its code can write any shell variable.
-Callback option detection is conservative, including glued and clustered forms;
-the callback itself is not evaluated. Other variable forms, including `${...}`,
-do not inherit that exception.
+exceptions only when the entire command, apart from surrounding whitespace,
+is exactly that one bare word. Additional segments, assignments, launchers,
+quotes, comments, arguments, and redirections revoke the exception. The router
+does not enumerate variable writers or infer shell state: namerefs and
+assignment expansions such as `${EDITOR:=reboot}` make that inference
+incomplete. Other variable forms, including `${...}`, do not inherit the
+exception.
 
 `$SHELL` always records unresolved execution, including when argument-less.
 A shell can execute stdin from a pipe, redirection, heredoc, or here-string;
@@ -68,7 +65,10 @@ producer feeding `xargs`.
 
 A write redirection target built by active expansion also degrades before
 redirection syntax is stripped from argv. This includes `>`, `>>`, `>|`,
-and fd-prefixed write redirects. A single-quoted or escaped marker remains a
+`>&`, and fd-prefixed write redirects. Bash can treat a non-numeric target
+after `>&` as a filename. An unresolved target therefore degrades even when
+it could instead become an fd number; literal fd numbers and `-` do not
+trigger this check. A single-quoted or escaped marker remains a
 literal target.
 
 An unresolved execution, including a dynamically sourced interpreter, sets
@@ -85,7 +85,8 @@ word in the same stage has active expansion.
 Some safe commands with dynamic argv now require approval and a Snapshot.
 Accepted false positives include common agent forms such as
 `git commit -m "$MSG"`, `cd "$DIR"`, `cargo test $ARGS`, and
-`git log --grep "$x"` until command-specific grammars prove those dynamic
+`git log --grep "$x"`, `[ -n "$X" ]`, and `test -n "$X"` until
+command-specific grammars prove those dynamic
 positions are data-only. An ANSI-C quoted `printf` argument can also degrade
 conservatively because the current tokenizer does not preserve that quote form;
 it may encode a state-writing option or format.

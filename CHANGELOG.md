@@ -11,6 +11,8 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Security: Limit interactive-program variable exceptions to a single bare command word and require approval and recovery for dynamic `>&` targets. (ADR-043, PR #482)
+
 - Security: Bare `$SHELL` now requires approval and recovery; shell-variable writers and opaque callbacks revoke interactive-program exceptions, and dynamic `file` arguments no longer receive read-only treatment. (ADR-043, PR #482)
 - Security: Unresolved shell words, dynamic ripgrep executor values, stateful `printf` arguments, and `IFS` assignments behind launcher options now require approval and a recovery plan instead of automatic execution. (ADR-043)
 - Added: A `Live snapshot/rollback (SQLite, macOS)` CI job runs the live SQLite snapshot and rollback lifecycle test on the macOS runner. The Docker live test stays Linux-only because hosted macOS runners have no Docker daemon; `docs/ci.md` records the decision and what stays untested. `tests/snapshot_rollback_ci.rs` checks both. (#411)
