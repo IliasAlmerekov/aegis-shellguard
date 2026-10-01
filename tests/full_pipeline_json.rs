@@ -60,7 +60,7 @@ fn dynamic_command_and_argv_require_confirmation_and_recovery() {
 
 #[test]
 fn bare_interactive_program_variables_remain_safe() {
-    for command in ["$EDITOR", "$VISUAL", "$PAGER", "$SHELL"] {
+    for command in ["$EDITOR", "$VISUAL", "$PAGER"] {
         let home = TempDir::new().unwrap();
         let output = base_command(home.path())
             .args(["-c", command, "--output", "json"])

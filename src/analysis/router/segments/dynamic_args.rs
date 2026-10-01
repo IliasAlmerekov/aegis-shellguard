@@ -3,6 +3,17 @@
 use super::*;
 use std::borrow::Cow;
 
+// ADR-043: these programs only produce output or inspect data and metadata.
+// echo prints data; ls/pwd list locations; cat/head/tail read data;
+// grep/wc select or count data; stat reads metadata; the remaining path
+// utilities return names or resolved paths. printf and rg need the option
+// checks below because they can write shell state or launch a program.
+// file is excluded because -C writes compiled magic files.
+const READ_ONLY: &[&str] = &[
+    "echo", "printf", "ls", "cat", "head", "tail", "grep", "rg", "wc", "stat", "basename",
+    "dirname", "readlink", "realpath", "pwd",
+];
+
 /// An unresolved program or state-bearing argv needs approval even when
 /// another routing path found a nested source in the same stage.
 pub(super) fn dynamic_stage_net(stage_raw: &str, ctx: &RouteContext<'_>) -> Option<RoutedTarget> {
@@ -75,10 +86,6 @@ pub(super) fn dynamic_stage_net(stage_raw: &str, ctx: &RouteContext<'_>) -> Opti
             }
             return Some(unresolved());
         }
-        const READ_ONLY: &[&str] = &[
-            "echo", "printf", "ls", "cat", "head", "tail", "grep", "rg", "wc", "stat", "file",
-            "basename", "dirname", "readlink", "realpath", "pwd",
-        ];
         let program = slice.program.rsplit('/').next().unwrap_or(slice.program);
         let argv = &slice.tokens[1..];
         let xargs_stdin = xargs_in_launcher_prefix(&words, slice.program);
@@ -194,7 +201,6 @@ fn interactive_program_exception_allowed(program: &str, command: &str) -> bool {
         "$EDITOR" => "EDITOR",
         "$VISUAL" => "VISUAL",
         "$PAGER" => "PAGER",
-        "$SHELL" => "SHELL",
         _ => return false,
     };
     !command_writes_shell_name(command, name) && !command_writes_shell_name(command, "IFS")
@@ -210,19 +216,80 @@ fn command_writes_shell_name(command: &str, name: &str) -> bool {
             }
             for slice in aegis_parser::effective_token_slices(&words) {
                 let program = slice.program.rsplit('/').next().unwrap_or(slice.program);
+                // Opaque shell code can change any variable. Do not try to
+                // infer which names it writes from its visible arguments.
+                if matches!(program, "source" | "." | "eval") {
+                    return true;
+                }
+                let argv = &slice.tokens[1..];
+                // Array-reader callbacks run in the current shell too.
+                if matches!(program, "mapfile" | "readarray")
+                    && argv.iter().take_while(|word| **word != "--").any(|word| {
+                        word.strip_prefix('-')
+                            .is_some_and(|options| options.contains('C'))
+                    })
+                {
+                    return true;
+                }
+                if program == "printf" && printf_writes_shell_name(argv, name) {
+                    return true;
+                }
                 if matches!(
                     program,
-                    "export" | "read" | "declare" | "typeset" | "local" | "readonly"
-                ) && slice.tokens[1..]
-                    .iter()
-                    .any(|token| *token == name || token_assigns_name(token, name))
-                {
+                    "export"
+                        | "read"
+                        | "declare"
+                        | "typeset"
+                        | "local"
+                        | "readonly"
+                        | "mapfile"
+                        | "readarray"
+                ) && slice.tokens[1..].iter().any(|token| {
+                    token_names_variable(token, name) || token_assigns_name(token, name)
+                }) {
                     return true;
                 }
             }
         }
     }
     false
+}
+
+fn printf_writes_shell_name(argv: &[&str], name: &str) -> bool {
+    let mut index = 0;
+    while let Some(&option) = argv.get(index) {
+        if option == "--" {
+            index += 1;
+            break;
+        }
+        let target = if option == "-v" {
+            index += 1;
+            argv.get(index).copied()
+        } else {
+            option.strip_prefix("-v")
+        };
+        let Some(target) = target else {
+            break;
+        };
+        if token_names_variable(target, name) {
+            return true;
+        }
+        index += 1;
+    }
+    let format_and_args = &argv[index..];
+    format_and_args
+        .first()
+        .is_some_and(|format| printf_writes_variable(format))
+        && format_and_args[1..]
+            .iter()
+            .any(|target| token_names_variable(target, name))
+}
+
+fn token_names_variable(token: &str, name: &str) -> bool {
+    token == name
+        || token
+            .split_once('[')
+            .is_some_and(|(candidate, index)| candidate == name && index.ends_with(']'))
 }
 
 fn token_assigns_name(token: &str, name: &str) -> bool {

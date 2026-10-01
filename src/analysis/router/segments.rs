@@ -437,13 +437,16 @@ pub(super) fn route_list_segment(
             && xargs_pipeline_consumer(&stage.raw)
             && dynamic_pipeline_input(&stages[index - 1].raw)
         {
-            stage_targets.push(RoutedTarget::Unresolved {
-                reason: DegradationReason::DynamicSource,
-            });
+            push_unique(
+                &mut stage_targets,
+                RoutedTarget::Unresolved {
+                    reason: DegradationReason::DynamicSource,
+                },
+            );
         }
         let dynamic_target = dynamic_stage_net(&stage.raw, ctx);
         if let Some(target) = dynamic_target {
-            stage_targets.push(target);
+            push_unique(&mut stage_targets, target);
         }
         if stage_degrades_home_trust(&stage.raw) {
             *home = HomeState::Degraded;

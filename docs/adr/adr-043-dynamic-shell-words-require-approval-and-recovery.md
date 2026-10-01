@@ -16,11 +16,24 @@ not by itself request a Snapshot.
 
 The router records DynamicSource degradation for a program word built by
 expansion even when it has no operand or only flags. Exact, argument-less
-`$EDITOR`, `$VISUAL`, `$PAGER`, and `$SHELL` remain interactive-launch
+`$EDITOR`, `$VISUAL`, and `$PAGER` remain interactive-launch
 exceptions only while the same command does not write that variable through an
 assignment, `export`, `read`, `declare`, `typeset`, `local`, or
-`readonly`, and does not assign `IFS`. Other variable forms, including
-`${...}`, do not inherit that exception.
+`readonly`, `printf -v`, `printf` with `%n`, `mapfile`, or `readarray`, and
+does not write `IFS`. The `printf` check covers separate, glued, and repeated
+`-v` options, array targets, and `%n` operands after `-v`. A visible `source`,
+`.`, or `eval`, or an array-reader callback option `-C`, revokes every
+interactive-launch exception because its code can write any shell variable.
+Callback option detection is conservative, including glued and clustered forms;
+the callback itself is not evaluated. Other variable forms, including `${...}`,
+do not inherit that exception.
+
+`$SHELL` always records unresolved execution, including when argument-less.
+A shell can execute stdin from a pipe, redirection, heredoc, or here-string;
+an argument-less invocation does not prove interactive use. The remaining
+interactive-launch exceptions trust the inherited `EDITOR`, `VISUAL`, and
+`PAGER` environment values. They do not prove that the expanded program is
+read-only.
 
 A variable supplied as argv to a program outside the read-only command set
 also degrades. This check runs for every stage, including one whose nested
@@ -42,6 +55,11 @@ options, but a same-shaped
 operand after the program does not. Variables in an `env -S` split string are
 treated as dynamic even when shell quoting prevents the outer shell from
 expanding them. Markers in shell comments are not expansion.
+
+The read-only command policy lives beside the stage-wide check. `file` is
+excluded because its `-C` option writes compiled magic files. Dynamic `file`
+argv therefore degrades, including an ordinary dynamic pathname, until a
+command-specific grammar can prove a narrower data-only position.
 
 Dynamic stdin is also treated as unresolved when it can become executable
 input, including `xargs` here-strings, dynamic plain input redirection for
@@ -74,3 +92,9 @@ it may encode a state-writing option or format.
 The narrow read-only command set preserves common data-reading commands on
 the fast path. Runtime shell expansion remains a non-goal under ADR-010;
 uncertainty is recorded instead of claiming to know the expanded command.
+
+This tightening ships without a bypass flag. Accepted false positives retain
+human confirmation and the configured Snapshot policy. Release regressions
+hold promotion and require a forward fix with data-only grammar coverage;
+downgrading restores known auto-approval gaps and is not a security-preserving
+rollback.
