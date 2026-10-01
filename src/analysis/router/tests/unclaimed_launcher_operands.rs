@@ -226,14 +226,17 @@ fn a_for_loop_header_routes_its_own_path_like_list_entries() {
 #[test]
 fn a_for_loop_variable_run_in_its_own_body_routes_the_loop_list() {
     // `x` never gets a static value of its own outside the loop, so the
-    // body's `"$x"` stays unclaimed — but the loop's own list is exactly as
+    // body's `"$x"` remains unresolved, and the loop's own list is exactly as
     // much a candidate as `setsid ./pyx`'s operand is, since bash assigns
     // `x=./pyx` and the body goes on to run it.
     assert_eq!(
         route(r#"for x in ./pyx; do "$x"; done"#, &[]),
-        vec![RoutedTarget::LauncherOperand {
-            path: PathBuf::from("./pyx"),
-        }]
+        vec![
+            RoutedTarget::LauncherOperand {
+                path: PathBuf::from("./pyx"),
+            },
+            unresolved_dynamic(),
+        ]
     );
 }
 
@@ -264,9 +267,12 @@ fn a_for_loop_header_routes_its_list_whatever_the_body_does_with_the_variable() 
     ] {
         assert_eq!(
             route(command, &[]),
-            vec![RoutedTarget::LauncherOperand {
-                path: PathBuf::from("./pyx"),
-            }],
+            vec![
+                RoutedTarget::LauncherOperand {
+                    path: PathBuf::from("./pyx"),
+                },
+                unresolved_dynamic()
+            ],
             "{command}"
         );
     }
@@ -322,16 +328,49 @@ fn name_only_programs_and_urls_keep_their_existing_operand_behavior() {
         "wc -l src/*.rs",
         "rm -f ./build/*.o",
         "wget -O out http://x/y*",
-        "kill $PID",
         // Known gap: a slash-less dynamic launcher operand cannot be
         // distinguished from data without changing ordinary shell commands.
-        "setsid $SCRIPT",
-        // Same gap: an operand that is one whole command substitution has
-        // no slash of its own, however path-like the substitution's output.
-        r#"setsid "$(echo ./pyx)""#,
     ] {
         assert_eq!(route(command, &[]), Vec::new(), "{command}");
     }
+    assert_eq!(route("kill $PID", &[]), vec![unresolved_dynamic()]);
+    assert_eq!(route("setsid $SCRIPT", &[]), vec![unresolved_dynamic()]);
+    assert_eq!(
+        route(r#"setsid "$(echo ./pyx)""#, &[]),
+        vec![unresolved_dynamic()]
+    );
+}
+
+#[test]
+fn dynamic_argv_backticks_and_live_substitution_beside_nowdoc_degrade() {
+    assert_eq!(route("rm `printf x`", &[]), vec![unresolved_dynamic()]);
+    let command =
+        "gh pr create --body \"$(cat <<'EOF'\nplain text\nEOF\n)\" --title \"$(printf x)\"";
+    assert!(route(command, &[]).contains(&unresolved_dynamic()));
+}
+
+#[test]
+fn ifs_data_text_is_not_an_assignment() {
+    assert_eq!(route("echo env IFS=,", &[]), Vec::new());
+}
+
+#[test]
+fn dynamic_argv_keeps_independent_launcher_operand() {
+    assert_eq!(
+        route("setsid \"$x\" ./pyx", &[]),
+        vec![
+            unresolved_dynamic(),
+            RoutedTarget::LauncherOperand {
+                path: PathBuf::from("./pyx"),
+            },
+        ]
+    );
+}
+
+#[test]
+fn inert_dollar_word_does_not_degrade_without_live_expansion() {
+    assert_eq!(route("rm '$x'", &[]), Vec::new());
+    assert_eq!(route(r"rm \$x", &[]), Vec::new());
 }
 
 // ── Regression: an executor value's own path-like candidate used to return

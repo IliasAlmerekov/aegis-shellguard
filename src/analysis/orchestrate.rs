@@ -185,6 +185,17 @@ pub async fn run_with_budget_in_cwd(
             baseline: baseline.clone(),
         };
     }
+    let mut unresolved_execution = routed.iter().any(|target| {
+        matches!(
+            target,
+            RoutedTarget::Unresolved {
+                reason: DegradationReason::DynamicSource
+            } | RoutedTarget::Dynamic {
+                reason: DegradationReason::DynamicSource,
+                ..
+            }
+        )
+    });
 
     let mut queue = AnalysisQueue::new(QueueBudget {
         max_depth: budget.max_depth,
@@ -297,7 +308,10 @@ pub async fn run_with_budget_in_cwd(
                     &mut per_target,
                 )
             }
-            Resolution::Degraded(reason) => per_target.push(degraded(reason)),
+            Resolution::Degraded(reason) => {
+                unresolved_execution |= reason == DegradationReason::DynamicSource;
+                per_target.push(degraded(reason));
+            }
             // A direct executable without a verified shebang is not an
             // analyzable source target and does not claim safety.
             Resolution::NotApplicable => {}
@@ -350,8 +364,10 @@ pub async fn run_with_budget_in_cwd(
     // the latest status/reasons, so a per-target merge would clobber earlier
     // reasons (D3).
     let aggregated = aggregate(&per_target);
+    let mut assessment = merge_analysis(baseline, &aggregated);
+    assessment.effect_opaque |= unresolved_execution;
     Outcome::Analyzed {
-        assessment: merge_analysis(baseline, &aggregated),
+        assessment,
         target_count: per_target.len(),
     }
 }
