@@ -11,7 +11,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
-- Fixed: Clippy passes on Rust 1.94 and 1.98 by using Option propagation and fixed-size byte chunks without changing behavior. (#410)
+- Fixed: Clippy passes on Rust 1.94 and 1.98 by using Option propagation and fixed-size byte chunks without changing behavior; the Snapshot CI contract test accepts CRLF checkouts. (#410)
 - Security: Limit interactive-program variable exceptions to a single bare command word and require approval and recovery for dynamic `>&` targets. (ADR-043, PR #482)
 
 - Security: Bare `$SHELL` now requires approval and recovery; shell-variable writers and opaque callbacks revoke interactive-program exceptions, and dynamic `file` arguments no longer receive read-only treatment. (ADR-043, PR #482)
