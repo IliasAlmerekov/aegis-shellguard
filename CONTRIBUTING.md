@@ -32,22 +32,30 @@ Usually not a good fit without prior discussion:
 
 Minimum local setup:
 
-- Rust stable toolchain
+- Rust 1.89 or newer, the minimum supported Rust version (MSRV) in `Cargo.toml`
+- Rust 1.94.0 to run `scripts/lint.sh`, the toolchain CI pins in `.github/versions.env`
 - Git
 - a Unix-like environment supported by the project (Linux or macOS)
+- on Linux, the `libcap` headers: `sudo apt-get install -y libcap-dev` on Debian and Ubuntu, or your distribution's equivalent
+
+Without the `libcap` headers the Linux build fails by design, with
+`failed to compile bubblewrap for Linux target: libcap not available via pkg-config`.
+[`docs/troubleshooting.md`](docs/troubleshooting.md) describes the local-only
+`AEGIS_SKIP_BWRAP_BUILD` and `AEGIS_BWRAP_SOURCE_DIR` overrides.
 
 Optional but useful:
 
 - `cargo-audit` for local advisory checks
 - `cargo-deny` for local dependency-policy checks
-- nightly Rust plus `cargo-fuzz` for fuzzing
+- the pinned nightly Rust plus `cargo-fuzz` for fuzzing (`FUZZ_NIGHTLY_TOOLCHAIN` in `.github/versions.env`)
 - Docker if you want to opt in to the real Docker integration tests
 
 Install helper tools if you want the full local verification surface:
 
 ```sh
 cargo install cargo-audit cargo-deny cargo-fuzz
-rustup toolchain install nightly
+rustup toolchain install 1.94.0 --component clippy,rustfmt
+rustup toolchain install nightly-2026-06-15
 ```
 
 ## Build the project
@@ -66,17 +74,25 @@ cargo build --release
 
 ## Run tests
 
-Run the main local test suite:
+The repository is a Cargo workspace with a root package and twelve member
+crates under `crates/`. A bare `cargo test` runs only the root package. Run
+the full local test suite with `--workspace`:
 
 ```sh
-cargo test
+cargo test --workspace
 ```
 
 Run a specific integration test when iterating on one area:
 
 ```sh
-cargo test --test full_pipeline
+cargo test --test full_pipeline_policy
 ```
+
+The end-to-end tests live in eight targets, one per area:
+`full_pipeline_allowlist`, `full_pipeline_audit`, `full_pipeline_config`,
+`full_pipeline_json`, `full_pipeline_policy`, `full_pipeline_shell`,
+`full_pipeline_snapshot` and `full_pipeline_toggle`. To run the tests of one
+member crate, use `cargo test -p aegis-parser`, for example.
 
 Docker integration tests are skipped by default. To opt in:
 
@@ -109,10 +125,14 @@ See [`docs/performance-baseline.md`](docs/performance-baseline.md) for the bench
 
 ## Run fuzzing
 
-The repository currently includes a parser fuzz target. Run it with nightly Rust:
+The repository includes nine fuzz targets in `fuzz/fuzz_targets/`: `parser`,
+`scanner`, `heredoc`, `router`, `language_protocol`, `language_python`,
+`language_javascript`, `language_typescript` and `language_bash`. List them
+and run one with the pinned nightly Rust:
 
 ```sh
-cargo +nightly fuzz run parser fuzz/corpus/parser
+cargo +nightly-2026-06-15 fuzz list
+cargo +nightly-2026-06-15 fuzz run parser fuzz/corpus/parser
 ```
 
 Fuzzing guidance and current status are documented in [`docs/adr/README.md#verification-guidance`](docs/adr/README.md#verification-guidance).
@@ -136,10 +156,10 @@ Install the repository-managed Git hooks once per clone:
 ./scripts/setup-git-hooks.sh
 ```
 
-The pre-push hook mirrors the CI quality gate as closely as possible:
+The pre-push hook runs these steps from the CI quality gate:
 
 - `scripts/lint.sh` (rustfmt and clippy on the pinned toolchain)
-- `cargo test`
+- `cargo test --workspace`, which covers the root package and every member crate
 - `cargo audit` when `cargo-audit` is installed locally
 - `cargo deny check bans licenses sources` when `cargo-deny` is installed locally
 

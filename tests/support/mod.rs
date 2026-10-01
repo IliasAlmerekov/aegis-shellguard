@@ -23,9 +23,6 @@ use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
 use aegis_types::Decision;
 use aegis_types::RiskLevel;
 
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
-
 pub fn aegis_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
 }
@@ -91,15 +88,43 @@ pub fn read_audit_entries(home: &Path) -> Vec<serde_json::Value> {
         .collect()
 }
 
+/// Write `body` to `path` and make it executable, without this process ever
+/// holding an open write handle on `path`.
+///
+/// With `fs::write`, another test thread can `fork()` while this process holds
+/// the write descriptor. The child keeps a copy until its own `exec()` closes
+/// it, and running the fake executable inside that window fails with
+/// `ETXTBSY` ("Text file busy") (#468). Renaming afterwards does not help: the
+/// copied descriptor still points at the same inode. A short-lived `sh` child
+/// does the write, so no descriptor of this process refers to the file.
 pub fn write_executable(path: &Path, body: &str) {
-    fs::write(path, body).unwrap();
-
     #[cfg(unix)]
     {
-        let mut permissions = fs::metadata(path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(path, permissions).unwrap();
+        use std::io::Write;
+        use std::process::Stdio;
+
+        let mut child = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(r#"cat > "$1" && chmod 755 "$1""#)
+            .arg("sh")
+            .arg(path)
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("failed to spawn helper process to write executable");
+
+        child
+            .stdin
+            .take()
+            .expect("child stdin must be piped")
+            .write_all(body.as_bytes())
+            .expect("failed to write executable contents to helper process");
+
+        let status = child.wait().expect("failed to wait for helper process");
+        assert!(status.success(), "failed to write executable at {path:?}");
     }
+
+    #[cfg(not(unix))]
+    fs::write(path, body).unwrap();
 }
 
 pub fn write_disabled_toggle(home: &Path) {

@@ -209,10 +209,13 @@ fn expanding_heredoc_with_substitution_degrades_dynamically() {
     let targets = route(command, &[]);
     assert_eq!(
         targets,
-        vec![RoutedTarget::Dynamic {
-            language: SourceLanguage::Bash,
-            reason: DegradationReason::DynamicSource,
-        }]
+        vec![
+            unresolved_dynamic(),
+            RoutedTarget::Dynamic {
+                language: SourceLanguage::Bash,
+                reason: DegradationReason::DynamicSource,
+            },
+        ]
     );
 }
 
@@ -561,10 +564,13 @@ fn cd_with_command_substitution_degrades_a_relative_script_file() {
     let targets = route("cd -- $(mktemp -d) && python3 script.py", &[]);
     assert_eq!(
         targets,
-        vec![RoutedTarget::Dynamic {
-            language: SourceLanguage::Python,
-            reason: DegradationReason::DynamicSource,
-        }]
+        vec![
+            unresolved_dynamic(),
+            RoutedTarget::Dynamic {
+                language: SourceLanguage::Python,
+                reason: DegradationReason::DynamicSource,
+            },
+        ]
     );
 }
 

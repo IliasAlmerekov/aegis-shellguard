@@ -128,7 +128,7 @@ fn a_pipe_into_an_interpreter_with_flags_before_the_stdin_sentinel_degrades_dyna
 fn a_dynamic_here_string_command_substitution_degrades() {
     assert_eq!(
         route(r#"python3 <<<"$(cat ./evil.py)""#, &[]),
-        vec![evil_py_dynamic()]
+        vec![unresolved_dynamic(), evil_py_dynamic()]
     );
 }
 

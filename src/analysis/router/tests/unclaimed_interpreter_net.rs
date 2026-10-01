@@ -703,6 +703,21 @@ fn echo_of_a_variable_is_not_routed() {
 }
 
 #[test]
+fn literal_dollar_program_with_operand_keeps_prior_fallback() {
+    assert_eq!(route("'$c' ./evil.py", &[]), vec![unresolved_dynamic()]);
+}
+
+#[test]
+fn a_single_quoted_dollar_is_not_a_dynamic_argument() {
+    assert_eq!(route("git log --grep '$x'", &[]), Vec::new());
+}
+
+#[test]
+fn an_unresolved_database_argument_degrades() {
+    assert_eq!(route("psql -c \"$query\"", &[]), vec![unresolved_dynamic()]);
+}
+
+#[test]
 fn ls_of_a_brace_list_operand_is_not_routed() {
     assert_eq!(route("ls {a,b}", &[]), Vec::new());
 }

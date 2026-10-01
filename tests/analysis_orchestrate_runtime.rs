@@ -17,7 +17,6 @@ use aegis_types::{
     AllowlistOverrideLevel, AnalysisStatus, Assessment, CiPolicy, DegradationReason, MatchEvidence,
     Mode, ParsedCommand, RiskLevel, SnapshotPolicy,
 };
-use sha2::{Digest, Sha256};
 
 #[cfg(unix)]
 fn worker_fixture(dir: &Path, name: &str, body: &str) -> PathBuf {
@@ -474,7 +473,7 @@ async fn script_resolution_is_inside_total_deadline_and_preserves_original_byte_
         Outcome::Analyzed { assessment, .. } => assessment,
         other => panic!("BOM script must be analyzed: {other:?}"),
     };
-    let expected_hash = format!("{:x}", Sha256::digest(bytes));
+    let expected_hash = support::installer::sha256_hex(bytes);
     let provenance = analyzed.matched.iter().find_map(|matched| {
         if let MatchEvidence::LanguageRule { provenance, .. } = &matched.evidence {
             Some(provenance)

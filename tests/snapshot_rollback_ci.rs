@@ -70,3 +70,45 @@ fn ci_live_snapshot_rollback_job_runs_docker_and_sqlite_tests() {
         "CI must run the real SQLite Aegis CLI snapshot rollback lifecycle test"
     );
 }
+
+#[test]
+fn ci_runs_live_sqlite_snapshot_rollback_on_macos() {
+    let ci = workflow();
+    let block = ci
+        .split("\n  snapshot-rollback-live-macos:\n")
+        .nth(1)
+        .expect("CI must define the snapshot-rollback-live-macos job")
+        .split("\n  fuzz:\n")
+        .next()
+        .unwrap();
+
+    assert!(
+        block.contains("runs-on: ${{ needs.gate.outputs.macos_runner }}"),
+        "the macOS live job must use the pinned macOS runner label"
+    );
+    assert!(
+        block.contains("AEGIS_SQLITE_SNAPSHOT_TESTS: \"1\"")
+            && block.contains(
+                "cargo test --test snapshot_rollback_live sqlite_snapshot_rollback_restores_database_file_through_aegis_cli -- --exact --nocapture"
+            ),
+        "the macOS live job must run the same SQLite lifecycle test as the Linux job"
+    );
+    assert!(
+        !block.contains("AEGIS_DOCKER_TESTS") && !block.contains("docker "),
+        "hosted macOS runners have no Docker daemon, so the macOS job must not run Docker tests"
+    );
+}
+
+#[test]
+fn ci_docs_record_macos_docker_skip() {
+    let docs = read_repo_file("docs/ci.md");
+
+    assert!(
+        docs.contains("Live snapshot/rollback (SQLite, macOS)"),
+        "docs/ci.md must list the macOS live snapshot/rollback job"
+    );
+    assert!(
+        docs.contains("no Docker daemon"),
+        "docs/ci.md must record why the Docker live test is skipped on macOS"
+    );
+}

@@ -174,6 +174,166 @@ fn docs_ci_documents_the_pinned_versions() {
     }
 }
 
+/// `rust-version` from the `[workspace.package]` table of the root
+/// `Cargo.toml`. Only lines inside that table count, so a `rust-version` key
+/// in any other table cannot be picked up by mistake.
+fn workspace_msrv() -> String {
+    let manifest =
+        fs::read_to_string(repo_path("Cargo.toml")).expect("Cargo.toml should be readable");
+
+    manifest
+        .lines()
+        .map(str::trim)
+        .skip_while(|line| *line != "[workspace.package]")
+        .skip(1)
+        .take_while(|line| !line.starts_with('['))
+        .find_map(|line| line.strip_prefix("rust-version = "))
+        .map(|value| value.trim_matches('"').to_string())
+        .expect("Cargo.toml should set rust-version in [workspace.package]")
+}
+
+fn contributing() -> String {
+    fs::read_to_string(repo_path("CONTRIBUTING.md")).expect("CONTRIBUTING.md should be readable")
+}
+
+/// Words of `text` that look like a Rust toolchain version (`1.NN` or
+/// `1.NN.N`) or a pinned nightly (`nightly-YYYY-MM-DD`).
+fn toolchain_tokens(text: &str) -> Vec<String> {
+    let looks_like_rust_version = |token: &str| {
+        let mut parts = token.split('.');
+        parts.next() == Some("1")
+            && parts
+                .next()
+                .is_some_and(|minor| minor.len() == 2 && minor.chars().all(|c| c.is_ascii_digit()))
+            && parts
+                .next()
+                .is_none_or(|patch| !patch.is_empty() && patch.chars().all(|c| c.is_ascii_digit()))
+            && parts.next().is_none()
+    };
+
+    text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '-'))
+        .map(|word| word.trim_matches(|c| c == '.' || c == '-'))
+        .filter(|word| looks_like_rust_version(word) || word.starts_with("nightly-"))
+        .map(str::to_string)
+        .collect()
+}
+
+/// Places in `text` that pick a floating release channel instead of a pinned
+/// toolchain: a `+stable`, `+beta` or `+nightly` override, or a bare channel
+/// name anywhere on a line that runs `rustup` (`rustup toolchain install`,
+/// `rustup update`, `rustup run` and so on). Each use is reported with the
+/// word before it. Prose such as "the pinned nightly Rust" on a line without
+/// `rustup` is not a toolchain selection and does not count.
+fn floating_toolchain_uses(text: &str) -> Vec<String> {
+    const CHANNELS: [&str; 3] = ["stable", "beta", "nightly"];
+
+    let mut uses = Vec::new();
+    for line in text.lines() {
+        let words: Vec<&str> = line
+            .split_whitespace()
+            .map(|word| word.trim_matches('`'))
+            .collect();
+        if !words.contains(&"rustup") && !line.contains('+') {
+            continue;
+        }
+
+        for (index, word) in words.iter().enumerate() {
+            if word
+                .strip_prefix('+')
+                .is_some_and(|name| CHANNELS.contains(&name))
+            {
+                uses.push((*word).to_string());
+            }
+            if words.contains(&"rustup")
+                && CHANNELS.contains(word)
+                && let Some(previous) = index.checked_sub(1).and_then(|i| words.get(i))
+            {
+                uses.push(format!("{previous} {word}"));
+            }
+        }
+    }
+    uses
+}
+
+#[test]
+fn contributing_documents_the_pinned_toolchains() {
+    let docs = contributing();
+
+    for key in ["RUST_TOOLCHAIN", "FUZZ_NIGHTLY_TOOLCHAIN"] {
+        let value = pinned_version(key);
+        assert!(
+            docs.contains(&value),
+            "CONTRIBUTING.md must mention {key} = {value} from .github/versions.env; \
+             update CONTRIBUTING.md to the pinned value"
+        );
+    }
+}
+
+#[test]
+fn contributing_states_the_workspace_msrv() {
+    let msrv = workspace_msrv();
+
+    assert!(
+        contributing().contains(&format!("Rust {msrv} or newer")),
+        "CONTRIBUTING.md must say \"Rust {msrv} or newer\", matching rust-version in \
+         the root Cargo.toml [workspace.package]; update CONTRIBUTING.md"
+    );
+}
+
+#[test]
+fn contributing_names_no_other_toolchain_version() {
+    let allowed = [
+        pinned_version("RUST_TOOLCHAIN"),
+        pinned_version("FUZZ_NIGHTLY_TOOLCHAIN"),
+        workspace_msrv(),
+    ];
+
+    for token in toolchain_tokens(&contributing()) {
+        assert!(
+            allowed.contains(&token),
+            "CONTRIBUTING.md names toolchain version {token}, which matches none of \
+             RUST_TOOLCHAIN and FUZZ_NIGHTLY_TOOLCHAIN in .github/versions.env or \
+             rust-version in Cargo.toml; update CONTRIBUTING.md"
+        );
+    }
+}
+
+#[test]
+fn contributing_names_no_floating_toolchain() {
+    let uses = floating_toolchain_uses(&contributing());
+
+    assert!(
+        uses.is_empty(),
+        "CONTRIBUTING.md selects a floating toolchain ({uses:?}); name RUST_TOOLCHAIN or \
+         FUZZ_NIGHTLY_TOOLCHAIN from .github/versions.env instead"
+    );
+}
+
+#[test]
+fn floating_toolchain_uses_catches_channel_aliases() {
+    let text = "cargo +nightly fuzz run parser\n\
+                rustup toolchain install stable\n\
+                `rustup default beta`\n\
+                rustup override set nightly\n\
+                rustup toolchain install nightly --profile minimal\n\
+                rustup update stable\n\
+                cargo +1.94.0 clippy\n\
+                rustup toolchain install nightly-2026-06-15\n\
+                the pinned nightly Rust is stable enough";
+
+    assert_eq!(
+        floating_toolchain_uses(text),
+        [
+            "+nightly",
+            "install stable",
+            "default beta",
+            "set nightly",
+            "install nightly",
+            "update stable",
+        ]
+    );
+}
+
 #[test]
 fn docs_ci_documents_every_release_target() {
     let targets = fs::read_to_string(repo_path(".github/build-targets.json"))

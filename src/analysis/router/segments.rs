@@ -16,6 +16,7 @@ use super::*;
 
 mod argv_walk;
 mod direct;
+mod dynamic_args;
 mod dynamic_program;
 mod executor_config;
 mod runner;
@@ -26,6 +27,7 @@ use argv_walk::{
     walk_interpreter_argv,
 };
 use direct::route_direct_stage;
+use dynamic_args::{dynamic_pipeline_input, dynamic_stage_net, xargs_pipeline_consumer};
 use dynamic_program::{alias_value, is_dynamic_program_word};
 use executor_config::{
     assignment_stage_executor_routes, env_prefix_executor_route, option_value_executor_route,
@@ -405,6 +407,9 @@ pub(super) fn route_list_segment(
             *home = HomeState::Degraded;
         }
         if let Some(effect) = parse_cd_like(&stages[0].raw) {
+            if let Some(target) = dynamic_stage_net(&stages[0].raw, ctx) {
+                push_unique(targets, target);
+            }
             *cwd = fold_cd(cwd, effect, segment.separator);
             return;
         }
@@ -428,6 +433,21 @@ pub(super) fn route_list_segment(
     let mut stage_targets = Vec::new();
     let mut wrapped_stage_targets = Vec::new();
     for (index, stage) in stages.iter().enumerate() {
+        if index > 0
+            && xargs_pipeline_consumer(&stage.raw)
+            && dynamic_pipeline_input(&stages[index - 1].raw)
+        {
+            push_unique(
+                &mut stage_targets,
+                RoutedTarget::Unresolved {
+                    reason: DegradationReason::DynamicSource,
+                },
+            );
+        }
+        let dynamic_target = dynamic_stage_net(&stage.raw, ctx);
+        if let Some(target) = dynamic_target {
+            push_unique(&mut stage_targets, target);
+        }
         if stage_degrades_home_trust(&stage.raw) {
             *home = HomeState::Degraded;
         }
@@ -537,6 +557,10 @@ fn route_stage(
     targets: &mut Vec<RoutedTarget>,
     depth: u32,
 ) {
+    let dynamic_target = dynamic_stage_net(stage_raw, ctx);
+    if let Some(target) = dynamic_target {
+        push_unique(targets, target);
+    }
     let direct = route_direct_stage(stage_raw, ctx.trusted_aliases);
     let mut claimed = !direct.is_empty();
     for target in direct {

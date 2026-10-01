@@ -10,8 +10,8 @@ unset $(git rev-parse --local-env-vars)
 echo "pre-push: running scripts/lint.sh"
 scripts/lint.sh
 
-echo "pre-push: running cargo test"
-cargo test
+echo "pre-push: running cargo test --workspace"
+cargo test --workspace
 
 if cargo audit --help >/dev/null 2>&1; then
     echo "pre-push: running cargo audit"

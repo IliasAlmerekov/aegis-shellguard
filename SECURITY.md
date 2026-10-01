@@ -41,6 +41,9 @@ The following are in scope for responsible disclosure:
 - approval-flow bugs that silently auto-approve or skip confirmation
 - audit-log integrity issues, including missing, forged, or silently dropped security-relevant entries
 - snapshot / rollback contract bugs that create false safety signals for dangerous commands
+- Sandbox confinement escape, where a confined command writes outside the writable roots or reaches a network that its Effective confinement profile denies
+- a Sandbox status recorded as `Active` when the confined launch path was not prepared, so the command ran unconfined
+- vulnerabilities in the bubblewrap build vendored under `crates/aegis-sandbox/vendor/bubblewrap`, which `crates/aegis-sandbox/build.rs` compiles into the `aegis` binary on Linux
 - installer or release-flow issues that could compromise shipped binaries or update paths
 
 ## What is out of scope
@@ -52,12 +55,14 @@ The following are currently out of scope because they are documented non-goals o
 - reports that depend on the user explicitly approving a dangerous command after being warned
 - issues limited to local development helper directories such as `.claude/`, `.codex/`, or `.planning/`
 - vulnerabilities that exist only in third-party infrastructure outside this repository unless Aegis introduces the exploitable condition
+- reads of files or secrets from inside a confined command, because the Sandbox is not a confidentiality boundary
+- privilege escalation that needs a flaw outside Aegis, such as a kernel bug, because the Sandbox is not a privilege boundary
 
-The product also has explicit design limitations documented in `README.md` and `docs/adr/adr-010-full-shell-evaluation-and-deferred-execution-remain-non-goals.md`. Reports based only on these known non-goals are out of scope:
+The product also has explicit design limitations documented in `README.md`, `docs/threat-model.md`, `docs/adr/adr-010-full-shell-evaluation-and-deferred-execution-remain-non-goals.md`, and `docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md`. Reports based only on these known non-goals are out of scope:
 
 - obfuscated shell input that requires full shell evaluation
 - indirect execution where a safe write is followed by a later dangerous invocation
-- runtime-generated commands such as `eval "$(…)"` payload assembly
+- runtime-generated commands where `eval` receives a variable or function output, such as `eval "$VAR"` or `eval "$(some_function)"`. Aegis analyses a literal `eval` payload and the commands inside a literal `$(...)`. It cannot see a value built at run time, so it scores such an `eval` at least `Warn` without analysing the payload
 - alias or shell-function expansion not visible in the raw intercepted command
 - encoded payload variants outside the implemented heuristic coverage
 - subshell or injection techniques that are not visible to the current interception boundary

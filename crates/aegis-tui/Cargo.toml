@@ -12,7 +12,7 @@ description = "Crossterm confirmation TUI for Aegis. Depends on aegis-types, aeg
 [dependencies]
 aegis-types.workspace = true
 aegis-explanation.workspace = true
-crossterm = "0.28"
+crossterm = "0.29"
 
 [dev-dependencies]
 aegis-parser.workspace = true

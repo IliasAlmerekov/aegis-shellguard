@@ -167,10 +167,10 @@ Architectural constraints:
 Approved dependency categories currently include:
 
 - `clap` (4.5, derive API) — CLI parsing.
-- `crossterm` (0.28) — terminal UI, confirmation dialog.
+- `crossterm` (0.29) — terminal UI, confirmation dialog.
 - `aho-corasick` (1.1) — fast multi-pattern quick scan.
 - `regex` (1.11) — full pattern scan, second pass only.
-- `serde` + `toml` (0.8) — config model and parsing.
+- `serde` + `toml` (1.1) — config model and parsing.
 - `thiserror` — typed errors in library crates.
 - `anyhow` — error propagation in CLI glue.
 - `tokio` (features: process, fs, rt, rt-multi-thread, io-util, io-std, sync, time) — async subprocess and snapshot work.
@@ -183,7 +183,7 @@ Approved dependency categories currently include:
   build; **only** `aegis-sandbox` may depend on it (ADR-029 §3–§4).
 - `pkg-config` (build-dependency) — locates `libcap` for the vendored bubblewrap
   build; **only** `aegis-sandbox` may depend on it (ADR-029 §3–§4).
-- `tree-sitter` (0.26.11) — Tree-sitter runtime; **only** `aegis-language` may
+- `tree-sitter` (0.26.13) — Tree-sitter runtime; **only** `aegis-language` may
   depend on it (ADR-022 §8). It is the first sanctioned native-C build input.
 - `tree-sitter-python` (0.25.0), `tree-sitter-javascript` (0.25.0),
   `tree-sitter-typescript` (0.23.2), `tree-sitter-bash` (0.25.1) — the four
@@ -270,7 +270,7 @@ Minimum expectations:
 Quality gates:
 
 - `scripts/lint.sh` (rustfmt and clippy, the same commands CI runs)
-- `cargo test`
+- `cargo test --workspace`
 - `cargo audit`
 - `cargo deny check`
 

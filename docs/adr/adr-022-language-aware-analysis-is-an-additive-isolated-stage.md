@@ -234,9 +234,8 @@ on that whole token would instead find the trailing path segment of its
 
 A program word routing can only read through shell expansion it does not
 evaluate (`$VAR`, `${X:-python3}`, a backtick or `$(...)` substitution, a
-brace list such as `{a,b}`) degrades the same way, but only once the stage
-also carries an operand for it to act on: a bare `$EDITOR`/`$SHELL` with
-nothing to act on is an everyday interactive launch and stays untouched. A
+brace list such as `{a,b}`) degrades the same way. ADR-043 replaces the
+former operand gate and defines the narrow bare interactive exceptions. A
 program word that instead names a shell `alias` defined earlier in the same
 command (`alias runpy=python3`) resolves only as opaquely as its own
 replacement text: standing in for a known interpreter, for a dynamic word,
