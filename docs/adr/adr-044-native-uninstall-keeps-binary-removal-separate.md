@@ -31,8 +31,11 @@ advice. Local npm paths must not yield a global npm removal command.
 
 Preflight settings and managed shell blocks before mutation. Reject a symlinked
 target or ancestor only for a file uninstall would change: agent settings, hook
-payloads, and a startup file that holds a managed block. A symlinked startup
-file without a block, common with dotfile managers, is left alone. A symlinked
+payloads, and a startup file that holds a managed block. A settings file is
+checked only when it holds an Aegis registration, and a hook payload only when
+it exists. A symlinked startup file without a block, or a symlinked `~/.claude`
+or `~/.codex` with nothing of Aegis inside, is left alone; dotfile managers
+create both. A symlinked
 `~/.aegis` is kept and not followed, including the toggle-state payload inside
 it; `--purge-data` refuses it. Replace changed configuration files atomically,
 keep their permissions and the line endings of kept lines. Data purge does not
@@ -46,6 +49,10 @@ The scanner classifies uninstall as a Danger Self-management command (ADR-035).
 Clean only the global integrations. Project-local hooks written by
 `aegis install-hooks --local` are reported in the success output, not removed;
 the operator cleans them by hand.
+
+Leave the Codex `features.hooks` flag that `install-hooks` turns on in
+`~/.codex/config.toml`. Other Codex hooks may need it. The success output
+says the flag stays enabled when it is on.
 
 Keep `scripts/uninstall.sh` as the curl-specific fallback. It may probe package
 managers for advice but never invokes their uninstall commands. It resolves the

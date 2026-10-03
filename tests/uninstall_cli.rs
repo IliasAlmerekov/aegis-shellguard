@@ -11,6 +11,7 @@ use tempfile::TempDir;
 
 const RC_WITH_BLOCK: &str =
     "keep\n# >>> aegis shell setup >>>\nmanaged\n# <<< aegis shell setup <<<\n";
+const SETTINGS_WITH_AEGIS_HOOK: &str = r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"/home/u/.claude/hooks/aegis-pre-tool-use.sh"}]}]}}"#;
 
 fn uninstall(home: &Path, args: &[&str]) -> Output {
     Command::new(support::aegis_bin())
@@ -318,11 +319,16 @@ fn uninstall_preflights_malformed_rc_and_symlinked_settings_or_rc() {
             "malformed" => {
                 fs::write(home.path().join(".bashrc"), "# >>> aegis shell setup >>>\n").unwrap()
             }
-            "settings-link" => std::os::unix::fs::symlink(
-                outside.path().join("target"),
-                home.path().join(".claude/settings.json"),
-            )
-            .unwrap(),
+            "settings-link" => {
+                // A symlinked settings file is refused only when uninstall
+                // would prune an Aegis registration from it.
+                fs::write(outside.path().join("target"), SETTINGS_WITH_AEGIS_HOOK).unwrap();
+                std::os::unix::fs::symlink(
+                    outside.path().join("target"),
+                    home.path().join(".claude/settings.json"),
+                )
+                .unwrap()
+            }
             _ => {
                 // A symlinked rc is refused only when uninstall would rewrite it.
                 fs::write(outside.path().join("target"), RC_WITH_BLOCK).unwrap();
@@ -333,10 +339,10 @@ fn uninstall_preflights_malformed_rc_and_symlinked_settings_or_rc() {
                 .unwrap()
             }
         }
-        let expected = if fixture == "rc-link" {
-            RC_WITH_BLOCK
-        } else {
-            "keep"
+        let expected = match fixture {
+            "rc-link" => RC_WITH_BLOCK,
+            "settings-link" => SETTINGS_WITH_AEGIS_HOOK,
+            _ => "keep",
         };
         assert!(!uninstall(home.path(), &[]).status.success());
         assert!(hook.exists());
@@ -497,4 +503,65 @@ fn uninstall_keeps_crlf_line_endings_of_the_lines_it_keeps() {
     );
 
     assert_eq!(fs::read_to_string(&rc).unwrap(), "first\r\nlast\r\n");
+}
+
+#[test]
+fn uninstall_cleans_shell_setup_when_a_symlinked_claude_directory_holds_nothing_to_remove() {
+    let home = TempDir::new().unwrap();
+    let dotfiles = TempDir::new().unwrap();
+    fs::write(dotfiles.path().join("settings.json"), r#"{"theme":"dark"}"#).unwrap();
+    std::os::unix::fs::symlink(dotfiles.path(), home.path().join(".claude")).unwrap();
+    let rc = home.path().join(".bashrc");
+    fs::write(&rc, RC_WITH_BLOCK).unwrap();
+
+    let output = uninstall(home.path(), &["--channel", "npm"]);
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read_to_string(&rc).unwrap(), "keep\n");
+    assert!(home.path().join(".claude").is_symlink());
+    assert_eq!(
+        fs::read_to_string(dotfiles.path().join("settings.json")).unwrap(),
+        r#"{"theme":"dark"}"#
+    );
+}
+
+#[test]
+fn uninstall_refuses_to_delete_a_hook_payload_through_a_symlinked_claude_directory() {
+    let home = TempDir::new().unwrap();
+    let dotfiles = TempDir::new().unwrap();
+    fs::create_dir_all(dotfiles.path().join("hooks")).unwrap();
+    let hook = dotfiles.path().join("hooks/aegis-pre-tool-use.sh");
+    fs::write(&hook, "managed").unwrap();
+    std::os::unix::fs::symlink(dotfiles.path(), home.path().join(".claude")).unwrap();
+    let rc = home.path().join(".bashrc");
+    fs::write(&rc, RC_WITH_BLOCK).unwrap();
+
+    let output = uninstall(home.path(), &["--channel", "npm"]);
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("symlink"));
+    assert!(hook.exists());
+    assert_eq!(fs::read_to_string(&rc).unwrap(), RC_WITH_BLOCK);
+}
+
+#[test]
+fn uninstall_reports_the_codex_hooks_feature_flag_it_leaves_enabled() {
+    let home = TempDir::new().unwrap();
+    fs::create_dir_all(home.path().join(".codex")).unwrap();
+    let config = home.path().join(".codex/config.toml");
+    fs::write(&config, "[features]\nhooks = true\n").unwrap();
+
+    let output = uninstall(home.path(), &["--channel", "npm"]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("features.hooks"), "{stdout}");
+    assert_eq!(
+        fs::read_to_string(&config).unwrap(),
+        "[features]\nhooks = true\n"
+    );
 }

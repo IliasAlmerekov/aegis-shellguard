@@ -91,3 +91,44 @@ fn fallback_leaves_a_homebrew_cellar_link_alone_and_advises_brew() {
     assert!(!stderr.contains("still on PATH"), "{stderr}");
     assert!(!stderr.contains("Homebrew reports"), "{stderr}");
 }
+
+#[test]
+fn fallback_advises_cargo_for_a_cargo_binary_even_when_homebrew_also_has_aegis() {
+    let temp = TempDir::new().unwrap();
+    let tools = temp.path().join("tools");
+    fs::create_dir_all(&tools).unwrap();
+    support::write_executable(
+        &tools.join("brew"),
+        "#!/bin/sh\n[ \"$1\" = list ] && exit 0\nexit 1\n",
+    );
+    let cargo_home = temp.path().join("cargo");
+    fs::create_dir_all(cargo_home.join("bin")).unwrap();
+    support::write_executable(&cargo_home.join("bin/aegis"), "#!/bin/sh\nexit 99\n");
+    let home = temp.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let path = format!(
+        "{}:{}",
+        cargo_home.join("bin").display(),
+        installer_path(&temp, &tools)
+    );
+    let bindir = temp.path().join("curl-bin");
+    let output = run_script_at_home(
+        &home,
+        "uninstall.sh",
+        &[
+            ("PATH", &path),
+            ("AEGIS_BINDIR", bindir.to_str().unwrap()),
+            ("AEGIS_REAL_SHELL", "/bin/bash"),
+            ("AEGIS_UNINSTALL_PURGE_DATA", "0"),
+            ("CARGO_HOME", cargo_home.to_str().unwrap()),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let warning = String::from_utf8_lossy(&output.stderr);
+    assert!(warning.contains("cargo uninstall --root '"), "{warning}");
+    assert!(!warning.contains("brew uninstall"), "{warning}");
+}

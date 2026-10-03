@@ -73,16 +73,23 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
     if args.purge_data {
         reject_symlinks(&data)?;
     }
+    // Like startup files, a payload or settings file is checked for symlinks
+    // only when uninstall will change it, so a dotfile manager's linked
+    // `~/.claude` with nothing of Aegis inside does not block the rest.
+    let payloads: Vec<_> = payloads
+        .into_iter()
+        .filter(|path| fs::symlink_metadata(path).is_ok())
+        .collect();
     for path in &payloads {
         reject_symlinks(path)?;
     }
     let mut settings = Vec::new();
     for relative in [".claude/settings.json", ".codex/hooks.json"] {
         let path = home.join(relative);
-        reject_symlinks(&path)?;
         if path.try_exists().map_err(|error| error.to_string())? {
             let mut value = super::load_settings(&path)?;
             if prune_registrations(&mut value)? {
+                reject_symlinks(&path)?;
                 settings.push((path, value));
             }
         }
@@ -139,6 +146,13 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
             data.display()
         )
     };
+    // install-hooks turns this Codex flag on, but other Codex hooks may rely
+    // on it, so uninstall reports it instead of turning it off.
+    let codex_message = if codex_hooks_feature_enabled(&home.join(".codex/config.toml")) {
+        "\nCodex features.hooks stays enabled in ~/.codex/config.toml; turn it off there if no other hook needs it."
+    } else {
+        ""
+    };
     let channel_message = if args.channel.is_some() {
         "Using the explicitly selected removal channel."
     } else if channel.is_some() {
@@ -156,10 +170,18 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
         );
     }
     Ok(format!(
-        "{shell_message}\nRemoved Aegis agent hooks where present.\n{data_message}\nUser configuration and unrelated hooks were kept.\nProject-local hooks from `aegis install-hooks --local` were not touched. Projects where you ran it need manual cleanup: the hook shim denies every Bash command once the binary is gone.\n{channel_message}\nBinary kept at {}. Remove it separately:\n  {}\nOpen a new terminal after removal.",
+        "{shell_message}\nRemoved Aegis agent hooks where present.{codex_message}\n{data_message}\nUser configuration and unrelated hooks were kept.\nProject-local hooks from `aegis install-hooks --local` were not touched. Projects where you ran it need manual cleanup: the hook shim denies every Bash command once the binary is gone.\n{channel_message}\nBinary kept at {}. Remove it separately:\n  {}\nOpen a new terminal after removal.",
         binary.display(),
         removal_command(channel, &binary)
     ))
+}
+
+fn codex_hooks_feature_enabled(config: &Path) -> bool {
+    fs::read_to_string(config)
+        .ok()
+        .and_then(|raw| raw.parse::<toml::Table>().ok())
+        .and_then(|table| table.get("features")?.get("hooks")?.as_bool())
+        .unwrap_or(false)
 }
 
 fn display_paths<'a>(paths: impl Iterator<Item = &'a PathBuf>) -> String {
@@ -268,7 +290,9 @@ fn prune_registrations(settings: &mut Value) -> Result<bool, String> {
 }
 
 fn write_existing_file(path: &Path, content: &str) -> Result<(), String> {
-    let parent = path.parent().ok_or("shell startup file has no parent")?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
     let temporary = super::temporary_settings_path(parent);
     // Only clean up a temporary file that this invocation actually created.
     let mut file = fs::OpenOptions::new()

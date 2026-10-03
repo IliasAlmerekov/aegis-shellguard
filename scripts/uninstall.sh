@@ -179,12 +179,6 @@ describe_remaining_binary() {
         return
     fi
 
-    if need_cmd brew && brew list aegis >/dev/null 2>&1; then
-        printf 'warning: Homebrew reports aegis installed; %s remains on PATH. This script only removed %s. Check package ownership, then run `brew uninstall aegis`.\n' \
-            "${remaining_path}" "$(target_path)" >&2
-        return
-    fi
-
     cargo_root="${CARGO_INSTALL_ROOT:-${CARGO_HOME:-${HOME}/.cargo}}"
     if [ -e "${cargo_root}/bin/aegis" ] && [ "$(resolve_link "${remaining_path}")" = "$(resolve_link "${cargo_root}/bin/aegis")" ]; then
         if [ -n "${CARGO_INSTALL_ROOT:-${CARGO_HOME:-}}" ]; then
@@ -193,6 +187,14 @@ describe_remaining_binary() {
         else
             printf 'warning: %s matches the Cargo binary path, not verified package ownership. Run `cargo uninstall aegis` after checking the installation.\n' "${remaining_path}" >&2
         fi
+        return
+    fi
+
+    # Homebrew reporting aegis says nothing about this path, so the exact
+    # Cargo path match above wins.
+    if need_cmd brew && brew list aegis >/dev/null 2>&1; then
+        printf 'warning: Homebrew reports aegis installed; %s remains on PATH. This script only removed %s. Check package ownership, then run `brew uninstall aegis`.\n' \
+            "${remaining_path}" "$(target_path)" >&2
         return
     fi
 
