@@ -50,6 +50,7 @@ mod secure_fs;
 #[cfg(test)]
 mod test_support;
 /// Test hooks for observing snapshot registry materialization.
+#[cfg(any(test, feature = "testing"))]
 pub mod testing;
 
 /// Re-export of [`clock::Clock`], [`clock::SystemClock`], [`clock::FixedClock`].

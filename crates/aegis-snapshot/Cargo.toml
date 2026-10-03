@@ -13,7 +13,6 @@ description = "Snapshot and rollback plugins for Aegis."
 aegis-types.workspace = true
 aegis-config.workspace = true
 async-trait = "0.1"
-thiserror = "1"
 tokio = { version = "1", features = ["process", "fs", "rt", "rt-multi-thread", "io-util", "sync", "time"] }
 tracing = "0.1"
 serde = { version = "1", features = ["derive"] }
@@ -23,6 +22,11 @@ time = { version = "0.3", features = ["formatting", "parsing"] }
 # `std` exposes stored uid metadata but no effective-uid query; libc provides
 # `geteuid` without adding a native build dependency.
 libc = "0.2"
+
+[features]
+# Exposes registry test hooks to dependent crates' tests. Never enable it in
+# a release build.
+testing = []
 
 [dev-dependencies]
 tempfile = "3"

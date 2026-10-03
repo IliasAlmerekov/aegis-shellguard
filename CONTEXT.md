@@ -222,7 +222,7 @@ command` rules and is the only category whose subject is Aegis itself.
 **Self-management command**:
 An `aegis` invocation that changes Aegis' own `Effective enforcement state`, recovery
 artifacts, or installed integration points: `off`, `rollback`, `snapshot prune --yes`,
-`config init`, `install-hooks`, `setup-shell`. The scanner classifies these under
+`config init`, `install-hooks`, `setup-shell`, `uninstall`. The scanner classifies these under
 `Category::Aegis` so every spelling is covered, including an absolute path, a launcher
 prefix, and any position inside a compound command (ADR-035). An `aegis` command that
 only reads state or only tightens enforcement (`on`, `status`, `audit`,
@@ -832,6 +832,14 @@ The distribution Aegis was installed from and should check for a newer release
 on (`Channel::Npm` in v1; ADR-038). Stored in `Update state`, never inferred
 from how the running binary happens to be invoked.
 _Avoid_: distribution channel, package source
+
+**Removal channel**:
+The channel whose binary-removal command `aegis uninstall` prints. It comes from
+the canonical path of the running binary, or from an explicit `--channel`. It is
+a hint for the operator, not proof of package ownership, and is never written to
+`Update state`. `aegis uninstall` prints the command and never runs a package
+manager (ADR-044).
+_Avoid_: Installation channel, uninstall channel
 
 **Update check**:
 One request to the installation channel's registry for its `latest` version,

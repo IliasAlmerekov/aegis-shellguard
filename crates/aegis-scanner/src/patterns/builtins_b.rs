@@ -572,5 +572,24 @@ pub(super) fn rules() -> Vec<PrefixRule> {
             match_examples: &["aegis setup-shell --remove", "aegis setup-shell"],
             not_match_examples: &["aegis status"],
         },
+        PrefixRule {
+            id: Cow::Borrowed("AEG-007"),
+            category: Category::Aegis,
+            pattern: vec![s("aegis"), s("uninstall")],
+            risk: RiskLevel::Danger,
+            description: Cow::Borrowed(
+                "aegis uninstall removes command interception and can delete recovery data",
+            ),
+            safe_alt: Some(Cow::Borrowed(
+                "Review the uninstall yourself in a terminal Aegis does not proxy",
+            )),
+            justification: Some(Cow::Borrowed(
+                "Removing managed hooks and shell setup stops interception. The purge-data option also deletes audit logs and snapshots.",
+            )),
+            source: PatternSource::Builtin,
+            suppressed_by: &[],
+            match_examples: &["aegis uninstall", "aegis uninstall --purge-data"],
+            not_match_examples: &["aegis status"],
+        },
     ]
 }

@@ -2,8 +2,10 @@ use std::path::{Path, PathBuf};
 
 use super::shell_quote;
 
-const BEGIN_MARKER: &str = "# >>> aegis shell setup >>>";
-const END_MARKER: &str = "# <<< aegis shell setup <<<";
+/// Start of a shell block owned by Aegis.
+pub(super) const BEGIN_MARKER: &str = "# >>> aegis shell setup >>>";
+/// End of a shell block owned by Aegis.
+pub(super) const END_MARKER: &str = "# <<< aegis shell setup <<<";
 
 pub(crate) fn run_setup_shell(args: &crate::SetupShellArgs) -> i32 {
     match run_setup_shell_inner(args) {

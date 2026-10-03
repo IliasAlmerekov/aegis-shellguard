@@ -43,10 +43,7 @@ pub(crate) fn env_split_string_tokens<'a>(tokens: &[&'a str]) -> Option<Vec<&'a 
             words.extend_from_slice(&tail[index + consumed..]);
             return Some(words);
         }
-        match env_split_string_leading_option_len(tail, index) {
-            Some(len) => index += len,
-            None => return None,
-        }
+        index += env_split_string_leading_option_len(tail, index)?;
     }
     None
 }

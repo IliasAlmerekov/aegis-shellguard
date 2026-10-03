@@ -80,6 +80,8 @@ enum Commands {
     InstallHooks(InstallArgs),
     /// Configure Aegis as an explicit opt-in $SHELL proxy for new terminal sessions
     SetupShell(SetupShellArgs),
+    /// Remove managed integrations and show the command to remove the binary
+    Uninstall(UninstallArgs),
     /// Manage the opt-in npm update notice
     Update(UpdateArgs),
 }
@@ -233,6 +235,21 @@ struct SetupShellArgs {
     /// Path to the Aegis binary that SHELL should point to.
     #[arg(long = "aegis-bin")]
     aegis_bin: Option<std::path::PathBuf>,
+}
+
+#[derive(Args)]
+struct UninstallArgs {
+    /// Also delete ~/.aegis, including audit logs and snapshots.
+    #[arg(long)]
+    purge_data: bool,
+
+    /// Override removal-channel detection for the printed binary-removal command.
+    #[arg(long, value_enum)]
+    channel: Option<install::uninstall::RemovalChannel>,
+
+    /// Also clean a custom shell startup file.
+    #[arg(long = "rc-file")]
+    rc_file: Option<std::path::PathBuf>,
 }
 
 #[derive(Args)]

@@ -49,6 +49,62 @@ fn disabling_aegis_is_danger_in_every_spelling() {
 }
 
 #[test]
+fn uninstalling_aegis_is_danger_in_every_spelling() {
+    for command in [
+        "aegis uninstall",
+        "aegis uninstall --purge-data",
+        "env aegis uninstall",
+        "sudo /usr/local/bin/aegis uninstall",
+        "echo hi && aegis uninstall",
+    ] {
+        assert_eq!(risk_of(command), RiskLevel::Danger, "{command}");
+        assert!(matched_ids(command).iter().any(|id| id == "AEG-007"));
+    }
+}
+
+/// Aegis' own global options before the subcommand used to hide it from
+/// every `AEG-*` prefix rule, so `aegis --quiet uninstall --purge-data` was
+/// auto-approved as Safe.
+#[test]
+fn aegis_global_options_do_not_hide_a_self_management_subcommand() {
+    for (command, id) in [
+        ("aegis --quiet uninstall --purge-data", "AEG-007"),
+        ("aegis -v uninstall", "AEG-007"),
+        ("aegis --verbose off", "AEG-001"),
+        ("aegis --output text off", "AEG-001"),
+        ("aegis --output=json uninstall", "AEG-007"),
+        ("aegis --verbosity quiet off", "AEG-001"),
+        ("aegis --verbosity=quiet off", "AEG-001"),
+        ("aegis -c true off", "AEG-001"),
+        ("aegis -ctrue off", "AEG-001"),
+        ("aegis -vc true uninstall", "AEG-007"),
+        ("aegis --command=true --quiet uninstall", "AEG-007"),
+        (
+            "echo hi && sudo /usr/local/bin/aegis --quiet off",
+            "AEG-001",
+        ),
+    ] {
+        assert_eq!(
+            risk_of(command),
+            RiskLevel::Danger,
+            "{command:?} must reach Danger"
+        );
+        assert!(
+            matched_ids(command).iter().any(|matched| matched == id),
+            "{command:?} must match {id}, matched {:?}",
+            matched_ids(command)
+        );
+    }
+}
+
+#[test]
+fn aegis_global_options_before_a_read_only_subcommand_stay_safe() {
+    for command in ["aegis --quiet status", "aegis --output json audit"] {
+        assert_eq!(risk_of(command), RiskLevel::Safe, "{command:?}");
+    }
+}
+
+#[test]
 fn rollback_and_prune_are_danger() {
     assert_eq!(risk_of("aegis rollback snap-123"), RiskLevel::Danger);
     assert!(

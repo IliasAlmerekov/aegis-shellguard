@@ -271,14 +271,59 @@ override, or deny.
 
 ## Uninstall
 
+First remove Aegis-managed shell blocks and Claude Code/Codex hooks:
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/IliasAlmerekov/aegis-shellguard/main/scripts/uninstall.sh | sh
+aegis uninstall
+# Also delete ~/.aegis (audit logs, snapshots, toggle and update state):
+aegis uninstall --purge-data
 ```
 
-This removes the curl-installed binary and shell/hook setup. It leaves
-`~/.aegis` (audit log, snapshots) in place — add `--purge-data` to wipe it
-too. If you installed via npm instead, the script tells you to run `npm
-uninstall -g @iliasalmerekov/aegis` as a separate step.
+The command keeps data by default and prints its data decision. It preserves
+`~/.config/aegis/config.toml` and unrelated hooks. It checks `~/.bashrc` and
+`~/.zshrc`; for a custom startup file, pass `--rc-file /absolute/path/to/rc`.
+If `$SHELL` still points at Aegis and neither file held a block, it warns you
+to rerun with `--rc-file`.
+
+The binary stays installed so uninstall can finish without a package-manager
+subprocess. The command prints a removal channel inferred from the canonical binary path, so symlinks resolve. Check it, then remove the binary separately:
+
+| Removal channel | Binary removal |
+|----------------------|----------------|
+| npm (global) | `npm uninstall -g @iliasalmerekov/aegis` |
+| Homebrew | `brew uninstall aegis` |
+| Cargo | `cargo uninstall aegis` (use `--root /install/root` for a custom root) |
+| curl installer | `rm -- /path/to/aegis` using the printed binary path |
+
+Path inference does not prove package ownership. If the channel is unknown,
+check how you installed it and rerun with `--channel npm`, `homebrew`, `cargo`,
+or `curl`. A project-local npm installation is not treated as a global install.
+Open a new terminal after removal.
+
+For older versions without `aegis uninstall`, this fallback removes only the
+curl-installed binary at `${AEGIS_BINDIR:-/usr/local/bin}/aegis` and its setup:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/IliasAlmerekov/aegis-shellguard/main/scripts/uninstall.sh | sh
+# Explicit data purge:
+curl -fsSL https://raw.githubusercontent.com/IliasAlmerekov/aegis-shellguard/main/scripts/uninstall.sh | sh -s -- --purge-data
+```
+
+The fallback keeps data unless requested and warns if another binary remains on
+PATH. It prints npm, Homebrew, or Cargo removal advice when detected; it never
+runs their uninstall commands.
+
+If you removed the package before running `aegis uninstall`, the binary is gone
+but the hooks remain, so the hook shim denies every agent Bash command. Run the
+curl fallback above to clean up. It needs `jq` when `~/.claude/settings.json` or
+`~/.codex/hooks.json` exists. It only cleans the rc file chosen by `$SHELL` (or
+`AEGIS_SHELL_RC`). On Intel macOS, `/usr/local/bin/aegis` may be a Homebrew link
+into the Cellar; the script leaves it alone and tells you to run
+`brew uninstall aegis`.
+
+Neither path touches project-local hooks. Projects where you ran
+`aegis install-hooks --local` keep their `./.claude/settings.json` entries and
+`./.claude/hooks/` files, and need manual cleanup.
 
 ---
 

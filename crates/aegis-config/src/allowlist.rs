@@ -61,22 +61,13 @@ impl<'a> AllowlistContext<'a> {
         }
     }
 
-    /// Create a new allowlist matching context when cwd resolution failed.
-    pub fn without_cwd(command: &'a str, user: Option<&'a str>, now: OffsetDateTime) -> Self {
-        Self::with_optional_scope(command, None, user, now)
-    }
-
     /// Return a copy of this context with a different user.
+    #[cfg(test)]
     pub fn with_user(self, user: &'a str) -> Self {
         Self {
             user: Some(user),
             ..self
         }
-    }
-
-    /// Return a copy of this context without a resolved user.
-    pub fn without_user(self) -> Self {
-        Self { user: None, ..self }
     }
 }
 
@@ -208,6 +199,7 @@ impl Allowlist {
     }
 
     /// Returns `true` when any effective allowlist entry matches the context.
+    #[cfg(test)]
     pub fn is_allowed(&self, context: &AllowlistContext<'_>) -> bool {
         self.match_reason(context).is_some()
     }
