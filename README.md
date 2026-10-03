@@ -280,8 +280,10 @@ aegis uninstall --purge-data
 ```
 
 The command keeps data by default and prints its data decision. It preserves
-`~/.config/aegis/config.toml` and unrelated hooks. For a custom startup file,
-pass `--rc-file /absolute/path/to/rc`.
+`~/.config/aegis/config.toml` and unrelated hooks. It checks `~/.bashrc` and
+`~/.zshrc`; for a custom startup file, pass `--rc-file /absolute/path/to/rc`.
+If `$SHELL` still points at Aegis and neither file held a block, it warns you
+to rerun with `--rc-file`.
 
 The binary stays installed so uninstall can finish without a package-manager
 subprocess. The command prints a removal channel inferred from the canonical binary path, so symlinks resolve. Check it, then remove the binary separately:

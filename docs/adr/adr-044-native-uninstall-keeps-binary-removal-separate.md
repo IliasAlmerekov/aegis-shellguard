@@ -29,9 +29,18 @@ inference as a hint, not proof of package ownership.
 Unknown paths require an explicit `--channel` choice before giving channel
 advice. Local npm paths must not yield a global npm removal command.
 
-Preflight settings and managed shell blocks before mutation. Reject symlinked
-targets or ancestors. Replace changed configuration files atomically and keep
-their permissions. Data purge does not follow descendant symlinks.
+Preflight settings and managed shell blocks before mutation. Reject a symlinked
+target or ancestor only for a file uninstall would change: agent settings, hook
+payloads, and a startup file that holds a managed block. A symlinked startup
+file without a block, common with dotfile managers, is left alone. A symlinked
+`~/.aegis` is kept and not followed, including the toggle-state payload inside
+it; `--purge-data` refuses it. Replace changed configuration files atomically,
+keep their permissions and the line endings of kept lines. Data purge does not
+follow descendant symlinks.
+
+Report which startup files lost a block. When none did and `$SHELL` resolves to
+the running binary, warn that a block may live in a file set up with
+`--rc-file` and name the flag that cleans it.
 The scanner classifies uninstall as a Danger Self-management command (ADR-035).
 
 Clean only the global integrations. Project-local hooks written by

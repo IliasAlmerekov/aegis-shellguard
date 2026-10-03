@@ -9,6 +9,9 @@ use std::process::{Command, Output};
 use serde_json::json;
 use tempfile::TempDir;
 
+const RC_WITH_BLOCK: &str =
+    "keep\n# >>> aegis shell setup >>>\nmanaged\n# <<< aegis shell setup <<<\n";
+
 fn uninstall(home: &Path, args: &[&str]) -> Output {
     Command::new(support::aegis_bin())
         .env_clear()
@@ -320,17 +323,26 @@ fn uninstall_preflights_malformed_rc_and_symlinked_settings_or_rc() {
                 home.path().join(".claude/settings.json"),
             )
             .unwrap(),
-            _ => std::os::unix::fs::symlink(
-                outside.path().join("target"),
-                home.path().join(".zshrc"),
-            )
-            .unwrap(),
+            _ => {
+                // A symlinked rc is refused only when uninstall would rewrite it.
+                fs::write(outside.path().join("target"), RC_WITH_BLOCK).unwrap();
+                std::os::unix::fs::symlink(
+                    outside.path().join("target"),
+                    home.path().join(".zshrc"),
+                )
+                .unwrap()
+            }
         }
+        let expected = if fixture == "rc-link" {
+            RC_WITH_BLOCK
+        } else {
+            "keep"
+        };
         assert!(!uninstall(home.path(), &[]).status.success());
         assert!(hook.exists());
         assert_eq!(
             fs::read_to_string(outside.path().join("target")).unwrap(),
-            "keep"
+            expected
         );
     }
 }
@@ -389,4 +401,100 @@ fn uninstall_detects_homebrew_through_a_symlink_that_matches_the_curl_bindir() {
     assert!(message.contains("brew uninstall aegis"), "{message}");
     assert!(!message.contains("rm -- "), "{message}");
     assert!(link.exists() && cellar_binary.exists());
+}
+
+#[test]
+fn uninstall_leaves_a_symlinked_rc_without_a_managed_block_alone() {
+    let home = TempDir::new().unwrap();
+    let dotfiles = TempDir::new().unwrap();
+    let target = dotfiles.path().join("bashrc");
+    fs::write(&target, "alias ll='ls -la'\n").unwrap();
+    std::os::unix::fs::symlink(&target, home.path().join(".bashrc")).unwrap();
+    fs::create_dir_all(home.path().join(".claude/hooks")).unwrap();
+    let hook = home.path().join(".claude/hooks/aegis-pre-tool-use.sh");
+    fs::write(&hook, "managed").unwrap();
+
+    let output = uninstall(home.path(), &["--channel", "npm"]);
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!hook.exists());
+    assert!(home.path().join(".bashrc").is_symlink());
+    assert_eq!(fs::read_to_string(&target).unwrap(), "alias ll='ls -la'\n");
+}
+
+#[test]
+fn uninstall_without_purge_leaves_a_symlinked_data_directory_alone() {
+    let home = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    fs::create_dir_all(outside.path().join("lib")).unwrap();
+    fs::write(outside.path().join("lib/toggle-state.sh"), "toggle").unwrap();
+    fs::write(outside.path().join("audit.jsonl"), "private").unwrap();
+    std::os::unix::fs::symlink(outside.path(), home.path().join(".aegis")).unwrap();
+    fs::create_dir_all(home.path().join(".codex/hooks")).unwrap();
+    let hook = home.path().join(".codex/hooks/aegis-pre-tool-use.sh");
+    fs::write(&hook, "managed").unwrap();
+
+    let output = uninstall(home.path(), &["--channel", "npm"]);
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!hook.exists());
+    assert!(home.path().join(".aegis").is_symlink());
+    assert_eq!(
+        fs::read_to_string(outside.path().join("lib/toggle-state.sh")).unwrap(),
+        "toggle"
+    );
+    assert_eq!(
+        fs::read_to_string(outside.path().join("audit.jsonl")).unwrap(),
+        "private"
+    );
+}
+
+#[test]
+fn uninstall_warns_when_shell_still_points_at_aegis_and_no_block_was_found() {
+    let home = TempDir::new().unwrap();
+    let profile = home.path().join(".zprofile");
+    fs::write(&profile, RC_WITH_BLOCK).unwrap();
+
+    let output = Command::new(support::aegis_bin())
+        .env_clear()
+        .env("HOME", home.path())
+        .env("PATH", "/usr/bin:/bin")
+        .env("SHELL", support::aegis_bin())
+        .args(["uninstall", "--channel", "npm"])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--rc-file"), "{stderr}");
+    assert!(!stdout.contains("Removed managed shell blocks"), "{stdout}");
+    assert_eq!(fs::read_to_string(&profile).unwrap(), RC_WITH_BLOCK);
+}
+
+#[test]
+fn uninstall_keeps_crlf_line_endings_of_the_lines_it_keeps() {
+    let home = TempDir::new().unwrap();
+    let rc = home.path().join(".bashrc");
+    fs::write(
+        &rc,
+        "first\r\n# >>> aegis shell setup >>>\r\nmanaged\r\n# <<< aegis shell setup <<<\r\nlast\r\n",
+    )
+    .unwrap();
+
+    assert!(
+        uninstall(home.path(), &["--channel", "npm"])
+            .status
+            .success()
+    );
+
+    assert_eq!(fs::read_to_string(&rc).unwrap(), "first\r\nlast\r\n");
 }

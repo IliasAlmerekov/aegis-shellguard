@@ -7,7 +7,7 @@ use serde_json::Value;
 use super::{is_aegis_managed_bash_command, is_aegis_managed_session_start_command};
 
 /// Removal channel: which package channel's binary-removal command to print. Not update consent.
-#[derive(Clone, Copy, Debug, ValueEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub(crate) enum RemovalChannel {
     Npm,
     Homebrew,
@@ -47,13 +47,18 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
     }
     let invoked = std::env::current_exe()
         .map_err(|error| format!("cannot resolve the running binary: {error}"))?;
-    // Resolve symlinks first: a Homebrew link in the curl bindir must match
-    // the Cellar path, not the bindir. The canonical path is also the file
-    // that a curl removal command has to delete.
-    let binary = fs::canonicalize(&invoked).unwrap_or(invoked);
-    let channel = args.channel.or_else(|| detect_channel(&binary, &home));
+    let (binary, detected) = removal_target(&invoked, &home);
+    let channel = args.channel.or(detected);
     let data = home.join(".aegis");
-    let payloads: Vec<_> = PAYLOADS.iter().map(|path| home.join(path)).collect();
+    // A kept data directory is never followed through a symlink, so payloads
+    // inside it stay with the data. A purge still refuses the link below.
+    let keep_linked_data = !args.purge_data
+        && fs::symlink_metadata(&data).is_ok_and(|metadata| metadata.file_type().is_symlink());
+    let payloads: Vec<_> = PAYLOADS
+        .iter()
+        .map(|path| home.join(path))
+        .filter(|path| !(keep_linked_data && path.starts_with(&data)))
+        .collect();
     let mut rc_paths = vec![home.join(".bashrc"), home.join(".zshrc")];
     if let Some(path) = &args.rc_file {
         if !path.is_absolute() {
@@ -65,11 +70,10 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
     }
 
     // Validate every known target before changing any integration.
-    for path in payloads
-        .iter()
-        .chain(rc_paths.iter())
-        .chain(std::iter::once(&data))
-    {
+    if args.purge_data {
+        reject_symlinks(&data)?;
+    }
+    for path in &payloads {
         reject_symlinks(path)?;
     }
     let mut settings = Vec::new();
@@ -84,12 +88,15 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
         }
     }
     let mut shell_files = Vec::new();
-    for path in rc_paths {
-        let Some(content) = read_optional(&path)? else {
+    for path in &rc_paths {
+        let Some(content) = read_optional(path)? else {
             continue;
         };
         if has_managed_block(&content)? {
-            shell_files.push((path, super::shell::remove_managed_block(&content)));
+            // Only a file that will be rewritten must not be a symlink, so a
+            // dotfile manager's link without an Aegis block stays usable.
+            reject_symlinks(path)?;
+            shell_files.push((path.clone(), strip_managed_blocks(&content)));
         }
     }
     for (path, value) in settings {
@@ -97,8 +104,19 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
             .map_err(|error| format!("cannot serialize {}: {error}", path.display()))?;
         write_existing_file(&path, &format!("{content}\n"))?;
     }
-    for (path, content) in shell_files {
-        write_existing_file(&path, &content)?;
+    let shell_message = if shell_files.is_empty() {
+        format!(
+            "No managed shell block found in {}.",
+            display_paths(rc_paths.iter())
+        )
+    } else {
+        format!(
+            "Removed managed shell blocks from {}.",
+            display_paths(shell_files.iter().map(|(path, _)| path))
+        )
+    };
+    for (path, content) in &shell_files {
+        write_existing_file(path, content)?;
     }
     for path in payloads {
         match fs::remove_file(&path) {
@@ -128,11 +146,27 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
     } else {
         "No known removal channel matches the binary path."
     };
+    // A block in a startup file uninstall did not check keeps exporting
+    // SHELL as this binary, which breaks new terminals once it is removed.
+    let shell_is_aegis = std::env::var_os("SHELL")
+        .is_some_and(|shell| crate::shell_compat::same_file(Path::new(&shell), Some(&binary)));
+    if shell_files.is_empty() && shell_is_aegis {
+        eprintln!(
+            "warning: $SHELL is this Aegis binary, but no checked startup file holds a managed shell block. If you ran `aegis setup-shell --rc-file <path>`, rerun `aegis uninstall --rc-file <path>`."
+        );
+    }
     Ok(format!(
-        "Removed managed shell blocks and agent hooks where present.\n{data_message}\nUser configuration and unrelated hooks were kept.\nProject-local hooks from `aegis install-hooks --local` were not touched. Projects where you ran it need manual cleanup: the hook shim denies every Bash command once the binary is gone.\n{channel_message}\nBinary kept at {}. Remove it separately:\n  {}\nOpen a new terminal after removal.",
+        "{shell_message}\nRemoved Aegis agent hooks where present.\n{data_message}\nUser configuration and unrelated hooks were kept.\nProject-local hooks from `aegis install-hooks --local` were not touched. Projects where you ran it need manual cleanup: the hook shim denies every Bash command once the binary is gone.\n{channel_message}\nBinary kept at {}. Remove it separately:\n  {}\nOpen a new terminal after removal.",
         binary.display(),
         removal_command(channel, &binary)
     ))
+}
+
+fn display_paths<'a>(paths: impl Iterator<Item = &'a PathBuf>) -> String {
+    paths
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn reject_symlinks(path: &Path) -> Result<(), String> {
@@ -177,6 +211,24 @@ fn has_managed_block(content: &str) -> Result<bool, String> {
         return Err("unterminated managed shell block; repair it before uninstalling".into());
     }
     Ok(found)
+}
+
+/// Drops managed shell blocks and keeps every other line byte for byte,
+/// including its CRLF or LF ending. Callers validate the markers first.
+fn strip_managed_blocks(content: &str) -> String {
+    let mut output = String::with_capacity(content.len());
+    let mut inside = false;
+    for line in content.split_inclusive('\n') {
+        let bare = line.strip_suffix('\n').unwrap_or(line);
+        let bare = bare.strip_suffix('\r').unwrap_or(bare);
+        match bare {
+            super::shell::BEGIN_MARKER => inside = true,
+            super::shell::END_MARKER => inside = false,
+            _ if !inside => output.push_str(line),
+            _ => {}
+        }
+    }
+    output
 }
 
 fn prune_registrations(settings: &mut Value) -> Result<bool, String> {
@@ -253,6 +305,16 @@ fn write_existing_file(path: &Path, content: &str) -> Result<(), String> {
     result
 }
 
+/// Returns the canonical binary path and the Removal channel inferred from it.
+fn removal_target(invoked: &Path, home: &Path) -> (PathBuf, Option<RemovalChannel>) {
+    // Resolve symlinks first: a Homebrew link in the curl bindir must match
+    // the Cellar path, not the bindir. The canonical path is also the file
+    // that a curl removal command has to delete.
+    let binary = fs::canonicalize(invoked).unwrap_or_else(|_| invoked.to_path_buf());
+    let channel = detect_channel(&binary, home);
+    (binary, channel)
+}
+
 fn detect_channel(binary: &Path, home: &Path) -> Option<RemovalChannel> {
     let components: Vec<_> = binary
         .components()
@@ -314,5 +376,27 @@ fn removal_command(channel: Option<RemovalChannel>, binary: &Path) -> String {
             "Removal channel unknown. Rerun with --channel npm, homebrew, cargo, or curl after checking the installer for {}.",
             binary.display()
         ),
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn removal_target_follows_a_bindir_link_into_the_homebrew_cellar() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let cellar_binary = temp.path().join("Cellar/aegis/1.0/bin/aegis");
+        fs::create_dir_all(cellar_binary.parent().unwrap()).unwrap();
+        fs::write(&cellar_binary, "binary").unwrap();
+        let bindir = temp.path().join("bin");
+        fs::create_dir_all(&bindir).unwrap();
+        let link = bindir.join("aegis");
+        std::os::unix::fs::symlink("../Cellar/aegis/1.0/bin/aegis", &link).unwrap();
+
+        let (binary, channel) = removal_target(&link, temp.path());
+
+        assert_eq!(binary, fs::canonicalize(&cellar_binary).unwrap());
+        assert_eq!(channel, Some(RemovalChannel::Homebrew));
     }
 }

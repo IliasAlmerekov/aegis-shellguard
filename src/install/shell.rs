@@ -119,8 +119,7 @@ fn managed_block(real_shell: &Path, aegis_bin: &Path) -> String {
     )
 }
 
-/// Removes owned shell blocks; uninstall callers must prevalidate balanced markers.
-pub(super) fn remove_managed_block(input: &str) -> String {
+fn remove_managed_block(input: &str) -> String {
     let mut output = String::new();
     let mut skipping = false;
 
