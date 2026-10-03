@@ -11,6 +11,8 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Removed: The root package no longer declares `aho-corasick` or `flate2`, and `async-trait` moved to its dev-dependencies. `SnapshotRegistry::try_from_config`, `AllowlistContext::without_cwd` and `AllowlistContext::without_user` are gone; `Allowlist::is_allowed` and `AllowlistContext::with_user` exist only in tests. The `aegis-snapshot` registry build counter, its `testing` module and `SnapshotRegistry::new_with_plugins` now compile only behind the new `testing` feature, and `aegis-snapshot` drops its unused `thiserror` dependency. (#295)
+
 - Added: Native uninstall removes managed integrations across npm, Homebrew, Cargo, and curl installs, retains data unless explicitly purged, prints separate binary removal commands for the canonical-path Removal channel, and reports project-local hooks for manual cleanup; the fallback script leaves a Homebrew Cellar link alone. (#375, ADR-044)
 
 - Fixed: Clippy passes on Rust 1.94 and 1.98 by using Option propagation and fixed-size byte chunks without changing behavior; the Snapshot CI contract test accepts CRLF checkouts. (#410)

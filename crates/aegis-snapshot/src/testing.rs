@@ -2,7 +2,9 @@
 //!
 //! Exposed so that upstream crates can observe how many times the registry
 //! was materialised in a single test thread — without introducing a hard
-//! dependency on the internal implementation.
+//! dependency on the internal implementation. Compiled only for this crate's
+//! tests and behind the `testing` feature, which dependents enable from
+//! `[dev-dependencies]` alone.
 
 use std::cell::Cell;
 

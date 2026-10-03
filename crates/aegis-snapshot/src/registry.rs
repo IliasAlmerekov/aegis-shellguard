@@ -10,7 +10,6 @@ use aegis_types::{SnapshotPolicy, SnapshotRecord};
 use crate::error::SnapshotError;
 use crate::paths::resolve_snapshots_dir;
 use crate::retention::{PrunableRecord, resolve_prunable_records_from_default_audit_log};
-use crate::testing::increment_registry_build_count;
 use crate::{
     DockerPlugin, GitPlugin, MysqlPlugin, PostgresPlugin, SnapshotPlugin, SqlitePlugin,
     SupabasePlugin,
@@ -202,17 +201,11 @@ impl SnapshotRegistryConfig {
 impl SnapshotRegistry {
     /// Construct a registry from an explicit plugin list.
     ///
-    /// This constructor is intended for testing only.  Production code should
-    /// use [`SnapshotRegistry::from_runtime_config`] instead.
+    /// Test-only: production code uses
+    /// [`SnapshotRegistry::from_runtime_config`].
+    #[cfg(any(test, feature = "testing"))]
     pub fn new_with_plugins(plugins: Vec<Box<dyn SnapshotPlugin>>) -> Self {
         Self { plugins }
-    }
-
-    /// Fallible constructor that honours the effective runtime config.
-    pub fn try_from_config(config: &AegisConfig) -> std::result::Result<Self, SnapshotError> {
-        Ok(Self::from_runtime_config(&SnapshotRegistryConfig::try_new(
-            config,
-        )?))
     }
 
     /// Build a snapshot registry from the eager runtime config.
@@ -221,7 +214,8 @@ impl SnapshotRegistry {
     /// providers. Applicability remains a later concern evaluated by each
     /// provider for a specific working directory or command.
     pub fn from_runtime_config(config: &SnapshotRegistryConfig) -> Self {
-        increment_registry_build_count();
+        #[cfg(any(test, feature = "testing"))]
+        crate::testing::increment_registry_build_count();
 
         let mut plugins: Vec<Box<dyn SnapshotPlugin>> = Vec::new();
 
