@@ -17,7 +17,10 @@ Add `aegis uninstall` to remove managed shell blocks, hook registrations, and
 hook payloads across channels. Reuse the installer's managed-command predicates
 so unrelated hooks stay intact. Keep user configuration and data by default.
 Delete `~/.aegis` only with `--purge-data`; print the data decision either way.
-Allow an absolute custom startup file through `--rc-file`.
+Allow an absolute custom startup file through `--rc-file`. Resolve the
+symlinks in the directories above it first, so a path through a linked
+directory such as macOS `/var` or `/tmp` names the real file; the file itself
+is not resolved and stays subject to the symlink check below.
 
 Do not execute package managers or delete the running binary. Infer a channel
 from known global npm, Homebrew, Cargo, and curl paths, then print its separate
@@ -37,7 +40,8 @@ it exists. A symlinked startup file without a block, or a symlinked `~/.claude`
 or `~/.codex` with nothing of Aegis inside, is left alone; dotfile managers
 create both. A symlinked
 `~/.aegis` is kept and not followed, including the toggle-state payload inside
-it; `--purge-data` refuses it. Replace changed configuration files atomically,
+it; `--purge-data` refuses it. Each refusal names the file and the step
+that finishes its cleanup by hand. Replace changed configuration files atomically,
 keep their permissions and the line endings of kept lines. Data purge does not
 follow descendant symlinks.
 

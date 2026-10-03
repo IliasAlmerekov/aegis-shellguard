@@ -565,3 +565,58 @@ fn uninstall_reports_the_codex_hooks_feature_flag_it_leaves_enabled() {
         "[features]\nhooks = true\n"
     );
 }
+
+/// macOS temp dirs live under `/var`, a symlink to `/private/var`, so a
+/// custom rc path the operator types often crosses a symlinked directory.
+#[test]
+fn uninstall_cleans_a_custom_rc_reached_through_a_symlinked_directory() {
+    let home = TempDir::new().unwrap();
+    let real = home.path().join("real");
+    fs::create_dir_all(&real).unwrap();
+    fs::write(real.join("rc"), RC_WITH_BLOCK).unwrap();
+    std::os::unix::fs::symlink(&real, home.path().join("link")).unwrap();
+    let rc = home.path().join("link/rc");
+
+    let output = uninstall(home.path(), &["--rc-file", rc.to_str().unwrap()]);
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read_to_string(real.join("rc")).unwrap(), "keep\n");
+}
+
+#[test]
+fn uninstall_still_refuses_a_custom_rc_that_is_itself_a_symlink() {
+    let home = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    let target = outside.path().join("target");
+    fs::write(&target, RC_WITH_BLOCK).unwrap();
+    let rc = home.path().join("rc-link");
+    std::os::unix::fs::symlink(&target, &rc).unwrap();
+
+    let output = uninstall(home.path(), &["--rc-file", rc.to_str().unwrap()]);
+
+    assert!(!output.status.success());
+    assert_eq!(fs::read_to_string(&target).unwrap(), RC_WITH_BLOCK);
+}
+
+#[test]
+fn uninstall_explains_manual_cleanup_for_a_symlinked_claude_directory() {
+    let home = TempDir::new().unwrap();
+    let dotfiles = TempDir::new().unwrap();
+    fs::write(
+        dotfiles.path().join("settings.json"),
+        SETTINGS_WITH_AEGIS_HOOK,
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(dotfiles.path(), home.path().join(".claude")).unwrap();
+
+    let output = uninstall(home.path(), &[]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains(".claude/settings.json"), "{stderr}");
+    assert!(stderr.contains("by hand"), "{stderr}");
+}

@@ -64,14 +64,15 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
         if !path.is_absolute() {
             return Err("--rc-file must be an absolute path".into());
         }
-        if !rc_paths.contains(path) {
-            rc_paths.push(path.clone());
+        let path = resolve_rc_parent(path)?;
+        if !rc_paths.contains(&path) {
+            rc_paths.push(path);
         }
     }
 
     // Validate every known target before changing any integration.
     if args.purge_data {
-        reject_symlinks(&data)?;
+        reject_symlinks(&data, "Delete it by hand if you mean to purge it.")?;
     }
     // Like startup files, a payload or settings file is checked for symlinks
     // only when uninstall will change it, so a dotfile manager's linked
@@ -81,7 +82,10 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
         .filter(|path| fs::symlink_metadata(path).is_ok())
         .collect();
     for path in &payloads {
-        reject_symlinks(path)?;
+        reject_symlinks(
+            path,
+            "Delete the file by hand, then rerun `aegis uninstall`.",
+        )?;
     }
     let mut settings = Vec::new();
     for relative in [".claude/settings.json", ".codex/hooks.json"] {
@@ -89,7 +93,10 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
         if path.try_exists().map_err(|error| error.to_string())? {
             let mut value = super::load_settings(&path)?;
             if prune_registrations(&mut value)? {
-                reject_symlinks(&path)?;
+                reject_symlinks(
+                    &path,
+                    "Remove the Aegis hook entries from it by hand, then rerun `aegis uninstall`.",
+                )?;
                 settings.push((path, value));
             }
         }
@@ -102,7 +109,10 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
         if has_managed_block(&content)? {
             // Only a file that will be rewritten must not be a symlink, so a
             // dotfile manager's link without an Aegis block stays usable.
-            reject_symlinks(path)?;
+            reject_symlinks(
+                path,
+                "Remove the aegis shell setup block from it by hand, then rerun `aegis uninstall`.",
+            )?;
             shell_files.push((path.clone(), strip_managed_blocks(&content)));
         }
     }
@@ -191,11 +201,33 @@ fn display_paths<'a>(paths: impl Iterator<Item = &'a PathBuf>) -> String {
         .join(", ")
 }
 
-fn reject_symlinks(path: &Path) -> Result<(), String> {
+/// Resolves symlinks in the directories above a custom startup file, so a
+/// path through a linked directory (macOS `/var`, `/tmp`) names the real
+/// file. The file itself stays unresolved: a symlinked startup file is still
+/// refused before it is rewritten.
+fn resolve_rc_parent(path: &Path) -> Result<PathBuf, String> {
+    let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+        return Err(format!("--rc-file {} must name a file", path.display()));
+    };
+    match fs::canonicalize(parent) {
+        Ok(parent) => Ok(parent.join(name)),
+        // A missing directory holds no startup file to clean.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(path.to_path_buf()),
+        Err(error) => Err(format!("cannot resolve {}: {error}", parent.display())),
+    }
+}
+
+/// Refuses `path` when it or a directory above it is a symlink. `hint` tells
+/// the operator how to finish that cleanup by hand.
+fn reject_symlinks(path: &Path, hint: &str) -> Result<(), String> {
     for ancestor in path.ancestors() {
         match fs::symlink_metadata(ancestor) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Err(format!("refusing to modify symlink {}", ancestor.display()));
+                return Err(format!(
+                    "refusing to change {} through symlink {}. {hint}",
+                    path.display(),
+                    ancestor.display()
+                ));
             }
             Ok(_) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
