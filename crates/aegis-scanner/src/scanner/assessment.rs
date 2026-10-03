@@ -185,6 +185,7 @@ impl Scanner {
                 &mut matched,
                 &mut regex_matched_for_target,
             );
+            self.scan_aegis_option_candidates(&effective_slices, &mut matched);
         }
 
         if let Some(pipelines) = maybe_pipelines {
@@ -212,6 +213,46 @@ impl Scanner {
             highlight_ranges,
             command,
             analysis: None,
+        }
+    }
+
+    /// Rescan each `aegis` candidate slice whose subcommand sits behind Aegis'
+    /// own global options (`aegis --quiet uninstall`), so the `AEG-*` prefix
+    /// rules see `aegis <subcommand>` as they would without the options.
+    fn scan_aegis_option_candidates(
+        &self,
+        effective_slices: &[aegis_parser::EffectiveTokenSlice<'_>],
+        matched: &mut Vec<MatchResult>,
+    ) {
+        let Some(rules) = self.prefix_lookup("aegis") else {
+            return;
+        };
+        for candidate in effective_slices {
+            if !candidate.program.eq_ignore_ascii_case("aegis") {
+                continue;
+            }
+            let Some(start) = aegis_parser::aegis_option_subcommand_start(&candidate.tokens) else {
+                continue;
+            };
+            let aegis_tokens: Vec<&str> = std::iter::once(candidate.tokens[0])
+                .chain(candidate.tokens[start..].iter().copied())
+                .collect();
+            // As for git, report the subcommand-onward span: it is a real
+            // substring of the raw command, unlike the synthetic slice.
+            let tail = candidate.tokens[start..].join(" ");
+            for rule in rules {
+                if matched
+                    .iter()
+                    .any(|existing: &MatchResult| existing.pattern.id.as_ref() == rule.id.as_ref())
+                {
+                    continue;
+                }
+                if rule.matches_tokens(&aegis_tokens) {
+                    let mut result = rule.to_match_result(&aegis_tokens);
+                    result.matched_text = tail.clone();
+                    matched.push(result);
+                }
+            }
         }
     }
 

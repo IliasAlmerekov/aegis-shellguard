@@ -50,6 +50,9 @@ Seven token-prefix rules:
 - `AEG-007` — `aegis uninstall`, `Danger`. Removing integrations weakens
   enforcement; `--purge-data` also deletes recovery artifacts (#375, ADR-044).
 
+Aegis global options before the subcommand (`aegis --quiet off`) do not hide
+it from these rules (ADR-045).
+
 `Danger` and not `Block` throughout. Aegis runs as the operator's `$SHELL`, so a
 `Block` on `aegis off` would take away the operator's own escape hatch; the point
 is a confirmation prompt, not a wall.

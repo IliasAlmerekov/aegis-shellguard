@@ -8,6 +8,7 @@
 //! the token-level `PrefixPattern` matcher. It produces the canonical
 //! [`ParsedCommand`] consumed by the scanner. It depends only on `aegis-types`.
 
+mod aegis_options;
 mod embedded_scripts;
 mod env_launcher;
 mod git_options;
@@ -19,6 +20,7 @@ mod runner;
 mod segmentation;
 mod tokenizer;
 
+pub use aegis_options::aegis_option_subcommand_start;
 #[cfg(test)]
 use aegis_types::InlineScript;
 use aegis_types::ParsedCommand;

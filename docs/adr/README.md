@@ -108,6 +108,7 @@ the core classification / approval pipeline when enforcement is active.
 | ADR-042 | A nowdoc read by a Data consumer (`cat`, `jq`) is data (replaces the #357 file-write rule) | [`adr-042-a-nowdoc-read-by-a-data-consumer-is-data.md`](adr-042-a-nowdoc-read-by-a-data-consumer-is-data.md) |
 | ADR-043 | Dynamic shell words require approval and recovery | [`adr-043-dynamic-shell-words-require-approval-and-recovery.md`](adr-043-dynamic-shell-words-require-approval-and-recovery.md) |
 | ADR-044 | Native uninstall keeps binary removal separate | [`adr-044-native-uninstall-keeps-binary-removal-separate.md`](adr-044-native-uninstall-keeps-binary-removal-separate.md) |
+| ADR-045 | The scanner skips Aegis global options before matching AEG-* rules (extends ADR-035) | [`adr-045-the-scanner-skips-aegis-global-options-before-matching.md`](adr-045-the-scanner-skips-aegis-global-options-before-matching.md) |
 
 `ADR-009` is intentionally absent from the active set; numbering is preserved
 as-is so historical references do not drift.

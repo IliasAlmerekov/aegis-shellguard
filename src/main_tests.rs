@@ -723,3 +723,41 @@ snapshot_policy = "None"
     );
     assert_eq!(config.snapshot_policy, SnapshotPolicy::Selective);
 }
+
+/// The scanner skips Aegis' global options with its own fixed table
+/// (`aegis_parser::aegis_option_subcommand_start`). A new global option the
+/// table misses would hide `aegis <option> off` from every `AEG-*` rule
+/// again, so every option clap accepts before a subcommand must be skipped.
+#[test]
+fn scanner_skips_every_global_cli_option_before_a_subcommand() {
+    use clap::CommandFactory;
+
+    let command = Cli::command();
+    for argument in command.get_arguments() {
+        let id = argument.get_id().as_str();
+        if matches!(id, "help" | "version") || argument.is_positional() {
+            continue;
+        }
+        let takes_value = argument.get_action().takes_values();
+        let mut spellings = Vec::new();
+        if let Some(long) = argument.get_long() {
+            spellings.push(format!("--{long}"));
+        }
+        if let Some(short) = argument.get_short() {
+            spellings.push(format!("-{short}"));
+        }
+        assert!(!spellings.is_empty(), "{id} has no option spelling");
+        for spelling in spellings {
+            let mut tokens = vec!["aegis", spelling.as_str()];
+            if takes_value {
+                tokens.push("value");
+            }
+            tokens.push("off");
+            assert_eq!(
+                aegis_parser::aegis_option_subcommand_start(&tokens),
+                Some(tokens.len() - 1),
+                "the scanner must skip global option {spelling}"
+            );
+        }
+    }
+}
