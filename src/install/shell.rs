@@ -2,8 +2,10 @@ use std::path::{Path, PathBuf};
 
 use super::shell_quote;
 
-const BEGIN_MARKER: &str = "# >>> aegis shell setup >>>";
-const END_MARKER: &str = "# <<< aegis shell setup <<<";
+/// Start of a shell block owned by Aegis.
+pub(super) const BEGIN_MARKER: &str = "# >>> aegis shell setup >>>";
+/// End of a shell block owned by Aegis.
+pub(super) const END_MARKER: &str = "# <<< aegis shell setup <<<";
 
 pub(crate) fn run_setup_shell(args: &crate::SetupShellArgs) -> i32 {
     match run_setup_shell_inner(args) {
@@ -117,7 +119,8 @@ fn managed_block(real_shell: &Path, aegis_bin: &Path) -> String {
     )
 }
 
-fn remove_managed_block(input: &str) -> String {
+/// Removes owned shell blocks; uninstall callers must prevalidate balanced markers.
+pub(super) fn remove_managed_block(input: &str) -> String {
     let mut output = String::new();
     let mut skipping = false;
 

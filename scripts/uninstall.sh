@@ -104,6 +104,24 @@ remove_shell_setup() {
     mv "${tmp_rc}" "${rc_file}"
 }
 
+# Follow symlinks without `readlink -f`, which macOS lacks. Relative link
+# targets resolve against the directory that holds the link.
+resolve_link() {
+    resolved="$1"
+    hops=0
+
+    while [ -L "${resolved}" ] && [ "${hops}" -lt 40 ]; do
+        link_target="$(readlink "${resolved}")" || break
+        case "${link_target}" in
+            /*) resolved="${link_target}" ;;
+            *) resolved="$(dirname "${resolved}")/${link_target}" ;;
+        esac
+        hops=$((hops + 1))
+    done
+
+    printf '%s\n' "${resolved}"
+}
+
 remove_binary() {
     install_target="$(target_path)"
     install_dir="$(dirname "${install_target}")"
@@ -112,6 +130,15 @@ remove_binary() {
     if [ ! -e "${install_target}" ]; then
         return
     fi
+
+    # On Intel macOS Homebrew links /usr/local/bin/aegis into the Cellar. The
+    # package manager owns that link, so leave it for `brew uninstall aegis`.
+    case "$(resolve_link "${install_target}")" in
+        */Cellar/aegis/*)
+            binary_status="homebrew-link"
+            return
+            ;;
+    esac
 
     if [ -w "${install_dir}" ]; then
         rm -f "${install_target}"
@@ -149,6 +176,23 @@ describe_remaining_binary() {
     if need_cmd npm && npm ls -g "${NPM_PACKAGE}" >/dev/null 2>&1; then
         printf 'warning: %s is still installed via npm (%s); this script only removed %s. Run `npm uninstall -g %s` to remove it.\n' \
             "${remaining_path}" "${NPM_PACKAGE}" "$(target_path)" "${NPM_PACKAGE}" >&2
+        return
+    fi
+
+    if need_cmd brew && brew list aegis >/dev/null 2>&1; then
+        printf 'warning: Homebrew reports aegis installed; %s remains on PATH. This script only removed %s. Check package ownership, then run `brew uninstall aegis`.\n' \
+            "${remaining_path}" "$(target_path)" >&2
+        return
+    fi
+
+    cargo_root="${CARGO_INSTALL_ROOT:-${CARGO_HOME:-${HOME}/.cargo}}"
+    if [ -e "${cargo_root}/bin/aegis" ] && [ "$(resolve_link "${remaining_path}")" = "$(resolve_link "${cargo_root}/bin/aegis")" ]; then
+        if [ -n "${CARGO_INSTALL_ROOT:-${CARGO_HOME:-}}" ]; then
+            printf "warning: %s matches the Cargo binary path, not verified package ownership. Run cargo uninstall --root '%s' aegis after checking the installation.\n" \
+                "${remaining_path}" "$(printf '%s' "${cargo_root}" | sed "s/'/'\\\\''/g")" >&2
+        else
+            printf 'warning: %s matches the Cargo binary path, not verified package ownership. Run `cargo uninstall aegis` after checking the installation.\n' "${remaining_path}" >&2
+        fi
         return
     fi
 
@@ -260,10 +304,13 @@ main() {
     printf 'Removed shell wrapper setup from %s\n' "${rc_file}"
     if [ "${binary_status}" = "removed" ]; then
         printf 'Removed %s\n' "$(target_path)"
+        describe_remaining_binary
+    elif [ "${binary_status}" = "homebrew-link" ]; then
+        printf '%s is a Homebrew link; left in place. Run `brew uninstall aegis` to remove it.\n' "$(target_path)"
     else
         printf 'No binary found at %s; nothing to remove there.\n' "$(target_path)"
+        describe_remaining_binary
     fi
-    describe_remaining_binary
 
     if [ "${data_dir_existed}" = "true" ]; then
         if [ "${PURGE_DATA}" = "1" ]; then

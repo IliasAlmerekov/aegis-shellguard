@@ -34,7 +34,7 @@ Add to the domain glossary the term **`Self-management command`** and a
 `Category::Aegis` that holds nothing else, so an audit entry naming the category
 says what was touched without the reader mapping a rule ID.
 
-Six token-prefix rules:
+Seven token-prefix rules:
 
 - `AEG-001` — `aegis off`, `Danger`. Turning the toggle off removes
   classification, confirmation, and snapshots from every command that follows.
@@ -47,6 +47,8 @@ Six token-prefix rules:
 - `AEG-004` — `aegis config init`, `Warn`.
 - `AEG-005` — `aegis install-hooks` (and its `install` alias), `Warn`.
 - `AEG-006` — `aegis setup-shell`, `Warn`.
+- `AEG-007` — `aegis uninstall`, `Danger`. Removing integrations weakens
+  enforcement; `--purge-data` also deletes recovery artifacts (#375, ADR-044).
 
 `Danger` and not `Block` throughout. Aegis runs as the operator's `$SHELL`, so a
 `Block` on `aegis off` would take away the operator's own escape hatch; the point

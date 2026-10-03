@@ -2,6 +2,7 @@ mod claude;
 mod codex;
 mod hook;
 mod shell;
+pub(crate) mod uninstall;
 
 use std::env;
 use std::ffi::OsStr;

@@ -49,6 +49,20 @@ fn disabling_aegis_is_danger_in_every_spelling() {
 }
 
 #[test]
+fn uninstalling_aegis_is_danger_in_every_spelling() {
+    for command in [
+        "aegis uninstall",
+        "aegis uninstall --purge-data",
+        "env aegis uninstall",
+        "sudo /usr/local/bin/aegis uninstall",
+        "echo hi && aegis uninstall",
+    ] {
+        assert_eq!(risk_of(command), RiskLevel::Danger, "{command}");
+        assert!(matched_ids(command).iter().any(|id| id == "AEG-007"));
+    }
+}
+
+#[test]
 fn rollback_and_prune_are_danger() {
     assert_eq!(risk_of("aegis rollback snap-123"), RiskLevel::Danger);
     assert!(

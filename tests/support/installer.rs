@@ -351,7 +351,7 @@ pub fn installer_path(temp: &TempDir, stub_dir: &Path) -> String {
         &host_dir,
         &[
             "mktemp", "dirname", "cp", "mkdir", "uname", "basename", "awk", "install", "chmod",
-            "rm", "mv", "cat", "cut", "grep", "sed", "jq",
+            "rm", "mv", "cat", "cut", "grep", "sed", "jq", "readlink",
         ],
     );
 

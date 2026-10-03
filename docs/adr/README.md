@@ -107,6 +107,7 @@ the core classification / approval pipeline when enforcement is active.
 | ADR-041 | The scanner skips a git global option before matching GIT-* rules (extends ADR-014) | [`adr-041-the-scanner-skips-a-git-global-option-before-matching.md`](adr-041-the-scanner-skips-a-git-global-option-before-matching.md) |
 | ADR-042 | A nowdoc read by a Data consumer (`cat`, `jq`) is data (replaces the #357 file-write rule) | [`adr-042-a-nowdoc-read-by-a-data-consumer-is-data.md`](adr-042-a-nowdoc-read-by-a-data-consumer-is-data.md) |
 | ADR-043 | Dynamic shell words require approval and recovery | [`adr-043-dynamic-shell-words-require-approval-and-recovery.md`](adr-043-dynamic-shell-words-require-approval-and-recovery.md) |
+| ADR-044 | Native uninstall keeps binary removal separate | [`adr-044-native-uninstall-keeps-binary-removal-separate.md`](adr-044-native-uninstall-keeps-binary-removal-separate.md) |
 
 `ADR-009` is intentionally absent from the active set; numbering is preserved
 as-is so historical references do not drift.

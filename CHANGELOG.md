@@ -11,6 +11,8 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Added: Native uninstall removes managed integrations across npm, Homebrew, Cargo, and curl installs, retains data unless explicitly purged, prints separate binary removal commands for the canonical-path Removal channel, and reports project-local hooks for manual cleanup; the fallback script leaves a Homebrew Cellar link alone. (#375, ADR-044)
+
 - Fixed: Clippy passes on Rust 1.94 and 1.98 by using Option propagation and fixed-size byte chunks without changing behavior; the Snapshot CI contract test accepts CRLF checkouts. (#410)
 - Security: Limit interactive-program variable exceptions to a single bare command word and require approval and recovery for dynamic `>&` targets. (ADR-043, PR #482)
 
