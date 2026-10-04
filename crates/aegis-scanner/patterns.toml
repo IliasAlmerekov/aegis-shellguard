@@ -144,13 +144,13 @@ justification = "A single '>' replaces the entire shell-rc file with the redirec
 
 # ─── Git ─────────────────────────────────────────────────────────────────────
 # NOTE: GIT-001..GIT-010 are now defined as token-prefix rules in
-# builtin_prefix_rules() in crates/aegis-scanner/src/patterns.rs.
+# crates/aegis-scanner/src/patterns/builtins_a.rs and builtins_b.rs.
 # They are removed from this regex file to demonstrate the regex→token migration.
 
 # ─── Database ────────────────────────────────────────────────────────────────
 #
 # DB-006 (Redis FLUSHALL/FLUSHDB) is a token-prefix rule defined in
-# builtin_prefix_rules() in crates/aegis-scanner/src/patterns.rs.
+# crates/aegis-scanner/src/patterns/builtins_a.rs and builtins_b.rs.
 # The destructive-SQL rules below (DB-001/002/007/008) are regex patterns that
 # match the normalized command ANYWHERE: SQL verbs arrive embedded in
 # `psql -c` / `mysql -e` / `--command=` / `--execute` / heredoc / stdin, never
