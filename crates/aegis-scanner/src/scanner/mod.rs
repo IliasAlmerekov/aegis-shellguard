@@ -6,6 +6,7 @@ mod highlighting;
 mod keywords;
 mod pipeline_semantics;
 mod prefix_rule;
+mod quote_split;
 mod recursive;
 
 use std::collections::HashMap;

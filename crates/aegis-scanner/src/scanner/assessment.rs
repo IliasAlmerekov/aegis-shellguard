@@ -12,7 +12,8 @@ use super::{Scanner, highlighting, pipeline_semantics, recursive};
 /// (regex id, prefix id) pairs where the regex already reports everything its
 /// paired token-prefix rule would add for the same target, so the prefix rule
 /// steps aside once the regex has matched (GHSA-7gcj-4f7x-7fxj / #415).
-const REGEX_SUPERSEDED_PREFIXES: &[(&str, &str)] = &[("FS-001", "FS-020"), ("PS-006", "PS-008")];
+pub(super) const REGEX_SUPERSEDED_PREFIXES: &[(&str, &str)] =
+    &[("FS-001", "FS-020"), ("PS-006", "PS-008")];
 
 /// Synthetic pattern id for the GHSA-7564 candidate-cap Warn, alongside
 /// `SCAN-001`..`SCAN-003` below.
@@ -168,6 +169,7 @@ impl Scanner {
                 }
             }
 
+            let prefix_start = matched.len();
             for result in self.prefix_scan_effective_slices(&effective_slices) {
                 if prefix_id_superseded(&regex_matched_for_target, result.pattern.id.as_ref()) {
                     continue;
@@ -186,6 +188,13 @@ impl Scanner {
                 &mut regex_matched_for_target,
             );
             self.scan_aegis_option_candidates(&effective_slices, &mut matched);
+
+            if let Some(quoted) = target_report
+                .quoted_tokens(target)
+                .filter(|quoted| *quoted != token_refs.as_slice())
+            {
+                self.drop_quote_split_matches(&mut matched, prefix_start, quoted);
+            }
         }
 
         if let Some(pipelines) = maybe_pipelines {
@@ -219,7 +228,7 @@ impl Scanner {
     /// Rescan each `aegis` candidate slice whose subcommand sits behind Aegis'
     /// own global options (`aegis --quiet uninstall`), so the `AEG-*` prefix
     /// rules see `aegis <subcommand>` as they would without the options.
-    fn scan_aegis_option_candidates(
+    pub(super) fn scan_aegis_option_candidates(
         &self,
         effective_slices: &[aegis_parser::EffectiveTokenSlice<'_>],
         matched: &mut Vec<MatchResult>,
@@ -261,7 +270,7 @@ impl Scanner {
     /// position 1, so no `GIT-*` rule above ever sees it. Resolves where the
     /// subcommand actually starts and re-runs both scan mechanisms there,
     /// pushing matches (and the `SCAN-004` cap warning) into `matched`.
-    fn scan_git_option_candidates(
+    pub(super) fn scan_git_option_candidates(
         &self,
         effective_slices: &[aegis_parser::EffectiveTokenSlice<'_>],
         matched: &mut Vec<MatchResult>,

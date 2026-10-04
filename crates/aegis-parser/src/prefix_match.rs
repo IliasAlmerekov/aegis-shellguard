@@ -78,7 +78,14 @@ fn matches_from(pattern: &PrefixPattern, tokens: &[&str], pat_idx: usize) -> boo
             matches_from(pattern, &tokens[1..], pat_idx + 1)
         }
         PatternToken::AnyStar => {
+            // `--` ends option parsing, so a flag the next element looks for
+            // is an operand once the wildcard has skipped past one (#484).
+            let stop_at_double_dash = ends_options_at_double_dash(pattern)
+                && pattern.get(pat_idx + 1).is_some_and(is_flag_element);
             for skip in 0..=tokens.len() {
+                if stop_at_double_dash && skip > 0 && tokens[skip - 1] == "--" {
+                    break;
+                }
                 if matches_from(pattern, &tokens[skip..], pat_idx + 1) {
                     return true;
                 }
@@ -97,6 +104,25 @@ fn matches_from(pattern: &PrefixPattern, tokens: &[&str], pat_idx: usize) -> boo
             }
             matches_from(pattern, &tokens[1..], pat_idx + 1)
         }
+    }
+}
+
+/// Programs checked to treat every word after `--` as an operand (ADR-046).
+/// A program missing here keeps matching a flag after `--`, which fails safe.
+const DOUBLE_DASH_PROGRAMS: &[&str] = &["git", "rm", "rsync", "sgdisk", "wipefs"];
+
+/// Whether the program `pattern` is anchored at is in [`DOUBLE_DASH_PROGRAMS`].
+fn ends_options_at_double_dash(pattern: &PrefixPattern) -> bool {
+    matches!(pattern.first(), Some(PatternToken::Single(program)) if DOUBLE_DASH_PROGRAMS.contains(&program.as_ref()))
+}
+
+/// Whether `element` only ever matches an option token such as `-f` or `--force`.
+fn is_flag_element(element: &PatternToken) -> bool {
+    match element {
+        PatternToken::Single(token) => token.starts_with('-'),
+        PatternToken::Alts(alts) => alts.iter().all(|token| token.starts_with('-')),
+        PatternToken::ShortFlag { .. } => true,
+        PatternToken::Any | PatternToken::AnyStar => false,
     }
 }
 
@@ -166,6 +192,35 @@ mod tests {
         assert!(matches_prefix(&pattern, &["git", "log", "status"]));
         assert!(matches_prefix(&pattern, &["git", "a", "b", "c", "status"]));
         assert!(!matches_prefix(&pattern, &["git", "log"]));
+    }
+
+    #[test]
+    fn any_star_does_not_skip_end_of_options_before_a_flag() {
+        let pattern = vec![
+            single("git"),
+            PatternToken::AnyStar,
+            alts(&["-f", "--force"]),
+        ];
+        assert!(matches_prefix(&pattern, &["git", "--force", "--", "x"]));
+        assert!(!matches_prefix(
+            &pattern,
+            &["git", "origin", "--", "--force"]
+        ));
+    }
+
+    #[test]
+    fn any_star_skips_end_of_options_for_an_unchecked_program() {
+        let pattern = vec![single("aws"), PatternToken::AnyStar, single("--force")];
+        assert!(matches_prefix(
+            &pattern,
+            &["aws", "s3", "rb", "--", "--force"]
+        ));
+    }
+
+    #[test]
+    fn any_star_still_skips_end_of_options_before_an_operand() {
+        let pattern = vec![single("rm"), PatternToken::AnyStar, single("/")];
+        assert!(matches_prefix(&pattern, &["rm", "-rf", "--", "/"]));
     }
 
     #[test]

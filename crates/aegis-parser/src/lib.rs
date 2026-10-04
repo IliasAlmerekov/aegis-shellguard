@@ -38,8 +38,8 @@ pub use nested_shells::extract_nested_commands;
 pub use prefix_match::{contains_any_token, matches_prefix};
 pub use runner::Runner;
 pub use segmentation::{
-    extract_command_substitution_bodies, logical_segments, mask_command_substitutions,
-    top_level_pipelines, unwrap_subshell_group,
+    ScanSegment, extract_command_substitution_bodies, logical_scan_segments, logical_segments,
+    mask_command_substitutions, top_level_pipelines, unwrap_subshell_group,
 };
 pub use tokenizer::{extract_prefix, split_tokens};
 
