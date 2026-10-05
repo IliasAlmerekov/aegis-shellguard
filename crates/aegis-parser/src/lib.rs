@@ -41,8 +41,9 @@ pub use prefix_match::{
 };
 pub use runner::Runner;
 pub use segmentation::{
-    ScanSegment, extract_command_substitution_bodies, logical_scan_segments, logical_segments,
-    mask_command_substitutions, top_level_pipelines, unwrap_subshell_group,
+    ScanSegment, extract_command_substitution_bodies, has_multiple_top_level_segments,
+    logical_scan_segments, logical_segments, mask_command_substitutions, top_level_pipelines,
+    unwrap_subshell_group,
 };
 pub use tokenizer::{extract_prefix, split_tokens};
 
