@@ -74,3 +74,47 @@ fn assess_quoted_or_end_of_options_forms_that_still_warn() {
         assert_assessment_matches_pattern(cmd, risk, id);
     }
 }
+
+// A `--` inside a quoted or escaped argument is an operand, not end-of-options.
+// Later segments reach the prefix rules as lossy re-split tokens, where that
+// operand looks like a standalone `--` and would hide the real flag after it.
+#[test]
+fn assess_real_flag_after_a_quoted_double_dash_operand_still_warns() {
+    for (cmd, id) in [
+        ("true; git push origin 'a --' --force", "GIT-003"),
+        ("echo hi | git push origin 'a --' -f", "GIT-003"),
+        ("echo hi && git push origin \"a --\" --force", "GIT-003"),
+        (
+            "cd /repo && git push origin 'refs/heads/x --' --force",
+            "GIT-003",
+        ),
+        ("true; git push origin a\\ -- --force", "GIT-003"),
+        ("true; git clean 'a --' -fdx", "GIT-002"),
+        ("true; rsync -a 'a --' --delete src/ dst/", "FS-015"),
+        ("true; FOO=1 git push origin 'a --' --force", "GIT-003"),
+    ] {
+        let assessment = scanner().assess(cmd);
+        assert_eq!(assessment.risk, RiskLevel::Warn, "command {cmd:?}");
+        assert!(
+            assessment
+                .matched
+                .iter()
+                .any(|m| m.pattern.id.as_ref() == id),
+            "command {cmd:?} should match {id}"
+        );
+    }
+}
+
+#[test]
+fn assess_flag_after_real_double_dash_in_later_segment_stays_safe() {
+    for cmd in [
+        "true; git push origin -- --force",
+        "true; git push origin 'x --force'",
+    ] {
+        assert_eq!(
+            scanner().assess(cmd).risk,
+            RiskLevel::Safe,
+            "command {cmd:?}"
+        );
+    }
+}

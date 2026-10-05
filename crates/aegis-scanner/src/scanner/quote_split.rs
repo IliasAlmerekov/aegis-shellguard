@@ -6,8 +6,11 @@
 //! that git never receives. That same re-split is also how a command string
 //! handed to a runner (`watch 'git clean -fdx'`) reaches the prefix rules, so
 //! the lossy tokens stay the source of matches. This module only removes the
-//! matches that the segment's quote-preserving tokens contradict.
+//! matches that the segment's quote-preserving tokens contradict, and it is
+//! the one place a `--` ends option parsing: a `--` in the lossy tokens may
+//! come from a quoted argument, so it never hides a flag there.
 
+use aegis_parser::EndOfOptions;
 use aegis_types::{MatchEvidence, MatchResult};
 
 use super::Scanner;
@@ -17,7 +20,8 @@ impl Scanner {
     /// Remove token-prefix matches in `matched[from..]` that the
     /// quote-preserving `quoted` tokens of the same segment do not support.
     ///
-    /// A match stays when the same rule also matches `quoted`, or when a
+    /// A match stays when the same rule also matches `quoted` (where `--` ends
+    /// option parsing for the programs that treat it so), or when a
     /// quoted token that re-tokenizes into several words names the rule's
     /// program: that token may be a command string some runner executes.
     pub(super) fn drop_quote_split_matches(
@@ -26,6 +30,9 @@ impl Scanner {
         from: usize,
         quoted: &[String],
     ) {
+        if matched.len() <= from {
+            return;
+        }
         let multi_word_tokens: Vec<String> = quoted
             .iter()
             .filter(|token| aegis_parser::split_tokens(token) != [token.as_str()])
@@ -54,10 +61,15 @@ impl Scanner {
     fn prefix_ids(&self, tokens: &[String]) -> Vec<String> {
         let refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
         let slices = aegis_parser::effective_token_slices(&refs);
-        let mut found = self.prefix_scan_effective_slices(&slices);
+        let mut found = self.prefix_scan_effective_slices(&slices, EndOfOptions::Honor);
         let mut regex_matched = [false; REGEX_SUPERSEDED_PREFIXES.len()];
-        self.scan_git_option_candidates(&slices, &mut found, &mut regex_matched);
-        self.scan_aegis_option_candidates(&slices, &mut found);
+        self.scan_git_option_candidates(
+            &slices,
+            &mut found,
+            &mut regex_matched,
+            EndOfOptions::Honor,
+        );
+        self.scan_aegis_option_candidates(&slices, &mut found, EndOfOptions::Honor);
         found
             .into_iter()
             .filter(|result| matches!(result.evidence, MatchEvidence::TokenPrefixRule { .. }))

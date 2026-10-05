@@ -35,7 +35,10 @@ pub use git_options::{
 };
 pub use list_segments::{ListSegment, ListSeparator, list_segments};
 pub use nested_shells::extract_nested_commands;
-pub use prefix_match::{contains_any_token, matches_prefix};
+pub use prefix_match::{
+    EndOfOptions, contains_any_token, matches_prefix, matches_prefix_ending_options,
+    matches_prefix_with,
+};
 pub use runner::Runner;
 pub use segmentation::{
     ScanSegment, extract_command_substitution_bodies, logical_scan_segments, logical_segments,

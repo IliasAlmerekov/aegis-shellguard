@@ -39,17 +39,28 @@ re-split would turn those matches into false negatives.
    `DOUBLE_DASH_PROGRAMS`: `git`, `rm`, `rsync`, `sgdisk` and `wipefs`. Each
    was run with a flag after `--` and treated it as an operand. Before an
    operand element, such as PS-008's `/`, `AnyStar` still skips `--`.
+   The stop applies only to quote-preserving tokens, through
+   `matches_prefix_ending_options`. The main scan runs on the re-split
+   tokens, where a `--` may come from a quoted or escaped argument
+   (`git push origin 'a --' --force`), so there `AnyStar` skips `--` as
+   before. The filter in decision 2 then applies the stop: it runs for every
+   segment, including one whose quoted tokens equal the re-split tokens, and
+   drops a match that the quoted tokens do not support.
 
 ## Consequences
 
-- The set of matches can only shrink, and only for a rule the quoted tokens
-  contradict. A differential run over 7130 commands from the test suite and
+- The main scan finds the same matches as before #484. The filter then removes
+  only a match the quote-preserving tokens contradict, by a quoted word or by
+  a real `--`. A segment with no quote-preserving tokens, or two segments that
+  normalize alike with different tokens, is not filtered and keeps every
+  match. A `--` hidden inside a quoted argument therefore cannot hide a flag.
+  A differential run over 7130 commands from the test suite and
   rule examples changed no verdict except the #484 cases.
 - Some false positives remain. They fail safe and prompt.
   - The recursive path (heredoc, process substitution, backticks, `eval`)
     keeps no quote-preserving tokens, so it does not filter.
-  - `strip_env_prefix` also joins words with spaces, so
-    `FOO=1 git push origin 'x --force'` still warns.
+  - `strip_env_prefix` also joins words with spaces, so a target stripped of
+    an env prefix may have no quote-preserving tokens and is not filtered.
   - A quoted argument that names the program, such as
     `git commit -m 'revert git push --force'`, keeps its match.
 - `aws`, `gsutil` and `gcloud` are not in the list, because they could not

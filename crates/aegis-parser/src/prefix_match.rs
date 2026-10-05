@@ -43,14 +43,44 @@ pub fn contains_any_token(tokens: &[&str], candidates: &[&str]) -> bool {
 /// [`PatternToken::Any`], [`PatternToken::AnyStar`] and
 /// [`PatternToken::ShortFlag`]. The pattern must be a prefix of `tokens` —
 /// extra trailing tokens are allowed. Empty patterns never match.
+///
+/// A `--` token is an ordinary token here: use this on tokens whose quote
+/// boundaries are lost, where a `--` may come from a quoted argument.
 pub fn matches_prefix(pattern: &PrefixPattern, tokens: &[&str]) -> bool {
+    matches_prefix_with(pattern, tokens, EndOfOptions::Ignore)
+}
+
+/// Like [`matches_prefix`], but an [`PatternToken::AnyStar`] stops at a `--`
+/// token before a flag element for the programs in [`DOUBLE_DASH_PROGRAMS`]
+/// (ADR-046). Use it only on quote-preserving tokens, where every `--` token
+/// is a word the shell passed on its own.
+pub fn matches_prefix_ending_options(pattern: &PrefixPattern, tokens: &[&str]) -> bool {
+    matches_prefix_with(pattern, tokens, EndOfOptions::Honor)
+}
+
+/// Whether `--` ends option parsing while matching a prefix pattern.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EndOfOptions {
+    /// Treat `--` as an ordinary token (lossy, quote-stripped tokens).
+    Ignore,
+    /// Stop a wildcard at `--` (quote-preserving tokens).
+    Honor,
+}
+
+/// [`matches_prefix`] with an explicit [`EndOfOptions`] mode.
+pub fn matches_prefix_with(pattern: &PrefixPattern, tokens: &[&str], mode: EndOfOptions) -> bool {
     if pattern.is_empty() {
         return false;
     }
-    matches_from(pattern, tokens, 0)
+    matches_from(pattern, tokens, 0, mode)
 }
 
-fn matches_from(pattern: &PrefixPattern, tokens: &[&str], pat_idx: usize) -> bool {
+fn matches_from(
+    pattern: &PrefixPattern,
+    tokens: &[&str],
+    pat_idx: usize,
+    mode: EndOfOptions,
+) -> bool {
     if pat_idx == pattern.len() {
         return true;
     }
@@ -59,7 +89,7 @@ fn matches_from(pattern: &PrefixPattern, tokens: &[&str], pat_idx: usize) -> boo
             if tokens.is_empty() || !str_eq_maybe_case(tokens[0], s.as_ref()) {
                 return false;
             }
-            matches_from(pattern, &tokens[1..], pat_idx + 1)
+            matches_from(pattern, &tokens[1..], pat_idx + 1, mode)
         }
         PatternToken::Alts(alts) => {
             if tokens.is_empty()
@@ -69,24 +99,25 @@ fn matches_from(pattern: &PrefixPattern, tokens: &[&str], pat_idx: usize) -> boo
             {
                 return false;
             }
-            matches_from(pattern, &tokens[1..], pat_idx + 1)
+            matches_from(pattern, &tokens[1..], pat_idx + 1, mode)
         }
         PatternToken::Any => {
             if tokens.is_empty() {
                 return false;
             }
-            matches_from(pattern, &tokens[1..], pat_idx + 1)
+            matches_from(pattern, &tokens[1..], pat_idx + 1, mode)
         }
         PatternToken::AnyStar => {
             // `--` ends option parsing, so a flag the next element looks for
             // is an operand once the wildcard has skipped past one (#484).
-            let stop_at_double_dash = ends_options_at_double_dash(pattern)
+            let stop_at_double_dash = mode == EndOfOptions::Honor
+                && ends_options_at_double_dash(pattern)
                 && pattern.get(pat_idx + 1).is_some_and(is_flag_element);
             for skip in 0..=tokens.len() {
                 if stop_at_double_dash && skip > 0 && tokens[skip - 1] == "--" {
                     break;
                 }
-                if matches_from(pattern, &tokens[skip..], pat_idx + 1) {
+                if matches_from(pattern, &tokens[skip..], pat_idx + 1, mode) {
                     return true;
                 }
             }
@@ -102,7 +133,7 @@ fn matches_from(pattern: &PrefixPattern, tokens: &[&str], pat_idx: usize) -> boo
             if !matches {
                 return false;
             }
-            matches_from(pattern, &tokens[1..], pat_idx + 1)
+            matches_from(pattern, &tokens[1..], pat_idx + 1, mode)
         }
     }
 }
@@ -128,7 +159,7 @@ fn is_flag_element(element: &PatternToken) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{contains_any_token, matches_prefix};
+    use super::{contains_any_token, matches_prefix, matches_prefix_ending_options};
     use aegis_types::PatternToken;
     use std::borrow::Cow;
 
@@ -201,8 +232,24 @@ mod tests {
             PatternToken::AnyStar,
             alts(&["-f", "--force"]),
         ];
-        assert!(matches_prefix(&pattern, &["git", "--force", "--", "x"]));
-        assert!(!matches_prefix(
+        assert!(matches_prefix_ending_options(
+            &pattern,
+            &["git", "--force", "--", "x"]
+        ));
+        assert!(!matches_prefix_ending_options(
+            &pattern,
+            &["git", "origin", "--", "--force"]
+        ));
+    }
+
+    #[test]
+    fn any_star_skips_end_of_options_when_tokens_lost_their_quotes() {
+        let pattern = vec![
+            single("git"),
+            PatternToken::AnyStar,
+            alts(&["-f", "--force"]),
+        ];
+        assert!(matches_prefix(
             &pattern,
             &["git", "origin", "--", "--force"]
         ));
@@ -211,7 +258,7 @@ mod tests {
     #[test]
     fn any_star_skips_end_of_options_for_an_unchecked_program() {
         let pattern = vec![single("aws"), PatternToken::AnyStar, single("--force")];
-        assert!(matches_prefix(
+        assert!(matches_prefix_ending_options(
             &pattern,
             &["aws", "s3", "rb", "--", "--force"]
         ));
@@ -220,7 +267,10 @@ mod tests {
     #[test]
     fn any_star_still_skips_end_of_options_before_an_operand() {
         let pattern = vec![single("rm"), PatternToken::AnyStar, single("/")];
-        assert!(matches_prefix(&pattern, &["rm", "-rf", "--", "/"]));
+        assert!(matches_prefix_ending_options(
+            &pattern,
+            &["rm", "-rf", "--", "/"]
+        ));
     }
 
     #[test]

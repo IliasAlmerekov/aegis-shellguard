@@ -316,12 +316,13 @@ impl Scanner {
             return vec![];
         }
         let candidates = aegis_parser::effective_token_slices(tokens);
-        self.prefix_scan_effective_slices(&candidates)
+        self.prefix_scan_effective_slices(&candidates, aegis_parser::EndOfOptions::Ignore)
     }
 
     fn prefix_scan_effective_slices(
         &self,
         candidates: &[aegis_parser::EffectiveTokenSlice<'_>],
+        mode: aegis_parser::EndOfOptions,
     ) -> Vec<MatchResult> {
         candidates
             .iter()
@@ -330,7 +331,7 @@ impl Scanner {
                     .map_or(&[] as &[Arc<PrefixRule>], Vec::as_slice)
                     .iter()
                     .filter_map(move |rule| {
-                        if rule.matches_tokens(&candidate.tokens) {
+                        if rule.matches_tokens_with(&candidate.tokens, mode) {
                             Some(rule.to_match_result(&candidate.tokens))
                         } else {
                             None

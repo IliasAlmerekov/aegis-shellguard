@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::nested::RecursiveScanLimit;
+use aegis_parser::EndOfOptions;
 use aegis_types::ParsedCommand;
 use aegis_types::{
     Assessment, Category, DetectionSource, MatchEvidence, MatchResult, Pattern, PatternSource,
@@ -170,7 +171,8 @@ impl Scanner {
             }
 
             let prefix_start = matched.len();
-            for result in self.prefix_scan_effective_slices(&effective_slices) {
+            for result in self.prefix_scan_effective_slices(&effective_slices, EndOfOptions::Ignore)
+            {
                 if prefix_id_superseded(&regex_matched_for_target, result.pattern.id.as_ref()) {
                     continue;
                 }
@@ -186,13 +188,15 @@ impl Scanner {
                 &effective_slices,
                 &mut matched,
                 &mut regex_matched_for_target,
+                EndOfOptions::Ignore,
             );
-            self.scan_aegis_option_candidates(&effective_slices, &mut matched);
+            self.scan_aegis_option_candidates(
+                &effective_slices,
+                &mut matched,
+                EndOfOptions::Ignore,
+            );
 
-            if let Some(quoted) = target_report
-                .quoted_tokens(target)
-                .filter(|quoted| *quoted != token_refs.as_slice())
-            {
+            if let Some(quoted) = target_report.quoted_tokens(target) {
                 self.drop_quote_split_matches(&mut matched, prefix_start, quoted);
             }
         }
@@ -232,6 +236,7 @@ impl Scanner {
         &self,
         effective_slices: &[aegis_parser::EffectiveTokenSlice<'_>],
         matched: &mut Vec<MatchResult>,
+        mode: EndOfOptions,
     ) {
         let Some(rules) = self.prefix_lookup("aegis") else {
             return;
@@ -256,7 +261,7 @@ impl Scanner {
                 {
                     continue;
                 }
-                if rule.matches_tokens(&aegis_tokens) {
+                if rule.matches_tokens_with(&aegis_tokens, mode) {
                     let mut result = rule.to_match_result(&aegis_tokens);
                     result.matched_text = tail.clone();
                     matched.push(result);
@@ -275,6 +280,7 @@ impl Scanner {
         effective_slices: &[aegis_parser::EffectiveTokenSlice<'_>],
         matched: &mut Vec<MatchResult>,
         regex_matched_for_target: &mut [bool; REGEX_SUPERSEDED_PREFIXES.len()],
+        mode: EndOfOptions,
     ) {
         for candidate in effective_slices {
             if !candidate.program.eq_ignore_ascii_case("git") {
@@ -340,7 +346,7 @@ impl Scanner {
                         {
                             continue;
                         }
-                        if rule.matches_tokens(&git_tokens) {
+                        if rule.matches_tokens_with(&git_tokens, mode) {
                             let mut result = rule.to_match_result(&git_tokens);
                             result.matched_text = tail.clone();
                             matched.push(result);
