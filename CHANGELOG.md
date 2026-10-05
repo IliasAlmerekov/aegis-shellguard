@@ -11,6 +11,8 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+## [0.7.0] (2026-10-05)
+
 - Changed: CI is the only place clippy, the tests, `cargo audit` and `cargo deny check` run. The pre-push hook now runs only `scripts/lint.sh fmt`, which compiles nothing. AGENTS.md, CONVENTION.md, CONTRIBUTING.md and the PR template no longer ask for a local `cargo test --workspace`. Run only the targeted test for the code you changed.
 - Fixed: `git commit --amend` is `Warn` under the new GIT-010 rule instead of auto-approved as `Safe`. The rule finds `--amend` or its abbreviations `--am`, `--ame` and `--amen` anywhere in the `git commit` arguments. (#424)
 - Fixed: A flag inside a quoted argument (`git push origin 'x --force'`) or after `--` (`git push origin -- --force`) no longer trips a token-prefix rule. (#484, ADR-046)
