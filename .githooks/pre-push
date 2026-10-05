@@ -1,28 +1,7 @@
 #!/bin/sh
 set -eu
 
-# Git exports GIT_DIR and related variables to hooks in a linked worktree.
-# Tests spawn git in temporary directories, and those variables would point
-# every such spawn at this repository instead (#317).
-unset $(git rev-parse --local-env-vars)
-
-# The same rustfmt and clippy commands as CI, on the toolchain CI pins.
-echo "pre-push: running scripts/lint.sh"
-scripts/lint.sh
-
-echo "pre-push: running cargo test --workspace"
-cargo test --workspace
-
-if cargo audit --help >/dev/null 2>&1; then
-    echo "pre-push: running cargo audit"
-    cargo audit
-else
-    echo "pre-push: skipping cargo audit (cargo-audit is not installed)"
-fi
-
-if cargo deny --help >/dev/null 2>&1; then
-    echo "pre-push: running cargo deny check bans licenses sources"
-    cargo deny check bans licenses sources
-else
-    echo "pre-push: skipping cargo deny check (cargo-deny is not installed)"
-fi
+# Only the format check runs here. It compiles nothing, so it costs no
+# target/ space. CI runs clippy, the tests, audit and deny.
+echo "pre-push: running scripts/lint.sh fmt"
+scripts/lint.sh fmt

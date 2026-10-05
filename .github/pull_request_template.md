@@ -6,10 +6,6 @@ Closes #
 -
 -
 
-Evidence:
-- `cargo test --workspace`: N passed, 0 failed
-- `scripts/lint.sh`: clean
-- `cargo audit`: no new advisories
-- `cargo deny check`: ok
+Evidence: CI is green on this PR (quality, security and schema checks). Add any targeted local test you ran.
 
 Confidence: high | medium | low. <!-- One sentence: what would prove this wrong, or what is left unchecked. -->
