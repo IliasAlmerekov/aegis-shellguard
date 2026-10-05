@@ -172,7 +172,10 @@ impl Scanner {
 
             // The raw command joins every segment into one token list, so an
             // `any_star()` would run past `;`, `&&`, `|` or a newline into the
-            // next command's flags (#425). Each segment is its own target.
+            // next command's flags (#425). Each segment is its own target, so
+            // this `continue` skips the whole token path for the raw command
+            // (prefix scan, git/aegis option candidates, quote-split drop). That
+            // is safe because every top-level segment is scanned on its own.
             if target == cmd && aegis_parser::has_multiple_top_level_segments(cmd) {
                 continue;
             }

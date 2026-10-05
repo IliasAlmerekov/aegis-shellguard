@@ -72,3 +72,25 @@ fn assess_recursive_flag_and_root_of_a_later_command_does_not_trip_ps_008() {
 fn assess_real_root_deletion_in_a_chain_still_trips_ps_008() {
     assert_assessment_matches_pattern("echo go && rm / -rf", RiskLevel::Block, "PS-008");
 }
+
+// Chains that take the recursive or nested scan path must not leak either.
+
+#[test]
+fn assess_flag_of_a_later_command_with_nested_input_does_not_trip_git_push() {
+    let s = scanner();
+    for cmd in [
+        "git push; gh api x -f body=@- <<EOF\nhi\nEOF",
+        "git push; gh api x -f body=$(echo hi)",
+        "git push; gh api x -f body=`echo hi`",
+        "  git push; gh api x -f body=x",
+    ] {
+        assert_eq!(s.assess(cmd).risk, RiskLevel::Safe, "command {cmd:?}");
+    }
+}
+
+#[test]
+fn assess_real_force_push_in_a_group_or_background_chain_still_warns() {
+    for cmd in ["{ git push --force; }", "true & git push --force"] {
+        assert_assessment_matches_pattern(cmd, RiskLevel::Warn, "GIT-003");
+    }
+}
