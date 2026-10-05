@@ -1,32 +1,32 @@
 class Aegis < Formula
   desc "Heuristic shell guardrail for AI agent command execution"
   homepage "https://github.com/IliasAlmerekov/aegis-shellguard"
-  version "0.6.4"
+  version "0.7.0"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/IliasAlmerekov/aegis-shellguard/releases/download/v0.6.4/aegis-macos-aarch64", using: :nounzip
-      sha256 "044d8405af06fd049aff3d9cabb453310c73240fe366ce40f012794c2c70d24d"
+      url "https://github.com/IliasAlmerekov/aegis-shellguard/releases/download/v0.7.0/aegis-macos-aarch64", using: :nounzip
+      sha256 "aa7d6565630bf42c4607ef8b10c1bc0b6d261463f256a848585637a439737587"
     else
-      url "https://github.com/IliasAlmerekov/aegis-shellguard/releases/download/v0.6.4/aegis-macos-x86_64", using: :nounzip
-      sha256 "e4575ad031ac3c72decafa7ea13e1d5f467a7d66a37543d5f956398256ea6b41"
+      url "https://github.com/IliasAlmerekov/aegis-shellguard/releases/download/v0.7.0/aegis-macos-x86_64", using: :nounzip
+      sha256 "ff2a5dcd08e9b6a2d043c8425676630f505ed923d470160f21e5ed87081bee71"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
-      url "https://github.com/IliasAlmerekov/aegis-shellguard/releases/download/v0.6.4/aegis-linux-aarch64", using: :nounzip
-      sha256 "66fb3135ad1081f550be28347b13310d55bbd68cb331dbce56f462e5861fa8ec"
+      url "https://github.com/IliasAlmerekov/aegis-shellguard/releases/download/v0.7.0/aegis-linux-aarch64", using: :nounzip
+      sha256 "17b42d98644c123b1f1d0c2e96018c69a7f5e12f2beda27f8e255131579b5225"
     else
-      url "https://github.com/IliasAlmerekov/aegis-shellguard/releases/download/v0.6.4/aegis-linux-x86_64", using: :nounzip
-      sha256 "367492ed7453344ce54827cc14c7f8b59d1e14120443a8ec41493fdc6419f6fd"
+      url "https://github.com/IliasAlmerekov/aegis-shellguard/releases/download/v0.7.0/aegis-linux-x86_64", using: :nounzip
+      sha256 "6eafeab8ab5acce71ca76bcafef0a2a1582c2e06d51504fdd1ea400532c8cae0"
     end
   end
 
   resource "third_party_notices" do
-    url "https://github.com/IliasAlmerekov/aegis-shellguard/releases/download/v0.6.4/THIRD_PARTY_NOTICES.md"
-    sha256 "046120a95a821791c900bf9a9b4a40279de5512eb90cc5f048ffdef1d47de404"
+    url "https://github.com/IliasAlmerekov/aegis-shellguard/releases/download/v0.7.0/THIRD_PARTY_NOTICES.md"
+    sha256 "396b704f097977bd1335ad502cc29be4f443a861e445511f275020af24299d59"
   end
 
   def install
