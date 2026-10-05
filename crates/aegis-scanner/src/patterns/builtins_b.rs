@@ -65,7 +65,7 @@ pub(super) fn rules() -> Vec<PrefixRule> {
                 "git commit --amend --no-edit",
                 "git commit -q --amend --no-edit -a",
             ],
-            not_match_examples: &["git commit -m 'fix typo'"],
+            not_match_examples: &["git commit -m 'fix typo'", "git commit -am x"],
         },
         // ── Docker ────────────────────────────────────────────────────────────
         PrefixRule {

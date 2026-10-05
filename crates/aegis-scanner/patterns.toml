@@ -150,7 +150,7 @@ justification = "A single '>' replaces the entire shell-rc file with the redirec
 # ─── Database ────────────────────────────────────────────────────────────────
 #
 # DB-006 (Redis FLUSHALL/FLUSHDB) is a token-prefix rule defined in
-# crates/aegis-scanner/src/patterns/builtins_a.rs and builtins_b.rs.
+# crates/aegis-scanner/src/patterns/builtins_a.rs.
 # The destructive-SQL rules below (DB-001/002/007/008) are regex patterns that
 # match the normalized command ANYWHERE: SQL verbs arrive embedded in
 # `psql -c` / `mysql -e` / `--command=` / `--execute` / heredoc / stdin, never

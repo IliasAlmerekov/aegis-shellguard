@@ -34,6 +34,8 @@ fn assess_commit_without_amend_stays_safe() {
         "git commit -m 'fix typo'",
         "git commit --no-edit",
         "git commit --all -m x",
+        "git commit -am x",
+        "git commit -m x -- --amend",
     ] {
         assert_eq!(s.assess(cmd).risk, RiskLevel::Safe, "command {cmd:?}");
     }
