@@ -11,6 +11,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Fixed: A flag inside a quoted argument (`git push origin 'x --force'`) or after `--` (`git push origin -- --force`) no longer trips a token-prefix rule. (#484, ADR-046)
 - Security: Aegis global options before a subcommand (`aegis --quiet off`, `aegis --output text uninstall --purge-data`) no longer hide it from the `AEG-*` Self-management rules, which auto-approved such commands as Safe. (ADR-045)
 - Fixed: `aegis uninstall --rc-file` accepts a path through a symlinked directory such as macOS `/var` or `/tmp`, and every symlink refusal says how to finish that cleanup by hand. (#375, ADR-044)
 - Removed: The root package no longer declares `aho-corasick` or `flate2`, and `async-trait` moved to its dev-dependencies. `SnapshotRegistry::try_from_config`, `AllowlistContext::without_cwd` and `AllowlistContext::without_user` are gone; `Allowlist::is_allowed` and `AllowlistContext::with_user` exist only in tests. The `aegis-snapshot` registry build counter, its `testing` module and `SnapshotRegistry::new_with_plugins` now compile only behind the new `testing` feature, and `aegis-snapshot` drops its unused `thiserror` dependency. (#295)

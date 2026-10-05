@@ -31,6 +31,33 @@ use crate::list_segments::{SuspendCursor, case_statement_suspend_ranges};
 pub fn logical_segments(cmd: &str) -> Vec<String> {
     let mut segments = Vec::new();
 
+    for segment in logical_scan_segments(cmd) {
+        push_unique(&mut segments, segment.normalized);
+    }
+
+    segments
+}
+
+/// One logical segment of a command, in the two forms the scanner needs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScanSegment {
+    /// The segment's words joined by single spaces, as [`logical_segments`]
+    /// returns it. Quoting is gone, so re-tokenizing this string splits a
+    /// quoted argument such as `'x --force'` into separate words.
+    pub normalized: String,
+    /// The segment's words with quote boundaries kept: `'x --force'` stays one
+    /// token, as the program receives it.
+    pub tokens: Vec<String>,
+}
+
+/// [`logical_segments`], with each segment's quote-preserving tokens.
+///
+/// Two raw segments can normalize to the same string while their tokens
+/// differ (`git push 'x --force'` and `git push x --force`), so this list
+/// deduplicates on both fields and may hold one `normalized` value twice.
+pub fn logical_scan_segments(cmd: &str) -> Vec<ScanSegment> {
+    let mut segments = Vec::new();
+
     for raw_segment in split_top_level_segments(cmd) {
         collect_scan_segments(&raw_segment, &mut segments);
     }
@@ -61,9 +88,16 @@ pub fn top_level_pipelines(cmd: &str) -> Vec<PipelineChain> {
         .collect()
 }
 
-fn collect_scan_segments(raw_segment: &str, segments: &mut Vec<String>) {
-    if let Some(normalized) = normalize_segment(raw_segment) {
-        push_unique(segments, normalized);
+fn collect_scan_segments(raw_segment: &str, segments: &mut Vec<ScanSegment>) {
+    let tokens = split_tokens(raw_segment);
+    if !tokens.is_empty() {
+        let segment = ScanSegment {
+            normalized: tokens.join(" "),
+            tokens,
+        };
+        if !segments.contains(&segment) {
+            segments.push(segment);
+        }
     }
 
     if let Some(stripped_env_command) = strip_env_prefix(raw_segment) {

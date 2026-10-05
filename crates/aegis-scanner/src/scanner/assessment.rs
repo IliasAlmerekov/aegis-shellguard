@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::nested::RecursiveScanLimit;
+use aegis_parser::EndOfOptions;
 use aegis_types::ParsedCommand;
 use aegis_types::{
     Assessment, Category, DetectionSource, MatchEvidence, MatchResult, Pattern, PatternSource,
@@ -12,7 +13,8 @@ use super::{Scanner, highlighting, pipeline_semantics, recursive};
 /// (regex id, prefix id) pairs where the regex already reports everything its
 /// paired token-prefix rule would add for the same target, so the prefix rule
 /// steps aside once the regex has matched (GHSA-7gcj-4f7x-7fxj / #415).
-const REGEX_SUPERSEDED_PREFIXES: &[(&str, &str)] = &[("FS-001", "FS-020"), ("PS-006", "PS-008")];
+pub(super) const REGEX_SUPERSEDED_PREFIXES: &[(&str, &str)] =
+    &[("FS-001", "FS-020"), ("PS-006", "PS-008")];
 
 /// Synthetic pattern id for the GHSA-7564 candidate-cap Warn, alongside
 /// `SCAN-001`..`SCAN-003` below.
@@ -168,7 +170,9 @@ impl Scanner {
                 }
             }
 
-            for result in self.prefix_scan_effective_slices(&effective_slices) {
+            let prefix_start = matched.len();
+            for result in self.prefix_scan_effective_slices(&effective_slices, EndOfOptions::Ignore)
+            {
                 if prefix_id_superseded(&regex_matched_for_target, result.pattern.id.as_ref()) {
                     continue;
                 }
@@ -184,8 +188,17 @@ impl Scanner {
                 &effective_slices,
                 &mut matched,
                 &mut regex_matched_for_target,
+                EndOfOptions::Ignore,
             );
-            self.scan_aegis_option_candidates(&effective_slices, &mut matched);
+            self.scan_aegis_option_candidates(
+                &effective_slices,
+                &mut matched,
+                EndOfOptions::Ignore,
+            );
+
+            if let Some(quoted) = target_report.quoted_tokens(target) {
+                self.drop_quote_split_matches(&mut matched, prefix_start, quoted);
+            }
         }
 
         if let Some(pipelines) = maybe_pipelines {
@@ -219,10 +232,11 @@ impl Scanner {
     /// Rescan each `aegis` candidate slice whose subcommand sits behind Aegis'
     /// own global options (`aegis --quiet uninstall`), so the `AEG-*` prefix
     /// rules see `aegis <subcommand>` as they would without the options.
-    fn scan_aegis_option_candidates(
+    pub(super) fn scan_aegis_option_candidates(
         &self,
         effective_slices: &[aegis_parser::EffectiveTokenSlice<'_>],
         matched: &mut Vec<MatchResult>,
+        mode: EndOfOptions,
     ) {
         let Some(rules) = self.prefix_lookup("aegis") else {
             return;
@@ -247,7 +261,7 @@ impl Scanner {
                 {
                     continue;
                 }
-                if rule.matches_tokens(&aegis_tokens) {
+                if rule.matches_tokens_with(&aegis_tokens, mode) {
                     let mut result = rule.to_match_result(&aegis_tokens);
                     result.matched_text = tail.clone();
                     matched.push(result);
@@ -261,11 +275,12 @@ impl Scanner {
     /// position 1, so no `GIT-*` rule above ever sees it. Resolves where the
     /// subcommand actually starts and re-runs both scan mechanisms there,
     /// pushing matches (and the `SCAN-004` cap warning) into `matched`.
-    fn scan_git_option_candidates(
+    pub(super) fn scan_git_option_candidates(
         &self,
         effective_slices: &[aegis_parser::EffectiveTokenSlice<'_>],
         matched: &mut Vec<MatchResult>,
         regex_matched_for_target: &mut [bool; REGEX_SUPERSEDED_PREFIXES.len()],
+        mode: EndOfOptions,
     ) {
         for candidate in effective_slices {
             if !candidate.program.eq_ignore_ascii_case("git") {
@@ -331,7 +346,7 @@ impl Scanner {
                         {
                             continue;
                         }
-                        if rule.matches_tokens(&git_tokens) {
+                        if rule.matches_tokens_with(&git_tokens, mode) {
                             let mut result = rule.to_match_result(&git_tokens);
                             result.matched_text = tail.clone();
                             matched.push(result);

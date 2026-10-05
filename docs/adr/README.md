@@ -109,6 +109,7 @@ the core classification / approval pipeline when enforcement is active.
 | ADR-043 | Dynamic shell words require approval and recovery | [`adr-043-dynamic-shell-words-require-approval-and-recovery.md`](adr-043-dynamic-shell-words-require-approval-and-recovery.md) |
 | ADR-044 | Native uninstall keeps binary removal separate | [`adr-044-native-uninstall-keeps-binary-removal-separate.md`](adr-044-native-uninstall-keeps-binary-removal-separate.md) |
 | ADR-045 | The scanner skips Aegis global options before matching AEG-* rules (extends ADR-035) | [`adr-045-the-scanner-skips-aegis-global-options-before-matching.md`](adr-045-the-scanner-skips-aegis-global-options-before-matching.md) |
+| ADR-046 | Token-prefix matches respect quote boundaries and `--` | [`adr-046-prefix-matches-respect-quote-boundaries-and-end-of-options.md`](adr-046-prefix-matches-respect-quote-boundaries-and-end-of-options.md) |
 
 `ADR-009` is intentionally absent from the active set; numbering is preserved
 as-is so historical references do not drift.
