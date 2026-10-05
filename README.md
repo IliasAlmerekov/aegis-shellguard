@@ -9,7 +9,7 @@ provider applies, a Snapshot captures the working state first, so a "yes" can be
 restored to what was captured. When no provider applies, Aegis says so instead of
 implying an undo it cannot perform.
 
-[![version](https://img.shields.io/badge/version-0.6.11-60A5FA?style=flat-square)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.7.0-60A5FA?style=flat-square)](CHANGELOG.md)
 [![platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-22C55E?style=flat-square)](#how-to-install)
 [![license](https://img.shields.io/badge/license-MIT-A855F7?style=flat-square)](LICENSE)
 [![built with](https://img.shields.io/badge/built%20with-Rust-F59E0B?style=flat-square)](Cargo.toml)
@@ -52,7 +52,7 @@ running it unconfined
 stay accepted by exact name and ignored at any value, each reported as a
 `deprecated_sandbox_field`, and Aegis never rewrites your config to remove them.
 
-**Current pre-1.0 implementation (0.6.x):** the shipped binary still implements
+**Current pre-1.0 implementation (0.x):** the shipped binary still implements
 the optional model. If confinement is unavailable it records
 `sandbox_status = "unavailable"` and warns on the active Shell or Watch channel
 before running unconfined, and `sandbox.required = true` is what turns that into a
@@ -181,7 +181,7 @@ Homebrew installs the binary only — like npm and Cargo, it does not run the gl
 ### Developer source install
 
 ```bash
-cargo install --git https://github.com/IliasAlmerekov/aegis-shellguard --tag v0.6.11 aegis
+cargo install --git https://github.com/IliasAlmerekov/aegis-shellguard --tag v0.7.0 aegis
 ```
 
 ---

@@ -144,7 +144,7 @@ unconfined run: `sandbox.enabled` and `sandbox.required` are accepted by exact n
 and ignored at any value — each reported as a `deprecated_sandbox_field` — for the
 life of config schema v1.
 
-**Current pre-1.0 implementation (0.6.x):** the shipped code still implements the
+**Current pre-1.0 implementation (0.x):** the shipped code still implements the
 optional model. Shell warns on stderr and Watch emits a protocol warning before an
 unconfined fallback; the same command Audit entry records
 `sandbox_status = "unavailable"`, and `sandbox.required = true` is what turns

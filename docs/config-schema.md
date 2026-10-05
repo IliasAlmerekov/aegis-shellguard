@@ -286,12 +286,12 @@ string classifier, which matches how a command is *spelled* rather than what it
 *does*.
 
 This section documents **two states**, because they differ today: the 1.0 contract
-that `PRD.md` §5.5 promises, and what the shipped 0.6.x binary does. Where they
+that `PRD.md` §5.5 promises, and what the shipped 0.x binary does. Where they
 disagree, the PRD is the promise and the code is the behaviour; the gap closes with
 [#229](https://github.com/IliasAlmerekov/aegis-shellguard/issues/229) and
 [#230](https://github.com/IliasAlmerekov/aegis-shellguard/issues/230).
 
-### Current pre-1.0 implementation (0.6.x)
+### Current pre-1.0 implementation (0.x)
 
 ```toml
 [sandbox]

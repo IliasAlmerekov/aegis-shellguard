@@ -51,7 +51,7 @@ process execution. It allows writes under each `allow_write` path, and network
 access only when `allow_network` is set.
 
 When the Sandbox is `Unavailable`, the 1.0 contract blocks the command. The
-0.6.x binary still implements the optional model: the Sandbox is off unless
+0.x binary still implements the optional model: the Sandbox is off unless
 `sandbox.enabled` is set, and an unavailable Sandbox runs the command
 unconfined with a warning unless `sandbox.required = true`. The README describes
 the difference.

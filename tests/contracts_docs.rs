@@ -193,7 +193,7 @@ const DERIVED_SANDBOX_DOCS: [&str; 4] = [
 /// The marker a document must carry before it may describe the pre-ADR-029
 /// optional Sandbox. Matched case-insensitively so a sentence may open with it.
 ///
-/// It exists because the shipped 0.6.x code still implements the optional model
+/// It exists because the shipped 0.x code still implements the optional model
 /// while `PRD.md` already promises the mandatory layer. A derived document is
 /// allowed to describe the old behaviour — that is honesty, not drift — but only
 /// where it is labelled as the current implementation rather than the contract.
@@ -304,7 +304,7 @@ fn derived_docs_label_the_optional_sandbox_as_current_behaviour() {
 
         assert!(
             marked,
-            "{doc} must disclose that the shipped 0.6.x code has not caught up with \
+            "{doc} must disclose that the shipped 0.x code has not caught up with \
              the mandatory-layer contract yet (#229, #230)"
         );
     }
