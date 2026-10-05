@@ -38,6 +38,35 @@ pub(super) fn rules() -> Vec<PrefixRule> {
                 "git push origin :",
             ],
         },
+        PrefixRule {
+            id: Cow::Borrowed("GIT-010"),
+            category: Category::Git,
+            // git accepts any unambiguous prefix of a long option, and `--am`
+            // is already unambiguous among `git commit` options (#424).
+            pattern: vec![
+                s("git"),
+                s("commit"),
+                any_star(),
+                a(&["--amend", "--amen", "--ame", "--am"]),
+            ],
+            risk: RiskLevel::Warn,
+            description: Cow::Borrowed(
+                "git commit --amend — replaces the last commit with a rewritten one",
+            ),
+            safe_alt: Some(Cow::Borrowed(
+                "Make a new commit instead, or note the current SHA with 'git rev-parse HEAD' before amending",
+            )),
+            justification: Some(Cow::Borrowed(
+                "Amending changes the SHA of the last commit. If that commit was already pushed, the branch diverges from the remote. The old commit survives only in the reflog.",
+            )),
+            source: PatternSource::Builtin,
+            suppressed_by: &[],
+            match_examples: &[
+                "git commit --amend --no-edit",
+                "git commit -q --amend --no-edit -a",
+            ],
+            not_match_examples: &["git commit -m 'fix typo'", "git commit -am x"],
+        },
         // ── Docker ────────────────────────────────────────────────────────────
         PrefixRule {
             id: Cow::Borrowed("DK-001"),

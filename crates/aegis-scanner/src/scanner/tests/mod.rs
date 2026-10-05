@@ -74,6 +74,7 @@ mod h3_gaps;
 mod issue_344;
 mod issue_357;
 mod issue_396;
+mod issue_424;
 mod issue_431;
 mod issue_484;
 mod m5_followups;
