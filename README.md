@@ -52,7 +52,7 @@ running it unconfined
 stay accepted by exact name and ignored at any value, each reported as a
 `deprecated_sandbox_field`, and Aegis never rewrites your config to remove them.
 
-**Current pre-1.0 implementation (0.6.x):** the shipped binary still implements
+**Current pre-1.0 implementation (0.x):** the shipped binary still implements
 the optional model. If confinement is unavailable it records
 `sandbox_status = "unavailable"` and warns on the active Shell or Watch channel
 before running unconfined, and `sandbox.required = true` is what turns that into a
