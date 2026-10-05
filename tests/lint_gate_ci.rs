@@ -10,10 +10,7 @@ use std::path::{Path, PathBuf};
 const LINT_SCRIPT: &str = "scripts/lint.sh";
 
 /// Files that run the lint checks. Each one must go through the script.
-const CALLERS: &[&str] = &[
-    ".github/actions/quality-gate/action.yml",
-    "justfile",
-];
+const CALLERS: &[&str] = &[".github/actions/quality-gate/action.yml", "justfile"];
 
 /// Files that tell a person or an agent how to run the lint checks.
 const DOCS: &[&str] = &[
