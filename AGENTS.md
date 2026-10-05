@@ -35,7 +35,7 @@ Only push once every `code-review` finding is fixed or explicitly waived by the 
 
 After code passes all gates, update in this order:
 
-1. **Verification gates:** CI runs them, not you. Do not run `cargo test --workspace`, `scripts/lint.sh`, `cargo audit` or `cargo deny check` locally. Run only the targeted test for the code you changed (`rtk cargo test --test <name>` or `rtk cargo test -p <crate>`). Push, then wait for every CI check to go green (`gh pr checks`, `gh run watch`). Benchmark if a hot path was touched.
+1. **Verification gates:** CI runs them, not you. Do not run `cargo test --workspace`, clippy, `cargo audit` or `cargo deny check` locally. Run `scripts/lint.sh fmt` before every push (the pre-push hook does it); it compiles nothing. Run only the targeted test for the code you changed (`rtk cargo test --test <name>` or `rtk cargo test -p <crate>`). Push, then wait for every CI check to go green (`gh pr checks`, `gh run watch`). Benchmark if a hot path was touched.
 
 2. **Update `CHANGELOG.md`:** Prepend one line under `## [Unreleased]` (category: Added/Changed/Fixed/Removed/Security; reference the issue or ADR).
 

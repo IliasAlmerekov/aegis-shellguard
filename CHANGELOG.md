@@ -11,7 +11,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
-- Changed: CI is the only place the quality gates run. The pre-push hook and `scripts/setup-git-hooks.sh` are removed, and AGENTS.md, CONVENTION.md, CONTRIBUTING.md and the PR template no longer ask for a local `cargo test --workspace`, `scripts/lint.sh`, `cargo audit` or `cargo deny check`. Run only the targeted test for the code you changed.
+- Changed: CI is the only place clippy, the tests, `cargo audit` and `cargo deny check` run. The pre-push hook now runs only `scripts/lint.sh fmt`, which compiles nothing. AGENTS.md, CONVENTION.md, CONTRIBUTING.md and the PR template no longer ask for a local `cargo test --workspace`. Run only the targeted test for the code you changed.
 - Fixed: `git commit --amend` is `Warn` under the new GIT-010 rule instead of auto-approved as `Safe`. The rule finds `--amend` or its abbreviations `--am`, `--ame` and `--amen` anywhere in the `git commit` arguments. (#424)
 - Fixed: A flag inside a quoted argument (`git push origin 'x --force'`) or after `--` (`git push origin -- --force`) no longer trips a token-prefix rule. (#484, ADR-046)
 - Security: Aegis global options before a subcommand (`aegis --quiet off`, `aegis --output text uninstall --purge-data`) no longer hide it from the `AEG-*` Self-management rules, which auto-approved such commands as Safe. (ADR-045)

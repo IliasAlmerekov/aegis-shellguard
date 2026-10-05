@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+
+# Only the format check runs here. It compiles nothing, so it costs no
+# target/ space. CI runs clippy, the tests, audit and deny.
+echo "pre-push: running scripts/lint.sh fmt"
+scripts/lint.sh fmt

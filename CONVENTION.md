@@ -274,7 +274,7 @@ Quality gates, all run by CI and required to merge:
 - `cargo audit`
 - `cargo deny check`
 
-Nothing runs these gates locally before a push. There is no pre-push hook. Locally, run only the targeted test for the code you changed, for example `cargo test --test full_pipeline_policy` or `cargo test -p aegis-parser`. A full local build costs tens of gigabytes of `target/` per checkout.
+The pre-push hook runs only `scripts/lint.sh fmt`, which compiles nothing. Nothing else runs locally before a push. Locally, run only the targeted test for the code you changed, for example `cargo test --test full_pipeline_policy` or `cargo test -p aegis-parser`. A full local build costs tens of gigabytes of `target/` per checkout.
 
 Production-level verification requirements:
 

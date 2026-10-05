@@ -141,9 +141,19 @@ CI runs every gate on each pull request, and all of them must pass to merge:
 - `cargo audit` and `cargo deny check`
 - a regenerated `aegis-schema.json`, which must match the committed file
 
-There is no pre-push hook, and you do not need to run these locally. A full
-local build takes tens of gigabytes of `target/`. Run the targeted test for the
-code you changed, and let CI run the rest. After you change the config model in
+You do not need to run these locally. A full local build takes tens of
+gigabytes of `target/`. Run the targeted test for the code you changed, and
+let CI run the rest.
+
+The one local check is formatting. Install the repository-managed Git hook once
+per clone:
+
+```sh
+./scripts/setup-git-hooks.sh
+```
+
+The pre-push hook runs `scripts/lint.sh fmt`, which compiles nothing, and a
+formatting diff blocks the push. After you change the config model in
 `crates/aegis-config`, run `cargo run --bin aegis_schema` from the repository
 root and commit the updated `aegis-schema.json`, or the CI schema check fails.
 
