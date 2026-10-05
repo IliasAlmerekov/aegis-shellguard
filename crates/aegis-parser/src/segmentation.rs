@@ -65,6 +65,13 @@ pub fn logical_scan_segments(cmd: &str) -> Vec<ScanSegment> {
     segments
 }
 
+/// Whether `cmd` holds more than one top-level command: a `;`, `&&`, `||`,
+/// `|` or newline outside quotes splits it. A token-prefix rule must not match
+/// across such a split (#425).
+pub fn has_multiple_top_level_segments(cmd: &str) -> bool {
+    split_top_level_segments(cmd).len() > 1
+}
+
 /// Extract top-level pipeline chains from shell input.
 ///
 /// Examples:
