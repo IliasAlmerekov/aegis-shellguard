@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::patterns::PrefixRule;
 use crate::scanner::MatchResult;
+use aegis_parser::EndOfOptions;
 use aegis_types::{DetectionSource, MatchEvidence, Pattern};
 
 impl PrefixRule {
@@ -16,6 +17,11 @@ impl PrefixRule {
     /// first: a rule listing suppressing tokens never fires when any of them is
     /// present, at any position. A rule listing none is unaffected.
     pub fn matches_tokens(&self, tokens: &[&str]) -> bool {
+        self.matches_tokens_with(tokens, EndOfOptions::Ignore)
+    }
+
+    /// [`Self::matches_tokens`]; `Honor` only for quote-preserving tokens (#484).
+    pub(crate) fn matches_tokens_with(&self, tokens: &[&str], mode: EndOfOptions) -> bool {
         if aegis_parser::contains_any_token(tokens, self.suppressed_by) {
             return false;
         }
@@ -29,7 +35,7 @@ impl PrefixRule {
         }
 
         if self.id.as_ref() == "GIT-009" {
-            return aegis_parser::matches_prefix(&self.pattern, tokens)
+            return aegis_parser::matches_prefix_with(&self.pattern, tokens, mode)
                 && git_push_deletes_remote_refs(tokens);
         }
 
@@ -45,7 +51,7 @@ impl PrefixRule {
             return redis_cli_flush_is_command(tokens);
         }
 
-        aegis_parser::matches_prefix(&self.pattern, tokens)
+        aegis_parser::matches_prefix_with(&self.pattern, tokens, mode)
     }
 
     /// Produce a [`MatchResult`] for this rule when it matched `tokens`.
@@ -88,7 +94,7 @@ impl PrefixRule {
         for example in self.match_examples {
             let tokens = aegis_parser::split_tokens(example);
             let token_refs: Vec<&str> = tokens.iter().map(|s| s.as_str()).collect();
-            if !self.matches_tokens(&token_refs) {
+            if !self.matches_tokens_with(&token_refs, EndOfOptions::Honor) {
                 return Err(format!(
                     "match_example {:?} does not match pattern {:?}",
                     example, self.pattern
@@ -98,7 +104,7 @@ impl PrefixRule {
         for example in self.not_match_examples {
             let tokens = aegis_parser::split_tokens(example);
             let token_refs: Vec<&str> = tokens.iter().map(|s| s.as_str()).collect();
-            if self.matches_tokens(&token_refs) {
+            if self.matches_tokens_with(&token_refs, EndOfOptions::Honor) {
                 return Err(format!(
                     "not_match_example {:?} unexpectedly matches pattern {:?}",
                     example, self.pattern

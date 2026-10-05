@@ -1,5 +1,5 @@
 use crate::nested::{RecursiveScanReport, recursive_scan_targets};
-use aegis_parser::logical_segments;
+use aegis_parser::logical_scan_segments;
 use aegis_types::ParsedCommand;
 
 pub(super) fn scan_targets(cmd: &str, parsed: &ParsedCommand) -> RecursiveScanReport {
@@ -13,8 +13,9 @@ pub(super) fn scan_targets(cmd: &str, parsed: &ParsedCommand) -> RecursiveScanRe
     // still require the raw string as the primary scan target.
     let mut targets = vec![cmd.to_string()];
 
-    for segment in logical_segments(cmd) {
-        push_unique_target(&mut targets, segment);
+    let segments = logical_scan_segments(cmd);
+    for segment in &segments {
+        push_unique_target(&mut targets, segment.normalized.clone());
     }
 
     for script in &parsed.inline_scripts {
@@ -24,6 +25,7 @@ pub(super) fn scan_targets(cmd: &str, parsed: &ParsedCommand) -> RecursiveScanRe
     RecursiveScanReport {
         targets,
         limit_hit: None,
+        segments,
     }
 }
 

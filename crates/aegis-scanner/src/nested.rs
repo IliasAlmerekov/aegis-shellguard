@@ -1,8 +1,8 @@
 use std::collections::{HashSet, VecDeque};
 
 use aegis_parser::{
-    Parser, extract_eval_payloads, extract_heredoc_bodies, extract_process_substitution_bodies,
-    logical_segments, mask_inert_heredoc_substitution_markers,
+    Parser, ScanSegment, extract_eval_payloads, extract_heredoc_bodies,
+    extract_process_substitution_bodies, logical_segments, mask_inert_heredoc_substitution_markers,
 };
 
 pub(crate) const MAX_NESTED_SCAN_DEPTH: usize = 8;
@@ -16,6 +16,26 @@ pub enum RecursiveScanLimit {
 pub struct RecursiveScanReport {
     pub targets: Vec<String>,
     pub limit_hit: Option<RecursiveScanLimit>,
+    /// The logical segments behind the normalized entries of `targets`, with
+    /// their quote-preserving tokens. Empty on the recursive path, which
+    /// queues normalized strings for further expansion and so has no single
+    /// set of tokens per target.
+    pub segments: Vec<ScanSegment>,
+}
+
+impl RecursiveScanReport {
+    /// The quote-preserving tokens of the logical segment that normalized to
+    /// `target`, or `None` when no segment did or when two segments with
+    /// different tokens did (#484).
+    pub fn quoted_tokens(&self, target: &str) -> Option<&[String]> {
+        let mut found = self
+            .segments
+            .iter()
+            .filter(|segment| segment.normalized == target)
+            .map(|segment| segment.tokens.as_slice());
+        let first = found.next()?;
+        found.all(|tokens| tokens == first).then_some(first)
+    }
 }
 
 /// Collect recursive scan targets derived from nested execution wrappers.
@@ -58,7 +78,11 @@ pub fn recursive_scan_targets(cmd: &str) -> RecursiveScanReport {
         }
     }
 
-    RecursiveScanReport { targets, limit_hit }
+    RecursiveScanReport {
+        targets,
+        limit_hit,
+        segments: Vec::new(),
+    }
 }
 
 fn expand_nested_targets(cmd: &str) -> Vec<String> {
