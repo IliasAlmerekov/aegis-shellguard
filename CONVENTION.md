@@ -267,14 +267,14 @@ Minimum expectations:
 - Security-sensitive behavior must be regression-tested before merge.
 - Hot-path behavior must be checked for performance regressions when parser/scanner logic changes.
 
-Quality gates:
+Quality gates, all run by CI and required to merge:
 
-- `scripts/lint.sh` (rustfmt and clippy, the same commands CI runs)
+- `scripts/lint.sh` (rustfmt and clippy)
 - `cargo test --workspace`
 - `cargo audit`
 - `cargo deny check`
 
-Pre-push hooks should mirror CI as closely as possible.
+The pre-push hook runs only `scripts/lint.sh fmt`, which compiles nothing. Nothing else runs locally before a push. Locally, run only the targeted test for the code you changed, for example `cargo test --test full_pipeline_policy` or `cargo test -p aegis-parser`. A full local build costs tens of gigabytes of `target/` per checkout.
 
 Production-level verification requirements:
 
