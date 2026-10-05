@@ -40,7 +40,7 @@ runs:
     - uses: ./.github/actions/install-libcap
 
     # scripts/lint.sh holds the only copy of the rustfmt and clippy commands,
-    # so the pre-push hook and `just lint` run exactly what this gate runs.
+    # so `just lint` runs exactly what this gate runs.
     - name: rustfmt
       shell: bash
       run: scripts/lint.sh fmt

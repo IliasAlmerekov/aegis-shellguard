@@ -75,14 +75,9 @@ cargo build --release
 ## Run tests
 
 The repository is a Cargo workspace with a root package and twelve member
-crates under `crates/`. A bare `cargo test` runs only the root package. Run
-the full local test suite with `--workspace`:
-
-```sh
-cargo test --workspace
-```
-
-Run a specific integration test when iterating on one area:
+crates under `crates/`. A bare `cargo test` runs only the root package. CI
+runs the full suite with `cargo test --workspace`. Locally, run only the test
+for the area you changed:
 
 ```sh
 cargo test --test full_pipeline_policy
@@ -137,43 +132,20 @@ cargo +nightly-2026-06-15 fuzz run parser fuzz/corpus/parser
 
 Fuzzing guidance and current status are documented in [`docs/adr/README.md#verification-guidance`](docs/adr/README.md#verification-guidance).
 
-## Local security checks
+## What CI checks
 
-Recommended before opening a PR:
-
-```sh
-cargo audit
-cargo deny check
-```
-
-The repository-managed Git hook tolerates missing local installations of `cargo-audit` and `cargo-deny`, but CI does not.
-
-## Git hooks
-
-Install the repository-managed Git hooks once per clone:
-
-```sh
-./scripts/setup-git-hooks.sh
-```
-
-The pre-push hook runs these steps from the CI quality gate:
+CI runs every gate on each pull request, and all of them must pass to merge:
 
 - `scripts/lint.sh` (rustfmt and clippy on the pinned toolchain)
 - `cargo test --workspace`, which covers the root package and every member crate
-- `cargo audit` when `cargo-audit` is installed locally
-- `cargo deny check bans licenses sources` when `cargo-deny` is installed locally
+- `cargo audit` and `cargo deny check`
+- a regenerated `aegis-schema.json`, which must match the committed file
 
-`cargo audit` remains the local advisory/CVE gate. The pre-push hook limits
-`cargo-deny` to bans/licenses/sources so local pushes do not fail on transient
-advisory-database parsing issues in `cargo-deny` itself.
-
-Any failing step blocks `git push`.
-
-The CI quality gate also regenerates `aegis-schema.json` and fails when the
-result differs from the committed file. The pre-push hook does not run this
-check. After you change the config model in `crates/aegis-config`, run
-`cargo run --bin aegis_schema` from the repository root and commit the updated
-`aegis-schema.json`.
+There is no pre-push hook, and you do not need to run these locally. A full
+local build takes tens of gigabytes of `target/`. Run the targeted test for the
+code you changed, and let CI run the rest. After you change the config model in
+`crates/aegis-config`, run `cargo run --bin aegis_schema` from the repository
+root and commit the updated `aegis-schema.json`, or the CI schema check fails.
 
 ## Pull request checklist
 

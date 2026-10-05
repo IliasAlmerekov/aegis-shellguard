@@ -1,8 +1,8 @@
 #!/bin/sh
 # Run rustfmt and clippy exactly as CI does.
 #
-# This script is the only place these two commands are written (#276). CI, the
-# pre-push hook and `just lint` all call it, and `tests/lint_gate_ci.rs` fails
+# This script is the only place these two commands are written (#276). CI and
+# `just lint` both call it, and `tests/lint_gate_ci.rs` fails
 # if any of them grows its own copy again.
 #
 # Usage: scripts/lint.sh [fmt|clippy]
