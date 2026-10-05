@@ -29,3 +29,46 @@ fn assess_real_force_flag_in_any_command_of_the_chain_still_warns() {
         assert_assessment_matches_pattern(cmd, RiskLevel::Warn, "GIT-003");
     }
 }
+
+// #449: the same wildcard run made `FS-020` read `-rn` of a later `grep` as a
+// flag of `rm`.
+
+#[test]
+fn assess_recursive_flag_of_a_later_command_does_not_trip_rm() {
+    let s = scanner();
+    for cmd in [
+        "rm a && grep -rn x .",
+        "rm a; grep -rn x .",
+        "rm a || ls -R",
+        "rm a && git diff -R",
+        "rm a | grep -rn x .",
+    ] {
+        assert_eq!(s.assess(cmd).risk, RiskLevel::Safe, "command {cmd:?}");
+    }
+}
+
+#[test]
+fn assess_real_recursive_rm_in_a_chain_still_trips_fs_020() {
+    assert_assessment_matches_pattern("echo go && rm -r build", RiskLevel::Danger, "FS-020");
+}
+
+// #449: `PS-008` shares `rm_recursive_flag_present` with `FS-020`, so a later
+// command's `-r` and `/` must not read as `rm -r /`.
+
+#[test]
+fn assess_recursive_flag_and_root_of_a_later_command_does_not_trip_ps_008() {
+    let s = scanner();
+    for cmd in [
+        "rm a && grep -rn x /",
+        "rm a; grep -r x /",
+        "rm a || ls -R /",
+        "rm a | grep -rn x /",
+    ] {
+        assert_eq!(s.assess(cmd).risk, RiskLevel::Safe, "command {cmd:?}");
+    }
+}
+
+#[test]
+fn assess_real_root_deletion_in_a_chain_still_trips_ps_008() {
+    assert_assessment_matches_pattern("echo go && rm / -rf", RiskLevel::Block, "PS-008");
+}

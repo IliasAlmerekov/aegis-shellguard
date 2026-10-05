@@ -11,7 +11,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
-- Fixed: A flag in a later command of a chain (`git push; gh api ... -f body=x`, also after `&&`, `||`, `|` or a newline) no longer trips a token-prefix rule of an earlier command. (#425)
+- Fixed: A flag in a later command of a chain (`git push; gh api ... -f body=x`, also after `&&`, `||`, `|` or a newline) no longer trips a token-prefix rule of an earlier command. An `rm` followed by a later command with `-r`/`-R` (`rm a && grep -rn x .`) no longer trips FS-020. (#425, #449)
 - Fixed: A flag inside a quoted argument (`git push origin 'x --force'`) or after `--` (`git push origin -- --force`) no longer trips a token-prefix rule. (#484, ADR-046)
 - Security: Aegis global options before a subcommand (`aegis --quiet off`, `aegis --output text uninstall --purge-data`) no longer hide it from the `AEG-*` Self-management rules, which auto-approved such commands as Safe. (ADR-045)
 - Fixed: `aegis uninstall --rc-file` accepts a path through a symlinked directory such as macOS `/var` or `/tmp`, and every symlink refusal says how to finish that cleanup by hand. (#375, ADR-044)
