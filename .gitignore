@@ -3,7 +3,11 @@
 .env
 *.log
 .kiro/
-.agents/
+# `npx skills` installs project skills under .agents/; only the pipeline
+# config is tracked.
+.agents/*
+!.agents/pipeline.json
+.scratch/
 .claude/
 .codex/
 .worktrees/
