@@ -1,5 +1,6 @@
 use aegis_scanner::{PatternSet, Scanner};
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use std::time::Duration;
 
 fn make_scanner() -> Scanner {

@@ -19,7 +19,8 @@
 //! rebaseline it in the same change. See `docs/performance-baseline.md`.
 
 use aegis_language::{SourceLanguage, parse};
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use std::time::Duration;
 
 /// One representative inline-source snippet per foundation grammar. These are

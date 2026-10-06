@@ -19,7 +19,8 @@
 //! See `docs/performance-baseline.md`.
 
 use aegis_language::worker::{Outcome, analyze};
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use std::time::Duration;
 
 // The no-source corpus is shared verbatim with `tests/no_source.rs` (a
