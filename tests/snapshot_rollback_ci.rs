@@ -26,8 +26,8 @@ fn ci_defines_live_snapshot_rollback_job() {
         "live snapshot-rollback job must have a clear human-readable name"
     );
     assert!(
-        ci.contains("runs-on: ubuntu-latest"),
-        "live snapshot-rollback job should run on ubuntu-latest where Docker and sqlite3 are available"
+        ci.contains("runs-on: ${{ needs.gate.outputs.linux_runner }}"),
+        "live snapshot-rollback job should run on the pinned Linux runner, where Docker and sqlite3 are available"
     );
 }
 

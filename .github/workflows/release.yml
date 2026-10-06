@@ -33,7 +33,9 @@ concurrency:
 # the target matrix with its runner labels in `.github/build-targets.json`.
 # The `config` job loads both and re-exports them as job outputs, because
 # `runs-on:` cannot read a workflow `env:` value. Nothing else here may
-# hard-code a version.
+# hard-code a version or a runner label. `config` itself names the Linux label
+# as a literal, since it is the job that produces the outputs; a test keeps
+# that literal equal to the one in `.github/build-targets.json`.
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -45,7 +47,7 @@ jobs:
   # targets, on the same runner images, with the same toolchain that CI used.
   config:
     name: Load pinned versions
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       rust_toolchain: ${{ steps.versions.outputs.rust_toolchain }}
@@ -55,6 +57,7 @@ jobs:
       node_version: ${{ steps.versions.outputs.node_version }}
       npm_cli_version: ${{ steps.versions.outputs.npm_cli_version }}
       build_targets: ${{ steps.versions.outputs.build_targets }}
+      linux_runner: ${{ steps.versions.outputs.linux_runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -77,7 +80,8 @@ jobs:
   admission-ancestry:
     name: Tag admission (commit on main, CHANGELOG section)
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    needs: config
+    runs-on: ${{ needs.config.outputs.linux_runner }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -138,7 +142,7 @@ jobs:
   admission-quality:
     name: Tag admission (fmt, clippy, test)
     needs: [config, admission-ancestry]
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.config.outputs.linux_runner }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -159,7 +163,7 @@ jobs:
   admission-security:
     name: Tag admission (audit, deny)
     needs: [config, admission-ancestry]
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.config.outputs.linux_runner }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -256,8 +260,8 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    needs: build
-    runs-on: ubuntu-latest
+    needs: [config, build]
+    runs-on: ${{ needs.config.outputs.linux_runner }}
     timeout-minutes: 15
     permissions:
       contents: write
@@ -346,7 +350,7 @@ jobs:
   publish-npm:
     name: Publish npm package
     needs: [config, release]
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.config.outputs.linux_runner }}
     timeout-minutes: 20
     if: >-
       always() && needs.config.result == 'success' &&
