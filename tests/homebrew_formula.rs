@@ -106,6 +106,39 @@ fn formula() -> String {
 }
 
 #[test]
+fn homebrew_updater_should_fail_without_an_output_path() {
+    // The in-repo formula is gone, so the updater has no default output.
+    // Run it from a temp dir so a regression cannot write into the repo.
+    let dir = tempdir("formula-no-output");
+    let release_dir = dir.join("release");
+    std::fs::create_dir_all(&release_dir).expect("release fixture dir should be creatable");
+    write_release_fixtures(&release_dir, None, None);
+
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let output = Command::new("sh")
+        .arg(repo_root.join("scripts/update-homebrew-formula.sh"))
+        .arg(FIXTURE_TAG)
+        .current_dir(&dir)
+        .env(
+            "AEGIS_RELEASE_BASE_URL",
+            format!("file://{}", release_dir.display()),
+        )
+        .env_remove("AEGIS_HOMEBREW_FORMULA")
+        .output()
+        .expect("updater should be runnable");
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("AEGIS_HOMEBREW_FORMULA"),
+        "the error should name the missing variable"
+    );
+    assert!(
+        !dir.join("packaging").exists(),
+        "no formula written without an output path"
+    );
+}
+
+#[test]
 fn homebrew_updater_should_fail_when_a_sidecar_is_missing() {
     let run = run_updater(
         "formula-missing-sidecar",
