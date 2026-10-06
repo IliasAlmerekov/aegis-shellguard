@@ -164,7 +164,8 @@ Please make sure your PR:
 - has a clear summary of what changed and why
 - includes tests or explains why no test change was needed
 - keeps documentation in sync with behavior
-- does not overstate Aegis as a sandbox or complete security boundary
+- does not present the Sandbox as a confidentiality or privilege boundary, or
+  Aegis as a complete security boundary (ADR-029)
 - stays focused; unrelated cleanup should be split into a separate PR
 
 ## Where to ask questions

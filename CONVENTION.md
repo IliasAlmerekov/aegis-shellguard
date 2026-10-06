@@ -81,7 +81,7 @@ and related types), `aegis-tui` (crossterm confirmation dialog), `aegis-snapshot
 (six snapshot backends), `aegis-audit` (`AuditLogger`, append-only JSONL with
 optional hash-chain integrity), `aegis-starlark` (Starlark policy DSL loader
 for `~/.aegis/policy.star`), `aegis-sandbox` (bwrap + Landlock on Linux,
-sandbox-exec on macOS; opt-in execution confinement), and `aegis-language`
+sandbox-exec on macOS; mandatory execution confinement, ADR-029), and `aegis-language`
 (the focused Tree-sitter boundary for language-aware analysis — an additive
 slow path that owns the grammar manifest and parsing; ADR-022). Dependency
 arrows flow inward toward `aegis-types`; no library crate may depend on the
@@ -101,7 +101,7 @@ Current module responsibilities:
 - `crates/aegis-policy/`: pure policy evaluation (`Assessment` + context → decision)
 - `crates/aegis-config/`: config model, layered loader, validation, schema, `amend`
 - `crates/aegis-snapshot/`: snapshot plugin trait and six backends (git, docker, pg, mysql, sqlite, supabase)
-- `crates/aegis-sandbox/`: opt-in execution confinement (bwrap + Landlock / sandbox-exec)
+- `crates/aegis-sandbox/`: mandatory execution confinement (bwrap + Landlock / sandbox-exec)
 - `crates/aegis-tui/`: interactive confirmation flow (crossterm)
 - `crates/aegis-audit/`: `AuditLogger`, append-only JSONL, rotation, optional hash-chain
 

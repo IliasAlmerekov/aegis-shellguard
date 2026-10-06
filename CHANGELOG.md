@@ -11,6 +11,8 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Changed: The PR template matches the PR body rule in CONVENTION.md: one or two sentences on what and why, then `Evidence:` bullets. AGENTS.md no longer asks for Summary bullets and a checklist. The CONTRIBUTING.md checklist no longer forbids calling Aegis a sandbox, because ADR-029 made the Sandbox a mandatory 1.0 layer; it still forbids presenting it as a confidentiality or privilege boundary. CONVENTION.md describes `aegis-sandbox` as mandatory execution confinement instead of opt-in.
+
 ## [0.7.0] (2026-10-05)
 
 - Fixed: A flag in a later command of a chain (`git push; gh api ... -f body=x`, also after `&&`, `||`, `|` or a newline) no longer trips a token-prefix rule of an earlier command. An `rm` followed by a later command with `-r`/`-R` or a `/` (`rm a && grep -rn x .`) no longer trips FS-020 or PS-008. (#425, #449)
