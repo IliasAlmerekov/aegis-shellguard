@@ -11,6 +11,7 @@ Reference the ADR number when an architectural decision was made (e.g. `(ADR-011
 
 ## [Unreleased]
 
+- Changed: CI and Release jobs run on `ubuntu-24.04` instead of `ubuntu-latest`, which GitHub moves to Ubuntu 26.04 starting 2026-10-19. The Linux label lives in `.github/build-targets.json` and reaches each job as the `linux_runner` output; only the `gate`, `config` and Merge admission jobs repeat it as a literal. A test fails on any `*-latest` runner label. The `Release build` and `Live installer validation` checks now carry the pinned label in their names, for example `Release build (ubuntu-24.04)`. (#373)
 - Changed: The PR template matches the PR body rule in CONVENTION.md: one or two sentences on what and why, then `Evidence:` bullets. AGENTS.md no longer asks for Summary bullets and a checklist. The CONTRIBUTING.md checklist no longer forbids calling Aegis a sandbox, because ADR-029 made the Sandbox a mandatory 1.0 layer; it still forbids presenting it as a confidentiality or privilege boundary. CONVENTION.md notes that `aegis-sandbox` is opt-in in 0.x and becomes mandatory in 1.0 (#229).
 
 ## [0.7.0] (2026-10-05)

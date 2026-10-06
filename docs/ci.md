@@ -18,9 +18,14 @@ fails when `CONTRIBUTING.md` names a Rust toolchain other than
 - npm CLI for trusted publishing: `11.13.0`
 - The release target matrix and every runner label live in
   `.github/build-targets.json`. `ci.yml` (`Cross build`) and `release.yml`
-  (`build`) both expand it into `strategy.matrix.include`, and the macOS jobs
-  that name a runner outside the matrix read their label from the same file, so
-  a runner-image bump is also a one-line change.
+  (`build`) both expand it into `strategy.matrix.include`, and the jobs that
+  name a runner outside the matrix read their label from the same file. Linux
+  runs on `ubuntu-24.04` and macOS on `macos-26`; no job uses a floating
+  `*-latest` label. The `gate` job in `ci.yml` and the `config` job in
+  `release.yml` load the labels, so they repeat the Linux label as a literal.
+  So does the Merge admission check, which must run even when `gate` failed.
+  A runner-image bump edits `.github/build-targets.json` and those three lines,
+  and `tests/supply_chain_ci.rs` fails if they disagree.
 - GitHub Actions used by `.github/workflows/ci.yml` and `.github/workflows/release.yml` are pinned by full commit SHA with readable release comments. `.github/dependabot.yml` opens the weekly pull request that moves those SHAs forward, along with the cargo and npm dependency updates.
 
 ## Current CI Jobs
@@ -35,7 +40,7 @@ each event. A Heavy job is one behind the `heavy` output of the gate job.
 | `Quality (fmt, clippy, test)` | yes | yes | yes | yes | yes |
 | `Landing (test, build)` | yes | yes | yes | yes | yes |
 | `Security (audit, deny)` | yes | yes | yes | yes | yes |
-| `Release build (ubuntu-latest)` | yes | yes | yes | yes | yes |
+| `Release build (ubuntu-24.04)` | yes | yes | yes | yes | yes |
 | `Release build (macos-26)` (Heavy job) | yes | no | yes | yes | yes |
 | `Cross build` (Heavy job) | yes | no | yes | yes | yes |
 | `Performance baseline (scanner bench)` (Heavy job) | yes | no | yes | yes | yes |
@@ -51,11 +56,11 @@ What each job runs:
 - `Quality (fmt, clippy, test)`: formatting, clippy, and tests
 - `Landing (test, build)`: type check, tests, and static export build of the `landing/` npm workspace
 - `Security (audit, deny)`: `cargo-audit` and `cargo-deny`
-- `Release build (ubuntu-latest)` and `Release build (macos-26)`: `cargo build --release` on each runner
+- `Release build (ubuntu-24.04)` and `Release build (macos-26)`: `cargo build --release` on each runner. The Linux label in the name comes from `.github/build-targets.json`.
 - `Cross build`: the four-target cross matrix builds the shipping release binary so qualified grammars are linked into every release artifact
 - `Performance baseline (scanner bench)`: `scanner_bench` plus benchmark policy evaluation
-- `Live installer validation`: downloads the latest GitHub Release asset for the host platform, verifies the SHA-256 sidecar, installs to a temporary `BINDIR`, and asserts `aegis --version` succeeds. Runs on `ubuntu-latest` and `macos-26`; gated in the test suite by `AEGIS_TEST_LIVE_INSTALL=1` so default `cargo test` stays network-free.
-- `Live snapshot/rollback (Docker + SQLite)`: runs on `ubuntu-latest`, pulls the real `alpine` Docker fixture image, installs the real `sqlite3` CLI, then runs the gated Docker and SQLite snapshot/rollback integration tests with `AEGIS_DOCKER_TESTS=1` and `AEGIS_SQLITE_SNAPSHOT_TESTS=1`.
+- `Live installer validation`: downloads the latest GitHub Release asset for the host platform, verifies the SHA-256 sidecar, installs to a temporary `BINDIR`, and asserts `aegis --version` succeeds. Runs on the pinned Linux and macOS runners (`ubuntu-24.04` and `macos-26`); gated in the test suite by `AEGIS_TEST_LIVE_INSTALL=1` so default `cargo test` stays network-free.
+- `Live snapshot/rollback (Docker + SQLite)`: runs on the pinned Linux runner, pulls the real `alpine` Docker fixture image, installs the real `sqlite3` CLI, then runs the gated Docker and SQLite snapshot/rollback integration tests with `AEGIS_DOCKER_TESTS=1` and `AEGIS_SQLITE_SNAPSHOT_TESTS=1`.
 - `Live snapshot/rollback (SQLite, macOS)`: runs on the pinned macOS runner and executes the same gated SQLite lifecycle test as the Linux job (`AEGIS_SQLITE_SNAPSHOT_TESTS=1`) against the `/usr/bin/sqlite3` the OS ships. It skips the Docker test: hosted macOS runners have no Docker daemon preinstalled, so `docker pull alpine` and `docker_integration` cannot run there. Docker snapshot and rollback therefore stay untested on macOS in CI; only Linux covers the Docker plugin against a live daemon. Revisit if a hosted macOS runner gains a Docker daemon (#411).
 - `Fuzzing (parser, scanner, routing, protocol, adapters)`: corpus-backed
   parser, scanner, heredoc, router, language-protocol, Python, JavaScript,
@@ -119,7 +124,7 @@ required `brew tap` / `brew install` / `brew test` commands on macOS and Linux
 are listed in `docs/release-readiness.md`. A gated live test
 (`AEGIS_TEST_LIVE_HOMEBREW=1`) lives in `tests/homebrew_live.rs` and keeps
 default `cargo test` network-free; a CI job that runs it on
-`ubuntu-latest`/`macos-latest` will be added only after explicit workflow
+the pinned Linux and macOS runners will be added only after explicit workflow
 sign-off.
 
 ## npm package validation

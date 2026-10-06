@@ -1,14 +1,21 @@
 {
   "comment": [
-    "The release target matrix, and the only place a runner label is written.",
+    "The release target matrix, and the one place a runner label is chosen.",
     "`.github/actions/load-versions` emits `targets` as the `build_targets` job",
     "output, which both `ci.yml` (cross-matrix) and `release.yml` (build) feed",
-    "into `strategy.matrix.include`. It also derives the macOS runner labels",
-    "for the jobs that name a runner outside the matrix, so a runner-image bump",
-    "is a one-line change here.",
-    "The macOS runners are pinned rather than `macos-latest` (which migrated to",
-    "macOS 26 on 2026-06-15, see actions/runner-images#14167) so an OS bump",
-    "never silently changes what a release is built on.",
+    "into `strategy.matrix.include`. It also emits `linux_runner`, `macos_runner`",
+    "and `macos_intel_runner`, which every other job reads through `needs.`.",
+    "Three jobs repeat the Linux label as a literal. `gate` in `ci.yml` and",
+    "`config` in `release.yml` run load-versions, so they cannot read their",
+    "own runner from its outputs. `merge-admission` in `ci.yml` must still run",
+    "when `gate` failed and left those outputs empty.",
+    "`tests/supply_chain_ci.rs` fails when a literal differs from the Linux",
+    "`os` below, and when any other job names a runner literally.",
+    "Every runner is pinned to an OS version, never a floating `*-latest` label.",
+    "The floating macOS label moved to macOS 26 on 2026-06-15",
+    "(actions/runner-images#14167), and the floating Ubuntu label moves from",
+    "24.04 to 26.04 starting 2026-10-19 (actions/runner-images#14748). Pinning",
+    "makes an OS bump a reviewed change to this file instead of a silent one.",
     "`asset_name` is the published GitHub Release asset filename; the installer,",
     "the npm wrapper, and the Homebrew formula all resolve it, so renaming one",
     "breaks every install channel."
@@ -16,13 +23,13 @@
   "targets": [
     {
       "target": "x86_64-unknown-linux-musl",
-      "os": "ubuntu-latest",
+      "os": "ubuntu-24.04",
       "asset_name": "aegis-linux-x86_64",
       "use_cross": true
     },
     {
       "target": "aarch64-unknown-linux-musl",
-      "os": "ubuntu-latest",
+      "os": "ubuntu-24.04",
       "asset_name": "aegis-linux-aarch64",
       "use_cross": true
     },
