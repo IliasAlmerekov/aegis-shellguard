@@ -19,7 +19,7 @@ serde_json = "1"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 sha2 = "0.11"
 flate2 = "1"
-thiserror = "1"
+thiserror = "2"
 # `std` exposes stored uid metadata but no effective-uid query; libc provides
 # `geteuid` and Unix no-follow flags without adding a native build dependency.
 libc = "0.2"
