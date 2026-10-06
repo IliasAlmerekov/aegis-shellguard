@@ -149,6 +149,10 @@ fn homebrew_updater_should_fail_when_a_sidecar_is_missing() {
 
     assert!(!run.output.status.success());
     assert!(
+        String::from_utf8_lossy(&run.output.stderr).contains("aegis-macos-aarch64.sha256"),
+        "stderr should name the missing sidecar"
+    );
+    assert!(
         !run.formula_path.exists(),
         "no formula on a missing sidecar"
     );
@@ -200,6 +204,11 @@ fn homebrew_updater_should_fail_on_a_short_checksum() {
     );
 
     assert!(!run.output.status.success());
+    assert!(
+        String::from_utf8_lossy(&run.output.stderr).contains("invalid sha256"),
+        "stderr should name the checksum failure"
+    );
+    assert!(!run.formula_path.exists(), "no formula on a short checksum");
 }
 
 #[test]
