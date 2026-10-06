@@ -115,7 +115,10 @@ fn homebrew_updater_should_fail_when_a_sidecar_is_missing() {
     );
 
     assert!(!run.output.status.success());
-    assert!(!run.formula_path.exists(), "no formula on a missing sidecar");
+    assert!(
+        !run.formula_path.exists(),
+        "no formula on a missing sidecar"
+    );
 }
 
 #[test]
@@ -137,7 +140,10 @@ fn homebrew_updater_should_fail_on_a_malformed_checksum() {
         "formula-bad-checksum",
         FIXTURE_TAG,
         None,
-        Some(("aegis-linux-x86_64.sha256", "not-a-checksum  aegis-linux-x86_64\n")),
+        Some((
+            "aegis-linux-x86_64.sha256",
+            "not-a-checksum  aegis-linux-x86_64\n",
+        )),
     );
 
     assert!(!run.output.status.success());
@@ -154,7 +160,10 @@ fn homebrew_updater_should_fail_on_a_short_checksum() {
         "formula-short-checksum",
         FIXTURE_TAG,
         None,
-        Some(("aegis-linux-aarch64.sha256", "abc123  aegis-linux-aarch64\n")),
+        Some((
+            "aegis-linux-aarch64.sha256",
+            "abc123  aegis-linux-aarch64\n",
+        )),
     );
 
     assert!(!run.output.status.success());
@@ -169,7 +178,11 @@ fn homebrew_formula_version_and_urls_should_follow_the_tag() {
         .lines()
         .filter(|line| line.trim_start().starts_with("url \""))
         .collect();
-    assert_eq!(url_lines.len(), 5, "four binaries plus the notices resource");
+    assert_eq!(
+        url_lines.len(),
+        5,
+        "four binaries plus the notices resource"
+    );
     for line in url_lines {
         assert!(
             line.contains(
