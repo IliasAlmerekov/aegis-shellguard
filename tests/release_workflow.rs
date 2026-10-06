@@ -457,3 +457,101 @@ fn release_workflow_should_generate_sha256_before_uploading_artifacts() {
         "release workflow must write checksum output to <asset>.sha256"
     );
 }
+
+/// The text of one top-level job, from its `  <name>:` line to the next job
+/// or the comment block that introduces it.
+fn job(workflow: &str, name: &str) -> String {
+    let header = format!("  {name}:");
+    let mut lines = workflow.lines().skip_while(|line| *line != header);
+    let first = lines
+        .next()
+        .unwrap_or_else(|| panic!("release workflow should contain the {name} job"));
+    let mut body = vec![first];
+    for line in lines {
+        let top_level = line.starts_with("  ") && !line.starts_with("   ");
+        if top_level && !line.trim().is_empty() {
+            break;
+        }
+        body.push(line);
+    }
+    body.join("\n")
+}
+
+#[test]
+fn homebrew_generate_job_should_run_after_release_without_the_tap_key_or_cargo() {
+    let wf = release_workflow();
+    let generate = job(&wf, "generate-homebrew-formula");
+
+    assert!(generate.contains("needs: [config, release]"));
+    assert!(generate.contains("scripts/update-homebrew-formula.sh"));
+    assert!(generate.contains("actions/upload-artifact@"));
+    assert!(generate.contains("if-no-files-found: error"));
+    assert!(generate.contains("persist-credentials: false"));
+    assert!(
+        !generate.contains("HOMEBREW_TAP_DEPLOY_KEY"),
+        "the generate job must not hold the tap key"
+    );
+    assert!(
+        !generate.contains("cargo") && !generate.contains("setup-rust"),
+        "the generate job runs no cargo step"
+    );
+}
+
+#[test]
+fn homebrew_jobs_should_skip_prereleases_and_manual_dispatch() {
+    let wf = release_workflow();
+
+    for name in ["generate-homebrew-formula", "publish-homebrew-tap"] {
+        let body = job(&wf, name);
+        for suffix in ["-rc", "-beta", "-alpha"] {
+            assert!(
+                body.contains(&format!("!contains(github.ref_name, '{suffix}')")),
+                "{name} must skip {suffix} tags"
+            );
+        }
+        assert!(
+            body.contains("github.event_name == 'push'"),
+            "{name} must run on tag pushes only, not workflow_dispatch"
+        );
+        assert!(
+            !body.contains("github.event_name == 'workflow_dispatch'"),
+            "{name} must not run on workflow_dispatch"
+        );
+    }
+}
+
+#[test]
+fn homebrew_push_job_should_follow_generate_and_use_the_deploy_key_without_cargo() {
+    let wf = release_workflow();
+    let push = job(&wf, "publish-homebrew-tap");
+
+    assert!(
+        push.contains("generate-homebrew-formula"),
+        "the push job must need the generate job"
+    );
+    assert!(
+        wf.find("\n  generate-homebrew-formula:") < wf.find("\n  publish-homebrew-tap:"),
+        "the push job must be declared after the generate job"
+    );
+    assert!(push.contains("repository: IliasAlmerekov/homebrew-aegis"));
+    assert!(push.contains("ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}"));
+    assert!(push.contains("actions/download-artifact@"));
+    assert!(push.contains("git diff --cached --quiet"));
+    assert!(push.contains("contents: read"));
+    assert!(
+        !push.contains("cargo") && !push.contains("setup-rust"),
+        "the push job runs no cargo or Rust setup"
+    );
+}
+
+#[test]
+fn homebrew_deploy_key_should_only_appear_in_the_push_job() {
+    let wf = release_workflow();
+    let push = job(&wf, "publish-homebrew-tap");
+
+    assert_eq!(
+        wf.matches("HOMEBREW_TAP_DEPLOY_KEY").count(),
+        push.matches("HOMEBREW_TAP_DEPLOY_KEY").count(),
+        "only the push job may reference the tap deploy key"
+    );
+}

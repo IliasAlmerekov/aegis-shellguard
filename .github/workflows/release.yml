@@ -19,6 +19,12 @@ on:
 # would only expose it to a build script or a dependency. The jobs that talk to
 # GitHub pass a token explicitly instead, through `GH_TOKEN` or the
 # `action-gh-release` input.
+#
+# One job pushes, and it does not use the workflow token: `publish-homebrew-tap`
+# commits the generated formula to IliasAlmerekov/homebrew-aegis with an SSH
+# deploy key. Its tap checkout keeps credentials on, because the later
+# `git push` needs the key. That job runs no build or test code, and the
+# generate job before it holds no key.
 permissions:
   contents: read
 
@@ -342,6 +348,102 @@ jobs:
           # linked Tree-sitter components — must not publish with a warning.
           fail_on_unmatched_files: true
           files: ${{ steps.assets.outputs.files }}
+
+  # Homebrew tap, part 1 of 2. Regenerates the formula from the published
+  # Release's checksum sidecars and hands it to the push job as an artifact.
+  # This job holds no key, and it runs no cargo step: the updater fails closed
+  # on a missing sidecar or a malformed checksum, and admission already ran
+  # the full test suite on the tagged commit. Prerelease tags skip the tap, as
+  # they skip npm. There is no workflow_dispatch path; recovery is a re-run of
+  # the failed job in the original run, then the manual runbook in
+  # docs/release-readiness.md.
+  generate-homebrew-formula:
+    name: Generate Homebrew formula
+    needs: [config, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: >-
+      always() && needs.config.result == 'success' &&
+      github.event_name == 'push' && needs.release.result == 'success' &&
+      !contains(github.ref_name, '-rc') && !contains(github.ref_name, '-beta') &&
+      !contains(github.ref_name, '-alpha')
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Generate formula from release assets
+        env:
+          AEGIS_RELEASE_REPO: ${{ github.repository }}
+          AEGIS_HOMEBREW_FORMULA: ${{ runner.temp }}/homebrew/aegis.rb
+          TAG: ${{ github.ref_name }}
+        run: scripts/update-homebrew-formula.sh "$TAG"
+
+      - name: Upload formula
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: homebrew-formula
+          path: ${{ runner.temp }}/homebrew/aegis.rb
+          if-no-files-found: error
+
+  # Homebrew tap, part 2 of 2. The only job that holds the tap deploy key, and
+  # the only one that pushes. No cargo or Rust setup runs here, so the key never
+  # reaches build or test code. `brew audit` and the install smoke tests stay
+  # manual (docs/release-readiness.md).
+  publish-homebrew-tap:
+    name: Publish Homebrew tap
+    needs: [config, release, generate-homebrew-formula]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: >-
+      always() && needs.config.result == 'success' &&
+      github.event_name == 'push' && needs.release.result == 'success' &&
+      needs.generate-homebrew-formula.result == 'success' &&
+      !contains(github.ref_name, '-rc') && !contains(github.ref_name, '-beta') &&
+      !contains(github.ref_name, '-alpha')
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download formula
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: homebrew-formula
+          path: formula
+
+      # Exception to the header note: credentials stay persisted here because
+      # the `git push` below authenticates with this SSH key. actions/checkout
+      # also writes known_hosts, so no host key is pinned in this workflow.
+      - name: Check out the tap
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: IliasAlmerekov/homebrew-aegis
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          path: tap
+
+      - name: Commit and push the formula
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p tap/Formula
+          cp formula/aegis.rb tap/Formula/aegis.rb
+          cd tap
+          git add Formula/aegis.rb
+          # A re-run for a tag already published produces an identical formula.
+          # Exit cleanly instead of failing on an empty commit.
+          if git diff --cached --quiet; then
+            echo "tap already has the formula for $TAG; nothing to push"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "aegis ${TAG#v}"
+          git push origin HEAD
 
   publish-npm:
     name: Publish npm package
