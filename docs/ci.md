@@ -15,6 +15,8 @@ fails when `CONTRIBUTING.md` names a Rust toolchain other than
 - `cargo-audit`: `0.22.1`
 - `cargo-deny`: `0.19.0`
 - `cross`: `0.2.5`
+- `cargo-llvm-cov`: `0.9.1` and `cargo-mutants`: `27.1.0`, for the informational
+  jobs in `.github/workflows/pipeline.yml`
 - npm CLI for trusted publishing: `11.13.0`
 - The release target matrix and every runner label live in
   `.github/build-targets.json`. `ci.yml` (`Cross build`) and `release.yml`
@@ -114,6 +116,24 @@ newer run cancels the older one.
   - `x86_64-apple-darwin`
   - `aarch64-apple-darwin`
 - `Release / release`: artifact download plus GitHub Release publication
+
+## Agent pipeline workflow
+
+`.github/workflows/pipeline.yml` runs on every pull request and is
+informational. Its jobs are not in the Merge admission check and are not
+required status checks.
+
+- `Pipeline scope (packages, tier)`: maps the changed files to cargo packages
+  and to the highest review tier, with the rules in `.agents/pipeline.json`
+- `Test tamper check`: `scripts/test-tamper-check.sh` against the merge-base
+  with the PR's base branch. It fails on added skip markers or lost assertions
+  unless the PR head commit body carries `tamper-check: allow <reason>`
+- `Diff coverage (changed packages)`: `cargo llvm-cov` for the changed packages,
+  then the share of added Rust lines that ran. Below 80% it writes a warning;
+  it never fails. `lcov.info` and `diff-coverage.md` are uploaded as artifacts
+- `Mutants (changed code)`: `cargo mutants --in-diff` on the changed packages,
+  only for TRUNK and BRANCH tier PRs. It cannot fail the run; `mutants.out` is
+  uploaded as an artifact
 
 ## Homebrew tap validation
 
