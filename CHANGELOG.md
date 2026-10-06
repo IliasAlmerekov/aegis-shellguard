@@ -3,10 +3,6 @@
 All notable changes to Aegis are documented here.  
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: [SemVer](https://semver.org/).
 
-**Agent instructions:** prepend a new entry under `[Unreleased]` after every feature,
-fix, or breaking change. Use categories: `Added`, `Changed`, `Fixed`, `Removed`, `Security`.
-Reference the ADR number when an architectural decision was made (e.g. `(ADR-011)`).
-
 ---
 
 ## [Unreleased]
