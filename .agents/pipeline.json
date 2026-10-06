@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "default_branch": "main",
+  "worktree_dir": ".worktrees",
+  "env": { "CARGO_TARGET_DIR": "target" },
+  "gate": {
+    "timeout_seconds": 600,
+    "lint": ["scripts/lint.sh fmt"],
+    "typecheck": { "per_package": "cargo check -p {pkg} --all-targets" },
+    "tests": {
+      "per_package": "cargo test -p {pkg} --lib",
+      "per_test_file": { "glob": "tests/*.rs", "command": "cargo test --test {stem}" },
+      "test_map": [],
+      "from_handoff": true
+    },
+    "tamper_check": "scripts/test-tamper-check.sh",
+    "require_test_for": ["src/**", "crates/*/src/**"]
+  },
+  "packages": [
+    { "glob": "crates/{name}/**", "pkg": "{name}" },
+    { "glob": "src/**", "pkg": "aegis" },
+    { "glob": "tests/**", "pkg": "aegis" },
+    { "glob": "benches/**", "pkg": "aegis" }
+  ],
+  "full_run_triggers": ["Cargo.toml", "Cargo.lock"],
+  "all_packages": [
+    "aegis",
+    "aegis-types",
+    "aegis-parser",
+    "aegis-scanner",
+    "aegis-policy",
+    "aegis-config",
+    "aegis-explanation",
+    "aegis-tui",
+    "aegis-audit",
+    "aegis-snapshot",
+    "aegis-starlark",
+    "aegis-sandbox",
+    "aegis-language"
+  ],
+  "tiers": {
+    "default": "BRANCH",
+    "rules": [
+      { "glob": "AGENTS.md", "tier": "TRUNK" },
+      { "glob": "CLAUDE.md", "tier": "TRUNK" },
+      { "glob": ".agents/**", "tier": "TRUNK" },
+      { "glob": ".claude/**", "tier": "TRUNK" },
+      { "glob": ".github/**", "tier": "TRUNK" },
+      { "glob": "Cargo.toml", "tier": "TRUNK" },
+      { "glob": "Cargo.lock", "tier": "TRUNK" },
+      { "glob": "deny.toml", "tier": "TRUNK" },
+      { "glob": "scripts/install.sh", "tier": "TRUNK" },
+      { "glob": "packaging/**", "tier": "TRUNK" },
+      { "glob": "src/runtime_gate.rs", "tier": "TRUNK" },
+      { "glob": "src/analysis/**", "tier": "TRUNK" },
+      { "glob": "src/planning/**", "tier": "TRUNK" },
+      { "glob": "src/execution/**", "tier": "TRUNK" },
+      { "glob": "src/rollback.rs", "tier": "TRUNK" },
+      { "glob": "src/install/**", "tier": "TRUNK" },
+      { "glob": "src/update/**", "tier": "TRUNK" },
+      { "glob": "src/**", "tier": "BRANCH" },
+      { "glob": "crates/**", "tier": "BRANCH" },
+      { "glob": "tests/**", "tier": "BRANCH" },
+      { "glob": "docs/**", "tier": "LEAF" },
+      { "glob": "landing/**", "tier": "LEAF" },
+      { "glob": "benches/**", "tier": "LEAF" },
+      { "glob": "*.md", "tier": "LEAF" }
+    ]
+  },
+  "lanes": { "min_lane_for_tier": { "TRUNK": "standard" } },
+  "review": {
+    "iterations": { "trivial": 1, "standard": 3, "risky": 3 },
+    "return_min_severity": "MAJOR"
+  },
+  "auto_merge": "never",
+  "triage": {
+    "command": "uv run --env-file {main}/.env --script {plugin}/scripts/triage_findings.py",
+    "mode": "shadow",
+    "thresholds": { "executor_min": 0.7, "drop_max": 0.2 },
+    "never_send_remotes": ["ghsa-*"]
+  },
+  "test_guard": {
+    "test_path_globs": ["tests/**", "**/*_test.*", "**/*.test.*", "**/*.spec.*", "**/test_*.py"],
+    "inline_test_markers": ["#[cfg(test)]", "#[test]"]
+  },
+  "pr_template": ".github/pull_request_template.md",
+  "evidence": { "commands": ["scripts/lint.sh fmt"] }
+}
