@@ -1,3 +1,4 @@
+use std::hint::black_box;
 use std::time::Duration;
 
 use aegis::analysis::router::route;
@@ -5,7 +6,7 @@ use aegis::planning::{CwdState, PlanningOutcome, PlanningRequest, PreparedPlanne
 use aegis::runtime::RuntimeContext;
 use aegis_config::AegisConfig;
 use aegis_policy::ExecutionTransport;
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
 

@@ -1,3 +1,4 @@
+use std::hint::black_box;
 use std::process::Command;
 use std::time::Duration;
 
@@ -6,7 +7,7 @@ use aegis_config::{AegisConfig, UserPattern};
 use aegis_scanner::PatternSet;
 use aegis_scanner::Scanner;
 use aegis_types::{Category, RiskLevel};
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
