@@ -1,7 +1,9 @@
 #!/bin/sh
 set -eu
 
-# Regenerates packaging/homebrew/Formula/aegis.rb for a release tag by
+# Regenerates the Homebrew formula for a release tag (default output
+# packaging/homebrew/Formula/aegis.rb; the release workflow sets
+# AEGIS_HOMEBREW_FORMULA and publishes the result to the tap) by
 # downloading the four <asset>.sha256 sidecars published alongside the
 # GitHub Release, plus the checked-in THIRD_PARTY_NOTICES.md asset. Fails
 # closed if any sidecar or the notice is missing, or a checksum is not
@@ -34,7 +36,11 @@ esac
 
 version="${tag#v}"
 repo="${AEGIS_RELEASE_REPO:-IliasAlmerekov/aegis-shellguard}"
-base_url="https://github.com/${repo}/releases/download/${tag}"
+# `published_base` is what the formula urls say and always points at GitHub.
+# `base_url` is only where this script downloads sidecars from; tests point
+# AEGIS_RELEASE_BASE_URL at a file:// fixture directory.
+published_base="https://github.com/${repo}/releases/download/${tag}"
+base_url="${AEGIS_RELEASE_BASE_URL:-$published_base}"
 out="${AEGIS_HOMEBREW_FORMULA:-packaging/homebrew/Formula/aegis.rb}"
 tmp_dir="$(mktemp -d)"
 
@@ -126,26 +132,26 @@ class Aegis < Formula
 
   on_macos do
     if Hardware::CPU.arm?
-      url "${base_url}/aegis-macos-aarch64", using: :nounzip
+      url "${published_base}/aegis-macos-aarch64", using: :nounzip
       sha256 "${macos_aarch64}"
     else
-      url "${base_url}/aegis-macos-x86_64", using: :nounzip
+      url "${published_base}/aegis-macos-x86_64", using: :nounzip
       sha256 "${macos_x86_64}"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
-      url "${base_url}/aegis-linux-aarch64", using: :nounzip
+      url "${published_base}/aegis-linux-aarch64", using: :nounzip
       sha256 "${linux_aarch64}"
     else
-      url "${base_url}/aegis-linux-x86_64", using: :nounzip
+      url "${published_base}/aegis-linux-x86_64", using: :nounzip
       sha256 "${linux_x86_64}"
     end
   end
 
   resource "third_party_notices" do
-    url "${base_url}/THIRD_PARTY_NOTICES.md"
+    url "${published_base}/THIRD_PARTY_NOTICES.md"
     sha256 "${third_party_notices}"
   end
 
