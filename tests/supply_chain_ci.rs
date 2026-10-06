@@ -604,20 +604,44 @@ fn runner_labels(workflow: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// The runner label `.github/build-targets.json` gives the x86_64 Linux target.
+/// The runner label `.github/build-targets.json` gives its Linux targets. Every
+/// Linux target must name the same one, since the jobs outside the matrix read
+/// a single `linux_runner`.
 fn pinned_linux_runner() -> String {
-    let targets = fs::read_to_string(repo_path(".github/build-targets.json"))
+    let file = fs::read_to_string(repo_path(".github/build-targets.json"))
         .expect("build-targets.json should be readable");
-    let entry = targets
-        .split("\"target\": \"x86_64-unknown-linux-musl\"")
-        .nth(1)
-        .expect("build-targets.json should define x86_64-unknown-linux-musl");
-    entry
-        .split("\"os\": \"")
-        .nth(1)
-        .and_then(|rest| rest.split('"').next())
-        .expect("the x86_64 Linux target should name a runner in os")
-        .to_string()
+    let table: serde_json::Value =
+        serde_json::from_str(&file).expect("build-targets.json should be valid JSON");
+    let labels: Vec<(&str, &str)> = table["targets"]
+        .as_array()
+        .expect("build-targets.json should have a targets array")
+        .iter()
+        .filter_map(|entry| {
+            let target = entry["target"].as_str()?;
+            target
+                .contains("-linux-")
+                .then(|| (target, entry["os"].as_str().unwrap_or("")))
+        })
+        .collect();
+
+    let (_, pinned) = *labels
+        .first()
+        .expect("build-targets.json should define a Linux target");
+    for (target, label) in &labels {
+        assert_eq!(
+            *label, pinned,
+            "build-targets.json runs {target} on {label}, but the other Linux targets run on {pinned}"
+        );
+    }
+    pinned.to_string()
+}
+
+/// Both workflows, as `(file name, contents)`.
+fn workflows() -> [(&'static str, String); 2] {
+    [
+        ("ci.yml", ci_workflow()),
+        ("release.yml", release_workflow()),
+    ]
 }
 
 /// The jobs that name the Linux runner as a literal. `gate` and `config` load
@@ -659,13 +683,13 @@ fn no_workflow_uses_a_floating_runner_label() {
 #[test]
 fn literal_runner_jobs_run_on_the_pinned_linux_runner() {
     let pinned = pinned_linux_runner();
+    let workflows = workflows();
     for (name, id) in LITERAL_RUNNER_JOBS {
-        let workflow = if name == "ci.yml" {
-            ci_workflow()
-        } else {
-            release_workflow()
-        };
-        let label = runner_labels(&workflow)
+        let (_, workflow) = workflows
+            .iter()
+            .find(|(file, _)| *file == name)
+            .unwrap_or_else(|| panic!("{name} should be one of the workflows"));
+        let label = runner_labels(workflow)
             .into_iter()
             .find(|(job, _)| job == id)
             .unwrap_or_else(|| panic!("{name} should define the {id} job"))
@@ -679,10 +703,7 @@ fn literal_runner_jobs_run_on_the_pinned_linux_runner() {
 
 #[test]
 fn only_the_listed_jobs_write_a_literal_runner_label() {
-    for (name, workflow) in [
-        ("ci.yml", ci_workflow()),
-        ("release.yml", release_workflow()),
-    ] {
+    for (name, workflow) in workflows() {
         for (id, label) in runner_labels(&workflow) {
             if LITERAL_RUNNER_JOBS.contains(&(name, id.as_str())) {
                 continue;
