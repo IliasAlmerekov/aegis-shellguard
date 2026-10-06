@@ -124,6 +124,29 @@ repo=$(new_repo moved-assert)
 sed -i 's/assert_eq!(demo::double(0), 0);/let got = demo::double(0);\n    assert_eq!(got, 0);/' "$repo/tests/double.rs"
 expect "rewritten assertion passes" "$repo" 0 ""
 
+# Case: node:assert and Python assert( calls removed from JS and Python tests.
+repo=$(new_repo js-py-assert)
+cat >"$repo/tests/web.test.js" <<'EOF'
+const assert = require('node:assert')
+test('adds', () => {
+  assert.strictEqual(1 + 1, 2)
+  assert(true)
+})
+EOF
+cat >"$repo/tests/test_calc.py" <<'EOF'
+def test_adds():
+    assert(1 + 1 == 2)
+    assert 2 + 2 == 4
+EOF
+git -C "$repo" add -A
+git -C "$repo" commit -q -m "test: js and python tests"
+git -C "$repo" update-ref refs/remotes/origin/main HEAD
+sed -i '/strictEqual/d; /assert(true)/d' "$repo/tests/web.test.js"
+sed -i '/assert(1 + 1/d' "$repo/tests/test_calc.py"
+expect "removed assert.strictEqual( and assert( in JS" "$repo" 1 \
+    "tests/web.test.js:3: removes 2 assertion line(s) and adds 0"
+expect "removed assert( in Python" "$repo" 1 "tests/test_calc.py:2: removes 1 assertion line(s) and adds 0"
+
 # Case: the escape line in the HEAD commit body lets a removal through.
 repo=$(new_repo allow)
 sed -i '/double(3), 6/d' "$repo/tests/double.rs"

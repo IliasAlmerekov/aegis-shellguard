@@ -175,7 +175,9 @@ function added_line(text) {
 BEGIN {
     while ((getline l < inline_file) > 0) inline[l] = 1
     sp = "[[:space:]]"
-    assertion = "(assert(_eq|_ne)?!|debug_assert[[:alnum:]_]*!|prop_assert[[:alnum:]_]*!|expect\\(|(^|[^[:alnum:]_.])assert" sp ")"
+    # Rust assert macros, expect(, and a bare assert: Python `assert x` and
+    # `assert(x)`, JS `assert(x)` and `assert.strictEqual(...)`.
+    assertion = "(assert(_eq|_ne)?!|debug_assert[[:alnum:]_]*!|prop_assert[[:alnum:]_]*!|expect\\(|(^|[^[:alnum:]_.])assert(" sp "|\\.|\\())"
 }
 # Inside a hunk the header counts say how many lines follow, so a removed
 # line that starts with "--" is not mistaken for a file header.

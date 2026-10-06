@@ -9,6 +9,8 @@
     "typecheck": { "per_package": "cargo check -p {pkg} --all-targets" },
     "tests": {
       "per_package": "cargo test -p {pkg} --lib",
+      "per_package_integration": "cargo test -p {pkg} --tests",
+      "integration_exclude_packages": ["aegis"],
       "per_test_file": { "glob": "tests/*.rs", "command": "cargo test --test {stem}" },
       "test_map": [],
       "from_handoff": true
