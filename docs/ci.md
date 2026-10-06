@@ -109,18 +109,26 @@ newer run cancels the older one.
   - `x86_64-apple-darwin`
   - `aarch64-apple-darwin`
 - `Release / release`: artifact download plus GitHub Release publication
+- `Release / generate-homebrew-formula` and `Release / publish-homebrew-tap`:
+  Homebrew tap publication for stable tags
 
 ## Homebrew tap validation
 
-Homebrew validation is currently a release-operator smoke test rather than a
-default CI job. The formula lives at `packaging/homebrew/Formula/aegis.rb` and is
-regenerated from a release tag by `scripts/update-homebrew-formula.sh`. The
-required `brew tap` / `brew install` / `brew test` commands on macOS and Linux
-are listed in `docs/release-readiness.md`. A gated live test
-(`AEGIS_TEST_LIVE_HOMEBREW=1`) lives in `tests/homebrew_live.rs` and keeps
+The release workflow publishes the tap formula. After `Release / release`, the
+`generate-homebrew-formula` job runs `scripts/update-homebrew-formula.sh` for the
+tag and uploads the formula as an artifact. The `publish-homebrew-tap` job then
+commits it to `IliasAlmerekov/homebrew-aegis` as `aegis X.Y.Z`, using the deploy
+key in the `HOMEBREW_TAP_DEPLOY_KEY` secret. Only the push job holds the key, and
+it runs no build or test code. Prerelease tags skip both jobs, and an unchanged
+formula pushes nothing. This repository keeps no copy of the formula.
+
+`brew audit`, `brew install`, and `brew test` on macOS and Linux stay
+release-operator smoke tests, listed in `docs/release-readiness.md`. A gated live
+test (`AEGIS_TEST_LIVE_HOMEBREW=1`) lives in `tests/homebrew_live.rs` and keeps
 default `cargo test` network-free; a CI job that runs it on
 `ubuntu-latest`/`macos-latest` will be added only after explicit workflow
-sign-off.
+sign-off. `tests/homebrew_formula.rs` runs the updater against `file://` fixture
+checksums, so the formula contract is tested without the network.
 
 ## npm package validation
 

@@ -210,13 +210,14 @@ build-from-source escape hatch above disappears with the feature.
 
 ## Homebrew tap validation
 
-- [x] `packaging/homebrew/Formula/aegis.rb` was generated from the selected
-      GitHub Release tag.
-- [x] The published tap contains the same `Formula/aegis.rb`.
+- [x] The tap formula `Formula/aegis.rb` was generated from the selected
+      GitHub Release tag. The release workflow does this and pushes it to the
+      tap; the tap holds the only copy.
+- [x] The published tap contains that `Formula/aegis.rb`.
 - [ ] `brew audit --strict --online --formula aegis` passes in the tap.
-- [ ] `brew install IliasAlmerekov/aegis-shellguard/aegis` succeeds on macOS.
-- [ ] `brew install IliasAlmerekov/aegis-shellguard/aegis` succeeds on Linux.
-- [ ] `brew test IliasAlmerekov/aegis-shellguard/aegis` passes on both platforms.
+- [ ] `brew install IliasAlmerekov/aegis/aegis` succeeds on macOS.
+- [ ] `brew install IliasAlmerekov/aegis/aegis` succeeds on Linux.
+- [ ] `brew test IliasAlmerekov/aegis/aegis` passes on both platforms.
 
 Homebrew validation is currently a release-operator smoke test rather than a
 default CI job. The required commands are listed above; a gated live test
@@ -235,9 +236,9 @@ Live Linux x64 Homebrew evidence was collected on 2026-06-22 against the public
 tap after fixing the tap repository's line-ending policy
 (`c209468 fix: force LF line endings for formulae`). A clean retap produced
 `Formula/aegis.rb: Ruby script, ASCII text`; `brew audit --strict --online
---formula IliasAlmerekov/aegis-shellguard/aegis` exited 0; `brew install
-IliasAlmerekov/aegis-shellguard/aegis` installed v0.5.6; `brew test
-IliasAlmerekov/aegis-shellguard/aegis` passed; and
+--formula IliasAlmerekov/aegis/aegis` exited 0; `brew install
+IliasAlmerekov/aegis/aegis` installed v0.5.6; `brew test
+IliasAlmerekov/aegis/aegis` passed; and
 `/home/linuxbrew/.linuxbrew/opt/aegis/bin/aegis --version` printed
 `aegis 0.5.6`.
 
@@ -259,14 +260,40 @@ open. These missing smokes leave the Homebrew tap gate open.
 
 ## Homebrew tap publish runbook
 
-Operator runbook for closing the Homebrew tap gate. Run every step on release; the
-formula is generated deterministically by `scripts/update-homebrew-formula.sh`
-so the source-of-truth file is `packaging/homebrew/Formula/aegis.rb`.
+The release workflow publishes the tap on every stable `vX.Y.Z` tag. The
+`generate-homebrew-formula` job runs `scripts/update-homebrew-formula.sh` and
+uploads the formula; the `publish-homebrew-tap` job commits it as `aegis X.Y.Z`
+to `IliasAlmerekov/homebrew-aegis` with a deploy key. Prerelease tags
+(`-rc`, `-beta`, `-alpha`) skip the tap. The tap holds the only copy of the
+formula; this repository keeps none.
+
+To recover from a failed publish, re-run the failed job in the original release
+run. If that cannot work, follow the manual runbook below. `brew audit` and the
+install smoke tests stay manual in both paths.
+
+### One-time deploy key setup
+
+The workflow needs the secret `HOMEBREW_TAP_DEPLOY_KEY`. Repeat these steps to
+rotate it:
+
+```bash
+ssh-keygen -t ed25519 -N "" -C "aegis-homebrew-tap" -f /tmp/homebrew-tap-key
+gh repo deploy-key add /tmp/homebrew-tap-key.pub -R IliasAlmerekov/homebrew-aegis --allow-write --title "aegis release workflow"
+gh secret set HOMEBREW_TAP_DEPLOY_KEY -R IliasAlmerekov/aegis-shellguard < /tmp/homebrew-tap-key
+shred -u /tmp/homebrew-tap-key /tmp/homebrew-tap-key.pub
+```
+
+The key has no passphrase and write access to the tap only.
+
+### Manual runbook (fallback)
+
+Operator steps for when the automated jobs cannot publish. Run every step. The
+formula is generated deterministically by `scripts/update-homebrew-formula.sh`.
 
 1. Regenerate the formula from the release tag (idempotent):
 
    ```bash
-   scripts/update-homebrew-formula.sh vX.Y.Z
+   AEGIS_HOMEBREW_FORMULA=/tmp/aegis.rb scripts/update-homebrew-formula.sh vX.Y.Z
    ```
 
 2. Create the tap repository once (skip if it already exists):
@@ -280,7 +307,7 @@ so the source-of-truth file is `packaging/homebrew/Formula/aegis.rb`.
    ```bash
    git clone git@github.com:IliasAlmerekov/homebrew-aegis.git /tmp/homebrew-aegis
    mkdir -p /tmp/homebrew-aegis/Formula
-   cp packaging/homebrew/Formula/aegis.rb /tmp/homebrew-aegis/Formula/aegis.rb
+   cp /tmp/aegis.rb /tmp/homebrew-aegis/Formula/aegis.rb
    ```
 
 4. Audit the formula inside the tap:
@@ -291,8 +318,8 @@ so the source-of-truth file is `packaging/homebrew/Formula/aegis.rb`.
    ```
 
    Expected: `0 problems`. Fix any style issue in
-   `packaging/homebrew/Formula/aegis.rb` first, regenerate, and re-copy so the
-   source repo and the tap stay in sync.
+   `scripts/update-homebrew-formula.sh` first, regenerate, and re-copy so the
+   updater and the tap stay in sync.
 
 5. Commit and push the tap:
 
