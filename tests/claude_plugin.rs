@@ -363,6 +363,25 @@ fn settings_with_aegis_entry(dir: &Path) -> serde_json::Value {
     })
 }
 
+/// Run `aegis status` with `home` as `HOME` from `cwd` and return its stdout.
+fn aegis_status(home: &Path, cwd: &Path) -> String {
+    let output = Command::new(env!("CARGO_BIN_EXE_aegis"))
+        .arg("status")
+        .env("HOME", home)
+        .current_dir(cwd)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+fn claude_hooks_line(stdout: &str) -> &str {
+    stdout
+        .lines()
+        .find(|line| line.starts_with("claude code hooks: "))
+        .unwrap_or_else(|| panic!("no claude code hooks line:\n{stdout}"))
+}
+
 #[test]
 fn status_reports_claude_hook_registration() {
     for (plugin_enabled, entry, expected) in [
@@ -408,19 +427,8 @@ fn status_reports_claude_hook_registration() {
             .unwrap();
         }
 
-        let output = Command::new(env!("CARGO_BIN_EXE_aegis"))
-            .arg("status")
-            .env("HOME", home.path())
-            .current_dir(&project_dir)
-            .output()
-            .unwrap();
-
-        assert_eq!(output.status.code(), Some(0));
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let line = stdout
-            .lines()
-            .find(|line| line.starts_with("claude code hooks: "))
-            .unwrap_or_else(|| panic!("no claude code hooks line:\n{stdout}"));
+        let stdout = aegis_status(home.path(), &project_dir);
+        let line = claude_hooks_line(&stdout);
         assert!(line.starts_with(expected), "{entry:?}: {line}");
         // The plugin is either off or enabled and installed here, so the
         // enabled-but-not-installed warning must not print.
@@ -463,18 +471,9 @@ fn status_reports_every_duplicate_settings_file() {
     )
     .unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_aegis"))
-        .arg("status")
-        .env("HOME", home.path())
-        .current_dir(&project_dir)
-        .output()
-        .unwrap();
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let line = stdout
-        .lines()
-        .find(|line| line.starts_with("claude code hooks: duplicate"))
-        .unwrap_or_else(|| panic!("no duplicate line:\n{stdout}"));
+    let stdout = aegis_status(home.path(), &project_dir);
+    let line = claude_hooks_line(&stdout);
+    assert!(line.starts_with("claude code hooks: duplicate"), "{line}");
     for settings in [&project_settings, &user_settings] {
         assert!(line.contains(&settings.display().to_string()), "{line}");
     }
