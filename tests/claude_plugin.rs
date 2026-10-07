@@ -67,6 +67,14 @@ fn claude_plugin_hooks_match_templates() {
         ),
     ] {
         let expected = read_repo_file(template).replace("__AEGIS_BIN__", "aegis");
+        // The template ships through two channels, settings.json install and
+        // the plugin, so its comments must hold for both.
+        for single_channel_claim in ["Installed to:", "templated to an absolute"] {
+            assert!(
+                !expected.contains(single_channel_claim),
+                "{template} says `{single_channel_claim}`, which is false for the Claude Code plugin"
+            );
+        }
         assert_eq!(
             read_repo_file(plugin_hook),
             expected,
@@ -355,6 +363,25 @@ fn settings_with_aegis_entry(dir: &Path) -> serde_json::Value {
     })
 }
 
+/// Run `aegis status` with `home` as `HOME` from `cwd` and return its stdout.
+fn aegis_status(home: &Path, cwd: &Path) -> String {
+    let output = Command::new(env!("CARGO_BIN_EXE_aegis"))
+        .arg("status")
+        .env("HOME", home)
+        .current_dir(cwd)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+fn claude_hooks_line(stdout: &str) -> &str {
+    stdout
+        .lines()
+        .find(|line| line.starts_with("claude code hooks: "))
+        .unwrap_or_else(|| panic!("no claude code hooks line:\n{stdout}"))
+}
+
 #[test]
 fn status_reports_claude_hook_registration() {
     for (plugin_enabled, entry, expected) in [
@@ -400,19 +427,8 @@ fn status_reports_claude_hook_registration() {
             .unwrap();
         }
 
-        let output = Command::new(env!("CARGO_BIN_EXE_aegis"))
-            .arg("status")
-            .env("HOME", home.path())
-            .current_dir(&project_dir)
-            .output()
-            .unwrap();
-
-        assert_eq!(output.status.code(), Some(0));
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let line = stdout
-            .lines()
-            .find(|line| line.starts_with("claude code hooks: "))
-            .unwrap_or_else(|| panic!("no claude code hooks line:\n{stdout}"));
+        let stdout = aegis_status(home.path(), &project_dir);
+        let line = claude_hooks_line(&stdout);
         assert!(line.starts_with(expected), "{entry:?}: {line}");
         // The plugin is either off or enabled and installed here, so the
         // enabled-but-not-installed warning must not print.
@@ -435,14 +451,32 @@ fn status_reports_claude_hook_registration() {
 }
 
 #[test]
-fn release_script_bumps_the_claude_code_plugin_version() {
-    // The script downloads release checksums, so it cannot run offline; pin
-    // that it rewrites the plugin manifest next to package.json.
-    let script = read_repo_file("scripts/update-npm-package.sh");
-    assert!(
-        script.contains("plugins/aegis/.claude-plugin/plugin.json"),
-        "the release script must bump the Claude Code plugin version with the npm version"
-    );
+fn status_reports_every_duplicate_settings_file() {
+    // Removing the entries from one file must not leave the user with a
+    // duplicate they were never told about.
+    let home = TempDir::new().unwrap();
+    let project = TempDir::new().unwrap();
+    let project_dir = fs::canonicalize(project.path()).unwrap();
+    let user_settings = home.path().join(".claude/settings.json");
+    let project_settings = project_dir.join(".claude/settings.json");
+    let mut user_json = settings_with_aegis_entry(home.path());
+    user_json["enabledPlugins"] = serde_json::json!({ "aegis@aegis-shellguard": true });
+    fs::create_dir_all(user_settings.parent().unwrap()).unwrap();
+    fs::write(&user_settings, user_json.to_string()).unwrap();
+    write_installed_plugin(home.path(), "aegis@aegis-shellguard");
+    fs::create_dir_all(project_settings.parent().unwrap()).unwrap();
+    fs::write(
+        &project_settings,
+        settings_with_aegis_entry(&project_dir).to_string(),
+    )
+    .unwrap();
+
+    let stdout = aegis_status(home.path(), &project_dir);
+    let line = claude_hooks_line(&stdout);
+    assert!(line.starts_with("claude code hooks: duplicate"), "{line}");
+    for settings in [&project_settings, &user_settings] {
+        assert!(line.contains(&settings.display().to_string()), "{line}");
+    }
 }
 
 /// Copy `plugins/aegis/hooks/` into `<root>/hooks/`, keeping the modes.

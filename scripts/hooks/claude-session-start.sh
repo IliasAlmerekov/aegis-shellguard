@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # aegis-hook-version: 2
 # Claude Code SessionStart hook — reports Aegis' effective enforcement state.
-# Installed to: ~/.claude/hooks/aegis-session-start.sh
+# `aegis install-hooks` copies it to ~/.claude/hooks/aegis-session-start.sh; the
+# Claude Code plugin ships it as plugins/aegis/hooks/aegis-session-start.sh.
 
 set -u
 

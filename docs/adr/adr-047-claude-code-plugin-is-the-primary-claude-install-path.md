@@ -85,8 +85,11 @@ the `aegis-shellguard` marketplace, so it works before community review.
   the Bash tool after the user confirms. It carries no `` !` `` shell
   injection, because those lines run outside the Bash tool and so bypass
   PreToolUse and Aegis.
-- `plugin.json` carries the `aegis` crate version. A test enforces it, and
-  `scripts/update-npm-package.sh` bumps it with the npm package version.
+- `plugin.json` carries the `aegis` crate version, and
+  `claude_plugin_manifests_are_consistent` fails when they differ. The
+  version bump commit edits `plugin.json` next to `Cargo.toml`. Release CI
+  cannot do it: the marketplace serves `plugin.json` from git, and
+  `release.yml` runs after the tag and commits nothing.
 
 ## Consequences
 

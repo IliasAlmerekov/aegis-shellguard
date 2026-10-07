@@ -219,11 +219,17 @@ fn claude_hook_registration_label() -> String {
         ClaudeHookRegistration::Unknown => {
             "unknown (unrecognised installed_plugins.json format)".to_string()
         }
-        ClaudeHookRegistration::Duplicate(path) => format!(
-            "duplicate (the Claude Code plugin and {path}): aegis hook runs twice per command; \
-             remove the Aegis entries from {path} by hand",
-            path = path.display()
-        ),
+        ClaudeHookRegistration::Duplicate(paths) => {
+            let paths = paths
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "duplicate (the Claude Code plugin and {paths}): aegis hook runs twice per command; \
+                 remove the Aegis entries from {paths} by hand"
+            )
+        }
     }
 }
 

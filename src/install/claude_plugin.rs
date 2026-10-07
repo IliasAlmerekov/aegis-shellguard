@@ -179,9 +179,9 @@ pub(crate) enum ClaudeHookRegistration {
     Settings,
     /// Nothing registers them.
     None,
-    /// Both do, so `aegis hook` runs twice per command. Carries the settings
-    /// file that holds the aegis-managed entry.
-    Duplicate(PathBuf),
+    /// Both do, so `aegis hook` runs twice per command. Carries every
+    /// settings file that holds an aegis-managed entry, in precedence order.
+    Duplicate(Vec<PathBuf>),
     /// The plugin is enabled, but `installed_plugins.json` has an unknown
     /// format, so whether it registers them cannot be told.
     Unknown,
@@ -200,14 +200,15 @@ pub(crate) fn claude_hook_registration(home: Option<&Path>, cwd: &Path) -> Claud
     };
     // Claude Code merges hooks from every settings scope, the personal
     // settings.local.json included, so an entry in any of them runs.
-    let settings = settings_scopes(home, cwd)
+    let settings: Vec<PathBuf> = settings_scopes(home, cwd)
         .into_iter()
-        .find(|path| has_aegis_managed_pre_tool_use(path));
-    match (plugin, settings) {
-        (true, Some(path)) => ClaudeHookRegistration::Duplicate(path),
-        (true, None) => ClaudeHookRegistration::Plugin,
-        (false, Some(_)) => ClaudeHookRegistration::Settings,
-        (false, None) => ClaudeHookRegistration::None,
+        .filter(|path| has_aegis_managed_pre_tool_use(path))
+        .collect();
+    match (plugin, settings.is_empty()) {
+        (true, false) => ClaudeHookRegistration::Duplicate(settings),
+        (true, true) => ClaudeHookRegistration::Plugin,
+        (false, false) => ClaudeHookRegistration::Settings,
+        (false, true) => ClaudeHookRegistration::None,
     }
 }
 
