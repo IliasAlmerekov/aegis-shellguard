@@ -301,7 +301,10 @@ jobs:
           for pkg in $PACKAGES; do
             args+=(--package "$pkg")
           done
-          cargo mutants --in-diff pr.diff "${args[@]}" --no-shuffle
+          # cargo-mutants copies the tree without .git by default, and tests
+          # that call `git ls-files` (audit_integrity_wording) then fail the
+          # baseline before any mutant runs.
+          cargo mutants --in-diff pr.diff "${args[@]}" --no-shuffle --copy-vcs=true
 
       - name: Upload mutants.out
         if: always()
