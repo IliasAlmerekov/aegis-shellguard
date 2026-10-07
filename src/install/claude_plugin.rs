@@ -97,10 +97,10 @@ pub(crate) enum ClaudeHookRegistration {
 /// PreToolUse entry counts: a second SessionStart notice is harmless.
 pub(crate) fn claude_hook_registration(home: Option<&Path>, cwd: &Path) -> ClaudeHookRegistration {
     let plugin = claude_code_plugin_enabled(home, cwd);
-    let settings = home
-        .map(|home| home.join(".claude/settings.json"))
+    // Claude Code merges hooks from every settings scope, the personal
+    // settings.local.json included, so an entry in any of them runs.
+    let settings = settings_scopes(home, cwd)
         .into_iter()
-        .chain(std::iter::once(cwd.join(".claude/settings.json")))
         .find(|path| has_aegis_managed_pre_tool_use(path));
     match (plugin, settings) {
         (true, Some(path)) => ClaudeHookRegistration::Duplicate(path),

@@ -319,36 +319,74 @@ fn claude_plugin_rollback_command_runs_through_bash_tool() {
     }
 }
 
+/// Where `status_reports_claude_hook_registration` puts the aegis-managed
+/// PreToolUse entry.
+#[derive(Clone, Copy, Debug)]
+enum EntryScope {
+    Absent,
+    User,
+    ProjectLocal,
+}
+
+/// A settings object with an aegis-managed PreToolUse Bash entry.
+fn settings_with_aegis_entry(dir: &Path) -> serde_json::Value {
+    let shim = dir.join(".claude/hooks/aegis-pre-tool-use.sh");
+    serde_json::json!({
+        "hooks": {
+            "PreToolUse": [{
+                "matcher": "Bash",
+                "hooks": [{ "type": "command", "command": shim.display().to_string() }]
+            }]
+        }
+    })
+}
+
 #[test]
 fn status_reports_claude_hook_registration() {
-    for (plugin_enabled, settings_entry, expected) in [
-        (true, false, "claude code hooks: plugin"),
-        (false, true, "claude code hooks: settings"),
-        (false, false, "claude code hooks: none"),
-        (true, true, "claude code hooks: duplicate"),
+    for (plugin_enabled, entry, expected) in [
+        (true, EntryScope::Absent, "claude code hooks: plugin"),
+        (false, EntryScope::User, "claude code hooks: settings"),
+        (
+            false,
+            EntryScope::ProjectLocal,
+            "claude code hooks: settings",
+        ),
+        (false, EntryScope::Absent, "claude code hooks: none"),
+        (true, EntryScope::User, "claude code hooks: duplicate"),
+        (
+            true,
+            EntryScope::ProjectLocal,
+            "claude code hooks: duplicate",
+        ),
     ] {
         let home = TempDir::new().unwrap();
         let project = TempDir::new().unwrap();
-        let settings = home.path().join(".claude/settings.json");
-        let mut json = serde_json::json!({
-            "enabledPlugins": { "aegis@aegis-shellguard": plugin_enabled }
-        });
-        if settings_entry {
-            let shim = home.path().join(".claude/hooks/aegis-pre-tool-use.sh");
-            json["hooks"] = serde_json::json!({
-                "PreToolUse": [{
-                    "matcher": "Bash",
-                    "hooks": [{ "type": "command", "command": shim.display().to_string() }]
-                }]
-            });
+        // The status line prints the path from the canonical cwd, which on
+        // macOS is /private/var/... for a /var/folders/... temp dir.
+        let project_dir = fs::canonicalize(project.path()).unwrap();
+        let user_settings = home.path().join(".claude/settings.json");
+        let local_settings = project_dir.join(".claude/settings.local.json");
+        let mut user_json = match entry {
+            EntryScope::User => settings_with_aegis_entry(home.path()),
+            _ => serde_json::json!({}),
+        };
+        user_json["enabledPlugins"] =
+            serde_json::json!({ "aegis@aegis-shellguard": plugin_enabled });
+        fs::create_dir_all(user_settings.parent().unwrap()).unwrap();
+        fs::write(&user_settings, user_json.to_string()).unwrap();
+        if let EntryScope::ProjectLocal = entry {
+            fs::create_dir_all(local_settings.parent().unwrap()).unwrap();
+            fs::write(
+                &local_settings,
+                settings_with_aegis_entry(&project_dir).to_string(),
+            )
+            .unwrap();
         }
-        fs::create_dir_all(settings.parent().unwrap()).unwrap();
-        fs::write(&settings, json.to_string()).unwrap();
 
         let output = Command::new(env!("CARGO_BIN_EXE_aegis"))
             .arg("status")
             .env("HOME", home.path())
-            .current_dir(project.path())
+            .current_dir(&project_dir)
             .output()
             .unwrap();
 
@@ -358,13 +396,17 @@ fn status_reports_claude_hook_registration() {
             .lines()
             .find(|line| line.starts_with("claude code hooks: "))
             .unwrap_or_else(|| panic!("no claude code hooks line:\n{stdout}"));
-        assert!(line.starts_with(expected), "{line}");
+        assert!(line.starts_with(expected), "{entry:?}: {line}");
         if expected.ends_with("duplicate") {
+            let settings = match entry {
+                EntryScope::ProjectLocal => &local_settings,
+                _ => &user_settings,
+            };
             assert!(line.contains(&settings.display().to_string()), "{line}");
             assert!(line.contains("runs twice per command"), "{line}");
             assert!(line.contains("by hand"), "{line}");
         } else {
-            assert_eq!(line, expected);
+            assert_eq!(line, expected, "{entry:?}");
         }
     }
 }

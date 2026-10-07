@@ -58,8 +58,11 @@ the `aegis-shellguard` marketplace, so it works before community review.
   Code plugin aegis is enabled)`. It does not remove existing aegis-managed
   entries.
 - `aegis status` prints `claude code hooks: plugin|settings|none|duplicate`.
-  `duplicate` names the settings file that still holds the aegis-managed
-  PreToolUse entry and asks the user to remove it by hand.
+  It scans every settings scope Claude Code merges hooks from:
+  `.claude/settings.local.json`, `.claude/settings.json`, and
+  `~/.claude/settings.json`. `duplicate` names the settings file that still
+  holds the aegis-managed PreToolUse entry and asks the user to remove it by
+  hand.
 - `/aegis-rollback` runs `aegis snapshot list` and `aegis rollback <id>` through
   the Bash tool after the user confirms. It carries no `` !` `` shell
   injection, because those lines run outside the Bash tool and so bypass
