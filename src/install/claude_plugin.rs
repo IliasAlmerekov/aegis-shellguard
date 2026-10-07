@@ -15,14 +15,28 @@ use serde_json::Value;
 const AEGIS_PLUGIN_KEYS: [&str; 2] = ["aegis@claude-plugins-community", "aegis@aegis-shellguard"];
 
 /// True when the effective `enabledPlugins` value of the Aegis Claude Code
-/// plugin is `true`. Scopes are read with Claude Code's precedence:
-/// `<cwd>/.claude/settings.local.json`, then `<cwd>/.claude/settings.json`,
-/// then `~/.claude/settings.json`. The first scope that sets a key decides it.
-/// A missing or unparsable settings file sets nothing.
+/// plugin is `true` for a session in `cwd`. Scopes are read with Claude Code's
+/// precedence: `<cwd>/.claude/settings.local.json`, then
+/// `<cwd>/.claude/settings.json`, then `~/.claude/settings.json`. The first
+/// scope that sets a key decides it. A missing or unparsable settings file
+/// sets nothing. Used by `--local` installs and `aegis status`.
 pub(crate) fn claude_code_plugin_enabled(home: Option<&Path>, cwd: &Path) -> bool {
-    let scopes = settings_scopes(home, cwd)
-        .into_iter()
-        .filter_map(|path| read_enabled_plugins(&path))
+    plugin_enabled_in(&settings_scopes(home, cwd))
+}
+
+/// True when `~/.claude/settings.json` alone enables the Aegis Claude Code
+/// plugin. A global install writes hooks that cover every project, so a
+/// project scope must not decide it (R1-1): a repo that enables the plugin
+/// would leave every other project unguarded, and a repo that disables it
+/// would make every other project run `aegis hook` twice.
+pub(crate) fn claude_code_plugin_enabled_for_user(home: Option<&Path>) -> bool {
+    home.is_some_and(|home| plugin_enabled_in(&[home.join(".claude/settings.json")]))
+}
+
+fn plugin_enabled_in(scopes: &[PathBuf]) -> bool {
+    let scopes = scopes
+        .iter()
+        .filter_map(|path| read_enabled_plugins(path))
         .collect::<Vec<_>>();
     AEGIS_PLUGIN_KEYS.iter().any(|key| {
         scopes

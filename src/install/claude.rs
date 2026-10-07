@@ -16,12 +16,21 @@ pub(crate) fn run_claude_install(global: bool) -> AgentInstallResult {
     // The plugin registers the same hooks; installing settings entries too
     // would run `aegis hook` twice per command. Existing entries stay as they
     // are: an install that deletes config would surprise the user (ADR-047).
-    if let Ok(cwd) = std::env::current_dir()
-        && super::claude_plugin::claude_code_plugin_enabled(super::home_dir().as_deref(), &cwd)
-    {
+    if claude_code_plugin_enabled_for_install(global) {
         return AgentInstallResult::SkippedClaudeCodePlugin;
     }
     AgentInstallResult::from_result(run_install_inner(global))
+}
+
+/// A global install covers every project, so only user settings decide it; a
+/// `--local` install covers this project and follows the full scope chain.
+fn claude_code_plugin_enabled_for_install(global: bool) -> bool {
+    let home = super::home_dir();
+    if global {
+        return super::claude_plugin::claude_code_plugin_enabled_for_user(home.as_deref());
+    }
+    std::env::current_dir()
+        .is_ok_and(|cwd| super::claude_plugin::claude_code_plugin_enabled(home.as_deref(), &cwd))
 }
 
 fn run_install_inner(global: bool) -> Result<InstallOutcome, String> {

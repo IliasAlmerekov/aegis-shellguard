@@ -36,7 +36,12 @@ the `aegis-shellguard` marketplace, so it works before community review.
   says so and names `npm i -g @iliasalmerekov/aegis`.
 - The Claude Code plugin counts as enabled when the effective `enabledPlugins`
   value of `aegis@claude-plugins-community` or `aegis@aegis-shellguard` is
-  `true`. Scopes are read in Claude Code's order: `.claude/settings.local.json`,
+  `true`. Which scopes count depends on what the hooks cover. A global install
+  writes hooks for every project, so only `~/.claude/settings.json` decides it:
+  a repo that enables the plugin must not leave every other project unguarded,
+  and a repo that disables it must not make every other project run the Hook
+  twice. A `--local` install and `aegis status` describe the current project,
+  so they read Claude Code's order: `.claude/settings.local.json`,
   `.claude/settings.json`, then `~/.claude/settings.json`. Other `aegis@*` keys
   do not count, so a foreign plugin named `aegis` cannot switch the
   `settings.json` hooks off. `installed_plugins.json` is not read: only an
