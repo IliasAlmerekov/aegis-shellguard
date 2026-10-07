@@ -73,6 +73,9 @@ the `aegis-shellguard` marketplace, so it works before community review.
   but not installed, the value comes from the settings entries alone
   (`settings` or `none`), and a second line, `claude code plugin: aegis is
   enabled but not installed; only settings hooks guard Bash`, names the gap.
+  When the plugin is enabled and `installed_plugins.json` has a top-level
+  `version` other than 2, or none, `aegis status` prints `claude code hooks:
+  unknown (unrecognised installed_plugins.json format)` instead of guessing.
   It scans every settings scope Claude Code merges hooks from:
   `.claude/settings.local.json`, `.claude/settings.json`, and
   `~/.claude/settings.json`. `duplicate` names the settings file that still
@@ -90,13 +93,27 @@ the `aegis-shellguard` marketplace, so it works before community review.
 - A user with the Claude Code plugin enabled and an older `settings.json`
   install runs the Hook twice until they remove the entries. `aegis status`
   reports this; nothing removes them automatically.
-- Aegis now depends on the layout of Claude Code's `installed_plugins.json`
-  (format version 2). If Claude Code moves or reshapes that file, Aegis reads
-  the plugin as not installed and installs the settings hooks, so a format
-  change costs a duplicate Hook, never a missing one.
-- If user settings enable the Claude Code plugin and a project disables it, a
-  global install skips, so that project has no Hook and `aegis status` there
-  prints `none`. The remedy is a `--local` install in that project.
+- Aegis now depends on Claude Code's internal `installed_plugins.json`, and
+  reads it only when its top-level `version` is 2. A missing or different
+  version means an unknown format: the install treats the plugin as not
+  installed and writes the settings hooks, and `aegis status` prints
+  `unknown`. If Claude Code moves the file, Aegis reads the plugin as not
+  installed. Either way a format change costs a duplicate Hook, never a
+  missing one.
+- A repository can switch Aegis off for itself. A committed
+  `.claude/settings.json` with `"aegis@aegis-shellguard": false` (or
+  `"aegis@claude-community": false`) overrides the user-scope enable. With the
+  plugin active, the global install wrote no settings hooks, so that project
+  runs Bash with no Aegis Hook and no SessionStart notice. Only `aegis status`
+  shows it, as `none`. A `--local` install in that project restores the Hook.
+- This waiver is accepted because it gives a repository no capability it lacks
+  today. Project settings can already set `"disableAllHooks": true`, which
+  Claude Code applies over user settings and which turns off settings-installed
+  Aegis hooks the same way: per the Claude Code hooks documentation, only hooks
+  from managed policy settings survive a project-level `disableAllHooks`.
+- Users who need protection against repository config should install the Aegis
+  hooks through managed settings. A SessionStart sentinel that warns when the
+  PreToolUse Hook is missing is tracked as a follow-up issue.
 - Every change to a Claude hook template must also update the plugin copy. The
   drift test catches a missed copy.
 - The `aegis-hook-version` header of `claude-session-start.sh` moves to 2. The
