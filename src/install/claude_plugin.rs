@@ -12,7 +12,7 @@ use serde_json::Value;
 /// `enabledPlugins` keys that name the Aegis Claude Code plugin: the community
 /// catalog and the repository's own marketplace. A wildcard such as `aegis@*`
 /// would let a foreign plugin named `aegis` switch the settings hooks off.
-const AEGIS_PLUGIN_KEYS: [&str; 2] = ["aegis@claude-plugins-community", "aegis@aegis-shellguard"];
+const AEGIS_PLUGIN_KEYS: [&str; 2] = ["aegis@claude-community", "aegis@aegis-shellguard"];
 
 /// True when the effective `enabledPlugins` value of the Aegis Claude Code
 /// plugin is `true` for a session in `cwd`. Scopes are read with Claude Code's

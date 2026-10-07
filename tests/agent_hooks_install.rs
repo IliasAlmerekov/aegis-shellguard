@@ -620,7 +620,7 @@ fn install_claude_code(
 
 #[test]
 fn install_claude_skips_when_plugin_enabled() {
-    for plugin in ["aegis@claude-plugins-community", "aegis@aegis-shellguard"] {
+    for plugin in ["aegis@claude-community", "aegis@aegis-shellguard"] {
         for extra in [&[][..], &["--local"][..]] {
             let home = TempDir::new().unwrap();
             let project = TempDir::new().unwrap();

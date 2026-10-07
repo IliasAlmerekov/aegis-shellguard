@@ -38,7 +38,7 @@ the `aegis-shellguard` marketplace, so it works before community review.
   otherwise a missing binary denies every Bash call. The SessionStart hook
   says so and names `npm i -g @iliasalmerekov/aegis`.
 - The Claude Code plugin counts as enabled when the effective `enabledPlugins`
-  value of `aegis@claude-plugins-community` or `aegis@aegis-shellguard` is
+  value of `aegis@claude-community` or `aegis@aegis-shellguard` is
   `true`. Which scopes count depends on what the hooks cover. A global install
   writes hooks for every project, so only `~/.claude/settings.json` decides it:
   a repo that enables the plugin must not leave every other project unguarded,
