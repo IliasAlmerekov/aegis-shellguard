@@ -24,6 +24,8 @@ repo="${AEGIS_RELEASE_REPO:-IliasAlmerekov/aegis-shellguard}"
 base_url="https://github.com/${repo}/releases/download/${tag}"
 out="${AEGIS_NPM_CHECKSUMS:-packaging/npm/checksums.json}"
 package_json="${AEGIS_NPM_PACKAGE_JSON:-packaging/npm/package.json}"
+# The Claude Code plugin shows the same version as `aegis --version` (ADR-047).
+plugin_json="${AEGIS_CLAUDE_PLUGIN_JSON:-plugins/aegis/.claude-plugin/plugin.json}"
 tmp_dir="$(mktemp -d)"
 
 cleanup() {
@@ -77,6 +79,15 @@ if [ -f "$package_json" ]; then
     { print }
   ' "$package_json" > "$tmp_package"
   mv "$tmp_package" "$package_json"
+fi
+
+if [ -f "$plugin_json" ]; then
+  tmp_plugin="${tmp_dir}/plugin.json"
+  awk -v version="$version" '
+    /^  "version": / { print "  \"version\": \"" version "\","; next }
+    { print }
+  ' "$plugin_json" > "$tmp_plugin"
+  mv "$tmp_plugin" "$plugin_json"
 fi
 
 printf '%s updated\n' "$out"
