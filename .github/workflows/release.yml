@@ -430,6 +430,33 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          # Read version declarations as data; never execute formula Ruby.
+          python3 - "$TAG" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          def stable_version(value):
+              if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", value):
+                  sys.exit(f"invalid stable version: {value!r}")
+              return tuple(int(component) for component in value.split("."))
+
+          def formula_version(path):
+              versions = re.findall(r'^\s*version "([^"\n]+)"\s*$', path.read_text(), re.MULTILINE)
+              if len(versions) != 1:
+                  sys.exit(f"expected one version declaration in {path}")
+              return stable_version(versions[0])
+
+          tag = sys.argv[1]
+          if not tag.startswith("v"):
+              sys.exit(f"invalid release tag: {tag!r}")
+          incoming = stable_version(tag[1:])
+          if formula_version(pathlib.Path("formula/aegis.rb")) != incoming:
+              sys.exit("generated formula version does not match the release tag")
+          current = pathlib.Path("tap/Formula/aegis.rb")
+          if current.exists() and formula_version(current) > incoming:
+              sys.exit(f"refusing Homebrew tap downgrade to {tag}")
+          PY
           mkdir -p tap/Formula
           cp formula/aegis.rb tap/Formula/aegis.rb
           cd tap

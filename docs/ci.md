@@ -120,7 +120,11 @@ tag and uploads the formula as an artifact. The `publish-homebrew-tap` job then
 commits it to `IliasAlmerekov/homebrew-aegis` as `aegis X.Y.Z`, using the deploy
 key in the `HOMEBREW_TAP_DEPLOY_KEY` secret. Only the push job holds the key, and
 it runs no build or test code. Prerelease tags skip both jobs, and an unchanged
-formula pushes nothing. This repository keeps no copy of the formula.
+formula pushes nothing. Before replacing the tap formula, the push step checks
+that its version matches the release tag and compares stable versions
+numerically. An older release or an invalid version fails without replacing
+the formula. A concurrent remote update rejects the normal, non-force push.
+This repository keeps no copy of the formula.
 
 `brew audit`, `brew install`, and `brew test` on macOS and Linux stay
 release-operator smoke tests, listed in `docs/release-readiness.md`. A gated live
@@ -129,6 +133,9 @@ default `cargo test` network-free; a CI job that runs it on
 `ubuntu-latest`/`macos-latest` will be added only after explicit workflow
 sign-off. `tests/homebrew_formula.rs` runs the updater against `file://` fixture
 checksums, so the formula contract is tested without the network.
+`tests/release_workflow.rs` executes the publication step against a local bare
+Git repository to check commit/push, repeat publication, old-release recovery,
+numeric version ordering, invalid versions, and concurrent remote updates.
 
 ## npm package validation
 

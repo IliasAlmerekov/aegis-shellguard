@@ -268,8 +268,13 @@ to `IliasAlmerekov/homebrew-aegis` with a deploy key. Prerelease tags
 formula; this repository keeps none.
 
 To recover from a failed publish, re-run the failed job in the original release
-run. If that cannot work, follow the manual runbook below. `brew audit` and the
-install smoke tests stay manual in both paths.
+run. The push step checks stable versions numerically before replacing the
+formula. If the tap already holds a newer version, recovery of the old release
+fails without changing it. Recover the newest release instead; do not downgrade
+the tap. An identical formula succeeds without a new commit. A concurrent tap
+update rejects the non-force push; re-run to check the current tap version.
+If automated publication cannot work, follow the manual runbook below.
+`brew audit` and the install smoke tests stay manual in both paths.
 
 ### One-time deploy key setup
 
@@ -302,10 +307,22 @@ formula is generated deterministically by `scripts/update-homebrew-formula.sh`.
    gh repo create IliasAlmerekov/homebrew-aegis --public --description "Homebrew tap for Aegis"
    ```
 
-3. Clone the tap and lay out the formula under `Formula/`:
+3. Clone the tap:
 
    ```bash
    git clone git@github.com:IliasAlmerekov/homebrew-aegis.git /tmp/homebrew-aegis
+   ```
+
+   Before copying, read the `version` declarations in `/tmp/aegis.rb` and
+   `/tmp/homebrew-aegis/Formula/aegis.rb`. The generated version must match the
+   selected tag. Compare major, minor, and patch as integers, not strings.
+   If the tap version is newer, stop and select the newest release. If a
+   declaration is missing or invalid in an existing formula, stop and resolve
+   it before publishing. A new tap may have no formula yet.
+
+   Then lay out the formula:
+
+   ```bash
    mkdir -p /tmp/homebrew-aegis/Formula
    cp /tmp/aegis.rb /tmp/homebrew-aegis/Formula/aegis.rb
    ```

@@ -37,7 +37,7 @@ After code passes all gates, update in this order:
 
 1. **Verification gates:** CI runs them, not you. Do not run `cargo test --workspace`, clippy, `cargo audit` or `cargo deny check` locally. Run `scripts/lint.sh fmt` before every push (the pre-push hook does it); it compiles nothing. Run only the targeted test for the code you changed (`rtk cargo test --test <name>` or `rtk cargo test -p <crate>`). Push, then wait for every CI check to go green (`gh pr checks`, `gh run watch`). Benchmark if a hot path was touched.
 
-2. **Update `CHANGELOG.md`:** Prepend one line under `## [Unreleased]` (category: Added/Changed/Fixed/Removed/Security; reference the issue or ADR).
+2. **Update `CHANGELOG.md`:** After every feature, fix, or breaking change, prepend one line under `## [Unreleased]` (category: Added/Changed/Fixed/Removed/Security; reference the issue and any architectural ADR).
 
 3. **Update `CONTEXT.md`** (if needed): If the task introduces or sharpens a domain term, update glossary in the same change.
 

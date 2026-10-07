@@ -6,6 +6,7 @@
 //! asset contract.
 
 use std::path::Path;
+use std::process::{Command, Output};
 
 fn release_workflow() -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/workflows/release.yml");
@@ -554,4 +555,171 @@ fn homebrew_deploy_key_should_only_appear_in_the_push_job() {
         push.matches("HOMEBREW_TAP_DEPLOY_KEY").count(),
         "only the push job may reference the tap deploy key"
     );
+}
+
+// Execute the workflow's actual publication step, not a test-only copy.
+fn homebrew_publish_step() -> String {
+    let workflow = release_workflow().replace("\r\n", "\n");
+    let publish = job(&workflow, "publish-homebrew-tap");
+    publish
+        .split_once("      - name: Commit and push the formula\n")
+        .and_then(|(_, step)| step.split_once("        run: |\n"))
+        .expect("publication step should have a bash run block")
+        .1
+        .lines()
+        .map(|line| line.strip_prefix("          ").unwrap_or(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn tap_git(directory: &Path, arguments: &[&str]) -> String {
+    let output = Command::new("git")
+        .current_dir(directory)
+        .args(arguments)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .output()
+        .expect("git should start");
+    assert!(output.status.success(), "git {arguments:?}: {output:?}");
+    String::from_utf8(output.stdout).expect("git output should be UTF-8")
+}
+
+fn formula_fixture(version: &str) -> String {
+    format!("class Aegis < Formula\n  version \"{version}\"\nend\n")
+}
+
+fn local_tap(version: &str) -> tempfile::TempDir {
+    let directory = tempfile::tempdir().expect("temporary tap should be created");
+    let root = directory.path();
+    tap_git(
+        root,
+        &["init", "--bare", "--initial-branch=main", "remote.git"],
+    );
+    tap_git(root, &["clone", "remote.git", "tap"]);
+    let tap = root.join("tap");
+    tap_git(&tap, &["config", "user.name", "Release test"]);
+    tap_git(
+        &tap,
+        &["config", "user.email", "release-test@example.invalid"],
+    );
+    std::fs::create_dir(tap.join("Formula")).unwrap();
+    std::fs::write(tap.join("Formula/aegis.rb"), formula_fixture(version)).unwrap();
+    tap_git(&tap, &["add", "Formula/aegis.rb"]);
+    tap_git(&tap, &["commit", "-m", "Initial formula"]);
+    tap_git(&tap, &["push", "origin", "main"]);
+    std::fs::create_dir(root.join("formula")).unwrap();
+    directory
+}
+
+fn publish_to_local_tap(root: &Path, version: &str) -> Output {
+    std::fs::write(root.join("formula/aegis.rb"), formula_fixture(version)).unwrap();
+    Command::new("bash")
+        .args(["-c", &homebrew_publish_step()])
+        .current_dir(root)
+        .env("TAG", format!("v{version}"))
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .output()
+        .expect("publication step should start")
+}
+
+#[test]
+fn homebrew_old_release_recovery_should_not_downgrade_the_tap() {
+    let directory = local_tap("0.7.0");
+    let root = directory.path();
+    let newer = publish_to_local_tap(root, "0.7.2");
+    assert!(newer.status.success(), "{newer:?}");
+    let remote = root.join("remote.git");
+    let published = tap_git(&remote, &["rev-parse", "main"]);
+
+    let older = publish_to_local_tap(root, "0.7.1");
+    assert!(!older.status.success(), "old release must fail: {older:?}");
+    assert_eq!(tap_git(&remote, &["rev-parse", "main"]), published);
+    assert_eq!(
+        std::fs::read_to_string(root.join("tap/Formula/aegis.rb")).unwrap(),
+        formula_fixture("0.7.2"),
+        "downgrade must be rejected before copying the formula"
+    );
+}
+
+#[test]
+fn homebrew_republication_should_not_create_another_commit() {
+    let directory = local_tap("0.7.0");
+    let root = directory.path();
+    let first = publish_to_local_tap(root, "0.7.1");
+    assert!(first.status.success(), "{first:?}");
+    let remote = root.join("remote.git");
+    assert_eq!(
+        tap_git(&remote, &["log", "-1", "--format=%s"]),
+        "aegis 0.7.1\n"
+    );
+    assert_eq!(
+        tap_git(&remote, &["show", "main:Formula/aegis.rb"]),
+        formula_fixture("0.7.1")
+    );
+    let published = tap_git(&remote, &["rev-parse", "main"]);
+
+    let repeated = publish_to_local_tap(root, "0.7.1");
+    assert!(repeated.status.success(), "{repeated:?}");
+    assert_eq!(tap_git(&remote, &["rev-parse", "main"]), published);
+    assert_eq!(tap_git(&remote, &["rev-list", "--count", "main"]), "2\n");
+}
+
+#[test]
+fn homebrew_publication_should_compare_stable_versions_numerically() {
+    for (current, incoming) in [
+        ("0.7.9", "0.7.10"),
+        ("0.9.9", "0.10.0"),
+        ("0.99.99", "1.0.0"),
+    ] {
+        let directory = local_tap(current);
+        let root = directory.path();
+        let output = publish_to_local_tap(root, incoming);
+        assert!(
+            output.status.success(),
+            "{current} -> {incoming}: {output:?}"
+        );
+        assert_eq!(
+            tap_git(&root.join("remote.git"), &["show", "main:Formula/aegis.rb"]),
+            formula_fixture(incoming)
+        );
+    }
+}
+
+#[test]
+fn homebrew_publication_should_fail_closed_on_an_invalid_current_version() {
+    for current in ["unknown", "0.7.2-rc.1", "0.07.2"] {
+        let directory = local_tap(current);
+        let root = directory.path();
+        let remote = root.join("remote.git");
+        let published = tap_git(&remote, &["rev-parse", "main"]);
+        let output = publish_to_local_tap(root, "0.7.1");
+        assert!(!output.status.success(), "{current}: {output:?}");
+        assert_eq!(tap_git(&remote, &["rev-parse", "main"]), published);
+        assert_eq!(
+            std::fs::read_to_string(root.join("tap/Formula/aegis.rb")).unwrap(),
+            formula_fixture(current)
+        );
+    }
+}
+
+#[test]
+fn homebrew_concurrent_publication_should_not_overwrite_a_newer_remote_commit() {
+    let directory = local_tap("0.7.0");
+    let root = directory.path();
+    std::fs::create_dir(root.join("stale")).unwrap();
+    tap_git(root, &["clone", "remote.git", "stale/tap"]);
+    std::fs::create_dir(root.join("stale/formula")).unwrap();
+    let newer = publish_to_local_tap(root, "0.7.2");
+    assert!(newer.status.success(), "{newer:?}");
+    let remote = root.join("remote.git");
+    let published = tap_git(&remote, &["rev-parse", "main"]);
+
+    let raced = publish_to_local_tap(&root.join("stale"), "0.7.1");
+    assert!(
+        !raced.status.success(),
+        "stale checkout must not push: {raced:?}"
+    );
+    assert!(String::from_utf8_lossy(&raced.stderr).contains("[rejected]"));
+    assert_eq!(tap_git(&remote, &["rev-parse", "main"]), published);
 }
