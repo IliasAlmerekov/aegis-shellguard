@@ -306,12 +306,12 @@ fn claude_plugin_manifests_are_consistent() {
 
 #[test]
 fn claude_plugin_rollback_command_runs_through_bash_tool() {
-    let command = read_repo_file("plugins/aegis/commands/aegis-rollback.md");
+    let command = read_repo_file("plugins/aegis/commands/rollback.md");
     let front_matter = command
         .strip_prefix("---\n")
         .and_then(|rest| rest.split_once("\n---\n"))
         .map(|(front, _)| front)
-        .expect("aegis-rollback.md must open with YAML front matter");
+        .expect("rollback.md must open with YAML front matter");
     assert!(
         front_matter
             .lines()

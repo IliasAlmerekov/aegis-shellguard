@@ -23,7 +23,7 @@ call.
 
 Ship the Claude Code plugin from this repository: `plugins/aegis/` holds
 `plugin.json`, `hooks/hooks.json`, the two hook scripts, and the
-`/aegis-rollback` command. A root `.claude-plugin/marketplace.json` lists it as
+`commands/rollback.md`, which Claude Code namespaces as `/aegis:rollback`. A root `.claude-plugin/marketplace.json` lists it as
 the `aegis-shellguard` marketplace, so it works before community review.
 
 - The plugin hook scripts are committed copies of `scripts/hooks/claude-code.sh`
@@ -63,7 +63,7 @@ the `aegis-shellguard` marketplace, so it works before community review.
   `~/.claude/settings.json`. `duplicate` names the settings file that still
   holds the aegis-managed PreToolUse entry and asks the user to remove it by
   hand.
-- `/aegis-rollback` runs `aegis snapshot list` and `aegis rollback <id>` through
+- `/aegis:rollback` runs `aegis snapshot list` and `aegis rollback <id>` through
   the Bash tool after the user confirms. It carries no `` !` `` shell
   injection, because those lines run outside the Bash tool and so bypass
   PreToolUse and Aegis.
@@ -83,7 +83,7 @@ the `aegis-shellguard` marketplace, so it works before community review.
 - The `aegis-hook-version` header of `claude-session-start.sh` moves to 2. The
   installer now renders the binary path into the SessionStart hook too.
 - `aegis rollback` is reserved for the human operator by the PreToolUse hook, so
-  inside a guarded session `/aegis-rollback` may end by handing the user the
+  inside a guarded session `/aegis:rollback` may end by handing the user the
   exact command to run in their own terminal.
 - The Codex SessionStart hook gets no missing-binary notice yet; that is a
   follow-up.
