@@ -534,28 +534,33 @@ fn enable_plugin_without_install(home: &Path, case: NotInstalled) {
         serde_json::json!({ "enabledPlugins": { "aegis@aegis-shellguard": true } }).to_string(),
     )
     .unwrap();
-    let installed = match case {
-        NotInstalled::NoFile => return,
-        NotInstalled::Malformed => "{not json".to_string(),
-        NotInstalled::KeyAbsent => {
-            write_installed_plugin(home, "figma@claude-plugins-official");
-            return;
-        }
-        NotInstalled::EmptyArray => serde_json::json!({
-            "version": 2,
-            "plugins": { "aegis@aegis-shellguard": [] }
-        })
-        .to_string(),
-        NotInstalled::InstallPathMissing => serde_json::json!({
-            "version": 2,
-            "plugins": { "aegis@aegis-shellguard": [{
-                "scope": "user",
-                "installPath": home.join("missing/aegis").display().to_string()
-            }] }
-        })
-        .to_string(),
-    };
-    fs::write(claude.join("plugins/installed_plugins.json"), installed).unwrap();
+    let installed_file = claude.join("plugins/installed_plugins.json");
+    match case {
+        NotInstalled::NoFile => {}
+        NotInstalled::Malformed => fs::write(&installed_file, "{not json").unwrap(),
+        NotInstalled::KeyAbsent => write_installed_plugin(home, "figma@claude-plugins-official"),
+        NotInstalled::EmptyArray => fs::write(
+            &installed_file,
+            serde_json::json!({
+                "version": 2,
+                "plugins": { "aegis@aegis-shellguard": [] }
+            })
+            .to_string(),
+        )
+        .unwrap(),
+        NotInstalled::InstallPathMissing => fs::write(
+            &installed_file,
+            serde_json::json!({
+                "version": 2,
+                "plugins": { "aegis@aegis-shellguard": [{
+                    "scope": "user",
+                    "installPath": home.join("missing/aegis").display().to_string()
+                }] }
+            })
+            .to_string(),
+        )
+        .unwrap(),
+    }
 }
 
 #[test]
