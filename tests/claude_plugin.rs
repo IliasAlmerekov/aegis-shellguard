@@ -434,6 +434,44 @@ fn status_reports_claude_hook_registration() {
     }
 }
 
+#[test]
+fn status_reports_every_duplicate_settings_file() {
+    // Removing the entries from one file must not leave the user with a
+    // duplicate they were never told about.
+    let home = TempDir::new().unwrap();
+    let project = TempDir::new().unwrap();
+    let project_dir = fs::canonicalize(project.path()).unwrap();
+    let user_settings = home.path().join(".claude/settings.json");
+    let project_settings = project_dir.join(".claude/settings.json");
+    let mut user_json = settings_with_aegis_entry(home.path());
+    user_json["enabledPlugins"] = serde_json::json!({ "aegis@aegis-shellguard": true });
+    fs::create_dir_all(user_settings.parent().unwrap()).unwrap();
+    fs::write(&user_settings, user_json.to_string()).unwrap();
+    write_installed_plugin(home.path(), "aegis@aegis-shellguard");
+    fs::create_dir_all(project_settings.parent().unwrap()).unwrap();
+    fs::write(
+        &project_settings,
+        settings_with_aegis_entry(&project_dir).to_string(),
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_aegis"))
+        .arg("status")
+        .env("HOME", home.path())
+        .current_dir(&project_dir)
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let line = stdout
+        .lines()
+        .find(|line| line.starts_with("claude code hooks: duplicate"))
+        .unwrap_or_else(|| panic!("no duplicate line:\n{stdout}"));
+    for settings in [&project_settings, &user_settings] {
+        assert!(line.contains(&settings.display().to_string()), "{line}");
+    }
+}
+
 /// Copy `plugins/aegis/hooks/` into `<root>/hooks/`, keeping the modes.
 fn copy_plugin_hooks(root: &Path) {
     let source = repo_path("plugins/aegis/hooks");
