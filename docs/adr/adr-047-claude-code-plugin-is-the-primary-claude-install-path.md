@@ -30,6 +30,9 @@ the `aegis-shellguard` marketplace, so it works before community review.
   and `scripts/hooks/claude-session-start.sh` with `__AEGIS_BIN__` replaced by
   `aegis`, so they find the binary on `PATH`. A test fails when a copy drifts
   from its template byte for byte.
+- `hooks.json` double-quotes `${CLAUDE_PLUGIN_ROOT}` in each command. Claude
+  Code runs the command through a shell, and an unquoted root under a path with
+  a space would split, fail to start the hook, and let Bash run unguarded.
 - The plugin does not ship the binary. The PreToolUse hook keeps its fail-closed
   order: with `~/.aegis/disabled` present it exits before the binary check;
   otherwise a missing binary denies every Bash call. The SessionStart hook

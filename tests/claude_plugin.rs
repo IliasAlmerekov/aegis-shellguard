@@ -76,7 +76,7 @@ fn claude_plugin_hooks_match_templates() {
 /// test controls whether `aegis` resolves. With `with_aegis` the test binary
 /// is linked in as `aegis`.
 fn tool_path(dir: &Path, with_aegis: bool) -> String {
-    for tool in ["tr", "printenv", "cat", "grep"] {
+    for tool in ["bash", "tr", "printenv", "cat", "grep"] {
         let source = ["/usr/bin", "/bin"]
             .iter()
             .map(|prefix| Path::new(prefix).join(tool))
@@ -274,11 +274,11 @@ fn claude_plugin_manifests_are_consistent() {
     let hooks = read_repo_json("plugins/aegis/hooks/hooks.json");
     assert_eq!(
         registered_command(&hooks, "PreToolUse", "Bash"),
-        "${CLAUDE_PLUGIN_ROOT}/hooks/aegis-pre-tool-use.sh"
+        "\"${CLAUDE_PLUGIN_ROOT}/hooks/aegis-pre-tool-use.sh\""
     );
     assert_eq!(
         registered_command(&hooks, "SessionStart", "startup|resume"),
-        "${CLAUDE_PLUGIN_ROOT}/hooks/aegis-session-start.sh"
+        "\"${CLAUDE_PLUGIN_ROOT}/hooks/aegis-session-start.sh\""
     );
 
     let plugin = read_repo_json("plugins/aegis/.claude-plugin/plugin.json");
@@ -378,4 +378,62 @@ fn release_script_bumps_the_claude_code_plugin_version() {
         script.contains("plugins/aegis/.claude-plugin/plugin.json"),
         "the release script must bump the Claude Code plugin version with the npm version"
     );
+}
+
+/// Copy `plugins/aegis/hooks/` into `<root>/hooks/`, keeping the modes.
+fn copy_plugin_hooks(root: &Path) {
+    let source = repo_path("plugins/aegis/hooks");
+    fs::create_dir_all(root.join("hooks")).unwrap();
+    for entry in fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        fs::copy(entry.path(), root.join("hooks").join(entry.file_name())).unwrap();
+    }
+}
+
+#[test]
+fn claude_plugin_hook_commands_run_from_a_root_with_spaces() {
+    // Claude Code runs each hooks.json command through a shell with
+    // CLAUDE_PLUGIN_ROOT set. An unquoted root with a space splits into two
+    // words, the hook cannot start, and Claude Code lets Bash run unguarded.
+    let base = TempDir::new().unwrap();
+    let root = base.path().join("plugin cache").join("aegis");
+    copy_plugin_hooks(&root);
+    let home = TempDir::new().unwrap();
+    let bin = TempDir::new().unwrap();
+    let path = tool_path(bin.path(), true);
+    let hooks = read_repo_json("plugins/aegis/hooks/hooks.json");
+
+    for (event, matcher, stdin) in [
+        ("PreToolUse", "Bash", bash_payload("ls -la")),
+        ("SessionStart", "startup|resume", "{}".to_string()),
+    ] {
+        let mut child = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(registered_command(&hooks, event, matcher))
+            .env_clear()
+            .env("HOME", home.path())
+            .env("PATH", &path)
+            .env("CLAUDE_PLUGIN_ROOT", &root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(stdin.as_bytes())
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{event}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(stdout["hookSpecificOutput"]["hookEventName"], event);
+    }
 }
