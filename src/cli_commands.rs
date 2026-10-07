@@ -183,7 +183,28 @@ pub(crate) fn handle_toggle_status_command() -> i32 {
         );
     }
     println!("config: {}", view.config_status);
+    println!("claude code hooks: {}", claude_hook_registration_label());
     0
+}
+
+/// The `claude code hooks:` value of `aegis status` (#500, ADR-047).
+fn claude_hook_registration_label() -> String {
+    use crate::install::claude_plugin::{ClaudeHookRegistration, claude_hook_registration};
+
+    let home = crate::install::home_dir();
+    let Ok(cwd) = env::current_dir() else {
+        return "unknown (current directory is unavailable)".to_string();
+    };
+    match claude_hook_registration(home.as_deref(), &cwd) {
+        ClaudeHookRegistration::Plugin => "plugin".to_string(),
+        ClaudeHookRegistration::Settings => "settings".to_string(),
+        ClaudeHookRegistration::None => "none".to_string(),
+        ClaudeHookRegistration::Duplicate(path) => format!(
+            "duplicate (the Claude Code plugin and {path}): aegis hook runs twice per command; \
+             remove the Aegis entries from {path} by hand",
+            path = path.display()
+        ),
+    }
 }
 
 pub(crate) fn handle_update_command(args: crate::UpdateArgs) -> i32 {

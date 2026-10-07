@@ -50,3 +50,52 @@ fn read_enabled_plugins(path: &Path) -> Option<serde_json::Map<String, Value>> {
     let settings: Value = serde_json::from_str(&raw).ok()?;
     settings.get("enabledPlugins")?.as_object().cloned()
 }
+
+/// Where the Aegis Claude Code `Hook`s are registered, as `aegis status`
+/// reports it.
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum ClaudeHookRegistration {
+    /// Only the enabled Claude Code plugin registers them.
+    Plugin,
+    /// Only an aegis-managed PreToolUse Bash entry in a settings file does.
+    Settings,
+    /// Nothing registers them.
+    None,
+    /// Both do, so `aegis hook` runs twice per command. Carries the settings
+    /// file that holds the aegis-managed entry.
+    Duplicate(PathBuf),
+}
+
+/// Classify the Claude `Hook` registration for `home` and `cwd`. Only the
+/// PreToolUse entry counts: a second SessionStart notice is harmless.
+pub(crate) fn claude_hook_registration(home: Option<&Path>, cwd: &Path) -> ClaudeHookRegistration {
+    let plugin = claude_code_plugin_enabled(home, cwd);
+    let settings = home
+        .map(|home| home.join(".claude/settings.json"))
+        .into_iter()
+        .chain(std::iter::once(cwd.join(".claude/settings.json")))
+        .find(|path| has_aegis_managed_pre_tool_use(path));
+    match (plugin, settings) {
+        (true, Some(path)) => ClaudeHookRegistration::Duplicate(path),
+        (true, None) => ClaudeHookRegistration::Plugin,
+        (false, Some(_)) => ClaudeHookRegistration::Settings,
+        (false, None) => ClaudeHookRegistration::None,
+    }
+}
+
+fn has_aegis_managed_pre_tool_use(path: &Path) -> bool {
+    let Some(settings) = fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+    else {
+        return false;
+    };
+    settings["hooks"]["PreToolUse"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry["hooks"].as_array())
+        .flatten()
+        .filter_map(|hook| hook["command"].as_str())
+        .any(super::is_aegis_managed_bash_command)
+}

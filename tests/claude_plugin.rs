@@ -318,3 +318,53 @@ fn claude_plugin_rollback_command_runs_through_bash_tool() {
         assert!(command.contains(required), "missing `{required}`");
     }
 }
+
+#[test]
+fn status_reports_claude_hook_registration() {
+    for (plugin_enabled, settings_entry, expected) in [
+        (true, false, "claude code hooks: plugin"),
+        (false, true, "claude code hooks: settings"),
+        (false, false, "claude code hooks: none"),
+        (true, true, "claude code hooks: duplicate"),
+    ] {
+        let home = TempDir::new().unwrap();
+        let project = TempDir::new().unwrap();
+        let settings = home.path().join(".claude/settings.json");
+        let mut json = serde_json::json!({
+            "enabledPlugins": { "aegis@aegis-shellguard": plugin_enabled }
+        });
+        if settings_entry {
+            let shim = home.path().join(".claude/hooks/aegis-pre-tool-use.sh");
+            json["hooks"] = serde_json::json!({
+                "PreToolUse": [{
+                    "matcher": "Bash",
+                    "hooks": [{ "type": "command", "command": shim.display().to_string() }]
+                }]
+            });
+        }
+        fs::create_dir_all(settings.parent().unwrap()).unwrap();
+        fs::write(&settings, json.to_string()).unwrap();
+
+        let output = Command::new(env!("CARGO_BIN_EXE_aegis"))
+            .arg("status")
+            .env("HOME", home.path())
+            .current_dir(project.path())
+            .output()
+            .unwrap();
+
+        assert_eq!(output.status.code(), Some(0));
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let line = stdout
+            .lines()
+            .find(|line| line.starts_with("claude code hooks: "))
+            .unwrap_or_else(|| panic!("no claude code hooks line:\n{stdout}"));
+        assert!(line.starts_with(expected), "{line}");
+        if expected.ends_with("duplicate") {
+            assert!(line.contains(&settings.display().to_string()), "{line}");
+            assert!(line.contains("runs twice per command"), "{line}");
+            assert!(line.contains("by hand"), "{line}");
+        } else {
+            assert_eq!(line, expected);
+        }
+    }
+}
