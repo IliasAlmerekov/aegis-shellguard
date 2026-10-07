@@ -7,7 +7,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
-- Changed: CI and Release jobs run on `ubuntu-24.04` instead of `ubuntu-latest`, which GitHub moves to Ubuntu 26.04 starting 2026-10-19. The Linux label lives in `.github/build-targets.json` and reaches each job as the `linux_runner` output; only the `gate`, `config` and Merge admission jobs repeat it as a literal. A test fails on an `ubuntu-latest`, `macos-latest` or `windows-latest` label, and on a Linux label that differs between `.github/build-targets.json` and those three jobs. The `Release build` and `Live installer validation` checks now carry the pinned label in their names, for example `Release build (ubuntu-24.04)`. (#373)
+- Fixed: Both Homebrew release jobs use the pinned Linux runner from the shared config, matching the supply-chain CI checks (#491).
+- Fixed: Homebrew tap publication rejects older release versions before replacing the formula. Local bare Git tests cover recovery, repeat publication, numeric version ordering, invalid versions, and concurrent pushes. Changelog editing instructions now live in AGENTS.md (#491).
+- Changed: The release workflow publishes the Homebrew tap formula for stable tags through a key-less generate job and a deploy-key push job. `packaging/homebrew/Formula/aegis.rb` is deleted, the updater takes `AEGIS_RELEASE_BASE_URL`, and `tests/homebrew_formula.rs` tests it against `file://` fixtures. The runbook now installs from `IliasAlmerekov/aegis` and is the fallback (#491).
 - Changed: The PR template matches the PR body rule in CONVENTION.md: one or two sentences on what and why, then `Evidence:` bullets. AGENTS.md no longer asks for Summary bullets and a checklist. The CONTRIBUTING.md checklist no longer forbids calling Aegis a sandbox, because ADR-029 made the Sandbox a mandatory 1.0 layer; it still forbids presenting it as a confidentiality or privilege boundary. CONVENTION.md notes that `aegis-sandbox` is opt-in in 0.x and becomes mandatory in 1.0 (#229).
 
 ## [0.7.0] (2026-10-05)

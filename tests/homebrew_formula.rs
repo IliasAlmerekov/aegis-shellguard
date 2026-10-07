@@ -1,4 +1,6 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn repo_file(path: &str) -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(path);
@@ -6,8 +8,258 @@ fn repo_file(path: &str) -> String {
         .unwrap_or_else(|error| panic!("{} should be readable: {error}", path.display()))
 }
 
+const SIDECAR_ASSETS: [&str; 4] = [
+    "aegis-linux-x86_64",
+    "aegis-linux-aarch64",
+    "aegis-macos-x86_64",
+    "aegis-macos-aarch64",
+];
+
+const FIXTURE_TAG: &str = "v9.8.7";
+
+fn fixture_checksum(index: usize) -> String {
+    format!("{:x}", index + 1).repeat(64)
+}
+
+fn tempdir(label: &str) -> PathBuf {
+    // The pid keeps concurrent `cargo test` runs on one host apart and the
+    // counter keeps tests in this binary apart, since many call `formula()`.
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let id = NEXT.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("aegis-{label}-{}-{id}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir should be creatable");
+    dir
+}
+
+/// Writes the release fixtures the updater downloads: four `.sha256`
+/// sidecars and `THIRD_PARTY_NOTICES.md`. `skip` leaves one file out and
+/// `override_sidecar` replaces one sidecar body.
+fn write_release_fixtures(dir: &Path, skip: Option<&str>, override_sidecar: Option<(&str, &str)>) {
+    for (index, asset) in SIDECAR_ASSETS.iter().enumerate() {
+        let name = format!("{asset}.sha256");
+        if skip == Some(name.as_str()) {
+            continue;
+        }
+        let body = match override_sidecar {
+            Some((target, body)) if target == name => body.to_string(),
+            _ => format!("{}  {asset}\n", fixture_checksum(index)),
+        };
+        std::fs::write(dir.join(&name), body).expect("sidecar fixture should be writable");
+    }
+    if skip != Some("THIRD_PARTY_NOTICES.md") {
+        std::fs::write(dir.join("THIRD_PARTY_NOTICES.md"), "fixture notices\n")
+            .expect("notices fixture should be writable");
+    }
+}
+
+struct UpdaterRun {
+    output: Output,
+    formula_path: PathBuf,
+}
+
+impl UpdaterRun {
+    fn formula(&self) -> String {
+        std::fs::read_to_string(&self.formula_path).unwrap_or_else(|error| {
+            panic!(
+                "updater should have written {}: {error}\nstderr: {}",
+                self.formula_path.display(),
+                String::from_utf8_lossy(&self.output.stderr)
+            )
+        })
+    }
+}
+
+/// Runs the updater against `file://` fixtures, never the network.
+fn run_updater(
+    label: &str,
+    tag: &str,
+    skip: Option<&str>,
+    override_sidecar: Option<(&str, &str)>,
+) -> UpdaterRun {
+    let dir = tempdir(label);
+    let release_dir = dir.join("release");
+    std::fs::create_dir_all(&release_dir).expect("release fixture dir should be creatable");
+    write_release_fixtures(&release_dir, skip, override_sidecar);
+    let formula_path = dir.join("out").join("aegis.rb");
+
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let output = Command::new("sh")
+        .arg(repo_root.join("scripts/update-homebrew-formula.sh"))
+        .arg(tag)
+        .current_dir(repo_root)
+        .env(
+            "AEGIS_RELEASE_BASE_URL",
+            format!("file://{}", release_dir.display()),
+        )
+        .env("AEGIS_HOMEBREW_FORMULA", &formula_path)
+        .output()
+        .expect("updater should be runnable");
+    UpdaterRun {
+        output,
+        formula_path,
+    }
+}
+
 fn formula() -> String {
-    repo_file("packaging/homebrew/Formula/aegis.rb")
+    run_updater("formula-default", FIXTURE_TAG, None, None).formula()
+}
+
+#[test]
+fn homebrew_updater_should_fail_without_an_output_path() {
+    // The in-repo formula is gone, so the updater has no default output.
+    // Run it from a temp dir so a regression cannot write into the repo.
+    let dir = tempdir("formula-no-output");
+    let release_dir = dir.join("release");
+    std::fs::create_dir_all(&release_dir).expect("release fixture dir should be creatable");
+    write_release_fixtures(&release_dir, None, None);
+
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let output = Command::new("sh")
+        .arg(repo_root.join("scripts/update-homebrew-formula.sh"))
+        .arg(FIXTURE_TAG)
+        .current_dir(&dir)
+        .env(
+            "AEGIS_RELEASE_BASE_URL",
+            format!("file://{}", release_dir.display()),
+        )
+        .env_remove("AEGIS_HOMEBREW_FORMULA")
+        .output()
+        .expect("updater should be runnable");
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("AEGIS_HOMEBREW_FORMULA"),
+        "the error should name the missing variable"
+    );
+    assert!(
+        !dir.join("packaging").exists(),
+        "no formula written without an output path"
+    );
+}
+
+#[test]
+fn homebrew_updater_should_fail_when_a_sidecar_is_missing() {
+    let run = run_updater(
+        "formula-missing-sidecar",
+        FIXTURE_TAG,
+        Some("aegis-macos-aarch64.sha256"),
+        None,
+    );
+
+    assert!(!run.output.status.success());
+    assert!(
+        String::from_utf8_lossy(&run.output.stderr).contains("aegis-macos-aarch64.sha256"),
+        "stderr should name the missing sidecar"
+    );
+    assert!(
+        !run.formula_path.exists(),
+        "no formula on a missing sidecar"
+    );
+}
+
+#[test]
+fn homebrew_updater_should_fail_when_the_notices_asset_is_missing() {
+    let run = run_updater(
+        "formula-missing-notices",
+        FIXTURE_TAG,
+        Some("THIRD_PARTY_NOTICES.md"),
+        None,
+    );
+
+    assert!(!run.output.status.success());
+    assert!(!run.formula_path.exists(), "no formula without the notices");
+}
+
+#[test]
+fn homebrew_updater_should_fail_on_a_malformed_checksum() {
+    let run = run_updater(
+        "formula-bad-checksum",
+        FIXTURE_TAG,
+        None,
+        Some((
+            "aegis-linux-x86_64.sha256",
+            "not-a-checksum  aegis-linux-x86_64\n",
+        )),
+    );
+
+    assert!(!run.output.status.success());
+    assert!(
+        String::from_utf8_lossy(&run.output.stderr).contains("invalid sha256"),
+        "stderr should name the checksum failure"
+    );
+    assert!(!run.formula_path.exists(), "no formula on a bad checksum");
+}
+
+#[test]
+fn homebrew_updater_should_fail_on_a_short_checksum() {
+    let run = run_updater(
+        "formula-short-checksum",
+        FIXTURE_TAG,
+        None,
+        Some((
+            "aegis-linux-aarch64.sha256",
+            "abc123  aegis-linux-aarch64\n",
+        )),
+    );
+
+    assert!(!run.output.status.success());
+    assert!(
+        String::from_utf8_lossy(&run.output.stderr).contains("invalid sha256"),
+        "stderr should name the checksum failure"
+    );
+    assert!(!run.formula_path.exists(), "no formula on a short checksum");
+}
+
+#[test]
+fn homebrew_formula_version_and_urls_should_follow_the_tag() {
+    let formula = run_updater("formula-tag", "v1.2.3", None, None).formula();
+
+    assert!(formula.contains("version \"1.2.3\""));
+    let url_lines: Vec<&str> = formula
+        .lines()
+        .filter(|line| line.trim_start().starts_with("url \""))
+        .collect();
+    assert_eq!(
+        url_lines.len(),
+        5,
+        "four binaries plus the notices resource"
+    );
+    for line in url_lines {
+        assert!(
+            line.contains(
+                "\"https://github.com/IliasAlmerekov/aegis-shellguard/releases/download/v1.2.3/"
+            ),
+            "url must point at the tagged GitHub Release, not the fixture base: {line}"
+        );
+    }
+}
+
+#[test]
+fn homebrew_formula_should_pin_the_fixture_checksums_to_their_platforms() {
+    let formula = formula();
+
+    for (index, asset) in SIDECAR_ASSETS.iter().enumerate() {
+        let url_pos = formula
+            .find(&format!("/{asset}\", using"))
+            .unwrap_or_else(|| panic!("formula must reference {asset}"));
+        let after = &formula[url_pos..];
+        let sha_line = after.lines().nth(1).expect("sha line follows url");
+        assert!(
+            sha_line.contains(&fixture_checksum(index)),
+            "{asset} must carry its own sidecar checksum: {sha_line}"
+        );
+    }
+}
+
+#[test]
+fn repo_should_not_keep_a_second_copy_of_the_formula() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("packaging/homebrew/Formula/aegis.rb");
+
+    assert!(
+        !path.exists(),
+        "the tap holds the only formula; the release workflow generates it"
+    );
 }
 
 #[test]

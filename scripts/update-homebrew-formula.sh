@@ -1,7 +1,9 @@
 #!/bin/sh
 set -eu
 
-# Regenerates packaging/homebrew/Formula/aegis.rb for a release tag by
+# Regenerates the Homebrew formula for a release tag into the path in
+# AEGIS_HOMEBREW_FORMULA (required; the release workflow publishes the
+# result to the tap, and the repository keeps no copy) by
 # downloading the four <asset>.sha256 sidecars published alongside the
 # GitHub Release, plus the checked-in THIRD_PARTY_NOTICES.md asset. Fails
 # closed if any sidecar or the notice is missing, or a checksum is not
@@ -15,7 +17,7 @@ set -eu
 # from a sidecar.
 
 usage() {
-  printf 'Usage: %s vX.Y.Z\n' "$0" >&2
+  printf 'Usage: AEGIS_HOMEBREW_FORMULA=<path> %s vX.Y.Z\n' "$0" >&2
 }
 
 if [ "$#" -ne 1 ]; then
@@ -34,8 +36,16 @@ esac
 
 version="${tag#v}"
 repo="${AEGIS_RELEASE_REPO:-IliasAlmerekov/aegis-shellguard}"
-base_url="https://github.com/${repo}/releases/download/${tag}"
-out="${AEGIS_HOMEBREW_FORMULA:-packaging/homebrew/Formula/aegis.rb}"
+# `published_base` is what the formula urls say and always points at GitHub.
+# `base_url` is only where this script downloads sidecars from; tests point
+# AEGIS_RELEASE_BASE_URL at a file:// fixture directory.
+published_base="https://github.com/${repo}/releases/download/${tag}"
+base_url="${AEGIS_RELEASE_BASE_URL:-$published_base}"
+out="${AEGIS_HOMEBREW_FORMULA:-}"
+if [ -z "$out" ]; then
+  printf 'AEGIS_HOMEBREW_FORMULA must name the output file\n' >&2
+  exit 2
+fi
 tmp_dir="$(mktemp -d)"
 
 cleanup() {
@@ -126,26 +136,26 @@ class Aegis < Formula
 
   on_macos do
     if Hardware::CPU.arm?
-      url "${base_url}/aegis-macos-aarch64", using: :nounzip
+      url "${published_base}/aegis-macos-aarch64", using: :nounzip
       sha256 "${macos_aarch64}"
     else
-      url "${base_url}/aegis-macos-x86_64", using: :nounzip
+      url "${published_base}/aegis-macos-x86_64", using: :nounzip
       sha256 "${macos_x86_64}"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
-      url "${base_url}/aegis-linux-aarch64", using: :nounzip
+      url "${published_base}/aegis-linux-aarch64", using: :nounzip
       sha256 "${linux_aarch64}"
     else
-      url "${base_url}/aegis-linux-x86_64", using: :nounzip
+      url "${published_base}/aegis-linux-x86_64", using: :nounzip
       sha256 "${linux_x86_64}"
     end
   end
 
   resource "third_party_notices" do
-    url "${base_url}/THIRD_PARTY_NOTICES.md"
+    url "${published_base}/THIRD_PARTY_NOTICES.md"
     sha256 "${third_party_notices}"
   end
 
