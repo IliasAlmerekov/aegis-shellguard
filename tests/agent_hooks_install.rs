@@ -669,7 +669,11 @@ fn install_claude_respects_plugin_scope_precedence() {
         String::from_utf8_lossy(&output.stdout).contains("Claude Code: hook installed"),
         "project settings.json must override user settings"
     );
-    let shim = project.path().join(".claude/hooks/aegis-pre-tool-use.sh");
+    // A local install registers the shim under the canonical cwd, which on
+    // macOS is /private/var/... for a /var/folders/... temp dir.
+    let shim = fs::canonicalize(project.path())
+        .unwrap()
+        .join(".claude/hooks/aegis-pre-tool-use.sh");
     assert!(json_contains_command(
         &read_json(&project_settings),
         "PreToolUse",
