@@ -364,7 +364,7 @@ jobs:
   generate-homebrew-formula:
     name: Generate Homebrew formula
     needs: [config, release]
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.config.outputs.linux_runner }}
     timeout-minutes: 10
     if: >-
       always() && needs.config.result == 'success' &&
@@ -400,7 +400,7 @@ jobs:
   publish-homebrew-tap:
     name: Publish Homebrew tap
     needs: [config, release, generate-homebrew-formula]
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.config.outputs.linux_runner }}
     timeout-minutes: 10
     if: >-
       always() && needs.config.result == 'success' &&
