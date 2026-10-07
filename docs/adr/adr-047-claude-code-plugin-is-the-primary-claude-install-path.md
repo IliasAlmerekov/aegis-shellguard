@@ -40,9 +40,13 @@ the `aegis-shellguard` marketplace, so it works before community review.
   writes hooks for every project, so only `~/.claude/settings.json` decides it:
   a repo that enables the plugin must not leave every other project unguarded,
   and a repo that disables it must not make every other project run the Hook
-  twice. A `--local` install and `aegis status` describe the current project,
-  so they read Claude Code's order: `.claude/settings.local.json`,
-  `.claude/settings.json`, then `~/.claude/settings.json`. Other `aegis@*` keys
+  twice. A `--local` install writes the shared, committed
+  `.claude/settings.json`, so it reads that file, then `~/.claude/settings.json`,
+  and ignores the personal `.claude/settings.local.json`: one developer's
+  local opt-out must not make every teammate run the Hook twice. `aegis status`
+  reports what this user's session registers, so it reads Claude Code's full
+  order: `.claude/settings.local.json`, `.claude/settings.json`, then
+  `~/.claude/settings.json`. Other `aegis@*` keys
   do not count, so a foreign plugin named `aegis` cannot switch the
   `settings.json` hooks off. `installed_plugins.json` is not read: only an
   enabled plugin registers hooks.
@@ -65,6 +69,9 @@ the `aegis-shellguard` marketplace, so it works before community review.
 - A user with the Claude Code plugin enabled and an older `settings.json`
   install runs the Hook twice until they remove the entries. `aegis status`
   reports this; nothing removes them automatically.
+- If user settings enable the Claude Code plugin and a project disables it, a
+  global install skips, so that project has no Hook and `aegis status` there
+  prints `none`. The remedy is a `--local` install in that project.
 - Every change to a Claude hook template must also update the plugin copy. The
   drift test catches a missed copy.
 - The `aegis-hook-version` header of `claude-session-start.sh` moves to 2. The

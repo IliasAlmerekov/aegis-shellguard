@@ -19,18 +19,31 @@ const AEGIS_PLUGIN_KEYS: [&str; 2] = ["aegis@claude-plugins-community", "aegis@a
 /// precedence: `<cwd>/.claude/settings.local.json`, then
 /// `<cwd>/.claude/settings.json`, then `~/.claude/settings.json`. The first
 /// scope that sets a key decides it. A missing or unparsable settings file
-/// sets nothing. Used by `--local` installs and `aegis status`.
+/// sets nothing. Used by `aegis status`, which reports what this user's
+/// session registers.
 pub(crate) fn claude_code_plugin_enabled(home: Option<&Path>, cwd: &Path) -> bool {
     plugin_enabled_in(&settings_scopes(home, cwd))
 }
 
 /// True when `~/.claude/settings.json` alone enables the Aegis Claude Code
 /// plugin. A global install writes hooks that cover every project, so a
-/// project scope must not decide it (R1-1): a repo that enables the plugin
-/// would leave every other project unguarded, and a repo that disables it
-/// would make every other project run `aegis hook` twice.
+/// project scope must not decide it: a repo that enables the plugin would
+/// leave every other project unguarded, and a repo that disables it would make
+/// every other project run `aegis hook` twice.
 pub(crate) fn claude_code_plugin_enabled_for_user(home: Option<&Path>) -> bool {
     home.is_some_and(|home| plugin_enabled_in(&[home.join(".claude/settings.json")]))
+}
+
+/// True when the shared project settings enable the Aegis Claude Code plugin:
+/// `<cwd>/.claude/settings.json`, then `~/.claude/settings.json`. A `--local`
+/// install writes that committed file for every teammate, so the personal
+/// `settings.local.json` must not decide it.
+pub(crate) fn claude_code_plugin_enabled_for_project(home: Option<&Path>, cwd: &Path) -> bool {
+    let mut scopes = vec![cwd.join(".claude/settings.json")];
+    if let Some(home) = home {
+        scopes.push(home.join(".claude/settings.json"));
+    }
+    plugin_enabled_in(&scopes)
 }
 
 fn plugin_enabled_in(scopes: &[PathBuf]) -> bool {

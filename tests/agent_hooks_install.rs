@@ -650,8 +650,9 @@ fn install_claude_skips_when_plugin_enabled() {
 
 #[test]
 fn install_claude_respects_plugin_scope_precedence() {
-    // A `--local` install covers this project, so it follows Claude Code's
-    // precedence: settings.local.json over settings.json over user settings.
+    // A `--local` install writes the shared, committed .claude/settings.json,
+    // so it decides from that file, then user settings. The personal
+    // settings.local.json must not decide what every teammate runs.
     let home = TempDir::new().unwrap();
     let project = TempDir::new().unwrap();
     write_enabled_plugin(
@@ -659,6 +660,26 @@ fn install_claude_respects_plugin_scope_precedence() {
         "aegis@aegis-shellguard",
         true,
     );
+    let project_settings = project.path().join(".claude/settings.json");
+    write_enabled_plugin(&project_settings, "aegis@aegis-shellguard", false);
+
+    let output = install_claude_code(home.path(), project.path(), &["--local"]);
+
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("Claude Code: hook installed"),
+        "project settings.json must override user settings"
+    );
+    let shim = project.path().join(".claude/hooks/aegis-pre-tool-use.sh");
+    assert!(json_contains_command(
+        &read_json(&project_settings),
+        "PreToolUse",
+        &shim.display().to_string()
+    ));
+
+    let home = TempDir::new().unwrap();
+    let project = TempDir::new().unwrap();
+    let project_settings = project.path().join(".claude/settings.json");
+    write_enabled_plugin(&project_settings, "aegis@aegis-shellguard", true);
     write_enabled_plugin(
         &project.path().join(".claude/settings.local.json"),
         "aegis@aegis-shellguard",
@@ -667,19 +688,17 @@ fn install_claude_respects_plugin_scope_precedence() {
 
     let output = install_claude_code(home.path(), project.path(), &["--local"]);
 
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Claude Code: hook installed"));
-    let shim = project.path().join(".claude/hooks/aegis-pre-tool-use.sh");
-    assert!(json_contains_command(
-        &read_json(&project.path().join(".claude/settings.json")),
-        "PreToolUse",
-        &shim.display().to_string()
-    ));
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains(PLUGIN_SKIP_LINE),
+        "a personal settings.local.json must not add hooks to the shared settings.json"
+    );
+    assert!(read_json(&project_settings).get("hooks").is_none());
 }
 
 #[test]
 fn install_claude_global_decides_from_user_settings_only() {
     // The global hooks cover every project, so a project scope must not
-    // switch them off (R1-1) or on.
+    // switch them off or on.
     let home = TempDir::new().unwrap();
     let project = TempDir::new().unwrap();
     let user_settings = home.path().join(".claude/settings.json");

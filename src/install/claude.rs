@@ -22,15 +22,17 @@ pub(crate) fn run_claude_install(global: bool) -> AgentInstallResult {
     AgentInstallResult::from_result(run_install_inner(global))
 }
 
-/// A global install covers every project, so only user settings decide it; a
-/// `--local` install covers this project and follows the full scope chain.
+/// A global install covers every project, so only user settings decide it. A
+/// `--local` install writes the shared project settings.json, so that file
+/// and user settings decide it, never the personal settings.local.json.
 fn claude_code_plugin_enabled_for_install(global: bool) -> bool {
     let home = super::home_dir();
     if global {
         return super::claude_plugin::claude_code_plugin_enabled_for_user(home.as_deref());
     }
-    std::env::current_dir()
-        .is_ok_and(|cwd| super::claude_plugin::claude_code_plugin_enabled(home.as_deref(), &cwd))
+    std::env::current_dir().is_ok_and(|cwd| {
+        super::claude_plugin::claude_code_plugin_enabled_for_project(home.as_deref(), &cwd)
+    })
 }
 
 fn run_install_inner(global: bool) -> Result<InstallOutcome, String> {
