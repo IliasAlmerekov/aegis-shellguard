@@ -160,12 +160,12 @@ here so the evidence has a place to attach when it arrives:
 
 ## Live installer validation
 
-The convenience installer is exercised end-to-end in CI on `ubuntu-latest` and `macos-latest` by the `live-installer` job. The test downloads the latest GitHub Release asset for the host platform, verifies the SHA-256 sidecar, installs the binary into a temporary `BINDIR`, and asserts that `aegis --version` succeeds. This job is gated in the test suite by the `AEGIS_TEST_LIVE_INSTALL=1` environment variable so default `cargo test` remains network-free.
+The convenience installer is exercised end-to-end in CI on the pinned Linux and macOS runners (`.github/build-targets.json`) by the `live-installer` job. The test downloads the latest GitHub Release asset for the host platform, verifies the SHA-256 sidecar, installs the binary into a temporary `BINDIR`, and asserts that `aegis --version` succeeds. This job is gated in the test suite by the `AEGIS_TEST_LIVE_INSTALL=1` environment variable so default `cargo test` remains network-free.
 
 
 ## Snapshot/rollback live backend validation
 
-The `Live snapshot/rollback (Docker + SQLite)` CI job closes the live snapshot/rollback gate by exercising snapshot and rollback against real backends on `ubuntu-latest`.
+The `Live snapshot/rollback (Docker + SQLite)` CI job closes the live snapshot/rollback gate by exercising snapshot and rollback against real backends on the pinned Linux runner.
 
 - Docker coverage runs `tests/docker_integration.rs::snapshot_rollback_reverts_filesystem_change` with `AEGIS_DOCKER_TESTS=1` after pulling the `alpine` fixture image.
 - SQLite coverage runs `tests/snapshot_rollback_live.rs::sqlite_snapshot_rollback_restores_database_file_through_aegis_cli` with `AEGIS_SQLITE_SNAPSHOT_TESTS=1` after installing the real `sqlite3` CLI.

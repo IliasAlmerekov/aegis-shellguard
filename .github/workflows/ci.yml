@@ -25,7 +25,11 @@ concurrency:
 # Every pinned version this workflow uses lives in `.github/versions.env`, and
 # every runner label in `.github/build-targets.json`. The `gate` job below
 # loads both and re-exports them as job outputs, because `runs-on:` cannot read
-# a workflow `env:` value. Nothing else here may hard-code a version.
+# a workflow `env:` value. Nothing else here may hard-code a version or a
+# runner label. Two jobs name the Linux label as a literal: `gate`, which
+# produces the outputs, and `merge-admission`, which must still run and fail
+# when `gate` failed and left them empty. A test keeps both literals equal to
+# the one in `.github/build-targets.json`.
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -47,7 +51,7 @@ jobs:
   # Keep this job's `name:` unchanged; it is reported as a check run.
   gate:
     name: Determine heavy-job gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       heavy: ${{ steps.compute.outputs.heavy }}
@@ -83,7 +87,7 @@ jobs:
 
   quality:
     name: Quality (fmt, clippy, test)
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.gate.outputs.linux_runner }}
     timeout-minutes: 15
     needs: gate
     steps:
@@ -106,7 +110,7 @@ jobs:
   # step with which files the build actually reads.
   landing:
     name: Landing (test, build)
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.gate.outputs.linux_runner }}
     timeout-minutes: 15
     needs: gate
     defaults:
@@ -139,7 +143,7 @@ jobs:
 
   security:
     name: Security (audit, deny)
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.gate.outputs.linux_runner }}
     timeout-minutes: 15
     needs: gate
     steps:
@@ -157,8 +161,8 @@ jobs:
           cargo-deny-version: ${{ needs.gate.outputs.cargo_deny_version }}
 
   build:
-    name: Release build (ubuntu-latest)
-    runs-on: ubuntu-latest
+    name: Release build (${{ needs.gate.outputs.linux_runner }})
+    runs-on: ${{ needs.gate.outputs.linux_runner }}
     timeout-minutes: 15
     needs: gate
     steps:
@@ -250,7 +254,7 @@ jobs:
   # build-macos above.
   performance:
     name: Performance baseline (scanner bench)
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.gate.outputs.linux_runner }}
     timeout-minutes: 25
     needs: gate
     if: needs.gate.outputs.heavy == 'true'
@@ -368,7 +372,7 @@ jobs:
   # build-macos above.
   snapshot-rollback-live:
     name: Live snapshot/rollback (Docker + SQLite)
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.gate.outputs.linux_runner }}
     timeout-minutes: 20
     needs: gate
     if: needs.gate.outputs.heavy == 'true'
@@ -436,7 +440,7 @@ jobs:
   # above: a regression here only needs to be caught before main or weekly.
   fuzz:
     name: Fuzzing (parser, scanner, routing, protocol, adapters)
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.gate.outputs.linux_runner }}
     timeout-minutes: 50
     needs: gate
     if: needs.gate.outputs.heavy == 'true'
@@ -509,7 +513,7 @@ jobs:
   # Keep this job's `name:` unchanged; branch protection requires it by name.
   merge-admission:
     name: Merge admission (all CI jobs)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     if: always()
     needs:

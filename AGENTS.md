@@ -49,6 +49,18 @@ After code passes all gates, update in this order:
 
 ---
 
+## Agent pipeline
+
+The agent-pipeline plugin carries one ticket through triage, interview, handoff, implement, review loop, ship, PR gate, merge, and retro. Commands: `/ticket`, `/handoff`, `/implement`, `/review-loop`, `/ship`, `/pr-gate`, `/retro`.
+
+- Config: `.agents/pipeline.json` (gate commands, path-to-package map, review tiers). It is the one tracked file under `.agents/`.
+- `/implement` works in a worktree under `.worktrees/`; a Stop gate checks the changed files before the agent may finish.
+- Gates stay per package and per test file (`cargo check -p`, `cargo test -p <pkg> --lib`, `cargo test --test <stem>`, `scripts/lint.sh fmt`, `scripts/test-tamper-check.sh`). Full-workspace tests, clippy, audit, and deny stay in CI.
+- Ticket state lives in `.scratch/<ticket>/` in the main checkout: local and gitignored.
+- `.github/workflows/pipeline.yml` adds informational PR checks (tamper check, diff coverage, mutants), outside the Merge admission check.
+
+---
+
 ## Execution
 
 - Route shell commands through `rtk` when it is installed. Examples live in a local, gitignored `RTK.md`; the repository does not ship one

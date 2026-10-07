@@ -26,6 +26,12 @@ outputs:
   cross_version:
     description: "Pinned cross version used for the musl targets"
     value: ${{ steps.load.outputs.cross_version }}
+  cargo_llvm_cov_version:
+    description: "Pinned cargo-llvm-cov version for the diff-coverage job"
+    value: ${{ steps.load.outputs.cargo_llvm_cov_version }}
+  cargo_mutants_version:
+    description: "Pinned cargo-mutants version for the mutants job"
+    value: ${{ steps.load.outputs.cargo_mutants_version }}
   node_version:
     description: "Node major version the landing workspace builds with"
     value: ${{ steps.load.outputs.node_version }}
@@ -86,6 +92,7 @@ runs:
         # stopping.
         for required in RUST_TOOLCHAIN FUZZ_NIGHTLY_TOOLCHAIN CARGO_AUDIT_VERSION \
                         CARGO_DENY_VERSION CARGO_FUZZ_VERSION CROSS_VERSION \
+                        CARGO_LLVM_COV_VERSION CARGO_MUTANTS_VERSION \
                         NODE_VERSION NPM_CLI_VERSION FUZZ_RUNS FUZZ_MAX_LEN; do
           if ! grep -q "^${required}=..*$" .github/versions.env; then
             echo "versions.env is missing a non-empty $required" >&2
@@ -114,6 +121,10 @@ runs:
 
         # The jobs that name a runner outside the matrix read their label from
         # the same table, so `macos-26` is written once in the whole repository.
+        # The Linux label also appears as a literal in the jobs that run this
+        # action (`gate` in ci.yml, `config` in release.yml), which cannot read
+        # it from their own outputs, and in ci.yml `merge-admission`, which
+        # must run even when `gate` failed.
         emit_runner() {
           local output_name="$1" target="$2" label
           label="$(jq -r --arg t "$target" '.targets[] | select(.target == $t) | .os' .github/build-targets.json)"

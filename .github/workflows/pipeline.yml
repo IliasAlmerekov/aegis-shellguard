@@ -1,0 +1,312 @@
+name: Agent pipeline
+
+# Informational checks for the agent pipeline (.agents/pipeline.json). None of
+# these jobs is listed in the Merge admission check in ci.yml, and none is a
+# required status check: a red or yellow result here is a signal for the
+# reviewer, not a merge gate.
+#
+# - tamper-check: scripts/test-tamper-check.sh over the PR diff
+# - diff-coverage: line coverage of the lines the PR adds, for the packages it
+#   changes, with a warning below DIFF_COVERAGE_MIN percent
+# - mutants: cargo-mutants on the PR diff, for TRUNK and BRANCH tier PRs only
+#
+# Tool versions come from .github/versions.env through load-versions, like
+# every other workflow here.
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    branches: ["**"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+  DIFF_COVERAGE_MIN: 80
+
+jobs:
+  # Loads the pinned versions and maps the PR's changed files to cargo
+  # packages and a review tier, using the rules in .agents/pipeline.json.
+  # Like `gate` in ci.yml, it names the Linux runner as a literal because it
+  # is the job that loads the label.
+  config:
+    name: Pipeline scope (packages, tier)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      rust_toolchain: ${{ steps.versions.outputs.rust_toolchain }}
+      cargo_llvm_cov_version: ${{ steps.versions.outputs.cargo_llvm_cov_version }}
+      cargo_mutants_version: ${{ steps.versions.outputs.cargo_mutants_version }}
+      linux_runner: ${{ steps.versions.outputs.linux_runner }}
+      base: ${{ steps.scope.outputs.base }}
+      packages: ${{ steps.scope.outputs.packages }}
+      tier: ${{ steps.scope.outputs.tier }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: ./.github/actions/load-versions
+        id: versions
+
+      - name: Map changed files to packages and tier
+        id: scope
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          base="$(git merge-base "origin/$BASE_REF" HEAD)"
+          git diff --name-only "$base" HEAD > "$RUNNER_TEMP/changed.txt"
+
+          # Glob syntax from the pipeline contract: `**` any depth, `*` one
+          # segment, `{name}` captures one segment. First matching rule wins.
+          scope="$(jq -c --rawfile changed "$RUNNER_TEMP/changed.txt" '
+            def glob_re:
+              "^" + (gsub("\\."; "\\.")
+                | gsub("\\*\\*/"; "\u0001") | gsub("\\*\\*"; "\u0002")
+                | gsub("\\*"; "[^/]*") | gsub("\\{name\\}"; "(?<name>[^/]+)")
+                | gsub("\u0001"; "(.*/)?") | gsub("\u0002"; ".*")) + "$";
+            . as $cfg
+            | ($changed | split("\n") | map(select(length > 0))) as $files
+            | def pkg_of($f):
+                [ $cfg.packages[] | . as $r
+                  | ($f | capture($r.glob | glob_re)) as $c
+                  | $r.pkg | gsub("\\{name\\}"; $c.name // "") ] | first // empty;
+              def tier_of($f):
+                [ $cfg.tiers.rules[] | . as $r
+                  | select($f | test($r.glob | glob_re)) | $r.tier ]
+                | first // $cfg.tiers.default;
+              def rank: {"TRUNK": 3, "BRANCH": 2, "LEAF": 1}[.] // 0;
+              (any($files[]; . as $f | any($cfg.full_run_triggers[]; . as $g | $f | test($g | glob_re)))) as $full
+            | {
+                packages: (if $full then $cfg.all_packages
+                           else [ $files[] as $f | pkg_of($f) ] | unique end | join(" ")),
+                tier: ([ $files[] as $f | tier_of($f) ] | max_by(rank) // "LEAF")
+              }
+          ' .agents/pipeline.json)"
+
+          packages="$(jq -r '.packages' <<<"$scope")"
+          tier="$(jq -r '.tier' <<<"$scope")"
+          {
+            echo "base=$base"
+            echo "packages=$packages"
+            echo "tier=$tier"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### Pipeline scope"
+            echo ""
+            echo "- Diff base: \`$base\`"
+            echo "- Tier: \`$tier\`"
+            echo "- Packages: \`${packages:-none}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "base=$base tier=$tier packages=$packages"
+
+  tamper-check:
+    name: Test tamper check
+    runs-on: ${{ needs.config.outputs.linux_runner }}
+    timeout-minutes: 5
+    needs: config
+    steps:
+      # The PR head, not the merge ref: the `tamper-check: allow <reason>`
+      # escape reads the body of the HEAD commit, and a merge ref's HEAD is
+      # GitHub's synthetic merge commit.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: scripts/test-tamper-check.sh
+        env:
+          DEFAULT_BRANCH: ${{ github.base_ref }}
+        run: scripts/test-tamper-check.sh
+
+  diff-coverage:
+    name: Diff coverage (changed packages)
+    runs-on: ${{ needs.config.outputs.linux_runner }}
+    timeout-minutes: 45
+    needs: config
+    if: needs.config.outputs.packages != ''
+    # Coverage is advice. A low number warns; nothing here fails the PR.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ needs.config.outputs.rust_toolchain }}
+          components: llvm-tools-preview
+          cache-key-prefix: coverage-
+
+      - uses: ./.github/actions/install-libcap
+
+      - uses: ./.github/actions/install-cargo-tool
+        with:
+          tool: cargo-llvm-cov
+          version: ${{ needs.config.outputs.cargo_llvm_cov_version }}
+
+      # --ignore-run-fail still writes the report when a test fails; the
+      # quality job in ci.yml is the one that fails on a red test.
+      - name: cargo llvm-cov (changed packages)
+        shell: bash
+        env:
+          PACKAGES: ${{ needs.config.outputs.packages }}
+        run: |
+          set -euo pipefail
+          args=()
+          for pkg in $PACKAGES; do
+            args+=(-p "$pkg")
+          done
+          cargo llvm-cov --locked --ignore-run-fail "${args[@]}" \
+            --lcov --output-path lcov.info
+
+      - name: Changed-line coverage
+        shell: bash
+        env:
+          BASE: ${{ needs.config.outputs.base }}
+        run: |
+          set -euo pipefail
+          git diff -U0 --no-color "$BASE" HEAD -- '*.rs' > pr.diff
+          python3 - "$GITHUB_WORKSPACE" pr.diff lcov.info "$DIFF_COVERAGE_MIN" <<'PY'
+          import os
+          import re
+          import sys
+
+          root, diff_path, lcov_path, minimum = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4])
+
+          # Lines each file adds, from the zero-context diff.
+          added = {}
+          path = None
+          with open(diff_path, encoding="utf-8", errors="replace") as diff:
+              for line in diff:
+                  if line.startswith("+++ "):
+                      name = line[4:].rstrip("\n")
+                      path = None if name == "/dev/null" else name.removeprefix("b/")
+                  elif line.startswith("@@ ") and path:
+                      match = re.match(r"@@ -\S+ \+(\d+)(?:,(\d+))? @@", line)
+                      start, count = int(match.group(1)), int(match.group(2) or "1")
+                      added.setdefault(path, set()).update(range(start, start + count))
+
+          # Execution counts per instrumented line, keyed by repo-relative path.
+          hits = {}
+          current = None
+          with open(lcov_path, encoding="utf-8") as lcov:
+              for line in lcov:
+                  line = line.strip()
+                  if line.startswith("SF:"):
+                      current = os.path.relpath(line[3:], root)
+                      hits.setdefault(current, {})
+                  elif line.startswith("DA:") and current:
+                      number, count = line[3:].split(",")[:2]
+                      hits[current][int(number)] = max(hits[current].get(int(number), 0), int(count))
+
+          rows = []
+          total = covered = 0
+          for path in sorted(added):
+              instrumented = [n for n in sorted(added[path]) if n in hits.get(path, {})]
+              if not instrumented:
+                  continue
+              missed = [n for n in instrumented if hits[path][n] == 0]
+              total += len(instrumented)
+              covered += len(instrumented) - len(missed)
+              rows.append((path, len(instrumented), len(missed), missed))
+
+          with open("diff-coverage.md", "w", encoding="utf-8") as report:
+              report.write("### Diff coverage\n\n")
+              if total == 0:
+                  report.write("No instrumented line changed.\n")
+              else:
+                  percent = 100.0 * covered / total
+                  report.write(f"{covered} of {total} changed instrumented lines covered ({percent:.1f}%), "
+                               f"warning threshold {minimum:g}%.\n\n")
+                  report.write("| File | Changed lines | Missed | Missed lines |\n| --- | --- | --- | --- |\n")
+                  for path, count, missed_count, missed in rows:
+                      listed = ", ".join(map(str, missed[:30])) + (" ..." if len(missed) > 30 else "")
+                      report.write(f"| `{path}` | {count} | {missed_count} | {listed} |\n")
+                  if percent < minimum:
+                      print(f"::warning::Diff coverage {percent:.1f}% is below {minimum:g}% "
+                            f"({covered} of {total} changed lines covered)")
+                  for path, _, _, missed in rows:
+                      for number in missed[:10]:
+                          print(f"::notice file={path},line={number}::Changed line not covered by tests")
+          PY
+          cat diff-coverage.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: diff-coverage
+          path: |
+            lcov.info
+            diff-coverage.md
+          if-no-files-found: ignore
+
+  # Mutation testing is slow, so it only runs where a surviving mutant matters:
+  # PRs whose tier (highest over the changed files) is TRUNK or BRANCH.
+  mutants:
+    name: Mutants (changed code)
+    runs-on: ${{ needs.config.outputs.linux_runner }}
+    timeout-minutes: 90
+    needs: config
+    if: >-
+      needs.config.outputs.packages != '' &&
+      (needs.config.outputs.tier == 'TRUNK' || needs.config.outputs.tier == 'BRANCH')
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ needs.config.outputs.rust_toolchain }}
+          cache-key-prefix: mutants-
+
+      - uses: ./.github/actions/install-libcap
+
+      - uses: ./.github/actions/install-cargo-tool
+        with:
+          tool: cargo-mutants
+          version: ${{ needs.config.outputs.cargo_mutants_version }}
+
+      - name: cargo mutants --in-diff
+        shell: bash
+        env:
+          BASE: ${{ needs.config.outputs.base }}
+          PACKAGES: ${{ needs.config.outputs.packages }}
+        run: |
+          set -euo pipefail
+          git diff --no-color "$BASE" HEAD -- '*.rs' > pr.diff
+          if [ ! -s pr.diff ]; then
+            echo "No Rust change in the diff; nothing to mutate."
+            exit 0
+          fi
+          args=()
+          for pkg in $PACKAGES; do
+            args+=(--package "$pkg")
+          done
+          cargo mutants --in-diff pr.diff "${args[@]}" --no-shuffle
+
+      - name: Upload mutants.out
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutants-out
+          path: mutants.out
+          if-no-files-found: ignore
