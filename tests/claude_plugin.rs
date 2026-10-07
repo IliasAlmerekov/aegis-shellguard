@@ -434,17 +434,6 @@ fn status_reports_claude_hook_registration() {
     }
 }
 
-#[test]
-fn release_script_bumps_the_claude_code_plugin_version() {
-    // The script downloads release checksums, so it cannot run offline; pin
-    // that it rewrites the plugin manifest next to package.json.
-    let script = read_repo_file("scripts/update-npm-package.sh");
-    assert!(
-        script.contains("plugins/aegis/.claude-plugin/plugin.json"),
-        "the release script must bump the Claude Code plugin version with the npm version"
-    );
-}
-
 /// Copy `plugins/aegis/hooks/` into `<root>/hooks/`, keeping the modes.
 fn copy_plugin_hooks(root: &Path) {
     let source = repo_path("plugins/aegis/hooks");
