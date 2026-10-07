@@ -653,3 +653,114 @@ fn status_reports_settings_when_plugin_enabled_but_not_installed() {
         }
     }
 }
+
+const UNKNOWN_FORMAT_INSTALL_LINE: &str = "Claude Code: plugin aegis is enabled but \
+    installed_plugins.json has an unknown format; installed settings hooks instead";
+const UNKNOWN_FORMAT_STATUS_LINE: &str =
+    "claude code hooks: unknown (unrecognised installed_plugins.json format)";
+
+/// Enable `aegis@aegis-shellguard` in user settings and record it in an
+/// `installed_plugins.json` whose top-level `version` is `version` (absent
+/// for `None`), with an install directory that exists.
+fn enable_plugin_with_format_version(home: &Path, version: Option<u64>) {
+    let claude = home.join(".claude");
+    let install_path = claude.join("plugins/cache/aegis-shellguard/aegis/1.0.0");
+    fs::create_dir_all(&install_path).unwrap();
+    fs::write(
+        claude.join("settings.json"),
+        serde_json::json!({ "enabledPlugins": { "aegis@aegis-shellguard": true } }).to_string(),
+    )
+    .unwrap();
+    let mut installed = serde_json::json!({
+        "plugins": { "aegis@aegis-shellguard": [{
+            "scope": "user",
+            "installPath": install_path.display().to_string()
+        }] }
+    });
+    if let Some(version) = version {
+        installed["version"] = serde_json::json!(version);
+    }
+    fs::write(
+        claude.join("plugins/installed_plugins.json"),
+        installed.to_string(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn install_claude_installs_hooks_when_installed_plugins_format_is_unknown() {
+    for version in [Some(3), None] {
+        for local in [false, true] {
+            let home = TempDir::new().unwrap();
+            let project = TempDir::new().unwrap();
+            let project_dir = fs::canonicalize(project.path()).unwrap();
+            enable_plugin_with_format_version(home.path(), version);
+
+            let mut command = Command::new(env!("CARGO_BIN_EXE_aegis"));
+            command
+                .args(["install-hooks", "--claude-code"])
+                .env("HOME", home.path())
+                .current_dir(&project_dir);
+            if local {
+                command.arg("--local");
+            }
+            let output = command.output().unwrap();
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                output.status.success(),
+                "{version:?} local={local}: {stdout}"
+            );
+            assert!(
+                stdout.contains("Claude Code: hook installed"),
+                "{version:?} local={local}: {stdout}"
+            );
+            assert!(
+                stdout.contains(UNKNOWN_FORMAT_INSTALL_LINE),
+                "{version:?} local={local}: {stdout}"
+            );
+            let base = if local { &project_dir } else { home.path() };
+            let shim = base.join(".claude/hooks/aegis-pre-tool-use.sh");
+            assert!(
+                json_contains_command(
+                    &read_json(&base.join(".claude/settings.json")),
+                    "PreToolUse",
+                    &shim.display().to_string()
+                ),
+                "{version:?} local={local}: the settings hook must be registered"
+            );
+        }
+    }
+}
+
+#[test]
+fn status_reports_unknown_when_installed_plugins_format_is_unknown() {
+    for version in [Some(3), None] {
+        for with_entry in [false, true] {
+            let home = TempDir::new().unwrap();
+            let project = TempDir::new().unwrap();
+            enable_plugin_with_format_version(home.path(), version);
+            if with_entry {
+                let mut json = settings_with_aegis_entry(home.path());
+                json["enabledPlugins"] = serde_json::json!({ "aegis@aegis-shellguard": true });
+                fs::write(home.path().join(".claude/settings.json"), json.to_string()).unwrap();
+            }
+
+            let output = Command::new(env!("CARGO_BIN_EXE_aegis"))
+                .arg("status")
+                .env("HOME", home.path())
+                .current_dir(project.path())
+                .output()
+                .unwrap();
+
+            assert_eq!(output.status.code(), Some(0));
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                stdout
+                    .lines()
+                    .any(|line| line == UNKNOWN_FORMAT_STATUS_LINE),
+                "{version:?} entry={with_entry}: {stdout}"
+            );
+        }
+    }
+}

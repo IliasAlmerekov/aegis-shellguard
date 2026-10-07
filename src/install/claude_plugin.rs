@@ -25,6 +25,10 @@ pub(crate) enum ClaudePluginState {
     /// `Hook`. Synced dotfiles produce this on a machine that never added the
     /// marketplace.
     EnabledNotInstalled,
+    /// An Aegis key is enabled, but `installed_plugins.json` carries a
+    /// top-level `version` other than 2, so Aegis cannot tell whether the
+    /// plugin is installed. Installs treat it as not installed.
+    UnknownFormat,
     /// An Aegis key is enabled and installed: the plugin registers the
     /// `Hook`s.
     Active,
@@ -89,24 +93,50 @@ fn plugin_state_in(home: Option<&Path>, scopes: &[PathBuf]) -> ClaudePluginState
     if enabled.is_empty() {
         return ClaudePluginState::Off;
     }
-    let installed = home.and_then(read_installed_plugins);
-    if enabled.iter().any(|key| {
-        installed
-            .as_ref()
-            .is_some_and(|plugins| has_install_dir(plugins, key))
-    }) {
+    let plugins = match home.map_or(InstalledPlugins::Missing, read_installed_plugins) {
+        InstalledPlugins::Missing => return ClaudePluginState::EnabledNotInstalled,
+        InstalledPlugins::UnknownFormat => return ClaudePluginState::UnknownFormat,
+        InstalledPlugins::Known(plugins) => plugins,
+    };
+    if enabled.iter().any(|key| has_install_dir(&plugins, key)) {
         ClaudePluginState::Active
     } else {
         ClaudePluginState::EnabledNotInstalled
     }
 }
 
-/// The `plugins` map of `~/.claude/plugins/installed_plugins.json`, or `None`
-/// when the file is missing, unreadable, or malformed.
-fn read_installed_plugins(home: &Path) -> Option<serde_json::Map<String, Value>> {
-    let raw = fs::read_to_string(home.join(".claude/plugins/installed_plugins.json")).ok()?;
-    let installed: Value = serde_json::from_str(&raw).ok()?;
-    installed.get("plugins")?.as_object().cloned()
+/// What `~/.claude/plugins/installed_plugins.json` says, read as format
+/// version 2.
+enum InstalledPlugins {
+    /// The file is missing, unreadable, or not JSON.
+    Missing,
+    /// The file is JSON, but its top-level `version` is missing or not 2.
+    /// The file is internal to Claude Code, so another layout is not guessed
+    /// at.
+    UnknownFormat,
+    /// The `plugins` map of a version 2 file; empty when the file has none.
+    Known(serde_json::Map<String, Value>),
+}
+
+const INSTALLED_PLUGINS_FORMAT_VERSION: u64 = 2;
+
+fn read_installed_plugins(home: &Path) -> InstalledPlugins {
+    let Some(installed) = fs::read_to_string(home.join(".claude/plugins/installed_plugins.json"))
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+    else {
+        return InstalledPlugins::Missing;
+    };
+    if installed.get("version").and_then(Value::as_u64) != Some(INSTALLED_PLUGINS_FORMAT_VERSION) {
+        return InstalledPlugins::UnknownFormat;
+    }
+    InstalledPlugins::Known(
+        installed
+            .get("plugins")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default(),
+    )
 }
 
 /// True when `key` has at least one install record whose `installPath` is an
@@ -152,14 +182,22 @@ pub(crate) enum ClaudeHookRegistration {
     /// Both do, so `aegis hook` runs twice per command. Carries the settings
     /// file that holds the aegis-managed entry.
     Duplicate(PathBuf),
+    /// The plugin is enabled, but `installed_plugins.json` has an unknown
+    /// format, so whether it registers them cannot be told.
+    Unknown,
 }
 
 /// Classify the Claude `Hook` registration for `home` and `cwd`. Only the
 /// PreToolUse entry counts: a second SessionStart notice is harmless. A
 /// plugin that is enabled but not installed registers nothing, so it counts
-/// as off.
+/// as off. An unknown `installed_plugins.json` format is reported as such
+/// instead of guessed.
 pub(crate) fn claude_hook_registration(home: Option<&Path>, cwd: &Path) -> ClaudeHookRegistration {
-    let plugin = claude_code_plugin_state(home, cwd) == ClaudePluginState::Active;
+    let plugin = match claude_code_plugin_state(home, cwd) {
+        ClaudePluginState::UnknownFormat => return ClaudeHookRegistration::Unknown,
+        ClaudePluginState::Active => true,
+        ClaudePluginState::Off | ClaudePluginState::EnabledNotInstalled => false,
+    };
     // Claude Code merges hooks from every settings scope, the personal
     // settings.local.json included, so an entry in any of them runs.
     let settings = settings_scopes(home, cwd)

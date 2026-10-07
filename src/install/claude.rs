@@ -25,6 +25,11 @@ pub(crate) fn run_claude_install(global: bool) -> ClaudeInstallResult {
         ClaudePluginState::EnabledNotInstalled => ClaudeInstallResult::PluginNotInstalled(
             AgentInstallResult::from_result(run_install_inner(global)),
         ),
+        // Claude Code changed its internal file, so whether the plugin is
+        // installed is unknown; installing settings hooks fails closed.
+        ClaudePluginState::UnknownFormat => ClaudeInstallResult::PluginFormatUnknown(
+            AgentInstallResult::from_result(run_install_inner(global)),
+        ),
         ClaudePluginState::Off => ClaudeInstallResult::Settings(AgentInstallResult::from_result(
             run_install_inner(global),
         )),

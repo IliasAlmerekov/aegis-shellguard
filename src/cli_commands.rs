@@ -216,6 +216,9 @@ fn claude_hook_registration_label() -> String {
         ClaudeHookRegistration::Plugin => "plugin".to_string(),
         ClaudeHookRegistration::Settings => "settings".to_string(),
         ClaudeHookRegistration::None => "none".to_string(),
+        ClaudeHookRegistration::Unknown => {
+            "unknown (unrecognised installed_plugins.json format)".to_string()
+        }
         ClaudeHookRegistration::Duplicate(path) => format!(
             "duplicate (the Claude Code plugin and {path}): aegis hook runs twice per command; \
              remove the Aegis entries from {path} by hand",

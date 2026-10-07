@@ -93,6 +93,14 @@ pub(crate) fn run_install(args: &super::InstallArgs) -> i32 {
                 );
                 exit
             }
+            ClaudeInstallResult::PluginFormatUnknown(result) => {
+                let exit = report_claude_settings_install(result, exit);
+                println!(
+                    "Claude Code: plugin aegis is enabled but installed_plugins.json has an \
+                     unknown format; installed settings hooks instead"
+                );
+                exit
+            }
             ClaudeInstallResult::Settings(result) => report_claude_settings_install(result, exit),
         };
     }
@@ -190,6 +198,9 @@ pub(crate) enum ClaudeInstallResult {
     /// The plugin is enabled but not installed, so it registers nothing and
     /// the settings install ran instead.
     PluginNotInstalled(AgentInstallResult),
+    /// The plugin is enabled, but `installed_plugins.json` has an unknown
+    /// format, so the settings install ran instead.
+    PluginFormatUnknown(AgentInstallResult),
     /// The plugin is off; the settings install ran.
     Settings(AgentInstallResult),
 }
