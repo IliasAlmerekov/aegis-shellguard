@@ -11,6 +11,7 @@ use tempfile::TempDir;
 
 use support::agent_hooks::{
     json_contains_command, prepare_agent_dirs, read_json, run_script, run_script_with_env,
+    write_installed_plugin,
 };
 
 #[test]
@@ -626,6 +627,7 @@ fn install_claude_skips_when_plugin_enabled() {
             let project = TempDir::new().unwrap();
             let user_settings = home.path().join(".claude/settings.json");
             write_enabled_plugin(&user_settings, plugin, true);
+            write_installed_plugin(home.path(), plugin);
 
             let output = install_claude_code(home.path(), project.path(), extra);
 
@@ -662,6 +664,7 @@ fn install_claude_respects_plugin_scope_precedence() {
     );
     let project_settings = project.path().join(".claude/settings.json");
     write_enabled_plugin(&project_settings, "aegis@aegis-shellguard", false);
+    write_installed_plugin(home.path(), "aegis@aegis-shellguard");
 
     let output = install_claude_code(home.path(), project.path(), &["--local"]);
 
@@ -689,6 +692,7 @@ fn install_claude_respects_plugin_scope_precedence() {
         "aegis@aegis-shellguard",
         false,
     );
+    write_installed_plugin(home.path(), "aegis@aegis-shellguard");
 
     let output = install_claude_code(home.path(), project.path(), &["--local"]);
 
@@ -712,6 +716,7 @@ fn install_claude_global_decides_from_user_settings_only() {
         "aegis@aegis-shellguard",
         true,
     );
+    write_installed_plugin(home.path(), "aegis@aegis-shellguard");
 
     let output = install_claude_code(home.path(), project.path(), &[]);
 
@@ -738,6 +743,7 @@ fn install_claude_global_decides_from_user_settings_only() {
         "aegis@aegis-shellguard",
         false,
     );
+    write_installed_plugin(home.path(), "aegis@aegis-shellguard");
 
     let output = install_claude_code(home.path(), project.path(), &[]);
 
@@ -754,6 +760,7 @@ fn install_claude_ignores_foreign_aegis_plugin() {
     let project = TempDir::new().unwrap();
     let user_settings = home.path().join(".claude/settings.json");
     write_enabled_plugin(&user_settings, "aegis@someone-else", true);
+    write_installed_plugin(home.path(), "aegis@someone-else");
 
     let output = install_claude_code(home.path(), project.path(), &[]);
 

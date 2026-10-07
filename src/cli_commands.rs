@@ -184,7 +184,24 @@ pub(crate) fn handle_toggle_status_command() -> i32 {
     }
     println!("config: {}", view.config_status);
     println!("claude code hooks: {}", claude_hook_registration_label());
+    if claude_plugin_enabled_but_not_installed() {
+        println!(
+            "claude code plugin: aegis is enabled but not installed; \
+             only settings hooks guard Bash"
+        );
+    }
     0
+}
+
+/// True when `enabledPlugins` turns the Aegis Claude Code plugin on but Claude
+/// Code has not installed it, so the plugin registers no `Hook` (ADR-047).
+fn claude_plugin_enabled_but_not_installed() -> bool {
+    use crate::install::claude_plugin::{ClaudePluginState, claude_code_plugin_state};
+
+    let home = crate::install::home_dir();
+    env::current_dir().is_ok_and(|cwd| {
+        claude_code_plugin_state(home.as_deref(), &cwd) == ClaudePluginState::EnabledNotInstalled
+    })
 }
 
 /// The `claude code hooks:` value of `aegis status` (#500, ADR-047).

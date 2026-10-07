@@ -129,3 +129,26 @@ pub fn run_claude_code_hook(home: &Path, command: &str) -> Output {
     let input = serde_json::json!({ "tool_input": { "command": command } }).to_string();
     run_script("hooks/claude-code.sh", home, &[], Some(input.as_str()))
 }
+
+/// Record `plugin` as installed in `<home>/.claude/plugins/installed_plugins.json`
+/// (format version 2), with an install directory that exists, the way Claude
+/// Code's `/plugin install` does. Overwrites any earlier record.
+pub fn write_installed_plugin(home: &Path, plugin: &str) {
+    let install_path = home.join(".claude/plugins/cache/aegis-shellguard/aegis/1.0.0");
+    fs::create_dir_all(&install_path).unwrap();
+    let installed = serde_json::json!({
+        "version": 2,
+        "plugins": {
+            plugin: [{
+                "scope": "user",
+                "installPath": install_path.display().to_string(),
+                "version": "1.0.0"
+            }]
+        }
+    });
+    fs::write(
+        home.join(".claude/plugins/installed_plugins.json"),
+        installed.to_string(),
+    )
+    .unwrap();
+}

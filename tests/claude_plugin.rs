@@ -12,6 +12,10 @@ use std::process::{Command, Output, Stdio};
 
 use tempfile::TempDir;
 
+mod support;
+
+use support::agent_hooks::{json_contains_command, read_json, write_installed_plugin};
+
 /// CI markers the hooks consult; cleared so a developer's environment cannot
 /// flip a hook into its CI-override branch.
 const CI_MARKER_VARS: [&str; 9] = [
@@ -384,6 +388,9 @@ fn status_reports_claude_hook_registration() {
             serde_json::json!({ "aegis@aegis-shellguard": plugin_enabled });
         fs::create_dir_all(user_settings.parent().unwrap()).unwrap();
         fs::write(&user_settings, user_json.to_string()).unwrap();
+        if plugin_enabled {
+            write_installed_plugin(home.path(), "aegis@aegis-shellguard");
+        }
         if let EntryScope::ProjectLocal = entry {
             fs::create_dir_all(local_settings.parent().unwrap()).unwrap();
             fs::write(
@@ -487,5 +494,151 @@ fn claude_plugin_hook_commands_run_from_a_root_with_spaces() {
         );
         let stdout: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(stdout["hookSpecificOutput"]["hookEventName"], event);
+    }
+}
+
+const PLUGIN_NOT_INSTALLED_LINE: &str =
+    "Claude Code: plugin aegis is enabled but not installed; installed settings hooks instead";
+
+/// Ways the Aegis plugin can be enabled in `enabledPlugins` while Claude Code
+/// has not installed it, so it registers no `Hook`.
+#[derive(Clone, Copy, Debug)]
+enum NotInstalled {
+    /// `installed_plugins.json` does not exist.
+    NoFile,
+    /// The file is not JSON.
+    Malformed,
+    /// The file lists other plugins only.
+    KeyAbsent,
+    /// The Aegis key holds an empty array.
+    EmptyArray,
+    /// The recorded `installPath` does not exist.
+    InstallPathMissing,
+}
+
+const NOT_INSTALLED_CASES: [NotInstalled; 5] = [
+    NotInstalled::NoFile,
+    NotInstalled::Malformed,
+    NotInstalled::KeyAbsent,
+    NotInstalled::EmptyArray,
+    NotInstalled::InstallPathMissing,
+];
+
+/// Enable `aegis@aegis-shellguard` in user settings and leave it not
+/// installed in the way `case` names.
+fn enable_plugin_without_install(home: &Path, case: NotInstalled) {
+    let claude = home.join(".claude");
+    fs::create_dir_all(claude.join("plugins")).unwrap();
+    fs::write(
+        claude.join("settings.json"),
+        serde_json::json!({ "enabledPlugins": { "aegis@aegis-shellguard": true } }).to_string(),
+    )
+    .unwrap();
+    let installed = match case {
+        NotInstalled::NoFile => return,
+        NotInstalled::Malformed => "{not json".to_string(),
+        NotInstalled::KeyAbsent => {
+            write_installed_plugin(home, "figma@claude-plugins-official");
+            return;
+        }
+        NotInstalled::EmptyArray => serde_json::json!({
+            "version": 2,
+            "plugins": { "aegis@aegis-shellguard": [] }
+        })
+        .to_string(),
+        NotInstalled::InstallPathMissing => serde_json::json!({
+            "version": 2,
+            "plugins": { "aegis@aegis-shellguard": [{
+                "scope": "user",
+                "installPath": home.join("missing/aegis").display().to_string()
+            }] }
+        })
+        .to_string(),
+    };
+    fs::write(claude.join("plugins/installed_plugins.json"), installed).unwrap();
+}
+
+#[test]
+fn install_claude_installs_hooks_when_plugin_enabled_but_not_installed() {
+    for case in NOT_INSTALLED_CASES {
+        for local in [false, true] {
+            let home = TempDir::new().unwrap();
+            let project = TempDir::new().unwrap();
+            let project_dir = fs::canonicalize(project.path()).unwrap();
+            enable_plugin_without_install(home.path(), case);
+
+            let mut command = Command::new(env!("CARGO_BIN_EXE_aegis"));
+            command
+                .args(["install-hooks", "--claude-code"])
+                .env("HOME", home.path())
+                .current_dir(&project_dir);
+            if local {
+                command.arg("--local");
+            }
+            let output = command.output().unwrap();
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(output.status.success(), "{case:?} local={local}: {stdout}");
+            assert!(
+                stdout.contains("Claude Code: hook installed"),
+                "{case:?} local={local}: {stdout}"
+            );
+            assert!(
+                stdout.contains(PLUGIN_NOT_INSTALLED_LINE),
+                "{case:?} local={local}: {stdout}"
+            );
+            let base = if local { &project_dir } else { home.path() };
+            let shim = base.join(".claude/hooks/aegis-pre-tool-use.sh");
+            assert!(
+                json_contains_command(
+                    &read_json(&base.join(".claude/settings.json")),
+                    "PreToolUse",
+                    &shim.display().to_string()
+                ),
+                "{case:?} local={local}: the settings hook must be registered"
+            );
+        }
+    }
+}
+
+#[test]
+fn status_reports_settings_when_plugin_enabled_but_not_installed() {
+    for case in NOT_INSTALLED_CASES {
+        for with_entry in [false, true] {
+            let home = TempDir::new().unwrap();
+            let project = TempDir::new().unwrap();
+            enable_plugin_without_install(home.path(), case);
+            if with_entry {
+                let user_settings = home.path().join(".claude/settings.json");
+                let mut json = settings_with_aegis_entry(home.path());
+                json["enabledPlugins"] = serde_json::json!({ "aegis@aegis-shellguard": true });
+                fs::write(&user_settings, json.to_string()).unwrap();
+            }
+
+            let output = Command::new(env!("CARGO_BIN_EXE_aegis"))
+                .arg("status")
+                .env("HOME", home.path())
+                .current_dir(project.path())
+                .output()
+                .unwrap();
+
+            assert_eq!(output.status.code(), Some(0));
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let expected = if with_entry {
+                "claude code hooks: settings"
+            } else {
+                "claude code hooks: none"
+            };
+            assert!(
+                stdout.lines().any(|line| line == expected),
+                "{case:?} entry={with_entry}: {stdout}"
+            );
+            assert!(
+                stdout.lines().any(|line| line
+                    == "claude code plugin: aegis is enabled but not installed; \
+                        only settings hooks guard Bash"),
+                "{case:?} entry={with_entry}: {stdout}"
+            );
+        }
     }
 }

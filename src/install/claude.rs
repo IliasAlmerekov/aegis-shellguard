@@ -3,35 +3,44 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use super::claude_plugin::{self, ClaudePluginState};
 use super::{
-    AgentInstallResult, InstallOutcome, combine_outcomes, load_settings, resolved_aegis_bin,
-    shell_quote, write_executable, write_settings_atomically,
+    AgentInstallResult, ClaudeInstallResult, InstallOutcome, combine_outcomes, load_settings,
+    resolved_aegis_bin, shell_quote, write_executable, write_settings_atomically,
 };
 
 const CLAUDE_PRE_TOOL_USE_HOOK_SH: &str = include_str!("../../scripts/hooks/claude-code.sh");
 const CLAUDE_SESSION_START_HOOK_SH: &str =
     include_str!("../../scripts/hooks/claude-session-start.sh");
 
-pub(crate) fn run_claude_install(global: bool) -> AgentInstallResult {
-    // The plugin registers the same hooks; installing settings entries too
-    // would run `aegis hook` twice per command. Existing entries stay as they
-    // are: an install that deletes config would surprise the user (ADR-047).
-    if claude_code_plugin_enabled_for_install(global) {
-        return AgentInstallResult::SkippedClaudeCodePlugin;
+pub(crate) fn run_claude_install(global: bool) -> ClaudeInstallResult {
+    match claude_code_plugin_state_for_install(global) {
+        // The plugin registers the same hooks; installing settings entries
+        // too would run `aegis hook` twice per command. Existing entries stay
+        // as they are: an install that deletes config would surprise the user
+        // (ADR-047).
+        ClaudePluginState::Active => ClaudeInstallResult::SkippedClaudeCodePlugin,
+        // An enabled plugin that is not installed registers nothing, so the
+        // settings hooks are the only guard (ADR-047).
+        ClaudePluginState::EnabledNotInstalled => ClaudeInstallResult::PluginNotInstalled(
+            AgentInstallResult::from_result(run_install_inner(global)),
+        ),
+        ClaudePluginState::Off => ClaudeInstallResult::Settings(AgentInstallResult::from_result(
+            run_install_inner(global),
+        )),
     }
-    AgentInstallResult::from_result(run_install_inner(global))
 }
 
 /// A global install covers every project, so only user settings decide it. A
 /// `--local` install writes the shared project settings.json, so that file
 /// and user settings decide it, never the personal settings.local.json.
-fn claude_code_plugin_enabled_for_install(global: bool) -> bool {
+fn claude_code_plugin_state_for_install(global: bool) -> ClaudePluginState {
     let home = super::home_dir();
     if global {
-        return super::claude_plugin::claude_code_plugin_enabled_for_user(home.as_deref());
+        return claude_plugin::claude_code_plugin_state_for_user(home.as_deref());
     }
-    std::env::current_dir().is_ok_and(|cwd| {
-        super::claude_plugin::claude_code_plugin_enabled_for_project(home.as_deref(), &cwd)
+    std::env::current_dir().map_or(ClaudePluginState::Off, |cwd| {
+        claude_plugin::claude_code_plugin_state_for_project(home.as_deref(), &cwd)
     })
 }
 
