@@ -5,7 +5,10 @@
   "env": { "CARGO_TARGET_DIR": "target" },
   "gate": {
     "timeout_seconds": 600,
-    "lint": ["scripts/lint.sh fmt"],
+    "lint": [
+      "scripts/lint.sh fmt",
+      "uvx semgrep scan --config .semgrep --error --quiet --metrics off"
+    ],
     "typecheck": { "per_package": "cargo check -p {pkg} --all-targets" },
     "tests": {
       "per_package": "cargo test -p {pkg} --lib",

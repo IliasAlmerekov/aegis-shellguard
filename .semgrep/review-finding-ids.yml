@@ -1,0 +1,15 @@
+rules:
+  - id: review-finding-id-in-source
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      Pipeline review finding ids such as R1-1 live only in the gitignored
+      .scratch/ review files, so no reader of the repository can look them up.
+      State the reason itself, and cite the issue, PR, or ADR instead.
+    pattern-regex: '\bR[0-9]+-[0-9]+\b'
+    paths:
+      include:
+        - /src/
+        - /crates/
+        - /tests/
+        - /scripts/

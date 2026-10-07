@@ -67,6 +67,8 @@ These rules are non-negotiable.
   Normal progress (a snapshot was created, a plugin was not applicable, no container was
   found) stays `info`. Do not mechanically promote every `info` inside an `Err` branch: a
   plugin correctly deciding it has nothing to do is not a coverage degradation.
+- A change to how the Aegis `Hook` gets registered names in its ADR every party that can
+  switch the `Hook` off, and what the user sees when one does (#500, ADR-047).
 
 ## 3. Architecture Rules
 
@@ -129,6 +131,8 @@ Architectural constraints:
 - `RiskLevel` ordering is semantic and must not be changed.
 - `Pattern` continues to use `Cow<'static, str>` to support both built-in and user-defined patterns.
 - The project must preserve the current exit-code contract.
+- An installer decides whether to write a settings file only from the scopes that file
+  covers. The full precedence chain is for reporting, as in `aegis status` (#500).
 
 ## 4. Rust and Code Style
 
@@ -147,6 +151,8 @@ Architectural constraints:
 - Avoid broad re-export layers unless they materially improve the public API.
 - Commits use the short conventional form (`feat:`, `fix:`, `perf:`, ...), subject line under 72 characters, body explaining why rather than what.
 - Every PR body is [`.github/pull_request_template.md`](.github/pull_request_template.md) filled in, at most 10 non-empty lines, whoever opens it; only bot PRs such as Dependabot keep their generated body. With `gh pr create`, copy the template into a file and pass it with `--body-file`. Keep the four parts in order: `Closes #N` (or `No issue: <reason>` for PRs that `CONTRIBUTING.md` lets skip an issue), one or two sentences on what and why, `Evidence:` bullets with each command run and its result (or the test that failed before the fix and passes after), and `Confidence:` as `high`, `medium`, or `low` plus one sentence naming the residual risk. Delete the template comments. File lists and change walkthroughs live in the diff; follow-ups, benchmarks, and session notes go in issue comments.
+- A fix unrelated to the PR's issue ships in its own PR, so reverting the issue's PR
+  reverts only that issue's work.
 
 ## 5. Error Handling Rules
 
@@ -267,6 +273,8 @@ Minimum expectations:
 - Snapshot changes must add lifecycle and rollback tests.
 - Security-sensitive behavior must be regression-tested before merge.
 - Hot-path behavior must be checked for performance regressions when parser/scanner logic changes.
+- A test of a shell script runs the script, or the block under test, against a fixture.
+  An assert on the script's source text proves nothing about what it does.
 
 Quality gates, all run by CI and required to merge:
 
@@ -295,6 +303,10 @@ Local development rules:
 - `rtk` is not part of the runtime product contract and not a requirement for end users or normal project builds.
 - Do not rely on local-only shortcuts that bypass CI checks.
 - Keep CI, docs, and local contributor instructions aligned.
+- A script that release CI runs and that edits a tracked file reaches users only if the
+  workflow commits the file. Docs must not claim such an edit ships.
+- `.semgrep/` holds Semgrep rules that the agent pipeline gate runs
+  (`uvx semgrep scan --config .semgrep --error`). CI does not run them yet.
 
 ## 11. Documentation Rules
 
