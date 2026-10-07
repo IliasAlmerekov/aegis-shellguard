@@ -280,6 +280,14 @@ jobs:
 
       - uses: ./.github/actions/install-libcap
 
+      # The test suite runs scripts through zsh, as in the quality-gate action.
+      - name: Install zsh
+        shell: bash
+        run: |
+          if ! command -v zsh >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y zsh
+          fi
+
       - uses: ./.github/actions/install-cargo-tool
         with:
           tool: cargo-mutants
