@@ -329,10 +329,29 @@ mod tests {
         super::set_proc_version_override(None);
     }
 
-    #[test]
-    fn system_bwrap_resolver_skips_bwrap_inside_cwd() {
+    /// Writes an executable fake `bwrap` at `path` without this process ever
+    /// holding a write fd on it. Tests run on parallel threads; a fork from
+    /// another thread while `fs::write` has the file open hands the child that
+    /// fd, and exec of the file then fails with ETXTBSY (#513). The script goes
+    /// to a sibling `.src` file that is never executed, and a separate `cp`
+    /// process creates the executable.
+    fn write_fake_bwrap(path: &std::path::Path, script: &str) {
         use std::os::unix::fs::PermissionsExt;
 
+        let source = path.with_extension("src");
+        std::fs::write(&source, script).unwrap();
+        std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let status = std::process::Command::new("cp")
+            .arg("-p")
+            .arg(&source)
+            .arg(path)
+            .status()
+            .unwrap();
+        assert!(status.success(), "cp of the fake bwrap failed: {status}");
+    }
+
+    #[test]
+    fn system_bwrap_resolver_skips_bwrap_inside_cwd() {
         let base = std::env::temp_dir().join(format!("aegis_bwrap_test_{}", std::process::id()));
         let outside = base.join("outside");
         let inside = base.join("inside");
@@ -350,9 +369,7 @@ mod tests {
             "#!/bin/sh\ncase \"$1\" in\n  --help) echo '{banner}'; exit 0;;\nesac\nexit 0\n"
         );
         for dir in [&outside, &inside] {
-            let path = dir.join("bwrap");
-            std::fs::write(&path, &script).unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            write_fake_bwrap(&dir.join("bwrap"), &script);
         }
 
         // cwd = inside: the bwrap inside cwd must be skipped, the outside one found.
@@ -375,8 +392,6 @@ mod tests {
 
     #[test]
     fn system_bwrap_resolver_skips_bwrap_missing_production_options() {
-        use std::os::unix::fs::PermissionsExt;
-
         let base =
             std::env::temp_dir().join(format!("aegis_bwrap_caps_test_{}", std::process::id()));
         let crippled = base.join("crippled");
@@ -407,9 +422,7 @@ mod tests {
         );
 
         for (dir, script) in [(&crippled, crippled_script), (&complete, complete_script)] {
-            let path = dir.join("bwrap");
-            std::fs::write(&path, script).unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            write_fake_bwrap(&dir.join("bwrap"), &script);
         }
 
         let cwd = std::fs::canonicalize(base.join("cwd")).unwrap();
