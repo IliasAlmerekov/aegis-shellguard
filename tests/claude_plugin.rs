@@ -162,7 +162,12 @@ fn claude_plugin_hook_matches_installed_shim() {
     ] {
         let payload = bash_payload(command);
         let shim_out = run_hook(&shim, home.path(), &path, &payload);
-        let plugin_out = run_hook(&repo_path(PLUGIN_PRE_TOOL_USE), home.path(), &path, &payload);
+        let plugin_out = run_hook(
+            &repo_path(PLUGIN_PRE_TOOL_USE),
+            home.path(),
+            &path,
+            &payload,
+        );
         assert!(shim_out.status.success() && plugin_out.status.success());
         assert_eq!(
             String::from_utf8_lossy(&plugin_out.stdout),
@@ -204,19 +209,24 @@ fn claude_session_start_reports_missing_binary() {
     let output = run_hook(&repo_path(PLUGIN_SESSION_START), home.path(), &path, "{}");
 
     assert_eq!(output.status.code(), Some(0));
-    let stdout: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .unwrap_or_else(|err| {
-            panic!(
-                "SessionStart must print exactly one JSON object ({err}): {}",
-                String::from_utf8_lossy(&output.stdout)
-            )
-        });
+    let stdout: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_else(|err| {
+        panic!(
+            "SessionStart must print exactly one JSON object ({err}): {}",
+            String::from_utf8_lossy(&output.stdout)
+        )
+    });
     let context = stdout["hookSpecificOutput"]["additionalContext"]
         .as_str()
         .unwrap();
     assert!(context.contains("Aegis is not installed"), "{context}");
-    assert!(context.contains("every Bash command is blocked"), "{context}");
-    assert!(context.contains("npm i -g @iliasalmerekov/aegis"), "{context}");
+    assert!(
+        context.contains("every Bash command is blocked"),
+        "{context}"
+    );
+    assert!(
+        context.contains("npm i -g @iliasalmerekov/aegis"),
+        "{context}"
+    );
 }
 
 #[test]
@@ -300,7 +310,10 @@ fn claude_plugin_rollback_command_runs_through_bash_tool() {
     );
     // `!`-prefixed lines run in Claude Code before the prompt reaches the
     // model, outside the Bash tool, so PreToolUse and Aegis never see them.
-    assert!(!command.contains("!`"), "the command must not inject shell output");
+    assert!(
+        !command.contains("!`"),
+        "the command must not inject shell output"
+    );
     for required in ["aegis snapshot list", "confirm", "aegis rollback"] {
         assert!(command.contains(required), "missing `{required}`");
     }
