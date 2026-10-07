@@ -242,3 +242,66 @@ fn installed_session_start_resolves_the_rendered_binary_path() {
         "the installed hook carries an absolute binary path and must not report a missing binary: {context}"
     );
 }
+
+fn read_repo_json(relative: &str) -> serde_json::Value {
+    serde_json::from_str(&read_repo_file(relative))
+        .unwrap_or_else(|err| panic!("{relative} is not valid JSON: {err}"))
+}
+
+/// The single command a hooks.json event registers under `matcher`.
+fn registered_command<'a>(hooks: &'a serde_json::Value, event: &str, matcher: &str) -> &'a str {
+    let entries = hooks["hooks"][event].as_array().unwrap();
+    assert_eq!(entries.len(), 1, "{event} must have exactly one entry");
+    assert_eq!(entries[0]["matcher"], matcher);
+    let commands = entries[0]["hooks"].as_array().unwrap();
+    assert_eq!(commands.len(), 1, "{event} must run exactly one command");
+    assert_eq!(commands[0]["type"], "command");
+    commands[0]["command"].as_str().unwrap()
+}
+
+#[test]
+fn claude_plugin_manifests_are_consistent() {
+    let hooks = read_repo_json("plugins/aegis/hooks/hooks.json");
+    assert_eq!(
+        registered_command(&hooks, "PreToolUse", "Bash"),
+        "${CLAUDE_PLUGIN_ROOT}/hooks/aegis-pre-tool-use.sh"
+    );
+    assert_eq!(
+        registered_command(&hooks, "SessionStart", "startup|resume"),
+        "${CLAUDE_PLUGIN_ROOT}/hooks/aegis-session-start.sh"
+    );
+
+    let plugin = read_repo_json("plugins/aegis/.claude-plugin/plugin.json");
+    assert_eq!(plugin["name"], "aegis");
+    assert_eq!(plugin["version"], env!("CARGO_PKG_VERSION"));
+
+    let marketplace = read_repo_json(".claude-plugin/marketplace.json");
+    assert_eq!(marketplace["name"], "aegis-shellguard");
+    assert!(marketplace["owner"]["name"].is_string());
+    let plugins = marketplace["plugins"].as_array().unwrap();
+    assert_eq!(plugins.len(), 1);
+    assert_eq!(plugins[0]["name"], "aegis");
+    assert_eq!(plugins[0]["source"], "./plugins/aegis");
+}
+
+#[test]
+fn claude_plugin_rollback_command_runs_through_bash_tool() {
+    let command = read_repo_file("plugins/aegis/commands/aegis-rollback.md");
+    let front_matter = command
+        .strip_prefix("---\n")
+        .and_then(|rest| rest.split_once("\n---\n"))
+        .map(|(front, _)| front)
+        .expect("aegis-rollback.md must open with YAML front matter");
+    assert!(
+        front_matter
+            .lines()
+            .any(|line| line.trim() == "disable-model-invocation: true"),
+        "front matter must set disable-model-invocation: true:\n{front_matter}"
+    );
+    // `!`-prefixed lines run in Claude Code before the prompt reaches the
+    // model, outside the Bash tool, so PreToolUse and Aegis never see them.
+    assert!(!command.contains("!`"), "the command must not inject shell output");
+    for required in ["aegis snapshot list", "confirm", "aegis rollback"] {
+        assert!(command.contains(required), "missing `{required}`");
+    }
+}

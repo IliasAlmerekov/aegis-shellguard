@@ -1,0 +1,12 @@
+{
+  "name": "aegis",
+  "version": "0.7.0",
+  "description": "Route every Claude Code Bash command through Aegis, which asks a human before destructive commands and takes a Snapshot first. Requires the aegis binary on PATH: npm i -g @iliasalmerekov/aegis",
+  "author": {
+    "name": "Ilias Almerekov"
+  },
+  "homepage": "https://github.com/IliasAlmerekov/aegis-shellguard",
+  "repository": "https://github.com/IliasAlmerekov/aegis-shellguard",
+  "license": "MIT",
+  "keywords": ["security", "shell", "hooks", "rollback", "snapshot"]
+}
