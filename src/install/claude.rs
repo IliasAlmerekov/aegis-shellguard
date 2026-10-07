@@ -13,6 +13,14 @@ const CLAUDE_SESSION_START_HOOK_SH: &str =
     include_str!("../../scripts/hooks/claude-session-start.sh");
 
 pub(crate) fn run_claude_install(global: bool) -> AgentInstallResult {
+    // The plugin registers the same hooks; installing settings entries too
+    // would run `aegis hook` twice per command. Existing entries stay as they
+    // are: an install that deletes config would surprise the user (ADR-047).
+    if let Ok(cwd) = std::env::current_dir()
+        && super::claude_plugin::claude_code_plugin_enabled(super::home_dir().as_deref(), &cwd)
+    {
+        return AgentInstallResult::SkippedClaudeCodePlugin;
+    }
     AgentInstallResult::from_result(run_install_inner(global))
 }
 
@@ -63,7 +71,8 @@ fn run_install_at_path(settings_path: &Path) -> Result<InstallOutcome, String> {
     let shim_path = hooks_dir.join("aegis-pre-tool-use.sh");
     let shim_outcome = write_executable(&shim_path, &render_claude_pre_tool_use_hook())?;
     let session_shim_path = hooks_dir.join("aegis-session-start.sh");
-    let session_shim_outcome = write_executable(&session_shim_path, &render_claude_session_start_hook())?;
+    let session_shim_outcome =
+        write_executable(&session_shim_path, &render_claude_session_start_hook())?;
 
     // Resolve to an absolute path so the registered command is PATH-independent
     // even when install ran from a relative cwd (e.g. a project-local install).

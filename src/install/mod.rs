@@ -1,4 +1,5 @@
 mod claude;
+pub(crate) mod claude_plugin;
 mod codex;
 mod hook;
 mod shell;
@@ -87,6 +88,9 @@ pub(crate) fn run_install(args: &super::InstallArgs) -> i32 {
             AgentInstallResult::Skipped => {
                 println!("Claude Code: skipped (agent directory not present)")
             }
+            AgentInstallResult::SkippedClaudeCodePlugin => {
+                println!("Claude Code: skipped (Claude Code plugin aegis is enabled)")
+            }
             AgentInstallResult::Error(err) => {
                 eprintln!("error: failed to install Claude Code hook: {err}");
                 exit = super::EXIT_INTERNAL;
@@ -100,7 +104,9 @@ pub(crate) fn run_install(args: &super::InstallArgs) -> i32 {
             AgentInstallResult::AlreadyPresent => {
                 println!("Codex: hooks already present, skipping")
             }
-            AgentInstallResult::Skipped => println!("Codex: skipped (agent directory not present)"),
+            AgentInstallResult::Skipped | AgentInstallResult::SkippedClaudeCodePlugin => {
+                println!("Codex: skipped (agent directory not present)")
+            }
             AgentInstallResult::Error(err) => {
                 eprintln!("error: failed to install Codex hooks: {err}");
                 exit = super::EXIT_INTERNAL;
@@ -153,6 +159,9 @@ pub(crate) enum AgentInstallResult {
     Installed,
     AlreadyPresent,
     Skipped,
+    /// The Aegis Claude Code plugin is enabled and registers the `Hook`s, so
+    /// the settings install is skipped. Only the Claude installer returns it.
+    SkippedClaudeCodePlugin,
     Error(String),
 }
 

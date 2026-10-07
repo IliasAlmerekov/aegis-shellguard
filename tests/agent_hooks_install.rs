@@ -587,3 +587,104 @@ fn codex_session_start_hook_keeps_its_codex_identity_when_installed() {
         "the codex session hook must not carry the Claude hook's install path"
     );
 }
+
+const PLUGIN_SKIP_LINE: &str = "Claude Code: skipped (Claude Code plugin aegis is enabled)";
+
+/// Write a Claude settings file whose `enabledPlugins` maps `plugin` to
+/// `enabled`.
+fn write_enabled_plugin(settings: &std::path::Path, plugin: &str, enabled: bool) {
+    fs::create_dir_all(settings.parent().unwrap()).unwrap();
+    fs::write(
+        settings,
+        serde_json::json!({ "enabledPlugins": { plugin: enabled } }).to_string(),
+    )
+    .unwrap();
+}
+
+/// Run `aegis install-hooks --claude-code [extra]` with `home` as HOME and
+/// `cwd` as the working directory.
+fn install_claude_code(
+    home: &std::path::Path,
+    cwd: &std::path::Path,
+    extra: &[&str],
+) -> std::process::Output {
+    std::process::Command::new(env!("CARGO_BIN_EXE_aegis"))
+        .arg("install-hooks")
+        .arg("--claude-code")
+        .args(extra)
+        .env("HOME", home)
+        .current_dir(cwd)
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn install_claude_skips_when_plugin_enabled() {
+    for plugin in ["aegis@claude-plugins-community", "aegis@aegis-shellguard"] {
+        for extra in [&[][..], &["--local"][..]] {
+            let home = TempDir::new().unwrap();
+            let project = TempDir::new().unwrap();
+            let user_settings = home.path().join(".claude/settings.json");
+            write_enabled_plugin(&user_settings, plugin, true);
+
+            let output = install_claude_code(home.path(), project.path(), extra);
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(output.status.success(), "{plugin} {extra:?}: {stdout}");
+            assert!(
+                stdout.contains(PLUGIN_SKIP_LINE),
+                "{plugin} {extra:?}: {stdout}"
+            );
+            for dir in [home.path(), project.path()] {
+                assert!(
+                    !dir.join(".claude/hooks").exists(),
+                    "{plugin} {extra:?}: no shim may be written under {}",
+                    dir.display()
+                );
+            }
+            assert!(read_json(&user_settings).get("hooks").is_none());
+            assert!(!project.path().join(".claude/settings.json").exists());
+        }
+    }
+}
+
+#[test]
+fn install_claude_respects_plugin_scope_precedence() {
+    let home = TempDir::new().unwrap();
+    let project = TempDir::new().unwrap();
+    let user_settings = home.path().join(".claude/settings.json");
+    write_enabled_plugin(&user_settings, "aegis@aegis-shellguard", true);
+    write_enabled_plugin(
+        &project.path().join(".claude/settings.local.json"),
+        "aegis@aegis-shellguard",
+        false,
+    );
+
+    let output = install_claude_code(home.path(), project.path(), &[]);
+
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Claude Code: hook installed"));
+    let shim = home.path().join(".claude/hooks/aegis-pre-tool-use.sh");
+    assert!(json_contains_command(
+        &read_json(&user_settings),
+        "PreToolUse",
+        &shim.display().to_string()
+    ));
+}
+
+#[test]
+fn install_claude_ignores_foreign_aegis_plugin() {
+    let home = TempDir::new().unwrap();
+    let project = TempDir::new().unwrap();
+    let user_settings = home.path().join(".claude/settings.json");
+    write_enabled_plugin(&user_settings, "aegis@someone-else", true);
+
+    let output = install_claude_code(home.path(), project.path(), &[]);
+
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Claude Code: hook installed"));
+    let shim = home.path().join(".claude/hooks/aegis-pre-tool-use.sh");
+    assert!(json_contains_command(
+        &read_json(&user_settings),
+        "PreToolUse",
+        &shim.display().to_string()
+    ));
+}
