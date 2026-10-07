@@ -67,6 +67,14 @@ fn claude_plugin_hooks_match_templates() {
         ),
     ] {
         let expected = read_repo_file(template).replace("__AEGIS_BIN__", "aegis");
+        // The template ships through two channels, settings.json install and
+        // the plugin, so its comments must hold for both.
+        for single_channel_claim in ["Installed to:", "templated to an absolute"] {
+            assert!(
+                !expected.contains(single_channel_claim),
+                "{template} says `{single_channel_claim}`, which is false for the Claude Code plugin"
+            );
+        }
         assert_eq!(
             read_repo_file(plugin_hook),
             expected,
