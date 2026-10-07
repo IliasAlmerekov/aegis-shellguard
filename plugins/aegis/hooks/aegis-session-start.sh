@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# aegis-hook-version: 1
+# aegis-hook-version: 2
 # Claude Code SessionStart hook — reports Aegis' effective enforcement state.
 # Installed to: ~/.claude/hooks/aegis-session-start.sh
 
@@ -91,6 +91,19 @@ aegis_emit_session_json() {
 
 if ! aegis_enforcement_enabled; then
   aegis_emit_session_json 'Aegis is disabled: commands run in unguarded passthrough. Run \"aegis on\" to re-enable enforcement; \"aegis status\" shows the effective state.' ''
+  exit 0
+fi
+
+# While enforcement is on, the PreToolUse hook denies every Bash call when the
+# aegis binary cannot be resolved (ADR-007). Say so at session start, so the
+# agent and the user learn why instead of seeing a wall of denials (#500).
+# Resolved the same way as the PreToolUse hook: an explicit AEGIS_BIN wins,
+# else the path rendered at install time (`aegis` for the Claude Code plugin).
+if [ -z "${AEGIS_BIN:-}" ]; then
+  AEGIS_BIN=aegis
+fi
+if ! command -v "${AEGIS_BIN}" >/dev/null 2>&1; then
+  aegis_emit_session_json 'Aegis is not installed: every Bash command is blocked until the aegis binary is on PATH. Install it with: npm i -g @iliasalmerekov/aegis' ''
   exit 0
 fi
 

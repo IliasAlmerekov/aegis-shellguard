@@ -63,7 +63,7 @@ fn run_install_at_path(settings_path: &Path) -> Result<InstallOutcome, String> {
     let shim_path = hooks_dir.join("aegis-pre-tool-use.sh");
     let shim_outcome = write_executable(&shim_path, &render_claude_pre_tool_use_hook())?;
     let session_shim_path = hooks_dir.join("aegis-session-start.sh");
-    let session_shim_outcome = write_executable(&session_shim_path, CLAUDE_SESSION_START_HOOK_SH)?;
+    let session_shim_outcome = write_executable(&session_shim_path, &render_claude_session_start_hook())?;
 
     // Resolve to an absolute path so the registered command is PATH-independent
     // even when install ran from a relative cwd (e.g. a project-local install).
@@ -144,6 +144,13 @@ fn apply_session_start_installation(
 /// differ (see ADR-012 consequences).
 fn render_claude_pre_tool_use_hook() -> String {
     CLAUDE_PRE_TOOL_USE_HOOK_SH.replace("__AEGIS_BIN__", &shell_quote(&resolved_aegis_bin()))
+}
+
+/// Materialize the Claude SessionStart hook with the same binary path as the
+/// PreToolUse hook, so its missing-binary notice checks the binary the
+/// PreToolUse hook will actually run.
+fn render_claude_session_start_hook() -> String {
+    CLAUDE_SESSION_START_HOOK_SH.replace("__AEGIS_BIN__", &shell_quote(&resolved_aegis_bin()))
 }
 
 fn apply_installation(settings: &mut Value, hook_command: &str) -> Result<InstallOutcome, String> {
