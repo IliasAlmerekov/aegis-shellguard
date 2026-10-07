@@ -414,6 +414,12 @@ fn status_reports_claude_hook_registration() {
             .find(|line| line.starts_with("claude code hooks: "))
             .unwrap_or_else(|| panic!("no claude code hooks line:\n{stdout}"));
         assert!(line.starts_with(expected), "{entry:?}: {line}");
+        // The plugin is either off or enabled and installed here, so the
+        // enabled-but-not-installed warning must not print.
+        assert!(
+            !stdout.contains("claude code plugin:"),
+            "{entry:?}: unexpected plugin warning:\n{stdout}"
+        );
         if expected.ends_with("duplicate") {
             let settings = match entry {
                 EntryScope::ProjectLocal => &local_settings,
