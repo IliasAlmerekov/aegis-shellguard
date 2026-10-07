@@ -37,9 +37,18 @@ the `aegis-shellguard` marketplace, so it works before community review.
   order: with `~/.aegis/disabled` present it exits before the binary check;
   otherwise a missing binary denies every Bash call. The SessionStart hook
   says so and names `npm i -g @iliasalmerekov/aegis`.
-- The Claude Code plugin counts as enabled when the effective `enabledPlugins`
-  value of `aegis@claude-community` or `aegis@aegis-shellguard` is
-  `true`. Which scopes count depends on what the hooks cover. A global install
+- The Claude Code plugin counts as active only when both hold for the same
+  key, `aegis@claude-community` or `aegis@aegis-shellguard`: its effective
+  `enabledPlugins` value is `true`, and `~/.claude/plugins/installed_plugins.json`
+  lists that key under `plugins` with at least one record whose `installPath`
+  is an existing directory. A missing, unreadable, or malformed file, a
+  missing key, an empty array, or a missing `installPath` directory all mean
+  "not installed". `enabledPlugins` alone is not enough: synced dotfiles can
+  enable the plugin on a machine that never added the marketplace, and that
+  plugin registers no Hook. Skipping the settings hooks there would leave Bash
+  unguarded, while installing them next to a working plugin only runs the Hook
+  twice, so the check fails closed. Only the two exact keys are read in both
+  files, so a foreign plugin named `aegis` cannot pass either check. Which scopes count depends on what the hooks cover. A global install
   writes hooks for every project, so only `~/.claude/settings.json` decides it:
   a repo that enables the plugin must not leave every other project unguarded,
   and a repo that disables it must not make every other project run the Hook
@@ -51,13 +60,19 @@ the `aegis-shellguard` marketplace, so it works before community review.
   order: `.claude/settings.local.json`, `.claude/settings.json`, then
   `~/.claude/settings.json`. Other `aegis@*` keys
   do not count, so a foreign plugin named `aegis` cannot switch the
-  `settings.json` hooks off. `installed_plugins.json` is not read: only an
-  enabled plugin registers hooks.
-- While the plugin is enabled, `aegis install-hooks` with Claude selected writes
+  `settings.json` hooks off. `installed_plugins.json` is always read from
+  `~/.claude`, whatever the scope that enabled the key.
+- While the plugin is active, `aegis install-hooks` with Claude selected writes
   no shims and no settings entries and prints `Claude Code: skipped (Claude
   Code plugin aegis is enabled)`. It does not remove existing aegis-managed
-  entries.
+  entries. When the plugin is enabled but not installed, the install writes
+  the settings hooks as usual and adds the line `Claude Code: plugin aegis is
+  enabled but not installed; installed settings hooks instead`.
 - `aegis status` prints `claude code hooks: plugin|settings|none|duplicate`.
+  `plugin` and `duplicate` need an active plugin. When the plugin is enabled
+  but not installed, the value comes from the settings entries alone
+  (`settings` or `none`), and a second line, `claude code plugin: aegis is
+  enabled but not installed; only settings hooks guard Bash`, names the gap.
   It scans every settings scope Claude Code merges hooks from:
   `.claude/settings.local.json`, `.claude/settings.json`, and
   `~/.claude/settings.json`. `duplicate` names the settings file that still
@@ -75,6 +90,10 @@ the `aegis-shellguard` marketplace, so it works before community review.
 - A user with the Claude Code plugin enabled and an older `settings.json`
   install runs the Hook twice until they remove the entries. `aegis status`
   reports this; nothing removes them automatically.
+- Aegis now depends on the layout of Claude Code's `installed_plugins.json`
+  (format version 2). If Claude Code moves or reshapes that file, Aegis reads
+  the plugin as not installed and installs the settings hooks, so a format
+  change costs a duplicate Hook, never a missing one.
 - If user settings enable the Claude Code plugin and a project disables it, a
   global install skips, so that project has no Hook and `aegis status` there
   prints `none`. The remedy is a `--local` install in that project.
