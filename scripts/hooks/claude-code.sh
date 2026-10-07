@@ -2,7 +2,8 @@
 # aegis-hook-version: 4
 # Claude Code PreToolUse hook — transparently rewrites unwrapped Bash commands
 # through aegis by delegating to the Rust `aegis hook` rewrite. No jq/python3
-# required. Installed to: ~/.claude/hooks/aegis-pre-tool-use.sh
+# required. `aegis install-hooks` copies it to ~/.claude/hooks/aegis-pre-tool-use.sh;
+# the Claude Code plugin ships it as plugins/aegis/hooks/aegis-pre-tool-use.sh.
 #
 # This shim is intentionally behaviorally identical to
 # scripts/hooks/codex-pre-tool-use.sh; only agent-specific comments differ (the
@@ -69,9 +70,10 @@ fi
 
 # Delegate JSON parsing and the allow+updatedInput rewrite to the Rust binary so
 # behavior is identical to the Codex PreToolUse hook and does not depend on jq
-# or python3 being installed. AEGIS_BIN is templated to an absolute, shell-quoted
-# path at install time so the hook works even when the hook-exec PATH is minimal;
-# an explicit AEGIS_BIN in the environment still wins (used by tests).
+# or python3 being installed. `aegis install-hooks` renders AEGIS_BIN as an
+# absolute, shell-quoted path so the hook works even when the hook-exec PATH is
+# minimal; the Claude Code plugin copy uses `aegis` and looks it up on PATH. An
+# explicit AEGIS_BIN in the environment still wins (used by tests).
 if [ -z "${AEGIS_BIN:-}" ]; then
   AEGIS_BIN=__AEGIS_BIN__
 fi
