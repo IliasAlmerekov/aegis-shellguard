@@ -1,0 +1,13 @@
+{
+  "name": "aegis-shellguard",
+  "owner": {
+    "name": "Ilias Almerekov"
+  },
+  "plugins": [
+    {
+      "name": "aegis",
+      "source": "./plugins/aegis",
+      "description": "Route every Claude Code Bash command through Aegis, which asks a human before destructive commands and takes a best-effort Snapshot where a provider applies. Requires the aegis binary on PATH."
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 mod claude;
+pub(crate) mod claude_plugin;
 mod codex;
 mod hook;
 mod shell;
@@ -79,19 +80,29 @@ pub(crate) fn run_install(args: &super::InstallArgs) -> i32 {
     let selection = install_target_selection(args);
 
     if selection.includes_claude() {
-        match claude::run_claude_install(!args.local) {
-            AgentInstallResult::Installed => println!("Claude Code: hook installed"),
-            AgentInstallResult::AlreadyPresent => {
-                println!("Claude Code: hook already present, skipping")
+        exit = match claude::run_claude_install(!args.local) {
+            ClaudeInstallResult::SkippedClaudeCodePlugin => {
+                println!("Claude Code: skipped (Claude Code plugin aegis is enabled)");
+                exit
             }
-            AgentInstallResult::Skipped => {
-                println!("Claude Code: skipped (agent directory not present)")
+            ClaudeInstallResult::PluginNotInstalled(result) => {
+                let exit = report_claude_settings_install(result, exit);
+                println!(
+                    "Claude Code: plugin aegis is enabled but not installed; \
+                     installed settings hooks instead"
+                );
+                exit
             }
-            AgentInstallResult::Error(err) => {
-                eprintln!("error: failed to install Claude Code hook: {err}");
-                exit = super::EXIT_INTERNAL;
+            ClaudeInstallResult::PluginFormatUnknown(result) => {
+                let exit = report_claude_settings_install(result, exit);
+                println!(
+                    "Claude Code: plugin aegis is enabled but installed_plugins.json has an \
+                     unknown format; installed settings hooks instead"
+                );
+                exit
             }
-        }
+            ClaudeInstallResult::Settings(result) => report_claude_settings_install(result, exit),
+        };
     }
 
     if selection.includes_codex() {
@@ -100,7 +111,9 @@ pub(crate) fn run_install(args: &super::InstallArgs) -> i32 {
             AgentInstallResult::AlreadyPresent => {
                 println!("Codex: hooks already present, skipping")
             }
-            AgentInstallResult::Skipped => println!("Codex: skipped (agent directory not present)"),
+            AgentInstallResult::Skipped => {
+                println!("Codex: skipped (agent directory not present)")
+            }
             AgentInstallResult::Error(err) => {
                 eprintln!("error: failed to install Codex hooks: {err}");
                 exit = super::EXIT_INTERNAL;
@@ -108,6 +121,25 @@ pub(crate) fn run_install(args: &super::InstallArgs) -> i32 {
         }
     }
 
+    exit
+}
+
+/// Print the result of a Claude settings install and return the updated exit
+/// code.
+fn report_claude_settings_install(result: AgentInstallResult, exit: i32) -> i32 {
+    match result {
+        AgentInstallResult::Installed => println!("Claude Code: hook installed"),
+        AgentInstallResult::AlreadyPresent => {
+            println!("Claude Code: hook already present, skipping")
+        }
+        AgentInstallResult::Skipped => {
+            println!("Claude Code: skipped (agent directory not present)")
+        }
+        AgentInstallResult::Error(err) => {
+            eprintln!("error: failed to install Claude Code hook: {err}");
+            return super::EXIT_INTERNAL;
+        }
+    }
     exit
 }
 
@@ -154,6 +186,23 @@ pub(crate) enum AgentInstallResult {
     AlreadyPresent,
     Skipped,
     Error(String),
+}
+
+/// Result of `aegis install-hooks --claude-code`, which first asks whether the
+/// Aegis Claude Code plugin registers the `Hook`s (ADR-047).
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum ClaudeInstallResult {
+    /// The plugin is enabled and installed, so the settings install is
+    /// skipped.
+    SkippedClaudeCodePlugin,
+    /// The plugin is enabled but not installed, so it registers nothing and
+    /// the settings install ran instead.
+    PluginNotInstalled(AgentInstallResult),
+    /// The plugin is enabled, but `installed_plugins.json` has an unknown
+    /// format, so the settings install ran instead.
+    PluginFormatUnknown(AgentInstallResult),
+    /// The plugin is off; the settings install ran.
+    Settings(AgentInstallResult),
 }
 
 impl AgentInstallResult {

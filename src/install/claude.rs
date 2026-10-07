@@ -3,17 +3,50 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use super::claude_plugin::{self, ClaudePluginState};
 use super::{
-    AgentInstallResult, InstallOutcome, combine_outcomes, load_settings, resolved_aegis_bin,
-    shell_quote, write_executable, write_settings_atomically,
+    AgentInstallResult, ClaudeInstallResult, InstallOutcome, combine_outcomes, load_settings,
+    resolved_aegis_bin, shell_quote, write_executable, write_settings_atomically,
 };
 
 const CLAUDE_PRE_TOOL_USE_HOOK_SH: &str = include_str!("../../scripts/hooks/claude-code.sh");
 const CLAUDE_SESSION_START_HOOK_SH: &str =
     include_str!("../../scripts/hooks/claude-session-start.sh");
 
-pub(crate) fn run_claude_install(global: bool) -> AgentInstallResult {
-    AgentInstallResult::from_result(run_install_inner(global))
+pub(crate) fn run_claude_install(global: bool) -> ClaudeInstallResult {
+    match claude_code_plugin_state_for_install(global) {
+        // The plugin registers the same hooks; installing settings entries
+        // too would run `aegis hook` twice per command. Existing entries stay
+        // as they are: an install that deletes config would surprise the user
+        // (ADR-047).
+        ClaudePluginState::Active => ClaudeInstallResult::SkippedClaudeCodePlugin,
+        // An enabled plugin that is not installed registers nothing, so the
+        // settings hooks are the only guard (ADR-047).
+        ClaudePluginState::EnabledNotInstalled => ClaudeInstallResult::PluginNotInstalled(
+            AgentInstallResult::from_result(run_install_inner(global)),
+        ),
+        // Claude Code changed its internal file, so whether the plugin is
+        // installed is unknown; installing settings hooks fails closed.
+        ClaudePluginState::UnknownFormat => ClaudeInstallResult::PluginFormatUnknown(
+            AgentInstallResult::from_result(run_install_inner(global)),
+        ),
+        ClaudePluginState::Off => ClaudeInstallResult::Settings(AgentInstallResult::from_result(
+            run_install_inner(global),
+        )),
+    }
+}
+
+/// A global install covers every project, so only user settings decide it. A
+/// `--local` install writes the shared project settings.json, so that file
+/// and user settings decide it, never the personal settings.local.json.
+fn claude_code_plugin_state_for_install(global: bool) -> ClaudePluginState {
+    let home = super::home_dir();
+    if global {
+        return claude_plugin::claude_code_plugin_state_for_user(home.as_deref());
+    }
+    std::env::current_dir().map_or(ClaudePluginState::Off, |cwd| {
+        claude_plugin::claude_code_plugin_state_for_project(home.as_deref(), &cwd)
+    })
 }
 
 fn run_install_inner(global: bool) -> Result<InstallOutcome, String> {
@@ -63,7 +96,8 @@ fn run_install_at_path(settings_path: &Path) -> Result<InstallOutcome, String> {
     let shim_path = hooks_dir.join("aegis-pre-tool-use.sh");
     let shim_outcome = write_executable(&shim_path, &render_claude_pre_tool_use_hook())?;
     let session_shim_path = hooks_dir.join("aegis-session-start.sh");
-    let session_shim_outcome = write_executable(&session_shim_path, CLAUDE_SESSION_START_HOOK_SH)?;
+    let session_shim_outcome =
+        write_executable(&session_shim_path, &render_claude_session_start_hook())?;
 
     // Resolve to an absolute path so the registered command is PATH-independent
     // even when install ran from a relative cwd (e.g. a project-local install).
@@ -144,6 +178,13 @@ fn apply_session_start_installation(
 /// differ (see ADR-012 consequences).
 fn render_claude_pre_tool_use_hook() -> String {
     CLAUDE_PRE_TOOL_USE_HOOK_SH.replace("__AEGIS_BIN__", &shell_quote(&resolved_aegis_bin()))
+}
+
+/// Materialize the Claude SessionStart hook with the same binary path as the
+/// PreToolUse hook, so its missing-binary notice checks the binary the
+/// PreToolUse hook will actually run.
+fn render_claude_session_start_hook() -> String {
+    CLAUDE_SESSION_START_HOOK_SH.replace("__AEGIS_BIN__", &shell_quote(&resolved_aegis_bin()))
 }
 
 fn apply_installation(settings: &mut Value, hook_command: &str) -> Result<InstallOutcome, String> {

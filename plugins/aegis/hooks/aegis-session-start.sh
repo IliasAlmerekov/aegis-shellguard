@@ -100,7 +100,7 @@ fi
 # Resolved the same way as the PreToolUse hook: an explicit AEGIS_BIN wins,
 # else the path rendered at install time (`aegis` for the Claude Code plugin).
 if [ -z "${AEGIS_BIN:-}" ]; then
-  AEGIS_BIN=__AEGIS_BIN__
+  AEGIS_BIN=aegis
 fi
 if ! command -v "${AEGIS_BIN}" >/dev/null 2>&1; then
   aegis_emit_session_json 'Aegis is not installed: every Bash command is blocked until the aegis binary is on PATH. Install it with: npm i -g @iliasalmerekov/aegis' ''
