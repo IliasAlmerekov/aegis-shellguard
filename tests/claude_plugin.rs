@@ -292,6 +292,16 @@ fn claude_plugin_manifests_are_consistent() {
     assert_eq!(plugins.len(), 1);
     assert_eq!(plugins[0]["name"], "aegis");
     assert_eq!(plugins[0]["source"], "./plugins/aegis");
+
+    // A Snapshot is best-effort and depends on a provider applying; the
+    // catalog text must not promise one before every destructive command.
+    for description in [&plugin["description"], &plugins[0]["description"]] {
+        let description = description.as_str().unwrap();
+        assert!(
+            description.contains("best-effort Snapshot"),
+            "{description}"
+        );
+    }
 }
 
 #[test]
