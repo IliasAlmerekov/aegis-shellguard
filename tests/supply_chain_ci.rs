@@ -376,7 +376,9 @@ fn checkout_steps(workflow: &str) -> Vec<String> {
 /// where any later step, build script, or dependency can read it. No job here
 /// pushes with it: the release notes are published by `action-gh-release` with
 /// its own token, and the tag admission check talks to the compare API through
-/// `GH_TOKEN`.
+/// `GH_TOKEN`. The one exception is the Homebrew tap checkout in release.yml:
+/// it authenticates with an SSH deploy key (`ssh-key:`), not the workflow
+/// token, and keeps it so the later `git push` works.
 #[test]
 fn no_checkout_leaves_the_workflow_token_in_the_checkout() {
     for (name, workflow) in [
@@ -390,6 +392,12 @@ fn no_checkout_leaves_the_workflow_token_in_the_checkout() {
         );
 
         for (index, step) in steps.iter().enumerate() {
+            let is_tap_checkout = name == "release.yml"
+                && step.contains("repository: IliasAlmerekov/homebrew-aegis")
+                && step.contains("ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}");
+            if is_tap_checkout {
+                continue;
+            }
             assert!(
                 step.contains("persist-credentials: false"),
                 "{name} checkout #{} keeps the workflow token in .git/config; \
