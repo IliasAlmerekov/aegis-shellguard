@@ -754,6 +754,10 @@ panic or abnormal termination of the Hook is contained as a deny — see
 **Contained Hook Panic**.
 _Avoid_: wrapper, plugin (reserve "wrapper" for the shell `$SHELL` proxy itself)
 
+**Claude Code plugin**:
+The package Claude Code installs from a plugin catalog to register the Aegis `Hook`s and the `/aegis-rollback` slash command. It does not ship the aegis binary; while enforcement is on and the binary is not on `PATH`, the `Hook` it registers denies every Bash call. Always write the full name: the bare word "plugin" also names a Snapshot provider.
+_Avoid_: plugin (alone), extension, integration
+
 **Contained Hook Panic**:
 A panic or abnormal termination of the `Hook` that is converted into the ordinary
 deny response instead of dying silently, so the agent never mistakes a crash for
