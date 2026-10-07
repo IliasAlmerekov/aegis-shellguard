@@ -113,7 +113,7 @@ the `aegis-shellguard` marketplace, so it works before community review.
   from managed policy settings survive a project-level `disableAllHooks`.
 - Users who need protection against repository config should install the Aegis
   hooks through managed settings. A SessionStart sentinel that warns when the
-  PreToolUse Hook is missing is tracked as a follow-up issue.
+  PreToolUse Hook is missing is tracked in #514.
 - Every change to a Claude hook template must also update the plugin copy. The
   drift test catches a missed copy.
 - The `aegis-hook-version` header of `claude-session-start.sh` moves to 2. The
