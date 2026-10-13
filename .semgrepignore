@@ -1,0 +1,7 @@
+# Replaces Semgrep's default ignore list, which skips tests/; review finding
+# ids leak into test comments too.
+target/
+.worktrees/
+.scratch/
+landing/
+node_modules/

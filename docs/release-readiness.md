@@ -420,14 +420,6 @@ registry install, `rtk npm install --prefix /tmp/aegis-v063-npm-smoke
 @iliasalmerekov/aegis@0.6.3`, added one package; its wrapper printed
 `aegis 0.6.3`. The macOS registry install remains open.
 
-## Cargo install validation
-
-- [ ] `cargo install --git https://github.com/IliasAlmerekov/aegis-shellguard --tag vX.Y.Z aegis`
-      succeeds on a clean machine with a current stable Rust toolchain.
-- [ ] `aegis --version` prints the selected release version after Cargo install.
-- [ ] crates.io publication, if enabled, is handled as a separate release
-      checkpoint because the root crate depends on internal workspace crates.
-
 The `smoke-install` job in the release workflow installs the published
 registry package on macOS arm64, macOS Intel, and Linux after every stable tag,
 and after an npm recovery dispatch. Network-free contract tests live in
@@ -436,6 +428,14 @@ and after an npm recovery dispatch. Network-free contract tests live in
 `tests/npm_live.rs`. Both keep default `cargo test` network-free. The macOS box
 above stays open until the first stable release run passes the job; record its
 run URL here: _pending, tracked in #412_.
+
+## Cargo install validation
+
+- [ ] `cargo install --git https://github.com/IliasAlmerekov/aegis-shellguard --tag vX.Y.Z aegis`
+      succeeds on a clean machine with a current stable Rust toolchain.
+- [ ] `aegis --version` prints the selected release version after Cargo install.
+- [ ] crates.io publication, if enabled, is handled as a separate release
+      checkpoint because the root crate depends on internal workspace crates.
 
 Cargo support for the cargo-install gate is the documented
 `cargo install --git` source-build path; crates.io publication remains a

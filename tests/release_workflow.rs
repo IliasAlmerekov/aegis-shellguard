@@ -791,6 +791,10 @@ fn install_smoke_job_should_run_the_gated_live_tests_with_the_tag_version() {
     assert!(smoke.contains("AEGIS_TEST_LIVE_HOMEBREW"));
     assert!(smoke.contains("AEGIS_TEST_LIVE_NPM"));
     assert!(smoke.contains("AEGIS_TEST_EXPECTED_VERSION"));
+    assert!(
+        !smoke.contains("substr("),
+        "Actions expressions have no substr function; strip the v in the shell"
+    );
     assert!(smoke.contains("cargo test --test homebrew_live"));
     assert!(smoke.contains("cargo test --test npm_live"));
     assert!(smoke.contains("/home/linuxbrew/.linuxbrew/bin"));
