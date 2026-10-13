@@ -225,7 +225,7 @@ test in `tests/homebrew_live.rs`, which a release operator can also run by
 hand:
 `AEGIS_TEST_LIVE_HOMEBREW=1 AEGIS_TEST_EXPECTED_VERSION=X.Y.Z cargo test --test homebrew_live -- --nocapture`.
 The boxes above stay open until the first stable release run passes that job.
-Record its run URL here: _pending, first stable release after #412_.
+Record its run URL here: _pending, tracked in #412_.
 
 ### Evidence recorded 2026-06-22 (Linux x64 / WSL2, release v0.5.6)
 
@@ -435,7 +435,9 @@ and after an npm recovery dispatch. Network-free contract tests live in
 (`AEGIS_TEST_LIVE_NPM=1 AEGIS_TEST_EXPECTED_VERSION=X.Y.Z`) lives in
 `tests/npm_live.rs`. Both keep default `cargo test` network-free. The macOS box
 above stays open until the first stable release run passes the job; record its
-run URL here: _pending, first stable release after #412_. Cargo support for the cargo-install gate is the documented
+run URL here: _pending, tracked in #412_.
+
+Cargo support for the cargo-install gate is the documented
 `cargo install --git` source-build path; crates.io publication remains a
 separate human-controlled release checkpoint.
 

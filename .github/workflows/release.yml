@@ -594,6 +594,10 @@ jobs:
   # operator can run the same code by hand with the same variables. A failing
   # smoke fails the run; nothing is rolled back or unpublished. The npm
   # recovery dispatch publishes no tap, so there it runs the npm smoke only.
+  #
+  # It checks out the workflow's own commit, not the tag: a recovery dispatch
+  # runs from main, and an old tag lacks these live tests. The tag only sets
+  # the expected version.
   smoke-install:
     name: Install smoke ${{ matrix.os }}
     needs: [config, publish-homebrew-tap, publish-npm]
@@ -622,7 +626,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ inputs.tag || github.ref_name }}
 
       - uses: ./.github/actions/setup-rust
         with:
