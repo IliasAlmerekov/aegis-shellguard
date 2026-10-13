@@ -219,10 +219,13 @@ build-from-source escape hatch above disappears with the feature.
 - [ ] `brew install IliasAlmerekov/aegis/aegis` succeeds on Linux.
 - [ ] `brew test IliasAlmerekov/aegis/aegis` passes on both platforms.
 
-Homebrew validation is currently a release-operator smoke test rather than a
-default CI job. The required commands are listed above; a gated live test
-(`AEGIS_TEST_LIVE_HOMEBREW=1`) lives in `tests/homebrew_live.rs` and can be
-run manually where Homebrew is available.
+The `smoke-install` job in the release workflow runs these checks on macOS
+arm64, macOS Intel, and Linux after every stable tag. It runs the gated live
+test in `tests/homebrew_live.rs`, which a release operator can also run by
+hand:
+`AEGIS_TEST_LIVE_HOMEBREW=1 AEGIS_TEST_EXPECTED_VERSION=X.Y.Z cargo test --test homebrew_live -- --nocapture`.
+The boxes above stay open until the first stable release run passes that job.
+Record its run URL here: _pending, first stable release after #412_.
 
 ### Evidence recorded 2026-06-22 (Linux x64 / WSL2, release v0.5.6)
 
@@ -244,7 +247,7 @@ IliasAlmerekov/aegis/aegis` passed; and
 
 For the v0.5.6 release pass, the available formula, Linux clean-retap smoke,
 and release asset/checksum contract were accepted as sufficient evidence. The
-missing macOS smoke remained an operator follow-up; the current Homebrew tap
+missing macOS smoke was left open then; the current Homebrew tap
 gate status is recorded with the v0.6.3 evidence below.
 
 ### Evidence recorded 2026-08-05 (release v0.6.3)
@@ -256,7 +259,7 @@ The identical formula was published to
 in commit `41adf056f387b57770ca4043c0cdc362547833ee`. This Linux host has no
 `brew` executable, so `brew audit`, install, test, version, and notice-delivery
 evidence remain open for Linux; the required real-macOS operator smoke is also
-open. These missing smokes leave the Homebrew tap gate open.
+open. The `smoke-install` job closes them on the next stable release.
 
 ## Homebrew tap publish runbook
 
@@ -274,7 +277,8 @@ fails without changing it. Recover the newest release instead; do not downgrade
 the tap. An identical formula succeeds without a new commit. A concurrent tap
 update rejects the non-force push; re-run to check the current tap version.
 If automated publication cannot work, follow the manual runbook below.
-`brew audit` and the install smoke tests stay manual in both paths.
+The `smoke-install` job runs `brew audit` and the install smokes after the
+automated path; after the manual path, run them by hand (step 6 below).
 
 ### One-time deploy key setup
 
@@ -395,7 +399,8 @@ worked: `npm install -g --prefix /tmp/aegis-npm-registry
 `/tmp/aegis-npm-registry/bin/aegis --version` printed `aegis 0.5.6` on Linux
 x64.
 
-macOS npm smoke is still an operator follow-up. The npm wrapper gate is accepted as closed for
+The macOS npm smoke was left open then; the `smoke-install` job runs it on
+every stable release from #412 on. The npm wrapper gate is accepted as closed for
 this release pass based on the public npm package, Linux registry install smoke,
 and the package checksum contract that covers both macOS assets.
 
@@ -423,10 +428,14 @@ registry install, `rtk npm install --prefix /tmp/aegis-v063-npm-smoke
 - [ ] crates.io publication, if enabled, is handled as a separate release
       checkpoint because the root crate depends on internal workspace crates.
 
-npm wrapper validation is currently a release-operator smoke test rather than a
-default CI job. Network-free contract tests live in `tests/npm_package.rs` and
-the gated live test (`AEGIS_TEST_LIVE_NPM=1`) lives in `tests/npm_live.rs`; both
-keep default `cargo test` network-free. Cargo support for the cargo-install gate is the documented
+The `smoke-install` job in the release workflow installs the published
+registry package on macOS arm64, macOS Intel, and Linux after every stable tag,
+and after an npm recovery dispatch. Network-free contract tests live in
+`tests/npm_package.rs`; the gated live test
+(`AEGIS_TEST_LIVE_NPM=1 AEGIS_TEST_EXPECTED_VERSION=X.Y.Z`) lives in
+`tests/npm_live.rs`. Both keep default `cargo test` network-free. The macOS box
+above stays open until the first stable release run passes the job; record its
+run URL here: _pending, first stable release after #412_. Cargo support for the cargo-install gate is the documented
 `cargo install --git` source-build path; crates.io publication remains a
 separate human-controlled release checkpoint.
 

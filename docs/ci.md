@@ -151,12 +151,15 @@ numerically. An older release or an invalid version fails without replacing
 the formula. A concurrent remote update rejects the normal, non-force push.
 This repository keeps no copy of the formula.
 
-`brew audit`, `brew install`, and `brew test` on macOS and Linux stay
-release-operator smoke tests, listed in `docs/release-readiness.md`. A gated live
-test (`AEGIS_TEST_LIVE_HOMEBREW=1`) lives in `tests/homebrew_live.rs` and keeps
-default `cargo test` network-free; a CI job that runs it on
-`ubuntu-latest`/`macos-latest` will be added only after explicit workflow
-sign-off. `tests/homebrew_formula.rs` runs the updater against `file://` fixture
+The `smoke-install` job in `release.yml` runs `brew audit --strict --online`,
+`brew install`, and `brew test` after `publish-homebrew-tap` and `publish-npm`,
+on the pinned macOS arm64, macOS Intel, and Linux runners (read from
+`.github/build-targets.json`). The job runs the gated live test
+`tests/homebrew_live.rs` (`AEGIS_TEST_LIVE_HOMEBREW=1`), which checks that
+`aegis --version` prints `AEGIS_TEST_EXPECTED_VERSION`, set from the tag. The
+job skips prerelease tags, and a failing smoke fails the release run without
+rolling anything back. Default `cargo test` stays network-free.
+`tests/homebrew_formula.rs` runs the updater against `file://` fixture
 checksums, so the formula contract is tested without the network.
 `tests/release_workflow.rs` executes the publication step against a local bare
 Git repository to check commit/push, repeat publication, old-release recovery,
@@ -164,12 +167,16 @@ numeric version ordering, invalid versions, and concurrent remote updates.
 
 ## npm package validation
 
-npm package validation is a release-operator smoke test until explicit CI
-workflow sign-off is granted. Network-free contract tests live in
+The `smoke-install` job in `release.yml` installs the published
+`@iliasalmerekov/aegis@<version>` from the npm registry on the same three
+runners, retrying while the registry catches up, and checks `aegis --version`.
+On a manual npm recovery dispatch it runs the npm smoke only, because that
+path publishes no tap. Network-free contract tests live in
 `tests/npm_package.rs` and assert the manifest, installer fail-closed
 behavior, checksums, updater, and docs without touching the network. The gated
-live test in `tests/npm_live.rs` runs only when `AEGIS_TEST_LIVE_NPM=1` is set,
-keeping default `cargo test` network-free. The npm wrapper downloads a pinned
+live test in `tests/npm_live.rs` runs only when `AEGIS_TEST_LIVE_NPM=1` and
+`AEGIS_TEST_EXPECTED_VERSION` are set, keeping default `cargo test`
+network-free. The npm wrapper downloads a pinned
 GitHub Release binary during `postinstall`, verifies SHA256, and does not edit
 shell startup files or agent config.
 

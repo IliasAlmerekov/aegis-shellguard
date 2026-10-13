@@ -64,6 +64,8 @@ jobs:
       npm_cli_version: ${{ steps.versions.outputs.npm_cli_version }}
       build_targets: ${{ steps.versions.outputs.build_targets }}
       linux_runner: ${{ steps.versions.outputs.linux_runner }}
+      macos_runner: ${{ steps.versions.outputs.macos_runner }}
+      macos_intel_runner: ${{ steps.versions.outputs.macos_intel_runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -395,8 +397,8 @@ jobs:
 
   # Homebrew tap, part 2 of 2. The only job that holds the tap deploy key, and
   # the only one that pushes. No cargo or Rust setup runs here, so the key never
-  # reaches build or test code. `brew audit` and the install smoke tests stay
-  # manual (docs/release-readiness.md).
+  # reaches build or test code. `brew audit` and the install smokes run in the
+  # `smoke-install` job, after this one and `publish-npm`.
   publish-homebrew-tap:
     name: Publish Homebrew tap
     needs: [config, release, generate-homebrew-formula]
@@ -585,3 +587,71 @@ jobs:
           # earlier tag. Do not claim main's commit as that package's source.
           NPM_CONFIG_PROVENANCE: ${{ github.event_name == 'workflow_dispatch' && 'false' || 'true' }}
         run: npm publish --access public
+
+  # Install smokes. Installs what the two publish jobs just shipped, the way a
+  # user would, on the macOS arm64, macOS Intel, and Linux runners. It runs the
+  # gated live tests (tests/homebrew_live.rs, tests/npm_live.rs), so a release
+  # operator can run the same code by hand with the same variables. A failing
+  # smoke fails the run; nothing is rolled back or unpublished. The npm
+  # recovery dispatch publishes no tap, so there it runs the npm smoke only.
+  smoke-install:
+    name: Install smoke ${{ matrix.os }}
+    needs: [config, publish-homebrew-tap, publish-npm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    if: >-
+      always() && needs.config.result == 'success' &&
+      needs.publish-npm.result == 'success' &&
+      ((github.event_name == 'push' &&
+        needs.publish-homebrew-tap.result == 'success' &&
+        !contains(github.ref_name, '-rc') && !contains(github.ref_name, '-beta') &&
+        !contains(github.ref_name, '-alpha')) || github.event_name == 'workflow_dispatch')
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ${{ needs.config.outputs.linux_runner }}
+          - ${{ needs.config.outputs.macos_runner }}
+          - ${{ needs.config.outputs.macos_intel_runner }}
+    env:
+      AEGIS_TEST_EXPECTED_VERSION: ${{ startsWith(inputs.tag || github.ref_name, 'v') && substr(inputs.tag || github.ref_name, 1, 64) || '' }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag || github.ref_name }}
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ needs.config.outputs.rust_toolchain }}
+          cache: "false"
+
+      - uses: ./.github/actions/install-libcap
+        if: runner.os == 'Linux'
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ needs.config.outputs.node_version }}
+          package-manager-cache: false
+
+      - name: Homebrew smoke
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          AEGIS_TEST_LIVE_HOMEBREW: "1"
+        run: |
+          set -euo pipefail
+          # The Linux runner ships Homebrew outside the default PATH.
+          if [ "$RUNNER_OS" = Linux ]; then
+            export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
+          fi
+          cargo test --test homebrew_live -- --nocapture
+
+      - name: npm smoke
+        shell: bash
+        env:
+          AEGIS_TEST_LIVE_NPM: "1"
+        run: cargo test --test npm_live -- --nocapture
