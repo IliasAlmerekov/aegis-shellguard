@@ -120,11 +120,8 @@ removed quadratic scan cost or silently skipping detection. This is a rare
 shape for a real git invocation; the accepted cost is an extra prompt on it,
 the same trade the `--help` false positive below already makes.
 
-Snapshot targeting is unchanged: it still targets the process cwd
-(`src/execution/mod.rs`) even for `git -C other ...`, so a `Danger` command
-with a redirected working tree gets a prompt and an attempted Snapshot of the
-wrong directory. That gap is tracked as a follow-up once this advisory
-publishes, not fixed here.
+Snapshot targeting was left unchanged by this ADR: the git Snapshot still
+targeted the process cwd even for `git -C other ...`. ADR-048 closes that gap.
 
 `git --help reset --hard` now warns even though it only prints `reset`'s
 manual page and exits. This is an accepted false positive, in the same

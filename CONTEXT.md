@@ -594,6 +594,16 @@ that knows how to capture and restore state for its domain. Each successful run 
 `SnapshotRecord` (`plugin` + opaque `snapshot_id`).
 _Avoid_: snapshotter, driver, backend
 
+**Git target**:
+The working tree a git command acts on once its global options (`-C`,
+`--work-tree`, `--git-dir`) are applied; the git `Snapshot plugin` captures and
+restores this tree. It is unresolved when Aegis cannot determine it statically
+(a variable, glob or `~` in a path, a missing path, a `--git-dir` that is not
+`<work tree>/.git`, `GIT_DIR=` or `GIT_WORK_TREE=` in the stage's env prefix,
+an unlisted option read two ways); no Snapshot covers an unresolved Git target
+and the dialog and audit entry say so (ADR-048).
+_Avoid_: Snapshot target (reserved for database plugins and the ratchet)
+
 **Snapshot target**:
 The state a database `Snapshot plugin` captures and a Rollback restores into: a
 database with its host, port, and user, or a SQLite file path. The manifest
