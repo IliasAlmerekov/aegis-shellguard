@@ -465,3 +465,6 @@ impl SnapshotPlugin for GitPlugin {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod toplevel_tests;
