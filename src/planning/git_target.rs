@@ -603,4 +603,27 @@ mod tests {
         assert!(plan.has_unresolved());
         assert_eq!(plan.resolved_paths().count(), 0);
     }
+
+    #[test]
+    fn explain_names_each_target_and_each_unresolved_reason() {
+        let plan = GitTargetPlan {
+            targets: vec![
+                GitTarget::Resolved(PathBuf::from("/work/a")),
+                GitTarget::Unresolved(GitTargetUnresolved::PathNotFound),
+            ],
+            process_cwd: false,
+        };
+
+        assert_eq!(
+            plan.explain(),
+            vec![
+                aegis_explanation::GitTargetExplanation::Resolved {
+                    path: "/work/a".to_string()
+                },
+                aegis_explanation::GitTargetExplanation::Unresolved {
+                    reason: "a path does not exist".to_string()
+                },
+            ]
+        );
+    }
 }
