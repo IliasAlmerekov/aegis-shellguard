@@ -438,6 +438,17 @@ mod tests {
     }
 
     #[test]
+    fn git_dir_alone_is_unresolved_even_when_it_is_the_cwd_dot_git() {
+        let dir = tree();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+
+        assert_eq!(
+            one(args(&[], None, Some(".git")), &cwd_of(&dir)),
+            GitTarget::Unresolved(GitTargetUnresolved::GitDirNotInWorkTree)
+        );
+    }
+
+    #[test]
     fn git_dir_alone_is_unresolved() {
         let dir = tree();
 
