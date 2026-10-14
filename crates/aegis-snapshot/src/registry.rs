@@ -621,6 +621,84 @@ mod tests {
     }
 
     #[test]
+    fn merge_adds_applicable_counts_and_appends_records() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let registry = SnapshotRegistry::new_with_plugins(vec![Box::new(AlwaysSucceedingPlugin)]);
+        let mut first = runtime.block_on(registry.snapshot_all(Path::new("/x"), "c"));
+        first.applicable = 2;
+        let mut second = runtime.block_on(registry.snapshot_all(Path::new("/x"), "c"));
+        second.applicable = 3;
+
+        first.merge(second);
+
+        assert_eq!(first.applicable, 5);
+        assert_eq!(first.records.len(), 2);
+    }
+
+    #[test]
+    fn snapshot_all_except_skips_only_the_excluded_plugin() {
+        let registry = SnapshotRegistry::new_with_plugins(vec![
+            Box::new(AlwaysSucceedingPlugin),
+            Box::new(AlwaysFailingPlugin),
+        ]);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        let coverage = runtime.block_on(registry.snapshot_all_except(
+            "mock-failing",
+            Path::new("/nonexistent-cwd"),
+            "rm -rf /",
+        ));
+
+        assert_eq!(coverage.applicable, 1);
+        assert_eq!(coverage.records.len(), 1);
+    }
+
+    #[test]
+    fn snapshot_plugin_at_runs_only_the_named_plugin() {
+        let registry = SnapshotRegistry::new_with_plugins(vec![
+            Box::new(AlwaysSucceedingPlugin),
+            Box::new(AlwaysFailingPlugin),
+        ]);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        let coverage = runtime.block_on(registry.snapshot_plugin_at(
+            "mock-succeeding",
+            Path::new("/nonexistent-cwd"),
+            "rm -rf /",
+        ));
+
+        assert_eq!(coverage.applicable, 1);
+        assert_eq!(coverage.records.len(), 1);
+    }
+
+    #[test]
+    fn plugin_applicable_at_is_true_for_a_named_applicable_plugin() {
+        let registry = SnapshotRegistry::new_with_plugins(vec![
+            Box::new(NeverApplicablePlugin),
+            Box::new(AlwaysSucceedingPlugin),
+        ]);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        assert!(
+            runtime.block_on(registry.plugin_applicable_at("mock-succeeding", Path::new("/x")))
+        );
+    }
+
+    #[test]
+    fn plugin_applicable_at_is_false_for_an_inapplicable_or_missing_plugin() {
+        let registry = SnapshotRegistry::new_with_plugins(vec![
+            Box::new(NeverApplicablePlugin),
+            Box::new(AlwaysSucceedingPlugin),
+        ]);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        assert!(
+            !runtime.block_on(registry.plugin_applicable_at("mock-inapplicable", Path::new("/x")))
+        );
+        assert!(!runtime.block_on(registry.plugin_applicable_at("absent", Path::new("/x"))));
+    }
+
+    #[test]
     fn snapshot_all_warns_with_plugin_and_error_fields_on_plugin_failure() {
         let registry = SnapshotRegistry::new_with_plugins(vec![Box::new(AlwaysFailingPlugin)]);
         let captured: Arc<Mutex<Option<CapturedFields>>> = Arc::new(Mutex::new(None));
