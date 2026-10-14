@@ -10,7 +10,7 @@ use aegis_parser::GitTargetArgs;
 fn report(cmd: &str) -> GitStageReport {
     let scanner = scanner();
     let assessment = scanner.assess(cmd);
-    scanner.git_stage_report(cmd, &assessment)
+    scanner.git_stage_report_with_env(cmd, &assessment, false)
 }
 
 fn args(dash_c: &[&str], work_tree: Option<&str>, git_dir: Option<&str>) -> GitTargetArgs {
@@ -209,4 +209,17 @@ fn danger_id_in_a_redirected_stage_does_not_hide_the_same_id_in_a_plain_stage() 
     let report = report("git -C other log --format='rm -rf decoy'; rm -rf actual");
 
     assert!(report.needs_process_cwd);
+}
+
+#[test]
+fn ambient_git_dir_redirects_a_plain_danger_stage() {
+    let scanner = scanner();
+    let cmd = "git filter-branch --index-filter true";
+    let assessment = scanner.assess(cmd);
+    let report = scanner.git_stage_report_with_env(cmd, &assessment, true);
+
+    assert_eq!(
+        report.redirected.iter().map(|s| s.target.clone()).collect::<Vec<_>>(),
+        vec![GitStageTarget::EnvironmentRedirect]
+    );
 }

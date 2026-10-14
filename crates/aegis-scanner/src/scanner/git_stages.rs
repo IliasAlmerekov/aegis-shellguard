@@ -25,7 +25,8 @@ pub enum GitStageTarget {
     Options(Vec<GitTargetArgs>),
     /// The option walk exceeded its candidate budget.
     TooManyOptions,
-    /// `GIT_DIR=` or `GIT_WORK_TREE=` sits in the stage's environment prefix.
+    /// `GIT_DIR=` or `GIT_WORK_TREE=` sits in the stage's environment prefix,
+    /// or in Aegis's own environment.
     EnvironmentRedirect,
     /// The stage sits behind a launcher whose argv the scanner cannot map
     /// back onto the stage's own tokens (an `env -S` split).
@@ -61,6 +62,22 @@ impl Scanner {
     /// `assessment` must be the assessment of `cmd`. Called only when a
     /// recovery backstop applies, never on the safe path.
     pub fn git_stage_report(&self, cmd: &str, assessment: &Assessment) -> GitStageReport {
+        let ambient = ["GIT_DIR", "GIT_WORK_TREE"]
+            .iter()
+            .any(|name| std::env::var_os(name).is_some());
+        self.git_stage_report_with_env(cmd, assessment, ambient)
+    }
+
+    /// [`Self::git_stage_report`] with the process environment passed in:
+    /// `ambient_git_env` says Aegis's own environment sets `GIT_DIR` or
+    /// `GIT_WORK_TREE`, which every spawned git inherits, so no git stage
+    /// can be shown to act on the cwd.
+    pub fn git_stage_report_with_env(
+        &self,
+        cmd: &str,
+        assessment: &Assessment,
+        ambient_git_env: bool,
+    ) -> GitStageReport {
         let parsed = aegis_parser::Parser::parse(cmd);
         let target_report = recursive::scan_targets(cmd, &parsed);
         if target_report.limit_hit.is_some() {
@@ -91,7 +108,7 @@ impl Scanner {
                     plain_ids.extend(self.danger_ids(&slice));
                     continue;
                 }
-                let stage_target = stage_target(&token_refs, &slice);
+                let stage_target = stage_target(&token_refs, &slice, ambient_git_env);
                 let ids = self.danger_ids(&slice);
                 if ids.is_empty() {
                     continue;
@@ -147,7 +164,11 @@ impl Scanner {
 
 /// `Some` when the stage's working tree is redirected or cannot be shown to
 /// be the process cwd; `None` for a plain stage.
-fn stage_target(token_refs: &[&str], slice: &EffectiveTokenSlice<'_>) -> Option<GitStageTarget> {
+fn stage_target(
+    token_refs: &[&str],
+    slice: &EffectiveTokenSlice<'_>,
+    ambient_git_env: bool,
+) -> Option<GitStageTarget> {
     let tail_len = slice.tokens.len() - 1;
     let tail_start = token_refs.len().checked_sub(tail_len);
     let mapped = tail_start.is_some_and(|start| token_refs[start..] == slice.tokens[1..]);
@@ -155,9 +176,10 @@ fn stage_target(token_refs: &[&str], slice: &EffectiveTokenSlice<'_>) -> Option<
         return Some(GitStageTarget::UnmappedLauncher);
     }
     let prefix = &token_refs[..token_refs.len() - tail_len];
-    if prefix
-        .iter()
-        .any(|token| token.starts_with("GIT_DIR=") || token.starts_with("GIT_WORK_TREE="))
+    if ambient_git_env
+        || prefix
+            .iter()
+            .any(|token| token.starts_with("GIT_DIR=") || token.starts_with("GIT_WORK_TREE="))
     {
         return Some(GitStageTarget::EnvironmentRedirect);
     }
