@@ -118,6 +118,32 @@ impl GitTargetPlan {
             .any(|target| matches!(target, GitTarget::Unresolved(_)))
     }
 
+    /// Replace each resolved target with `map(path)`, or with an unresolved
+    /// one carrying `reason` when `map` returns `None`. Targets that become
+    /// equal collapse into one.
+    pub fn map_resolved(
+        &mut self,
+        map: impl Fn(&Path) -> Option<PathBuf>,
+        reason: GitTargetUnresolved,
+    ) {
+        for target in &mut self.targets {
+            if let GitTarget::Resolved(path) = target {
+                *target = match map(path) {
+                    Some(mapped) => GitTarget::Resolved(mapped),
+                    None => GitTarget::Unresolved(reason),
+                };
+            }
+        }
+        let mut seen: Vec<GitTarget> = Vec::new();
+        self.targets.retain(|target| {
+            let fresh = !seen.contains(target);
+            if fresh {
+                seen.push(target.clone());
+            }
+            fresh
+        });
+    }
+
     /// Replace each resolved target that `keep` rejects with an unresolved
     /// one carrying `reason`. Used for a target the git plugin cannot cover.
     pub fn demote_resolved(&mut self, keep: impl Fn(&Path) -> bool, reason: GitTargetUnresolved) {

@@ -354,3 +354,17 @@ fn disabled_git_snapshot_still_reports_a_resolved_target_that_is_not_a_repositor
         )]
     );
 }
+
+#[test]
+fn dash_c_subdirectory_resolves_to_the_repository_top_level() {
+    let fx = fixture();
+    let sub = fx.a.join("deep/sub");
+    std::fs::create_dir_all(&sub).unwrap();
+    let command = format!(
+        "git -C {} filter-branch --index-filter true",
+        sub.display()
+    );
+    let (_, targets) = required(plan_for(&fx, &command, CwdState::Resolved(fx.cwd.clone())));
+
+    assert_eq!(targets.targets, vec![resolved(&fx.a)]);
+}

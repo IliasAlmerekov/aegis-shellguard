@@ -61,7 +61,10 @@ of the same command succeeded.
 The Git target is planned whenever a recovery backstop applies, also when the
 git provider is disabled (`auto_snapshot_git = false`). A resolved target then
 runs nothing git; an unresolved one is disclosed and halts as above. A
-resolved path is checked to be a git working tree with or without the provider. Turning
+resolved path is checked to be a git working tree with or without the provider,
+and a directory inside a repository becomes the repository top level
+(`git rev-parse --show-toplevel`), so every stage on one repository shares one
+Snapshot location. Turning
 off one provider is not the `Mode::Audit` or `SnapshotPolicy::None` opt-out.
 
 Rollback needs no change: the git `snapshot_id` encodes the directory the plugin
