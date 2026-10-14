@@ -1,8 +1,8 @@
 //! Pure planning logic: build a planning outcome from a runtime context.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use crate::planning::git_target::GitTargetPlan;
+use crate::planning::git_target::{GitTargetPlan, GitTargetUnresolved};
 use crate::planning::policy_rules::evaluate_policy_rules;
 use crate::planning::prepare::PreparedPlanner;
 use crate::planning::types::{CwdState, DecisionContext, InterceptionPlan, PlanningOutcome};
@@ -104,14 +104,21 @@ pub async fn plan_with_context_async(
             if !git_targets.process_cwd {
                 applicable_snapshot_plugins.retain(|name| *name != "git");
             }
-            if !applicable_snapshot_plugins.contains(&"git") {
-                for path in git_targets.resolved_paths() {
-                    if context.git_snapshot_applicable_at_async(path).await {
-                        applicable_snapshot_plugins.push("git");
-                        break;
-                    }
+            // A resolved target the git plugin cannot cover is a gap, not a
+            // silent no-op: report it as unresolved.
+            let mut covered: Vec<PathBuf> = Vec::new();
+            for path in git_targets.resolved_paths() {
+                if context.git_snapshot_applicable_at_async(path).await {
+                    covered.push(path.to_path_buf());
                 }
             }
+            if !covered.is_empty() && !applicable_snapshot_plugins.contains(&"git") {
+                applicable_snapshot_plugins.push("git");
+            }
+            git_targets.demote_resolved(
+                |path| covered.iter().any(|c| c == path),
+                GitTargetUnresolved::NotAGitRepository,
+            );
         }
     }
 

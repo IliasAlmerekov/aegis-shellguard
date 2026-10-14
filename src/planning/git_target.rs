@@ -29,6 +29,9 @@ pub enum GitTargetUnresolved {
     /// `--work-tree` is given without `--git-dir`: git still finds the
     /// repository from the `-C` directory, so the work tree is not the target.
     WorkTreeWithoutGitDir,
+    /// The resolved directory is not a git repository the git Snapshot can
+    /// cover.
+    NotAGitRepository,
     /// A relative path needs the process cwd, which is unavailable.
     CwdUnavailable,
     /// Two readings of an unlisted global option give different targets.
@@ -52,6 +55,7 @@ impl GitTargetUnresolved {
             Self::DynamicPath => {
                 "a path holds a variable, glob, brace or ~ that Aegis cannot expand"
             }
+            Self::NotAGitRepository => "the target directory is not a git repository",
             Self::PathNotFound => "a path does not exist",
             Self::GitDirNotInWorkTree => "--git-dir is not <work tree>/.git",
             Self::WorkTreeWithoutGitDir => "--work-tree is given without a matching --git-dir",
@@ -109,6 +113,26 @@ impl GitTargetPlan {
         self.targets
             .iter()
             .any(|target| matches!(target, GitTarget::Unresolved(_)))
+    }
+
+    /// Replace each resolved target that `keep` rejects with an unresolved
+    /// one carrying `reason`. Used for a target the git plugin cannot cover.
+    pub fn demote_resolved(&mut self, keep: impl Fn(&Path) -> bool, reason: GitTargetUnresolved) {
+        for target in &mut self.targets {
+            if let GitTarget::Resolved(path) = target
+                && !keep(path)
+            {
+                *target = GitTarget::Unresolved(reason);
+            }
+        }
+        let mut seen: Vec<GitTarget> = Vec::new();
+        self.targets.retain(|target| {
+            let fresh = !seen.contains(target);
+            if fresh {
+                seen.push(target.clone());
+            }
+            fresh
+        });
     }
 
     /// The canonical directories the git plugin must snapshot.

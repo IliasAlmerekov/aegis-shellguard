@@ -286,3 +286,23 @@ fn disabled_git_snapshot_runs_nothing_git_for_a_resolved_target() {
         assert!(!applicable_plugins.contains(&"git"));
     }
 }
+
+#[test]
+fn resolved_target_that_is_not_a_git_repository_is_unresolved() {
+    let fx = fixture();
+    let plain = fx.cwd.parent().unwrap().join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    let command = format!(
+        "git -C {} filter-branch --index-filter true",
+        plain.display()
+    );
+    let (plugins, targets) = required(plan_for(&fx, &command, CwdState::Resolved(fx.cwd.clone())));
+
+    assert_eq!(
+        targets.targets,
+        vec![GitTarget::Unresolved(
+            GitTargetUnresolved::NotAGitRepository
+        )]
+    );
+    assert!(!plugins.contains(&"git"));
+}
