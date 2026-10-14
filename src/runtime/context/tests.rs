@@ -439,6 +439,20 @@ fn runtime_context_new_does_not_build_snapshot_registry_eagerly() {
 }
 
 #[test]
+fn git_snapshot_enabled_follows_the_auto_snapshot_git_setting() {
+    for enabled in [true, false] {
+        let mut config = AegisConfig::default();
+        config.snapshot_policy = SnapshotPolicy::Selective;
+        config.auto_snapshot_git = enabled;
+        config.auto_snapshot_docker = false;
+
+        let context = RuntimeContext::new(config, test_handle()).unwrap();
+
+        assert_eq!(context.git_snapshot_enabled(), enabled);
+    }
+}
+
+#[test]
 fn runtime_context_new_requires_handle_parameter() {
     // Verify the two-argument signature is the only way to construct.
     // This test will fail to compile if RuntimeContext::new still accepts
