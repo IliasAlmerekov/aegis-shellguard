@@ -330,3 +330,27 @@ fn audit_mode_takes_no_snapshot_for_an_unresolved_git_target() {
 
     assert!(matches!(plan, SnapshotPlan::NotRequired));
 }
+
+#[test]
+fn disabled_git_snapshot_still_reports_a_resolved_target_that_is_not_a_repository() {
+    let fx = fixture();
+    let plain = fx.cwd.parent().unwrap().join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    let command = format!(
+        "git -C {} filter-branch --index-filter true",
+        plain.display()
+    );
+    let (_, targets) = required(plan_with_git(
+        &fx,
+        &command,
+        CwdState::Resolved(fx.cwd.clone()),
+        false,
+    ));
+
+    assert_eq!(
+        targets.targets,
+        vec![GitTarget::Unresolved(
+            GitTargetUnresolved::NotAGitRepository
+        )]
+    );
+}

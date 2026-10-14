@@ -100,12 +100,24 @@ pub async fn plan_with_context_async(
         // unattended run. Disabling one provider is not the Audit opt-out.
         let report = context.git_stage_report(request.command, &assessment);
         git_targets = GitTargetPlan::resolve(&report, &request.cwd_state);
+        // A resolved target that is not a git working tree is a gap whether
+        // or not the git provider is enabled: report it as unresolved.
+        let mut repositories: Vec<PathBuf> = Vec::new();
+        for path in git_targets.resolved_paths() {
+            if aegis_snapshot::git_toplevel(path).await.is_some() {
+                repositories.push(path.to_path_buf());
+            }
+        }
+        git_targets.demote_resolved(
+            |path| repositories.iter().any(|r| r == path),
+            GitTargetUnresolved::NotAGitRepository,
+        );
         if context.git_snapshot_enabled() {
             if !git_targets.process_cwd {
                 applicable_snapshot_plugins.retain(|name| *name != "git");
             }
             // A resolved target the git plugin cannot cover is a gap, not a
-            // silent no-op: report it as unresolved.
+            // silent no-op.
             let mut covered: Vec<PathBuf> = Vec::new();
             for path in git_targets.resolved_paths() {
                 if context.git_snapshot_applicable_at_async(path).await {

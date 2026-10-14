@@ -59,6 +59,27 @@ fn git_command(cwd: impl AsRef<Path>) -> Command {
     cmd
 }
 
+/// The top-level directory of the working tree that contains `dir`, or `None`
+/// when `dir` is not inside a git working tree (a bare repository included) or
+/// git cannot run. Isolated from ambient git-location variables.
+pub async fn git_toplevel(dir: &Path) -> Option<std::path::PathBuf> {
+    let output = git_command(dir)
+        .args(["rev-parse", "--show-toplevel"])
+        .stderr(std::process::Stdio::null())
+        .output()
+        .await
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let top = text.trim_end_matches(['\n', '\r']);
+    if top.is_empty() {
+        return None;
+    }
+    std::path::PathBuf::from(top).canonicalize().ok()
+}
+
 /// Message prefix of the stash entry `rollback` creates for the state it
 /// replaces. Tests and recovery instructions both look for it.
 const PRE_ROLLBACK_PREFIX: &str = "aegis-pre-rollback-";
