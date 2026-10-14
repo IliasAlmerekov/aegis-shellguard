@@ -190,3 +190,14 @@ fn sudo_close_from_is_not_a_directory_change() {
 
     assert_eq!(only_options(&report), vec![vec![args(&["a"], None, None)]]);
 }
+
+#[test]
+fn environment_redirect_deep_in_a_launcher_prefix_is_flagged() {
+    let report = report("env A=1 B=2 GIT_DIR=elsewhere git filter-branch --force");
+
+    assert_eq!(report.redirected.len(), 1);
+    assert_eq!(
+        report.redirected[0].target,
+        GitStageTarget::EnvironmentRedirect
+    );
+}
