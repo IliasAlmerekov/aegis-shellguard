@@ -101,6 +101,23 @@ fn assert_audit_integrity_verified(home: &Path, workspace: &Path) {
     );
 }
 
+/// Marks the writer thread finished when dropped, even if it panics, so a
+/// polling reader stops instead of spinning forever. A panic also sets
+/// `failed` so the reader does not wait for data that will never arrive.
+struct WriterDone {
+    done: Arc<AtomicBool>,
+    failed: Arc<AtomicBool>,
+}
+
+impl Drop for WriterDone {
+    fn drop(&mut self) {
+        if thread::panicking() {
+            self.failed.store(true, Ordering::Release);
+        }
+        self.done.store(true, Ordering::Release);
+    }
+}
+
 #[test]
 fn concurrent_writers_do_not_corrupt_audit_log() {
     let home = TempDir::new().unwrap();
@@ -198,23 +215,30 @@ fn concurrent_reader_during_repeated_rotation_never_observes_broken_json() {
 
     let writer_home = home.path().to_path_buf();
     let writer_workspace = workspace.path().to_path_buf();
-    let writer_done_signal = Arc::clone(&writer_done);
+    let writer_failed = Arc::new(AtomicBool::new(false));
+    let writer_guard = WriterDone {
+        done: Arc::clone(&writer_done),
+        failed: Arc::clone(&writer_failed),
+    };
     let writer = thread::spawn(move || {
+        let _guard = writer_guard;
         for index in 0..40usize {
             let payload = "y".repeat(96);
             let command = format!("printf rotate-{index:02}-{payload}");
             let output = run_safe_command(&writer_home, &writer_workspace, &command);
             assert!(output.status.success(), "writer process failed");
         }
-        writer_done_signal.store(true, Ordering::Release);
     });
 
     let reader_home = home.path().to_path_buf();
     let reader_workspace = workspace.path().to_path_buf();
     let reader_done_signal = Arc::clone(&writer_done);
+    let reader_failed_signal = Arc::clone(&writer_failed);
     let reader = thread::spawn(move || {
         let mut successful_reads = 0usize;
-        while !reader_done_signal.load(Ordering::Acquire) || successful_reads < 40 {
+        while !reader_done_signal.load(Ordering::Acquire)
+            || (successful_reads < 40 && !reader_failed_signal.load(Ordering::Acquire))
+        {
             let entries = read_audit_json(&reader_home, &reader_workspace);
             let _ = serde_json::to_vec(&entries).unwrap();
             successful_reads += 1;
@@ -334,23 +358,39 @@ fn concurrent_reader_during_compressed_rotation_never_observes_data_loss() {
 
     let writer_home = home.path().to_path_buf();
     let writer_workspace = workspace.path().to_path_buf();
-    let writer_done_signal = Arc::clone(&writer_done);
+    let writer_failed = Arc::new(AtomicBool::new(false));
+    let writer_guard = WriterDone {
+        done: Arc::clone(&writer_done),
+        failed: Arc::clone(&writer_failed),
+    };
     let writer = thread::spawn(move || {
+        let _guard = writer_guard;
         for index in 0..36usize {
             let payload = "c".repeat(110);
             let command = format!("printf compressed-{index:02}-{payload}");
             let output = run_safe_command(&writer_home, &writer_workspace, &command);
             assert!(output.status.success(), "writer process failed");
         }
-        writer_done_signal.store(true, Ordering::Release);
     });
 
     let reader_home = home.path().to_path_buf();
     let reader_workspace = workspace.path().to_path_buf();
     let reader_done_signal = Arc::clone(&writer_done);
+    let reader_failed_signal = Arc::clone(&writer_failed);
     let reader = thread::spawn(move || {
         let mut saw_nonempty_read = false;
-        while !reader_done_signal.load(Ordering::Acquire) || !saw_nonempty_read {
+        // Once the writer is done, entries that exist are already on disk, so
+        // a bounded number of further reads is enough. Without the bound a
+        // writer that wrote nothing would leave this loop spinning forever.
+        let mut reads_after_done = 0usize;
+        while !reader_done_signal.load(Ordering::Acquire)
+            || (!saw_nonempty_read
+                && !reader_failed_signal.load(Ordering::Acquire)
+                && reads_after_done < 50)
+        {
+            if reader_done_signal.load(Ordering::Acquire) {
+                reads_after_done += 1;
+            }
             let entries = read_audit_json(&reader_home, &reader_workspace);
             if !entries.is_empty() {
                 saw_nonempty_read = true;
