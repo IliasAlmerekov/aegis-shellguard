@@ -29,7 +29,7 @@ them only when a recovery backstop applies, so the safe path pays nothing.
   `--git-dir` is given, so a lone `--work-tree` does not name the tree at risk.
 - `--git-dir` is accepted only when it canonicalizes to `<work tree>/.git`.
 - Everything else is unresolved: `--git-dir` alone or elsewhere, `--work-tree`
-  alone, a path with `$`, a glob, a brace expansion, a backslash or `~`,
+  alone, `--bare` (no working tree), a path with `$`, a glob, a brace expansion, a backslash or `~`,
   `GIT_DIR=` or `GIT_WORK_TREE=` in the stage's env prefix or in Aegis's own
   environment (every spawned git inherits it), a launcher that
   changes the directory before git runs (`env -C`, `env --chdir`, `sudo -D`,

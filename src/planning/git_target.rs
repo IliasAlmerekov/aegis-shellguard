@@ -42,6 +42,8 @@ pub enum GitTargetUnresolved {
     UnmappedLauncher,
     /// A launcher (`env -C`, `sudo -D`) changes the directory before git runs.
     LauncherChangesDirectory,
+    /// `--bare` names a repository with no working tree to snapshot.
+    BareRepository,
 }
 
 impl GitTargetUnresolved {
@@ -69,6 +71,7 @@ impl GitTargetUnresolved {
             Self::LauncherChangesDirectory => {
                 "a launcher changes the working directory before git runs"
             }
+            Self::BareRepository => "--bare names a repository with no working tree",
             Self::UnmappedLauncher => "git runs behind a launcher whose arguments Aegis cannot map",
         }
     }
@@ -245,6 +248,9 @@ fn join(base: Option<&Path>, path: &str) -> Option<PathBuf> {
 
 fn resolve_args(args: &GitTargetArgs, cwd: &CwdState) -> GitTarget {
     let unresolved = GitTarget::Unresolved;
+    if args.bare {
+        return unresolved(GitTargetUnresolved::BareRepository);
+    }
     let all_paths = args
         .dash_c
         .iter()
@@ -318,7 +324,22 @@ mod tests {
             dash_c: dash_c.iter().map(|s| (*s).to_string()).collect(),
             work_tree: work_tree.map(str::to_string),
             git_dir: git_dir.map(str::to_string),
+            ..GitTargetArgs::default()
         }
+    }
+
+    #[test]
+    fn bare_option_is_unresolved_even_with_a_valid_dash_c() {
+        let dir = tree();
+        let bare = GitTargetArgs {
+            bare: true,
+            ..args(&["other"], None, None)
+        };
+
+        assert_eq!(
+            one(bare, &cwd_of(&dir)),
+            GitTarget::Unresolved(GitTargetUnresolved::BareRepository)
+        );
     }
 
     fn one(args: GitTargetArgs, cwd: &CwdState) -> GitTarget {

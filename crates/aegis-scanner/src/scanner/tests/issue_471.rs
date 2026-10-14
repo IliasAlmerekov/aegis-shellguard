@@ -18,6 +18,7 @@ fn args(dash_c: &[&str], work_tree: Option<&str>, git_dir: Option<&str>) -> GitT
         dash_c: dash_c.iter().map(|s| (*s).to_string()).collect(),
         work_tree: work_tree.map(str::to_string),
         git_dir: git_dir.map(str::to_string),
+        ..GitTargetArgs::default()
     }
 }
 

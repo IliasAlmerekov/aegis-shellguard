@@ -216,6 +216,9 @@ pub struct GitTargetArgs {
     pub work_tree: Option<String>,
     /// The last `--git-dir` value, in either spelling.
     pub git_dir: Option<String>,
+    /// Whether `--bare` is among the options: git then treats the directory
+    /// as a bare repository with no working tree to snapshot.
+    pub bare: bool,
 }
 
 /// Outcome of [`git_option_target_readings`].
@@ -242,6 +245,10 @@ const MAX_TARGET_WALK_STATES: usize = 1024;
 fn apply_target_option(tokens: &[&str], pos: usize, args: &GitTargetArgs) -> GitTargetArgs {
     let token = tokens[pos];
     let mut next = args.clone();
+    if token == "--bare" {
+        next.bare = true;
+        return next;
+    }
     if token == "-C" {
         if let Some(value) = tokens.get(pos + 1) {
             next.dash_c.push((*value).to_string());
@@ -564,7 +571,15 @@ mod tests {
                 dash_c: dash_c.iter().map(|s| (*s).to_string()).collect(),
                 work_tree: work_tree.map(str::to_string),
                 git_dir: git_dir.map(str::to_string),
+                ..GitTargetArgs::default()
             }
+        }
+
+        #[test]
+        fn bare_option_is_recorded_in_the_reading() {
+            let reading = readings(&["git", "-C", "r.git", "--bare", "filter-branch"]);
+
+            assert!(reading[0].bare);
         }
 
         #[test]
