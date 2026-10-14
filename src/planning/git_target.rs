@@ -37,6 +37,8 @@ pub enum GitTargetUnresolved {
     TooManyOptions,
     /// The git stage sits behind a launcher whose argv Aegis cannot map back.
     UnmappedLauncher,
+    /// A launcher (`env -C`, `sudo -D`) changes the directory before git runs.
+    LauncherChangesDirectory,
 }
 
 impl GitTargetUnresolved {
@@ -60,6 +62,9 @@ impl GitTargetUnresolved {
                 "two readings of an unknown git option give different targets"
             }
             Self::TooManyOptions => "too many unrecognized git global options",
+            Self::LauncherChangesDirectory => {
+                "a launcher changes the working directory before git runs"
+            }
             Self::UnmappedLauncher => "git runs behind a launcher whose arguments Aegis cannot map",
         }
     }
@@ -177,6 +182,9 @@ fn resolve_stage(stage: &GitStageTarget, cwd: &CwdState) -> GitTarget {
         }
         GitStageTarget::TooManyOptions => {
             GitTarget::Unresolved(GitTargetUnresolved::TooManyOptions)
+        }
+        GitStageTarget::LauncherChangesDirectory => {
+            GitTarget::Unresolved(GitTargetUnresolved::LauncherChangesDirectory)
         }
         GitStageTarget::UnmappedLauncher => {
             GitTarget::Unresolved(GitTargetUnresolved::UnmappedLauncher)
@@ -488,6 +496,17 @@ mod tests {
         assert_eq!(
             resolve_stage(&GitStageTarget::EnvironmentRedirect, &CwdState::Unavailable),
             GitTarget::Unresolved(GitTargetUnresolved::EnvironmentRedirect)
+        );
+    }
+
+    #[test]
+    fn launcher_that_changes_directory_is_unresolved() {
+        assert_eq!(
+            resolve_stage(
+                &GitStageTarget::LauncherChangesDirectory,
+                &CwdState::Unavailable
+            ),
+            GitTarget::Unresolved(GitTargetUnresolved::LauncherChangesDirectory)
         );
     }
 

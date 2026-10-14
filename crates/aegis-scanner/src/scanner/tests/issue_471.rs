@@ -155,3 +155,38 @@ fn unlisted_option_swallowing_dash_c_reports_both_readings() {
     assert!(stages[0].contains(&args(&["a"], None, None)));
     assert!(stages[0].contains(&args(&[], None, None)));
 }
+
+#[test]
+fn launcher_that_changes_directory_leaves_the_target_unresolved() {
+    for cmd in [
+        "env -C /base git -C repo filter-branch",
+        "env -C/base git -C repo filter-branch",
+        "env --chdir=/base git -C repo filter-branch",
+        "env --chdir /base git filter-branch",
+        "sudo -D /base git -C repo filter-branch",
+        "sudo --chdir=/base git filter-branch",
+    ] {
+        let report = report(cmd);
+
+        assert_eq!(report.redirected.len(), 1, "{cmd}");
+        assert_eq!(
+            report.redirected[0].target,
+            GitStageTarget::LauncherChangesDirectory,
+            "{cmd}"
+        );
+    }
+}
+
+#[test]
+fn launcher_without_a_directory_option_keeps_the_option_values() {
+    let report = report("env -i FOO=1 git -C a filter-branch");
+
+    assert_eq!(only_options(&report), vec![vec![args(&["a"], None, None)]]);
+}
+
+#[test]
+fn sudo_close_from_is_not_a_directory_change() {
+    let report = report("sudo -C 5 git -C a filter-branch");
+
+    assert_eq!(only_options(&report), vec![vec![args(&["a"], None, None)]]);
+}

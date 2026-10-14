@@ -30,6 +30,10 @@ pub enum GitStageTarget {
     /// The stage sits behind a launcher whose argv the scanner cannot map
     /// back onto the stage's own tokens (an `env -S` split).
     UnmappedLauncher,
+    /// A launcher before `git` changes the working directory (`env -C`,
+    /// `env --chdir`, `sudo -D`, `sudo --chdir`), so every relative path in
+    /// the stage resolves against a directory Aegis does not track.
+    LauncherChangesDirectory,
 }
 
 /// One `Danger` git stage whose working tree is not the process cwd, or not
@@ -153,6 +157,9 @@ fn stage_target(token_refs: &[&str], slice: &EffectiveTokenSlice<'_>) -> Option<
     {
         return Some(GitStageTarget::EnvironmentRedirect);
     }
+    if prefix_changes_directory(prefix) {
+        return Some(GitStageTarget::LauncherChangesDirectory);
+    }
     match aegis_parser::git_option_target_readings(&slice.tokens) {
         GitTargetReadings::TooMany => Some(GitStageTarget::TooManyOptions),
         GitTargetReadings::Readings(readings) => {
@@ -166,4 +173,30 @@ fn stage_target(token_refs: &[&str], slice: &EffectiveTokenSlice<'_>) -> Option<
             }
         }
     }
+}
+
+/// Whether a launcher in `prefix` runs the command in another directory.
+///
+/// Reads `env -C DIR`, `-CDIR`, `--chdir DIR`, `--chdir=DIR` and the `sudo`
+/// forms `-D DIR`, `--chdir=DIR`. Short options may be clustered, so any short
+/// option token holding the letter counts. This leans toward reporting a
+/// change: an unresolved Git target is disclosed, never silently wrong.
+fn prefix_changes_directory(prefix: &[&str]) -> bool {
+    let has_launcher = |name: &str| {
+        prefix.iter().any(|token| {
+            token
+                .rsplit('/')
+                .next()
+                .unwrap_or(token)
+                .eq_ignore_ascii_case(name)
+        })
+    };
+    let (env, sudo) = (has_launcher("env"), has_launcher("sudo"));
+    prefix.iter().any(|token| {
+        let long = *token == "--chdir" || token.starts_with("--chdir=");
+        let short = |letter: char| {
+            token.starts_with('-') && !token.starts_with("--") && token.contains(letter)
+        };
+        ((env || sudo) && long) || (env && short('C')) || (sudo && short('D'))
+    })
 }

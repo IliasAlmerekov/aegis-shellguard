@@ -29,10 +29,12 @@ them only when a recovery backstop applies, so the safe path pays nothing.
   `--git-dir` is given, so a lone `--work-tree` does not name the tree at risk.
 - `--git-dir` is accepted only when it canonicalizes to `<work tree>/.git`.
 - Everything else is unresolved: `--git-dir` alone or elsewhere, `--work-tree`
-  alone, a path with `$`, a glob, a brace expansion, a backslash or `~`, `GIT_DIR=` or `GIT_WORK_TREE=` in the stage's env
-  prefix, a missing path, a relative path with no cwd, and an unlisted option
-  whose two readings give different targets. A process-environment `GIT_DIR`
-  is not a redirect: only the env prefix of the stage is read.
+  alone, a path with `$`, a glob, a brace expansion, a backslash or `~`,
+  `GIT_DIR=` or `GIT_WORK_TREE=` in the stage's env prefix, a launcher that
+  changes the directory before git runs (`env -C`, `env --chdir`, `sudo -D`,
+  `sudo --chdir`), a missing path, a relative path with no cwd, and an unlisted
+  option whose two readings give different targets. A process-environment
+  `GIT_DIR` is not a redirect: only the env prefix of the stage is read.
 
 Which Snapshots run, as `SnapshotPlan::Required { git_targets }` that execution
 follows without deriving anything from the command:
