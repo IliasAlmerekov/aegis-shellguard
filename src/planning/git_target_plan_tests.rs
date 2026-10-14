@@ -53,6 +53,15 @@ fn fixture() -> Fixture {
 }
 
 fn plan_for(fx: &Fixture, command: &str, cwd_state: CwdState) -> SnapshotPlan {
+    plan_with_git(fx, command, cwd_state, true)
+}
+
+fn plan_with_git(
+    fx: &Fixture,
+    command: &str,
+    cwd_state: CwdState,
+    auto_snapshot_git: bool,
+) -> SnapshotPlan {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -60,7 +69,7 @@ fn plan_for(fx: &Fixture, command: &str, cwd_state: CwdState) -> SnapshotPlan {
     let mut config = AegisConfig::default();
     config.mode = Mode::Protect;
     config.snapshot_policy = SnapshotPolicy::Selective;
-    config.auto_snapshot_git = true;
+    config.auto_snapshot_git = auto_snapshot_git;
     config.auto_snapshot_docker = false;
     let context = RuntimeContext::new(config, rt.handle().clone()).unwrap();
     let outcome = std::thread::scope(|scope| {
@@ -244,4 +253,36 @@ fn environment_redirect_is_unresolved() {
     ));
 
     assert!(targets.has_unresolved());
+}
+
+#[test]
+fn disabled_git_snapshot_still_discloses_an_unresolved_git_target() {
+    let fx = fixture();
+    let (plugins, targets) = required(plan_with_git(
+        &fx,
+        "git -C \"$REPO\" filter-branch --index-filter true",
+        CwdState::Resolved(fx.cwd.clone()),
+        false,
+    ));
+
+    assert!(targets.has_unresolved());
+    assert!(!plugins.contains(&"git"));
+}
+
+#[test]
+fn disabled_git_snapshot_runs_nothing_git_for_a_resolved_target() {
+    let fx = fixture();
+    let command = format!(
+        "git -C {} filter-branch --index-filter true",
+        fx.a.display()
+    );
+    let plan = plan_with_git(&fx, &command, CwdState::Resolved(fx.cwd.clone()), false);
+
+    // With no provider left, policy may require no Snapshot at all.
+    if let SnapshotPlan::Required {
+        applicable_plugins, ..
+    } = plan
+    {
+        assert!(!applicable_plugins.contains(&"git"));
+    }
 }

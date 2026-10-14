@@ -94,17 +94,22 @@ pub async fn plan_with_context_async(
     // canonicalizes paths) runs only here, for a command that already needs a
     // recovery backstop and only when a git stage redirects its working tree.
     let mut git_targets = GitTargetPlan::default();
-    if backstop && context.git_snapshot_enabled() {
+    if backstop {
+        // The target is planned even when the git provider is disabled: an
+        // unresolved Git target must still be disclosed and halt an
+        // unattended run. Disabling one provider is not the Audit opt-out.
         let report = context.git_stage_report(request.command, &assessment);
         git_targets = GitTargetPlan::resolve(&report, &request.cwd_state);
-        if !git_targets.process_cwd {
-            applicable_snapshot_plugins.retain(|name| *name != "git");
-        }
-        if !applicable_snapshot_plugins.contains(&"git") {
-            for path in git_targets.resolved_paths() {
-                if context.git_snapshot_applicable_at_async(path).await {
-                    applicable_snapshot_plugins.push("git");
-                    break;
+        if context.git_snapshot_enabled() {
+            if !git_targets.process_cwd {
+                applicable_snapshot_plugins.retain(|name| *name != "git");
+            }
+            if !applicable_snapshot_plugins.contains(&"git") {
+                for path in git_targets.resolved_paths() {
+                    if context.git_snapshot_applicable_at_async(path).await {
+                        applicable_snapshot_plugins.push("git");
+                        break;
+                    }
                 }
             }
         }

@@ -55,6 +55,11 @@ auto-approved run outside `Mode::Audit` halts with the Recovery obligation
 unmet (`RecoveryDegradation::UnresolvedGitTarget`), even when other Snapshots
 of the same command succeeded.
 
+The Git target is planned whenever a recovery backstop applies, also when the
+git provider is disabled (`auto_snapshot_git = false`). A resolved target then
+runs nothing git; an unresolved one is disclosed and halts as above. Turning
+off one provider is not the `Mode::Audit` or `SnapshotPolicy::None` opt-out.
+
 Rollback needs no change: the git `snapshot_id` encodes the directory the plugin
 ran in, so the Snapshot's location is the Git target.
 
