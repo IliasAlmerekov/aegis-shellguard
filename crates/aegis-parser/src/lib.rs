@@ -30,10 +30,7 @@ pub use embedded_scripts::{
     split_at_heredoc_marker,
 };
 use env_launcher::{env_prefix_lengths, env_split_string_tokens};
-pub use git_options::{
-    GitSubcommandStarts, GitTargetArgs, GitTargetReadings, MAX_GIT_OPTION_CANDIDATES,
-    git_option_subcommand_starts, git_option_target_readings,
-};
+pub use git_options::*;
 pub use list_segments::{ListSegment, ListSeparator, list_segments};
 pub use nested_shells::extract_nested_commands;
 pub use prefix_match::{

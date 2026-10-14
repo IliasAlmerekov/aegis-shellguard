@@ -2,6 +2,8 @@
 
 pub mod core;
 pub mod git_target;
+#[cfg(test)]
+mod git_target_plan_tests;
 pub mod policy_rules;
 pub mod prepare;
 pub mod types;

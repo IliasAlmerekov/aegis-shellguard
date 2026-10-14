@@ -176,4 +176,93 @@ mod tests {
             None
         );
     }
+
+    // #471: an unresolved Git target halts unattended runs only.
+
+    fn plan_for(command: &str, mode: Mode) -> InterceptionPlan {
+        use crate::planning::{CwdState, PlanningOutcome, PlanningRequest, plan_with_context};
+        use crate::runtime::RuntimeContext;
+        use aegis_config::AegisConfig;
+        use aegis_types::SnapshotPolicy;
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let mut config = AegisConfig::default();
+        config.mode = mode;
+        config.snapshot_policy = SnapshotPolicy::Selective;
+        config.auto_snapshot_git = true;
+        config.auto_snapshot_docker = false;
+        let context = RuntimeContext::new(config, rt.handle().clone()).unwrap();
+        let cwd = std::env::temp_dir();
+        let outcome = std::thread::scope(|scope| {
+            scope
+                .spawn(|| {
+                    plan_with_context(
+                        &context,
+                        PlanningRequest {
+                            command,
+                            cwd_state: CwdState::Resolved(cwd),
+                            transport: aegis_policy::ExecutionTransport::Shell,
+                            ci_detected: true,
+                        },
+                    )
+                })
+                .join()
+                .unwrap()
+        });
+        let PlanningOutcome::Planned(plan) = outcome else {
+            panic!("expected a normal plan");
+        };
+        plan
+    }
+
+    const UNRESOLVED: &str = "git -C /aegis-471-no-such-dir filter-branch --index-filter true";
+
+    #[test]
+    fn unresolved_git_target_halts_an_unattended_run_even_with_other_snapshots() {
+        let plan = plan_for(UNRESOLVED, Mode::Protect);
+        let coverage = SnapshotCoverage::complete(vec![record("git")]);
+
+        assert_eq!(
+            plan_recovery_degradation(&plan, true, &coverage),
+            Some(RecoveryDegradation::UnresolvedGitTarget)
+        );
+    }
+
+    #[test]
+    fn unresolved_git_target_does_not_halt_a_confirmed_run() {
+        let plan = plan_for(UNRESOLVED, Mode::Protect);
+
+        assert_eq!(
+            plan_recovery_degradation(&plan, false, &SnapshotCoverage::default()),
+            None
+        );
+    }
+
+    #[test]
+    fn unresolved_git_target_does_not_halt_in_audit_mode() {
+        let plan = plan_for(UNRESOLVED, Mode::Audit);
+
+        assert_eq!(
+            plan_recovery_degradation(&plan, true, &SnapshotCoverage::default()),
+            None
+        );
+    }
+
+    #[test]
+    fn resolved_git_target_does_not_halt_an_unattended_run() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let command = format!(
+            "git -C {} filter-branch --index-filter true",
+            dir.path().display()
+        );
+        let plan = plan_for(&command, Mode::Protect);
+
+        assert_eq!(
+            plan_recovery_degradation(&plan, true, &SnapshotCoverage::default()),
+            None
+        );
+    }
 }
