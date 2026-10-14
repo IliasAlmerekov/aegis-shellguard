@@ -430,6 +430,69 @@ impl RuntimeContext {
         self.snapshot_registry().snapshot_all(cwd, cmd).await
     }
 
+    /// Run the snapshot pass a plan asks for (#471).
+    ///
+    /// Every plugin but git runs at `cwd`. The git plugin runs at each
+    /// resolved Git target, and at `cwd` only when the plan says some part of
+    /// the command needs a Snapshot there. A plan with no Git targets and
+    /// `process_cwd` set is the plain [`Self::create_snapshots_async`] pass.
+    pub async fn create_snapshots_for_plan_async(
+        &self,
+        cwd: &Path,
+        cmd: &str,
+        git_targets: &crate::planning::GitTargetPlan,
+    ) -> SnapshotCoverage {
+        let registry = self.snapshot_registry();
+        if git_targets.targets.is_empty() && git_targets.process_cwd {
+            return registry.snapshot_all(cwd, cmd).await;
+        }
+
+        let mut coverage = if git_targets.process_cwd {
+            registry.snapshot_all(cwd, cmd).await
+        } else {
+            registry.snapshot_all_except("git", cwd, cmd).await
+        };
+        for path in git_targets.resolved_paths() {
+            coverage.merge(registry.snapshot_plugin_at("git", path, cmd).await);
+        }
+        coverage
+    }
+
+    /// Sync variant of [`Self::create_snapshots_for_plan_async`].
+    pub fn create_snapshots_for_plan(
+        &self,
+        cwd: &Path,
+        cmd: &str,
+        git_targets: &crate::planning::GitTargetPlan,
+    ) -> SnapshotCoverage {
+        self.async_handle
+            .block_on(self.create_snapshots_for_plan_async(cwd, cmd, git_targets))
+    }
+
+    /// Whether the git `Snapshot plugin` is enabled in this runtime.
+    pub fn git_snapshot_enabled(&self) -> bool {
+        self.snapshot_registry()
+            .configured_provider_names()
+            .contains(&"git")
+    }
+
+    /// Whether the git plugin can snapshot the working tree at `dir`.
+    pub async fn git_snapshot_applicable_at_async(&self, dir: &Path) -> bool {
+        self.snapshot_registry()
+            .plugin_applicable_at("git", dir)
+            .await
+    }
+
+    /// Report the `Danger` git stages of `cmd` that redirect their working
+    /// tree. Slow path only: call it once a recovery backstop applies.
+    pub fn git_stage_report(
+        &self,
+        cmd: &str,
+        assessment: &Assessment,
+    ) -> aegis_scanner::GitStageReport {
+        self.scanner.git_stage_report(cmd, assessment)
+    }
+
     /// Append one audit entry with the context-bound logger configuration.
     pub fn append_audit_entry(
         &self,

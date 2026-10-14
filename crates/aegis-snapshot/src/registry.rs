@@ -111,6 +111,13 @@ impl SnapshotCoverage {
         }
     }
 
+    /// Fold another pass into this one: records append and applicable
+    /// counts add, so partial coverage stays visible across passes.
+    pub fn merge(&mut self, other: SnapshotCoverage) {
+        self.records.extend(other.records);
+        self.applicable += other.applicable;
+    }
+
     /// Returns `true` when an applicable plugin failed while another succeeded.
     #[must_use]
     pub fn is_partial(&self) -> bool {
@@ -276,9 +283,57 @@ impl SnapshotRegistry {
     /// partial one without asking every plugin for applicability a second
     /// time and risking a different answer.
     pub async fn snapshot_all(&self, cwd: &Path, cmd: &str) -> SnapshotCoverage {
+        self.snapshot_matching(cwd, cmd, |_| true).await
+    }
+
+    /// [`Self::snapshot_all`] without the plugin named `excluded`.
+    ///
+    /// Used when the git `Snapshot plugin` follows a Git target instead of
+    /// the process cwd (#471): every other plugin still runs at `cwd`.
+    pub async fn snapshot_all_except(
+        &self,
+        excluded: &str,
+        cwd: &Path,
+        cmd: &str,
+    ) -> SnapshotCoverage {
+        self.snapshot_matching(cwd, cmd, |name| name != excluded)
+            .await
+    }
+
+    /// Run only the plugin named `plugin`, rooted at `dir`.
+    ///
+    /// Returns an empty coverage when the plugin is not materialized in this
+    /// registry or is not applicable to `dir`.
+    pub async fn snapshot_plugin_at(
+        &self,
+        plugin: &str,
+        dir: &Path,
+        cmd: &str,
+    ) -> SnapshotCoverage {
+        self.snapshot_matching(dir, cmd, |name| name == plugin)
+            .await
+    }
+
+    /// Whether the plugin named `plugin` is materialized in this registry
+    /// and applicable to `dir`.
+    pub async fn plugin_applicable_at(&self, plugin: &str, dir: &Path) -> bool {
+        for candidate in &self.plugins {
+            if candidate.name() == plugin {
+                return candidate.is_applicable(dir).await;
+            }
+        }
+        false
+    }
+
+    async fn snapshot_matching(
+        &self,
+        cwd: &Path,
+        cmd: &str,
+        include: impl Fn(&str) -> bool,
+    ) -> SnapshotCoverage {
         let mut coverage = SnapshotCoverage::default();
         for plugin in &self.plugins {
-            if !plugin.is_applicable(cwd).await {
+            if !include(plugin.name()) || !plugin.is_applicable(cwd).await {
                 continue;
             }
             coverage.applicable += 1;

@@ -65,6 +65,7 @@ pub fn build_explanation_from_plan(
                 .iter()
                 .map(|plugin| (*plugin).to_string())
                 .collect(),
+            git_targets: Vec::new(),
         },
         outcome: None,
     }
@@ -197,6 +198,7 @@ mod tests {
                 ci_detected: false,
                 allowlist_match: None,
                 applicable_snapshot_plugins: vec!["git".to_string()],
+                git_targets: Vec::new(),
             },
             outcome: None,
         }
@@ -393,6 +395,7 @@ mod tests {
                 ci_detected: false,
                 allowlist_match: None,
                 applicable_snapshot_plugins: vec!["git".to_string()],
+                git_targets: Vec::new(),
             },
             outcome: None,
         };

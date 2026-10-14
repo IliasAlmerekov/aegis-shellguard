@@ -114,3 +114,22 @@ fn recovery_prompt_flush_failure_denies() {
 
     assert_eq!(decision, RecoveryPromptDecision::Deny);
 }
+
+#[test]
+fn recovery_prompt_names_an_unresolved_git_target_and_denies_without_a_tty() {
+    let mut output = Vec::new();
+    let decision = show_recovery_override_with_input(
+        RecoveryDegradation::UnresolvedGitTarget,
+        false,
+        &mut b"r\n".as_ref(),
+        &mut output,
+    );
+    let text = strip_ansi(&String::from_utf8_lossy(&output));
+
+    assert_eq!(decision, RecoveryPromptDecision::Deny);
+    assert!(
+        text.contains("working tree could not be resolved")
+            && !text.contains("could not determine the eventual effect"),
+        "banner must name the unresolved Git target, not effect opacity: {text}"
+    );
+}

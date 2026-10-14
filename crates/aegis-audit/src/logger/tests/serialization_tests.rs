@@ -31,6 +31,7 @@ fn audit_entry_serializes_nested_explanation_sections() {
             ci_detected: false,
             allowlist_match: None,
             applicable_snapshot_plugins: vec!["git".to_string()],
+            git_targets: Vec::new(),
         },
         outcome: Some(ExecutionOutcomeExplanation {
             decision: ExecutionDecisionExplanation::Approved,
@@ -134,6 +135,7 @@ fn audit_entry_keeps_existing_top_level_fields_for_backward_compatibility() {
             ci_detected: false,
             allowlist_match: None,
             applicable_snapshot_plugins: vec!["git".to_string()],
+            git_targets: Vec::new(),
         },
         outcome: Some(ExecutionOutcomeExplanation {
             decision: ExecutionDecisionExplanation::Approved,

@@ -348,3 +348,59 @@ fn deny_always_is_not_approved_by_show_confirmation_with_input() {
         "DenyAlways must not be treated as approved by show_confirmation_with_input"
     );
 }
+
+// ── Git target disclosure (#471) ──────────────────────────────────────────
+
+fn dialog_text_with_git_targets(targets: Vec<aegis_explanation::GitTargetExplanation>) -> String {
+    let assessment = make_assessment("git -C \"$X\" filter-branch", RiskLevel::Danger, vec![]);
+    let mut explanation = default_explanation_for_assessment(&assessment);
+    explanation.context.git_targets = targets;
+
+    let mut output = Vec::new();
+    show_confirmation_with_input(
+        &assessment,
+        &explanation,
+        &[],
+        true,
+        &mut b"no\n".as_ref(),
+        &mut output,
+    );
+    strip_ansi(&String::from_utf8_lossy(&output))
+}
+
+#[test]
+fn render_dialog_discloses_an_unresolved_git_target() {
+    let text =
+        dialog_text_with_git_targets(vec![aegis_explanation::GitTargetExplanation::Unresolved {
+            reason: "a path holds a variable".to_string(),
+        }]);
+
+    assert!(
+        text.contains("Git target unresolved: a path holds a variable"),
+        "dialog must name the unresolved Git target; got:\n{text}"
+    );
+    assert!(
+        text.contains("no git Snapshot covers it"),
+        "dialog must say no git Snapshot covers it; got:\n{text}"
+    );
+}
+
+#[test]
+fn render_dialog_names_a_resolved_git_target() {
+    let text =
+        dialog_text_with_git_targets(vec![aegis_explanation::GitTargetExplanation::Resolved {
+            path: "/work/other".to_string(),
+        }]);
+
+    assert!(
+        text.contains("Git target: /work/other"),
+        "dialog must name the resolved Git target; got:\n{text}"
+    );
+}
+
+#[test]
+fn render_dialog_omits_the_git_target_section_when_none() {
+    let text = dialog_text_with_git_targets(Vec::new());
+
+    assert!(!text.contains("Git target"), "got:\n{text}");
+}

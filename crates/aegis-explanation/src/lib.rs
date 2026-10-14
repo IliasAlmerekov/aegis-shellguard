@@ -109,6 +109,26 @@ pub struct ExecutionContextExplanation {
     pub allowlist_match: Option<AllowlistExplanation>,
     /// Snapshot plugins applicable to the resolved execution context.
     pub applicable_snapshot_plugins: Vec<String>,
+    /// The working trees the git Snapshot targets, one entry per redirected
+    /// git stage (#471). Empty when no git stage redirects its working tree.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub git_targets: Vec<GitTargetExplanation>,
+}
+
+/// One Git target as disclosed to the operator and the audit log.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum GitTargetExplanation {
+    /// The git Snapshot covers this working tree.
+    Resolved {
+        /// Canonical path of the working tree.
+        path: String,
+    },
+    /// No git Snapshot covers this stage's working tree.
+    Unresolved {
+        /// Why the Git target could not be resolved.
+        reason: String,
+    },
 }
 
 /// Descriptive allowlist provenance for explanation output.

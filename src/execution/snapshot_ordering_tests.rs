@@ -48,7 +48,8 @@ fn effect_opaque_non_danger_plan_requests_recovery_snapshot() {
     assert_eq!(
         plan.snapshot_plan(),
         SnapshotPlan::Required {
-            applicable_plugins: Vec::new()
+            applicable_plugins: Vec::new(),
+            git_targets: aegis::planning::GitTargetPlan::default(),
         }
     );
 }

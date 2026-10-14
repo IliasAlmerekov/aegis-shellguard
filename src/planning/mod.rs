@@ -1,10 +1,12 @@
 //! Orchestration layer that wraps the pure policy engine.
 
 pub mod core;
+pub mod git_target;
 pub mod policy_rules;
 pub mod prepare;
 pub mod types;
 
+pub use git_target::{GitTarget, GitTargetPlan, GitTargetUnresolved};
 pub use policy_rules::evaluate_policy_rules;
 
 pub use core::{PlanningRequest, plan_with_context, plan_with_context_async};

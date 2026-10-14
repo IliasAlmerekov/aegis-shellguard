@@ -1,7 +1,9 @@
 //! Shared post-attempt Required recovery status.
 
 use aegis_snapshot::SnapshotCoverage;
-use aegis_types::RecoveryDegradation;
+use aegis_types::{Mode, RecoveryDegradation};
+
+use crate::planning::InterceptionPlan;
 
 /// Post-attempt state for an active ADR-016 Required recovery obligation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,6 +37,35 @@ pub fn recovery_status(
     } else {
         RecoveryStatus::Ready
     })
+}
+
+/// The Recovery degradation, if any, that must stop or interrupt this run.
+///
+/// Two sources. An unresolved Git target on an unattended run means the
+/// Recovery obligation cannot be met: no git Snapshot covers the working tree
+/// the command changes, and other Snapshots that succeeded do not change that
+/// (#471). Otherwise the post-attempt [`recovery_status`] decides. `unattended`
+/// is true when no human decided: the run was auto-approved. A confirmed run
+/// keeps the weaker attended promise and discloses the gap in the dialog and
+/// the audit entry instead. `Mode::Audit` declines all enforcement.
+#[must_use]
+pub fn plan_recovery_degradation(
+    plan: &InterceptionPlan,
+    unattended: bool,
+    coverage: &SnapshotCoverage,
+) -> Option<RecoveryDegradation> {
+    let context = plan.decision_context();
+    if unattended && context.mode() != Mode::Audit && context.git_targets().has_unresolved() {
+        return Some(RecoveryDegradation::UnresolvedGitTarget);
+    }
+    match recovery_status(
+        plan.assessment().effect_opaque,
+        plan.policy_decision().snapshots_required,
+        coverage,
+    ) {
+        Some(RecoveryStatus::Degraded(degradation)) => Some(degradation),
+        Some(RecoveryStatus::Ready) | None => None,
+    }
 }
 
 #[cfg(test)]

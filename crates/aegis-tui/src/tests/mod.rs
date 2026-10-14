@@ -218,6 +218,7 @@ pub fn make_explanation(
             ci_detected: false,
             allowlist_match,
             applicable_snapshot_plugins: Vec::new(),
+            git_targets: Vec::new(),
         },
         outcome: None,
     }

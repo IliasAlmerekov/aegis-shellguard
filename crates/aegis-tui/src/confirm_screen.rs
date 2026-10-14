@@ -5,7 +5,7 @@ use crossterm::{
     style::{Attribute, Color, Print, ResetColor, SetAttribute, SetForegroundColor},
 };
 
-use aegis_explanation::CommandExplanation;
+use aegis_explanation::{CommandExplanation, GitTargetExplanation};
 use aegis_types::{Assessment, MatchEvidence, RiskLevel, SnapshotRecord};
 
 use super::shared::{
@@ -139,6 +139,28 @@ pub(super) fn render_dialog<W: Write>(
         );
         for reason in &analysis.degradation_reasons {
             let _ = queue!(out, Print(format!("    degradation: {reason:?}\n")));
+        }
+    }
+
+    // Git targets (#471): the working tree each git stage acts on. An
+    // unresolved one is disclosed in red: no git Snapshot covers it, and no
+    // Snapshot of the current directory stands in for it.
+    for target in &explanation.context.git_targets {
+        match target {
+            GitTargetExplanation::Resolved { path } => {
+                let _ = queue!(out, Print(format!("\n  Git target: {path}\n")));
+            }
+            GitTargetExplanation::Unresolved { reason } => {
+                let _ = queue!(
+                    out,
+                    SetForegroundColor(Color::Red),
+                    SetAttribute(Attribute::Bold),
+                    Print(format!(
+                        "\n  Git target unresolved: {reason}; no git Snapshot covers it\n"
+                    )),
+                    ResetColor,
+                );
+            }
         }
     }
 

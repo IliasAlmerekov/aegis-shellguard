@@ -491,6 +491,7 @@ auto_snapshot_docker = false
         plan.snapshot_plan(),
         aegis::planning::SnapshotPlan::Required {
             applicable_plugins: vec!["git"],
+            git_targets: aegis::planning::GitTargetPlan::default(),
         }
     );
 }

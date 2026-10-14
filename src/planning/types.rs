@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use crate::explanation::CommandExplanation;
 use crate::explanation::formatter::build_explanation_from_plan;
+use crate::planning::git_target::GitTargetPlan;
 use aegis_config::AllowlistMatch;
 use aegis_policy::{ExecutionTransport, PolicyAction, PolicyDecision};
 use aegis_types::{Assessment, Mode};
@@ -33,9 +34,15 @@ impl InterceptionPlan {
         decision_context: DecisionContext,
         policy_decision: PolicyDecision,
     ) -> Self {
-        let snapshot_plan = if policy_decision.snapshots_required {
+        // An unresolved Git target keeps the plan `Required`: nothing covers
+        // it, and that gap must reach the dialog, the audit entry and the
+        // unattended halt even when policy asked for no Snapshot.
+        let snapshot_plan = if policy_decision.snapshots_required
+            || decision_context.git_targets.has_unresolved()
+        {
             SnapshotPlan::Required {
                 applicable_plugins: decision_context.applicable_snapshot_plugins.clone(),
+                git_targets: decision_context.git_targets.clone(),
             }
         } else {
             SnapshotPlan::NotRequired
@@ -45,7 +52,7 @@ impl InterceptionPlan {
             PolicyAction::Prompt => ExecutionDisposition::RequiresApproval,
             PolicyAction::Block => ExecutionDisposition::Block,
         };
-        let explanation = build_explanation_from_plan(
+        let mut explanation = build_explanation_from_plan(
             &assessment,
             decision_context.mode,
             decision_context.transport,
@@ -54,6 +61,7 @@ impl InterceptionPlan {
             &decision_context.applicable_snapshot_plugins,
             policy_decision,
         );
+        explanation.context.git_targets = decision_context.git_targets.explain();
 
         Self {
             assessment: Box::new(assessment),
@@ -135,6 +143,7 @@ pub struct DecisionContext {
     cwd_state: CwdState,
     allowlist_match: Option<AllowlistMatch>,
     applicable_snapshot_plugins: Vec<&'static str>,
+    git_targets: GitTargetPlan,
 }
 
 impl DecisionContext {
@@ -154,7 +163,19 @@ impl DecisionContext {
             cwd_state,
             allowlist_match,
             applicable_snapshot_plugins,
+            git_targets: GitTargetPlan::default(),
         }
+    }
+
+    /// Attach the resolved Git targets of the command's git stages.
+    pub(crate) fn with_git_targets(mut self, git_targets: GitTargetPlan) -> Self {
+        self.git_targets = git_targets;
+        self
+    }
+
+    /// Return the git Snapshot targets resolved for this command.
+    pub fn git_targets(&self) -> &GitTargetPlan {
+        &self.git_targets
     }
 
     /// Return the effective execution mode.
@@ -206,6 +227,10 @@ pub enum SnapshotPlan {
     Required {
         /// Names of snapshot plugins applicable to this command.
         applicable_plugins: Vec<&'static str>,
+        /// The git Snapshots to take: the Git targets the command acts on,
+        /// and whether the process cwd also needs one (#471). Execution runs
+        /// this plan and derives nothing from the command itself.
+        git_targets: GitTargetPlan,
     },
 }
 

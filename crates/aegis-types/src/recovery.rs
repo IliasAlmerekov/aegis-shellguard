@@ -26,4 +26,9 @@ pub enum RecoveryDegradation {
     /// failed. Coverage is incomplete, and Aegis cannot tell whether the
     /// plugin that failed covered state the command will touch.
     PartialSnapshotCoverage,
+    /// An unattended run needs a git Snapshot of the working tree a `git`
+    /// command acts on, but that Git target could not be resolved (a variable
+    /// or glob path, `GIT_DIR`, a missing path). Nothing covers it, and Aegis
+    /// does not substitute a Snapshot of the process cwd (#471).
+    UnresolvedGitTarget,
 }

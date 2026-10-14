@@ -489,6 +489,7 @@ fn append_audit_entry_enriches_explanation_with_runtime_outcome() {
             ci_detected: false,
             allowlist_match: None,
             applicable_snapshot_plugins: vec!["git".to_string()],
+            git_targets: Vec::new(),
         },
         outcome: None,
     };
@@ -565,6 +566,7 @@ fn append_audit_entry_preserves_allowlist_context_fields() {
             ci_detected: false,
             allowlist_match: allowlist_match.as_ref().map(allowlist_explanation_from),
             applicable_snapshot_plugins: Vec::new(),
+            git_targets: Vec::new(),
         },
         outcome: None,
     };
@@ -626,6 +628,7 @@ fn build_audit_entry_records_effect_opaque_and_backstop_state_from_runtime_facts
             ci_detected: false,
             allowlist_match: None,
             applicable_snapshot_plugins: vec!["git".to_string()],
+            git_targets: Vec::new(),
         },
         outcome: None,
     };
@@ -698,6 +701,7 @@ fn build_audit_entry_records_plain_safe_command_without_backstops() {
             ci_detected: false,
             allowlist_match: None,
             applicable_snapshot_plugins: Vec::new(),
+            git_targets: Vec::new(),
         },
         outcome: None,
     };
