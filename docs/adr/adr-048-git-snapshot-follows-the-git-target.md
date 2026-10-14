@@ -78,7 +78,7 @@ has an unresolved Git target, so it gets a cwd Snapshot for the opacity while
 the Git target stays disclosed as uncovered.
 
 Whether the cwd also needs a git Snapshot is decided by comparing the `Danger`
-pattern ids of redirected stages with those of plain stages and with the
+pattern ids of redirected stages with those of plain git stages, of non-git stages and with the
 assessment's matches. This is an approximation: a stage whose env prefix is
 dropped by normalization can look like a plain stage and add a cwd Snapshot
 that was not strictly needed. The extra Snapshot is harmless.

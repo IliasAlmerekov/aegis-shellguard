@@ -201,3 +201,12 @@ fn environment_redirect_deep_in_a_launcher_prefix_is_flagged() {
         GitStageTarget::EnvironmentRedirect
     );
 }
+
+#[test]
+fn danger_id_in_a_redirected_stage_does_not_hide_the_same_id_in_a_plain_stage() {
+    // `rm -rf` inside the `git log` argument matches FS-001 in the redirected
+    // stage; the real `rm -rf actual` still needs the process cwd Snapshot.
+    let report = report("git -C other log --format='rm -rf decoy'; rm -rf actual");
+
+    assert!(report.needs_process_cwd);
+}

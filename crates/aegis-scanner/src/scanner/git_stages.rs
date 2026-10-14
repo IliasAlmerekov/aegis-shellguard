@@ -85,6 +85,10 @@ impl Scanner {
 
             for slice in aegis_parser::effective_token_slices(&token_refs) {
                 if !slice.program.eq_ignore_ascii_case("git") {
+                    // A Danger match in any other stage needs the process cwd
+                    // Snapshot, even when a redirected git stage matches the
+                    // same pattern id (`git -C a log --format='rm -rf x'`).
+                    plain_ids.extend(self.danger_ids(&slice));
                     continue;
                 }
                 let stage_target = stage_target(&token_refs, &slice);
