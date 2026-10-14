@@ -26,6 +26,9 @@ pub enum GitTargetUnresolved {
     /// `--git-dir` is given without `--work-tree`, or does not canonicalize
     /// to `<work tree>/.git`.
     GitDirNotInWorkTree,
+    /// `--work-tree` is given without `--git-dir`: git still finds the
+    /// repository from the `-C` directory, so the work tree is not the target.
+    WorkTreeWithoutGitDir,
     /// A relative path needs the process cwd, which is unavailable.
     CwdUnavailable,
     /// Two readings of an unlisted global option give different targets.
@@ -44,9 +47,12 @@ impl GitTargetUnresolved {
             Self::EnvironmentRedirect => {
                 "GIT_DIR or GIT_WORK_TREE redirects git from the environment"
             }
-            Self::DynamicPath => "a path holds a variable, glob or ~ that Aegis cannot expand",
+            Self::DynamicPath => {
+                "a path holds a variable, glob, brace or ~ that Aegis cannot expand"
+            }
             Self::PathNotFound => "a path does not exist",
             Self::GitDirNotInWorkTree => "--git-dir is not <work tree>/.git",
+            Self::WorkTreeWithoutGitDir => "--work-tree is given without a matching --git-dir",
             Self::CwdUnavailable => {
                 "a relative path needs the working directory, which is unavailable"
             }
@@ -192,7 +198,7 @@ fn resolve_stage(stage: &GitStageTarget, cwd: &CwdState) -> GitTarget {
 }
 
 fn is_dynamic(path: &str) -> bool {
-    path.contains(['$', '*', '?', '[', ']', '~', '`'])
+    path.contains(['$', '*', '?', '[', ']', '~', '`', '{', '}', '\\'])
 }
 
 /// Join `path` onto `base`, `None` when a relative path has no base.
@@ -216,19 +222,27 @@ fn resolve_args(args: &GitTargetArgs, cwd: &CwdState) -> GitTarget {
         if is_dynamic(path) {
             return unresolved(GitTargetUnresolved::DynamicPath);
         }
-        if path.is_empty() {
-            return unresolved(GitTargetUnresolved::PathNotFound);
-        }
     }
-    if args.git_dir.is_some() && args.work_tree.is_none() {
-        return unresolved(GitTargetUnresolved::GitDirNotInWorkTree);
+    let non_chain_empty = args
+        .work_tree
+        .iter()
+        .chain(args.git_dir.iter())
+        .any(String::is_empty);
+    if non_chain_empty {
+        return unresolved(GitTargetUnresolved::PathNotFound);
+    }
+    match (&args.work_tree, &args.git_dir) {
+        (None, Some(_)) => return unresolved(GitTargetUnresolved::GitDirNotInWorkTree),
+        (Some(_), None) => return unresolved(GitTargetUnresolved::WorkTreeWithoutGitDir),
+        _ => {}
     }
 
     let mut after_c: Option<PathBuf> = match cwd {
         CwdState::Resolved(path) => Some(path.clone()),
         CwdState::Unavailable => None,
     };
-    for path in &args.dash_c {
+    // `git -C ""` is a no-op, so an empty value leaves the directory as is.
+    for path in args.dash_c.iter().filter(|path| !path.is_empty()) {
         after_c = join(after_c.as_deref(), path);
         if after_c.is_none() {
             return unresolved(GitTargetUnresolved::CwdUnavailable);
@@ -319,13 +333,56 @@ mod tests {
     }
 
     #[test]
-    fn work_tree_applies_after_the_dash_c_chain() {
+    fn work_tree_without_git_dir_is_unresolved() {
+        let dir = tree();
+
+        assert_eq!(
+            one(args(&[], Some("other"), None), &cwd_of(&dir)),
+            GitTarget::Unresolved(GitTargetUnresolved::WorkTreeWithoutGitDir)
+        );
+    }
+
+    #[test]
+    fn work_tree_without_git_dir_after_dash_c_is_unresolved() {
         let dir = tree();
 
         assert_eq!(
             one(args(&["a"], Some("b"), None), &cwd_of(&dir)),
+            GitTarget::Unresolved(GitTargetUnresolved::WorkTreeWithoutGitDir)
+        );
+    }
+
+    #[test]
+    fn work_tree_with_matching_git_dir_applies_after_the_dash_c_chain() {
+        let dir = tree();
+
+        assert_eq!(
+            one(args(&["a"], Some("b"), Some("b/.git")), &cwd_of(&dir)),
             GitTarget::Resolved(canon(&dir, "a/b"))
         );
+    }
+
+    #[test]
+    fn empty_dash_c_leaves_the_directory_unchanged() {
+        let dir = tree();
+
+        assert_eq!(
+            one(args(&["a", ""], None, None), &cwd_of(&dir)),
+            GitTarget::Resolved(canon(&dir, "a"))
+        );
+    }
+
+    #[test]
+    fn brace_expansion_and_backslash_are_dynamic() {
+        let dir = tree();
+
+        for path in ["{a,b}", "a/{b}", "a\\b"] {
+            assert_eq!(
+                one(args(&[path], None, None), &cwd_of(&dir)),
+                GitTarget::Unresolved(GitTargetUnresolved::DynamicPath),
+                "{path}"
+            );
+        }
     }
 
     #[test]

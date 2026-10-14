@@ -23,11 +23,13 @@ options (the ADR-041 walk, now also yielding option values). Planning resolves
 them only when a recovery backstop applies, so the safe path pays nothing.
 
 - `-C` options apply in order; a relative path resolves against the previous
-  result, starting at the process cwd.
-- `--work-tree` applies after the `-C` chain.
+  result, starting at the process cwd. An empty `-C` value changes nothing.
+- `--work-tree` applies after the `-C` chain, and only together with
+  `--git-dir`. Git finds the repository from the `-C` directory when no
+  `--git-dir` is given, so a lone `--work-tree` does not name the tree at risk.
 - `--git-dir` is accepted only when it canonicalizes to `<work tree>/.git`.
-- Everything else is unresolved: `--git-dir` alone or elsewhere, a path with
-  `$`, a glob or `~`, `GIT_DIR=` or `GIT_WORK_TREE=` in the stage's env
+- Everything else is unresolved: `--git-dir` alone or elsewhere, `--work-tree`
+  alone, a path with `$`, a glob, a brace expansion, a backslash or `~`, `GIT_DIR=` or `GIT_WORK_TREE=` in the stage's env
   prefix, a missing path, a relative path with no cwd, and an unlisted option
   whose two readings give different targets. A process-environment `GIT_DIR`
   is not a redirect: only the env prefix of the stage is read.
