@@ -365,3 +365,55 @@ fn dash_c_subdirectory_resolves_to_the_repository_top_level() {
 
     assert_eq!(targets.targets, vec![resolved(&fx.a)]);
 }
+
+#[test]
+fn demote_resolved_turns_a_rejected_target_unresolved_and_keeps_the_kept_one() {
+    let mut plan = crate::planning::GitTargetPlan {
+        targets: vec![
+            resolved(Path::new("/keep")),
+            resolved(Path::new("/drop")),
+            resolved(Path::new("/drop-too")),
+        ],
+        process_cwd: false,
+    };
+
+    plan.demote_resolved(
+        |path| path == Path::new("/keep"),
+        GitTargetUnresolved::NotAGitRepository,
+    );
+
+    // The two rejected targets collapse into one unresolved entry.
+    assert_eq!(
+        plan.targets,
+        vec![
+            resolved(Path::new("/keep")),
+            GitTarget::Unresolved(GitTargetUnresolved::NotAGitRepository),
+        ]
+    );
+}
+
+#[test]
+fn git_snapshot_applicability_follows_whether_the_directory_is_a_repository() {
+    let fx = fixture();
+    let plain = fx.cwd.parent().unwrap().join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut config = AegisConfig::default();
+    config.snapshot_policy = SnapshotPolicy::Selective;
+    config.auto_snapshot_git = true;
+    config.auto_snapshot_docker = false;
+    let context = RuntimeContext::new(config, rt.handle().clone()).unwrap();
+
+    let (in_repo, outside) = rt.block_on(async {
+        (
+            context.git_snapshot_applicable_at_async(&fx.a).await,
+            context.git_snapshot_applicable_at_async(&plain).await,
+        )
+    });
+
+    assert!(in_repo);
+    assert!(!outside);
+}
