@@ -145,7 +145,14 @@ async fn effect_opaque_plan(
     prepared: &PreparedPlanner,
     workspace: &TempDir,
 ) -> (InputFrame, crate::planning::InterceptionPlan) {
-    let command = "sh ./run.sh";
+    plan_for_command(prepared, workspace, "sh ./run.sh").await
+}
+
+async fn plan_for_command(
+    prepared: &PreparedPlanner,
+    workspace: &TempDir,
+    command: &str,
+) -> (InputFrame, crate::planning::InterceptionPlan) {
     let cwd = workspace.path().to_string_lossy().into_owned();
     let outcome = prepared
         .plan_async(PlanningRequest {
@@ -296,4 +303,36 @@ async fn watch_recovery_deny_records_enabled_sandbox_as_not_attempted() {
 
     let entry = read_audit_entry(&audit_path);
     assert_eq!(entry["sandbox_status"], "not_attempted");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_confirmed_run_with_an_unresolved_git_target_skips_the_recovery_prompt() {
+    let workspace = TempDir::new().unwrap();
+    let audit_dir = TempDir::new().unwrap();
+    let audit_path = audit_dir.path().join("audit.jsonl");
+    let prepared = prepared_with_audit_path(audit_path.clone());
+    let (frame, plan) = plan_for_command(
+        &prepared,
+        &workspace,
+        "git -C /aegis-471-no-such-dir filter-branch --index-filter true",
+    )
+    .await;
+    let prompted = Cell::new(false);
+
+    run_watch_plan_with_prompts(
+        frame,
+        &prepared,
+        plan,
+        false,
+        |_, _| PromptDecision::Approve,
+        |_| {
+            prompted.set(true);
+            RecoveryPromptDecision::Deny
+        },
+    )
+    .await;
+
+    assert!(!prompted.get(), "a human-approved run is not unattended");
+    let entry = read_audit_entry(&audit_path);
+    assert_eq!(entry["decision"], "Approved");
 }
