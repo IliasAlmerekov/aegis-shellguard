@@ -285,7 +285,7 @@ fn apply_target_option(tokens: &[&str], pos: usize, args: &GitTargetArgs) -> Git
 pub fn git_option_target_readings(tokens: &[&str]) -> GitTargetReadings {
     use std::collections::HashSet;
 
-    if tokens.len() < 2 || !tokens[1].starts_with('-') {
+    if tokens.get(1).is_none_or(|token| !token.starts_with('-')) {
         return GitTargetReadings::Readings(Vec::new());
     }
 
@@ -302,10 +302,10 @@ pub fn git_option_target_readings(tokens: &[&str]) -> GitTargetReadings {
             continue;
         }
 
-        let carried = match classify(tokens[pos]) {
-            OptionArity::Unlisted => args.clone(),
-            _ => apply_target_option(tokens, pos, &args),
-        };
+        // An unlisted option never names `-C`, `--work-tree` or `--git-dir`
+        // (`classify` lists all three), so `apply_target_option` leaves its
+        // args unchanged and no arity special case is needed here.
+        let carried = apply_target_option(tokens, pos, &args);
         for succ in successors(tokens, pos).into_iter().flatten() {
             if succ >= tokens.len() {
                 continue;
@@ -565,6 +565,12 @@ mod tests {
                 work_tree: work_tree.map(str::to_string),
                 git_dir: git_dir.map(str::to_string),
             }
+        }
+
+        #[test]
+        fn empty_and_single_token_slices_have_no_readings() {
+            assert!(readings(&[]).is_empty());
+            assert!(readings(&["git"]).is_empty());
         }
 
         #[test]
