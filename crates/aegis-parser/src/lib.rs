@@ -30,7 +30,10 @@ pub use embedded_scripts::{
     split_at_heredoc_marker,
 };
 use env_launcher::{env_prefix_lengths, env_split_string_tokens};
-pub use git_options::*;
+pub use git_options::{
+    GitSubcommandStarts, GitTargetArgs, GitTargetReadings, MAX_GIT_OPTION_CANDIDATES,
+    git_option_subcommand_starts, git_option_target_readings,
+};
 pub use list_segments::{ListSegment, ListSeparator, list_segments};
 pub use nested_shells::extract_nested_commands;
 pub use prefix_match::{
@@ -50,10 +53,9 @@ pub use tokenizer::{extract_prefix, split_tokens};
 /// introduce a command rather than being one themselves. The single source
 /// every command-position/reserved-word scan in this crate, and callers
 /// outside it, reads instead of each keeping its own copy to drift out of
-/// sync (issue #384/#430). `case`, `function`, and `coproc` are deliberately
-/// absent: each needs handling beyond a flat membership check (nesting nested
-/// `case`/`esac`, a header's own name and body, a two-word start), done
-/// separately at the call sites that need it.
+/// sync (issue #384/#430). `case`, `function`, and `coproc` are absent on
+/// purpose: each needs more than a flat membership check (nested `case`/
+/// `esac`, a header's name and body, a two-word start), done at call sites.
 pub const COMMAND_STARTING_KEYWORDS: [&str; 9] = [
     "!", "if", "then", "elif", "else", "while", "until", "do", "time",
 ];
