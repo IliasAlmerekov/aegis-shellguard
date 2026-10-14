@@ -220,7 +220,11 @@ fn ambient_git_dir_redirects_a_plain_danger_stage() {
     let report = scanner.git_stage_report_with_env(cmd, &assessment, true);
 
     assert_eq!(
-        report.redirected.iter().map(|s| s.target.clone()).collect::<Vec<_>>(),
+        report
+            .redirected
+            .iter()
+            .map(|s| s.target.clone())
+            .collect::<Vec<_>>(),
         vec![GitStageTarget::EnvironmentRedirect]
     );
 }

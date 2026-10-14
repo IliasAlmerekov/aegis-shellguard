@@ -39,8 +39,8 @@ impl InterceptionPlan {
         // unattended halt even when policy asked for no Snapshot.
         // `Mode::Audit` observes only and never takes a Snapshot; the gap
         // stays in the explanation.
-        let unresolved_gap = decision_context.git_targets.has_unresolved()
-            && decision_context.mode != Mode::Audit;
+        let unresolved_gap =
+            decision_context.git_targets.has_unresolved() && decision_context.mode != Mode::Audit;
         let snapshot_plan = if policy_decision.snapshots_required || unresolved_gap {
             SnapshotPlan::Required {
                 applicable_plugins: decision_context.applicable_snapshot_plugins.clone(),
