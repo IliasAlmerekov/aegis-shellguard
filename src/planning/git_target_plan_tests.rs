@@ -62,12 +62,22 @@ fn plan_with_git(
     cwd_state: CwdState,
     auto_snapshot_git: bool,
 ) -> SnapshotPlan {
+    plan_with_mode(fx, command, cwd_state, auto_snapshot_git, Mode::Protect)
+}
+
+fn plan_with_mode(
+    fx: &Fixture,
+    command: &str,
+    cwd_state: CwdState,
+    auto_snapshot_git: bool,
+    mode: Mode,
+) -> SnapshotPlan {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap();
     let mut config = AegisConfig::default();
-    config.mode = Mode::Protect;
+    config.mode = mode;
     config.snapshot_policy = SnapshotPolicy::Selective;
     config.auto_snapshot_git = auto_snapshot_git;
     config.auto_snapshot_docker = false;
@@ -305,4 +315,18 @@ fn resolved_target_that_is_not_a_git_repository_is_unresolved() {
         )]
     );
     assert!(!plugins.contains(&"git"));
+}
+
+#[test]
+fn audit_mode_takes_no_snapshot_for_an_unresolved_git_target() {
+    let fx = fixture();
+    let plan = plan_with_mode(
+        &fx,
+        "git -C \"$REPO\" filter-branch --index-filter true",
+        CwdState::Resolved(fx.cwd.clone()),
+        true,
+        Mode::Audit,
+    );
+
+    assert!(matches!(plan, SnapshotPlan::NotRequired));
 }

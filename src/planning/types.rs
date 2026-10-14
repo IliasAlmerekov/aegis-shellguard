@@ -37,9 +37,11 @@ impl InterceptionPlan {
         // An unresolved Git target keeps the plan `Required`: nothing covers
         // it, and that gap must reach the dialog, the audit entry and the
         // unattended halt even when policy asked for no Snapshot.
-        let snapshot_plan = if policy_decision.snapshots_required
-            || decision_context.git_targets.has_unresolved()
-        {
+        // `Mode::Audit` observes only and never takes a Snapshot; the gap
+        // stays in the explanation.
+        let unresolved_gap = decision_context.git_targets.has_unresolved()
+            && decision_context.mode != Mode::Audit;
+        let snapshot_plan = if policy_decision.snapshots_required || unresolved_gap {
             SnapshotPlan::Required {
                 applicable_plugins: decision_context.applicable_snapshot_plugins.clone(),
                 git_targets: decision_context.git_targets.clone(),

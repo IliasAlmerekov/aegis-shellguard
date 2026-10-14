@@ -48,7 +48,9 @@ follows without deriving anything from the command:
   command).
 - An unresolved Git target never gets a substitute cwd Snapshot, and Aegis does
   not try "both directories". The plan stays `Required` even if policy asked
-  for no Snapshot, so the gap is disclosed.
+  for no Snapshot, so the gap is disclosed. `Mode::Audit` is the exception:
+  it takes no Snapshot, so the plan stays `NotRequired` and only the
+  explanation names the unresolved target.
 
 Disclosure. A confirmed (human) run still prompts; the dialog and the audit
 entry name each Git target or the reason it is unresolved. An unattended
