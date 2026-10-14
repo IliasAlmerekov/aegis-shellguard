@@ -228,3 +228,15 @@ fn ambient_git_dir_redirects_a_plain_danger_stage() {
         vec![GitStageTarget::EnvironmentRedirect]
     );
 }
+
+#[test]
+fn process_environment_report_flags_a_plain_danger_stage_for_the_process_cwd() {
+    // The environment-reading entry point must run the real analysis, not
+    // return an empty report. A plain Danger stage needs the cwd Snapshot
+    // whether or not the test process has GIT_DIR/GIT_WORK_TREE set.
+    let scanner = scanner();
+    let cmd = "git filter-branch --index-filter true";
+    let assessment = scanner.assess(cmd);
+
+    assert!(scanner.git_stage_report(cmd, &assessment).needs_process_cwd);
+}
