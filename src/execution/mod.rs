@@ -163,7 +163,7 @@ pub(crate) fn run_planned_shell_command_with_renderer<R: ExecutionRenderer>(
 )]
 fn execute_with_snapshots<R: ExecutionRenderer>(
     cmd: &str,
-    verbose: bool,
+    _verbose: bool,
     prepared: &PreparedPlanner,
     plan: &InterceptionPlan,
     launch: &ShellLaunchOptions,
@@ -171,7 +171,7 @@ fn execute_with_snapshots<R: ExecutionRenderer>(
     sandbox_config: Option<&aegis_sandbox::SandboxConfig>,
     renderer: &R,
 ) -> i32 {
-    let coverage = create_snapshots_for_plan(prepared, plan, verbose);
+    let coverage = create_snapshots_for_plan(prepared, plan);
     let snapshots = coverage.records.as_slice();
     if let Some(degradation) =
         plan_recovery_degradation(plan, decision == Decision::AutoApproved, &coverage)
@@ -297,7 +297,6 @@ fn append_shell_recovery_audit(
 fn create_snapshots_for_plan(
     prepared: &PreparedPlanner,
     plan: &InterceptionPlan,
-    _verbose: bool,
 ) -> SnapshotCoverage {
     let aegis::planning::SnapshotPlan::Required { git_targets, .. } = plan.snapshot_plan() else {
         return SnapshotCoverage::default();
