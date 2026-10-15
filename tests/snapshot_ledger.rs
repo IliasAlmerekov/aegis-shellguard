@@ -213,3 +213,116 @@ fn archived_prune_entry_hides_snapshot_under_custom_audit_path() {
         "prune must remove the live Snapshot and nothing for the archived prune"
     );
 }
+
+fn git(repo: &Path, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {args:?} failed: {}",
+        stderr(&output)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+/// A git repository with one stash; returns the repository and the stash hash.
+fn repo_with_stash(home: &Path) -> (PathBuf, String) {
+    let repo = home.join("repo");
+    fs::create_dir(&repo).unwrap();
+    let repo = repo.canonicalize().unwrap();
+    git(&repo, &["init", "-q"]);
+    git(&repo, &["config", "user.email", "test@aegis.dev"]);
+    git(&repo, &["config", "user.name", "Aegis Test"]);
+    git(&repo, &["config", "core.autocrlf", "false"]);
+    git(&repo, &["commit", "-q", "--allow-empty", "-m", "init"]);
+    fs::write(repo.join("stashed.txt"), "stashed\n").unwrap();
+    git(
+        &repo,
+        &["stash", "push", "-q", "--include-untracked", "-m", "old"],
+    );
+    let hash = git(&repo, &["rev-parse", "stash@{0}"]);
+    (repo, hash)
+}
+
+fn stash_hashes(repo: &Path) -> Vec<String> {
+    git(repo, &["stash", "list", "--format=%H"])
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn unreadable_audit_line_fails_safe() {
+    let home = TempDir::new().unwrap();
+    let audit_path = default_audit_path(home.path());
+    let (repo, hash) = repo_with_stash(home.path());
+    let snapshot_id = format!("{}\t{hash}", repo.display());
+    record_creation(&AuditLogger::new(&audit_path), "git", &snapshot_id);
+    let mut log = fs::read_to_string(&audit_path).unwrap();
+    log.push_str("not json\n");
+    fs::write(&audit_path, log).unwrap();
+    let config_dir = home.path().join(".config/aegis");
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::write(
+        config_dir.join("config.toml"),
+        "allowlist_override_level = \"Danger\"\n\n[prune]\nenabled = true\nmax_age_days = 0\n",
+    )
+    .unwrap();
+
+    for args in [
+        vec!["snapshot", "list"],
+        vec!["snapshot", "prune", "--yes"],
+        vec!["rollback", snapshot_id.as_str()],
+    ] {
+        let output = run_aegis(home.path(), &audit_path, &args);
+        assert!(!output.status.success(), "{args:?} must fail");
+        assert!(
+            stderr(&output).contains("audit log"),
+            "{args:?} must name the audit log: {}",
+            stderr(&output)
+        );
+        assert_eq!(
+            stash_hashes(&repo),
+            vec![hash.clone()],
+            "{args:?} touched the Snapshot"
+        );
+    }
+
+    let target = "rm -rf /tmp/aegis-snapshot-ledger-target";
+    fs::write(
+        repo.join(".aegis.toml"),
+        format!(
+            "[[allow]]\npattern = \"{target}\"\ncwd = \"{}\"\nreason = \"snapshot ledger test\"\n",
+            repo.display()
+        ),
+    )
+    .unwrap();
+    fs::write(repo.join("work.txt"), "work\n").unwrap();
+    let through_aegis = Command::new(aegis_bin())
+        .env("AEGIS_REAL_SHELL", "/bin/sh")
+        .env("AEGIS_CI", "0")
+        .env("HOME", home.path())
+        .env("AEGIS_AUDIT_PATH", &audit_path)
+        .current_dir(&repo)
+        .args(["-c", target])
+        .output()
+        .unwrap();
+    assert!(
+        through_aegis.status.success(),
+        "the command must still run: {}",
+        stderr(&through_aegis)
+    );
+    assert!(
+        stderr(&through_aegis).contains("automatic snapshot prune skipped"),
+        "automatic prune must warn: {}",
+        stderr(&through_aegis)
+    );
+    assert!(
+        stash_hashes(&repo).contains(&hash),
+        "automatic prune must delete nothing: {:?}",
+        stash_hashes(&repo)
+    );
+}
