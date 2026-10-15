@@ -347,12 +347,19 @@ fn rollback_does_not_refresh_recorded_at() {
     });
     fs::create_dir_all(audit_path.parent().unwrap()).unwrap();
     fs::write(&audit_path, format!("{creation}\n")).unwrap();
+    // The entry `aegis rollback` writes after a restore: Safe, one Snapshot.
     AuditLogger::new(&audit_path)
-        .append(snapshot_entry(
-            &format!("aegis rollback {snapshot_id}"),
+        .append(AuditEntry::new(
+            format!("aegis rollback {snapshot_id}"),
+            RiskLevel::Safe,
+            Vec::new(),
             Decision::Approved,
-            "git",
-            &snapshot_id,
+            vec![AuditSnapshot {
+                plugin: "git".to_string(),
+                snapshot_id: snapshot_id.clone(),
+            }],
+            None,
+            None,
         ))
         .unwrap();
     write_max_age_policy(home.path(), 7);

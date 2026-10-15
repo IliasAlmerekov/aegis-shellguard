@@ -36,7 +36,10 @@ The ledger follows these rules.
    because prune deleted the Snapshot artifact.
 3. Only creation entries record a Snapshot. The `Approved` entry that
    `aegis rollback <id>` writes neither creates nor refreshes a record, so
-   `recorded_at` is the creation time. A Rollback does not extend a Snapshot's
+   `recorded_at` is the creation time. The ledger matches that entry by its
+   exact shape: risk `Safe`, one snapshot, and the command
+   `aegis rollback <that snapshot's id>`. A guarded command that only starts
+   with `aegis rollback ` still records the Snapshot taken for it. A Rollback does not extend a Snapshot's
    life under the age and count retention rules.
 4. The ledger reads through `AuditLogger::from_audit_config`. It honours
    `AEGIS_AUDIT_PATH`, reads the rotated `audit.jsonl.N` and

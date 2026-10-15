@@ -13,10 +13,10 @@
 
 use std::collections::HashSet;
 
-use aegis_types::{Decision, RecordedSnapshot};
+use aegis_types::{Decision, RecordedSnapshot, RiskLevel};
 
 use crate::error::AuditError;
-use crate::logger::{AuditEntry, AuditLogger};
+use crate::logger::{AuditEntry, AuditLogger, DecisionEntry};
 
 const PRUNE_COMMAND_PREFIX: &str = "aegis prune ";
 const ROLLBACK_COMMAND_PREFIX: &str = "aegis rollback ";
@@ -71,9 +71,7 @@ impl SnapshotLedger {
                 }
                 continue;
             }
-            if base.decision == Decision::Approved
-                && base.command.starts_with(ROLLBACK_COMMAND_PREFIX)
-            {
+            if is_rollback_entry(base) {
                 continue;
             }
             for snapshot in &base.snapshots {
@@ -142,6 +140,23 @@ impl SnapshotLedger {
     }
 }
 
+/// Whether `base` is the entry `aegis rollback <id>` writes after a restore.
+///
+/// Only that exact shape counts: `Approved`, risk `Safe`, one snapshot, and
+/// the command `aegis rollback <that snapshot's id>`. A guarded command that
+/// merely starts with `aegis rollback ` still records its Snapshot.
+fn is_rollback_entry(base: &DecisionEntry) -> bool {
+    let [snapshot] = base.snapshots.as_slice() else {
+        return false;
+    };
+    base.decision == Decision::Approved
+        && base.risk == RiskLevel::Safe
+        && base
+            .command
+            .strip_prefix(ROLLBACK_COMMAND_PREFIX)
+            .is_some_and(|id| id == snapshot.snapshot_id)
+}
+
 /// Extract the snapshot id from a prune entry's `aegis prune <id>` command.
 ///
 /// Legacy prune entries carry the id only there, with an empty `snapshots`.
@@ -155,12 +170,20 @@ fn snapshot_id_from_prune_command(command: &str) -> Option<&str> {
 mod tests {
     use super::*;
     use crate::logger::AuditSnapshot;
-    use aegis_types::RiskLevel;
 
     fn entry(command: &str, decision: Decision, pairs: &[(&str, &str)]) -> AuditEntry {
+        entry_with_risk(command, RiskLevel::Danger, decision, pairs)
+    }
+
+    fn entry_with_risk(
+        command: &str,
+        risk: RiskLevel,
+        decision: Decision,
+        pairs: &[(&str, &str)],
+    ) -> AuditEntry {
         AuditEntry::new(
             command,
-            RiskLevel::Danger,
+            risk,
             Vec::new(),
             decision,
             pairs
@@ -224,10 +247,26 @@ mod tests {
         let ledger = SnapshotLedger::from_entries(&[
             entry("rm a", Decision::Approved, &[("git", "A")]),
             entry("rm b", Decision::Approved, &[("git", "B")]),
-            entry("aegis rollback A", Decision::Approved, &[("git", "A")]),
+            entry_with_risk(
+                "aegis rollback A",
+                RiskLevel::Safe,
+                Decision::Approved,
+                &[("git", "A")],
+            ),
         ]);
 
         assert_eq!(live_pairs(&ledger), vec![("git", "A"), ("git", "B")]);
+    }
+
+    #[test]
+    fn ledger_records_a_guarded_command_that_starts_like_a_rollback() {
+        let ledger = SnapshotLedger::from_entries(&[entry(
+            "aegis rollback x; rm -rf src",
+            Decision::Approved,
+            &[("git", "S")],
+        )]);
+
+        assert_eq!(live_pairs(&ledger), vec![("git", "S")]);
     }
 
     #[test]
