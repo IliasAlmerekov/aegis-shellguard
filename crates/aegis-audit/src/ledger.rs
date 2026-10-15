@@ -1,7 +1,7 @@
 //! The Snapshot ledger: the single reading of the Audit log that answers which
 //! Snapshots exist, which were pruned, and which record an id resolves to.
 //!
-//! Rules (ADR-048):
+//! Rules (ADR-049):
 //! - A Snapshot is keyed by the pair (plugin, snapshot_id). A prune hides only
 //!   the pair it names; a legacy prune entry without a `snapshots` entry hides
 //!   every pair with the id from its `aegis prune <id>` command.
