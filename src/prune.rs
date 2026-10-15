@@ -1,7 +1,7 @@
 //! CLI implementation for `aegis snapshot prune`.
 
 use aegis::error::AegisError;
-use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
+use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot, SnapshotLedger};
 use aegis_config::{AegisConfig, PruneConfig};
 use aegis_snapshot::{Clock, PrunableRecord, RetentionPolicy, SnapshotRegistry, SystemClock};
 use aegis_types::Decision;
@@ -15,10 +15,9 @@ use aegis_types::RiskLevel;
 pub(crate) async fn execute(args: crate::PruneArgs) -> Result<Vec<PrunableRecord>, AegisError> {
     let config = AegisConfig::load().map_err(AegisError::from)?;
     let registry = SnapshotRegistry::for_rollback().map_err(AegisError::from)?;
-    let records: Vec<PrunableRecord> = registry
-        .resolve_prunable_records()
-        .await
-        .map_err(AegisError::from)?;
+    let logger = AuditLogger::from_audit_config(&config.audit);
+    let ledger = SnapshotLedger::load(&logger)?;
+    let records = registry.resolve_prunable_records(ledger.live_records());
     let policy = RetentionPolicy::from_config(&config.prune);
     let now = SystemClock.now();
     let candidates = policy.apply(&records, now);
@@ -28,7 +27,6 @@ pub(crate) async fn execute(args: crate::PruneArgs) -> Result<Vec<PrunableRecord
         return Ok(Vec::new());
     }
 
-    let logger = AuditLogger::from_audit_config(&config.audit);
     let mut pruned = Vec::new();
     let mut failures = Vec::new();
     for record in candidates {

@@ -10,7 +10,7 @@ use tokio::runtime::{Handle, RuntimeFlavor};
 use crate::error::AegisError;
 use crate::explanation::CommandExplanation;
 use crate::explanation::formatter::{CommandExplanationExt, build_outcome_explanation};
-use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
+use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot, SnapshotLedger};
 use aegis_config::{AegisConfig, Allowlist, AllowlistContext, AllowlistMatch, Blocklist};
 use aegis_scanner::Scanner;
 use aegis_snapshot::{
@@ -688,9 +688,18 @@ impl RuntimeContext {
 async fn automatic_prune(config: AegisConfig) -> Result<(), AegisError> {
     let registry_config = SnapshotRegistryConfig::for_rollback_from_config(&config)?;
     let registry = SnapshotRegistry::from_runtime_config(&registry_config);
-    let records = registry.resolve_prunable_records().await?;
-    let candidates = RetentionPolicy::from_config(&config.prune).apply(&records, SystemClock.now());
     let logger = AuditLogger::from_audit_config(&config.audit);
+    // A ledger that cannot be read prunes nothing: keeping a Snapshot too long
+    // is recoverable, deleting one the ledger misread is not.
+    let ledger = match SnapshotLedger::load(&logger) {
+        Ok(ledger) => ledger,
+        Err(error) => {
+            tracing::warn!(%error, "automatic snapshot prune skipped: the audit log could not be read");
+            return Ok(());
+        }
+    };
+    let records = registry.resolve_prunable_records(ledger.live_records());
+    let candidates = RetentionPolicy::from_config(&config.prune).apply(&records, SystemClock.now());
     for record in candidates {
         if let Err(error) = registry.delete(&record.plugin, &record.snapshot_id).await {
             tracing::warn!(plugin = %record.plugin, id = %record.snapshot_id, %error, "automatic snapshot prune failed");
