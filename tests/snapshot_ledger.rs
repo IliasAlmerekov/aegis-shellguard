@@ -326,3 +326,47 @@ fn unreadable_audit_line_fails_safe() {
         stash_hashes(&repo)
     );
 }
+
+#[test]
+fn rollback_does_not_refresh_recorded_at() {
+    let home = TempDir::new().unwrap();
+    let audit_path = default_audit_path(home.path());
+    let snapshot_id = missing_repo_git_id(home.path(), "ten-days-old");
+    let ten_days_ago = (time::OffsetDateTime::now_utc() - time::Duration::days(10))
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+    let creation = serde_json::json!({
+        "timestamp": ten_days_ago,
+        "sequence": 1,
+        "command": "rm -rf src",
+        "risk": "Danger",
+        "matched_patterns": [],
+        "pattern_ids": [],
+        "decision": "Approved",
+        "snapshots": [{ "plugin": "git", "snapshot_id": snapshot_id }],
+    });
+    fs::create_dir_all(audit_path.parent().unwrap()).unwrap();
+    fs::write(&audit_path, format!("{creation}\n")).unwrap();
+    AuditLogger::new(&audit_path)
+        .append(snapshot_entry(
+            &format!("aegis rollback {snapshot_id}"),
+            Decision::Approved,
+            "git",
+            &snapshot_id,
+        ))
+        .unwrap();
+    write_max_age_policy(home.path(), 7);
+
+    let prune = run_aegis(home.path(), &audit_path, &["snapshot", "prune", "--yes"]);
+
+    assert!(prune.status.success(), "prune failed: {}", stderr(&prune));
+    assert!(
+        stdout(&prune).contains("Pruned 1 snapshot(s)"),
+        "a rollback must not extend the Snapshot's life: {}",
+        stdout(&prune)
+    );
+    assert_eq!(
+        pruned_pairs(&audit_path),
+        vec![("git".to_string(), snapshot_id)]
+    );
+}
