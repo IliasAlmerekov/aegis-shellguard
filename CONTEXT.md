@@ -717,6 +717,11 @@ Restoring the state captured by a previous `Snapshot`, addressed by its
 command that ran afterward.
 _Avoid_: undo, revert
 
+**Snapshot ledger**:
+The single reading of the `Audit log` that answers which `Snapshot`s exist, which
+were pruned, and which record a `snapshot_id` resolves to.
+_Avoid_: snapshot index, snapshot history
+
 **Audit log**:
 The append-only JSONL record at `~/.aegis/audit.jsonl`. One `AuditEntry` per line;
 never rewritten. The format is part of the public contract.

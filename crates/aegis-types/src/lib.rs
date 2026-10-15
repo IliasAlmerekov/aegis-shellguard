@@ -36,7 +36,7 @@ pub use policy::{AllowlistOverrideLevel, CiPolicy, Mode, PolicyRuleDecision, Sna
 pub use recovery::RecoveryDegradation;
 pub use risk::RiskLevel;
 pub use sandbox::SandboxStatus;
-pub use snapshot::SnapshotRecord;
+pub use snapshot::{RecordedSnapshot, SnapshotRecord};
 
 #[cfg(test)]
 mod tests {
