@@ -111,6 +111,13 @@ impl SnapshotCoverage {
         }
     }
 
+    /// Fold another pass into this one: records append and applicable
+    /// counts add, so partial coverage stays visible across passes.
+    pub fn merge(&mut self, other: SnapshotCoverage) {
+        self.records.extend(other.records);
+        self.applicable += other.applicable;
+    }
+
     /// Returns `true` when an applicable plugin failed while another succeeded.
     #[must_use]
     pub fn is_partial(&self) -> bool {
@@ -276,9 +283,57 @@ impl SnapshotRegistry {
     /// partial one without asking every plugin for applicability a second
     /// time and risking a different answer.
     pub async fn snapshot_all(&self, cwd: &Path, cmd: &str) -> SnapshotCoverage {
+        self.snapshot_matching(cwd, cmd, |_| true).await
+    }
+
+    /// [`Self::snapshot_all`] without the plugin named `excluded`.
+    ///
+    /// Used when the git `Snapshot plugin` follows a Git target instead of
+    /// the process cwd (#471): every other plugin still runs at `cwd`.
+    pub async fn snapshot_all_except(
+        &self,
+        excluded: &str,
+        cwd: &Path,
+        cmd: &str,
+    ) -> SnapshotCoverage {
+        self.snapshot_matching(cwd, cmd, |name| name != excluded)
+            .await
+    }
+
+    /// Run only the plugin named `plugin`, rooted at `dir`.
+    ///
+    /// Returns an empty coverage when the plugin is not materialized in this
+    /// registry or is not applicable to `dir`.
+    pub async fn snapshot_plugin_at(
+        &self,
+        plugin: &str,
+        dir: &Path,
+        cmd: &str,
+    ) -> SnapshotCoverage {
+        self.snapshot_matching(dir, cmd, |name| name == plugin)
+            .await
+    }
+
+    /// Whether the plugin named `plugin` is materialized in this registry
+    /// and applicable to `dir`.
+    pub async fn plugin_applicable_at(&self, plugin: &str, dir: &Path) -> bool {
+        for candidate in &self.plugins {
+            if candidate.name() == plugin {
+                return candidate.is_applicable(dir).await;
+            }
+        }
+        false
+    }
+
+    async fn snapshot_matching(
+        &self,
+        cwd: &Path,
+        cmd: &str,
+        include: impl Fn(&str) -> bool,
+    ) -> SnapshotCoverage {
         let mut coverage = SnapshotCoverage::default();
         for plugin in &self.plugins {
-            if !plugin.is_applicable(cwd).await {
+            if !include(plugin.name()) || !plugin.is_applicable(cwd).await {
                 continue;
             }
             coverage.applicable += 1;
@@ -563,6 +618,84 @@ mod tests {
             !coverage.is_partial(),
             "a plugin that has nothing to do here must not read as missing coverage"
         );
+    }
+
+    #[test]
+    fn merge_adds_applicable_counts_and_appends_records() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let registry = SnapshotRegistry::new_with_plugins(vec![Box::new(AlwaysSucceedingPlugin)]);
+        let mut first = runtime.block_on(registry.snapshot_all(Path::new("/x"), "c"));
+        first.applicable = 2;
+        let mut second = runtime.block_on(registry.snapshot_all(Path::new("/x"), "c"));
+        second.applicable = 3;
+
+        first.merge(second);
+
+        assert_eq!(first.applicable, 5);
+        assert_eq!(first.records.len(), 2);
+    }
+
+    #[test]
+    fn snapshot_all_except_skips_only_the_excluded_plugin() {
+        let registry = SnapshotRegistry::new_with_plugins(vec![
+            Box::new(AlwaysSucceedingPlugin),
+            Box::new(AlwaysFailingPlugin),
+        ]);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        let coverage = runtime.block_on(registry.snapshot_all_except(
+            "mock-failing",
+            Path::new("/nonexistent-cwd"),
+            "rm -rf /",
+        ));
+
+        assert_eq!(coverage.applicable, 1);
+        assert_eq!(coverage.records.len(), 1);
+    }
+
+    #[test]
+    fn snapshot_plugin_at_runs_only_the_named_plugin() {
+        let registry = SnapshotRegistry::new_with_plugins(vec![
+            Box::new(AlwaysSucceedingPlugin),
+            Box::new(AlwaysFailingPlugin),
+        ]);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        let coverage = runtime.block_on(registry.snapshot_plugin_at(
+            "mock-succeeding",
+            Path::new("/nonexistent-cwd"),
+            "rm -rf /",
+        ));
+
+        assert_eq!(coverage.applicable, 1);
+        assert_eq!(coverage.records.len(), 1);
+    }
+
+    #[test]
+    fn plugin_applicable_at_is_true_for_a_named_applicable_plugin() {
+        let registry = SnapshotRegistry::new_with_plugins(vec![
+            Box::new(NeverApplicablePlugin),
+            Box::new(AlwaysSucceedingPlugin),
+        ]);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        assert!(
+            runtime.block_on(registry.plugin_applicable_at("mock-succeeding", Path::new("/x")))
+        );
+    }
+
+    #[test]
+    fn plugin_applicable_at_is_false_for_an_inapplicable_or_missing_plugin() {
+        let registry = SnapshotRegistry::new_with_plugins(vec![
+            Box::new(NeverApplicablePlugin),
+            Box::new(AlwaysSucceedingPlugin),
+        ]);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+
+        assert!(
+            !runtime.block_on(registry.plugin_applicable_at("mock-inapplicable", Path::new("/x")))
+        );
+        assert!(!runtime.block_on(registry.plugin_applicable_at("absent", Path::new("/x"))));
     }
 
     #[test]

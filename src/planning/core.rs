@@ -1,7 +1,8 @@
 //! Pure planning logic: build a planning outcome from a runtime context.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use crate::planning::git_target::{GitTargetPlan, GitTargetUnresolved};
 use crate::planning::policy_rules::evaluate_policy_rules;
 use crate::planning::prepare::PreparedPlanner;
 use crate::planning::types::{CwdState, DecisionContext, InterceptionPlan, PlanningOutcome};
@@ -76,19 +77,69 @@ pub async fn plan_with_context_async(
         }
         CwdState::Unavailable => context.is_blocked_for_command(request.command, None),
     };
-    let applicable_snapshot_plugins =
-        if recovery_backstop_applies(&assessment, context.config().snapshot_policy) {
-            match &request.cwd_state {
-                CwdState::Resolved(path) => context.applicable_snapshot_plugins_async(path).await,
-                CwdState::Unavailable => {
-                    context
-                        .applicable_snapshot_plugins_async(Path::new("."))
-                        .await
+    let backstop = recovery_backstop_applies(&assessment, context.config().snapshot_policy);
+    let snapshot_cwd = match &request.cwd_state {
+        CwdState::Resolved(path) => path.clone(),
+        CwdState::Unavailable => Path::new(".").to_path_buf(),
+    };
+    let mut applicable_snapshot_plugins = if backstop {
+        context
+            .applicable_snapshot_plugins_async(&snapshot_cwd)
+            .await
+    } else {
+        Vec::new()
+    };
+
+    // #471: the git Snapshot follows the Git target. Resolution (which
+    // canonicalizes paths) runs only here, for a command that already needs a
+    // recovery backstop and only when a git stage redirects its working tree.
+    let mut git_targets = GitTargetPlan::default();
+    if backstop {
+        // The target is planned even when the git provider is disabled: an
+        // unresolved Git target must still be disclosed and halt an
+        // unattended run. Disabling one provider is not the Audit opt-out.
+        let report = context.git_stage_report(request.command, &assessment);
+        git_targets = GitTargetPlan::resolve(&report, &request.cwd_state);
+        // A resolved target that is not a git working tree is a gap whether
+        // or not the git provider is enabled: report it as unresolved. A
+        // directory inside a repository is replaced by the repository top
+        // level, so the snapshot_id of every stage on one repository agrees.
+        let mut top_levels: Vec<(PathBuf, PathBuf)> = Vec::new();
+        for path in git_targets.resolved_paths() {
+            if let Some(top) = aegis_snapshot::git_toplevel(path).await {
+                top_levels.push((path.to_path_buf(), top));
+            }
+        }
+        git_targets.map_resolved(
+            |path| {
+                top_levels
+                    .iter()
+                    .find(|(from, _)| from == path)
+                    .map(|(_, top)| top.clone())
+            },
+            GitTargetUnresolved::NotAGitRepository,
+        );
+        if context.git_snapshot_enabled() {
+            if !git_targets.process_cwd {
+                applicable_snapshot_plugins.retain(|name| *name != "git");
+            }
+            // A resolved target the git plugin cannot cover is a gap, not a
+            // silent no-op.
+            let mut covered: Vec<PathBuf> = Vec::new();
+            for path in git_targets.resolved_paths() {
+                if context.git_snapshot_applicable_at_async(path).await {
+                    covered.push(path.to_path_buf());
                 }
             }
-        } else {
-            Vec::new()
-        };
+            if !covered.is_empty() && !applicable_snapshot_plugins.contains(&"git") {
+                applicable_snapshot_plugins.push("git");
+            }
+            git_targets.demote_resolved(
+                |path| covered.iter().any(|c| c == path),
+                GitTargetUnresolved::NotAGitRepository,
+            );
+        }
+    }
 
     build_planning_outcome(
         context,
@@ -97,6 +148,7 @@ pub async fn plan_with_context_async(
         allowlist_match,
         blocklist_match,
         applicable_snapshot_plugins,
+        git_targets,
     )
 }
 
@@ -138,6 +190,7 @@ fn build_planning_outcome(
     allowlist_match: Option<aegis_config::AllowlistMatch>,
     blocklist_match: bool,
     applicable_snapshot_plugins: Vec<&'static str>,
+    git_targets: GitTargetPlan,
 ) -> PlanningOutcome {
     let decision_context = DecisionContext::new(
         context.config().mode,
@@ -146,7 +199,8 @@ fn build_planning_outcome(
         request.cwd_state,
         allowlist_match,
         applicable_snapshot_plugins,
-    );
+    )
+    .with_git_targets(git_targets);
 
     let policy_decision = evaluate_policy(PolicyInput {
         assessment: &assessment,
@@ -368,6 +422,7 @@ mod tests {
             plan.snapshot_plan(),
             SnapshotPlan::Required {
                 applicable_plugins: vec!["git"],
+                git_targets: GitTargetPlan::default(),
             }
         );
     }
@@ -465,6 +520,7 @@ mod tests {
             plan.snapshot_plan(),
             SnapshotPlan::Required {
                 applicable_plugins: vec!["git"],
+                git_targets: GitTargetPlan::default(),
             }
         );
     }
@@ -489,6 +545,7 @@ mod tests {
             plan.snapshot_plan(),
             SnapshotPlan::Required {
                 applicable_plugins: Vec::new(),
+                git_targets: GitTargetPlan::default(),
             }
         );
     }

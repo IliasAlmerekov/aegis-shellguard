@@ -79,7 +79,9 @@ pub(crate) fn render_planned(
     let plan_snapshot = plan.snapshot_plan();
     let (snapshot_requested, applicable_snapshot_plugins) = match &plan_snapshot {
         SnapshotPlan::NotRequired => (false, Vec::new()),
-        SnapshotPlan::Required { applicable_plugins } => (true, applicable_plugins.clone()),
+        SnapshotPlan::Required {
+            applicable_plugins, ..
+        } => (true, applicable_plugins.clone()),
     };
     let decision_label = decision_string(decision.decision);
     let exit_code = exit_code_for(decision.decision);

@@ -31,6 +31,7 @@ fn audit_entry_serializes_nested_explanation_sections() {
             ci_detected: false,
             allowlist_match: None,
             applicable_snapshot_plugins: vec!["git".to_string()],
+            git_targets: Vec::new(),
         },
         outcome: Some(ExecutionOutcomeExplanation {
             decision: ExecutionDecisionExplanation::Approved,
@@ -134,6 +135,7 @@ fn audit_entry_keeps_existing_top_level_fields_for_backward_compatibility() {
             ci_detected: false,
             allowlist_match: None,
             applicable_snapshot_plugins: vec!["git".to_string()],
+            git_targets: Vec::new(),
         },
         outcome: Some(ExecutionOutcomeExplanation {
             decision: ExecutionDecisionExplanation::Approved,
@@ -369,5 +371,38 @@ fn new_entry_records_recovery_degradation_reason() {
     assert_eq!(
         roundtripped.as_base().recovery_degradation,
         Some(RecoveryDegradation::NoSnapshotAvailable)
+    );
+}
+
+#[test]
+fn audit_entry_discloses_git_targets_in_the_explanation_context() {
+    let mut explanation = explanation_with_match_text("git filter-branch");
+    explanation.context.git_targets = vec![
+        aegis_explanation::GitTargetExplanation::Resolved {
+            path: "/work/other".to_string(),
+        },
+        aegis_explanation::GitTargetExplanation::Unresolved {
+            reason: "a path does not exist".to_string(),
+        },
+    ];
+    let entry = AuditEntry::new(
+        "git -C other filter-branch",
+        RiskLevel::Danger,
+        Vec::new(),
+        Decision::Approved,
+        Vec::new(),
+        None,
+        None,
+    )
+    .with_explanation(explanation);
+
+    let json = serde_json::to_value(&entry).unwrap();
+
+    assert_eq!(
+        json["explanation"]["context"]["git_targets"],
+        serde_json::json!([
+            {"status": "resolved", "path": "/work/other"},
+            {"status": "unresolved", "reason": "a path does not exist"}
+        ])
     );
 }

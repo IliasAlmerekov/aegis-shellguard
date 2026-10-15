@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use aegis::planning::{CwdState, ExecutionDisposition, InterceptionPlan, PreparedPlanner};
-use aegis::runtime::{AuditWriteOptions, RecoveryStatus, recovery_status};
+use aegis::runtime::{AuditWriteOptions, plan_recovery_degradation};
 use aegis_config::amend::{
     AppendOutcome, active_config_path_for_append, append_allow_rule, append_block_rule,
 };
@@ -163,7 +163,7 @@ pub(crate) fn run_planned_shell_command_with_renderer<R: ExecutionRenderer>(
 )]
 fn execute_with_snapshots<R: ExecutionRenderer>(
     cmd: &str,
-    verbose: bool,
+    _verbose: bool,
     prepared: &PreparedPlanner,
     plan: &InterceptionPlan,
     launch: &ShellLaunchOptions,
@@ -171,13 +171,11 @@ fn execute_with_snapshots<R: ExecutionRenderer>(
     sandbox_config: Option<&aegis_sandbox::SandboxConfig>,
     renderer: &R,
 ) -> i32 {
-    let coverage = create_snapshots_for_plan(prepared, plan, verbose);
+    let coverage = create_snapshots_for_plan(prepared, plan);
     let snapshots = coverage.records.as_slice();
-    if let Some(RecoveryStatus::Degraded(degradation)) = recovery_status(
-        plan.assessment().effect_opaque,
-        plan.policy_decision().snapshots_required,
-        &coverage,
-    ) {
+    if let Some(degradation) =
+        plan_recovery_degradation(plan, decision == Decision::AutoApproved, &coverage)
+    {
         return match renderer.show_recovery_override(degradation) {
             RecoveryPromptDecision::RunOnceWithoutRecovery => complete_approved_shell_execution(
                 ShellExecution {
@@ -299,24 +297,18 @@ fn append_shell_recovery_audit(
 fn create_snapshots_for_plan(
     prepared: &PreparedPlanner,
     plan: &InterceptionPlan,
-    verbose: bool,
 ) -> SnapshotCoverage {
-    if matches!(
-        plan.snapshot_plan(),
-        aegis::planning::SnapshotPlan::NotRequired
-    ) {
+    let aegis::planning::SnapshotPlan::Required { git_targets, .. } = plan.snapshot_plan() else {
         return SnapshotCoverage::default();
-    }
-
+    };
     match prepared {
-        PreparedPlanner::Ready(context) => match plan.decision_context().cwd_state() {
-            CwdState::Resolved(path) => {
-                context.create_snapshots(path.as_path(), &plan.assessment().command.raw, verbose)
-            }
-            CwdState::Unavailable => {
-                context.create_snapshots(Path::new("."), &plan.assessment().command.raw, verbose)
-            }
-        },
+        PreparedPlanner::Ready(context) => {
+            let cwd = match plan.decision_context().cwd_state() {
+                CwdState::Resolved(path) => path.as_path(),
+                CwdState::Unavailable => Path::new("."),
+            };
+            context.create_snapshots_for_plan(cwd, &plan.assessment().command.raw, &git_targets)
+        }
         PreparedPlanner::SetupFailure(_) => SnapshotCoverage::default(),
     }
 }

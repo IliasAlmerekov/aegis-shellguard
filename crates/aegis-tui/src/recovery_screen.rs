@@ -33,6 +33,9 @@ fn degradation_banner(degradation: RecoveryDegradation) -> &'static str {
         RecoveryDegradation::PartialSnapshotCoverage => {
             "\n  AEGIS REQUIRED RECOVERY IS INCOMPLETE\n\n  Aegis could not determine the eventual effect from the assessed command text.\n  At least one applicable snapshot provider failed. The Snapshots that were\n  created do not cover everything the ADR-016 recovery backstop would cover."
         }
+        RecoveryDegradation::UnresolvedGitTarget => {
+            "\n  AEGIS REQUIRED RECOVERY IS UNAVAILABLE\n\n  A git command's working tree could not be resolved (a variable, glob, GIT_DIR or\n  missing path), so no git Snapshot covers what it changes. Aegis does not\n  substitute a Snapshot of the current directory. Proceeding would run without recovery."
+        }
         _ => {
             "\n  AEGIS REQUIRED RECOVERY IS UNAVAILABLE\n\n  Aegis could not determine the eventual effect from the assessed command text.\n  No required Snapshot was created. Proceeding would run without the ADR-016 recovery backstop."
         }

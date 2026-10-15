@@ -289,6 +289,48 @@ fn successful_required_snapshot_executes_without_recovery_prompt() {
 }
 
 #[test]
+fn auto_approved_run_with_an_unresolved_git_target_halts_before_the_child() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let cwd = workspace.path().canonicalize().unwrap();
+    let config_dir = home.path().join(".config").join("aegis");
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::write(
+        config_dir.join("config.toml"),
+        "allowlist_override_level = \"Danger\"\n",
+    )
+    .unwrap();
+    fs::write(
+        cwd.join(".aegis.toml"),
+        format!(
+            "[[allow]]\npattern = \"git -C /aegis-471-no-such-dir filter-branch*\"\ncwd = \"{}\"\nreason = \"test allowlist\"\n",
+            cwd.display()
+        ),
+    )
+    .unwrap();
+
+    let output = shell_command(home.path(), &cwd)
+        .stdin(Stdio::null())
+        .args([
+            "-c",
+            "git -C /aegis-471-no-such-dir filter-branch --index-filter true",
+        ])
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "stdout=\n{}\nstderr=\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let entry = read_single_audit_entry(home.path());
+    assert_eq!(entry["decision"], "Denied");
+    assert_eq!(entry["recovery_degradation"], "unresolved_git_target");
+}
+
+#[test]
 fn degraded_audit_write_failure_remains_fail_closed() {
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();

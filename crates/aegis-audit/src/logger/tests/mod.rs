@@ -91,6 +91,7 @@ pub fn explanation_with_match_text(matched_text: &str) -> CommandExplanation {
             ci_detected: false,
             allowlist_match: None,
             applicable_snapshot_plugins: vec!["git".to_string()],
+            git_targets: Vec::new(),
         },
         outcome: Some(ExecutionOutcomeExplanation {
             decision: ExecutionDecisionExplanation::Approved,

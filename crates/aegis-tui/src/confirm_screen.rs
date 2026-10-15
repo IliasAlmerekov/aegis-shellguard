@@ -5,7 +5,7 @@ use crossterm::{
     style::{Attribute, Color, Print, ResetColor, SetAttribute, SetForegroundColor},
 };
 
-use aegis_explanation::CommandExplanation;
+use aegis_explanation::{CommandExplanation, GitTargetExplanation};
 use aegis_types::{Assessment, MatchEvidence, RiskLevel, SnapshotRecord};
 
 use super::shared::{
@@ -139,6 +139,32 @@ pub(super) fn render_dialog<W: Write>(
         );
         for reason in &analysis.degradation_reasons {
             let _ = queue!(out, Print(format!("    degradation: {reason:?}\n")));
+        }
+    }
+
+    // Git targets (#471): the working tree each git stage acts on. An
+    // unresolved one is disclosed in red: no git Snapshot covers it, and no
+    // Snapshot of the current directory stands in for it.
+    for target in &explanation.context.git_targets {
+        match target {
+            GitTargetExplanation::Resolved { path } => {
+                let _ = queue!(
+                    out,
+                    Print(format!("\n  Git target: {}\n", escape_control(path)))
+                );
+            }
+            GitTargetExplanation::Unresolved { reason } => {
+                let _ = queue!(
+                    out,
+                    SetForegroundColor(Color::Red),
+                    SetAttribute(Attribute::Bold),
+                    Print(format!(
+                        "\n  Git target unresolved: {}; no git Snapshot covers it\n",
+                        escape_control(reason)
+                    )),
+                    ResetColor,
+                );
+            }
         }
     }
 
@@ -305,5 +331,36 @@ fn prompt_one_time_analysis<R: BufRead, W: Write>(
             let _ = out.flush();
             PromptDecision::Deny
         }
+    }
+}
+
+/// Show control characters (ESC, newline, ...) as visible `\u{..}` escapes.
+///
+/// A Git target path comes from the command text; printed raw, an escape
+/// sequence in it could rewrite what the confirmation dialog shows.
+fn escape_control(text: &str) -> String {
+    text.chars()
+        .flat_map(|c| {
+            if c.is_control() {
+                c.escape_default().collect::<Vec<_>>()
+            } else {
+                vec![c]
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod escape_control_tests {
+    use super::escape_control;
+
+    #[test]
+    fn escape_and_newline_are_shown_visibly() {
+        assert_eq!(escape_control("a\x1b[2Jb\nc"), "a\\u{1b}[2Jb\\nc");
+    }
+
+    #[test]
+    fn printable_text_is_unchanged() {
+        assert_eq!(escape_control("/tmp/repo é"), "/tmp/repo é");
     }
 }

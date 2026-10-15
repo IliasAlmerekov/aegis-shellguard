@@ -2,6 +2,7 @@
 
 mod assessment;
 mod effect_opaque;
+mod git_stages;
 mod highlighting;
 mod keywords;
 mod pipeline_semantics;
@@ -26,6 +27,7 @@ use aegis_types::{
 };
 
 pub use crate::patterns::PrefixRule;
+pub use git_stages::{GitStage, GitStageReport, GitStageTarget};
 
 /// First-pass scanner backed by an Aho-Corasick automaton.
 ///

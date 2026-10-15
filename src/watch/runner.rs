@@ -9,7 +9,7 @@ use crate::planning::{
     CwdState, ExecutionDisposition, InterceptionPlan, PlanningOutcome, PreparedPlanner,
     SetupFailurePlan,
 };
-use crate::runtime::{RecoveryStatus, RuntimeContext, WatchAuditContext, recovery_status};
+use crate::runtime::{RuntimeContext, WatchAuditContext, plan_recovery_degradation};
 use aegis_config::amend::{
     AppendOutcome, active_config_path_for_append, append_allow_rule, append_block_rule,
 };
@@ -332,9 +332,9 @@ async fn run_watch_plan_with_prompts<C, R>(
         Decision::Approved | Decision::AutoApproved => {
             let coverage = create_watch_snapshots(context, &plan, cwd.as_path()).await;
             let snapshots = coverage.records.as_slice();
-            if let Some(RecoveryStatus::Degraded(degradation)) = recovery_status(
-                plan.assessment().effect_opaque,
-                plan.policy_decision().snapshots_required,
+            if let Some(degradation) = plan_recovery_degradation(
+                &plan,
+                runtime_decision == Decision::AutoApproved,
                 &coverage,
             ) {
                 let recovery_decision = recovery_prompt(degradation);
@@ -554,15 +554,12 @@ async fn create_watch_snapshots(
     plan: &InterceptionPlan,
     cwd: &std::path::Path,
 ) -> aegis_snapshot::SnapshotCoverage {
-    if matches!(
-        plan.snapshot_plan(),
-        crate::planning::SnapshotPlan::NotRequired
-    ) {
+    let crate::planning::SnapshotPlan::Required { git_targets, .. } = plan.snapshot_plan() else {
         return aegis_snapshot::SnapshotCoverage::default();
-    }
+    };
 
     context
-        .create_snapshots_async(cwd, &plan.assessment().command.raw)
+        .create_snapshots_for_plan_async(cwd, &plan.assessment().command.raw, &git_targets)
         .await
 }
 

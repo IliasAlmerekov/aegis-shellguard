@@ -201,6 +201,137 @@ pub fn git_option_subcommand_starts(tokens: &[&str]) -> GitSubcommandStarts {
     GitSubcommandStarts::Starts(starts)
 }
 
+/// The `-C`, `--work-tree` and `--git-dir` values one reading of a git
+/// slice's global options applies, in the order git applies them (#471).
+///
+/// Values are raw tokens: nothing here touches the filesystem, expands a
+/// variable or resolves a relative path. The caller decides what a path
+/// means.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+pub struct GitTargetArgs {
+    /// Every `-C <path>` value, in command order. Git applies them in
+    /// sequence, each relative path resolving against the previous result.
+    pub dash_c: Vec<String>,
+    /// The last `--work-tree` value, in either spelling.
+    pub work_tree: Option<String>,
+    /// The last `--git-dir` value, in either spelling.
+    pub git_dir: Option<String>,
+    /// Whether `--bare` is among the options: git then treats the directory
+    /// as a bare repository with no working tree to snapshot.
+    pub bare: bool,
+}
+
+/// Outcome of [`git_option_target_readings`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitTargetReadings {
+    /// The distinct option sets of every reading that reaches a subcommand
+    /// start, in discovery order. Empty when the slice has no global options.
+    /// More than one entry means an unlisted option made two readings of the
+    /// same command disagree about the target.
+    Readings(Vec<GitTargetArgs>),
+    /// The walk exceeded its state budget. The caller must treat the target
+    /// as unresolved.
+    TooMany,
+}
+
+/// Upper bound on distinct `(position, options)` states the target walk
+/// explores. [`git_option_subcommand_starts`] already caps candidates, but
+/// the target walk keeps a state per option set, so it needs a bound of its
+/// own to stay linear-ish on a hostile chain of unlisted options.
+const MAX_TARGET_WALK_STATES: usize = 1024;
+
+/// The value a known option applies at `pos`, if it is one of the three
+/// target options, folded into `args`.
+fn apply_target_option(tokens: &[&str], pos: usize, args: &GitTargetArgs) -> GitTargetArgs {
+    let token = tokens[pos];
+    let mut next = args.clone();
+    if token == "--bare" {
+        next.bare = true;
+        return next;
+    }
+    if token == "-C" {
+        if let Some(value) = tokens.get(pos + 1) {
+            next.dash_c.push((*value).to_string());
+        }
+        return next;
+    }
+    let (name, glued) = match token.split_once('=') {
+        Some((name, value)) => (name, Some(value)),
+        None => (token, None),
+    };
+    if name != "--work-tree" && name != "--git-dir" {
+        return next;
+    }
+    let value = match glued {
+        Some(value) => Some(value),
+        None => tokens.get(pos + 1).copied(),
+    };
+    if let Some(value) = value {
+        let value = value.to_string();
+        if name == "--work-tree" {
+            next.work_tree = Some(value);
+        } else {
+            next.git_dir = Some(value);
+        }
+    }
+    next
+}
+
+/// Resolve the `-C`, `--work-tree` and `--git-dir` values behind every
+/// reading of `tokens`' git global options.
+///
+/// Walks the same option graph as [`git_option_subcommand_starts`] (same
+/// option table, same two readings of an unlisted option), but carries the
+/// target options each path applied. A reading that reaches a subcommand
+/// start contributes its option set. Identical sets collapse, so an unlisted
+/// option that does not change the target adds no reading, while one that
+/// swallows a `-C` as its value adds a second, different reading.
+///
+/// Like [`git_option_subcommand_starts`], returns an empty reading list for a
+/// slice with no global options.
+pub fn git_option_target_readings(tokens: &[&str]) -> GitTargetReadings {
+    use std::collections::HashSet;
+
+    if tokens.get(1).is_none_or(|token| !token.starts_with('-')) {
+        return GitTargetReadings::Readings(Vec::new());
+    }
+
+    let mut seen: HashSet<(usize, GitTargetArgs)> = HashSet::new();
+    let mut stack = vec![(1usize, GitTargetArgs::default())];
+    let mut readings: Vec<GitTargetArgs> = Vec::new();
+
+    seen.insert((1, GitTargetArgs::default()));
+    while let Some((pos, args)) = stack.pop() {
+        if !tokens[pos].starts_with('-') {
+            if !readings.contains(&args) {
+                readings.push(args);
+            }
+            continue;
+        }
+
+        // An unlisted option never names `-C`, `--work-tree` or `--git-dir`
+        // (`classify` lists all three), so `apply_target_option` leaves its
+        // args unchanged and no arity special case is needed here.
+        let carried = apply_target_option(tokens, pos, &args);
+        for succ in successors(tokens, pos).into_iter().flatten() {
+            if succ >= tokens.len() {
+                continue;
+            }
+            let state = (succ, carried.clone());
+            if seen.contains(&state) {
+                continue;
+            }
+            if seen.len() >= MAX_TARGET_WALK_STATES {
+                return GitTargetReadings::TooMany;
+            }
+            seen.insert(state.clone());
+            stack.push(state);
+        }
+    }
+
+    GitTargetReadings::Readings(readings)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{GitSubcommandStarts, MAX_GIT_OPTION_CANDIDATES, git_option_subcommand_starts};
@@ -423,5 +554,123 @@ mod tests {
             elapsed < std::time::Duration::from_millis(50),
             "must bail out at the cap, not walk all 2000 pairs: took {elapsed:?}"
         );
+    }
+
+    mod target_readings {
+        use super::super::{GitTargetArgs, GitTargetReadings, git_option_target_readings};
+
+        fn readings(tokens: &[&str]) -> Vec<GitTargetArgs> {
+            match git_option_target_readings(tokens) {
+                GitTargetReadings::Readings(readings) => readings,
+                GitTargetReadings::TooMany => panic!("unexpected TooMany for {tokens:?}"),
+            }
+        }
+
+        fn args(dash_c: &[&str], work_tree: Option<&str>, git_dir: Option<&str>) -> GitTargetArgs {
+            GitTargetArgs {
+                dash_c: dash_c.iter().map(|s| (*s).to_string()).collect(),
+                work_tree: work_tree.map(str::to_string),
+                git_dir: git_dir.map(str::to_string),
+                ..GitTargetArgs::default()
+            }
+        }
+
+        #[test]
+        fn bare_option_is_recorded_in_the_reading() {
+            let reading = readings(&["git", "-C", "r.git", "--bare", "filter-branch"]);
+
+            assert!(reading[0].bare);
+        }
+
+        #[test]
+        fn empty_and_single_token_slices_have_no_readings() {
+            assert!(readings(&[]).is_empty());
+            assert!(readings(&["git"]).is_empty());
+        }
+
+        #[test]
+        fn plain_subcommand_has_no_readings() {
+            assert!(readings(&["git", "reset", "--hard"]).is_empty());
+        }
+
+        #[test]
+        fn dash_c_chain_is_kept_in_command_order() {
+            assert_eq!(
+                readings(&["git", "-C", "a", "-C", "b", "reset", "--hard"]),
+                vec![args(&["a", "b"], None, None)]
+            );
+        }
+
+        #[test]
+        fn work_tree_after_dash_c_is_kept_separately() {
+            assert_eq!(
+                readings(&["git", "-C", "a", "--work-tree", "w", "reset", "--hard"]),
+                vec![args(&["a"], Some("w"), None)]
+            );
+        }
+
+        #[test]
+        fn work_tree_and_git_dir_accept_glued_and_separate_values() {
+            assert_eq!(
+                readings(&["git", "--work-tree=w", "--git-dir=w/.git", "reset"]),
+                vec![args(&[], Some("w"), Some("w/.git"))]
+            );
+            assert_eq!(
+                readings(&["git", "--work-tree", "w", "--git-dir", "w/.git", "reset"]),
+                vec![args(&[], Some("w"), Some("w/.git"))]
+            );
+        }
+
+        #[test]
+        fn last_work_tree_wins() {
+            assert_eq!(
+                readings(&["git", "--work-tree=a", "--work-tree=b", "reset"]),
+                vec![args(&[], Some("b"), None)]
+            );
+        }
+
+        #[test]
+        fn options_that_do_not_move_the_target_leave_empty_args() {
+            assert_eq!(
+                readings(&["git", "-c", "x=y", "--no-pager", "reset", "--hard"]),
+                vec![args(&[], None, None)]
+            );
+        }
+
+        #[test]
+        fn unlisted_option_that_does_not_touch_the_target_adds_no_reading() {
+            assert_eq!(
+                readings(&["git", "--newopt", "x", "reset", "--hard"]),
+                vec![args(&[], None, None)]
+            );
+        }
+
+        #[test]
+        fn unlisted_option_swallowing_dash_c_gives_two_different_readings() {
+            let found = readings(&["git", "--newopt", "-C", "a", "reset", "--hard"]);
+            assert!(found.contains(&args(&["a"], None, None)));
+            assert!(found.contains(&args(&[], None, None)));
+        }
+
+        #[test]
+        fn dangling_dash_c_has_no_reading() {
+            assert!(readings(&["git", "-C"]).is_empty());
+        }
+
+        #[test]
+        fn hostile_unlisted_chain_stays_bounded() {
+            let mut tokens: Vec<String> = vec!["git".to_string()];
+            for i in 0..2000 {
+                tokens.push(format!("--unknown-{i}"));
+                tokens.push("-C".to_string());
+                tokens.push(format!("d{i}"));
+            }
+            tokens.push("reset".to_string());
+            let refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
+            assert_eq!(
+                git_option_target_readings(&refs),
+                GitTargetReadings::TooMany
+            );
+        }
     }
 }

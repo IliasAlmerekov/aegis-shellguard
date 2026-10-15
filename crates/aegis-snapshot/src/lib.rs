@@ -24,7 +24,7 @@ mod supabase;
 /// Built-in Docker snapshot provider.
 pub use docker::DockerPlugin;
 /// Built-in Git snapshot provider.
-pub use git::GitPlugin;
+pub use git::{GitPlugin, git_toplevel};
 /// Built-in MySQL snapshot provider.
 pub use mysql::MysqlPlugin;
 /// Built-in PostgreSQL snapshot provider.

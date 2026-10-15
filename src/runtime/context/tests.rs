@@ -439,6 +439,20 @@ fn runtime_context_new_does_not_build_snapshot_registry_eagerly() {
 }
 
 #[test]
+fn git_snapshot_enabled_follows_the_auto_snapshot_git_setting() {
+    for enabled in [true, false] {
+        let mut config = AegisConfig::default();
+        config.snapshot_policy = SnapshotPolicy::Selective;
+        config.auto_snapshot_git = enabled;
+        config.auto_snapshot_docker = false;
+
+        let context = RuntimeContext::new(config, test_handle()).unwrap();
+
+        assert_eq!(context.git_snapshot_enabled(), enabled);
+    }
+}
+
+#[test]
 fn runtime_context_new_requires_handle_parameter() {
     // Verify the two-argument signature is the only way to construct.
     // This test will fail to compile if RuntimeContext::new still accepts
@@ -489,6 +503,7 @@ fn append_audit_entry_enriches_explanation_with_runtime_outcome() {
             ci_detected: false,
             allowlist_match: None,
             applicable_snapshot_plugins: vec!["git".to_string()],
+            git_targets: Vec::new(),
         },
         outcome: None,
     };
@@ -565,6 +580,7 @@ fn append_audit_entry_preserves_allowlist_context_fields() {
             ci_detected: false,
             allowlist_match: allowlist_match.as_ref().map(allowlist_explanation_from),
             applicable_snapshot_plugins: Vec::new(),
+            git_targets: Vec::new(),
         },
         outcome: None,
     };
@@ -626,6 +642,7 @@ fn build_audit_entry_records_effect_opaque_and_backstop_state_from_runtime_facts
             ci_detected: false,
             allowlist_match: None,
             applicable_snapshot_plugins: vec!["git".to_string()],
+            git_targets: Vec::new(),
         },
         outcome: None,
     };
@@ -698,6 +715,7 @@ fn build_audit_entry_records_plain_safe_command_without_backstops() {
             ci_detected: false,
             allowlist_match: None,
             applicable_snapshot_plugins: Vec::new(),
+            git_targets: Vec::new(),
         },
         outcome: None,
     };
