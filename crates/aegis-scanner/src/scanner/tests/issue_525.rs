@@ -339,3 +339,186 @@ fn quotes_inside_other_quotes_do_not_change_what_is_literal() {
         assert_eq!(dirs(&report(cmd)), vec![expected], "{cmd:?}");
     }
 }
+
+// Codex review of PR #529.
+
+#[test]
+fn a_quoted_or_escaped_cd_spelling_still_moves_the_directory() {
+    for cmd in [
+        "c''d ../other && rm -rf x",
+        "c\"\"d ../other && rm -rf x",
+        "'cd' ../other && rm -rf x",
+        "\"c\"d ../other && rm -rf x",
+        "c'd' ../other && rm -rf x",
+    ] {
+        assert_eq!(dirs(&report(cmd)), vec![chain(&["../other"])], "{cmd:?}");
+        assert!(!report(cmd).needs_process_cwd, "{cmd:?}");
+    }
+}
+
+#[test]
+fn a_backslash_escaped_cd_spelling_is_unresolved_not_skipped() {
+    for cmd in ["\\cd ../other && rm -rf x", "c\\d ../other && rm -rf x"] {
+        let report = report(cmd);
+
+        assert!(
+            matches!(dirs(&report)[..], [StageDir::Unresolved(_)]),
+            "{cmd:?}"
+        );
+        assert!(!report.needs_process_cwd, "{cmd:?}");
+    }
+}
+
+#[test]
+fn dot_relative_cd_operands_ignore_cdpath() {
+    for cmd in [
+        "cd ../other && rm -rf y",
+        "cd ./other && rm -rf y",
+        "cd . && rm -rf y",
+        "cd .. && rm -rf y",
+    ] {
+        let dirs = dirs(&report_with(cmd, true));
+
+        assert_eq!(dirs.len(), 1, "{cmd:?}");
+        assert!(matches!(dirs[0], StageDir::Chain(_)), "{cmd:?}: {dirs:?}");
+    }
+    for cmd in [
+        "cd other && rm -rf y",
+        "cd .hidden && rm -rf y",
+        "cd ..x && rm -rf y",
+    ] {
+        assert_eq!(
+            dirs(&report_with(cmd, true)),
+            vec![unresolved(CdUnresolved::CdPathSet)],
+            "{cmd:?}"
+        );
+    }
+}
+
+#[test]
+fn redirections_on_a_cd_stage_are_not_operands() {
+    for cmd in [
+        "cd ../other 2>/dev/null && rm -rf x",
+        "cd ../other >/dev/null 2>&1 && rm -rf x",
+        "cd ../other 2> /dev/null && rm -rf x",
+        "cd ../other &>/dev/null && rm -rf x",
+        "cd >/dev/null ../other && rm -rf x",
+        "cd -- ../other 2>/dev/null && rm -rf x",
+        "cd ../other < /dev/null && rm -rf x",
+    ] {
+        assert_eq!(dirs(&report(cmd)), vec![chain(&["../other"])], "{cmd:?}");
+    }
+}
+
+#[test]
+fn a_quoted_redirection_lookalike_is_still_an_operand() {
+    assert_eq!(
+        dirs(&report("cd ../other '2>x' && rm -rf y")),
+        vec![unresolved(CdUnresolved::UnsupportedForm)]
+    );
+}
+
+#[test]
+fn a_cdpath_change_earlier_in_the_line_makes_a_later_relative_cd_unresolved() {
+    for cmd in [
+        "export CDPATH=/tmp && cd project && rm -rf y",
+        "CDPATH=/tmp && cd project && rm -rf y",
+        "declare -x CDPATH=/tmp && cd project && rm -rf y",
+        "env CDPATH=/tmp true && cd project && rm -rf y",
+        "(export CDPATH=/tmp) && cd project && rm -rf y",
+        "export CDPATH=/tmp; cd project && rm -rf y",
+    ] {
+        assert_eq!(
+            dirs(&report(cmd)),
+            vec![unresolved(CdUnresolved::CdPathSet)],
+            "{cmd:?}"
+        );
+    }
+}
+
+#[test]
+fn a_cdpath_change_leaves_absolute_and_dot_relative_cds_resolved() {
+    assert_eq!(
+        dirs(&report("export CDPATH=/tmp && cd /srv/x && rm -rf y")),
+        vec![chain(&["/srv/x"])]
+    );
+    assert_eq!(
+        dirs(&report("export CDPATH=/tmp && cd ../x && rm -rf y")),
+        vec![chain(&["../x"])]
+    );
+}
+
+#[test]
+fn a_literal_absolute_cd_after_an_unresolved_one_recovers_a_directory() {
+    for cmd in [
+        "cd \"$X\" && cd /known/repo && rm -rf y",
+        "cd && cd /known/repo && rm -rf y",
+        "pushd x && cd -- /known/repo && rm -rf y",
+        "cd x; cd /known/repo && rm -rf y",
+    ] {
+        let dirs = dirs(&report(cmd));
+
+        assert_eq!(dirs.len(), 1, "{cmd:?}");
+        assert_eq!(
+            dirs[0],
+            if cmd.starts_with("cd x;") {
+                // Not joined by `&&`: keeps the ADR-049 rule.
+                unresolved(CdUnresolved::MayNotRun)
+            } else {
+                chain(&["/known/repo"])
+            },
+            "{cmd:?}"
+        );
+    }
+}
+
+#[test]
+fn an_absolute_cd_recovers_only_when_joined_by_and_and_itself_literal() {
+    for cmd in [
+        "cd \"$X\" || cd /known/repo && rm -rf y",
+        "cd \"$X\"; cd /known/repo && rm -rf y",
+        "cd \"$X\" && cd \"$Y\" && rm -rf y",
+        "cd \"$X\" && cd /known/$Y && rm -rf y",
+        "cd \"$X\" && cd relative && rm -rf y",
+        "cd \"$X\" && cd -P /known/repo && rm -rf y",
+        "cd \"$X\" && cd /known/repo || rm -rf y",
+    ] {
+        let dirs = dirs(&report(cmd));
+
+        assert_eq!(dirs.len(), 1, "{cmd:?}");
+        assert!(
+            matches!(dirs[0], StageDir::Unresolved(_)),
+            "{cmd:?}: {dirs:?}"
+        );
+    }
+}
+
+#[test]
+fn a_non_git_stage_behind_a_directory_changing_launcher_is_unresolved() {
+    for cmd in [
+        "cd ../a && env -C ../b rm -rf x",
+        "cd ../a && env --chdir=../b rm -rf x",
+        "cd ../a && sudo -D ../b rm -rf x",
+        "cd ../a && sudo --chdir ../b rm -rf x",
+    ] {
+        let report = report(cmd);
+
+        // The launcher slice itself also matches `rm -rf` as a plain stage in
+        // the moved directory; the stage that matters is the unresolved one.
+        assert!(
+            report.redirected.iter().any(|stage| {
+                stage.target == DangerStageTarget::LauncherChangesDirectory && !stage.is_git
+            }),
+            "{cmd:?}: {:?}",
+            report.redirected
+        );
+        assert!(!report.needs_process_cwd, "{cmd:?}");
+    }
+}
+
+#[test]
+fn a_launcher_that_keeps_the_directory_leaves_a_moved_non_git_stage_plain() {
+    let report = report("cd ../a && sudo rm -rf x");
+
+    assert_eq!(report.redirected[0].target, DangerStageTarget::Plain);
+}

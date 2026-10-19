@@ -11,6 +11,8 @@
 //! `cd -- <literal> &&`. Here a wrong answer only mis-aims a recovery point,
 //! which the disclosure rules of ADR-048 already cover.
 
+use std::cell::Cell;
+
 use aegis_parser::ListSeparator;
 
 use super::recursive;
@@ -91,13 +93,17 @@ pub(super) fn mentions_cd(targets: &[String]) -> bool {
 /// Split `cmd` into stage texts, each with the directory it runs in.
 pub(super) fn stage_dirs(cmd: &str, cdpath_set: bool) -> Vec<(String, StageDir)> {
     let mut stages = Vec::new();
-    let walker = Walker { cdpath_set };
+    let walker = Walker {
+        cdpath_set: Cell::new(cdpath_set),
+    };
     walker.list(cmd, StageDir::Process, &mut stages, 0);
     stages
 }
 
 struct Walker {
-    cdpath_set: bool,
+    /// Whether `CDPATH` may be set: in Aegis's own environment, or by an
+    /// earlier stage of the command line. Once set, it stays set.
+    cdpath_set: Cell<bool>,
 }
 
 impl Walker {
@@ -147,10 +153,30 @@ impl Walker {
         }
 
         let tokens = aegis_parser::split_tokens(raw);
+        // A stage that names `CDPATH` may set or clear it for the stages after
+        // it. This errs toward unresolved. The stage itself runs with the old
+        // value (`CDPATH=x cd y` is a hidden `cd`, unresolved on its own).
+        let touches_cdpath =
+            raw.contains("CDPATH") || tokens.iter().any(|token| token.contains("CDPATH"));
+        let result = self.stage_inner(raw, &tokens, state, incoming, out);
+        if touches_cdpath {
+            self.cdpath_set.set(true);
+        }
+        result
+    }
+
+    fn stage_inner(
+        &self,
+        raw: &str,
+        tokens: &[String],
+        state: &StageDir,
+        incoming: Option<ListSeparator>,
+        out: &mut Vec<(String, StageDir)>,
+    ) -> Option<StageDir> {
         if tokens.first().map(String::as_str) == Some("cd") {
             // The tokenizer drops quotes and backslashes, so the quoting is
             // read from the raw text.
-            let operands = cd_operands(raw, &tokens);
+            let operands = cd_operands(raw, tokens);
             return Some(self.apply_cd(state, &operands, incoming));
         }
 
@@ -169,35 +195,60 @@ impl Walker {
         operands: &[CdWord],
         incoming: Option<ListSeparator>,
     ) -> StageDir {
-        if matches!(state, StageDir::Unresolved(_)) {
-            return state.clone();
+        let parsed = self.literal_path(operands);
+        if let StageDir::Unresolved(_) = state {
+            // A literal absolute `cd` reached through `&&` runs only when the
+            // earlier steps succeeded, and lands in the same place whatever the
+            // directory was before: it recovers a known directory.
+            return match parsed {
+                Ok(path) if incoming == Some(ListSeparator::And) && path.starts_with('/') => {
+                    StageDir::Chain(vec![path])
+                }
+                _ => state.clone(),
+            };
         }
-        let word = match operands {
-            [word] if !word.value.starts_with('-') => word,
-            [dashdash, word] if dashdash.value == "--" => word,
-            _ => return StageDir::Unresolved(CdUnresolved::UnsupportedForm),
+        let path = match parsed {
+            Ok(path) => path,
+            Err(reason) => return StageDir::Unresolved(reason),
         };
-        let path = &word.value;
-        if path.is_empty() || path == "-" {
-            return StageDir::Unresolved(CdUnresolved::UnsupportedForm);
-        }
-        if word.dynamic {
-            return StageDir::Unresolved(CdUnresolved::DynamicPath);
-        }
-        if self.cdpath_set && !path.starts_with('/') {
-            return StageDir::Unresolved(CdUnresolved::CdPathSet);
-        }
         if incoming == Some(ListSeparator::Or) {
             return StageDir::Unresolved(CdUnresolved::MayNotRun);
         }
         match state {
             StageDir::Chain(steps) => {
                 let mut steps = steps.clone();
-                steps.push(path.clone());
+                steps.push(path);
                 StageDir::Chain(steps)
             }
-            _ => StageDir::Chain(vec![path.clone()]),
+            _ => StageDir::Chain(vec![path]),
         }
+    }
+
+    /// The literal path a `cd` with these operands names, or why it is not one.
+    fn literal_path(&self, operands: &[CdWord]) -> Result<String, CdUnresolved> {
+        let word = match operands {
+            [word] if !word.value.starts_with('-') => word,
+            [dashdash, word] if dashdash.value == "--" => word,
+            _ => return Err(CdUnresolved::UnsupportedForm),
+        };
+        let path = &word.value;
+        if path.is_empty() || path == "-" {
+            return Err(CdUnresolved::UnsupportedForm);
+        }
+        if word.dynamic {
+            return Err(CdUnresolved::DynamicPath);
+        }
+        // `CDPATH` is not searched for an absolute path, or one whose first
+        // component is `.` or `..`.
+        let searched = !path.starts_with('/')
+            && path != "."
+            && path != ".."
+            && !path.starts_with("./")
+            && !path.starts_with("../");
+        if self.cdpath_set.get() && searched {
+            return Err(CdUnresolved::CdPathSet);
+        }
+        Ok(path.clone())
     }
 }
 
@@ -206,6 +257,8 @@ impl Walker {
 struct CdWord {
     value: String,
     dynamic: bool,
+    /// Whether any part of the word was quoted.
+    quoted: bool,
 }
 
 /// The operands of the `cd` stage `raw`, whose tokens are `tokens`.
@@ -223,15 +276,45 @@ fn cd_operands(raw: &str, tokens: &[String]) -> Vec<CdWord> {
         .map(|word| word.value.as_str())
         .eq(tokens.iter().map(String::as_str));
     if aligned {
-        return words.into_iter().skip(1).collect();
+        return without_redirections(words.into_iter().skip(1).collect());
     }
-    tokens[1..]
-        .iter()
-        .map(|token| CdWord {
-            dynamic: true,
-            value: token.clone(),
-        })
-        .collect()
+    without_redirections(
+        tokens[1..]
+            .iter()
+            .map(|token| CdWord {
+                dynamic: true,
+                quoted: false,
+                value: token.clone(),
+            })
+            .collect(),
+    )
+}
+
+/// Drop the redirections (`2>/dev/null`, `> file`, `&>x`, `< in`) from the
+/// words of a command: they are syntax, not arguments. A quoted word is always
+/// an argument.
+fn without_redirections(words: Vec<CdWord>) -> Vec<CdWord> {
+    let mut kept = Vec::new();
+    let mut skip_target = false;
+    for word in words {
+        if skip_target {
+            skip_target = false;
+            continue;
+        }
+        if word.quoted {
+            kept.push(word);
+            continue;
+        }
+        let operator = word.value.trim_start_matches(|c: char| c.is_ascii_digit());
+        let operator = operator.strip_prefix('&').unwrap_or(operator);
+        if operator.starts_with(['<', '>']) {
+            let rest = operator.trim_start_matches(['<', '>', '&', '|']);
+            skip_target = rest.is_empty();
+            continue;
+        }
+        kept.push(word);
+    }
+    kept
 }
 
 /// Split `raw` into whitespace-separated words the way the tokenizer does
@@ -239,17 +322,24 @@ fn cd_operands(raw: &str, tokens: &[String]) -> Vec<CdWord> {
 fn raw_words(raw: &str) -> Vec<CdWord> {
     let mut words = Vec::new();
     let mut value = String::new();
-    let mut dynamic = false;
+    let (mut dynamic, mut quoted) = (false, false);
     let (mut single, mut double) = (false, false);
     for ch in raw.chars() {
         match ch {
-            '\'' if !double => single = !single,
-            '"' if !single => double = !double,
+            '\'' if !double => {
+                single = !single;
+                quoted = true;
+            }
+            '"' if !single => {
+                double = !double;
+                quoted = true;
+            }
             c if c.is_whitespace() && !single && !double => {
                 if !value.is_empty() {
                     words.push(CdWord {
                         value: std::mem::take(&mut value),
                         dynamic: std::mem::take(&mut dynamic),
+                        quoted: std::mem::take(&mut quoted),
                     });
                 }
             }
@@ -266,7 +356,11 @@ fn raw_words(raw: &str) -> Vec<CdWord> {
         }
     }
     if !value.is_empty() {
-        words.push(CdWord { value, dynamic });
+        words.push(CdWord {
+            value,
+            dynamic,
+            quoted,
+        });
     }
     words
 }

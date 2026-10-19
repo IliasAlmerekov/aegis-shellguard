@@ -136,7 +136,7 @@ impl StageEvidence {
                     } else if !ids.is_empty() {
                         self.redirected_ids.extend(ids);
                         self.push_stage(DangerStage {
-                            target: DangerStageTarget::Plain,
+                            target: moved_stage_target(&token_refs, &slice),
                             dir: dir.clone(),
                             is_git: false,
                         });
@@ -250,6 +250,22 @@ impl Scanner {
             .filter(|m| m.pattern.risk == RiskLevel::Danger)
             .map(|m| m.pattern.id.to_string())
             .collect()
+    }
+}
+
+/// The target of a non-git stage that a `cd` moved: plain, unless a launcher
+/// in front of it changes the directory again (`env -C`, `sudo -D`) or cannot
+/// be mapped back onto the stage's own tokens (#525).
+fn moved_stage_target(token_refs: &[&str], slice: &EffectiveTokenSlice<'_>) -> DangerStageTarget {
+    let tail_len = slice.tokens.len() - 1;
+    let tail_start = token_refs.len().checked_sub(tail_len);
+    if !tail_start.is_some_and(|start| token_refs[start..] == slice.tokens[1..]) {
+        return DangerStageTarget::UnmappedLauncher;
+    }
+    if prefix_changes_directory(&token_refs[..token_refs.len() - tail_len]) {
+        DangerStageTarget::LauncherChangesDirectory
+    } else {
+        DangerStageTarget::Plain
     }
 }
 
