@@ -522,11 +522,15 @@ fn unresolvable_cd_forms_are_disclosed_and_never_covered_by_the_cwd() {
 
         assert_eq!(plan.targets, vec![unresolved(reason)], "{command:?}");
         assert_eq!(plan.resolved_paths().count(), 0, "{command:?}");
-        // A dynamic path makes the command effect-opaque (ADR-043), which
-        // earns the ADR-016 cwd Snapshot; every other reason adds none.
-        if reason != GitTargetUnresolved::DynamicPath {
-            assert!(!plan.process_cwd, "{command:?}");
-        }
+        // A dynamic `cd` path (`$D`, `~`, a glob) makes the command
+        // effect-opaque (ADR-043), which earns the ADR-016 cwd Snapshot. That
+        // is accepted (ADR-049): the unresolved target is still disclosed and
+        // halts an unattended run, as `git -C "$X"` does under ADR-048. Every
+        // other reason adds no cwd Snapshot.
+        // `cd ~/x` and `cd ../a*` expand without a `$`, so the router does not
+        // call them effect-opaque and they add no cwd Snapshot.
+        let effect_opaque = command.contains('$');
+        assert_eq!(plan.process_cwd, effect_opaque, "{command:?}");
     }
 }
 
@@ -549,6 +553,7 @@ fn a_subshell_group_snapshots_the_directory_it_changes_to() {
     // The language router treats a subshell group as effect-opaque, which
     // adds the ADR-016 cwd recovery Snapshot on top; `a` is covered too.
     assert_eq!(plan.targets, vec![resolved(&fx.a)]);
+    assert!(plan.process_cwd);
 }
 
 #[test]

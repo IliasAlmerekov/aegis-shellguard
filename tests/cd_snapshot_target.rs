@@ -25,15 +25,8 @@ struct World {
     cwd: PathBuf,
 }
 
-/// A cwd that is a git repository with one commit, next to a plain directory.
-fn world(mode: &str) -> World {
-    let home = TempDir::new().unwrap();
-    let root = TempDir::new().unwrap();
-    let base = root.path().canonicalize().unwrap();
-    let cwd = base.join("cwd");
-    fs::create_dir_all(&cwd).unwrap();
-    fs::create_dir_all(base.join("plain")).unwrap();
-    fs::write(cwd.join("f"), "x\n").unwrap();
+fn commit_repo(dir: &Path) {
+    fs::write(dir.join("f"), "x\n").unwrap();
     for args in [
         vec!["init", "-q"],
         vec!["add", "."],
@@ -50,13 +43,28 @@ fn world(mode: &str) -> World {
     ] {
         let out = Command::new("git")
             .args(&args)
-            .current_dir(&cwd)
+            .current_dir(dir)
             .env_remove("GIT_DIR")
             .env_remove("GIT_WORK_TREE")
             .output()
             .unwrap();
         assert!(out.status.success());
     }
+}
+
+/// A cwd that is a git repository with one commit, next to a plain directory
+/// and a second repository, `other`.
+fn world(mode: &str) -> World {
+    let home = TempDir::new().unwrap();
+    let root = TempDir::new().unwrap();
+    let base = root.path().canonicalize().unwrap();
+    let cwd = base.join("cwd");
+    fs::create_dir_all(&cwd).unwrap();
+    fs::create_dir_all(base.join("plain")).unwrap();
+    commit_repo(&cwd);
+    let other = base.join("other");
+    fs::create_dir_all(&other).unwrap();
+    commit_repo(&other);
     let config_dir = home.path().join(".config").join("aegis");
     fs::create_dir_all(&config_dir).unwrap();
     fs::write(
@@ -218,4 +226,62 @@ fn audit_mode_does_not_halt_for_an_unresolved_cd() {
     let entry = audit_entry(world.home.path());
     assert!(entry["recovery_degradation"].is_null());
     assert!(entry["snapshots"].as_array().is_none_or(Vec::is_empty));
+}
+
+/// The snapshot ids a run recorded, by the directory they name.
+fn snapshot_ids(entry: &Value) -> Vec<String> {
+    entry["snapshots"]
+        .as_array()
+        .map(|snaps| {
+            snaps
+                .iter()
+                .map(|snap| snap["snapshot_id"].as_str().unwrap_or_default().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn a_cd_in_a_pipeline_stage_leaves_the_process_cwd_snapshot() {
+    let world = world("Protect");
+
+    let output = run_allowlisted(&world, "cd ../other | rm -rf y", None);
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr=\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let entry = audit_entry(world.home.path());
+    assert!(entry["recovery_degradation"].is_null(), "{entry}");
+    let ids = snapshot_ids(&entry);
+    assert_eq!(ids.len(), 1, "{entry}");
+    assert!(
+        ids[0].starts_with(&world.cwd.display().to_string()),
+        "the Snapshot must be of the process cwd, not `other`: {ids:?}"
+    );
+}
+
+#[test]
+fn a_subshell_group_is_denied_for_analysis_not_for_an_unresolved_target() {
+    // A `( ... )` group is effect-opaque (ADR-043), so an allowlist cannot
+    // approve it and the run is denied before any Snapshot. The denial must
+    // come from that analysis rule: the `cd` inside or before the group is
+    // resolved, not disclosed as an unresolved Git target. The targets a
+    // group plans (`x` for `(cd x && D)`, the process cwd for `(cd x); D`)
+    // are pinned by the planning tests in `git_target_plan_tests.rs`.
+    let world = world("Protect");
+    for command in ["(cd ../other); rm -rf y", "(cd ../other && rm -rf y)"] {
+        let output = run_allowlisted(&world, command, None);
+
+        assert_eq!(output.status.code(), Some(2), "{command:?}");
+        let entry = audit_entry(world.home.path());
+        assert_eq!(entry["decision"], "Denied", "{command:?}");
+        assert!(
+            entry["recovery_degradation"].is_null(),
+            "{command:?}: {entry}"
+        );
+        assert_eq!(entry["effect_opaque"], true, "{command:?}");
+    }
 }
