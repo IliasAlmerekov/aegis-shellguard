@@ -141,7 +141,7 @@ pub async fn plan_with_context_async(
             // #525: a non-git stage moved by `cd` is snapshotted only when its
             // directory lies in a repository the git plugin covers; anywhere
             // else it behaves as if run there directly.
-            for dir in std::mem::take(&mut git_targets.soft_dirs) {
+            for dir in std::mem::take(&mut git_targets.opportunistic_dirs) {
                 if let Some(top) = aegis_snapshot::git_toplevel(&dir).await
                     && context.git_snapshot_applicable_at_async(&top).await
                 {
@@ -152,7 +152,7 @@ pub async fn plan_with_context_async(
                 }
             }
         } else {
-            git_targets.soft_dirs.clear();
+            git_targets.opportunistic_dirs.clear();
         }
     }
 

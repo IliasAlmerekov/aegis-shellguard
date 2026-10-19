@@ -376,7 +376,7 @@ fn demote_resolved_turns_a_rejected_target_unresolved_and_keeps_the_kept_one() {
             resolved(Path::new("/drop-too")),
         ],
         process_cwd: false,
-        soft_dirs: Vec::new(),
+        opportunistic_dirs: Vec::new(),
     };
 
     plan.demote_resolved(

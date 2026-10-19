@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 
 use aegis_parser::GitTargetArgs;
-use aegis_scanner::{CdUnresolved, GitStage, GitStageReport, GitStageTarget, StageDir};
+use aegis_scanner::{CdUnresolved, DangerStage, DangerStageTarget, GitStageReport, StageDir};
 
 use crate::planning::types::CwdState;
 
@@ -118,7 +118,7 @@ pub struct GitTargetPlan {
     /// plugin covers; otherwise the stage behaves as if run there directly:
     /// no Snapshot and no disclosure. Planning settles these once it can
     /// ask git, so execution never sees them.
-    pub soft_dirs: Vec<PathBuf>,
+    pub opportunistic_dirs: Vec<PathBuf>,
 }
 
 impl Default for GitTargetPlan {
@@ -126,7 +126,7 @@ impl Default for GitTargetPlan {
         Self {
             targets: Vec::new(),
             process_cwd: true,
-            soft_dirs: Vec::new(),
+            opportunistic_dirs: Vec::new(),
         }
     }
 }
@@ -223,7 +223,7 @@ impl GitTargetPlan {
         }
 
         let mut targets: Vec<GitTarget> = Vec::new();
-        let mut soft_dirs: Vec<PathBuf> = Vec::new();
+        let mut opportunistic_dirs: Vec<PathBuf> = Vec::new();
         let mut process_cwd = report.needs_process_cwd;
         let canonical_cwd = match cwd {
             CwdState::Resolved(path) => path.canonicalize().ok(),
@@ -233,12 +233,12 @@ impl GitTargetPlan {
         for stage in &report.redirected {
             let target = match resolve_stage_in_dir(stage, cwd) {
                 StageOutcome::Target(target) => target,
-                StageOutcome::Soft(path) => {
+                StageOutcome::Opportunistic(path) => {
                     // A directory that is the process cwd is the cwd pass.
                     if canonical_cwd.as_deref() == Some(path.as_path()) {
                         process_cwd = true;
-                    } else if !soft_dirs.contains(&path) {
-                        soft_dirs.push(path);
+                    } else if !opportunistic_dirs.contains(&path) {
+                        opportunistic_dirs.push(path);
                     }
                     continue;
                 }
@@ -258,7 +258,7 @@ impl GitTargetPlan {
         Self {
             targets,
             process_cwd,
-            soft_dirs,
+            opportunistic_dirs,
         }
     }
 
@@ -276,17 +276,17 @@ enum StageOutcome {
     /// A target to plan, or an unresolved one to disclose.
     Target(GitTarget),
     /// A non-git stage's directory: planned only if it is a covered repository.
-    Soft(PathBuf),
+    Opportunistic(PathBuf),
 }
 
-fn resolve_stage_in_dir(stage: &GitStage, cwd: &CwdState) -> StageOutcome {
+fn resolve_stage_in_dir(stage: &DangerStage, cwd: &CwdState) -> StageOutcome {
     let base = match resolve_dir(&stage.dir, cwd) {
         Ok(base) => base,
         Err(reason) => return StageOutcome::Target(GitTarget::Unresolved(reason)),
     };
     match (&stage.target, stage.is_git, &base) {
-        (GitStageTarget::Plain, false, CwdState::Resolved(path)) => {
-            StageOutcome::Soft(path.clone())
+        (DangerStageTarget::Plain, false, CwdState::Resolved(path)) => {
+            StageOutcome::Opportunistic(path.clone())
         }
         _ => StageOutcome::Target(resolve_stage(&stage.target, &base)),
     }
@@ -341,22 +341,22 @@ fn normalize_lexically(path: &Path) -> PathBuf {
     out
 }
 
-fn resolve_stage(stage: &GitStageTarget, cwd: &CwdState) -> GitTarget {
+fn resolve_stage(stage: &DangerStageTarget, cwd: &CwdState) -> GitTarget {
     match stage {
-        GitStageTarget::Plain => resolve_args(&GitTargetArgs::default(), cwd),
-        GitStageTarget::EnvironmentRedirect => {
+        DangerStageTarget::Plain => resolve_args(&GitTargetArgs::default(), cwd),
+        DangerStageTarget::EnvironmentRedirect => {
             GitTarget::Unresolved(GitTargetUnresolved::EnvironmentRedirect)
         }
-        GitStageTarget::TooManyOptions => {
+        DangerStageTarget::TooManyOptions => {
             GitTarget::Unresolved(GitTargetUnresolved::TooManyOptions)
         }
-        GitStageTarget::LauncherChangesDirectory => {
+        DangerStageTarget::LauncherChangesDirectory => {
             GitTarget::Unresolved(GitTargetUnresolved::LauncherChangesDirectory)
         }
-        GitStageTarget::UnmappedLauncher => {
+        DangerStageTarget::UnmappedLauncher => {
             GitTarget::Unresolved(GitTargetUnresolved::UnmappedLauncher)
         }
-        GitStageTarget::Options(readings) => {
+        DangerStageTarget::Options(readings) => {
             let mut outcomes: Vec<GitTarget> = Vec::new();
             for args in readings {
                 let outcome = resolve_args(args, cwd);

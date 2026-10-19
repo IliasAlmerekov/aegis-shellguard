@@ -1,5 +1,5 @@
 use super::*;
-use crate::scanner::{CdUnresolved, GitStageReport, GitStageTarget, StageDir};
+use crate::scanner::{AmbientEnv, CdUnresolved, DangerStageTarget, GitStageReport, StageDir};
 
 // #525: the Snapshot follows the directory a Danger stage runs in once the
 // `cd` steps before it are applied. The scanner reports, per Danger stage, the
@@ -9,7 +9,14 @@ use crate::scanner::{CdUnresolved, GitStageReport, GitStageTarget, StageDir};
 fn report_with(cmd: &str, cdpath_set: bool) -> GitStageReport {
     let scanner = scanner();
     let assessment = scanner.assess(cmd);
-    scanner.git_stage_report_with_ambient(cmd, &assessment, false, cdpath_set)
+    scanner.git_stage_report_with(
+        cmd,
+        &assessment,
+        AmbientEnv {
+            git_env: false,
+            cdpath_set,
+        },
+    )
 }
 
 fn report(cmd: &str) -> GitStageReport {
@@ -41,7 +48,7 @@ fn cd_with_double_dash_resolves_like_a_plain_cd() {
     let report = report("cd -- ../other && git filter-branch --index-filter true");
 
     assert_eq!(dirs(&report), vec![chain(&["../other"])]);
-    assert_eq!(report.redirected[0].target, GitStageTarget::Plain);
+    assert_eq!(report.redirected[0].target, DangerStageTarget::Plain);
     assert!(report.redirected[0].is_git);
     assert!(!report.needs_process_cwd);
 }
@@ -53,7 +60,7 @@ fn cd_then_git_dash_c_keeps_both_the_cd_and_the_option_values() {
     assert_eq!(dirs(&report), vec![chain(&["a"])]);
     assert!(matches!(
         report.redirected[0].target,
-        GitStageTarget::Options(_)
+        DangerStageTarget::Options(_)
     ));
 }
 
@@ -169,7 +176,7 @@ fn a_non_git_danger_stage_in_a_resolved_directory_is_not_a_git_stage() {
     let report = report("cd x && rm -rf y");
 
     assert!(!report.redirected[0].is_git);
-    assert_eq!(report.redirected[0].target, GitStageTarget::Plain);
+    assert_eq!(report.redirected[0].target, DangerStageTarget::Plain);
 }
 
 #[test]

@@ -41,8 +41,11 @@ Which `cd` forms resolve:
   `~`, and any relative `cd` while `CDPATH` is set in Aegis's own environment.
 - A `cd` that hides behind `eval`, `source`, `.`, a launcher or a nested shell
   (`bash -c 'cd x'`) leaves its own stage and every later stage unresolved.
-  These words are read only once the command also holds a literal `cd`, so a
-  command with `source` but no `cd` keeps its old plan.
+  `eval`, `source` and `.` count whether or not a `cd` word appears beside
+  them, because the string or file they run can hold one. The walk itself
+  starts only when the command holds a `cd`, `pushd` or `popd`, so a command
+  with `source` but no `cd` keeps its old plan. A stage that is itself `pushd`
+  or `popd` reports the unsupported form, whatever it holds.
 
 Which separators carry the directory forward:
 
@@ -62,7 +65,8 @@ Directories that are not a repository, or do not exist:
 
 - A non-git Danger stage in an existing directory outside any git working tree
   behaves like the same stage run directly there: no git Snapshot, no
-  disclosure, no halt.
+  disclosure, no halt. Its directory is an **opportunistic directory**: it gets
+  a git Snapshot only if it lies inside a repository the git provider covers.
 - A git stage in such a directory is an unresolved Git target, as `git -C` is
   under ADR-048.
 - A directory that does not exist at planning time (`mkdir n && cd n && ...`) is

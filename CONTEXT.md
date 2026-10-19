@@ -608,6 +608,13 @@ directory such as `env -C`, an unlisted option read two ways, or a `cd` that is
 and the dialog and audit entry say so (ADR-048, ADR-049).
 _Avoid_: Snapshot target (reserved for database plugins and the ratchet)
 
+**Opportunistic directory**:
+The directory a non-git Danger stage runs in after a `cd`. It gets a git Snapshot
+only if it lies inside a repository the git provider covers; anywhere else the
+stage behaves as if run there directly, with no Snapshot and no disclosure
+(ADR-049). A git stage has no such leniency: it needs a Git target.
+_Avoid_: soft directory
+
 **Snapshot target**:
 The state a database `Snapshot plugin` captures and a Rollback restores into: a
 database with its host, port, and user, or a SQLite file path. The manifest

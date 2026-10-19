@@ -23,8 +23,8 @@ use aegis_types::{Assessment, Pattern};
 pub use error::ScannerError;
 pub use patterns::{PatternSet, PrefixRule};
 pub use scanner::{
-    CdUnresolved, GitStage, GitStageReport, GitStageTarget, Scanner, StageDir, path_is_dynamic,
-    try_new_call_count_for_tests,
+    CdUnresolved, DangerStage, DangerStageTarget, GitStageReport, Scanner, StageDir,
+    path_is_dynamic, try_new_call_count_for_tests,
 };
 
 /// Process-wide built-in scanner, compiled once from the embedded

@@ -1,5 +1,5 @@
 use super::*;
-use aegis_scanner::GitStage;
+use aegis_scanner::DangerStage;
 use tempfile::TempDir;
 
 fn args(dash_c: &[&str], work_tree: Option<&str>, git_dir: Option<&str>) -> GitTargetArgs {
@@ -25,8 +25,8 @@ fn bare_option_is_unresolved_even_with_a_valid_dash_c() {
     );
 }
 
-fn stage(target: GitStageTarget) -> GitStage {
-    GitStage {
+fn stage(target: DangerStageTarget) -> DangerStage {
+    DangerStage {
         target,
         dir: StageDir::Process,
         is_git: true,
@@ -34,7 +34,7 @@ fn stage(target: GitStageTarget) -> GitStage {
 }
 
 fn one(args: GitTargetArgs, cwd: &CwdState) -> GitTarget {
-    resolve_stage(&GitStageTarget::Options(vec![args]), cwd)
+    resolve_stage(&DangerStageTarget::Options(vec![args]), cwd)
 }
 
 fn tree() -> TempDir {
@@ -218,7 +218,7 @@ fn absolute_dash_c_without_a_cwd_still_resolves() {
 #[test]
 fn readings_that_disagree_are_unresolved() {
     let dir = tree();
-    let stage = GitStageTarget::Options(vec![args(&["a"], None, None), args(&[], None, None)]);
+    let stage = DangerStageTarget::Options(vec![args(&["a"], None, None), args(&[], None, None)]);
 
     assert_eq!(
         resolve_stage(&stage, &cwd_of(&dir)),
@@ -229,7 +229,8 @@ fn readings_that_disagree_are_unresolved() {
 #[test]
 fn readings_that_agree_resolve_once() {
     let dir = tree();
-    let stage = GitStageTarget::Options(vec![args(&["a"], None, None), args(&["a"], None, None)]);
+    let stage =
+        DangerStageTarget::Options(vec![args(&["a"], None, None), args(&["a"], None, None)]);
 
     assert_eq!(
         resolve_stage(&stage, &cwd_of(&dir)),
@@ -240,7 +241,10 @@ fn readings_that_agree_resolve_once() {
 #[test]
 fn environment_redirect_is_unresolved() {
     assert_eq!(
-        resolve_stage(&GitStageTarget::EnvironmentRedirect, &CwdState::Unavailable),
+        resolve_stage(
+            &DangerStageTarget::EnvironmentRedirect,
+            &CwdState::Unavailable
+        ),
         GitTarget::Unresolved(GitTargetUnresolved::EnvironmentRedirect)
     );
 }
@@ -249,7 +253,7 @@ fn environment_redirect_is_unresolved() {
 fn launcher_that_changes_directory_is_unresolved() {
     assert_eq!(
         resolve_stage(
-            &GitStageTarget::LauncherChangesDirectory,
+            &DangerStageTarget::LauncherChangesDirectory,
             &CwdState::Unavailable
         ),
         GitTarget::Unresolved(GitTargetUnresolved::LauncherChangesDirectory)
@@ -269,9 +273,17 @@ fn plan_keeps_each_distinct_target_and_skips_the_cwd_when_unneeded() {
     let dir = tree();
     let report = GitStageReport {
         redirected: vec![
-            stage(GitStageTarget::Options(vec![args(&["a"], None, None)])),
-            stage(GitStageTarget::Options(vec![args(&["other"], None, None)])),
-            stage(GitStageTarget::Options(vec![args(&["other"], None, None)])),
+            stage(DangerStageTarget::Options(vec![args(&["a"], None, None)])),
+            stage(DangerStageTarget::Options(vec![args(
+                &["other"],
+                None,
+                None,
+            )])),
+            stage(DangerStageTarget::Options(vec![args(
+                &["other"],
+                None,
+                None,
+            )])),
         ],
         needs_process_cwd: false,
     };
@@ -293,7 +305,7 @@ fn plan_keeps_each_distinct_target_and_skips_the_cwd_when_unneeded() {
 fn plan_folds_a_target_equal_to_the_cwd_into_the_cwd_pass() {
     let dir = tree();
     let report = GitStageReport {
-        redirected: vec![stage(GitStageTarget::Options(vec![args(
+        redirected: vec![stage(DangerStageTarget::Options(vec![args(
             &["."],
             None,
             None,
@@ -310,7 +322,7 @@ fn plan_folds_a_target_equal_to_the_cwd_into_the_cwd_pass() {
 #[test]
 fn plan_reports_an_unresolved_target() {
     let report = GitStageReport {
-        redirected: vec![stage(GitStageTarget::Options(vec![args(
+        redirected: vec![stage(DangerStageTarget::Options(vec![args(
             &["$X"],
             None,
             None,
@@ -332,7 +344,7 @@ fn explain_names_each_target_and_each_unresolved_reason() {
             GitTarget::Unresolved(GitTargetUnresolved::PathNotFound),
         ],
         process_cwd: false,
-        soft_dirs: Vec::new(),
+        opportunistic_dirs: Vec::new(),
     };
 
     assert_eq!(

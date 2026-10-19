@@ -29,7 +29,9 @@ use aegis_types::{
 
 pub use crate::patterns::PrefixRule;
 pub use cd_walk::{CdUnresolved, StageDir, path_is_dynamic};
-pub use git_stages::{GitStage, GitStageReport, GitStageTarget};
+#[cfg(test)]
+pub(crate) use git_stages::AmbientEnv;
+pub use git_stages::{DangerStage, DangerStageTarget, GitStageReport};
 
 /// First-pass scanner backed by an Aho-Corasick automaton.
 ///
