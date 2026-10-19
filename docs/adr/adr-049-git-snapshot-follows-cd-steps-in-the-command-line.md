@@ -38,12 +38,24 @@ Which `cd` forms resolve:
   shell does (`cd link && cd ..` is the parent of `link`), then canonicalized.
 - Unresolved: `cd` with no argument, `cd -`, any option, extra operands,
   `pushd`, `popd`, a path with `$`, a glob, a brace expansion, a backslash or
-  `~`, and any relative `cd` while `CDPATH` is set in Aegis's own environment.
+  `~`, and any relative `cd` while `CDPATH` is set in Aegis's own environment
+  or by an earlier stage of the command line. A stage that names `CDPATH`
+  anywhere (`export CDPATH=/tmp`, `CDPATH=x`, `declare -x CDPATH=x`) makes
+  every later relative `cd` unresolved, because Aegis does not track the value.
+  Bash does not search `CDPATH` for an absolute operand or one that starts with
+  `.`, `..`, `./` or `../`, so those stay resolved.
+  Redirections on the `cd` stage (`cd x 2>/dev/null`) are syntax, not
+  operands, and do not change the form. A quoted word is always an operand.
   Quoting counts: single quotes make every character literal, so `cd 'x$y'`
   resolves to the directory named `x$y`. Inside double quotes only `$`, a
   backtick and a backslash still expand, so `cd "~/x"` resolves to a directory
   named `~` and `cd "x$y"` stays unresolved. The `-C` values of ADR-048 reach
   planning with their quotes already removed, so they stay conservative.
+- A literal absolute `cd` (`cd /known/repo`, `cd -- /known/repo`) reached
+  through `&&` after an unresolved `cd` recovers a known directory: it runs
+  only if the earlier steps succeeded and lands in the same place whatever the
+  directory was. Behind `;`, `||` or `&`, or with a dynamic or relative path,
+  the earlier unresolved state stands.
 - A `cd` that hides behind `eval`, `source`, `.`, a launcher or a nested shell
   (`bash -c 'cd x'`) leaves its own stage and every later stage unresolved.
   `eval`, `source` and `.` count whether or not a `cd` word appears beside
@@ -64,7 +76,8 @@ Which separators carry the directory forward:
 
 Several directories: every resolved directory gets its own git Snapshot,
 deduplicated by repository top level as in ADR-048. A stage in the process cwd
-still takes the cwd pass.
+still takes the cwd pass, and a moved stage whose repository is the process
+cwd's repository adds no second Snapshot of it when the cwd pass runs.
 
 Directories that are not a repository, or do not exist:
 
@@ -74,6 +87,15 @@ Directories that are not a repository, or do not exist:
   a git Snapshot only if it lies inside a repository the git provider covers.
 - A git stage in such a directory is an unresolved Git target, as `git -C` is
   under ADR-048.
+- A non-git stage that a `cd` moved and that sits behind a launcher which
+  changes the directory again (`env -C`, `env --chdir`, `sudo -D`,
+  `sudo --chdir`), or behind one Aegis cannot map, is an unresolved target, as
+  such a git stage is under ADR-048. Without a `cd`, such a stage keeps its
+  pre-#525 plan.
+- A git stage after an unresolved `cd` whose options are all absolute
+  (`cd "$X" && git -C /known/repo ...`) names its tree whatever the directory
+  was, so it resolves from the options alone. A relative option keeps the
+  `cd` reason.
 - A directory that does not exist at planning time (`mkdir n && cd n && ...`) is
   unresolved for any stage.
 
