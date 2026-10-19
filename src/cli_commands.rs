@@ -362,14 +362,10 @@ pub(crate) fn handle_snapshot_command(
 }
 
 fn handle_snapshot_list_command() -> i32 {
-    let config = match AegisConfig::load() {
-        Ok(config) => config,
-        Err(err) => {
-            eprintln!("error: failed to load config: {err}");
-            return EXIT_INTERNAL;
-        }
-    };
-    let logger = AuditLogger::from_audit_config(&config.audit);
+    // Listing is read-only and needs no policy: it must keep working when a
+    // config file is damaged, which is when recovery matters most. Reading
+    // finds rotated segments without the rotation or integrity settings.
+    let logger = AuditLogger::default();
     match SnapshotLedger::load(&logger) {
         Ok(ledger) => {
             print!("{}", format_snapshot_listing(&ledger));

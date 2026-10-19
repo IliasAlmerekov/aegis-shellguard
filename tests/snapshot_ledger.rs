@@ -377,3 +377,22 @@ fn rollback_does_not_refresh_recorded_at() {
         vec![("git".to_string(), snapshot_id)]
     );
 }
+
+#[test]
+fn snapshot_list_survives_a_malformed_config() {
+    let home = TempDir::new().unwrap();
+    let audit_path = default_audit_path(home.path());
+    record_creation(&AuditLogger::new(&audit_path), "docker", "none");
+    let config_dir = home.path().join(".config/aegis");
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::write(config_dir.join("config.toml"), "this is = = not toml [[\n").unwrap();
+
+    let list = run_aegis(home.path(), &audit_path, &["snapshot", "list"]);
+
+    assert!(list.status.success(), "list failed: {}", stderr(&list));
+    assert!(
+        stdout(&list).contains("id:       none"),
+        "{}",
+        stdout(&list)
+    );
+}
