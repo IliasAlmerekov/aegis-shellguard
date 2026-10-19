@@ -3,9 +3,8 @@ use std::path::PathBuf;
 
 use aegis::error::AegisError;
 use aegis::toggle;
-use aegis_audit::{AuditEntry, AuditIntegrityStatus, AuditLogger, AuditQuery};
+use aegis_audit::{AuditEntry, AuditIntegrityStatus, AuditLogger, AuditQuery, SnapshotLedger};
 use aegis_config::{AegisConfig, ValidationReport, validate_config_layers};
-use aegis_types::Decision;
 
 use crate::{
     AuditArgs, AuditOutputFormat, ConfigArgs, ConfigCommand, ConfigValidateArgs,
@@ -363,10 +362,13 @@ pub(crate) fn handle_snapshot_command(
 }
 
 fn handle_snapshot_list_command() -> i32 {
+    // Listing is read-only and needs no policy: it must keep working when a
+    // config file is damaged, which is when recovery matters most. Reading
+    // finds rotated segments without the rotation or integrity settings.
     let logger = AuditLogger::default();
-    match logger.read_all() {
-        Ok(entries) => {
-            print!("{}", format_snapshot_listing(&entries));
+    match SnapshotLedger::load(&logger) {
+        Ok(ledger) => {
+            print!("{}", format_snapshot_listing(&ledger));
             0
         }
         Err(err) => {
@@ -376,101 +378,40 @@ fn handle_snapshot_list_command() -> i32 {
     }
 }
 
-/// Render every snapshot recorded in the audit log.
+/// Render every live Snapshot in the Snapshot ledger, newest first in log order.
 ///
 /// The audit log is append-only, so a recorded id does **not** guarantee the
-/// underlying stash/image/dump still exists (it may have been deleted, corrupted,
-/// or pruned). The output therefore reports *recorded* snapshots for discovery,
+/// underlying stash/image/dump still exists (it may have been deleted or
+/// corrupted). The output therefore reports *recorded* snapshots for discovery,
 /// not a recoverability guarantee.
 ///
-/// Deduplication mirrors `aegis rollback`'s lookup
-/// (see `find_snapshot_target` in `rollback.rs`): rollback resolves an id to the
-/// **most recent** entry that recorded it, so this list keys by `snapshot_id` and
-/// keeps the latest occurrence's provider and timestamp. That keeps each row
-/// consistent with what `aegis rollback '<id>'` would actually target. Rows are
-/// listed newest-recorded first.
-pub(crate) fn format_snapshot_listing(entries: &[AuditEntry]) -> String {
-    use std::collections::{HashMap, HashSet};
+/// One row per (provider, id) pair, the same key `aegis rollback` and
+/// `aegis snapshot prune` use; pruned pairs are hidden and counted.
+pub(crate) fn format_snapshot_listing(ledger: &SnapshotLedger) -> String {
+    let pruned = ledger.pruned_count();
+    let records = ledger.live_records();
 
-    // Collect snapshot ids that have been pruned so they can be hidden from the
-    // discoverable list. Prune records may store the removed id in the `command`
-    // field as `aegis prune <snapshot_id>` when the `snapshots` array is empty.
-    let mut pruned_ids: HashSet<&str> = HashSet::new();
-    for entry in entries {
-        let base = entry.as_base();
-        if base.decision == Decision::Pruned {
-            for snapshot in &base.snapshots {
-                pruned_ids.insert(snapshot.snapshot_id.as_str());
-            }
-            if let Some(id) = snapshot_id_from_prune_command(&base.command) {
-                pruned_ids.insert(id);
-            }
-        }
-    }
-
-    // id -> (order, provider, recorded-at); `order` is the global occurrence index
-    // so the latest record wins and we can sort by it without parsing timestamps.
-    let mut latest: HashMap<&str, (usize, &str, String)> = HashMap::new();
-    let mut order = 0usize;
-    for entry in entries {
-        let base = entry.as_base();
-        for snapshot in &base.snapshots {
-            if pruned_ids.contains(snapshot.snapshot_id.as_str()) {
-                continue;
-            }
-            order += 1;
-            let recorded = base.timestamp.to_string();
-            latest
-                .entry(snapshot.snapshot_id.as_str())
-                .and_modify(|slot| *slot = (order, snapshot.plugin.as_str(), recorded.clone()))
-                .or_insert((order, snapshot.plugin.as_str(), recorded));
-        }
-    }
-
-    if latest.is_empty() {
-        if pruned_ids.is_empty() {
+    if records.is_empty() {
+        if pruned == 0 {
             return "No snapshots recorded.\n".to_string();
         }
-        return format!(
-            "No snapshots recorded. ({} pruned snapshot(s) hidden.)\n",
-            pruned_ids.len()
-        );
+        return format!("No snapshots recorded. ({pruned} pruned snapshot(s) hidden.)\n");
     }
-
-    // (order, id, provider, recorded-at) sorted newest-recorded first.
-    let mut rows: Vec<(usize, &str, &str, &str)> = latest
-        .iter()
-        .map(|(id, (order_idx, provider, recorded))| {
-            (*order_idx, *id, *provider, recorded.as_str())
-        })
-        .collect();
-    rows.sort_by_key(|row| std::cmp::Reverse(row.0));
 
     let mut out = String::from("Recorded snapshots (newest first):\n");
-    for (_, id, provider, recorded) in &rows {
+    for record in records.iter().rev() {
+        let recorded = time::OffsetDateTime::from(record.recorded_at)
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap_or_else(|_| "unknown".to_string());
         out.push('\n');
-        out.push_str(&format!("  provider: {provider}\n"));
+        out.push_str(&format!("  provider: {}\n", record.plugin));
         out.push_str(&format!("  recorded: {recorded}\n"));
-        out.push_str(&format!("  id:       {id}\n"));
+        out.push_str(&format!("  id:       {}\n", record.snapshot_id));
     }
-    if !pruned_ids.is_empty() {
-        out.push_str(&format!(
-            "\n  ({} pruned snapshot(s) hidden.)\n",
-            pruned_ids.len()
-        ));
+    if pruned != 0 {
+        out.push_str(&format!("\n  ({pruned} pruned snapshot(s) hidden.)\n"));
     }
     out
-}
-
-/// Extract a snapshot id from a prune audit entry's command field.
-///
-/// Prune records store the removed snapshot id as `aegis prune <snapshot_id>` in
-/// the `command` field when the `snapshots` array is empty.
-fn snapshot_id_from_prune_command(command: &str) -> Option<&str> {
-    const PRUNE_PREFIX: &str = "aegis prune ";
-    command
-        .strip_prefix(PRUNE_PREFIX)
-        .filter(|id| !id.is_empty())
 }
 
 pub(crate) fn handle_config_validate_command(args: ConfigValidateArgs) -> i32 {
@@ -601,8 +542,8 @@ fn format_audit_summary(
 
 #[cfg(test)]
 mod tests {
-    use super::format_snapshot_listing;
-    use aegis_audit::{AuditEntry, AuditSnapshot};
+    use super::format_snapshot_listing as format_ledger;
+    use aegis_audit::{AuditEntry, AuditSnapshot, SnapshotLedger};
     use aegis_types::Decision;
     use aegis_types::RiskLevel;
 
@@ -619,6 +560,10 @@ mod tests {
             None,
             None,
         )
+    }
+
+    fn format_snapshot_listing(entries: &[AuditEntry]) -> String {
+        format_ledger(&SnapshotLedger::from_entries(entries))
     }
 
     #[test]
@@ -660,9 +605,8 @@ mod tests {
     }
 
     #[test]
-    fn repeated_id_keeps_latest_provider_to_match_rollback() {
-        // `aegis rollback` resolves an id to its most recent entry; the listing must
-        // agree, so the latest occurrence's provider wins (not the earliest).
+    fn same_id_under_two_providers_lists_one_row_per_pair_newest_first() {
+        // The ledger keys a Snapshot by (provider, id), as rollback and prune do.
         let entries = vec![
             entry_with_snapshot("first", "git", "dup-id"),
             entry_with_snapshot("second", "docker", "dup-id"),
@@ -670,9 +614,10 @@ mod tests {
 
         let output = format_snapshot_listing(&entries);
 
-        assert_eq!(output.matches("dup-id").count(), 1, "{output}");
-        assert!(output.contains("provider: docker"), "{output}");
-        assert!(!output.contains("provider: git"), "{output}");
+        assert_eq!(output.matches("dup-id").count(), 2, "{output}");
+        let docker = output.find("provider: docker").expect("docker row");
+        let git = output.find("provider: git").expect("git row");
+        assert!(docker < git, "newest first: {output}");
     }
 
     #[test]

@@ -60,6 +60,12 @@ impl AuditTimestamp {
     }
 }
 
+impl From<AuditTimestamp> for std::time::SystemTime {
+    fn from(timestamp: AuditTimestamp) -> Self {
+        timestamp.0.into()
+    }
+}
+
 impl std::fmt::Display for AuditTimestamp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.format_rfc3339())

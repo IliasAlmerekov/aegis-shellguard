@@ -112,6 +112,7 @@ the core classification / approval pipeline when enforcement is active.
 | ADR-046 | Token-prefix matches respect quote boundaries and `--` | [`adr-046-prefix-matches-respect-quote-boundaries-and-end-of-options.md`](adr-046-prefix-matches-respect-quote-boundaries-and-end-of-options.md) |
 | ADR-047 | The Claude Code plugin is the primary Claude install path | [`adr-047-claude-code-plugin-is-the-primary-claude-install-path.md`](adr-047-claude-code-plugin-is-the-primary-claude-install-path.md) |
 | ADR-048 | The git Snapshot follows the Git target; an unresolved Git target is disclosed, never covered by a cwd Snapshot | [`adr-048-git-snapshot-follows-the-git-target.md`](adr-048-git-snapshot-follows-the-git-target.md) |
+| ADR-049 | One Snapshot ledger reads the Audit log for list, prune and Rollback | [`adr-049-one-snapshot-ledger-reads-audit-history.md`](adr-049-one-snapshot-ledger-reads-audit-history.md) |
 
 `ADR-009` is intentionally absent from the active set; numbering is preserved
 as-is so historical references do not drift.
