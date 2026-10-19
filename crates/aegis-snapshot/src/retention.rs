@@ -56,7 +56,10 @@ impl RetentionPolicy {
 
     /// Apply this policy to a set of records and return the prune candidates.
     ///
-    /// Candidates preserve the original input order.
+    /// `records` must be newest first in Audit log order. The per-provider
+    /// count rule keeps the first `count` records of each provider in that
+    /// order and never consults timestamps, which feed only the age rule
+    /// (ADR-049). Candidates preserve the original input order.
     pub fn apply(&self, records: &[PrunableRecord], now: OffsetDateTime) -> Vec<PrunableRecord> {
         if self.max_count_per_provider.is_none() && self.max_age_days.is_none() {
             return Vec::new();
@@ -81,8 +84,7 @@ impl RetentionPolicy {
                     .or_default()
                     .push(record);
             }
-            for group in by_provider.values_mut() {
-                group.sort_by_key(|record| std::cmp::Reverse(record.recorded_at));
+            for group in by_provider.values() {
                 for record in group.iter().take(count) {
                     kept.insert((record.plugin.clone(), record.snapshot_id.clone()));
                 }

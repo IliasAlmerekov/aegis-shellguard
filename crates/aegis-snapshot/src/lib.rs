@@ -290,8 +290,8 @@ mod tests {
         let records = vec![
             PrunableRecord {
                 plugin: "git".to_string(),
-                snapshot_id: "git-1".to_string(),
-                recorded_at: now - time::Duration::days(3),
+                snapshot_id: "git-3".to_string(),
+                recorded_at: now - time::Duration::days(1),
             },
             PrunableRecord {
                 plugin: "git".to_string(),
@@ -300,8 +300,8 @@ mod tests {
             },
             PrunableRecord {
                 plugin: "git".to_string(),
-                snapshot_id: "git-3".to_string(),
-                recorded_at: now - time::Duration::days(1),
+                snapshot_id: "git-1".to_string(),
+                recorded_at: now - time::Duration::days(3),
             },
             PrunableRecord {
                 plugin: "docker".to_string(),
@@ -312,6 +312,31 @@ mod tests {
         let candidates = policy.apply(&records, now);
         let ids: Vec<_> = candidates.iter().map(|r| r.snapshot_id.as_str()).collect();
         assert_eq!(ids, vec!["git-1"]);
+    }
+
+    #[test]
+    fn test_retention_policy_count_follows_ledger_order_not_timestamps() {
+        use time::OffsetDateTime;
+
+        let now = OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
+        let policy = RetentionPolicy::from_max_count_per_provider(1);
+        // Newest first in log order. A clock correction gave the newest record
+        // the earlier timestamp.
+        let records = vec![
+            PrunableRecord {
+                plugin: "git".to_string(),
+                snapshot_id: "newest-in-log".to_string(),
+                recorded_at: now - time::Duration::days(5),
+            },
+            PrunableRecord {
+                plugin: "git".to_string(),
+                snapshot_id: "older-in-log".to_string(),
+                recorded_at: now - time::Duration::days(1),
+            },
+        ];
+        let candidates = policy.apply(&records, now);
+        let ids: Vec<_> = candidates.iter().map(|r| r.snapshot_id.as_str()).collect();
+        assert_eq!(ids, vec!["older-in-log"]);
     }
 
     #[test]
