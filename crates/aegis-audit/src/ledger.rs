@@ -61,10 +61,10 @@ impl SnapshotLedger {
         for entry in entries {
             let base = entry.as_base();
             if base.decision == Decision::Pruned {
-                if base.snapshots.is_empty() {
-                    if let Some(id) = snapshot_id_from_prune_command(&base.command) {
-                        legacy_pruned_ids.insert(id);
-                    }
+                if base.snapshots.is_empty()
+                    && let Some(id) = snapshot_id_from_prune_command(&base.command)
+                {
+                    legacy_pruned_ids.insert(id);
                 }
                 for snapshot in &base.snapshots {
                     pruned_pairs.insert((&snapshot.plugin, &snapshot.snapshot_id));
