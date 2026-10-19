@@ -214,22 +214,21 @@ struct CdWord {
 /// literal; inside double quotes only `$`, a backtick and a backslash expand;
 /// unquoted, any of those or a glob, brace or `~` expands, and a backslash
 /// always counts as dynamic. When the raw words do not line up with the
-/// tokenizer's tokens, every operand falls back to [`path_is_dynamic`] on its
-/// unquoted text: unresolved whenever unsure.
+/// tokenizer's tokens, every operand counts as dynamic: unresolved whenever
+/// unsure.
 fn cd_operands(raw: &str, tokens: &[String]) -> Vec<CdWord> {
     let words = raw_words(raw);
-    let aligned = words.len() == tokens.len()
-        && words
-            .iter()
-            .zip(tokens)
-            .all(|(word, token)| word.value == *token);
+    let aligned = words
+        .iter()
+        .map(|word| word.value.as_str())
+        .eq(tokens.iter().map(String::as_str));
     if aligned {
         return words.into_iter().skip(1).collect();
     }
     tokens[1..]
         .iter()
         .map(|token| CdWord {
-            dynamic: path_is_dynamic(token) || raw.contains('\\'),
+            dynamic: true,
             value: token.clone(),
         })
         .collect()
@@ -242,17 +241,10 @@ fn raw_words(raw: &str) -> Vec<CdWord> {
     let mut value = String::new();
     let mut dynamic = false;
     let (mut single, mut double) = (false, false);
-    let mut chars = raw.chars();
-    while let Some(ch) = chars.next() {
+    for ch in raw.chars() {
         match ch {
             '\'' if !double => single = !single,
             '"' if !single => double = !double,
-            '\\' if !single => {
-                dynamic = true;
-                if let Some(next) = chars.next() {
-                    value.push(next);
-                }
-            }
             c if c.is_whitespace() && !single && !double => {
                 if !value.is_empty() {
                     words.push(CdWord {
@@ -265,7 +257,7 @@ fn raw_words(raw: &str) -> Vec<CdWord> {
                 dynamic |= if single {
                     false
                 } else if double {
-                    matches!(c, '$' | '`')
+                    matches!(c, '$' | '`' | '\\')
                 } else {
                     path_is_dynamic(c.encode_utf8(&mut [0; 4]))
                 };
