@@ -271,3 +271,71 @@ fn quoting_decides_which_cd_path_characters_are_literal() {
         assert_eq!(dirs(&report), vec![expected], "{cmd:?}");
     }
 }
+
+#[test]
+fn deeply_nested_subshell_groups_give_up_as_opaque() {
+    let mut cmd = String::from("rm -rf x");
+    for _ in 0..10 {
+        cmd = format!("(cd a && {cmd})");
+    }
+
+    assert_eq!(dirs(&report(&cmd)), vec![unresolved(CdUnresolved::Opaque)]);
+}
+
+#[test]
+fn a_cd_option_without_a_path_is_an_unsupported_form() {
+    for cmd in [
+        "cd -P && rm -rf y",
+        "cd -x && rm -rf y",
+        "cd -- - && rm -rf y",
+    ] {
+        assert_eq!(
+            dirs(&report(cmd)),
+            vec![unresolved(CdUnresolved::UnsupportedForm)],
+            "{cmd:?}"
+        );
+    }
+}
+
+#[test]
+fn a_command_without_a_cd_never_walks_the_list() {
+    // `source` and `eval` make a walked stage unresolved; without a `cd` the
+    // walk must not run, so the stage keeps the process directory.
+    for cmd in [
+        "source env.sh && rm -rf x",
+        "eval y; rm -rf x",
+        "abcd && source env.sh && rm -rf x",
+    ] {
+        let report = report(cmd);
+
+        assert!(
+            report.redirected.iter().all(|s| s.dir == StageDir::Process),
+            "{cmd:?}"
+        );
+    }
+}
+
+#[test]
+fn a_pushd_or_wrapper_that_is_not_the_whole_stage_is_opaque() {
+    for cmd in [
+        "bash -c 'pushd x' && rm -rf z",
+        "eval cd y && rm -rf z",
+        "echo $(popd) && rm -rf z",
+    ] {
+        assert_eq!(
+            dirs(&report(cmd)),
+            vec![unresolved(CdUnresolved::Opaque)],
+            "{cmd:?}"
+        );
+    }
+}
+
+#[test]
+fn quotes_inside_other_quotes_do_not_change_what_is_literal() {
+    for (cmd, expected) in [
+        ("cd \"it's\"'x$y' && rm -rf z", chain(&["it'sx$y"])),
+        ("cd 'a\"b$c' && rm -rf z", chain(&["a\"b$c"])),
+    ] {
+        assert_eq!(dirs(&report(cmd)), vec![expected], "{cmd:?}");
+    }
+}
