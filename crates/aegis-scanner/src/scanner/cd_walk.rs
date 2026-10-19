@@ -20,7 +20,8 @@ use super::recursive;
 pub enum CdUnresolved {
     /// `cd` with no path, `cd -`, an option, extra operands, `pushd` or `popd`.
     UnsupportedForm,
-    /// A `cd` path holds `$`, a glob, a brace expansion, a backslash or `~`.
+    /// A `cd` path holds an unquoted `$`, glob, brace expansion, backslash or
+    /// `~`, or a `$`, backtick or backslash inside double quotes.
     DynamicPath,
     /// A relative `cd` while `CDPATH` is set in Aegis's own environment.
     CdPathSet,
@@ -54,8 +55,11 @@ impl StageDir {
     }
 }
 
-/// Whether `path` holds a character the shell would expand or unquote, so its
-/// value is not known from the text.
+/// Whether `path`, taken as unquoted text, holds a character the shell would
+/// expand or unquote, so its value is not known from the text. The quotes are
+/// already gone from the text a caller passes here, so a quoted literal such
+/// as `'x$y'` also reads as dynamic: this errs toward unresolved. A `cd`
+/// operand is judged from the raw text with its quoting instead.
 #[must_use]
 pub fn path_is_dynamic(path: &str) -> bool {
     path.contains(['$', '*', '?', '[', ']', '~', '`', '{', '}', '\\'])
@@ -144,11 +148,10 @@ impl Walker {
 
         let tokens = aegis_parser::split_tokens(raw);
         if tokens.first().map(String::as_str) == Some("cd") {
-            // The tokenizer drops backslashes, so look at the raw text.
-            if raw.contains('\\') {
-                return Some(state.degrade(CdUnresolved::DynamicPath));
-            }
-            return Some(self.apply_cd(state, &tokens[1..], incoming));
+            // The tokenizer drops quotes and backslashes, so the quoting is
+            // read from the raw text.
+            let operands = cd_operands(raw, &tokens);
+            return Some(self.apply_cd(state, &operands, incoming));
         }
 
         if let Some(reason) = hidden_cd(raw) {
@@ -163,21 +166,22 @@ impl Walker {
     fn apply_cd(
         &self,
         state: &StageDir,
-        operands: &[String],
+        operands: &[CdWord],
         incoming: Option<ListSeparator>,
     ) -> StageDir {
         if matches!(state, StageDir::Unresolved(_)) {
             return state.clone();
         }
-        let path = match operands {
-            [path] if !path.starts_with('-') => path,
-            [dashdash, path] if dashdash == "--" => path,
+        let word = match operands {
+            [word] if !word.value.starts_with('-') => word,
+            [dashdash, word] if dashdash.value == "--" => word,
             _ => return StageDir::Unresolved(CdUnresolved::UnsupportedForm),
         };
+        let path = &word.value;
         if path.is_empty() || path == "-" {
             return StageDir::Unresolved(CdUnresolved::UnsupportedForm);
         }
-        if path_is_dynamic(path) {
+        if word.dynamic {
             return StageDir::Unresolved(CdUnresolved::DynamicPath);
         }
         if self.cdpath_set && !path.starts_with('/') {
@@ -195,6 +199,84 @@ impl Walker {
             _ => StageDir::Chain(vec![path.clone()]),
         }
     }
+}
+
+/// One operand of a `cd`: its text after quote removal, and whether the shell
+/// would still change it (expand a variable, glob, brace or `~`, or unescape).
+struct CdWord {
+    value: String,
+    dynamic: bool,
+}
+
+/// The operands of the `cd` stage `raw`, whose tokens are `tokens`.
+///
+/// Reads the raw text so quoting counts: single quotes make everything
+/// literal; inside double quotes only `$`, a backtick and a backslash expand;
+/// unquoted, any of those or a glob, brace or `~` expands, and a backslash
+/// always counts as dynamic. When the raw words do not line up with the
+/// tokenizer's tokens, every operand falls back to [`path_is_dynamic`] on its
+/// unquoted text: unresolved whenever unsure.
+fn cd_operands(raw: &str, tokens: &[String]) -> Vec<CdWord> {
+    let words = raw_words(raw);
+    let aligned = words.len() == tokens.len()
+        && words
+            .iter()
+            .zip(tokens)
+            .all(|(word, token)| word.value == *token);
+    if aligned {
+        return words.into_iter().skip(1).collect();
+    }
+    tokens[1..]
+        .iter()
+        .map(|token| CdWord {
+            dynamic: path_is_dynamic(token) || raw.contains('\\'),
+            value: token.clone(),
+        })
+        .collect()
+}
+
+/// Split `raw` into whitespace-separated words the way the tokenizer does
+/// for plain words, tracking which characters were left unquoted.
+fn raw_words(raw: &str) -> Vec<CdWord> {
+    let mut words = Vec::new();
+    let mut value = String::new();
+    let mut dynamic = false;
+    let (mut single, mut double) = (false, false);
+    let mut chars = raw.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\'' if !double => single = !single,
+            '"' if !single => double = !double,
+            '\\' if !single => {
+                dynamic = true;
+                if let Some(next) = chars.next() {
+                    value.push(next);
+                }
+            }
+            c if c.is_whitespace() && !single && !double => {
+                if !value.is_empty() {
+                    words.push(CdWord {
+                        value: std::mem::take(&mut value),
+                        dynamic: std::mem::take(&mut dynamic),
+                    });
+                }
+            }
+            c => {
+                dynamic |= if single {
+                    false
+                } else if double {
+                    matches!(c, '$' | '`')
+                } else {
+                    path_is_dynamic(c.encode_utf8(&mut [0; 4]))
+                };
+                value.push(c);
+            }
+        }
+    }
+    if !value.is_empty() {
+        words.push(CdWord { value, dynamic });
+    }
+    words
 }
 
 /// A resolved directory survives only an unbroken `&&` chain.

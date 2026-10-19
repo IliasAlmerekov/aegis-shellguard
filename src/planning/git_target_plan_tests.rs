@@ -582,6 +582,58 @@ fn a_subshell_group_snapshots_the_directory_it_changes_to() {
 }
 
 #[test]
+fn quoted_cd_paths_name_the_directory_that_is_literally_spelled() {
+    let fx = fixture();
+    let base = fx.cwd.parent().unwrap();
+    let dollar = base.join("x$y");
+    let star = base.join("a*");
+    let tilde = fx.cwd.join("~");
+    for dir in [&dollar, &star, &tilde] {
+        git_init(dir);
+    }
+    for (command, expected) in [
+        ("cd '../x$y' && rm -rf z", &dollar),
+        ("cd '../a*' && rm -rf z", &star),
+        ("cd \"~\" && rm -rf z", &tilde),
+    ] {
+        let (_, plan) = cd_plan(&fx, command);
+
+        assert_eq!(plan.targets, vec![resolved(expected)], "{command:?}");
+    }
+}
+
+#[test]
+fn an_expanding_cd_path_stays_unresolved_even_when_a_literal_directory_exists() {
+    let fx = fixture();
+    git_init(&fx.cwd.parent().unwrap().join("x$y"));
+    for command in ["cd \"../x$y\" && rm -rf z", "cd ~/x && rm -rf z"] {
+        let (_, plan) = cd_plan(&fx, command);
+
+        assert_eq!(
+            plan.targets,
+            vec![unresolved(GitTargetUnresolved::Cd(
+                CdUnresolved::DynamicPath
+            ))],
+            "{command:?}"
+        );
+    }
+}
+
+#[test]
+fn a_git_dash_c_path_with_a_quoted_dollar_stays_unresolved() {
+    // `-C` values reach planning after the parser removed their quotes, so a
+    // literal `$` cannot be told from an expansion: stay conservative.
+    let fx = fixture();
+    git_init(&fx.cwd.parent().unwrap().join("x$y"));
+    let (_, plan) = cd_plan(&fx, "git -C '../x$y' filter-branch --index-filter true");
+
+    assert_eq!(
+        plan.targets,
+        vec![unresolved(GitTargetUnresolved::DynamicPath)]
+    );
+}
+
+#[test]
 fn a_non_git_stage_in_a_plain_directory_takes_no_snapshot_and_no_disclosure() {
     let fx = fixture();
     let plain = fx.cwd.parent().unwrap().join("plain");

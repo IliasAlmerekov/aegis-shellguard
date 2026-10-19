@@ -39,6 +39,11 @@ Which `cd` forms resolve:
 - Unresolved: `cd` with no argument, `cd -`, any option, extra operands,
   `pushd`, `popd`, a path with `$`, a glob, a brace expansion, a backslash or
   `~`, and any relative `cd` while `CDPATH` is set in Aegis's own environment.
+  Quoting counts: single quotes make every character literal, so `cd 'x$y'`
+  resolves to the directory named `x$y`. Inside double quotes only `$`, a
+  backtick and a backslash still expand, so `cd "~/x"` resolves to a directory
+  named `~` and `cd "x$y"` stays unresolved. The `-C` values of ADR-048 reach
+  planning with their quotes already removed, so they stay conservative.
 - A `cd` that hides behind `eval`, `source`, `.`, a launcher or a nested shell
   (`bash -c 'cd x'`) leaves its own stage and every later stage unresolved.
   `eval`, `source` and `.` count whether or not a `cd` word appears beside

@@ -305,9 +305,6 @@ fn resolve_dir(dir: &StageDir, cwd: &CwdState) -> Result<CwdState, GitTargetUnre
                 CwdState::Unavailable => None,
             };
             for step in steps {
-                if aegis_scanner::path_is_dynamic(step) {
-                    return Err(GitTargetUnresolved::Cd(CdUnresolved::DynamicPath));
-                }
                 let joined =
                     join(current.as_deref(), step).ok_or(GitTargetUnresolved::CwdUnavailable)?;
                 current = Some(normalize_lexically(&joined));

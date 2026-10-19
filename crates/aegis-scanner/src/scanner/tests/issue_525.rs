@@ -221,3 +221,53 @@ fn a_wrapper_after_an_unresolved_cd_keeps_the_first_reason() {
         vec![unresolved(CdUnresolved::UnsupportedForm)]
     );
 }
+
+#[test]
+fn quoting_decides_which_cd_path_characters_are_literal() {
+    for (cmd, expected) in [
+        // Single quotes make every character literal.
+        ("cd 'x$y' && rm -rf z", chain(&["x$y"])),
+        ("cd 'a*' && rm -rf z", chain(&["a*"])),
+        ("cd '~/x' && rm -rf z", chain(&["~/x"])),
+        ("cd 'a{b,c}' && rm -rf z", chain(&["a{b,c}"])),
+        ("cd 'a\\b' && rm -rf z", chain(&["a\\b"])),
+        // Double quotes still expand `$`, a backtick and a backslash, but not
+        // globs, braces or a tilde.
+        ("cd \"a*\" && rm -rf z", chain(&["a*"])),
+        ("cd \"~/x\" && rm -rf z", chain(&["~/x"])),
+        ("cd \"a{b,c}\" && rm -rf z", chain(&["a{b,c}"])),
+        (
+            "cd \"x$y\" && rm -rf z",
+            unresolved(CdUnresolved::DynamicPath),
+        ),
+        (
+            "cd \"x`y`\" && rm -rf z",
+            unresolved(CdUnresolved::DynamicPath),
+        ),
+        (
+            "cd \"a\\b\" && rm -rf z",
+            unresolved(CdUnresolved::DynamicPath),
+        ),
+        // Unquoted, each of them expands.
+        ("cd ~/x && rm -rf z", unresolved(CdUnresolved::DynamicPath)),
+        ("cd a* && rm -rf z", unresolved(CdUnresolved::DynamicPath)),
+        ("cd x$y && rm -rf z", unresolved(CdUnresolved::DynamicPath)),
+        (
+            "cd a\\ b && rm -rf z",
+            unresolved(CdUnresolved::DynamicPath),
+        ),
+        // A quoted part does not hide an unquoted one in the same word.
+        (
+            "cd 'a'$B && rm -rf z",
+            unresolved(CdUnresolved::DynamicPath),
+        ),
+        (
+            "cd 'a'\"$B\" && rm -rf z",
+            unresolved(CdUnresolved::DynamicPath),
+        ),
+    ] {
+        let report = report(cmd);
+
+        assert_eq!(dirs(&report), vec![expected], "{cmd:?}");
+    }
+}
