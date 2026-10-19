@@ -138,6 +138,21 @@ pub async fn plan_with_context_async(
                 |path| covered.iter().any(|c| c == path),
                 GitTargetUnresolved::NotAGitRepository,
             );
+            // #525: a non-git stage moved by `cd` is snapshotted only when its
+            // directory lies in a repository the git plugin covers; anywhere
+            // else it behaves as if run there directly.
+            for dir in std::mem::take(&mut git_targets.soft_dirs) {
+                if let Some(top) = aegis_snapshot::git_toplevel(&dir).await
+                    && context.git_snapshot_applicable_at_async(&top).await
+                {
+                    git_targets.push_resolved(top);
+                    if !applicable_snapshot_plugins.contains(&"git") {
+                        applicable_snapshot_plugins.push("git");
+                    }
+                }
+            }
+        } else {
+            git_targets.soft_dirs.clear();
         }
     }
 

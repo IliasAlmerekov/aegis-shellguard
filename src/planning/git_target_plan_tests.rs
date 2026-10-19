@@ -375,6 +375,7 @@ fn demote_resolved_turns_a_rejected_target_unresolved_and_keeps_the_kept_one() {
             resolved(Path::new("/drop-too")),
         ],
         process_cwd: false,
+        soft_dirs: Vec::new(),
     };
 
     plan.demote_resolved(
@@ -416,4 +417,251 @@ fn git_snapshot_applicability_follows_whether_the_directory_is_a_repository() {
 
     assert!(in_repo);
     assert!(!outside);
+}
+
+// #525: the Snapshot follows the directory a stage runs in after `cd` steps.
+
+fn cd_plan(fx: &Fixture, command: &str) -> (Vec<&'static str>, crate::planning::GitTargetPlan) {
+    required(plan_for(fx, command, CwdState::Resolved(fx.cwd.clone())))
+}
+
+fn unresolved(reason: GitTargetUnresolved) -> GitTarget {
+    GitTarget::Unresolved(reason)
+}
+
+#[test]
+fn cd_to_another_repository_plans_its_snapshot_not_the_cwd() {
+    let fx = fixture();
+    let (plugins, plan) = cd_plan(&fx, "cd ../a && rm -rf x");
+
+    assert_eq!(plan.targets, vec![resolved(&fx.a)]);
+    assert!(!plan.process_cwd);
+    assert_eq!(plugins, vec!["git"]);
+}
+
+#[test]
+fn cd_with_double_dash_then_a_git_stage_resolves_to_the_other_repository() {
+    let fx = fixture();
+    let (_, plan) = cd_plan(&fx, "cd -- ../a && git filter-branch --index-filter true");
+
+    assert_eq!(plan.targets, vec![resolved(&fx.a)]);
+    assert!(!plan.process_cwd);
+}
+
+#[test]
+fn cd_then_dash_c_composes_to_the_nested_repository() {
+    let fx = fixture();
+    git_init(&fx.a.join("inner"));
+    let (_, plan) = cd_plan(
+        &fx,
+        "cd ../a && git -C inner filter-branch --index-filter true",
+    );
+
+    assert_eq!(plan.targets, vec![resolved(&fx.a.join("inner"))]);
+}
+
+#[test]
+fn two_cd_steps_plan_two_snapshots() {
+    let fx = fixture();
+    let (_, plan) = cd_plan(&fx, "cd ../a && rm -rf x && cd ../b && rm -rf y");
+
+    assert_eq!(plan.targets, vec![resolved(&fx.a), resolved(&fx.b)]);
+    assert!(!plan.process_cwd);
+}
+
+#[test]
+fn a_subdirectory_of_a_repository_resolves_to_its_top_level() {
+    let fx = fixture();
+    std::fs::create_dir_all(fx.a.join("deep")).unwrap();
+    let (_, plan) = cd_plan(&fx, "cd ../a/deep && rm -rf x");
+
+    assert_eq!(plan.targets, vec![resolved(&fx.a)]);
+}
+
+#[test]
+fn cd_dotdot_is_followed_lexically_like_the_shell_does() {
+    let fx = fixture();
+    std::fs::create_dir_all(fx.a.join("deep")).unwrap();
+    let link = fx.cwd.parent().unwrap().join("link");
+    std::os::unix::fs::symlink(fx.a.join("deep"), &link).unwrap();
+    // `link` points into the repository `a`. The shell's `cd ..` from `link`
+    // is the logical parent (the fixture root, no repository), so no Snapshot
+    // is planned; the physical parent would be the repository `a`.
+    let plan = plan_for(
+        &fx,
+        "cd ../link && cd .. && rm -rf x",
+        CwdState::Resolved(fx.cwd.clone()),
+    );
+
+    assert_eq!(plan, SnapshotPlan::NotRequired);
+}
+
+#[test]
+fn unresolvable_cd_forms_are_disclosed_and_never_covered_by_the_cwd() {
+    let fx = fixture();
+    let cases = [
+        ("cd && rm -rf y", GitTargetUnresolved::CdUnsupportedForm),
+        ("cd - && rm -rf y", GitTargetUnresolved::CdUnsupportedForm),
+        (
+            "cd -P ../a && rm -rf y",
+            GitTargetUnresolved::CdUnsupportedForm,
+        ),
+        (
+            "pushd ../a && rm -rf y",
+            GitTargetUnresolved::CdUnsupportedForm,
+        ),
+        ("cd \"$D\" && rm -rf y", GitTargetUnresolved::DynamicPath),
+        ("cd ~/x && rm -rf y", GitTargetUnresolved::DynamicPath),
+        ("cd ../a* && rm -rf y", GitTargetUnresolved::DynamicPath),
+        ("cd ../a; rm -rf y", GitTargetUnresolved::CdMayNotRun),
+        ("cd ../a || rm -rf y", GitTargetUnresolved::CdMayNotRun),
+        ("cd ../a\nrm -rf y", GitTargetUnresolved::CdMayNotRun),
+    ];
+    for (command, reason) in cases {
+        let (_, plan) = cd_plan(&fx, command);
+
+        assert_eq!(plan.targets, vec![unresolved(reason)], "{command:?}");
+        assert_eq!(plan.resolved_paths().count(), 0, "{command:?}");
+        // A dynamic path makes the command effect-opaque (ADR-043), which
+        // earns the ADR-016 cwd Snapshot; every other reason adds none.
+        if reason != GitTargetUnresolved::DynamicPath {
+            assert!(!plan.process_cwd, "{command:?}");
+        }
+    }
+}
+
+#[test]
+fn pipeline_cd_and_a_closed_subshell_leave_the_process_cwd() {
+    let fx = fixture();
+    for command in ["cd ../a | rm -rf y", "(cd ../a); rm -rf y"] {
+        let (_, plan) = cd_plan(&fx, command);
+
+        assert!(plan.targets.is_empty(), "{command:?}");
+        assert!(plan.process_cwd, "{command:?}");
+    }
+}
+
+#[test]
+fn a_subshell_group_snapshots_the_directory_it_changes_to() {
+    let fx = fixture();
+    let (_, plan) = cd_plan(&fx, "(cd ../a && rm -rf y)");
+
+    // The language router treats a subshell group as effect-opaque, which
+    // adds the ADR-016 cwd recovery Snapshot on top; `a` is covered too.
+    assert_eq!(plan.targets, vec![resolved(&fx.a)]);
+}
+
+#[test]
+fn a_non_git_stage_in_a_plain_directory_takes_no_snapshot_and_no_disclosure() {
+    let fx = fixture();
+    let plain = fx.cwd.parent().unwrap().join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    let plan = plan_for(
+        &fx,
+        "cd ../plain && rm -rf x",
+        CwdState::Resolved(fx.cwd.clone()),
+    );
+
+    // No git Snapshot applies, so the plan holds nothing to disclose or halt on.
+    assert_eq!(plan, SnapshotPlan::NotRequired);
+}
+
+#[test]
+fn a_git_stage_in_a_plain_directory_is_an_unresolved_target() {
+    let fx = fixture();
+    let plain = fx.cwd.parent().unwrap().join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    let (_, plan) = cd_plan(&fx, "cd ../plain && git filter-branch --index-filter true");
+
+    assert_eq!(
+        plan.targets,
+        vec![unresolved(GitTargetUnresolved::NotAGitRepository)]
+    );
+}
+
+#[test]
+fn a_directory_that_does_not_exist_yet_is_unresolved() {
+    let fx = fixture();
+    for command in ["mkdir n && cd n && rm -rf x", "cd ../gone && rm -rf x"] {
+        let (_, plan) = cd_plan(&fx, command);
+
+        assert_eq!(
+            plan.targets,
+            vec![unresolved(GitTargetUnresolved::PathNotFound)],
+            "{command:?}"
+        );
+    }
+}
+
+#[test]
+fn audit_mode_takes_no_snapshot_for_an_unresolved_cd_and_explains_it() {
+    let fx = fixture();
+    let plan = plan_with_mode(
+        &fx,
+        "cd \"$D\" && rm -rf x",
+        CwdState::Resolved(fx.cwd.clone()),
+        true,
+        Mode::Audit,
+    );
+
+    assert_eq!(plan, SnapshotPlan::NotRequired);
+}
+
+#[test]
+fn a_command_without_cd_keeps_the_pre_525_plan() {
+    let fx = fixture();
+    let (_, plan) = cd_plan(&fx, "rm -rf x");
+
+    assert_eq!(plan, crate::planning::GitTargetPlan::default());
+}
+
+#[test]
+fn a_stage_in_the_cwd_after_cd_dot_folds_into_the_cwd_snapshot() {
+    let fx = fixture();
+    let (_, plan) = cd_plan(&fx, "cd . && rm -rf x");
+
+    assert!(plan.targets.is_empty());
+    assert!(plan.process_cwd);
+}
+
+#[test]
+fn docker_and_database_providers_keep_using_the_process_cwd_after_cd() {
+    let fx = fixture();
+    let plugins = |command: &str| {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let mut config = AegisConfig::default();
+        config.snapshot_policy = SnapshotPolicy::Full;
+        config.auto_snapshot_git = true;
+        config.auto_snapshot_docker = true;
+        let context = RuntimeContext::new(config, rt.handle().clone()).unwrap();
+        let outcome = std::thread::scope(|scope| {
+            scope
+                .spawn(|| {
+                    plan_with_context(
+                        &context,
+                        PlanningRequest {
+                            command,
+                            cwd_state: CwdState::Resolved(fx.cwd.clone()),
+                            transport: ExecutionTransport::Shell,
+                            ci_detected: false,
+                        },
+                    )
+                })
+                .join()
+                .unwrap()
+        });
+        let PlanningOutcome::Planned(plan) = outcome else {
+            panic!("expected a normal plan");
+        };
+        let (plugins, _) = required(plan.snapshot_plan());
+        plugins
+            .into_iter()
+            .filter(|name| *name != "git")
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(plugins("cd ../a && rm -rf x"), plugins("rm -rf x"));
 }

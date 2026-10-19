@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 
 use aegis_parser::GitTargetArgs;
-use aegis_scanner::{GitStageReport, GitStageTarget};
+use aegis_scanner::{CdUnresolved, GitStage, GitStageReport, GitStageTarget, StageDir};
 
 use crate::planning::types::CwdState;
 
@@ -44,6 +44,16 @@ pub enum GitTargetUnresolved {
     LauncherChangesDirectory,
     /// `--bare` names a repository with no working tree to snapshot.
     BareRepository,
+    /// An earlier `cd` has no path, or is `cd -`, `pushd`, `popd`, or takes an
+    /// option or extra operands.
+    CdUnsupportedForm,
+    /// A relative `cd` while `CDPATH` is set in Aegis's own environment.
+    CdPathSet,
+    /// An earlier `cd` may not have run before the stage (`;`, `||`, `&`, a
+    /// newline, or a `cd` reached through `||`).
+    CdMayNotRun,
+    /// A `cd` hides behind `eval`, `source`, `.`, a launcher or a nested shell.
+    CdOpaque,
 }
 
 impl GitTargetUnresolved {
@@ -73,6 +83,12 @@ impl GitTargetUnresolved {
             }
             Self::BareRepository => "--bare names a repository with no working tree",
             Self::UnmappedLauncher => "git runs behind a launcher whose arguments Aegis cannot map",
+            Self::CdUnsupportedForm => {
+                "an earlier cd has no plain path (cd, cd -, an option, pushd or popd)"
+            }
+            Self::CdPathSet => "CDPATH is set, so a relative cd may land elsewhere",
+            Self::CdMayNotRun => "an earlier cd may not have run before this command",
+            Self::CdOpaque => "a cd hides behind eval, source, a launcher or a nested shell",
         }
     }
 }
@@ -98,6 +114,12 @@ pub struct GitTargetPlan {
     pub targets: Vec<GitTarget>,
     /// Whether the git plugin runs at the process cwd.
     pub process_cwd: bool,
+    /// Directories a non-git Danger stage runs in after a `cd` (#525). Each
+    /// gets a git Snapshot only if it lies inside a working tree the git
+    /// plugin covers; otherwise the stage behaves as if run there directly:
+    /// no Snapshot and no disclosure. Planning settles these once it can
+    /// ask git, so execution never sees them.
+    pub soft_dirs: Vec<PathBuf>,
 }
 
 impl Default for GitTargetPlan {
@@ -105,6 +127,7 @@ impl Default for GitTargetPlan {
         Self {
             targets: Vec::new(),
             process_cwd: true,
+            soft_dirs: Vec::new(),
         }
     }
 }
@@ -190,7 +213,7 @@ impl GitTargetPlan {
             .collect()
     }
 
-    /// Resolve the targets of every redirected git stage in `report`.
+    /// Resolve the targets of every redirected stage in `report`.
     ///
     /// Touches the filesystem (canonicalization), so callers run it only for
     /// a command that already needs a recovery backstop.
@@ -201,6 +224,7 @@ impl GitTargetPlan {
         }
 
         let mut targets: Vec<GitTarget> = Vec::new();
+        let mut soft_dirs: Vec<PathBuf> = Vec::new();
         let mut process_cwd = report.needs_process_cwd;
         let canonical_cwd = match cwd {
             CwdState::Resolved(path) => path.canonicalize().ok(),
@@ -208,7 +232,18 @@ impl GitTargetPlan {
         };
 
         for stage in &report.redirected {
-            let target = resolve_stage(&stage.target, cwd);
+            let target = match resolve_stage_in_dir(stage, cwd) {
+                StageOutcome::Target(target) => target,
+                StageOutcome::Soft(path) => {
+                    // A directory that is the process cwd is the cwd pass.
+                    if canonical_cwd.as_deref() == Some(path.as_path()) {
+                        process_cwd = true;
+                    } else if !soft_dirs.contains(&path) {
+                        soft_dirs.push(path);
+                    }
+                    continue;
+                }
+            };
             // A target that is the process cwd is covered by the cwd pass.
             if let GitTarget::Resolved(path) = &target
                 && canonical_cwd.as_deref() == Some(path.as_path())
@@ -224,12 +259,98 @@ impl GitTargetPlan {
         Self {
             targets,
             process_cwd,
+            soft_dirs,
+        }
+    }
+
+    /// Add a resolved target unless it is already planned.
+    pub fn push_resolved(&mut self, path: PathBuf) {
+        let target = GitTarget::Resolved(path);
+        if !self.targets.contains(&target) {
+            self.targets.push(target);
         }
     }
 }
 
+/// What one redirected stage resolves to.
+enum StageOutcome {
+    /// A target to plan, or an unresolved one to disclose.
+    Target(GitTarget),
+    /// A non-git stage's directory: planned only if it is a covered repository.
+    Soft(PathBuf),
+}
+
+fn resolve_stage_in_dir(stage: &GitStage, cwd: &CwdState) -> StageOutcome {
+    let base = match resolve_dir(&stage.dir, cwd) {
+        Ok(base) => base,
+        Err(reason) => return StageOutcome::Target(GitTarget::Unresolved(reason)),
+    };
+    match (&stage.target, stage.is_git, &base) {
+        (GitStageTarget::Plain, false, CwdState::Resolved(path)) => {
+            StageOutcome::Soft(path.clone())
+        }
+        _ => StageOutcome::Target(resolve_stage(&stage.target, &base)),
+    }
+}
+
+/// The directory `dir` names, as the cwd the stage's own options resolve
+/// against. A `cd` chain is followed lexically, as the shell does, then
+/// canonicalized.
+fn resolve_dir(dir: &StageDir, cwd: &CwdState) -> Result<CwdState, GitTargetUnresolved> {
+    match dir {
+        StageDir::Process => Ok(cwd.clone()),
+        StageDir::Unresolved(reason) => Err(match reason {
+            CdUnresolved::UnsupportedForm => GitTargetUnresolved::CdUnsupportedForm,
+            CdUnresolved::DynamicPath => GitTargetUnresolved::DynamicPath,
+            CdUnresolved::CdPathSet => GitTargetUnresolved::CdPathSet,
+            CdUnresolved::MayNotRun => GitTargetUnresolved::CdMayNotRun,
+            CdUnresolved::Opaque => GitTargetUnresolved::CdOpaque,
+        }),
+        StageDir::Chain(steps) => {
+            let mut current: Option<PathBuf> = match cwd {
+                CwdState::Resolved(path) => Some(path.clone()),
+                CwdState::Unavailable => None,
+            };
+            for step in steps {
+                if aegis_scanner::path_is_dynamic(step) {
+                    return Err(GitTargetUnresolved::DynamicPath);
+                }
+                let joined =
+                    join(current.as_deref(), step).ok_or(GitTargetUnresolved::CwdUnavailable)?;
+                current = Some(normalize_lexically(&joined));
+            }
+            let path = current.ok_or(GitTargetUnresolved::CwdUnavailable)?;
+            let canonical = path
+                .canonicalize()
+                .map_err(|_| GitTargetUnresolved::PathNotFound)?;
+            Ok(CwdState::Resolved(canonical))
+        }
+    }
+}
+
+/// Drop `.` and fold `..` into the path text, without touching the
+/// filesystem: `cd link && cd ..` goes to the parent of `link`, not to the
+/// parent of what `link` points at.
+fn normalize_lexically(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !out.pop() {
+                    out.push("..");
+                }
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 fn resolve_stage(stage: &GitStageTarget, cwd: &CwdState) -> GitTarget {
     match stage {
+        GitStageTarget::Plain => resolve_args(&GitTargetArgs::default(), cwd),
         GitStageTarget::EnvironmentRedirect => {
             GitTarget::Unresolved(GitTargetUnresolved::EnvironmentRedirect)
         }
@@ -259,7 +380,7 @@ fn resolve_stage(stage: &GitStageTarget, cwd: &CwdState) -> GitTarget {
 }
 
 fn is_dynamic(path: &str) -> bool {
-    path.contains(['$', '*', '?', '[', ']', '~', '`', '{', '}', '\\'])
+    aegis_scanner::path_is_dynamic(path)
 }
 
 /// Join `path` onto `base`, `None` when a relative path has no base.
@@ -366,6 +487,14 @@ mod tests {
             one(bare, &cwd_of(&dir)),
             GitTarget::Unresolved(GitTargetUnresolved::BareRepository)
         );
+    }
+
+    fn stage(target: GitStageTarget) -> GitStage {
+        GitStage {
+            target,
+            dir: StageDir::Process,
+            is_git: true,
+        }
     }
 
     fn one(args: GitTargetArgs, cwd: &CwdState) -> GitTarget {
@@ -605,15 +734,9 @@ mod tests {
         let dir = tree();
         let report = GitStageReport {
             redirected: vec![
-                GitStage {
-                    target: GitStageTarget::Options(vec![args(&["a"], None, None)]),
-                },
-                GitStage {
-                    target: GitStageTarget::Options(vec![args(&["other"], None, None)]),
-                },
-                GitStage {
-                    target: GitStageTarget::Options(vec![args(&["other"], None, None)]),
-                },
+                stage(GitStageTarget::Options(vec![args(&["a"], None, None)])),
+                stage(GitStageTarget::Options(vec![args(&["other"], None, None)])),
+                stage(GitStageTarget::Options(vec![args(&["other"], None, None)])),
             ],
             needs_process_cwd: false,
         };
@@ -635,9 +758,11 @@ mod tests {
     fn plan_folds_a_target_equal_to_the_cwd_into_the_cwd_pass() {
         let dir = tree();
         let report = GitStageReport {
-            redirected: vec![GitStage {
-                target: GitStageTarget::Options(vec![args(&["."], None, None)]),
-            }],
+            redirected: vec![stage(GitStageTarget::Options(vec![args(
+                &["."],
+                None,
+                None,
+            )]))],
             needs_process_cwd: false,
         };
 
@@ -650,9 +775,11 @@ mod tests {
     #[test]
     fn plan_reports_an_unresolved_target() {
         let report = GitStageReport {
-            redirected: vec![GitStage {
-                target: GitStageTarget::Options(vec![args(&["$X"], None, None)]),
-            }],
+            redirected: vec![stage(GitStageTarget::Options(vec![args(
+                &["$X"],
+                None,
+                None,
+            )]))],
             needs_process_cwd: false,
         };
 
@@ -670,6 +797,7 @@ mod tests {
                 GitTarget::Unresolved(GitTargetUnresolved::PathNotFound),
             ],
             process_cwd: false,
+            soft_dirs: Vec::new(),
         };
 
         assert_eq!(
