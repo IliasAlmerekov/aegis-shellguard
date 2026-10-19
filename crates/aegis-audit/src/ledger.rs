@@ -313,7 +313,10 @@ mod tests {
             entry("aegis prune B", Decision::Pruned, &[("docker", "B")]),
         ];
 
-        assert_eq!(SnapshotLedger::from_entries(&entries[..2]).pruned_count(), 0);
+        assert_eq!(
+            SnapshotLedger::from_entries(&entries[..2]).pruned_count(),
+            0
+        );
         assert_eq!(SnapshotLedger::from_entries(&entries).pruned_count(), 2);
     }
 
