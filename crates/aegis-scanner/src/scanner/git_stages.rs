@@ -257,16 +257,24 @@ impl Scanner {
 /// in front of it changes the directory again (`env -C`, `sudo -D`) or cannot
 /// be mapped back onto the stage's own tokens (#525).
 fn moved_stage_target(token_refs: &[&str], slice: &EffectiveTokenSlice<'_>) -> DangerStageTarget {
+    match launcher_prefix(token_refs, slice) {
+        None => DangerStageTarget::UnmappedLauncher,
+        Some(prefix) if prefix_changes_directory(prefix) => {
+            DangerStageTarget::LauncherChangesDirectory
+        }
+        Some(_) => DangerStageTarget::Plain,
+    }
+}
+
+/// The tokens in front of the effective program, or `None` when the slice does
+/// not map back onto the tail of the stage's own tokens (an `env -S` split).
+fn launcher_prefix<'a, 'b>(
+    token_refs: &'a [&'b str],
+    slice: &EffectiveTokenSlice<'_>,
+) -> Option<&'a [&'b str]> {
     let tail_len = slice.tokens.len() - 1;
-    let tail_start = token_refs.len().checked_sub(tail_len);
-    if !tail_start.is_some_and(|start| token_refs[start..] == slice.tokens[1..]) {
-        return DangerStageTarget::UnmappedLauncher;
-    }
-    if prefix_changes_directory(&token_refs[..token_refs.len() - tail_len]) {
-        DangerStageTarget::LauncherChangesDirectory
-    } else {
-        DangerStageTarget::Plain
-    }
+    let start = token_refs.len().checked_sub(tail_len)?;
+    (token_refs[start..] == slice.tokens[1..]).then(|| &token_refs[..start])
 }
 
 /// `Some` when the stage's working tree is redirected or cannot be shown to
@@ -276,13 +284,9 @@ fn stage_target(
     slice: &EffectiveTokenSlice<'_>,
     ambient_git_env: bool,
 ) -> Option<DangerStageTarget> {
-    let tail_len = slice.tokens.len() - 1;
-    let tail_start = token_refs.len().checked_sub(tail_len);
-    let mapped = tail_start.is_some_and(|start| token_refs[start..] == slice.tokens[1..]);
-    if !mapped {
+    let Some(prefix) = launcher_prefix(token_refs, slice) else {
         return Some(DangerStageTarget::UnmappedLauncher);
-    }
-    let prefix = &token_refs[..token_refs.len() - tail_len];
+    };
     if ambient_git_env
         || prefix
             .iter()
