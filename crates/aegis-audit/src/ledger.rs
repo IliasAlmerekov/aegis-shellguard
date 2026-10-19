@@ -305,6 +305,36 @@ mod tests {
     }
 
     #[test]
+    fn ledger_pruned_count_distinguishes_zero_and_multiple_pairs() {
+        let entries = [
+            entry("rm a", Decision::Approved, &[("git", "A")]),
+            entry("rm b", Decision::Approved, &[("docker", "B")]),
+            entry("aegis prune A", Decision::Pruned, &[("git", "A")]),
+            entry("aegis prune B", Decision::Pruned, &[("docker", "B")]),
+        ];
+
+        assert_eq!(SnapshotLedger::from_entries(&entries[..2]).pruned_count(), 0);
+        assert_eq!(SnapshotLedger::from_entries(&entries).pruned_count(), 2);
+    }
+
+    #[test]
+    fn ledger_keeps_rollback_shaped_entries_unless_every_field_matches() {
+        let ledger = SnapshotLedger::from_entries(&[
+            // A dangerous approved command is not the Safe rollback record.
+            entry("aegis rollback A", Decision::Approved, &[("git", "A")]),
+            // A Safe but non-Approved entry is not a rollback record either.
+            entry_with_risk(
+                "aegis rollback B",
+                RiskLevel::Safe,
+                Decision::AutoApproved,
+                &[("git", "B")],
+            ),
+        ]);
+
+        assert_eq!(live_pairs(&ledger), vec![("git", "A"), ("git", "B")]);
+    }
+
+    #[test]
     fn ledger_resolve_unknown_id_is_not_found() {
         let ledger =
             SnapshotLedger::from_entries(&[entry("rm a", Decision::Approved, &[("git", "A")])]);

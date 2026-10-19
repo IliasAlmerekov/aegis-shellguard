@@ -1,3 +1,5 @@
+mod audit_error_category;
+
 use std::fs;
 use std::path::Path;
 
