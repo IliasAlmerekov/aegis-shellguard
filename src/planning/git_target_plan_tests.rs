@@ -6,6 +6,7 @@ use std::process::Command;
 
 use aegis_config::AegisConfig;
 use aegis_policy::ExecutionTransport;
+use aegis_scanner::CdUnresolved;
 use aegis_types::{Mode, SnapshotPolicy};
 use tempfile::TempDir;
 
@@ -500,22 +501,46 @@ fn cd_dotdot_is_followed_lexically_like_the_shell_does() {
 fn unresolvable_cd_forms_are_disclosed_and_never_covered_by_the_cwd() {
     let fx = fixture();
     let cases = [
-        ("cd && rm -rf y", GitTargetUnresolved::CdUnsupportedForm),
-        ("cd - && rm -rf y", GitTargetUnresolved::CdUnsupportedForm),
+        (
+            "cd && rm -rf y",
+            GitTargetUnresolved::Cd(CdUnresolved::UnsupportedForm),
+        ),
+        (
+            "cd - && rm -rf y",
+            GitTargetUnresolved::Cd(CdUnresolved::UnsupportedForm),
+        ),
         (
             "cd -P ../a && rm -rf y",
-            GitTargetUnresolved::CdUnsupportedForm,
+            GitTargetUnresolved::Cd(CdUnresolved::UnsupportedForm),
         ),
         (
             "pushd ../a && rm -rf y",
-            GitTargetUnresolved::CdUnsupportedForm,
+            GitTargetUnresolved::Cd(CdUnresolved::UnsupportedForm),
         ),
-        ("cd \"$D\" && rm -rf y", GitTargetUnresolved::DynamicPath),
-        ("cd ~/x && rm -rf y", GitTargetUnresolved::DynamicPath),
-        ("cd ../a* && rm -rf y", GitTargetUnresolved::DynamicPath),
-        ("cd ../a; rm -rf y", GitTargetUnresolved::CdMayNotRun),
-        ("cd ../a || rm -rf y", GitTargetUnresolved::CdMayNotRun),
-        ("cd ../a\nrm -rf y", GitTargetUnresolved::CdMayNotRun),
+        (
+            "cd \"$D\" && rm -rf y",
+            GitTargetUnresolved::Cd(CdUnresolved::DynamicPath),
+        ),
+        (
+            "cd ~/x && rm -rf y",
+            GitTargetUnresolved::Cd(CdUnresolved::DynamicPath),
+        ),
+        (
+            "cd ../a* && rm -rf y",
+            GitTargetUnresolved::Cd(CdUnresolved::DynamicPath),
+        ),
+        (
+            "cd ../a; rm -rf y",
+            GitTargetUnresolved::Cd(CdUnresolved::MayNotRun),
+        ),
+        (
+            "cd ../a || rm -rf y",
+            GitTargetUnresolved::Cd(CdUnresolved::MayNotRun),
+        ),
+        (
+            "cd ../a\nrm -rf y",
+            GitTargetUnresolved::Cd(CdUnresolved::MayNotRun),
+        ),
     ];
     for (command, reason) in cases {
         let (_, plan) = cd_plan(&fx, command);

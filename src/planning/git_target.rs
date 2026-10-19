@@ -44,16 +44,8 @@ pub enum GitTargetUnresolved {
     LauncherChangesDirectory,
     /// `--bare` names a repository with no working tree to snapshot.
     BareRepository,
-    /// An earlier `cd` has no path, or is `cd -`, `pushd`, `popd`, or takes an
-    /// option or extra operands.
-    CdUnsupportedForm,
-    /// A relative `cd` while `CDPATH` is set in Aegis's own environment.
-    CdPathSet,
-    /// An earlier `cd` may not have run before the stage (`;`, `||`, `&`, a
-    /// newline, or a `cd` reached through `||`).
-    CdMayNotRun,
-    /// A `cd` hides behind `eval`, `source`, `.`, a launcher or a nested shell.
-    CdOpaque,
+    /// An earlier `cd` in the command line cannot be followed.
+    Cd(CdUnresolved),
 }
 
 impl GitTargetUnresolved {
@@ -83,12 +75,19 @@ impl GitTargetUnresolved {
             }
             Self::BareRepository => "--bare names a repository with no working tree",
             Self::UnmappedLauncher => "git runs behind a launcher whose arguments Aegis cannot map",
-            Self::CdUnsupportedForm => {
-                "an earlier cd has no plain path (cd, cd -, an option, pushd or popd)"
-            }
-            Self::CdPathSet => "CDPATH is set, so a relative cd may land elsewhere",
-            Self::CdMayNotRun => "an earlier cd may not have run before this command",
-            Self::CdOpaque => "a cd hides behind eval, source, a launcher or a nested shell",
+            Self::Cd(reason) => match reason {
+                CdUnresolved::UnsupportedForm => {
+                    "an earlier cd has no plain path (cd, cd -, an option, pushd or popd)"
+                }
+                CdUnresolved::DynamicPath => {
+                    "a path holds a variable, glob, brace or ~ that Aegis cannot expand"
+                }
+                CdUnresolved::CdPathSet => "CDPATH is set, so a relative cd may land elsewhere",
+                CdUnresolved::MayNotRun => "an earlier cd may not have run before this command",
+                CdUnresolved::Opaque => {
+                    "a cd hides behind eval, source, a launcher or a nested shell"
+                }
+            },
         }
     }
 }
@@ -299,13 +298,7 @@ fn resolve_stage_in_dir(stage: &GitStage, cwd: &CwdState) -> StageOutcome {
 fn resolve_dir(dir: &StageDir, cwd: &CwdState) -> Result<CwdState, GitTargetUnresolved> {
     match dir {
         StageDir::Process => Ok(cwd.clone()),
-        StageDir::Unresolved(reason) => Err(match reason {
-            CdUnresolved::UnsupportedForm => GitTargetUnresolved::CdUnsupportedForm,
-            CdUnresolved::DynamicPath => GitTargetUnresolved::DynamicPath,
-            CdUnresolved::CdPathSet => GitTargetUnresolved::CdPathSet,
-            CdUnresolved::MayNotRun => GitTargetUnresolved::CdMayNotRun,
-            CdUnresolved::Opaque => GitTargetUnresolved::CdOpaque,
-        }),
+        StageDir::Unresolved(reason) => Err(GitTargetUnresolved::Cd(*reason)),
         StageDir::Chain(steps) => {
             let mut current: Option<PathBuf> = match cwd {
                 CwdState::Resolved(path) => Some(path.clone()),
@@ -313,7 +306,7 @@ fn resolve_dir(dir: &StageDir, cwd: &CwdState) -> Result<CwdState, GitTargetUnre
             };
             for step in steps {
                 if aegis_scanner::path_is_dynamic(step) {
-                    return Err(GitTargetUnresolved::DynamicPath);
+                    return Err(GitTargetUnresolved::Cd(CdUnresolved::DynamicPath));
                 }
                 let joined =
                     join(current.as_deref(), step).ok_or(GitTargetUnresolved::CwdUnavailable)?;
@@ -379,10 +372,6 @@ fn resolve_stage(stage: &GitStageTarget, cwd: &CwdState) -> GitTarget {
     }
 }
 
-fn is_dynamic(path: &str) -> bool {
-    aegis_scanner::path_is_dynamic(path)
-}
-
 /// Join `path` onto `base`, `None` when a relative path has no base.
 fn join(base: Option<&Path>, path: &str) -> Option<PathBuf> {
     let path = Path::new(path);
@@ -404,7 +393,7 @@ fn resolve_args(args: &GitTargetArgs, cwd: &CwdState) -> GitTarget {
         .chain(args.work_tree.iter())
         .chain(args.git_dir.iter());
     for path in all_paths {
-        if is_dynamic(path) {
+        if aegis_scanner::path_is_dynamic(path) {
             return unresolved(GitTargetUnresolved::DynamicPath);
         }
     }
