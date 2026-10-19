@@ -43,6 +43,17 @@ pub enum StageDir {
     Unresolved(CdUnresolved),
 }
 
+impl StageDir {
+    /// This directory after something makes it unknowable for `reason`. An
+    /// already unresolved directory keeps its first reason.
+    fn degrade(&self, reason: CdUnresolved) -> StageDir {
+        match self {
+            StageDir::Unresolved(_) => self.clone(),
+            _ => StageDir::Unresolved(reason),
+        }
+    }
+}
+
 /// Whether `path` holds a character the shell would expand or unquote, so its
 /// value is not known from the text.
 #[must_use]
@@ -135,19 +146,13 @@ impl Walker {
         if tokens.first().map(String::as_str) == Some("cd") {
             // The tokenizer drops backslashes, so look at the raw text.
             if raw.contains('\\') {
-                return Some(match state {
-                    StageDir::Unresolved(_) => state.clone(),
-                    _ => StageDir::Unresolved(CdUnresolved::DynamicPath),
-                });
+                return Some(state.degrade(CdUnresolved::DynamicPath));
             }
             return Some(self.apply_cd(state, &tokens[1..], incoming));
         }
 
         if let Some(reason) = hidden_cd(raw) {
-            let dir = match state {
-                StageDir::Unresolved(_) => state.clone(),
-                _ => StageDir::Unresolved(reason),
-            };
+            let dir = state.degrade(reason);
             out.push((raw.to_string(), dir.clone()));
             return Some(dir);
         }
