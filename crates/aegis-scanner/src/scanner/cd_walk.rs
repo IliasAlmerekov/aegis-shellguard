@@ -52,8 +52,10 @@ pub fn path_is_dynamic(path: &str) -> bool {
 
 const MAX_GROUP_DEPTH: usize = 8;
 
-/// Programs that change the directory, or may, through a script Aegis cannot
-/// see. `eval` and `source` only count once a `cd` word is also present.
+/// Programs that change the directory, or may, through text Aegis cannot see.
+/// `eval`, `source` and `.` always count, with no `cd` word required: the
+/// string or file they run can hold a `cd` that never appears in the command
+/// line (`eval "$X"`, `source env.sh`). This errs toward unresolved.
 const CD_LIKE: &[&str] = &["cd", "pushd", "popd", "eval", "source", "."];
 
 /// Whether `target` holds a stage whose effective program is `cd`, `pushd` or
@@ -203,6 +205,9 @@ fn advance(state: StageDir, separator: Option<ListSeparator>) -> StageDir {
 /// Why `raw`, an ordinary stage, may change the directory behind Aegis's back:
 /// `pushd`/`popd`, or any `cd`, `eval`, `source` or `.` it holds directly or in
 /// a nested shell, substitution or payload.
+///
+/// Precedence: a stage that is itself `pushd` or `popd` is `UnsupportedForm`,
+/// whatever else it holds; any other hit is `Opaque`.
 fn hidden_cd(raw: &str) -> Option<CdUnresolved> {
     let parsed = aegis_parser::Parser::parse(raw);
     let report = recursive::scan_targets(raw, &parsed);
@@ -211,12 +216,13 @@ fn hidden_cd(raw: &str) -> Option<CdUnresolved> {
         let tokens = aegis_parser::split_tokens(target);
         let refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
         for slice in aegis_parser::effective_token_slices(&refs) {
-            if CD_LIKE.contains(&slice.program) {
-                reason = Some(match slice.program {
-                    "pushd" | "popd" if target == raw => CdUnresolved::UnsupportedForm,
-                    _ => CdUnresolved::Opaque,
-                });
+            if !CD_LIKE.contains(&slice.program) {
+                continue;
             }
+            if target == raw && matches!(slice.program, "pushd" | "popd") {
+                return Some(CdUnresolved::UnsupportedForm);
+            }
+            reason = Some(CdUnresolved::Opaque);
         }
     }
     reason

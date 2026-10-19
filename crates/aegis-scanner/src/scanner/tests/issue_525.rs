@@ -187,3 +187,30 @@ fn a_command_without_cd_reports_exactly_what_it_did_before() {
     assert!(report.redirected.iter().all(|s| s.dir == StageDir::Process));
     assert!(report.needs_process_cwd);
 }
+
+#[test]
+fn a_stage_that_is_itself_pushd_reports_unsupported_form_even_with_a_wrapper_inside() {
+    for cmd in [
+        "pushd x $(eval y) && rm -rf z",
+        "pushd $(source f) && rm -rf z",
+        "pushd x `eval y` && rm -rf z",
+    ] {
+        let report = report(cmd);
+
+        assert_eq!(
+            dirs(&report),
+            vec![unresolved(CdUnresolved::UnsupportedForm)],
+            "{cmd:?}"
+        );
+    }
+}
+
+#[test]
+fn a_wrapper_after_an_unresolved_cd_keeps_the_first_reason() {
+    let report = report("pushd x; eval cd y; rm -rf z");
+
+    assert_eq!(
+        dirs(&report),
+        vec![unresolved(CdUnresolved::UnsupportedForm)]
+    );
+}
