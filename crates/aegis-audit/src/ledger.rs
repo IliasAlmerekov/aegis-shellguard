@@ -11,7 +11,7 @@
 //! - "Latest" means latest in log order (segments oldest to newest, then line
 //!   order), never latest by timestamp.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use aegis_types::{Decision, RecordedSnapshot, RiskLevel};
 
@@ -54,7 +54,10 @@ impl SnapshotLedger {
 
     /// Build the ledger from Audit log entries in log order.
     pub fn from_entries(entries: &[AuditEntry]) -> Self {
-        let mut recorded: Vec<RecordedSnapshot> = Vec::new();
+        // Log-order slots; a re-recorded pair vacates its old slot and takes a
+        // new one at the end. `slot_of` finds the old slot without a scan.
+        let mut recorded: Vec<Option<RecordedSnapshot>> = Vec::new();
+        let mut slot_of: HashMap<(&str, &str), usize> = HashMap::new();
         let mut pruned_pairs: HashSet<(&str, &str)> = HashSet::new();
         let mut legacy_pruned_ids: HashSet<&str> = HashSet::new();
 
@@ -75,17 +78,19 @@ impl SnapshotLedger {
                 continue;
             }
             for snapshot in &base.snapshots {
-                recorded.retain(|record| {
-                    record.plugin != snapshot.plugin || record.snapshot_id != snapshot.snapshot_id
-                });
-                recorded.push(RecordedSnapshot {
+                let slot = recorded.len();
+                if let Some(old) = slot_of.insert((&snapshot.plugin, &snapshot.snapshot_id), slot) {
+                    recorded[old] = None;
+                }
+                recorded.push(Some(RecordedSnapshot {
                     plugin: snapshot.plugin.clone(),
                     snapshot_id: snapshot.snapshot_id.clone(),
                     recorded_at: base.timestamp.into(),
-                });
+                }));
             }
         }
 
+        let mut recorded: Vec<RecordedSnapshot> = recorded.into_iter().flatten().collect();
         let is_pruned = |record: &RecordedSnapshot| {
             pruned_pairs.contains(&(record.plugin.as_str(), record.snapshot_id.as_str()))
                 || legacy_pruned_ids.contains(record.snapshot_id.as_str())
@@ -267,6 +272,36 @@ mod tests {
         )]);
 
         assert_eq!(live_pairs(&ledger), vec![("git", "S")]);
+    }
+
+    #[test]
+    fn ledger_re_recorded_pair_moves_to_the_latest_position() {
+        let ledger = SnapshotLedger::from_entries(&[
+            entry("rm a", Decision::Approved, &[("git", "A")]),
+            entry("rm b", Decision::Approved, &[("git", "B")]),
+            entry("rm a again", Decision::Approved, &[("git", "A")]),
+        ]);
+
+        assert_eq!(live_pairs(&ledger), vec![("git", "B"), ("git", "A")]);
+    }
+
+    #[test]
+    fn ledger_builds_a_large_log_in_linear_time() {
+        let ids: Vec<String> = (0..40_000).map(|n| format!("snap-{n}")).collect();
+        let entries: Vec<AuditEntry> = ids
+            .iter()
+            .map(|id| entry("rm a", Decision::Approved, &[("git", id.as_str())]))
+            .collect();
+
+        let started = std::time::Instant::now();
+        let ledger = SnapshotLedger::from_entries(&entries);
+
+        assert_eq!(ledger.live_records().len(), 40_000);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "ledger construction took {:?}",
+            started.elapsed()
+        );
     }
 
     #[test]
