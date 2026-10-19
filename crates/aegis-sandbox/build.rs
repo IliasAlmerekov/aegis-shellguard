@@ -73,6 +73,11 @@ fn try_build_bwrap() -> Result<(), String> {
     // C `main` to `bwrap_main` so a thin Rust-free wrapper can provide the real
     // entry point (mirrors Codex's `-Dmain=bwrap_main`).
     let mut build = cc::Build::new();
+    // bwrap is an embedded helper linked by hand below, which passes no
+    // compile flags. Newer cc adds `-fsanitize=address` when rustc is
+    // instrumented (CARGO_CFG_SANITIZE, set under cargo-fuzz), which would need
+    // the ASan runtime at that link. The helper must not be instrumented.
+    build.flag_if_supported("-fno-sanitize=address");
     build
         .file(src_dir.join("bubblewrap.c"))
         .file(src_dir.join("bind-mount.c"))
@@ -104,6 +109,7 @@ fn try_build_bwrap() -> Result<(), String> {
     .map_err(|err| format!("failed to write {}: {err}", wrapper.display()))?;
 
     let mut wrapper_build = cc::Build::new();
+    wrapper_build.flag_if_supported("-fno-sanitize=address");
     wrapper_build
         .file(&wrapper)
         .include(&out_dir)
