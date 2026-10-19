@@ -10,7 +10,7 @@ use tokio::runtime::{Handle, RuntimeFlavor};
 use crate::error::AegisError;
 use crate::explanation::CommandExplanation;
 use crate::explanation::formatter::{CommandExplanationExt, build_outcome_explanation};
-use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot, SnapshotLedger};
+use aegis_audit::{AuditEntry, AuditError, AuditLogger, AuditSnapshot, SnapshotLedger};
 use aegis_config::{AegisConfig, Allowlist, AllowlistContext, AllowlistMatch, Blocklist};
 use aegis_scanner::Scanner;
 use aegis_snapshot::{
@@ -685,6 +685,16 @@ impl RuntimeContext {
     }
 }
 
+/// A fixed, path-free label for an [`AuditError`], safe for a `tracing` field.
+fn audit_error_category(error: &AuditError) -> &'static str {
+    match error {
+        AuditError::InsecureAuditArtifact { .. } => "insecure audit artifact",
+        AuditError::Io(_) | AuditError::WriteFailed { .. } => "audit log i/o failure",
+        AuditError::Parse { .. } => "unreadable audit log line",
+        _ => "audit log error",
+    }
+}
+
 async fn automatic_prune(config: AegisConfig) -> Result<(), AegisError> {
     let registry_config = SnapshotRegistryConfig::for_rollback_from_config(&config)?;
     let registry = SnapshotRegistry::from_runtime_config(&registry_config);
@@ -694,7 +704,12 @@ async fn automatic_prune(config: AegisConfig) -> Result<(), AegisError> {
     let ledger = match SnapshotLedger::load(&logger) {
         Ok(ledger) => ledger,
         Err(error) => {
-            tracing::warn!(%error, "automatic snapshot prune skipped: the audit log could not be read");
+            // The error's Display carries the audit path, which may come from
+            // AEGIS_AUDIT_PATH; log only a fixed category.
+            tracing::warn!(
+                reason = audit_error_category(&error),
+                "automatic snapshot prune skipped: the audit log could not be read"
+            );
             return Ok(());
         }
     };

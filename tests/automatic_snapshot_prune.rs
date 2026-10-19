@@ -348,3 +348,50 @@ fn sandboxed_shell_automatic_prune_uses_the_same_git_retention_policy() {
 
     assert_auto_pruned_old_snapshot(home.path(), &repo, &old_hash, &old_id);
 }
+
+#[test]
+fn unreadable_ledger_diagnostic_does_not_leak_the_audit_path() {
+    let home = TempDir::new().unwrap();
+    let repo = home.path().join("repo");
+    fs::create_dir(&repo).unwrap();
+    init_git_repo(&repo);
+    let repo = repo.canonicalize().unwrap();
+    write_config(home.path(), &repo, true, false);
+
+    let marker = "audit-path-marker-7f3a";
+    let audit_dir = home.path().join(marker);
+    fs::create_dir(&audit_dir).unwrap();
+    let audit_path = audit_dir.join("audit.jsonl");
+    let valid = serde_json::json!({
+        "timestamp": "2020-01-01T00:00:00Z",
+        "sequence": 1,
+        "command": "rm -rf src",
+        "risk": "Danger",
+        "matched_patterns": [],
+        "pattern_ids": [],
+        "decision": "Approved",
+        "snapshots": [],
+    });
+    fs::write(&audit_path, format!("{valid}\nnot json\n{valid}\n")).unwrap();
+
+    let output = Command::new(aegis_bin())
+        .env("AEGIS_REAL_SHELL", "/bin/sh")
+        .env("AEGIS_CI", "0")
+        .env("AEGIS_LOG", "warn")
+        .env("AEGIS_AUDIT_PATH", &audit_path)
+        .env("HOME", home.path())
+        .current_dir(&repo)
+        .args(["-c", TEST_COMMAND])
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("automatic snapshot prune skipped"),
+        "the skip diagnostic must fire:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains(marker),
+        "the diagnostic must not carry AEGIS_AUDIT_PATH:\n{stderr}"
+    );
+}
