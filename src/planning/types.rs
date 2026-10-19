@@ -20,7 +20,7 @@ pub enum PlanningOutcome {
 /// Canonical typed plan for one intercepted command.
 pub struct InterceptionPlan {
     assessment: Box<Assessment>,
-    decision_context: DecisionContext,
+    decision_context: Box<DecisionContext>,
     policy_decision: PolicyDecision,
     snapshot_plan: SnapshotPlan,
     execution_disposition: ExecutionDisposition,
@@ -67,7 +67,7 @@ impl InterceptionPlan {
 
         Self {
             assessment: Box::new(assessment),
-            decision_context,
+            decision_context: Box::new(decision_context),
             policy_decision,
             snapshot_plan,
             execution_disposition,
