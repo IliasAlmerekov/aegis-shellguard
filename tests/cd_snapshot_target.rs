@@ -169,7 +169,21 @@ fn a_variable_cd_path_is_disclosed_and_never_runs_unattended() {
 fn relative_cd_with_cdpath_set_halts_an_unattended_run() {
     let world = world("Protect");
 
-    assert_halted(&world, "cd ../plain && rm -rf y", Some("/tmp"));
+    assert_halted(&world, "cd plain && rm -rf y", Some("/tmp"));
+}
+
+#[test]
+fn dot_relative_cd_with_cdpath_set_does_not_halt() {
+    let world = world("Protect");
+
+    let output = run_allowlisted(&world, "cd ../plain && rm -rf y", Some("/tmp"));
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr=\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]

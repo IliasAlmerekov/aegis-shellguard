@@ -15,7 +15,7 @@ use crate::planning::types::{CwdState, PlanningOutcome, SnapshotPlan};
 use crate::planning::{PlanningRequest, plan_with_context};
 use crate::runtime::RuntimeContext;
 
-fn git_init(path: &Path) {
+pub(super) fn git_init(path: &Path) {
     std::fs::create_dir_all(path).unwrap();
     let status = Command::new("git")
         .arg("init")
@@ -29,14 +29,14 @@ fn git_init(path: &Path) {
     assert!(status.success());
 }
 
-struct Fixture {
+pub(super) struct Fixture {
     _root: TempDir,
-    cwd: PathBuf,
-    a: PathBuf,
-    b: PathBuf,
+    pub(super) cwd: PathBuf,
+    pub(super) a: PathBuf,
+    pub(super) b: PathBuf,
 }
 
-fn fixture() -> Fixture {
+pub(super) fn fixture() -> Fixture {
     let root = TempDir::new().unwrap();
     let base = root.path().canonicalize().unwrap();
     let cwd = base.join("cwd");
@@ -53,7 +53,7 @@ fn fixture() -> Fixture {
     }
 }
 
-fn plan_for(fx: &Fixture, command: &str, cwd_state: CwdState) -> SnapshotPlan {
+pub(super) fn plan_for(fx: &Fixture, command: &str, cwd_state: CwdState) -> SnapshotPlan {
     plan_with_git(fx, command, cwd_state, true)
 }
 
@@ -116,7 +116,7 @@ fn required(plan: SnapshotPlan) -> (Vec<&'static str>, crate::planning::GitTarge
     }
 }
 
-fn resolved(path: &Path) -> GitTarget {
+pub(super) fn resolved(path: &Path) -> GitTarget {
     GitTarget::Resolved(path.to_path_buf())
 }
 
@@ -422,11 +422,14 @@ fn git_snapshot_applicability_follows_whether_the_directory_is_a_repository() {
 
 // #525: the Snapshot follows the directory a stage runs in after `cd` steps.
 
-fn cd_plan(fx: &Fixture, command: &str) -> (Vec<&'static str>, crate::planning::GitTargetPlan) {
+pub(super) fn cd_plan(
+    fx: &Fixture,
+    command: &str,
+) -> (Vec<&'static str>, crate::planning::GitTargetPlan) {
     required(plan_for(fx, command, CwdState::Resolved(fx.cwd.clone())))
 }
 
-fn unresolved(reason: GitTargetUnresolved) -> GitTarget {
+pub(super) fn unresolved(reason: GitTargetUnresolved) -> GitTarget {
     GitTarget::Unresolved(reason)
 }
 

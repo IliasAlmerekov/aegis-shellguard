@@ -262,6 +262,12 @@ impl GitTargetPlan {
         }
     }
 
+    /// Drop the resolved target `path`: the process cwd pass already covers it.
+    pub fn drop_resolved(&mut self, path: &Path) {
+        self.targets
+            .retain(|target| !matches!(target, GitTarget::Resolved(p) if p == path));
+    }
+
     /// Add a resolved target unless it is already planned.
     pub fn push_resolved(&mut self, path: PathBuf) {
         let target = GitTarget::Resolved(path);
@@ -282,7 +288,19 @@ enum StageOutcome {
 fn resolve_stage_in_dir(stage: &DangerStage, cwd: &CwdState) -> StageOutcome {
     let base = match resolve_dir(&stage.dir, cwd) {
         Ok(base) => base,
-        Err(reason) => return StageOutcome::Target(GitTarget::Unresolved(reason)),
+        Err(reason) => {
+            // A git stage whose options are all absolute names its tree
+            // whatever directory it started in (`cd "$X" && git -C /repo ...`).
+            // Try it with no base directory; keep the `cd` reason when the
+            // options still need one.
+            if stage.is_git
+                && let target @ GitTarget::Resolved(_) =
+                    resolve_stage(&stage.target, &CwdState::Unavailable)
+            {
+                return StageOutcome::Target(target);
+            }
+            return StageOutcome::Target(GitTarget::Unresolved(reason));
+        }
     };
     match (&stage.target, stage.is_git, &base) {
         (DangerStageTarget::Plain, false, CwdState::Resolved(path)) => {
