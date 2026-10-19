@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Fixed: The fuzz CI job builds again: the vendored bubblewrap helper in `aegis-sandbox` is compiled with `-fno-sanitize=address`, because newer `cc` adds `-fsanitize=address` under cargo-fuzz and the hand-written link of `bwrap` has no ASan runtime.
 - Fixed: The git Snapshot of a `Danger` git command now covers the working tree git acts on (`-C`, `--work-tree`, `--git-dir`), not the process cwd. An unresolved Git target is disclosed in the dialog and audit entry and halts an unattended run; no cwd Snapshot stands in for it. Ambient `GIT_DIR`/`GIT_WORK_TREE` and `--bare` leave the target unresolved, a `-C` subdirectory resolves to the repository top level, and `Mode::Audit` still takes no Snapshot. (#471, ADR-048)
 - Added: The release workflow installs the published Homebrew formula and npm package on macOS arm64, macOS Intel, and Linux after every stable tag, and checks the printed version. (#412)
 - Added: `.semgrep/review-finding-ids.yml` rejects pipeline review finding ids such as `R1-1` in `src/`, `crates/`, `tests/` and `scripts/`, and the agent pipeline gate runs it. CONVENTION.md gains five rules from the #500 retro: installer scope, Hook off-switch parties in the ADR, script tests that run the script, release CI edits that are never committed, and one PR per unrelated fix (#500).
