@@ -322,7 +322,9 @@ fn resolve_dir(dir: &StageDir, cwd: &CwdState) -> Result<CwdState, GitTargetUnre
         StageDir::Unresolved(reason) => Err(GitTargetUnresolved::Cd(*reason)),
         StageDir::Chain(steps) => {
             let mut current: Option<PathBuf> = match cwd {
-                CwdState::Resolved(path) => Some(path.clone()),
+                CwdState::Resolved(path) => {
+                    Some(start_dir(path, std::env::var_os("PWD").as_deref()))
+                }
                 CwdState::Unavailable => None,
             };
             for step in steps {
@@ -339,6 +341,31 @@ fn resolve_dir(dir: &StageDir, cwd: &CwdState) -> Result<CwdState, GitTargetUnre
     }
 }
 
+/// The directory the launched shell starts in. Bash keeps the logical `PWD` it
+/// inherits when that names the same directory as the physical cwd, so
+/// `cd ..` from a symlinked start folds the link name, not its target. A `PWD`
+/// that is relative, holds `.` or `..`, or names another directory is ignored,
+/// as Bash ignores it.
+fn start_dir(physical: &Path, pwd: Option<&std::ffi::OsStr>) -> PathBuf {
+    let Some(pwd) = pwd else {
+        return physical.to_path_buf();
+    };
+    // `Path::components` drops a `.` in the middle, so read the raw text.
+    let text = pwd.to_string_lossy();
+    let plain = text.starts_with('/') && text.split('/').all(|part| part != "." && part != "..");
+    let pwd = Path::new(pwd);
+    let same = plain
+        && match (pwd.canonicalize(), physical.canonicalize()) {
+            (Ok(logical), Ok(physical)) => logical == physical,
+            _ => false,
+        };
+    if same {
+        pwd.to_path_buf()
+    } else {
+        physical.to_path_buf()
+    }
+}
+
 /// Drop `.` and fold `..` into the path text, without touching the
 /// filesystem: `cd link && cd ..` goes to the parent of `link`, not to the
 /// parent of what `link` points at.
@@ -348,11 +375,16 @@ fn normalize_lexically(path: &Path) -> PathBuf {
     for component in path.components() {
         match component {
             Component::CurDir => {}
-            Component::ParentDir => {
-                if !out.pop() {
-                    out.push("..");
+            Component::ParentDir => match out.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    out.pop();
                 }
-            }
+                // `..` at the root stays at the root.
+                Some(Component::RootDir | Component::Prefix(_)) => {}
+                // A leading `..` of a relative path cannot be folded, and the
+                // next `..` must not cancel it.
+                _ => out.push(".."),
+            },
             other => out.push(other),
         }
     }
@@ -466,5 +498,7 @@ fn resolve_args(args: &GitTargetArgs, cwd: &CwdState) -> GitTarget {
 
     GitTarget::Resolved(work_tree)
 }
+#[cfg(test)]
+mod lexical_tests;
 #[cfg(test)]
 mod tests;
