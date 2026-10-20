@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+## [0.7.1] (2026-10-20)
+
 - Fixed: The git Snapshot of a `Danger` command now follows a `cd` earlier in the command line (`cd ../other && rm -rf x`) instead of covering the process cwd. A `cd` Aegis cannot follow (`cd -`, `pushd`, a variable or glob path, `CDPATH`, a `cd` joined by `;` or `||`, or one hidden behind `eval`) is disclosed as an unresolved Git target and halts an unattended run; router cwd tracking is unchanged. (#525, ADR-050)
 - Fixed: `aegis-language` no longer depends on `aegis-parser`, restoring its leaf boundary. The bash adapter reads command words with its own reader, which a parity test holds to the tokenizer's rules, so `r\m`, `"rm"` and `$'\162m'` still read as `rm`. (ADR-022, ADR-051)
 - Security: Shell words are read the way bash reads them before classification. ANSI-C quoting (`$'...'`) and locale quoting (`$"..."`) are decoded, also inside double-quoted command substitution; a backslash inside double quotes stays unless it escapes `$`, backtick, `"`, `\` or newline; and a backslash-newline joins the word. Such spellings match the same rules, Snapshot plan, `[[rules]]` and nested-shell analysis as the plain command. A `[[block]]` entry also matches the command with quotes removed, while `[[allow]]` still matches only the command as written. An ANSI-C quoted word that does not close or does not decode to valid text is classified Warn (`SCAN-005`) and Effect-opaque, and routing stays as conservative as before for any ANSI-C quoting. (ADR-051)
