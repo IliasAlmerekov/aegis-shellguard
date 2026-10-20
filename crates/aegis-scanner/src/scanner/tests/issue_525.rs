@@ -427,6 +427,7 @@ fn a_cdpath_change_earlier_in_the_line_makes_a_later_relative_cd_unresolved() {
         "env CDPATH=/tmp true && cd project && rm -rf y",
         "(export CDPATH=/tmp) && cd project && rm -rf y",
         "export CDPATH=/tmp; cd project && rm -rf y",
+        "export CDP''ATH=/tmp && cd project && rm -rf y",
     ] {
         assert_eq!(
             dirs(&report(cmd)),
