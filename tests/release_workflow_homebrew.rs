@@ -357,3 +357,27 @@ fn homebrew_publication_should_reject_a_formula_url_outside_the_release_download
     let output = publish_formula(directory.path(), "0.7.2", &foreign);
     assert!(!output.status.success(), "{output:?}");
 }
+
+#[test]
+fn homebrew_publication_should_refuse_a_tap_whose_version_line_disagrees_with_its_urls() {
+    let skewed =
+        legacy_formula_fixture("0.7.1").replacen("version \"0.7.1\"", "version \"0.8.0\"", 1);
+    let directory = local_tap_with(&skewed);
+    let root = directory.path();
+    let remote = root.join("remote.git");
+    let published = tap_git(&remote, &["rev-parse", "main"]);
+
+    let output = publish_to_local_tap(root, "0.7.2");
+    assert!(!output.status.success(), "{output:?}");
+    assert_eq!(tap_git(&remote, &["rev-parse", "main"]), published);
+}
+
+#[test]
+fn homebrew_publication_should_reject_a_generated_formula_whose_version_line_disagrees() {
+    let skewed =
+        legacy_formula_fixture("0.7.2").replacen("version \"0.7.2\"", "version \"0.9.0\"", 1);
+    let directory = local_tap("0.7.0");
+
+    let output = publish_formula(directory.path(), "0.7.2", &skewed);
+    assert!(!output.status.success(), "{output:?}");
+}
