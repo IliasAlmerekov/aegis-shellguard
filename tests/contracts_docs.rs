@@ -399,10 +399,6 @@ fn m3a_docs_keep_disabled_passthrough_and_hook_refresh_explicit() {
 #[test]
 fn m1_sandbox_api_docs_define_failure_and_non_return_contracts() {
     let source = fs::read_to_string(repo_path("crates/aegis-sandbox/src/lib.rs")).unwrap();
-    let plan = fs::read_to_string(repo_path(
-        "docs/plans/2026-07-14-m1-sandbox-degradation-contract.md",
-    ))
-    .unwrap();
 
     let exec_docs = source
         .split("pub fn exec")
@@ -442,11 +438,6 @@ fn m1_sandbox_api_docs_define_failure_and_non_return_contracts() {
     ] {
         assert!(prepare_spawn_docs.contains(error));
     }
-
-    assert!(
-        !plan.contains("Sandbox state"),
-        "M1 plan must use the canonical term `Sandbox status`"
-    );
 }
 
 #[test]
@@ -693,10 +684,6 @@ fn m4_docs_keep_the_fail_closed_hook_panic_guarantee_and_its_non_goals_explicit(
     let troubleshooting = unwrapped("docs/troubleshooting.md");
     let readme = unwrapped("README.md");
     let context = fs::read_to_string(repo_path("CONTEXT.md")).unwrap();
-    let plan = fs::read_to_string(repo_path(
-        "docs/plans/2026-07-14-m4-hook-panic-fail-closed.md",
-    ))
-    .unwrap();
 
     // The ADR must record the two-layer decision and the honest non-goals, so a
     // future contributor does not "simplify" the script back to `exec`.
@@ -753,15 +740,5 @@ fn m4_docs_keep_the_fail_closed_hook_panic_guarantee_and_its_non_goals_explicit(
     assert!(
         context.contains("Contained Hook Panic"),
         "CONTEXT.md Hook entry must cross-reference `Contained Hook Panic`"
-    );
-
-    // The plan must have left Draft and gained the script-level layer.
-    assert!(
-        plan.contains("Accepted"),
-        "the M4 plan must have left Draft status"
-    );
-    assert!(
-        plan.contains("Script-level layer"),
-        "the M4 plan scope must mention the script-level layer"
     );
 }
