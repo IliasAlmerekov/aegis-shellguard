@@ -595,17 +595,25 @@ that knows how to capture and restore state for its domain. Each successful run 
 _Avoid_: snapshotter, driver, backend
 
 **Git target**:
-The working tree a git command acts on once its global options (`-C`,
-`--work-tree`, `--git-dir`) are applied; the git `Snapshot plugin` captures and
-restores this tree. It is unresolved when Aegis cannot determine it statically
-(a variable, glob, brace expansion or `~` in a path, a missing path, a
-directory that is not a git repository, a `--git-dir` that is not
-`<work tree>/.git`, a `--work-tree` without `--git-dir`, `GIT_DIR=` or
-`GIT_WORK_TREE=` in the stage's env prefix, a launcher that changes the
-directory such as `env -C`, an unlisted option read two ways); no Snapshot
-covers an unresolved Git target and the dialog and audit entry say so
-(ADR-048).
+The working tree a Danger stage changes once the `cd` steps before it and its
+git global options (`-C`, `--work-tree`, `--git-dir`) are applied; the git
+`Snapshot plugin` captures and restores this tree. It is unresolved when Aegis
+cannot determine it statically (a variable, glob, brace expansion or `~` in a
+path, a missing path, a directory that is not a git repository, a `--git-dir`
+that is not `<work tree>/.git`, a `--work-tree` without `--git-dir`, `GIT_DIR=`
+or `GIT_WORK_TREE=` in the stage's env prefix, a launcher that changes the
+directory such as `env -C`, an unlisted option read two ways, or a `cd` that is
+`cd -`, `pushd`, takes an option, may not have run, hides behind `eval` or
+`source`, or meets a set `CDPATH`); no Snapshot covers an unresolved Git target
+and the dialog and audit entry say so (ADR-048, ADR-050).
 _Avoid_: Snapshot target (reserved for database plugins and the ratchet)
+
+**Opportunistic directory**:
+The directory a non-git Danger stage runs in after a `cd`. It gets a git Snapshot
+only if it lies inside a repository the git provider covers; anywhere else the
+stage behaves as if run there directly, with no Snapshot and no disclosure
+(ADR-050). A git stage has no such leniency: it needs a Git target.
+_Avoid_: soft directory
 
 **Snapshot target**:
 The state a database `Snapshot plugin` captures and a Rollback restores into: a

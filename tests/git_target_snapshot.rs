@@ -243,3 +243,64 @@ fn an_unresolved_target_takes_no_substitute_snapshot_of_the_cwd() {
 
     assert!(ids.is_empty());
 }
+
+// #525: the Snapshot follows a `cd` earlier in the command line.
+
+#[test]
+fn cd_snapshot_restores_the_other_repository_and_leaves_the_cwd_alone() {
+    let rt = runtime();
+    let world = world();
+    dirty(&world.a);
+
+    let ids = snapshot(&rt, &world.cwd, "cd ../a && rm -rf x");
+    assert_eq!(ids.len(), 1);
+    destroy(&world.a);
+    rollback(&rt, &ids[0]);
+
+    assert_restored(&world.a);
+    assert_untouched(&world.cwd);
+}
+
+#[test]
+fn cd_then_git_dash_c_snapshots_the_nested_repository() {
+    let rt = runtime();
+    let world = world();
+    let inner = world.a.join("inner");
+    repo(&inner);
+    dirty(&inner);
+
+    let ids = snapshot(
+        &rt,
+        &world.cwd,
+        "cd ../a && git -C inner filter-branch --index-filter true",
+    );
+    assert_eq!(ids.len(), 1);
+    destroy(&inner);
+    rollback(&rt, &ids[0]);
+
+    assert_restored(&inner);
+}
+
+#[test]
+fn two_cd_steps_snapshot_both_repositories() {
+    let rt = runtime();
+    let world = world();
+    dirty(&world.a);
+    dirty(&world.b);
+
+    let ids = snapshot(
+        &rt,
+        &world.cwd,
+        "cd ../a && rm -rf x && cd ../b && rm -rf y",
+    );
+    assert_eq!(ids.len(), 2);
+    destroy(&world.a);
+    destroy(&world.b);
+    for id in &ids {
+        rollback(&rt, id);
+    }
+
+    assert_restored(&world.a);
+    assert_restored(&world.b);
+    assert_untouched(&world.cwd);
+}

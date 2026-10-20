@@ -108,13 +108,13 @@ fn git_stage_report_finds_a_git_stage_after_an_escaped_ansi_c_quote() {
     let s = scanner();
     let cmd = r"echo $'\'' ; git -C $'oth\x65r' filter-branch --index-filter true ; echo $'\''";
     let assessment = s.assess(cmd);
-    let report = s.git_stage_report_with_env(cmd, &assessment, false);
+    let report = s.git_stage_report_with(cmd, &assessment, crate::scanner::AmbientEnv::default());
 
     let targets: Vec<_> = report
         .redirected
         .iter()
         .map(|stage| match &stage.target {
-            crate::scanner::GitStageTarget::Options(readings) => readings
+            crate::scanner::DangerStageTarget::Options(readings) => readings
                 .iter()
                 .map(|args| args.dash_c.clone())
                 .collect::<Vec<_>>(),

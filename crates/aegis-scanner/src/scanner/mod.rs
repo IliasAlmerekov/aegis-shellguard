@@ -1,6 +1,7 @@
 //! Scanner: assess(cmd) -> RiskLevel
 
 mod assessment;
+mod cd_walk;
 mod effect_opaque;
 mod git_stages;
 mod highlighting;
@@ -27,7 +28,10 @@ use aegis_types::{
 };
 
 pub use crate::patterns::PrefixRule;
-pub use git_stages::{GitStage, GitStageReport, GitStageTarget};
+pub use cd_walk::{CdUnresolved, StageDir, path_is_dynamic};
+#[cfg(test)]
+pub(crate) use git_stages::AmbientEnv;
+pub use git_stages::{DangerStage, DangerStageTarget, GitStageReport};
 
 /// First-pass scanner backed by an Aho-Corasick automaton.
 ///

@@ -1,5 +1,5 @@
 use super::*;
-use crate::scanner::{GitStageReport, GitStageTarget};
+use crate::scanner::{AmbientEnv, DangerStageTarget, GitStageReport};
 use aegis_parser::GitTargetArgs;
 
 // #471: the git Snapshot must cover the working tree git acts on. The scanner
@@ -10,7 +10,7 @@ use aegis_parser::GitTargetArgs;
 fn report(cmd: &str) -> GitStageReport {
     let scanner = scanner();
     let assessment = scanner.assess(cmd);
-    scanner.git_stage_report_with_env(cmd, &assessment, false)
+    scanner.git_stage_report_with(cmd, &assessment, AmbientEnv::default())
 }
 
 fn args(dash_c: &[&str], work_tree: Option<&str>, git_dir: Option<&str>) -> GitTargetArgs {
@@ -27,7 +27,7 @@ fn only_options(report: &GitStageReport) -> Vec<Vec<GitTargetArgs>> {
         .redirected
         .iter()
         .map(|stage| match &stage.target {
-            GitStageTarget::Options(readings) => readings.clone(),
+            DangerStageTarget::Options(readings) => readings.clone(),
             other => panic!("expected options, got {other:?}"),
         })
         .collect()
@@ -124,7 +124,7 @@ fn environment_redirect_in_the_prefix_is_flagged_even_without_options() {
     assert_eq!(report.redirected.len(), 1);
     assert_eq!(
         report.redirected[0].target,
-        GitStageTarget::EnvironmentRedirect
+        DangerStageTarget::EnvironmentRedirect
     );
 }
 
@@ -172,7 +172,7 @@ fn launcher_that_changes_directory_leaves_the_target_unresolved() {
         assert_eq!(report.redirected.len(), 1, "{cmd}");
         assert_eq!(
             report.redirected[0].target,
-            GitStageTarget::LauncherChangesDirectory,
+            DangerStageTarget::LauncherChangesDirectory,
             "{cmd}"
         );
     }
@@ -199,7 +199,7 @@ fn environment_redirect_deep_in_a_launcher_prefix_is_flagged() {
     assert_eq!(report.redirected.len(), 1);
     assert_eq!(
         report.redirected[0].target,
-        GitStageTarget::EnvironmentRedirect
+        DangerStageTarget::EnvironmentRedirect
     );
 }
 
@@ -217,7 +217,15 @@ fn ambient_git_dir_redirects_a_plain_danger_stage() {
     let scanner = scanner();
     let cmd = "git filter-branch --index-filter true";
     let assessment = scanner.assess(cmd);
-    let report = scanner.git_stage_report_with_env(cmd, &assessment, true);
+    let report = scanner.git_stage_report_with(
+        cmd,
+        &assessment,
+        AmbientEnv {
+            git_env: true,
+            cdpath_set: false,
+            ..AmbientEnv::default()
+        },
+    );
 
     assert_eq!(
         report
@@ -225,7 +233,7 @@ fn ambient_git_dir_redirects_a_plain_danger_stage() {
             .iter()
             .map(|s| s.target.clone())
             .collect::<Vec<_>>(),
-        vec![GitStageTarget::EnvironmentRedirect]
+        vec![DangerStageTarget::EnvironmentRedirect]
     );
 }
 

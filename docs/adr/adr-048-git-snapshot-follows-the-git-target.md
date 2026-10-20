@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Accepted. ADR-050 extends the Git target to `cd` steps earlier in the command line.
 
 ## Context
 
@@ -90,6 +90,6 @@ that was not strictly needed. The extra Snapshot is harmless.
 `git reset --hard` (GIT-001) is `Warn`, so policy requires no Snapshot for it,
 with or without `-C`. This ADR changes no risk level.
 
-Out of scope: targeting after `cd`, a `--git-dir` outside `<work tree>/.git`,
+Out of scope: a `--git-dir` outside `<work tree>/.git`,
 redirecting non-git plugins, and the general `.` fallback for an unavailable
 cwd (#220).
