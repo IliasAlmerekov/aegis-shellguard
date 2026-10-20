@@ -11,6 +11,7 @@
 // every item inside is `pub(crate)`, so the module is `pub(crate)` too —
 // it is not part of the crate's public API surface (boundary test).
 pub mod bash;
+pub mod bash_word;
 pub(crate) mod family;
 pub mod javascript;
 pub mod python;

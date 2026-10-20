@@ -106,7 +106,6 @@ dependencies = [
 name = "aegis-language"
 version = "0.7.0"
 dependencies = [
- "aegis-parser",
  "criterion",
  "thiserror",
  "tree-sitter",

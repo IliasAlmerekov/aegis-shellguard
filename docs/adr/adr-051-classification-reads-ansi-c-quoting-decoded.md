@@ -29,7 +29,10 @@ unclaimed stage with unquoted `$'` for the same reason.
    well: inside double quotes a backslash goes only before `$`, backtick,
    `"`, `\` and newline (`"r\m"` stays `r\m`), and a backslash-newline outside
    single quotes is a line continuation that joins the word (`r\<newline>m`
-   is `rm`).
+   is `rm`). The bash adapter in `aegis-language` reads command words by the
+   same rules through its own copy, `languages::bash_word::shell_word`, since
+   that crate must stay a leaf (ADR-022 §8); `tests/bash_word_parity.rs` keeps
+   the two readers in step.
 2. `aegis_parser::canonical_ansi_c_quoting` rewrites every unquoted
    `$'...'` piece as the plain single-quoted word it decodes to (`'\''` for an
    embedded quote). `Scanner::assess`, `Scanner::git_stage_report` and
