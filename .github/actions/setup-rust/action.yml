@@ -31,7 +31,7 @@ runs:
   using: "composite"
   steps:
     - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master (Add 1.94.1 patch release)
+      uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master (Add 1.94.1 patch release)
       with:
         toolchain: ${{ inputs.toolchain }}
         components: ${{ inputs.components }}
