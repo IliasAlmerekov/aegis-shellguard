@@ -321,7 +321,7 @@ formula is generated deterministically by `scripts/update-homebrew-formula.sh`.
    `/tmp/aegis.rb` and `/tmp/homebrew-aegis/Formula/aegis.rb`:
 
    ```bash
-   grep -E '^\s*url "' /tmp/aegis.rb /tmp/homebrew-aegis/Formula/aegis.rb
+   grep -E '^[[:space:]]*url "' /tmp/aegis.rb /tmp/homebrew-aegis/Formula/aegis.rb
    ```
 
    Every URL must point under
