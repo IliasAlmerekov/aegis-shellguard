@@ -51,11 +51,25 @@ Which `cd` forms resolve:
   backtick and a backslash still expand, so `cd "~/x"` resolves to a directory
   named `~` and `cd "x$y"` stays unresolved. The `-C` values of ADR-048 reach
   planning with their quotes already removed, so they stay conservative.
+- A redirection written against an operand (`cd ../x>log`) is syntax, not part
+  of the path. An unquoted parenthesis in an operand (`@(x)`, `+(x)`, `!(x)`)
+  is an extended glob and makes the path dynamic.
+- The chain starts from the directory Bash starts in. When the inherited `PWD`
+  is absolute, has no `.` or `..` part and names the same directory as the
+  physical cwd, the chain folds from `PWD`, so `cd ..` from a symlinked start
+  leaves the link's parent, as Bash does. Any other `PWD` is ignored. A
+  leading `..` of a relative chain is kept, so `../../repo` does not shrink to
+  `repo`.
 - A command substitution in a `cd` operand (`cd "$(rm -rf x; pwd)"`) runs
   before the `cd` takes effect, so what it holds belongs to the directory in
   effect before that `cd`. If it holds a `cd`, `eval`, `source` or `.`, that
   directory is unresolved.
-- Unresolved: any `cd` after a stage that may turn on Bash's physical mode
+- Unresolved: every `cd` when Aegis's own environment holds an exported `cd`
+  function (`BASH_FUNC_cd%%`), because Bash runs the function and not the
+  builtin. `command -p cd` and `builtin cd` hide a `cd` behind a wrapper, like
+  `eval`.
+- Unresolved: any `cd` when Aegis's own environment has `SHELLOPTS` with
+  `physical`, and any `cd` after a stage that may turn on Bash's physical mode
   (`set -P`, `set -eP`, `set -o physical`, a `set` word Aegis cannot read, or
   any mention of `SHELLOPTS`). In physical mode `..` follows symlinks, and the
   lexical walk would name the wrong directory. A `cd` before that stage keeps
@@ -80,8 +94,16 @@ Which separators carry the directory forward:
   makes every later stage unresolved: if the `cd` fails, the later stage runs
   in the old directory, and Aegis does not snapshot both (ADR-048).
 - A `cd` that is a pipeline stage runs in a subshell and changes nothing after
-  it.
+  it. The exception is the last stage once Bash's `lastpipe` may be on (a stage
+  names `lastpipe` or `BASHOPTS`, or the environment's `BASHOPTS` holds it):
+  that stage runs in the current shell, so its `cd` applies.
 - A `cd` inside a `( ... )` group applies inside the group only.
+
+A Danger match that only the language-aware analysis adds (`python3 -c
+'shutil.rmtree(...)'`) has no stage in the scanner's token walk. After a `cd`
+it is attributed to every stage a `cd` moved, and also to the process cwd when
+a stage still runs there. This takes more Snapshots than strictly needed and
+never fewer.
 
 A structural match on a whole pipeline (`PIPE-*`, or a pattern that reads the
 pipeline text such as `curl ... | sh`) belongs to the directory the pipeline
@@ -107,7 +129,7 @@ Directories that are not a repository, or do not exist:
   under ADR-048.
 - A non-git stage that a `cd` moved and that sits behind a launcher which
   changes the directory again (`env -C`, `env --chdir`, `sudo -D`,
-  `sudo --chdir`), or behind one Aegis cannot map, is an unresolved target, as
+  `sudo --chdir`, `sudo -i`, `sudo --login`), or behind one Aegis cannot map, is an unresolved target, as
   such a git stage is under ADR-048. Without a `cd`, such a stage keeps its
   pre-#525 plan.
 - A git stage after an unresolved `cd` whose options are all absolute
@@ -152,6 +174,12 @@ segmentation. Constructs it cannot place (`{ ...; }` groups, `if`/`for` bodies)
 pass through their separators, so a `cd` inside one degrades to unresolved
 rather than guessing. That can add a halt for a harmless command, never a wrong
 Snapshot silently.
+
+Known gaps, tracked as follow-ups: zsh-only forms (a pipeline's last stage
+running in the current shell, the `chdir` builtin, `cd +n` directory-stack
+operands), a path that an earlier stage of the same command replaces (`ln -sfn
+B link && cd link`), and the `set -P` detection reading a `set` word that is
+only an argument of another command.
 
 Out of scope: changing router `CwdState`, making SQLite or any other non-git
 provider follow the directory (a separate issue tracks the SQLite relative-path
