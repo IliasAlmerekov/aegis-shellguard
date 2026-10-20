@@ -436,11 +436,19 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          # Read version declarations as data; never execute formula Ruby.
+          # Read the version from the release download URLs as data; never
+          # execute formula Ruby. Homebrew scans its version from the URL, so a
+          # formula carries no explicit `version` line (brew audit rejects it).
+          # A tap formula published before that still has one; it must agree with
+          # its URLs, or the formula is refused.
           python3 - "$TAG" <<'PY'
           import pathlib
           import re
           import sys
+
+          RELEASE_URL = re.compile(
+              r'^https://github\.com/IliasAlmerekov/aegis-shellguard/releases/download/v([^/"\s]+)/[^"\s]+$'
+          )
 
           def stable_version(value):
               if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", value):
@@ -448,10 +456,25 @@ jobs:
               return tuple(int(component) for component in value.split("."))
 
           def formula_version(path):
-              versions = re.findall(r'^\s*version "([^"\n]+)"\s*$', path.read_text(), re.MULTILINE)
+              text = path.read_text()
+              urls = re.findall(r'^\s*url "([^"\n]*)"', text, re.MULTILINE)
+              if not urls:
+                  sys.exit(f"expected release download URLs in {path}")
+              versions = set()
+              for url in urls:
+                  match = RELEASE_URL.match(url)
+                  if match is None:
+                      sys.exit(f"unexpected URL in {path}: {url!r}")
+                  versions.add(match.group(1))
               if len(versions) != 1:
-                  sys.exit(f"expected one version declaration in {path}")
-              return stable_version(versions[0])
+                  sys.exit(f"URLs in {path} disagree on the version: {sorted(versions)}")
+              url_version = versions.pop()
+              for declared in re.findall(r'^\s*version "([^"\n]*)"', text, re.MULTILINE):
+                  if declared != url_version:
+                      sys.exit(
+                          f"version {declared!r} in {path} disagrees with its URLs ({url_version!r})"
+                      )
+              return stable_version(url_version)
 
           tag = sys.argv[1]
           if not tag.startswith("v"):

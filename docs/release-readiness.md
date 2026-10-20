@@ -317,12 +317,23 @@ formula is generated deterministically by `scripts/update-homebrew-formula.sh`.
    git clone git@github.com:IliasAlmerekov/homebrew-aegis.git /tmp/homebrew-aegis
    ```
 
-   Before copying, read the `version` declarations in `/tmp/aegis.rb` and
-   `/tmp/homebrew-aegis/Formula/aegis.rb`. The generated version must match the
-   selected tag. Compare major, minor, and patch as integers, not strings.
-   If the tap version is newer, stop and select the newest release. If a
-   declaration is missing or invalid in an existing formula, stop and resolve
-   it before publishing. A new tap may have no formula yet.
+   Before copying, read the release version from the release download URLs in
+   `/tmp/aegis.rb` and `/tmp/homebrew-aegis/Formula/aegis.rb`:
+
+   ```bash
+   grep -E '^[[:space:]]*url "' /tmp/aegis.rb /tmp/homebrew-aegis/Formula/aegis.rb
+   ```
+
+   Every URL must point under
+   `https://github.com/IliasAlmerekov/aegis-shellguard/releases/download/vX.Y.Z/`
+   with one `X.Y.Z` per file. The generated formula carries no `version` line, and
+   its URL version must match the selected tag. Compare major, minor, and patch
+   as integers, not strings. If the tap version is newer, stop and select the
+   newest release. If an existing formula has a URL outside the release
+   downloads, URLs that disagree, or a version that is not a stable `X.Y.Z`,
+   stop and resolve it before publishing. An older tap formula may still carry
+   a `version` line; it must equal its URL version, otherwise stop. A new tap
+   may have no formula yet.
 
    Then lay out the formula:
 

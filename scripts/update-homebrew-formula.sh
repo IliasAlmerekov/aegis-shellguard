@@ -131,7 +131,6 @@ cat > "$out" <<EOF
 class Aegis < Formula
   desc "Heuristic shell guardrail for AI agent command execution"
   homepage "https://github.com/IliasAlmerekov/aegis-shellguard"
-  version "${version}"
   license "MIT"
 
   on_macos do
