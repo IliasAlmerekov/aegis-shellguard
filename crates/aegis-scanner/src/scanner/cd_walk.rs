@@ -11,7 +11,7 @@
 //! `cd -- <literal> &&`. Here a wrong answer only mis-aims a recovery point,
 //! which the disclosure rules of ADR-048 already cover.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use aegis_parser::ListSeparator;
 
@@ -94,21 +94,37 @@ pub(super) fn mentions_cd(targets: &[String]) -> bool {
     })
 }
 
+/// The stages and pipelines of a command, each with the directory it runs in.
+pub(super) struct Walk {
+    /// Every stage text, with the directory it runs in.
+    pub(super) stages: Vec<(String, StageDir)>,
+    /// Every multi-stage pipeline, as its stage texts, with the directory the
+    /// whole pipeline runs in. Pipeline-level (structural) Danger matches
+    /// belong to these, not to any single stage.
+    pub(super) pipelines: Vec<(Vec<String>, StageDir)>,
+}
+
 /// Split `cmd` into stage texts, each with the directory it runs in.
-pub(super) fn stage_dirs(cmd: &str, cdpath_set: bool) -> Vec<(String, StageDir)> {
+pub(super) fn stage_dirs(cmd: &str, cdpath_set: bool) -> Walk {
     let mut stages = Vec::new();
     let walker = Walker {
         cdpath_set: Cell::new(cdpath_set),
         physical: Cell::new(false),
+        pipelines: RefCell::new(Vec::new()),
     };
     walker.list(cmd, StageDir::Process, &mut stages, 0);
-    stages
+    Walk {
+        stages,
+        pipelines: walker.pipelines.into_inner(),
+    }
 }
 
 struct Walker {
     /// Whether an earlier stage may have turned on Bash's physical mode
     /// (`set -P`). Once on, it stays on.
     physical: Cell<bool>,
+    /// Multi-stage pipelines seen so far, with the directory each runs in.
+    pipelines: RefCell<Vec<(Vec<String>, StageDir)>>,
     /// Whether `CDPATH` may be set: in Aegis's own environment, or by an
     /// earlier stage of the command line. Once set, it stays set.
     cdpath_set: Cell<bool>,
@@ -127,6 +143,15 @@ impl Walker {
         let mut incoming: Option<ListSeparator> = None;
         for segment in aegis_parser::list_segments(cmd) {
             let single = segment.pipeline.segments.len() == 1;
+            if !single {
+                let stages = segment
+                    .pipeline
+                    .segments
+                    .iter()
+                    .map(|stage| stage.raw.trim().to_string())
+                    .collect();
+                self.pipelines.borrow_mut().push((stages, state.clone()));
+            }
             let mut next = state.clone();
             for stage in &segment.pipeline.segments {
                 let effect = self.stage(stage.raw.trim(), &state, incoming, out, depth);

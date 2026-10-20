@@ -15,7 +15,7 @@ use aegis_types::{Assessment, MatchResult, RiskLevel};
 
 use super::assessment::REGEX_SUPERSEDED_PREFIXES;
 use super::cd_walk::{StageDir, mentions_cd, stage_dirs};
-use super::{Scanner, recursive};
+use super::{Scanner, pipeline_semantics, recursive};
 
 /// Why a redirected git stage has no single option set to resolve.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +101,41 @@ impl StageEvidence {
     fn push_stage(&mut self, stage: DangerStage) {
         if !self.redirected.contains(&stage) {
             self.redirected.push(stage);
+        }
+    }
+
+    /// Attribute the structural `Danger` matches of one pipeline (its `stages`)
+    /// to the directory `dir` it runs in.
+    fn collect_pipeline(&mut self, scanner: &Scanner, stages: &[String], dir: &StageDir) {
+        let pipeline = stages.join(" | ");
+        let chains = aegis_parser::top_level_pipelines(&pipeline);
+        let mut matched = pipeline_semantics::semantic_pipeline_matches(&chains);
+        // Patterns that read the whole pipeline text (`curl ... | sh`) match
+        // no single stage either.
+        for stage in stages {
+            let tokens = aegis_parser::split_tokens(stage);
+            let refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
+            for slice in aegis_parser::effective_token_slices(&refs) {
+                matched.extend(scanner.full_scan(&pipeline, Some(slice.program)));
+            }
+        }
+        let ids: Vec<String> = matched
+            .into_iter()
+            .filter(|matched| matched.pattern.risk == RiskLevel::Danger)
+            .map(|matched| matched.pattern.id.to_string())
+            .collect();
+        if ids.is_empty() {
+            return;
+        }
+        if *dir == StageDir::Process {
+            self.plain_ids.extend(ids);
+        } else {
+            self.redirected_ids.extend(ids);
+            self.push_stage(DangerStage {
+                target: DangerStageTarget::Plain,
+                dir: dir.clone(),
+                is_git: false,
+            });
         }
     }
 
@@ -193,7 +228,8 @@ impl Scanner {
         if mentions_cd(&target_report.targets) {
             // #525: walk the command's list structure so each stage knows the
             // directory it runs in. Runs only when a `cd` is present.
-            for (stage, dir) in stage_dirs(cmd, ambient.cdpath_set) {
+            let walk = stage_dirs(cmd, ambient.cdpath_set);
+            for (stage, dir) in walk.stages {
                 let parsed = aegis_parser::Parser::parse(&stage);
                 let stage_report = recursive::scan_targets(&stage, &parsed);
                 if stage_report.limit_hit.is_some() {
@@ -203,6 +239,11 @@ impl Scanner {
                     };
                 }
                 evidence.collect(self, &stage, &stage_report.targets, &dir, ambient.git_env);
+            }
+            // The structural pipeline matches (`PIPE-*`) belong to the
+            // pipeline as a whole, so no single stage reproduces them.
+            for (pipeline, dir) in walk.pipelines {
+                evidence.collect_pipeline(self, &pipeline, &dir);
             }
         } else {
             evidence.collect(

@@ -83,6 +83,10 @@ Which separators carry the directory forward:
   it.
 - A `cd` inside a `( ... )` group applies inside the group only.
 
+A structural match on a whole pipeline (`PIPE-*`, or a pattern that reads the
+pipeline text such as `curl ... | sh`) belongs to the directory the pipeline
+runs in, because no single stage reproduces it.
+
 Several directories: every resolved directory gets its own git Snapshot,
 deduplicated by repository top level as in ADR-048. A stage in the process cwd
 still takes the cwd pass, and a moved stage whose repository is the process

