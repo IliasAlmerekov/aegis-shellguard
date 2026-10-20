@@ -335,7 +335,7 @@ This avoids the negation antipattern (saying "don't skip this step" activates sk
 
 ### When to Update These Docs
 
-- **AGENTS.md:** Update when the skill sequence changes (`~/.agents/ENGINEERING_GATES.md` is the source of truth)
+- **AGENTS.md:** Update when the skill sequence changes
 - **CLAUDE.md:** Update when project conventions change (architecture, error handling, performance rules, testing requirements)
 - **Both:** Point to environmental sources (CI jobs, RTK rules) rather than hardcoding
 
