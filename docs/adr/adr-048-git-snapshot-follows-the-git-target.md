@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. ADR-049 extends the Git target to `cd` steps earlier in the command line.
+Accepted. ADR-050 extends the Git target to `cd` steps earlier in the command line.
 
 ## Context
 

@@ -3,14 +3,9 @@
 use std::collections::{HashMap, HashSet};
 
 use time::OffsetDateTime;
-use time::format_description::well_known::Rfc3339;
 
 use aegis_config::PruneConfig;
-
-use crate::error::SnapshotError;
-use crate::paths::home_dir;
-
-type Result<T> = std::result::Result<T, SnapshotError>;
+use aegis_types::RecordedSnapshot;
 
 /// One snapshot record that may be eligible for pruning.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,7 +14,7 @@ pub struct PrunableRecord {
     pub plugin: String,
     /// Opaque snapshot identifier.
     pub snapshot_id: String,
-    /// Timestamp when the snapshot was recorded in the audit log.
+    /// Timestamp of the Audit log entry that created the snapshot.
     pub recorded_at: OffsetDateTime,
 }
 
@@ -61,7 +56,10 @@ impl RetentionPolicy {
 
     /// Apply this policy to a set of records and return the prune candidates.
     ///
-    /// Candidates preserve the original input order.
+    /// `records` must be newest first in Audit log order. The per-provider
+    /// count rule keeps the first `count` records of each provider in that
+    /// order and never consults timestamps, which feed only the age rule
+    /// (ADR-049). Candidates preserve the original input order.
     pub fn apply(&self, records: &[PrunableRecord], now: OffsetDateTime) -> Vec<PrunableRecord> {
         if self.max_count_per_provider.is_none() && self.max_age_days.is_none() {
             return Vec::new();
@@ -86,8 +84,7 @@ impl RetentionPolicy {
                     .or_default()
                     .push(record);
             }
-            for group in by_provider.values_mut() {
-                group.sort_by_key(|record| std::cmp::Reverse(record.recorded_at));
+            for group in by_provider.values() {
                 for record in group.iter().take(count) {
                     kept.insert((record.plugin.clone(), record.snapshot_id.clone()));
                 }
@@ -102,106 +99,19 @@ impl RetentionPolicy {
     }
 }
 
-#[derive(Debug, serde::Deserialize)]
-struct MinimalAuditSnapshot {
-    plugin: String,
-    snapshot_id: String,
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct MinimalAuditEntry {
-    timestamp: String,
-    decision: aegis_types::Decision,
-    command: String,
-    #[serde(default)]
-    snapshots: Vec<MinimalAuditSnapshot>,
-}
-
-/// Resolve the snapshot records that are still on record and have not been
-/// pruned, by reading the default audit log (`~/.aegis/audit.jsonl`).
+/// Turn the Snapshot ledger's live records into prune records, newest first
+/// in log order.
 ///
-/// Collects the latest recorded timestamp for each `(plugin, snapshot_id)` pair
-/// and removes any id that has a later `Decision::Pruned` entry. If the audit
-/// log is missing, the result is empty.
-pub(crate) fn resolve_prunable_records_from_default_audit_log() -> Result<Vec<PrunableRecord>> {
-    let Some(home) = home_dir() else {
-        return Ok(Vec::new());
-    };
-    let path = home.join(".aegis").join("audit.jsonl");
-
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-
-    let contents = std::fs::read_to_string(&path).map_err(SnapshotError::Io)?;
-    let mut latest: HashMap<(String, String), OffsetDateTime> = HashMap::new();
-    let mut pruned_pairs: HashSet<(String, String)> = HashSet::new();
-    let mut pruned_ids: HashSet<String> = HashSet::new();
-
-    for line in contents.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let entry: MinimalAuditEntry = match serde_json::from_str(line) {
-            Ok(entry) => entry,
-            Err(error) => {
-                tracing::warn!(%error, "skipping unparseable audit log line during prune");
-                continue;
-            }
-        };
-
-        if entry.decision == aegis_types::Decision::Pruned {
-            for snapshot in &entry.snapshots {
-                pruned_pairs.insert((snapshot.plugin.clone(), snapshot.snapshot_id.clone()));
-            }
-            if let Some(id) = snapshot_id_from_prune_command(&entry.command) {
-                pruned_ids.insert(id.to_string());
-            }
-            continue;
-        }
-
-        let recorded_at = match OffsetDateTime::parse(&entry.timestamp, &Rfc3339) {
-            Ok(ts) => ts,
-            Err(error) => {
-                tracing::warn!(%error, timestamp = %entry.timestamp, "skipping audit log line with invalid timestamp");
-                continue;
-            }
-        };
-
-        for snapshot in &entry.snapshots {
-            let key = (snapshot.plugin.clone(), snapshot.snapshot_id.clone());
-            match latest.get(&key) {
-                Some(previous) if *previous >= recorded_at => {}
-                _ => {
-                    latest.insert(key, recorded_at);
-                }
-            }
-        }
-    }
-
-    let mut records: Vec<PrunableRecord> = latest
-        .into_iter()
-        .filter(|((plugin, snapshot_id), _)| {
-            !pruned_pairs.contains(&(plugin.clone(), snapshot_id.clone()))
-                && !pruned_ids.contains(snapshot_id)
+/// The ledger lists records oldest first in log order; retention and the prune
+/// preview want the newest first.
+pub(crate) fn prunable_records_newest_first(records: &[RecordedSnapshot]) -> Vec<PrunableRecord> {
+    records
+        .iter()
+        .rev()
+        .map(|record| PrunableRecord {
+            plugin: record.plugin.clone(),
+            snapshot_id: record.snapshot_id.clone(),
+            recorded_at: OffsetDateTime::from(record.recorded_at),
         })
-        .map(|((plugin, snapshot_id), recorded_at)| PrunableRecord {
-            plugin,
-            snapshot_id,
-            recorded_at,
-        })
-        .collect();
-    records.sort_by_key(|record| std::cmp::Reverse(record.recorded_at));
-    Ok(records)
-}
-
-/// Extract a snapshot id from a prune audit entry's command field.
-///
-/// Prune records store the removed snapshot id as `aegis prune <snapshot_id>` in
-/// the `command` field when the `snapshots` array is empty.
-fn snapshot_id_from_prune_command(command: &str) -> Option<&str> {
-    const PRUNE_PREFIX: &str = "aegis prune ";
-    command
-        .strip_prefix(PRUNE_PREFIX)
-        .filter(|id| !id.is_empty())
+        .collect()
 }

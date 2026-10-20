@@ -605,14 +605,14 @@ or `GIT_WORK_TREE=` in the stage's env prefix, a launcher that changes the
 directory such as `env -C`, an unlisted option read two ways, or a `cd` that is
 `cd -`, `pushd`, takes an option, may not have run, hides behind `eval` or
 `source`, or meets a set `CDPATH`); no Snapshot covers an unresolved Git target
-and the dialog and audit entry say so (ADR-048, ADR-049).
+and the dialog and audit entry say so (ADR-048, ADR-050).
 _Avoid_: Snapshot target (reserved for database plugins and the ratchet)
 
 **Opportunistic directory**:
 The directory a non-git Danger stage runs in after a `cd`. It gets a git Snapshot
 only if it lies inside a repository the git provider covers; anywhere else the
 stage behaves as if run there directly, with no Snapshot and no disclosure
-(ADR-049). A git stage has no such leniency: it needs a Git target.
+(ADR-050). A git stage has no such leniency: it needs a Git target.
 _Avoid_: soft directory
 
 **Snapshot target**:
@@ -724,6 +724,11 @@ Restoring the state captured by a previous `Snapshot`, addressed by its
 `snapshot_id`. It restores captured state; it is not a general undo of the
 command that ran afterward.
 _Avoid_: undo, revert
+
+**Snapshot ledger**:
+The single reading of the `Audit log` that answers which `Snapshot`s exist, which
+were pruned, and which record a `snapshot_id` resolves to.
+_Avoid_: snapshot index, snapshot history
 
 **Audit log**:
 The append-only JSONL record at `~/.aegis/audit.jsonl`. One `AuditEntry` per line;

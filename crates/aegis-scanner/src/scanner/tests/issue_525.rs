@@ -463,7 +463,7 @@ fn a_literal_absolute_cd_after_an_unresolved_one_recovers_a_directory() {
         assert_eq!(
             dirs[0],
             if cmd.starts_with("cd x;") {
-                // Not joined by `&&`: keeps the ADR-049 rule.
+                // Not joined by `&&`: keeps the ADR-050 rule.
                 unresolved(CdUnresolved::MayNotRun)
             } else {
                 chain(&["/known/repo"])

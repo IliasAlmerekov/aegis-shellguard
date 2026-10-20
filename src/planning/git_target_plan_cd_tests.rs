@@ -1,4 +1,4 @@
-//! Planning tests for the Codex review of PR #529 (#525, ADR-049): the
+//! Planning tests for the Codex review of PR #529 (#525, ADR-050): the
 //! Snapshot plan after `cd` steps, where paths decide between a resolved
 //! target, an unresolved one and a duplicate of the process cwd pass.
 

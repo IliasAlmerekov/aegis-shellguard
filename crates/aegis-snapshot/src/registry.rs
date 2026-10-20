@@ -5,11 +5,11 @@ use std::path::{Path, PathBuf};
 use aegis_config::{
     AegisConfig, DockerScope, MysqlSnapshotConfig, PostgresSnapshotConfig, SupabaseSnapshotConfig,
 };
-use aegis_types::{SnapshotPolicy, SnapshotRecord};
+use aegis_types::{RecordedSnapshot, SnapshotPolicy, SnapshotRecord};
 
 use crate::error::SnapshotError;
 use crate::paths::resolve_snapshots_dir;
-use crate::retention::{PrunableRecord, resolve_prunable_records_from_default_audit_log};
+use crate::retention::{PrunableRecord, prunable_records_newest_first};
 use crate::{
     DockerPlugin, GitPlugin, MysqlPlugin, PostgresPlugin, SnapshotPlugin, SqlitePlugin,
     SupabasePlugin,
@@ -409,17 +409,14 @@ impl SnapshotRegistry {
         plugin.delete(snapshot_id).await
     }
 
-    /// Resolve the snapshot records that are still on record and have not been
-    /// pruned.
+    /// Turn the Snapshot ledger's live records into prune records, newest
+    /// first in log order.
     ///
-    /// Reads the default audit log (`~/.aegis/audit.jsonl`), collects the latest
-    /// recorded timestamp for each `(plugin, snapshot_id)` pair, and removes
-    /// any id that has a later `Decision::Pruned` entry. If the audit log is
-    /// missing, the result is empty.
-    pub async fn resolve_prunable_records(
-        &self,
-    ) -> std::result::Result<Vec<PrunableRecord>, SnapshotError> {
-        resolve_prunable_records_from_default_audit_log()
+    /// `records` are the ledger's live records, oldest first in log order; the
+    /// ledger has already removed every pruned Snapshot. A prune is final, so a
+    /// record of a pruned Snapshot never comes back here.
+    pub fn resolve_prunable_records(&self, records: &[RecordedSnapshot]) -> Vec<PrunableRecord> {
+        prunable_records_newest_first(records)
     }
 }
 

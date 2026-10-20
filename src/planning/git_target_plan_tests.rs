@@ -552,7 +552,7 @@ fn unresolvable_cd_forms_are_disclosed_and_never_covered_by_the_cwd() {
         assert_eq!(plan.resolved_paths().count(), 0, "{command:?}");
         // A dynamic `cd` path (`$D`, `~`, a glob) makes the command
         // effect-opaque (ADR-043), which earns the ADR-016 cwd Snapshot. That
-        // is accepted (ADR-049): the unresolved target is still disclosed and
+        // is accepted (ADR-050): the unresolved target is still disclosed and
         // halts an unattended run, as `git -C "$X"` does under ADR-048. Every
         // other reason adds no cwd Snapshot.
         // `cd ~/x` and `cd ../a*` expand without a `$`, so the router does not

@@ -1,5 +1,5 @@
 use aegis::error::AegisError;
-use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
+use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot, SnapshotLedger, SnapshotLookupError};
 use aegis_config::AegisConfig;
 use aegis_snapshot::{SnapshotRegistry, SnapshotRegistryConfig};
 use aegis_types::Decision;
@@ -30,54 +30,19 @@ pub(crate) async fn execute(snapshot_id: String) -> Result<RollbackTarget> {
 }
 
 fn find_snapshot_target(logger: &AuditLogger, snapshot_id: &str) -> Result<RollbackTarget> {
-    let entries = logger.read_all()?;
-
-    // Any id that has been explicitly pruned is no longer recoverable, even if
-    // earlier audit entries still reference it. Treat it as removed before doing
-    // the normal reverse lookup.
-    let mut pruned_ids = std::collections::HashSet::new();
-    for entry in &entries {
-        let base = entry.as_base();
-        if base.decision == Decision::Pruned {
-            for snapshot in &base.snapshots {
-                pruned_ids.insert(snapshot.snapshot_id.as_str());
-            }
-            if let Some(id) = snapshot_id_from_prune_command(&base.command) {
-                pruned_ids.insert(id);
-            }
-        }
-    }
-
-    if pruned_ids.contains(snapshot_id) {
-        return Err(AegisError::SnapshotPruned {
+    let ledger = SnapshotLedger::load(logger)?;
+    match ledger.resolve(snapshot_id) {
+        Ok(record) => Ok(RollbackTarget {
+            plugin: record.plugin.clone(),
+            snapshot_id: record.snapshot_id.clone(),
+        }),
+        Err(SnapshotLookupError::Pruned) => Err(AegisError::SnapshotPruned {
             snapshot_id: snapshot_id.to_string(),
-        });
-    }
-
-    entries
-        .iter()
-        .rev()
-        .filter(|entry| entry.as_base().decision != Decision::Pruned)
-        .flat_map(|entry| entry.as_base().snapshots.iter().rev())
-        .find(|snapshot| snapshot.snapshot_id == snapshot_id)
-        .map(|snapshot| RollbackTarget {
-            plugin: snapshot.plugin.clone(),
-            snapshot_id: snapshot.snapshot_id.clone(),
-        })
-        .ok_or_else(|| AegisError::SnapshotIdNotFound {
+        }),
+        Err(SnapshotLookupError::NotFound) => Err(AegisError::SnapshotIdNotFound {
             snapshot_id: snapshot_id.to_string(),
-        })
-}
-
-/// Extract a snapshot id from a prune audit entry's command field.
-///
-/// Prune records may store the removed snapshot id as `aegis prune <snapshot_id>`
-/// when the `snapshots` array is empty.
-fn snapshot_id_from_prune_command(command: &str) -> Option<&str> {
-    const PRUNE_PREFIX: &str = "aegis prune ";
-    command
-        .strip_prefix(PRUNE_PREFIX)
-        .filter(|id| !id.is_empty())
+        }),
+    }
 }
 
 fn append_rollback_audit_entry(logger: &AuditLogger, target: &RollbackTarget) -> Result<()> {

@@ -1,5 +1,5 @@
 //! The directory each stage of a command runs in, once earlier `cd` steps are
-//! applied (#525, ADR-049).
+//! applied (#525, ADR-050).
 //!
 //! The walk reads only the command's own list structure: top-level segments,
 //! their separators, pipelines and `( ... )` groups. It trusts a `cd` only when

@@ -1,4 +1,4 @@
-# ADR-049: The git Snapshot follows `cd` steps earlier in the command line; the router's cwd tracking stays stricter
+# ADR-050: The git Snapshot follows `cd` steps earlier in the command line; the router's cwd tracking stays stricter
 
 ## Status
 
