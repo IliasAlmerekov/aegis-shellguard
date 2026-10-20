@@ -49,13 +49,8 @@ fn try_unwrap_shell_tokens(tokens: &[String]) -> Option<Vec<String>> {
         t == "-c" || (t.starts_with('-') && !t.starts_with("--") && t.len() > 2 && t.ends_with('c'))
     })?;
     let inner_idx = idx + rel_c + 1;
-    let inner_raw = tokens.get(inner_idx)?;
-
-    let inner = if let Some(stripped) = inner_raw.strip_prefix('$') {
-        unescape_ansi_c(stripped)
-    } else {
-        inner_raw.clone()
-    };
+    // `split_tokens` already decoded an ANSI-C quoted body (`$'...'`).
+    let inner = tokens.get(inner_idx)?;
 
     let mut all_sub_cmds: Vec<Vec<String>> = Vec::new();
     for line in inner.split('\n') {
@@ -96,34 +91,4 @@ fn split_by_separators(tokens: Vec<String>) -> Vec<Vec<String>> {
         commands.push(current);
     }
     commands
-}
-
-/// Unescape ANSI-C escape sequences as used in bash's `$'...'` quoting.
-fn unescape_ansi_c(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '\\' {
-            match chars.next() {
-                Some('n') => result.push('\n'),
-                Some('t') => result.push('\t'),
-                Some('r') => result.push('\r'),
-                Some('\\') => result.push('\\'),
-                Some('\'') => result.push('\''),
-                Some('"') => result.push('"'),
-                Some('a') => result.push('\x07'),
-                Some('b') => result.push('\x08'),
-                Some('f') => result.push('\x0C'),
-                Some('v') => result.push('\x0B'),
-                Some(c) => {
-                    result.push('\\');
-                    result.push(c);
-                }
-                None => result.push('\\'),
-            }
-        } else {
-            result.push(ch);
-        }
-    }
-    result
 }

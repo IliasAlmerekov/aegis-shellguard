@@ -20,6 +20,10 @@ pub(super) const REGEX_SUPERSEDED_PREFIXES: &[(&str, &str)] =
 /// `SCAN-001`..`SCAN-003` below.
 const GIT_OPTION_CAP_EXCEEDED_ID: &str = "SCAN-004";
 
+/// Synthetic pattern id for an ANSI-C quoted word (`$'...'`) that does not
+/// decode exactly (see [`aegis_parser::ansi_c_quoting_is_inexact`]).
+const INEXACT_ANSI_C_ID: &str = "SCAN-005";
+
 /// Records that regex `id` matched the current target, for a later
 /// [`prefix_id_superseded`] check.
 fn note_regex_match(seen: &mut [bool; REGEX_SUPERSEDED_PREFIXES.len()], id: &str) {
@@ -49,7 +53,37 @@ impl Scanner {
     ///    Within the same target, a git slice with global options before its subcommand is
     ///    rescanned from each possible subcommand position (GHSA-7564).
     /// 5. Compute the maximum [`RiskLevel`] across all matched patterns and return.
+    ///
+    /// Every step reads the command with ANSI-C quoting rewritten to the words
+    /// bash runs ([`aegis_parser::canonical_ansi_c_quoting`]); the returned
+    /// [`ParsedCommand::raw`] keeps the spelling as written.
     pub fn assess(&self, cmd: &str) -> Assessment {
+        let canonical = aegis_parser::canonical_ansi_c_quoting(cmd);
+        let mut assessment = self.assess_canonical(&canonical);
+        if let std::borrow::Cow::Owned(_) = canonical {
+            // Offsets point into the rewritten text; recompute them from
+            // matched text against the command as written.
+            for result in &mut assessment.matched {
+                result.highlight_range = None;
+            }
+            assessment.highlight_ranges =
+                highlighting::sorted_highlight_ranges(cmd, &assessment.matched);
+            assessment.command.raw = cmd.to_string();
+        }
+        if aegis_parser::ansi_c_quoting_is_inexact(&canonical) {
+            assessment.effect_opaque = true;
+            assessment.risk = assessment.risk.max(RiskLevel::Warn);
+            assessment.matched.push(uncertain_match(
+                INEXACT_ANSI_C_ID,
+                "ANSI-C quoted word ($'...') does not close or does not decode to valid text"
+                    .to_string(),
+                Some("Spell the word without ANSI-C escapes"),
+            ));
+        }
+        assessment
+    }
+
+    fn assess_canonical(&self, cmd: &str) -> Assessment {
         if cmd.len() > super::MAX_SCAN_COMMAND_LEN {
             return uncertain_assessment_without_parse(
                 cmd,

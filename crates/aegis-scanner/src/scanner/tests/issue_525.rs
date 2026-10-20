@@ -692,3 +692,16 @@ fn a_scan_limit_without_any_cd_word_adds_no_disclosure() {
     assert!(report.redirected.is_empty());
     assert!(report.needs_process_cwd);
 }
+
+#[test]
+fn an_exactly_decoded_ansi_c_cd_walks_like_a_plain_cd() {
+    // The report reads the canonical text, so `$'cd'` is the `cd` bash runs.
+    assert_eq!(
+        report(r"$'cd' ../other && rm -rf x"),
+        report("cd ../other && rm -rf x")
+    );
+    assert_eq!(
+        report(r"cd $'../oth\x65r' && rm -rf x"),
+        report("cd ../other && rm -rf x")
+    );
+}

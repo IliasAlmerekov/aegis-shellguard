@@ -78,6 +78,7 @@ dependencies = [
 name = "aegis-config"
 version = "0.7.0"
 dependencies = [
+ "aegis-parser",
  "aegis-scanner",
  "aegis-types",
  "regex",
@@ -105,6 +106,7 @@ dependencies = [
 name = "aegis-language"
 version = "0.7.0"
 dependencies = [
+ "aegis-parser",
  "criterion",
  "thiserror",
  "tree-sitter",

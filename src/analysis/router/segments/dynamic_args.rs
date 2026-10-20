@@ -67,6 +67,10 @@ pub(super) fn dynamic_stage_net(stage_raw: &str, ctx: &RouteContext<'_>) -> Opti
         return Some(unresolved());
     }
     let shell_expansion = has_active_expansion(stage_raw);
+    // ADR-043: an argument written with ANSI-C quoting (`$'...'`) degrades
+    // like a dynamic one for every program whose argv this net checks. The
+    // decoded word is known, but the router stays conservative here.
+    let ansi_c_quoting = contains_unquoted_ansi_c_quote(stage_raw);
     for slice in aegis_parser::effective_token_slices(&words) {
         // env -S also expands ${VAR} when its value was single-quoted by
         // the outer shell. Limit the search to this candidate's launcher
@@ -97,13 +101,17 @@ pub(super) fn dynamic_stage_net(stage_raw: &str, ctx: &RouteContext<'_>) -> Opti
         {
             return Some(unresolved());
         }
+        let ansi_c_argv = ansi_c_quoting && !argv.is_empty();
         if ((!READ_ONLY.contains(&program)
-            && argv
-                .iter()
-                .any(|token| has_dynamic_argv(token, trusted_nowdoc_argument)))
-            || (program == "printf" && dynamic_printf_state(argv, trusted_nowdoc_argument))
-            || (program == "rg" && dynamic_rg_executor(argv, trusted_nowdoc_argument)))
-            && active_expansion
+            && (ansi_c_argv
+                || argv
+                    .iter()
+                    .any(|token| has_dynamic_argv(token, trusted_nowdoc_argument))))
+            || (program == "printf"
+                && (ansi_c_argv || dynamic_printf_state(argv, trusted_nowdoc_argument)))
+            || (program == "rg"
+                && (ansi_c_argv || dynamic_rg_executor(argv, trusted_nowdoc_argument))))
+            && (active_expansion || ansi_c_quoting)
         {
             return Some(unresolved());
         }

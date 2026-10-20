@@ -62,6 +62,7 @@ fn assert_assessment_matches_pattern(cmd: &str, expected_risk: RiskLevel, expect
 }
 
 mod advanced;
+mod ansi_c_quoting;
 mod basic;
 mod compatibility;
 mod construction;

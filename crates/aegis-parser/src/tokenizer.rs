@@ -1,19 +1,45 @@
 use std::iter::Peekable;
 use std::str::Chars;
 
+mod ansi_c;
+
 use crate::segmentation::ends_with_redirect_target;
+use ansi_c::read_ansi_c_quoted;
+pub use ansi_c::{canonical_ansi_c_quoting, canonical_ansi_c_quoting_marked};
 
 /// Split a shell command string into tokens, respecting quoting and escaping rules.
 ///
 /// Rules:
 /// - Whitespace separates tokens (unless quoted or escaped).
 /// - Single-quoted strings are one token; no escape processing inside.
-/// - Double-quoted strings are one token; backslash escaping applies inside.
+/// - Double-quoted strings are one token; a backslash inside escapes only
+///   `$`, backtick, `"`, `\` and newline, and stays before anything else.
+/// - A backslash-newline outside single quotes is a line continuation and
+///   is removed.
 /// - Backslash outside quotes escapes the next character (treated literally).
 /// - `;`, `&&`, `||`, and `|` outside quotes are returned as separator tokens.
 /// - Unquoted literal `$IFS` / `${IFS}` are treated as shell word-separators
 ///   (see [`ifs_marker_len`]), closing the C2 obfuscation bypass.
+/// - ANSI-C quoting (`$'...'`) is decoded the way bash decodes it, so
+///   `$'\162m'` yields `rm`. A piece that never closes keeps its raw
+///   spelling, `$'` included; see [`ansi_c_quoting_is_inexact`].
+/// - Locale quoting (`$"..."`) reads as plain double quotes.
 pub fn split_tokens(cmd: &str) -> Vec<String> {
+    split_tokens_checked(cmd).0
+}
+
+/// `true` when `cmd` holds an ANSI-C quoted piece (`$'...'`) whose decoded
+/// word may differ from what bash runs: the piece never closes, holds a NUL,
+/// or decodes to bytes that are not valid UTF-8. A caller must not treat such
+/// a command as understood. Costs a substring check unless `$'` occurs.
+pub fn ansi_c_quoting_is_inexact(cmd: &str) -> bool {
+    cmd.contains("$'") && !split_tokens_checked(cmd).1
+}
+
+/// [`split_tokens`], paired with `false` when an ANSI-C quoted piece did not
+/// decode exactly.
+fn split_tokens_checked(cmd: &str) -> (Vec<String>, bool) {
+    let mut exact = true;
     let mut tokens = Vec::new();
     let mut current = String::new();
     let mut chars = cmd.chars().peekable();
@@ -28,11 +54,17 @@ pub fn split_tokens(cmd: &str) -> Vec<String> {
             '"' if !in_single_quote => {
                 in_double_quote = !in_double_quote;
             }
-            '\\' if !in_single_quote => {
-                if let Some(next) = chars.next() {
+            '\\' if !in_single_quote => match chars.next() {
+                // A backslash-newline is a line continuation: both go.
+                Some('\n') | None => {}
+                // Inside double quotes the backslash stays unless it escapes
+                // one of the characters bash gives it meaning before.
+                Some(next) if in_double_quote && !matches!(next, '$' | '`' | '"' | '\\') => {
+                    current.push('\\');
                     current.push(next);
                 }
-            }
+                Some(next) => current.push(next),
+            },
             ';' if !in_single_quote && !in_double_quote => {
                 if !current.is_empty() {
                     tokens.push(current.clone());
@@ -81,6 +113,15 @@ pub fn split_tokens(cmd: &str) -> Vec<String> {
                     current.clear();
                 }
             }
+            '$' if !in_single_quote && !in_double_quote && chars.peek() == Some(&'\'') => {
+                chars.next();
+                let piece = read_ansi_c_quoted(&mut chars);
+                exact &= piece.exact;
+                current.push_str(&piece.text);
+            }
+            // `$"..."` is locale translation; without a message catalog bash
+            // reads it as `"..."`, so the `$` is dropped.
+            '$' if !in_single_quote && !in_double_quote && chars.peek() == Some(&'"') => {}
             '$' if !in_single_quote && !in_double_quote => {
                 // `$` already consumed; `chars` is positioned just past it.
                 if let Some(marker_len) = ifs_marker_len(&chars) {
@@ -106,7 +147,7 @@ pub fn split_tokens(cmd: &str) -> Vec<String> {
         tokens.push(current);
     }
 
-    tokens
+    (tokens, exact)
 }
 
 /// Recognize a literal unquoted IFS expansion at the tokenizer's current cursor.

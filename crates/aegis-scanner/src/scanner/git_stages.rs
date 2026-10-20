@@ -235,6 +235,9 @@ impl Scanner {
         assessment: &Assessment,
         ambient: AmbientEnv,
     ) -> GitStageReport {
+        // Read stage boundaries from the words bash runs, as `assess` does.
+        let canonical = aegis_parser::canonical_ansi_c_quoting(cmd);
+        let cmd = canonical.as_ref();
         let parsed = aegis_parser::Parser::parse(cmd);
         let target_report = recursive::scan_targets(cmd, &parsed);
         if target_report.limit_hit.is_some() {

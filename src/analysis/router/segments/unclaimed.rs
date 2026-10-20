@@ -99,7 +99,7 @@ fn basename(token: &str) -> &str {
 /// backslash outside a single quote escapes the next character, and `'`/`"`
 /// toggle quote state — so a quoted or escaped `$'` (`'$('`, `"\$'"`) does
 /// not trip this.
-fn contains_unquoted_ansi_c_quote(text: &str) -> bool {
+pub(super) fn contains_unquoted_ansi_c_quote(text: &str) -> bool {
     let mut in_single_quote = false;
     let mut in_double_quote = false;
     let mut chars = text.char_indices();
@@ -293,21 +293,17 @@ pub(super) fn unclaimed_interpreter_net(
         return targets;
     }
 
-    // The tokenizer does not understand ANSI-C quoting (`$'...'`), so it can
-    // glue a real operand into the garbage token that results (Rule C, issue
-    // #384/#430): `strace -o $'\'$(echo x' ./pyx ')'` tokenizes to nonsense
-    // that still happens to contain a `/`, which the path-like walk below
-    // would otherwise read as a literal path. Degrading here no longer
-    // requires `operands` (computed above) to hold a survivor: the same
-    // mis-tokenization can eat the operand entirely rather than just glue
-    // garbage onto it (`strace -o$'\'' ./pyx #'` collapses to one
-    // dash-prefixed token `operands`' own filter would strip, round-3 review
-    // finding 3), so unquoted `$'` alone is reason enough not to trust
-    // whatever the tokenizer made of the rest of the line. A bare
-    // `IFS=$'\n'` never reaches this point at all (it is a pure-assignment
-    // stage), and `printf $'a\n'`/`echo $'x'`/`grep $'\t' file` are exempt
-    // the same way any other `NAME_ONLY_PROGRAMS` member is, having already
-    // returned above.
+    // Rule C (issue #384/#430): any stage that used ANSI-C quoting (`$'...'`)
+    // degrades rather than trusting the operands read from it. The router
+    // reads each exactly decoded piece as `$''` plus its plain single-quoted
+    // word (`aegis_parser::canonical_ansi_c_quoting_marked`), so the `$'`
+    // stays visible here while quote edges stay correct: `strace -o
+    // $'\'$(echo x' ./pyx ')'` reaches this check as one stage and degrades
+    // instead of routing `./pyx`. A piece that does not decode exactly keeps
+    // its raw spelling and degrades the same way. A bare `IFS=$'\n'` never
+    // reaches this point at all (it is a pure-assignment stage), and `echo
+    // $'x'` / `grep $'\t' file` are exempt the same way any other
+    // `NAME_ONLY_PROGRAMS` member is, having already returned above.
     if contains_unquoted_ansi_c_quote(stage_text) {
         return vec![RoutedTarget::Unresolved {
             reason: DegradationReason::DynamicSource,

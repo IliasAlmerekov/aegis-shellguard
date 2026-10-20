@@ -346,6 +346,12 @@ pub fn route_with_home(
     trusted_aliases: &[(&str, &str)],
     home: Option<&Path>,
 ) -> Vec<RoutedTarget> {
+    // Route the words bash runs: ANSI-C quoting (`$'...'`) rewritten to plain
+    // single quotes, so every raw-text walk below reads quote edges correctly.
+    // Each rewritten piece keeps an empty `$''` in front, so Rule C still
+    // degrades every stage that used ANSI-C quoting.
+    let canonical = aegis_parser::canonical_ansi_c_quoting_marked(command);
+    let command = canonical.as_ref();
     let ctx = RouteContext {
         command,
         trusted_aliases,

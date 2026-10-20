@@ -702,3 +702,38 @@ mod ifs_obfuscation {
         assert_eq!(split_tokens("cat$IFS.txt"), vec!["cat", ".txt"]);
     }
 }
+
+// Inside double quotes bash removes a backslash only before `$`, backtick,
+// `"`, `\` and newline; before any other character the backslash stays.
+#[test]
+fn backslash_before_ordinary_char_in_double_quotes_is_kept() {
+    assert_eq!(
+        split_tokens(r#"echo "c\d" "\n""#),
+        vec!["echo", r"c\d", r"\n"]
+    );
+}
+
+#[test]
+fn backslash_before_special_char_in_double_quotes_is_removed() {
+    assert_eq!(
+        split_tokens(r#"echo "e\$f" "g\"h" "i\\j" "k\`l""#),
+        vec!["echo", "e$f", "g\"h", r"i\j", "k`l"]
+    );
+}
+
+// A backslash-newline is a line continuation: bash removes both characters,
+// outside quotes and inside double quotes alike.
+#[test]
+fn line_continuation_joins_the_word_outside_quotes() {
+    assert_eq!(split_tokens("r\\\nm -rf x"), vec!["rm", "-rf", "x"]);
+}
+
+#[test]
+fn line_continuation_joins_the_word_inside_double_quotes() {
+    assert_eq!(split_tokens("echo \"a\\\nb\""), vec!["echo", "ab"]);
+}
+
+#[test]
+fn backslash_newline_inside_single_quotes_stays() {
+    assert_eq!(split_tokens("echo 'a\\\nb'"), vec!["echo", "a\\\nb"]);
+}
