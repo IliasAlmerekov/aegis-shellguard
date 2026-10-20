@@ -584,11 +584,32 @@ fn tap_git(directory: &Path, arguments: &[&str]) -> String {
     String::from_utf8(output.stdout).expect("git output should be UTF-8")
 }
 
+const RELEASE_URL: &str = "https://github.com/IliasAlmerekov/aegis-shellguard/releases/download";
+
+/// A generated formula: the version lives only in the release URLs.
 fn formula_fixture(version: &str) -> String {
-    format!("class Aegis < Formula\n  version \"{version}\"\nend\n")
+    format!(
+        "class Aegis < Formula\n  \
+         url \"{RELEASE_URL}/v{version}/aegis-linux-x86_64\", using: :nounzip\n  \
+         resource \"third_party_notices\" do\n    \
+         url \"{RELEASE_URL}/v{version}/THIRD_PARTY_NOTICES.md\"\n  end\nend\n"
+    )
+}
+
+/// The formula published up to v0.7.1: an explicit `version` line plus URLs.
+fn legacy_formula_fixture(version: &str) -> String {
+    formula_fixture(version).replacen(
+        "class Aegis < Formula\n",
+        &format!("class Aegis < Formula\n  version \"{version}\"\n"),
+        1,
+    )
 }
 
 fn local_tap(version: &str) -> tempfile::TempDir {
+    local_tap_with(&formula_fixture(version))
+}
+
+fn local_tap_with(formula: &str) -> tempfile::TempDir {
     let directory = tempfile::tempdir().expect("temporary tap should be created");
     let root = directory.path();
     tap_git(
@@ -603,7 +624,7 @@ fn local_tap(version: &str) -> tempfile::TempDir {
         &["config", "user.email", "release-test@example.invalid"],
     );
     std::fs::create_dir(tap.join("Formula")).unwrap();
-    std::fs::write(tap.join("Formula/aegis.rb"), formula_fixture(version)).unwrap();
+    std::fs::write(tap.join("Formula/aegis.rb"), formula).unwrap();
     tap_git(&tap, &["add", "Formula/aegis.rb"]);
     tap_git(&tap, &["commit", "-m", "Initial formula"]);
     tap_git(&tap, &["push", "origin", "main"]);
@@ -612,7 +633,11 @@ fn local_tap(version: &str) -> tempfile::TempDir {
 }
 
 fn publish_to_local_tap(root: &Path, version: &str) -> Output {
-    std::fs::write(root.join("formula/aegis.rb"), formula_fixture(version)).unwrap();
+    publish_formula(root, version, &formula_fixture(version))
+}
+
+fn publish_formula(root: &Path, version: &str, formula: &str) -> Output {
+    std::fs::write(root.join("formula/aegis.rb"), formula).unwrap();
     Command::new("bash")
         .args(["-c", &homebrew_publish_step()])
         .current_dir(root)
@@ -722,4 +747,60 @@ fn homebrew_concurrent_publication_should_not_overwrite_a_newer_remote_commit() 
     );
     assert!(String::from_utf8_lossy(&raced.stderr).contains("[rejected]"));
     assert_eq!(tap_git(&remote, &["rev-parse", "main"]), published);
+}
+
+#[test]
+fn homebrew_publication_should_refuse_a_downgrade_from_a_legacy_version_line_formula() {
+    let directory = local_tap_with(&legacy_formula_fixture("0.7.1"));
+    let root = directory.path();
+    let remote = root.join("remote.git");
+    let published = tap_git(&remote, &["rev-parse", "main"]);
+
+    let older = publish_to_local_tap(root, "0.7.0");
+    assert!(!older.status.success(), "{older:?}");
+    assert_eq!(tap_git(&remote, &["rev-parse", "main"]), published);
+}
+
+#[test]
+fn homebrew_publication_should_upgrade_a_legacy_version_line_formula() {
+    let directory = local_tap_with(&legacy_formula_fixture("0.7.1"));
+    let root = directory.path();
+
+    let newer = publish_to_local_tap(root, "0.7.2");
+    assert!(newer.status.success(), "{newer:?}");
+    assert_eq!(
+        tap_git(&root.join("remote.git"), &["show", "main:Formula/aegis.rb"]),
+        formula_fixture("0.7.2")
+    );
+}
+
+#[test]
+fn homebrew_publication_should_reject_urls_that_disagree_on_the_version() {
+    let mixed = formula_fixture("0.7.2").replacen("v0.7.2", "v0.7.1", 1);
+    let directory = local_tap("0.7.0");
+    let root = directory.path();
+    let remote = root.join("remote.git");
+    let published = tap_git(&remote, &["rev-parse", "main"]);
+
+    let output = publish_formula(root, "0.7.2", &mixed);
+    assert!(!output.status.success(), "{output:?}");
+    assert_eq!(tap_git(&remote, &["rev-parse", "main"]), published);
+}
+
+#[test]
+fn homebrew_publication_should_reject_a_generated_formula_for_another_tag() {
+    let directory = local_tap("0.7.0");
+    let root = directory.path();
+
+    let output = publish_formula(root, "0.7.2", &formula_fixture("0.7.1"));
+    assert!(!output.status.success(), "{output:?}");
+}
+
+#[test]
+fn homebrew_publication_should_reject_a_formula_url_outside_the_release_downloads() {
+    let foreign = formula_fixture("0.7.2").replace(RELEASE_URL, "https://example.invalid/dl");
+    let directory = local_tap("0.7.0");
+
+    let output = publish_formula(directory.path(), "0.7.2", &foreign);
+    assert!(!output.status.success(), "{output:?}");
 }

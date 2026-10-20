@@ -215,7 +215,12 @@ fn homebrew_updater_should_fail_on_a_short_checksum() {
 fn homebrew_formula_version_and_urls_should_follow_the_tag() {
     let formula = run_updater("formula-tag", "v1.2.3", None, None).formula();
 
-    assert!(formula.contains("version \"1.2.3\""));
+    assert!(
+        !formula
+            .lines()
+            .any(|line| line.trim_start().starts_with("version ")),
+        "Homebrew scans the version from the URL; an explicit line fails brew audit"
+    );
     let url_lines: Vec<&str> = formula
         .lines()
         .filter(|line| line.trim_start().starts_with("url \""))

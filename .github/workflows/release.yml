@@ -436,11 +436,18 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          # Read version declarations as data; never execute formula Ruby.
+          # Read the version from the release download URLs as data; never
+          # execute formula Ruby. Homebrew scans its version from the URL, so a
+          # formula carries no explicit `version` line (brew audit rejects it).
+          # A tap formula published before that still has one; its URLs agree.
           python3 - "$TAG" <<'PY'
           import pathlib
           import re
           import sys
+
+          RELEASE_URL = re.compile(
+              r'^https://github\.com/IliasAlmerekov/aegis-shellguard/releases/download/v([^/"\s]+)/[^"\s]+$'
+          )
 
           def stable_version(value):
               if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", value):
@@ -448,10 +455,18 @@ jobs:
               return tuple(int(component) for component in value.split("."))
 
           def formula_version(path):
-              versions = re.findall(r'^\s*version "([^"\n]+)"\s*$', path.read_text(), re.MULTILINE)
+              urls = re.findall(r'^\s*url "([^"\n]*)"', path.read_text(), re.MULTILINE)
+              if not urls:
+                  sys.exit(f"expected release download URLs in {path}")
+              versions = set()
+              for url in urls:
+                  match = RELEASE_URL.match(url)
+                  if match is None:
+                      sys.exit(f"unexpected URL in {path}: {url!r}")
+                  versions.add(match.group(1))
               if len(versions) != 1:
-                  sys.exit(f"expected one version declaration in {path}")
-              return stable_version(versions[0])
+                  sys.exit(f"URLs in {path} disagree on the version: {sorted(versions)}")
+              return stable_version(versions.pop())
 
           tag = sys.argv[1]
           if not tag.startswith("v"):

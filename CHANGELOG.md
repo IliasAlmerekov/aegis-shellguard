@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Fixed: The generated Homebrew formula no longer carries an explicit `version` line, which `brew audit` rejects as redundant with the version scanned from the URL and which failed the v0.7.1 install smoke. The tap publication guard now reads the version from the release download URLs (all must agree) and still refuses a downgrade against a tap formula that has the old `version` line (#491)
+
 ## [0.7.1] (2026-10-20)
 
 - Fixed: The git Snapshot of a `Danger` command now follows a `cd` earlier in the command line (`cd ../other && rm -rf x`) instead of covering the process cwd. A `cd` Aegis cannot follow (`cd -`, `pushd`, a variable or glob path, `CDPATH`, a `cd` joined by `;` or `||`, or one hidden behind `eval`) is disclosed as an unresolved Git target and halts an unattended run; router cwd tracking is unchanged. (#525, ADR-050)
