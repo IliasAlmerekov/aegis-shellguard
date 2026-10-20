@@ -87,6 +87,11 @@ A structural match on a whole pipeline (`PIPE-*`, or a pattern that reads the
 pipeline text such as `curl ... | sh`) belongs to the directory the pipeline
 runs in, because no single stage reproduces it.
 
+When the recursive scan hits its depth or length limit and the command holds a
+`cd`, `pushd` or `popd`, the scanner reports an unresolved directory next to
+the process cwd Snapshot, so the unscanned part is disclosed instead of
+silently covered only by the cwd.
+
 Several directories: every resolved directory gets its own git Snapshot,
 deduplicated by repository top level as in ADR-048. A stage in the process cwd
 still takes the cwd pass, and a moved stage whose repository is the process

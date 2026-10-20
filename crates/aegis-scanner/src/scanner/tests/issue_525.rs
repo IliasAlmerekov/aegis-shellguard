@@ -668,3 +668,27 @@ fn structural_pipeline_danger_before_any_cd_still_needs_the_process_cwd() {
     assert!(report.redirected.is_empty(), "{report:?}");
     assert!(report.needs_process_cwd);
 }
+
+fn nested_eval_past_the_limit() -> String {
+    let mut cmd = "eval \"printf hi\"".to_string();
+    for _ in 0..=super::MAX_NESTED_SCAN_DEPTH {
+        cmd = format!("eval \"{cmd}\"");
+    }
+    cmd
+}
+
+#[test]
+fn a_scan_limit_after_a_cd_discloses_an_unresolved_directory() {
+    let report = report(&format!("cd ../other && {}", nested_eval_past_the_limit()));
+
+    assert_eq!(dirs(&report), vec![unresolved(CdUnresolved::Opaque)]);
+    assert!(report.needs_process_cwd);
+}
+
+#[test]
+fn a_scan_limit_without_any_cd_word_adds_no_disclosure() {
+    let report = report(&nested_eval_past_the_limit());
+
+    assert!(report.redirected.is_empty());
+    assert!(report.needs_process_cwd);
+}

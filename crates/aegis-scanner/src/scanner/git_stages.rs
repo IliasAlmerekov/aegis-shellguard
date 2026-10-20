@@ -14,7 +14,7 @@ use aegis_parser::{EffectiveTokenSlice, EndOfOptions, GitTargetArgs, GitTargetRe
 use aegis_types::{Assessment, MatchResult, RiskLevel};
 
 use super::assessment::REGEX_SUPERSEDED_PREFIXES;
-use super::cd_walk::{StageDir, mentions_cd, stage_dirs};
+use super::cd_walk::{CdUnresolved, StageDir, mentions_cd, stage_dirs};
 use super::{Scanner, pipeline_semantics, recursive};
 
 /// Why a redirected git stage has no single option set to resolve.
@@ -199,6 +199,26 @@ impl StageEvidence {
     }
 }
 
+/// The report for a command the recursive scan gave up on. A `cd` word may
+/// have moved the directory the unscanned part runs in, and that cannot be
+/// ruled out, so it is disclosed as an unresolved directory instead of being
+/// covered by the process cwd Snapshot alone.
+fn limit_hit_report(mentions_cd: bool) -> GitStageReport {
+    let redirected = if mentions_cd {
+        vec![DangerStage {
+            target: DangerStageTarget::Plain,
+            dir: StageDir::Unresolved(CdUnresolved::Opaque),
+            is_git: false,
+        }]
+    } else {
+        Vec::new()
+    };
+    GitStageReport {
+        redirected,
+        needs_process_cwd: true,
+    }
+}
+
 impl Scanner {
     /// Report which `Danger` git stages of `cmd` redirect their working tree.
     ///
@@ -218,10 +238,11 @@ impl Scanner {
         let parsed = aegis_parser::Parser::parse(cmd);
         let target_report = recursive::scan_targets(cmd, &parsed);
         if target_report.limit_hit.is_some() {
-            return GitStageReport {
-                redirected: Vec::new(),
-                needs_process_cwd: true,
-            };
+            return limit_hit_report(
+                ["cd", "pushd", "popd"]
+                    .iter()
+                    .any(|word| cmd.contains(word)),
+            );
         }
 
         let mut evidence = StageEvidence::default();
@@ -233,10 +254,7 @@ impl Scanner {
                 let parsed = aegis_parser::Parser::parse(&stage);
                 let stage_report = recursive::scan_targets(&stage, &parsed);
                 if stage_report.limit_hit.is_some() {
-                    return GitStageReport {
-                        redirected: Vec::new(),
-                        needs_process_cwd: true,
-                    };
+                    return limit_hit_report(true);
                 }
                 evidence.collect(self, &stage, &stage_report.targets, &dir, ambient.git_env);
             }
