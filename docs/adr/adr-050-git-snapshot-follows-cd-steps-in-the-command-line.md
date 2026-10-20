@@ -51,6 +51,10 @@ Which `cd` forms resolve:
   backtick and a backslash still expand, so `cd "~/x"` resolves to a directory
   named `~` and `cd "x$y"` stays unresolved. The `-C` values of ADR-048 reach
   planning with their quotes already removed, so they stay conservative.
+- A command substitution in a `cd` operand (`cd "$(rm -rf x; pwd)"`) runs
+  before the `cd` takes effect, so what it holds belongs to the directory in
+  effect before that `cd`. If it holds a `cd`, `eval`, `source` or `.`, that
+  directory is unresolved.
 - A literal absolute `cd` (`cd /known/repo`, `cd -- /known/repo`) reached
   through `&&` after an unresolved `cd` recovers a known directory: it runs
   only if the earlier steps succeeded and lands in the same place whatever the

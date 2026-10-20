@@ -523,3 +523,48 @@ fn a_launcher_that_keeps_the_directory_leaves_a_moved_non_git_stage_plain() {
 
     assert_eq!(report.redirected[0].target, DangerStageTarget::Plain);
 }
+
+// Codex review of PR #529.
+
+#[test]
+fn a_destructive_substitution_in_a_cd_operand_runs_in_the_directory_before_that_cd() {
+    let report = report("cd ../other && cd \"$(rm -rf victim; pwd)\"");
+
+    assert!(dirs(&report).contains(&chain(&["../other"])), "{report:?}");
+    assert!(!report.needs_process_cwd, "{report:?}");
+}
+
+#[test]
+fn a_destructive_substitution_in_an_unquoted_cd_operand_is_recorded() {
+    let report = report("cd ../other && cd $(rm -rf victim)");
+
+    assert!(dirs(&report).contains(&chain(&["../other"])), "{report:?}");
+}
+
+#[test]
+fn a_cd_hidden_inside_a_cd_operand_substitution_makes_that_stage_unresolved() {
+    let report = report("cd ../a && cd \"$(cd b; rm -rf victim)\"");
+
+    assert!(
+        dirs(&report)
+            .iter()
+            .all(|dir| matches!(dir, StageDir::Unresolved(_))),
+        "{report:?}"
+    );
+    assert!(!report.redirected.is_empty());
+}
+
+#[test]
+fn a_substitution_in_a_cd_operand_is_recorded_whatever_its_spelling() {
+    for cmd in [
+        "cd ../other && cd `rm -rf victim`",
+        "cd ../other && cd <(rm -rf victim)",
+    ] {
+        let report = report(cmd);
+
+        assert!(
+            dirs(&report).contains(&chain(&["../other"])),
+            "{cmd:?}: {report:?}"
+        );
+    }
+}

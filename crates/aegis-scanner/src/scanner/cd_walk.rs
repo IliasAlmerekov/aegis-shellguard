@@ -177,10 +177,19 @@ impl Walker {
             // The tokenizer drops quotes and backslashes, so the quoting is
             // read from the raw text.
             let operands = cd_operands(raw, tokens);
+            // A substitution in an operand runs before the `cd` takes effect,
+            // so what it holds belongs to the directory in effect before it.
+            if raw.contains("$(") || raw.contains('`') || raw.contains("<(") {
+                let before = match hidden_cd(raw, true) {
+                    Some(reason) => state.degrade(reason),
+                    None => state.clone(),
+                };
+                out.push((raw.to_string(), before));
+            }
             return Some(self.apply_cd(state, &operands, incoming));
         }
 
-        if let Some(reason) = hidden_cd(raw) {
+        if let Some(reason) = hidden_cd(raw, false) {
             let dir = state.degrade(reason);
             out.push((raw.to_string(), dir.clone()));
             return Some(dir);
@@ -379,9 +388,11 @@ fn advance(state: StageDir, separator: Option<ListSeparator>) -> StageDir {
 /// `pushd`/`popd`, or any `cd`, `eval`, `source` or `.` it holds directly or in
 /// a nested shell, substitution or payload.
 ///
+/// For a `cd` stage (`is_cd_stage`), the stage's own `cd` is skipped.
+///
 /// Precedence: a stage that is itself `pushd` or `popd` is `UnsupportedForm`,
 /// whatever else it holds; any other hit is `Opaque`.
-fn hidden_cd(raw: &str) -> Option<CdUnresolved> {
+fn hidden_cd(raw: &str, is_cd_stage: bool) -> Option<CdUnresolved> {
     let parsed = aegis_parser::Parser::parse(raw);
     let report = recursive::scan_targets(raw, &parsed);
     let mut reason = None;
@@ -390,6 +401,14 @@ fn hidden_cd(raw: &str) -> Option<CdUnresolved> {
         let refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
         for slice in aegis_parser::effective_token_slices(&refs) {
             if !CD_LIKE.contains(&slice.program) {
+                continue;
+            }
+            // The `cd` stage's own `cd` is not hidden: only what its operands
+            // hold counts.
+            if is_cd_stage
+                && slice.program == "cd"
+                && (target.contains("$(") || target.contains('`') || target.contains("<("))
+            {
                 continue;
             }
             if target == raw && matches!(slice.program, "pushd" | "popd") {
