@@ -572,9 +572,9 @@ fn word_text<'a>(node: Node, bytes: &'a [u8]) -> Option<Cow<'a, str>> {
     if !text.contains(['\\', '\'', '"', '$']) {
         return Some(Cow::Borrowed(text));
     }
-    match aegis_parser::split_tokens(text).as_slice() {
-        [word] => Some(Cow::Owned(word.clone())),
-        _ => Some(Cow::Borrowed(text)),
+    match super::bash_word::shell_word(text) {
+        Some(word) => Some(Cow::Owned(word)),
+        None => Some(Cow::Borrowed(text)),
     }
 }
 
