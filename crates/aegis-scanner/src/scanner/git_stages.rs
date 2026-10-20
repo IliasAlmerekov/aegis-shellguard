@@ -65,6 +65,13 @@ pub(crate) struct AmbientEnv {
     pub(crate) git_env: bool,
     /// `CDPATH` is set, so no relative `cd` can be followed.
     pub(crate) cdpath_set: bool,
+    /// Bash would start in physical mode (`SHELLOPTS` holds `physical`).
+    pub(crate) physical: bool,
+    /// Bash would import an exported `cd` function (`BASH_FUNC_cd%%`) that
+    /// replaces the builtin.
+    pub(crate) cd_function: bool,
+    /// Bash would start with `lastpipe` on (`BASHOPTS` holds `lastpipe`).
+    pub(crate) lastpipe: bool,
 }
 
 impl AmbientEnv {
@@ -74,8 +81,17 @@ impl AmbientEnv {
                 .iter()
                 .any(|name| std::env::var_os(name).is_some()),
             cdpath_set: std::env::var_os("CDPATH").is_some(),
+            physical: env_text("SHELLOPTS").contains("physical"),
+            cd_function: std::env::var_os("BASH_FUNC_cd%%").is_some(),
+            lastpipe: env_text("BASHOPTS").contains("lastpipe"),
         }
     }
+}
+
+fn env_text(name: &str) -> String {
+    std::env::var_os(name)
+        .map(|value| value.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 /// The evidence one report gathers while it walks the stages.
@@ -136,6 +152,42 @@ impl StageEvidence {
                 dir: dir.clone(),
                 is_git: false,
             });
+        }
+    }
+
+    /// Attribute `Danger` matches no stage scan reproduces to the stages that
+    /// could hold them. The language-aware analysis adds such matches
+    /// (`python3 -c 'shutil.rmtree(...)'`, a script file) to the assessment,
+    /// and their ids cannot be rebuilt from a stage's tokens. Every stage that
+    /// a `cd` moved takes the match, and the process cwd keeps it when a stage
+    /// still runs there, so a moved stage never falls back to the cwd alone
+    /// (#525). This errs toward more Snapshots and disclosures.
+    fn attribute_unmatched(&mut self, assessment: &Assessment, stages: &[(String, StageDir)]) {
+        let unmatched: Vec<String> = assessment
+            .matched
+            .iter()
+            .filter(|matched| matched.pattern.risk == RiskLevel::Danger)
+            .map(|matched| matched.pattern.id.to_string())
+            .filter(|id| !self.redirected_ids.contains(id) && !self.plain_ids.contains(id))
+            .collect();
+        if unmatched.is_empty() {
+            return;
+        }
+        let mut in_process_cwd = stages.is_empty();
+        for (_, dir) in stages {
+            if *dir == StageDir::Process {
+                in_process_cwd = true;
+            } else {
+                self.redirected_ids.extend(unmatched.iter().cloned());
+                self.push_stage(DangerStage {
+                    target: DangerStageTarget::Plain,
+                    dir: dir.clone(),
+                    is_git: false,
+                });
+            }
+        }
+        if in_process_cwd {
+            self.plain_ids.extend(unmatched);
         }
     }
 
@@ -252,20 +304,21 @@ impl Scanner {
         if mentions_cd(&target_report.targets) {
             // #525: walk the command's list structure so each stage knows the
             // directory it runs in. Runs only when a `cd` is present.
-            let walk = stage_dirs(cmd, ambient.cdpath_set);
-            for (stage, dir) in walk.stages {
-                let parsed = aegis_parser::Parser::parse(&stage);
-                let stage_report = recursive::scan_targets(&stage, &parsed);
+            let walk = stage_dirs(cmd, ambient);
+            for (stage, dir) in &walk.stages {
+                let parsed = aegis_parser::Parser::parse(stage);
+                let stage_report = recursive::scan_targets(stage, &parsed);
                 if stage_report.limit_hit.is_some() {
                     return limit_hit_report(true);
                 }
-                evidence.collect(self, &stage, &stage_report.targets, &dir, ambient.git_env);
+                evidence.collect(self, stage, &stage_report.targets, dir, ambient.git_env);
             }
             // The structural pipeline matches (`PIPE-*`) belong to the
             // pipeline as a whole, so no single stage reproduces them.
             for (pipeline, dir) in walk.pipelines {
                 evidence.collect_pipeline(self, &pipeline, &dir);
             }
+            evidence.attribute_unmatched(assessment, &walk.stages);
         } else {
             evidence.collect(
                 self,
@@ -377,7 +430,7 @@ fn stage_target(
 /// Whether a launcher in `prefix` runs the command in another directory.
 ///
 /// Reads `env -C DIR`, `-CDIR`, `--chdir DIR`, `--chdir=DIR` and the `sudo`
-/// forms `-D DIR`, `--chdir=DIR`. Short options may be clustered, so any short
+/// forms `-D DIR`, `--chdir=DIR`, `-i` and `--login`. Short options may be clustered, so any short
 /// option token holding the letter counts. This leans toward reporting a
 /// change: an unresolved Git target is disclosed, never silently wrong.
 fn prefix_changes_directory(prefix: &[&str]) -> bool {
@@ -396,6 +449,9 @@ fn prefix_changes_directory(prefix: &[&str]) -> bool {
         let short = |letter: char| {
             token.starts_with('-') && !token.starts_with("--") && token.contains(letter)
         };
-        ((env || sudo) && long) || (env && short('C')) || (sudo && short('D'))
+        // `sudo -i` and `--login` start the target user's login shell in
+        // that user's home directory.
+        let login = *token == "--login" || short('i');
+        ((env || sudo) && long) || (env && short('C')) || (sudo && (short('D') || login))
     })
 }

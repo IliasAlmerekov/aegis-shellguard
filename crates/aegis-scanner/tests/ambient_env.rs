@@ -50,7 +50,35 @@ fn git_stage_report_reads_cdpath_and_git_env_from_the_process() {
     unsafe { std::env::set_var("GIT_DIR", "/elsewhere/.git") };
     assert_eq!(
         stages(cd_git),
-        vec![(chain, DangerStageTarget::EnvironmentRedirect)]
+        vec![(chain.clone(), DangerStageTarget::EnvironmentRedirect)]
     );
     unsafe { std::env::remove_var("GIT_DIR") };
+
+    // Bash reads these from its own environment at startup.
+    unsafe { std::env::set_var("SHELLOPTS", "braceexpand:physical") };
+    assert_eq!(
+        stages("cd x && cd .. && rm -rf y"),
+        vec![(
+            StageDir::Unresolved(CdUnresolved::PhysicalMode),
+            DangerStageTarget::Plain
+        )]
+    );
+    unsafe { std::env::remove_var("SHELLOPTS") };
+
+    unsafe { std::env::set_var("BASH_FUNC_cd%%", "() { :; }") };
+    assert_eq!(
+        stages(cd_rm),
+        vec![(
+            StageDir::Unresolved(CdUnresolved::Opaque),
+            DangerStageTarget::Plain
+        )]
+    );
+    unsafe { std::env::remove_var("BASH_FUNC_cd%%") };
+
+    unsafe { std::env::set_var("BASHOPTS", "cmdhist:lastpipe") };
+    assert_eq!(
+        stages("true | cd x && rm -rf y"),
+        vec![(chain.clone(), DangerStageTarget::Plain)]
+    );
+    unsafe { std::env::remove_var("BASHOPTS") };
 }

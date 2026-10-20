@@ -15,6 +15,7 @@ use std::cell::{Cell, RefCell};
 
 use aegis_parser::ListSeparator;
 
+use super::git_stages::AmbientEnv;
 use super::recursive;
 
 /// Why a stage's directory could not be followed through the `cd` steps.
@@ -88,9 +89,10 @@ pub(super) fn mentions_cd(targets: &[String]) -> bool {
         }
         let tokens = aegis_parser::split_tokens(target);
         let refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
-        aegis_parser::effective_token_slices(&refs)
-            .iter()
-            .any(|slice| matches!(slice.program, "cd" | "pushd" | "popd"))
+        wrapped_cd_like(&tokens).is_some_and(|program| matches!(program, "cd" | "pushd" | "popd"))
+            || aegis_parser::effective_token_slices(&refs)
+                .iter()
+                .any(|slice| matches!(slice.program, "cd" | "pushd" | "popd"))
     })
 }
 
@@ -105,11 +107,13 @@ pub(super) struct Walk {
 }
 
 /// Split `cmd` into stage texts, each with the directory it runs in.
-pub(super) fn stage_dirs(cmd: &str, cdpath_set: bool) -> Walk {
+pub(super) fn stage_dirs(cmd: &str, ambient: AmbientEnv) -> Walk {
     let mut stages = Vec::new();
     let walker = Walker {
-        cdpath_set: Cell::new(cdpath_set),
-        physical: Cell::new(false),
+        cdpath_set: Cell::new(ambient.cdpath_set),
+        physical: Cell::new(ambient.physical),
+        lastpipe: Cell::new(ambient.lastpipe),
+        cd_function: ambient.cd_function,
         pipelines: RefCell::new(Vec::new()),
     };
     walker.list(cmd, StageDir::Process, &mut stages, 0);
@@ -128,6 +132,11 @@ struct Walker {
     /// Whether `CDPATH` may be set: in Aegis's own environment, or by an
     /// earlier stage of the command line. Once set, it stays set.
     cdpath_set: Cell<bool>,
+    /// Whether Bash's `lastpipe` may be on, so the last stage of a pipeline
+    /// runs in the current shell. Once on, it stays on.
+    lastpipe: Cell<bool>,
+    /// Whether Aegis's environment exports a `cd` function Bash would import.
+    cd_function: bool,
 }
 
 impl Walker {
@@ -153,10 +162,13 @@ impl Walker {
                 self.pipelines.borrow_mut().push((stages, state.clone()));
             }
             let mut next = state.clone();
-            for stage in &segment.pipeline.segments {
+            let last_index = segment.pipeline.segments.len() - 1;
+            for (index, stage) in segment.pipeline.segments.iter().enumerate() {
                 let effect = self.stage(stage.raw.trim(), &state, incoming, out, depth);
-                // A `cd` in a pipeline runs in a subshell: no effect after it.
-                if single && let Some(effect) = effect {
+                // A `cd` in a pipeline runs in a subshell: no effect after it,
+                // unless `lastpipe` runs the last stage in the current shell.
+                let in_shell = single || (index == last_index && self.lastpipe.get());
+                if in_shell && let Some(effect) = effect {
                     next = effect;
                 }
             }
@@ -195,6 +207,9 @@ impl Walker {
         if touches_cdpath {
             self.cdpath_set.set(true);
         }
+        if raw.contains("lastpipe") || raw.contains("BASHOPTS") {
+            self.lastpipe.set(true);
+        }
         if sets_physical_mode(raw, &tokens) {
             self.physical.set(true);
         }
@@ -221,6 +236,10 @@ impl Walker {
                     None => state.clone(),
                 };
                 out.push((raw.to_string(), before));
+            }
+            if self.cd_function {
+                // Bash runs the imported function, not the builtin.
+                return Some(state.degrade(CdUnresolved::Opaque));
             }
             if self.physical.get() {
                 // `..` would follow symlinks, which the lexical walk does not.
@@ -308,6 +327,10 @@ struct CdWord {
     dynamic: bool,
     /// Whether any part of the word was quoted.
     quoted: bool,
+    /// Where an unquoted `<` or `>` starts inside the word, with whether the
+    /// text before it was dynamic. `cd ../x>log` is the operand `../x` and a
+    /// redirection.
+    redirect: Option<(usize, bool)>,
 }
 
 /// The operands of the `cd` stage `raw`, whose tokens are `tokens`.
@@ -333,6 +356,7 @@ fn cd_operands(raw: &str, tokens: &[String]) -> Vec<CdWord> {
             .map(|token| CdWord {
                 dynamic: true,
                 quoted: false,
+                redirect: None,
                 value: token.clone(),
             })
             .collect(),
@@ -350,7 +374,23 @@ fn without_redirections(words: Vec<CdWord>) -> Vec<CdWord> {
             skip_target = false;
             continue;
         }
-        if word.quoted {
+        if let Some((at, prefix_dynamic)) = word.redirect
+            && at > 0
+            && !word.value[..at]
+                .bytes()
+                .all(|b| b.is_ascii_digit() || b == b'&')
+        {
+            let rest = word.value[at..].trim_start_matches(['<', '>', '&', '|']);
+            skip_target = rest.is_empty();
+            kept.push(CdWord {
+                value: word.value[..at].to_string(),
+                dynamic: prefix_dynamic,
+                quoted: word.quoted,
+                redirect: None,
+            });
+            continue;
+        }
+        if word.redirect.is_none() && word.quoted {
             kept.push(word);
             continue;
         }
@@ -372,6 +412,7 @@ fn raw_words(raw: &str) -> Vec<CdWord> {
     let mut words = Vec::new();
     let mut value = String::new();
     let (mut dynamic, mut quoted) = (false, false);
+    let mut redirect: Option<(usize, bool)> = None;
     let (mut single, mut double) = (false, false);
     for ch in raw.chars() {
         match ch {
@@ -389,16 +430,23 @@ fn raw_words(raw: &str) -> Vec<CdWord> {
                         value: std::mem::take(&mut value),
                         dynamic: std::mem::take(&mut dynamic),
                         quoted: std::mem::take(&mut quoted),
+                        redirect: redirect.take(),
                     });
                 }
             }
             c => {
+                if !single && !double && matches!(c, '<' | '>') && redirect.is_none() {
+                    redirect = Some((value.len(), dynamic));
+                }
                 dynamic |= if single {
                     false
                 } else if double {
                     matches!(c, '$' | '`' | '\\')
                 } else {
-                    path_is_dynamic(c.encode_utf8(&mut [0; 4]))
+                    // Parentheses only parse in a `cd` operand as an extended
+                    // glob (`@(x)`, `!(x)`), which Bash expands when `extglob`
+                    // is on.
+                    path_is_dynamic(c.encode_utf8(&mut [0; 4])) || matches!(c, '(' | ')')
                 };
                 value.push(c);
             }
@@ -409,6 +457,7 @@ fn raw_words(raw: &str) -> Vec<CdWord> {
             value,
             dynamic,
             quoted,
+            redirect,
         });
     }
     words
@@ -439,19 +488,22 @@ fn hidden_cd(raw: &str, is_cd_stage: bool) -> Option<CdUnresolved> {
     for target in &report.targets {
         let tokens = aegis_parser::split_tokens(target);
         let refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
-        for slice in aegis_parser::effective_token_slices(&refs) {
-            if !CD_LIKE.contains(&slice.program) {
+        let wrapped = wrapped_cd_like(&tokens);
+        let slices = aegis_parser::effective_token_slices(&refs);
+        let programs = slices.iter().map(|slice| slice.program).chain(wrapped);
+        for program in programs {
+            if !CD_LIKE.contains(&program) {
                 continue;
             }
             // The `cd` stage's own `cd` is not hidden: only what its operands
             // hold counts.
             if is_cd_stage
-                && slice.program == "cd"
+                && program == "cd"
                 && (target.contains("$(") || target.contains('`') || target.contains("<("))
             {
                 continue;
             }
-            if target == raw && matches!(slice.program, "pushd" | "popd") {
+            if target == raw && matches!(program, "pushd" | "popd") {
                 return Some(CdUnresolved::UnsupportedForm);
             }
             reason = Some(CdUnresolved::Opaque);
@@ -476,4 +528,22 @@ fn sets_physical_mode(raw: &str, tokens: &[String]) -> bool {
             || token.contains('$')
             || (token.starts_with('-') && !token.starts_with("--") && token.contains('P'))
     })
+}
+
+/// The program behind a `command` or `builtin` wrapper and its options, when
+/// it is a directory-changing one (`command -p cd`). The parser's launcher
+/// walk skips only the wrapper word, so an option would read as the program.
+fn wrapped_cd_like(tokens: &[String]) -> Option<&str> {
+    let mut words = tokens
+        .iter()
+        .map(String::as_str)
+        .skip_while(|token| !token.starts_with('-') && token.contains('='));
+    let wrapper = words.next()?;
+    let wrapper = wrapper.rsplit('/').next().unwrap_or(wrapper);
+    if !(wrapper.eq_ignore_ascii_case("command") || wrapper.eq_ignore_ascii_case("builtin")) {
+        return None;
+    }
+    words
+        .find(|token| !token.starts_with('-'))
+        .filter(|program| CD_LIKE.contains(program))
 }

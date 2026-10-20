@@ -15,6 +15,7 @@ fn report_with(cmd: &str, cdpath_set: bool) -> GitStageReport {
         AmbientEnv {
             git_env: false,
             cdpath_set,
+            ..AmbientEnv::default()
         },
     )
 }

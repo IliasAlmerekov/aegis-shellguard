@@ -223,6 +223,7 @@ fn ambient_git_dir_redirects_a_plain_danger_stage() {
         AmbientEnv {
             git_env: true,
             cdpath_set: false,
+            ..AmbientEnv::default()
         },
     );
 

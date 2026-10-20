@@ -81,6 +81,7 @@ mod issue_431;
 mod issue_471;
 mod issue_484;
 mod issue_525;
+mod issue_525_codex3;
 mod m5_followups;
 mod m5_gaps;
 mod m5_npm;
