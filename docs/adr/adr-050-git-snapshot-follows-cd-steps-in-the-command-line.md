@@ -55,6 +55,11 @@ Which `cd` forms resolve:
   before the `cd` takes effect, so what it holds belongs to the directory in
   effect before that `cd`. If it holds a `cd`, `eval`, `source` or `.`, that
   directory is unresolved.
+- Unresolved: any `cd` after a stage that may turn on Bash's physical mode
+  (`set -P`, `set -eP`, `set -o physical`, a `set` word Aegis cannot read, or
+  any mention of `SHELLOPTS`). In physical mode `..` follows symlinks, and the
+  lexical walk would name the wrong directory. A `cd` before that stage keeps
+  its chain.
 - A literal absolute `cd` (`cd /known/repo`, `cd -- /known/repo`) reached
   through `&&` after an unresolved `cd` recovers a known directory: it runs
   only if the earlier steps succeeded and lands in the same place whatever the

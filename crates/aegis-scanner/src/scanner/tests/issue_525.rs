@@ -568,3 +568,72 @@ fn a_substitution_in_a_cd_operand_is_recorded_whatever_its_spelling() {
         );
     }
 }
+
+#[test]
+fn bash_physical_mode_makes_a_later_cd_unresolved() {
+    for cmd in [
+        "set -P && cd ../link && cd .. && rm -rf y",
+        "set -o physical && cd ../link && cd .. && rm -rf y",
+        "set -eP; cd ../link && cd .. && rm -rf y",
+        "set -e -o physical && cd ../link && rm -rf y",
+        "builtin set -P && cd ../link && rm -rf y",
+        "export SHELLOPTS=physical && cd ../link && rm -rf y",
+    ] {
+        let report = report(cmd);
+
+        assert_eq!(
+            dirs(&report),
+            vec![unresolved(CdUnresolved::PhysicalMode)],
+            "{cmd:?}: {report:?}"
+        );
+    }
+}
+
+#[test]
+fn a_cd_before_physical_mode_keeps_its_resolved_chain() {
+    let report = report("cd a && set -P && rm -rf y");
+
+    assert_eq!(dirs(&report), vec![chain(&["a"])]);
+}
+
+#[test]
+fn set_without_the_physical_option_does_not_degrade_a_cd() {
+    let report = report("set -e && cd a && rm -rf y");
+
+    assert_eq!(dirs(&report), vec![chain(&["a"])]);
+}
+
+#[test]
+fn a_set_word_aegis_cannot_read_makes_a_later_cd_unresolved() {
+    let report = report("set $OPTS && cd ../link && rm -rf y");
+
+    assert_eq!(dirs(&report), vec![unresolved(CdUnresolved::PhysicalMode)]);
+}
+
+#[test]
+fn physical_mode_unresolves_each_cd_form_on_its_own() {
+    for (cmd, reason) in [
+        (
+            "set -o physical; cd a; rm -rf y",
+            CdUnresolved::PhysicalMode,
+        ),
+        ("set -P && cd a || rm -rf y", CdUnresolved::PhysicalMode),
+    ] {
+        let report = report(cmd);
+
+        assert!(
+            report
+                .redirected
+                .iter()
+                .all(|s| matches!(s.dir, StageDir::Unresolved(_))),
+            "{cmd:?}: {report:?}"
+        );
+        assert!(
+            report
+                .redirected
+                .iter()
+                .any(|s| s.dir == unresolved(reason)),
+            "{cmd:?}: {report:?}"
+        );
+    }
+}

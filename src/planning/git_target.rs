@@ -87,6 +87,9 @@ impl GitTargetUnresolved {
                 CdUnresolved::Opaque => {
                     "a cd hides behind eval, source, a launcher or a nested shell"
                 }
+                CdUnresolved::PhysicalMode => {
+                    "Bash physical mode may be on, so .. follows symlinks"
+                }
             },
         }
     }

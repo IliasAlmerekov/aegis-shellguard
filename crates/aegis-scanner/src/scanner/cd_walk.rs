@@ -32,6 +32,10 @@ pub enum CdUnresolved {
     MayNotRun,
     /// A `cd` hides behind `eval`, `source`, `.`, a launcher or a nested shell.
     Opaque,
+    /// An earlier stage may have turned on Bash's physical mode (`set -P`,
+    /// `set -o physical`, `SHELLOPTS`), so `..` resolves through symlinks and
+    /// the lexical walk would name the wrong directory.
+    PhysicalMode,
 }
 
 /// The directory one stage runs in, relative to the process cwd.
@@ -95,12 +99,16 @@ pub(super) fn stage_dirs(cmd: &str, cdpath_set: bool) -> Vec<(String, StageDir)>
     let mut stages = Vec::new();
     let walker = Walker {
         cdpath_set: Cell::new(cdpath_set),
+        physical: Cell::new(false),
     };
     walker.list(cmd, StageDir::Process, &mut stages, 0);
     stages
 }
 
 struct Walker {
+    /// Whether an earlier stage may have turned on Bash's physical mode
+    /// (`set -P`). Once on, it stays on.
+    physical: Cell<bool>,
     /// Whether `CDPATH` may be set: in Aegis's own environment, or by an
     /// earlier stage of the command line. Once set, it stays set.
     cdpath_set: Cell<bool>,
@@ -162,6 +170,9 @@ impl Walker {
         if touches_cdpath {
             self.cdpath_set.set(true);
         }
+        if sets_physical_mode(raw, &tokens) {
+            self.physical.set(true);
+        }
         result
     }
 
@@ -185,6 +196,10 @@ impl Walker {
                     None => state.clone(),
                 };
                 out.push((raw.to_string(), before));
+            }
+            if self.physical.get() {
+                // `..` would follow symlinks, which the lexical walk does not.
+                return Some(state.degrade(CdUnresolved::PhysicalMode));
             }
             return Some(self.apply_cd(state, &operands, incoming));
         }
@@ -418,4 +433,22 @@ fn hidden_cd(raw: &str, is_cd_stage: bool) -> Option<CdUnresolved> {
         }
     }
     reason
+}
+
+/// Whether `raw` (tokens `tokens`) may turn on Bash's physical directory mode
+/// for the stages after it: `set -P`, `set -eP`, `set -o physical`, a `set`
+/// with a word Aegis cannot read, or any mention of `SHELLOPTS`. This errs
+/// toward true.
+fn sets_physical_mode(raw: &str, tokens: &[String]) -> bool {
+    if raw.contains("SHELLOPTS") {
+        return true;
+    }
+    let Some(set_at) = tokens.iter().position(|token| token == "set") else {
+        return false;
+    };
+    tokens[set_at + 1..].iter().any(|token| {
+        token == "physical"
+            || token.contains('$')
+            || (token.starts_with('-') && !token.starts_with("--") && token.contains('P'))
+    })
 }
