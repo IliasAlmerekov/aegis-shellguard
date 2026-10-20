@@ -325,11 +325,26 @@ impl Blocklist {
     }
 
     /// Returns the first effective blocklist entry for the current context.
+    ///
+    /// An entry matches the command as written or its unquoted form (ADR-051),
+    /// so a quoted spelling (`"rm" -rf x`, `$'rm' -rf x`, `r''m -rf x`) cannot
+    /// dodge an entry that blocks the plain command. The allowlist matches
+    /// only the command as written.
     pub fn match_reason(&self, context: &AllowlistContext<'_>) -> Option<BlocklistMatch> {
+        let unquoted = unquoted_form(context.command);
+        let unquoted_context = unquoted.as_deref().map(|command| AllowlistContext {
+            command,
+            ..*context
+        });
         self.project_entries
             .iter()
             .chain(self.global_entries.iter())
-            .find(|entry| entry.is_effective(context))
+            .find(|entry| {
+                entry.is_effective(context)
+                    || unquoted_context
+                        .as_ref()
+                        .is_some_and(|unquoted| entry.is_effective(unquoted))
+            })
             .map(|entry| BlocklistMatch {
                 pattern: entry.pattern.clone(),
                 reason: entry.reason.clone(),
@@ -342,6 +357,16 @@ impl Blocklist {
         self.match_reason(context).is_some()
     }
 }
+
+/// The words bash runs, quotes removed and escapes decoded, joined by single
+/// spaces; `None` when that equals the trimmed command.
+fn unquoted_form(command: &str) -> Option<String> {
+    let unquoted = aegis_parser::split_tokens(command).join(" ");
+    (unquoted != command.trim()).then_some(unquoted)
+}
+
+#[cfg(test)]
+mod quoting_tests;
 
 #[cfg(test)]
 mod tests {

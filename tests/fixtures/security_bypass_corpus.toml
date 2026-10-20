@@ -794,3 +794,79 @@ expected_risk = "block"
 expected_decision = "block"
 expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
+
+[[cases]]
+# Bash decodes ANSI-C quoting before it runs a word: `$'\162m'` is `rm`.
+name = "ansi_c_octal_program_word"
+command = "$'\\162m' -rf /tmp/aegis-ansi-probe"
+expected_risk = "danger"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "strict_policy"
+
+[[cases]]
+name = "ansi_c_hex_program_word_behind_sudo"
+command = "sudo $'\\x72m' -rf /tmp/aegis-ansi-probe"
+expected_risk = "danger"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "strict_policy"
+
+[[cases]]
+name = "ansi_c_pieces_joined_into_program_and_flag"
+command = "r$'m' $'-rf' /tmp/aegis-ansi-probe"
+expected_risk = "danger"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "strict_policy"
+
+[[cases]]
+name = "locale_quoted_program_word"
+command = "$\"rm\" -rf /tmp/aegis-ansi-probe"
+expected_risk = "danger"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "strict_policy"
+
+[[cases]]
+# An escaped quote inside `$'...'` does not end it, so the `;` splits commands.
+name = "ansi_c_escaped_quote_keeps_command_boundaries"
+command = "echo $'\\'' ; $'\\162m' -rf /tmp/aegis-ansi-probe ; echo $'\\''"
+expected_risk = "danger"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "strict_policy"
+
+[[cases]]
+# A backslash-newline is a line continuation: bash joins `r` and `m` into `rm`.
+name = "line_continuation_inside_program_word"
+command = "r\\\nm -rf /tmp/aegis-ansi-probe"
+expected_risk = "danger"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "strict_policy"
+
+[[cases]]
+# The outer double quotes keep `\m`; the inner shell reads it as `m`.
+name = "escaped_char_in_double_quoted_shell_body"
+command = "bash -c \"r\\m -rf /tmp/aegis-ansi-probe\""
+expected_risk = "danger"
+expected_decision = "prompt"
+expected_exit_code = 2
+
+[[cases]]
+name = "escaped_quote_in_double_quoted_shell_body"
+command = "sh -c \"rm -rf \\\"/tmp/aegis-ansi-probe\\\"\""
+expected_risk = "danger"
+expected_decision = "prompt"
+expected_exit_code = 2
+
+[[cases]]
+# Command substitution inside double quotes starts a fresh quoting context, so
+# the escaped quote there does not end the piece and `;` splits commands.
+name = "ansi_c_escaped_quote_inside_double_quoted_substitution"
+command = "echo \"$(echo $'\\'' ; git push --force ; echo $'\\'')\""
+expected_risk = "warn"
+expected_decision = "block"
+expected_exit_code = 3
+expected_block_reason = "strict_policy"

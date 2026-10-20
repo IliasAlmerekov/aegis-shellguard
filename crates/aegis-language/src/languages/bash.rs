@@ -32,6 +32,7 @@
 //! is not yet recognized), and unsupported interpreters (`perl`/`ruby`/`php`/…)
 //! are later slices.
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::sync::LazyLock;
 
@@ -261,8 +262,8 @@ fn is_node(name: &str) -> bool {
 /// Build a [`DetectedOperation`] for one classified command, attaching operand
 /// certainty and (for execution sinks) a nested literal payload.
 fn interpret_command(name_node: Node, cmd_node: Node, bytes: &[u8]) -> Option<DetectedOperation> {
-    let name = name_node.utf8_text(bytes).ok()?;
-    let class = classify_command(name)?;
+    let name = word_text(name_node, bytes)?;
+    let class = classify_command(&name)?;
     let args = command_args(cmd_node);
     let span = span_for(cmd_node);
     match class {
@@ -430,9 +431,10 @@ fn command_args(cmd_node: Node) -> Vec<Node> {
 fn rm_modifiers(args: &[Node], bytes: &[u8]) -> OperationModifiers {
     let mut mods = OperationModifiers::default();
     for arg in args {
-        let Some(text) = arg.utf8_text(bytes).ok() else {
+        let Some(text) = word_text(*arg, bytes) else {
             continue;
         };
+        let text = text.as_ref();
         if text == "--recursive" {
             mods.recursive = true;
             continue;
@@ -461,7 +463,7 @@ fn rm_modifiers(args: &[Node], bytes: &[u8]) -> OperationModifiers {
 /// Whether any argument carries a short flag containing `flag` (e.g. `tee -a`).
 fn has_short_flag(args: &[Node], flag: char, bytes: &[u8]) -> bool {
     for arg in args {
-        let Ok(text) = arg.utf8_text(bytes) else {
+        let Some(text) = word_text(*arg, bytes) else {
             continue;
         };
         let Some(rest) = text.strip_prefix('-') else {
@@ -477,22 +479,18 @@ fn has_short_flag(args: &[Node], flag: char, bytes: &[u8]) -> bool {
 /// Whether any argument is the long flag `--{flag}` (e.g. `tee --append`).
 fn has_long_flag(args: &[Node], flag: &str, bytes: &[u8]) -> bool {
     let needle = format!("--{flag}");
-    args.iter().any(|arg| {
-        arg.utf8_text(bytes)
-            .map(|text| text == needle.as_str())
-            .unwrap_or(false)
-    })
+    args.iter()
+        .any(|arg| word_text(*arg, bytes).is_some_and(|text| text == needle.as_str()))
 }
 
 /// The argument immediately following the first argument whose text equals one
 /// of `flags` (e.g. the payload after `bash -c` / `node -e`), or `None`.
 fn arg_after_flag<'a>(args: &[Node<'a>], flags: &[&str], bytes: &[u8]) -> Option<Node<'a>> {
     for (i, arg) in args.iter().enumerate() {
-        let Ok(cow) = arg.utf8_text(bytes) else {
+        let Some(text) = word_text(*arg, bytes) else {
             continue;
         };
-        let text: &str = cow;
-        if flags.contains(&text) {
+        if flags.contains(&text.as_ref()) {
             return args.get(i + 1).copied();
         }
     }
@@ -563,6 +561,20 @@ fn literal_content(node: Node, bytes: &[u8]) -> Option<String> {
         }
         "word" => Some(text.to_string()),
         _ => None,
+    }
+}
+
+/// The word bash runs for `node`: quotes removed, escapes and ANSI-C quoting
+/// decoded (`r\m`, `"rm"` and `$'\162m'` all read as `rm`). Text that does
+/// not read as exactly one word is returned as written.
+fn word_text<'a>(node: Node, bytes: &'a [u8]) -> Option<Cow<'a, str>> {
+    let text = node.utf8_text(bytes).ok()?;
+    if !text.contains(['\\', '\'', '"', '$']) {
+        return Some(Cow::Borrowed(text));
+    }
+    match aegis_parser::split_tokens(text).as_slice() {
+        [word] => Some(Cow::Owned(word.clone())),
+        _ => Some(Cow::Borrowed(text)),
     }
 }
 

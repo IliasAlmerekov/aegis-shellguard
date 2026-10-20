@@ -37,7 +37,7 @@ use runner::{
     bare_python_script_route, opaque_runner_before_run, opaque_runner_option,
     package_executable_uncertain,
 };
-use unclaimed::unclaimed_interpreter_net;
+use unclaimed::{contains_unquoted_ansi_c_quote, unclaimed_interpreter_net};
 use wrappers::{posix_function_definition_body, strip_trailing_redirection, wrapper_bodies};
 
 /// Bound on wrapper-peeling recursion. Each level of

@@ -674,3 +674,26 @@ fn empty_source_records_no_operations_and_no_errors() {
     assert_eq!(result.parse_errors, 0);
     assert!(result.operations.is_empty());
 }
+
+#[test]
+fn quoted_or_escaped_rm_spelling_yields_filesystem_delete() {
+    for source in [
+        r"r\m -rf /tmp/x",
+        r#""rm" -rf /tmp/x"#,
+        r"r''m -rf /tmp/x",
+        r"$'\162m' -rf /tmp/x",
+        r#"rm "-rf" /tmp/x"#,
+        r"rm -r\f /tmp/x",
+    ] {
+        let op = one_op(source);
+        assert_eq!(op.kind, OperationKind::FilesystemDelete, "{source}");
+        assert!(op.modifiers.recursive && op.modifiers.forced, "{source}");
+    }
+}
+
+#[test]
+fn quoted_shell_exec_flag_still_recovers_the_payload() {
+    let op = one_op(r#"ba\sh "-c" 'rm -rf /tmp/x'"#);
+    assert_eq!(op.kind, OperationKind::CodeExecution, "{op:?}");
+    assert!(op.payload.is_some(), "{op:?}");
+}

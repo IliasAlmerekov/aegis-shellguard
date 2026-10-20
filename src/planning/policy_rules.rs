@@ -1,7 +1,7 @@
 //! Runtime evaluation of typed `[[rules]]` entries against a raw command string.
 
 use aegis_config::{PolicyRule, policy_pattern_matches};
-use aegis_parser::{logical_segments, split_tokens};
+use aegis_parser::{canonical_ansi_c_quoting, logical_segments, split_tokens};
 use aegis_policy::PolicyRulesResult;
 use aegis_types::PolicyRuleDecision;
 
@@ -13,8 +13,11 @@ use aegis_types::PolicyRuleDecision;
 ///   the user reviews the full command chain.
 /// - Returns the default (not matched) when no rule matches.
 pub fn evaluate_policy_rules(rules: &[PolicyRule], cmd: &str) -> PolicyRulesResult {
-    let segments = logical_segments(cmd);
-    let first_segment: &str = segments.first().map(String::as_str).unwrap_or(cmd);
+    // Segment boundaries come from the words bash runs; see
+    // `canonical_ansi_c_quoting`.
+    let cmd = canonical_ansi_c_quoting(cmd);
+    let segments = logical_segments(&cmd);
+    let first_segment: &str = segments.first().map(String::as_str).unwrap_or(&cmd);
     let is_compound = segments.len() > 1;
 
     let token_strings: Vec<String> = split_tokens(first_segment);
@@ -214,6 +217,27 @@ mod tests {
         assert!(result.matched);
         // Allow must be downgraded to Prompt for compound commands.
         assert_eq!(result.decision, Some(PolicyRuleDecision::Prompt));
+    }
+
+    #[test]
+    fn ansi_c_quoted_escaped_quote_still_counts_as_compound() {
+        let rules = vec![rule_with_pattern(
+            vec![single("echo")],
+            PolicyRuleDecision::Allow,
+        )];
+        let result = evaluate_policy_rules(&rules, r"echo $'\'' ; terraform destroy ; echo $'\''");
+        assert!(result.matched);
+        assert_eq!(result.decision, Some(PolicyRuleDecision::Prompt));
+    }
+
+    #[test]
+    fn ansi_c_quoted_program_word_matches_the_decoded_rule() {
+        let rules = vec![rule_with_pattern(
+            vec![single("terraform"), single("destroy")],
+            PolicyRuleDecision::Block,
+        )];
+        let result = evaluate_policy_rules(&rules, r"$'\x74erraform' destroy");
+        assert_eq!(result.decision, Some(PolicyRuleDecision::Block));
     }
 
     #[test]

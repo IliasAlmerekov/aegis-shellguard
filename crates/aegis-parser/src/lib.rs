@@ -46,7 +46,10 @@ pub use segmentation::{
     logical_scan_segments, logical_segments, mask_command_substitutions, top_level_pipelines,
     unwrap_subshell_group,
 };
-pub use tokenizer::{extract_prefix, split_tokens};
+pub use tokenizer::{
+    ansi_c_quoting_is_inexact, canonical_ansi_c_quoting, canonical_ansi_c_quoting_marked,
+    extract_prefix, split_tokens,
+};
 
 /// Reserved words that keep the *next* word in command position too (issue
 /// #384) — `!`/`if`/`then`/`elif`/`else`/`while`/`until`/`do`/`time` all
@@ -550,11 +553,9 @@ fn nice_prefix_len(tokens: &[&str]) -> usize {
 }
 
 pub(crate) fn program_basename(token: &str) -> &str {
-    if let Some((_, basename)) = token.rsplit_once('/') {
-        basename
-    } else {
-        token
-    }
+    token
+        .rsplit_once('/')
+        .map_or(token, |(_, basename)| basename)
 }
 
 /// One top-level segment within a pipeline chain.
