@@ -8,7 +8,7 @@ const BANNED_PHRASES: [&str; 4] = [
     concat!("tamper", " evidence"),
 ];
 
-const ALLOWED_CONTEXTS: [(&str, &str); 8] = [
+const ALLOWED_CONTEXTS: [(&str, &str); 4] = [
     (
         "CHANGELOG.md",
         concat!(
@@ -32,38 +32,6 @@ const ALLOWED_CONTEXTS: [(&str, &str); 8] = [
         concat!(
             "  tamper",
             "-evidence — see TASKS.md H5 — but silently disabling even that from an"
-        ),
-    ),
-    (
-        "docs/plans/2026-07-14-h5-audit-integrity-contract.md",
-        concat!(
-            "\"tamper",
-            "-evident\" exceeds Aegis' local heuristic-guardrail contract."
-        ),
-    ),
-    (
-        "docs/plans/2026-07-14-h5-audit-integrity-contract.md",
-        concat!(
-            "1. **Terminology.** Ban `tamper",
-            "-evident`, `tamper",
-            "-proof`, `tamper",
-            " detection`,"
-        ),
-    ),
-    (
-        "docs/plans/2026-07-14-h5-audit-integrity-contract.md",
-        concat!(
-            "   and `tamper",
-            " evidence` as *capability claims* for the local chain. Canonical"
-        ),
-    ),
-    (
-        "docs/plans/2026-07-14-h5-audit-integrity-contract.md",
-        concat!(
-            "- `rtk git grep -n \"tamper",
-            "-evident\\|tamper",
-            " evidence\\|tamper",
-            " detection\"` — only"
         ),
     ),
 ];
