@@ -124,8 +124,9 @@ fn assert_no_confidentiality_overclaims(contents: &str, doc: &str) {
 }
 
 /// `PRD.md` is the normative source of the Sandbox contract, so it is pinned to
-/// the mandatory-layer wording of ADR-029 and the derived-profile wording of
-/// ADR-030.
+/// the mandatory-layer wording of ADR-029 and the `Trusted ceiling` wording of
+/// ADR-030. The derived-profile wording stays in the PRD as 1.x target state
+/// (ADR-030 amendment of 2026-10-06).
 #[test]
 fn prd_defines_the_mandatory_sandbox_contract() {
     let prd = fs::read_to_string(repo_path("PRD.md")).unwrap();
@@ -139,7 +140,7 @@ fn prd_defines_the_mandatory_sandbox_contract() {
         "not a confidentiality boundary",
         "not a privilege boundary",
         "write/network guardrail",
-        // ADR-030: the ceiling bounds, derivation only subtracts.
+        // ADR-030: the ceiling bounds; derivation (1.x) only subtracts.
         "Trusted ceiling",
         "Confinement degradation",
         // ADR-029 amendment (2026-08-20): the `[sandbox]` migration contract.

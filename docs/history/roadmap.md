@@ -524,9 +524,9 @@ contract, stated normatively in `PRD.md` §5.5, is:
   by exact name and **ignored at any value**, with a typed
   `deprecated_sandbox_field` diagnostic, for the whole support life of config
   schema v1. Aegis never rewrites a config file to remove them.
-- Write and network authority is bounded by the `Trusted ceiling` and narrowed
-  further by whichever rules matched the command
-  ([ADR-030](../adr/adr-030-the-confinement-profile-is-derived-from-the-assessment.md)).
+- Write and network authority is bounded by the `Trusted ceiling`. Narrowing it
+  further by whichever rules matched the command is 1.x target state
+  ([ADR-030 amendment](../adr/adr-030-the-confinement-profile-is-derived-from-the-assessment.md#amendment--2026-10-06-10-ships-the-trusted-ceiling-only)).
 - The surviving honesty claim is unchanged: the layer is a write/network
   guardrail, **not a confidentiality boundary and not a privilege boundary**.
 

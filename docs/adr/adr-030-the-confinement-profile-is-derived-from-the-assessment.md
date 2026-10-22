@@ -4,6 +4,9 @@
 
 Accepted. Extends [ADR-029](adr-029-the-sandbox-is-a-mandatory-1-0-layer.md).
 Refined 2026-08-20 — see [Refinement](#refinement--2026-08-20-the-ceiling-under-the-sandbox-migration-contract).
+Amended 2026-10-06: 1.0 ships the `Trusted ceiling` only, and per-command
+derivation moves to 1.x. See
+[Amendment](#amendment--2026-10-06-10-ships-the-trusted-ceiling-only).
 
 ## Context
 
@@ -223,3 +226,33 @@ component-wise at merge with no filesystem access, and canonically at enforcemen
 on both the trusted and the effective roots — which requires the trusted base and
 its provenance to reach enforcement
 ([#242](https://github.com/IliasAlmerekov/aegis-shellguard/issues/242)).
+
+## Amendment — 2026-10-06: 1.0 ships the Trusted ceiling only
+
+Decided in the 2026-10-06 positioning grill and recorded in
+[#498](https://github.com/IliasAlmerekov/aegis-shellguard/issues/498). The
+Decision above is unchanged as the target design. Only its release split changes.
+
+**1.0 ships the `Trusted ceiling` and nothing narrower.** The 1.0 effective
+profile is the ceiling of decision 2 intersected with project tightening and with
+any outer agent sandbox
+([#242](https://github.com/IliasAlmerekov/aegis-shellguard/issues/242)). Every
+command executed outside `Mode::Audit` gets that profile. The Sandbox stays mandatory under
+[ADR-029](adr-029-the-sandbox-is-a-mandatory-1-0-layer.md), and the ceiling rules
+of the 2026-08-20 Refinement stay normative for 1.0.
+
+**Derivation and surfacing move to 1.x.** Intersecting the restrictions of matched
+rules ([#243](https://github.com/IliasAlmerekov/aegis-shellguard/issues/243)) and
+showing the effective profile and its `Confinement degradation` in the dialog and
+the Audit log ([#244](https://github.com/IliasAlmerekov/aegis-shellguard/issues/244))
+are 1.x target state. Until then a rule carries no `Confinement restriction`, no
+`Confinement degradation` can occur, and the confinement degradation metric is not
+a 1.0 metric.
+
+**Why.** Rollback became the main promise of Aegis. Agent platforms now ask before
+a destructive command, but none of them restores the effects of a shell command.
+1.0 effort goes to the Snapshot and Rollback contract of
+[ADR-026](adr-026-snapshot-rollback-contract-for-1-0.md). Per-command narrowing
+needs a program-specific extractor for every restriction, and a wrong one is a
+hard command failure with no dialog in front of it (Consequences above). It is
+not needed to keep the 1.0 promise.

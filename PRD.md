@@ -1,8 +1,8 @@
 # PRD — Aegis 1.0
 
 **Status:** Approved specification for the Aegis 1.0 production release
-**Document revision:** 3
-**Last updated:** 2026-08-20
+**Document revision:** 4
+**Last updated:** 2026-10-22
 
 This PRD is the single normative source of the Aegis 1.0 product promise.
 The `1.0` milestone is the live release gate under
@@ -17,19 +17,23 @@ None of them restates the gate.
 
 ## 1. Product Overview
 
-Aegis is a lightweight Rust CLI that acts as a `$SHELL` proxy. It sits between an
-AI agent and the real shell, intercepts every shell command, classifies it by
-risk level, and requires human confirmation before destructive operations run.
+Aegis is a lightweight Rust CLI that acts as a `$SHELL` proxy. Before a risky
+command runs, it takes a Snapshot of the state the command can destroy, so the
+developer can roll it back. It gets in first by sitting between an AI agent and
+the real shell, where it intercepts every shell command, classifies it by risk
+level, and requires human confirmation before destructive operations run.
 
 **Problem.** AI agents (Claude Code, Codex, Cursor) run shell commands fast and
 with full permissions. A single bad command deletes files, resets a repository,
-drops a database, or pushes something dangerous. The developer has no control
-point between the agent's intent and the irreversible action.
+drops a database, or pushes something dangerous. Agent platforms now ask before
+destructive commands, but their checkpoints do not cover shell effects: the
+Claude Code docs say checkpointing "does not track files modified by Bash
+commands". Once the command has run, the developer has nothing to restore from.
 
-**Promise (one-liner).** Aegis is the last barrier between an AI agent and a
-dangerous command: safe commands run instantly, risky ones require confirmation,
-the worst are always blocked, and every command that does run is confined by the
-OS.
+**Promise (one-liner).** Aegis lets you roll back what an AI agent changed in
+git, Docker and databases from your shell. It snapshots that state before a risky
+command runs, asks you first when it should, confines every command it executes
+outside audit mode, and tells you plainly when a command cannot be rolled back.
 
 ---
 
@@ -38,13 +42,14 @@ OS.
 Aegis 1.0 is a **rule-driven guardrail for AI-agent shell commands**. It is built
 from three layers, and their 1.0 status is not uniform:
 
-- **Heuristic decision layer — the core of 1.0.** A fast rule corpus over parsed
-  commands decides `Safe` / `Warn` / `Danger` / `Block` and drives the
-  confirmation dialog.
 - **Snapshot / Rollback — mandatory in 1.0.** All six providers are part of the
   promise and are proven by a CI snapshot → rollback cycle
   ([ADR-026](docs/adr/adr-026-snapshot-rollback-contract-for-1-0.md)). Recovery is
   an obligation, not a convenience, wherever no human made the decision (§5.10).
+- **Heuristic decision layer — the core of 1.0.** A fast rule corpus over parsed
+  commands decides `Safe` / `Warn` / `Danger` / `Block` and drives the
+  confirmation dialog. It is also what lets Aegis take the Snapshot before the
+  command runs.
 - **Sandbox — a mandatory 1.0 layer.** Confinement is attempted for every
   executed command; failure to establish it blocks execution rather than
   downgrading to an unconfined run
@@ -55,11 +60,14 @@ from three layers, and their 1.0 status is not uniform:
 **Relationship to the agent's own sandbox.** An agent's sandbox protects the host
 *from* the agent, and the region it permits is the workspace itself — everything
 inside that region is granted wholesale. Aegis confines what the agent does
-*inside* that permitted region, driven by its own rule corpus, which knows which
-commands destroy what. The two layers are therefore complementary rather than
+*inside* that permitted region. In 1.0 its profile is the `Trusted ceiling`
+intersected with project tightening and with the outer sandbox. Narrowing each
+individual command by the rules that matched it, driven by a rule corpus that
+knows which commands destroy what, is 1.x target state
+([ADR-030 amendment]). The two layers are complementary rather than
 duplicative: the outer one decides where the agent may act at all, the inner one
-narrows each individual command within it. Nesting was measured on Linux and can
-only ever tighten authority, never widen it
+bounds what a command may write and reach inside it. Nesting was measured on
+Linux and can only ever tighten authority, never widen it
 ([#208](https://github.com/IliasAlmerekov/aegis-shellguard/issues/208)).
 
 **Honest boundaries (must be reflected in the product and docs).** Aegis confines
@@ -115,8 +123,9 @@ path, but team features are not shipped in 1.0.
    has no human to warn. Aegis re-checks Recovery readiness on every such run and
    halts the command when the obligation cannot be met (§5.10).
 6. **Confined execution.** Every executed command runs inside an OS confinement
-   whose write and network authority is bounded by the `Trusted ceiling` and
-   narrowed further by whichever rules matched the command.
+   whose write and network authority is bounded by the `Trusted ceiling`.
+   Narrowing it further by whichever rules matched the command is 1.x target
+   state ([ADR-030 amendment]).
 7. **Audit.** Every decision and every execution is written to an append-only
    JSONL log; the user reviews history and verifies the chain integrity
    (`aegis audit --verify-integrity`).
@@ -150,8 +159,9 @@ path, but team features are not shipped in 1.0.
   startup error — never a warning, never a silent ignore.
 - `[[rules]]` fields: `pattern` with `Alts`, `decision`
   (`allow`/`prompt`/`block`), `justification`, `match_examples`,
-  `not_match_examples`, a `when` clause (environment-conditional decision), and an
-  optional `Confinement restriction` (§5.5).
+  `not_match_examples`, and a `when` clause (environment-conditional decision).
+  The optional `Confinement restriction` field (§5.5) is 1.x target state
+  ([ADR-030 amendment]).
 - Rules are validated at load time. Invalid rules fail configuration loading with
   a human-readable validation error.
 
@@ -203,9 +213,11 @@ invariant; nothing here overrides it.
 ### 5.5 Sandbox
 
 The Sandbox is a **mandatory Sandbox** layer of Aegis 1.0, not an add-on
-([ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md)), and the
-profile it applies is derived per command rather than fixed for the session
-([ADR-030](docs/adr/adr-030-the-confinement-profile-is-derived-from-the-assessment.md)).
+([ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md)). In 1.0 the
+profile it applies is the `Trusted ceiling` with project tightening and any outer
+agent sandbox. Deriving the profile per command from the matched rules
+([ADR-030](docs/adr/adr-030-the-confinement-profile-is-derived-from-the-assessment.md))
+is 1.x target state ([ADR-030 amendment]).
 
 **Obligation.** Confinement is applied to every command Aegis executes outside
 `Mode::Audit`. Failure to establish the required confinement **blocks execution**;
@@ -230,10 +242,15 @@ unusable: writes within the workspace tree and `/tmp`, with network access
 disabled. A `cwd` of `/` does not implicitly make `/` a workspace. The project
 config layer may only narrow the ceiling, never widen it.
 
-**Derivation only ever subtracts, and only where a rule fired.** The effective
-profile is the `Trusted ceiling` intersected with the project tightening, with the
-restrictions carried by the rules that matched, and with any outer agent sandbox.
-Consequences of that shape, all of them normative:
+**The 1.0 effective profile.** The effective profile is the `Trusted ceiling`
+intersected with the project tightening and with any outer agent sandbox. No
+effective profile may grant a path, a network permission, or any other authority
+the ceiling withholds.
+
+**Per-rule derivation is 1.x target state** ([ADR-030 amendment]). Nothing
+in this paragraph or its list is a 1.0 promise. Derivation only ever subtracts,
+and only where a rule fired: the 1.x effective profile also intersects the
+restrictions carried by the rules that matched. Consequences of that shape:
 
 - An empty `matched` yields the ceiling unchanged, so the safe hot path performs
   no derivation work and stays inside the §6 budget.
@@ -241,17 +258,17 @@ Consequences of that shape, all of them normative:
   `Category` take no part in derivation, and a restriction is never expressed as
   an argv index: a wrong profile here is a broken command with no dialog to catch
   it.
-- No derived profile may grant a path, a network permission, or any other
-  authority the ceiling withholds.
 - When a restriction is declared but its extractor resolves no target, the command
   runs under the ceiling and a `Confinement degradation` is recorded. The
   degradation is **visible in the confirmation dialog**, not only in the Audit log,
   and it never blocks: blocking would turn a parser gap into an outage.
 
-**Observability.** The effective profile is shown in the confirmation dialog and
-recorded in the Audit log as a new field. When the layer cannot be established the
-Audit records `sandbox_status = "unavailable" accompanies Decision::Blocked`,
-because under a mandatory layer those two facts are one event rather than two.
+**Observability.** Showing the effective profile in the confirmation dialog and
+recording it in the Audit log as a new field is 1.x target state
+([ADR-030 amendment]); in 1.0 the profile does not vary per command. When the
+layer cannot be established the Audit records
+`sandbox_status = "unavailable" accompanies Decision::Blocked`, because under a
+mandatory layer those two facts are one event rather than two.
 `SandboxStatus` keeps its four values — the Audit format is a public contract from
 1.0 and `Unavailable` remains an accurate description of the fact; only its
 consequence changed. The active-channel warning survives for `NotConfigured` and
@@ -294,8 +311,8 @@ only ever reduce authority, never grant it.
   typed `trusted_ceiling_path_omitted` outcome carrying its reason
   (`relative` / `parent_dir` / `not_found` / `outside_trusted_ceiling`), its
   layer, and its location. Authority only narrows. This is deliberately not a
-  `Confinement degradation`, which names the opposite movement — a profile that
-  widened to the ceiling. Absolute paths only; `.` may be dropped
+  `Confinement degradation` (1.x), which names the opposite movement — a profile
+  that widened to the ceiling. Absolute paths only; `.` may be dropped
   component-wise; `..` is never folded lexically, because `/workspace/link/../secret`
   with `link -> /etc/subdir` folds to a path the filesystem does not resolve to.
   Containment is therefore checked at two moments: component-wise at merge, with
@@ -318,8 +335,9 @@ Hook protocols. `aegis config validate` is the authoritative surface and
 changes its exit code on warnings alone. The promise is that the warning is
 **available** on a discovery surface, not that every user reads it.
 
-The Audit log records the effective profile that was granted (§5.5,
-Observability) and not the causal diagnostics of how it was built. Config and
+Once it records the effective profile (§5.5, Observability, 1.x), the Audit log
+records the profile that was granted and not the causal diagnostics of how it was
+built. Config and
 runtime diagnostics own the reason; the Audit log is not a history of config
 provenance.
 
@@ -370,7 +388,9 @@ provenance.
 
 ### 5.10 Recovery
 
-Recovery is the ability to undo an executed destructive command. The **obligation**
+Recovery is the ability to restore, through Rollback, the state a Snapshot
+captured before a destructive command ran. It is not a general undo of the
+command. The **obligation**
 to have it attaches to the absence of a human decision, not to `RiskLevel`
 ([ADR-031](docs/adr/adr-031-unattended-destructive-execution-requires-recovery.md)).
 This section holds that invariant; §5.4 holds the machinery.
@@ -541,9 +561,11 @@ Officially supported 1.0 channels:
   reach the layer. **Target: 0%.** The pre-1.0 "share of commands executed in the
   sandbox" is retired: a successfully executed command outside `Mode::Audit` has
   `SandboxStatus::Active` by definition, so that figure is now identically 100%.
-- **Confinement degradation rate:** the share of executed commands that fell back
-  to the `Trusted ceiling` because a declared restriction's extractor resolved no
-  target (§5.5). Non-zero is expected; a rising trend indicates extractor gaps.
+- **Confinement degradation rate (1.x target state):** the share of executed
+  commands that fell back to the `Trusted ceiling` because a declared
+  restriction's extractor resolved no target (§5.5). Non-zero is expected; a
+  rising trend indicates extractor gaps. It is not a 1.0 metric, because 1.0
+  ships no per-rule derivation ([ADR-030 amendment]).
 - **Prevented incidents:** the count of `Block` and `Deny` on `Danger` commands
   in the audit log as an indicator of real protection.
 
@@ -590,3 +612,5 @@ release checklist elsewhere in the repository is evidence of work done, not a ga
 - A guarantee of byte-for-byte reproducible builds across all environments.
 - First-class integration with agents other than Claude Code and Codex (others
   go through `$SHELL`, best-effort).
+
+[ADR-030 amendment]: docs/adr/adr-030-the-confinement-profile-is-derived-from-the-assessment.md#amendment--2026-10-06-10-ships-the-trusted-ceiling-only
