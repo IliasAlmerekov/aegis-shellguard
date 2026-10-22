@@ -4,7 +4,8 @@
 
 Accepted. Supersedes [ADR-003](adr-003-aegis-is-a-heuristic-guardrail-not-a-sandbox.md).
 Per-command narrowing by the rule corpus, the rationale in Context below, is
-realised in 1.x. 1.0 confines every command under the `Trusted ceiling`; see the
+realised in 1.x. 1.0 confines every command it executes outside `Mode::Audit`
+under the `Trusted ceiling`; see the
 [ADR-030 amendment of 2026-10-06](adr-030-the-confinement-profile-is-derived-from-the-assessment.md#amendment--2026-10-06-10-ships-the-trusted-ceiling-only).
 The decision that the Sandbox is mandatory is unchanged.
 

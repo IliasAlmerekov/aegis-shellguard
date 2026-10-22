@@ -346,15 +346,15 @@ allow_write = []
 - **A bad ceiling entry narrows instead of failing the load**, with its own typed
   outcome `trusted_ceiling_path_omitted` and reason
   `relative` / `parent_dir` / `not_found` / `outside_trusted_ceiling`. This is
-  deliberately **not** a `Confinement degradation`: that term means the profile
+  deliberately **not** a `Confinement degradation` (1.x): that term means the profile
   widened to the ceiling, this one means it narrowed. It does not promise "never
   blocks" — a TOCTOU between canonicalisation and `bwrap --bind` remains.
 - **`allow_network` keeps its meaning** and stays project-tightenable to `false`
   only.
 - Warnings for all of the above are typed diagnostics surfaced by
   `aegis config validate` and `aegis status`, never a per-`$SHELL -c` log line.
-  Audit records the effective profile, not the causal diagnostics of how it was
-  built.
+  Once Audit records the effective profile (1.x, ADR-030 amendment), it records
+  that profile, not the causal diagnostics of how it was built.
 - macOS permits `file-read*` in the generated Seatbelt profile; it restricts
   writes and network access but does not hide readable files or secrets. On
   Linux, bwrap exposes read-only system mounts plus explicitly bound writable

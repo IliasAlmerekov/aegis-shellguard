@@ -30,10 +30,10 @@ destructive commands, but their checkpoints do not cover shell effects: the
 Claude Code docs say checkpointing "does not track files modified by Bash
 commands". Once the command has run, the developer has nothing to restore from.
 
-**Promise (one-liner).** Aegis lets you roll back what an AI agent did in your
-shell. It snapshots git, Docker and databases before a risky command runs, asks
-you first when it should, runs every command inside OS confinement, and tells you
-plainly when a command cannot be rolled back.
+**Promise (one-liner).** Aegis lets you roll back what an AI agent changed in
+git, Docker and databases from your shell. It snapshots that state before a risky
+command runs, asks you first when it should, confines every command it executes
+outside audit mode, and tells you plainly when a command cannot be rolled back.
 
 ---
 

@@ -237,7 +237,7 @@ Decision above is unchanged as the target design. Only its release split changes
 profile is the ceiling of decision 2 intersected with project tightening and with
 any outer agent sandbox
 ([#242](https://github.com/IliasAlmerekov/aegis-shellguard/issues/242)). Every
-executed command gets that profile. The Sandbox stays mandatory under
+command executed outside `Mode::Audit` gets that profile. The Sandbox stays mandatory under
 [ADR-029](adr-029-the-sandbox-is-a-mandatory-1-0-layer.md), and the ceiling rules
 of the 2026-08-20 Refinement stay normative for 1.0.
 
