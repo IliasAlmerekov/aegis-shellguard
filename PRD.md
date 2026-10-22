@@ -19,9 +19,9 @@ None of them restates the gate.
 
 Aegis is a lightweight Rust CLI that acts as a `$SHELL` proxy. Before a risky
 command runs, it takes a Snapshot of the state the command can destroy, so the
-developer can roll it back. To get there first, it sits between an AI agent and
-the real shell, intercepts every shell command, classifies it by risk level, and
-requires human confirmation before destructive operations run.
+developer can roll it back. It gets in first by sitting between an AI agent and
+the real shell, where it intercepts every shell command, classifies it by risk
+level, and requires human confirmation before destructive operations run.
 
 **Problem.** AI agents (Claude Code, Codex, Cursor) run shell commands fast and
 with full permissions. A single bad command deletes files, resets a repository,
@@ -33,7 +33,7 @@ commands". Once the command has run, the developer has nothing to restore from.
 **Promise (one-liner).** Aegis lets you roll back what an AI agent did in your
 shell. It snapshots git, Docker and databases before a risky command runs, asks
 you first when it should, runs every command inside OS confinement, and tells you
-plainly when a command can't be rolled back.
+plainly when a command cannot be rolled back.
 
 ---
 
@@ -258,8 +258,6 @@ restrictions carried by the rules that matched. Consequences of that shape:
   `Category` take no part in derivation, and a restriction is never expressed as
   an argv index: a wrong profile here is a broken command with no dialog to catch
   it.
-- No derived profile may grant a path, a network permission, or any other
-  authority the ceiling withholds.
 - When a restriction is declared but its extractor resolves no target, the command
   runs under the ceiling and a `Confinement degradation` is recorded. The
   degradation is **visible in the confirmation dialog**, not only in the Audit log,
@@ -313,8 +311,8 @@ only ever reduce authority, never grant it.
   typed `trusted_ceiling_path_omitted` outcome carrying its reason
   (`relative` / `parent_dir` / `not_found` / `outside_trusted_ceiling`), its
   layer, and its location. Authority only narrows. This is deliberately not a
-  `Confinement degradation`, which names the opposite movement — a profile that
-  widened to the ceiling. Absolute paths only; `.` may be dropped
+  `Confinement degradation` (1.x), which names the opposite movement — a profile
+  that widened to the ceiling. Absolute paths only; `.` may be dropped
   component-wise; `..` is never folded lexically, because `/workspace/link/../secret`
   with `link -> /etc/subdir` folds to a path the filesystem does not resolve to.
   Containment is therefore checked at two moments: component-wise at merge, with
