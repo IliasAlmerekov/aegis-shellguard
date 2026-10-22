@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Changed: PRD revision 4 leads the product promise with Rollback, lists the Snapshot / Rollback layer first, and defines Recovery as restoring captured state rather than an undo. 1.0 confinement is the `Trusted ceiling`; per-rule derivation and its surfacing move to 1.x (#498, ADR-030 amendment of 2026-10-06)
 - Fixed: The generated Homebrew formula no longer carries an explicit `version` line, which `brew audit` rejects as redundant with the version scanned from the URL and which failed the v0.7.1 install smoke. The tap publication guard now reads the version from the release download URLs (all must agree) and still refuses a downgrade against a tap formula that has the old `version` line (#491)
 
 ## [0.7.1] (2026-10-20)

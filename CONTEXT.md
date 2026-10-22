@@ -536,14 +536,16 @@ Rule matches. It can only subtract. Targets are located by a named
 program-specific extractor, never by argv position and never by `Category`
 inference. A Rule that declares none is the identity — the ceiling passes through
 unchanged (ADR-030).
+Target state: 1.x (ADR-030 amendment).
 _Avoid_: permission grant, capability, sandbox rule
 
 **Effective confinement profile**:
 The writable roots and network permission actually applied to one command: the
-`Trusted ceiling` intersected with project tightening, with every matched
-`Confinement restriction`, and with any outer agent sandbox. Recorded in the
-`AuditEntry`, because `Sandbox status` alone no longer says what was confined once
-the profile varies per command.
+`Trusted ceiling` intersected with project tightening and with any outer agent
+sandbox. In 1.x it is also intersected with every matched `Confinement
+restriction`, and it is recorded in the `AuditEntry`, because `Sandbox status`
+alone no longer says what was confined once the profile varies per command
+(ADR-030 amendment).
 _Avoid_: derived profile, computed profile, final profile
 
 **Confinement degradation**:
@@ -551,6 +553,7 @@ The state where a `Confinement restriction` was declared but its extractor resol
 no target, so the command runs under the `Trusted ceiling` instead of a narrowed
 profile. Like `Recovery degradation` it must never be silent: it is visible in the
 confirmation dialog, not only in the `Audit log`.
+Target state: 1.x (ADR-030 amendment).
 _Avoid_: extractor failure, profile fallback
 
 **Sandbox status**:
