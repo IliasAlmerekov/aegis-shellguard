@@ -161,6 +161,7 @@ struct RollbackArgs {
     snapshot_id: String,
 
     /// Attempt the restore without asking when the liveness check is inconclusive.
+    /// It has no effect when the Snapshot is confirmed gone.
     #[arg(long)]
     yes: bool,
 }

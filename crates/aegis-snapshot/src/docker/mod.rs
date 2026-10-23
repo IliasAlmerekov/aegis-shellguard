@@ -82,7 +82,13 @@ impl DockerPlugin {
 
         let mut attempt = 0usize;
         loop {
-            match Command::new(&self.docker_bin).args(&args).output().await {
+            // kill_on_drop: a liveness timeout drops this future and must not orphan the child.
+            match Command::new(&self.docker_bin)
+                .args(&args)
+                .kill_on_drop(true)
+                .output()
+                .await
+            {
                 Ok(output) => return Ok(output),
                 Err(error)
                     if is_executable_busy(&error) && attempt < DOCKER_BUSY_RETRY_ATTEMPTS =>

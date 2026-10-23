@@ -128,6 +128,11 @@ fn stash_list(repo: &Path) -> String {
 /// A fake `docker` whose `image inspect` fails the way a dead daemon does.
 /// Every call is appended to the returned log.
 fn fake_dead_docker(env: &Env) -> (PathBuf, PathBuf) {
+    fake_docker_failing_inspect(env, "Cannot connect to the Docker daemon")
+}
+
+/// A fake `docker` whose `image inspect` fails with `message` on stderr.
+fn fake_docker_failing_inspect(env: &Env, message: &str) -> (PathBuf, PathBuf) {
     let bin_dir = env.home.path().join("fake-bin");
     fs::create_dir(&bin_dir).unwrap();
     let log = env.home.path().join("docker.log");
@@ -135,8 +140,9 @@ fn fake_dead_docker(env: &Env) -> (PathBuf, PathBuf) {
     fs::write(
         &script,
         format!(
-            "#!/bin/sh\necho \"$@\" >> '{}'\nif [ \"$1\" = image ]; then\n  echo 'Cannot connect to the Docker daemon' >&2\n  exit 1\nfi\nexit 0\n",
-            log.display()
+            "#!/bin/sh\necho \"$@\" >> '{}'\nif [ \"$1\" = image ]; then\n  echo '{}' >&2\n  exit 1\nfi\nexit 0\n",
+            log.display(),
+            message
         ),
     )
     .unwrap();
@@ -300,6 +306,27 @@ fn rollback_of_an_inconclusive_snapshot_without_a_terminal_exits_2_and_names_yes
     assert!(stderr(&output).contains("--yes"), "{}", stderr(&output));
     assert!(!fs::read_to_string(&log).unwrap().contains("stop"));
     assert_eq!(env.audit_len(), audit_before);
+}
+
+#[test]
+fn rollback_of_a_snapshot_whose_image_is_gone_exits_1_with_or_without_yes() {
+    let env = Env::new();
+    let (bin_dir, log) = fake_docker_failing_inspect(&env, "Error: No such image: img:1");
+    env.record("docker", DOCKER_RECORD);
+
+    for args in [
+        &["rollback", DOCKER_RECORD][..],
+        &["rollback", DOCKER_RECORD, "--yes"][..],
+    ] {
+        let output = env.run_with_path(args, Some(&bin_dir));
+        assert_eq!(code(&output), 1, "{args:?}: {}", stderr(&output));
+    }
+
+    let calls = fs::read_to_string(&log).unwrap();
+    assert!(
+        calls.lines().all(|l| l.starts_with("image inspect")),
+        "{calls}"
+    );
 }
 
 #[test]

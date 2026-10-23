@@ -28,6 +28,20 @@ mod rollback;
 #[cfg(test)]
 mod tests;
 
+/// The manifest gate `rollback` applies before it acts; `liveness` checks the same.
+fn ensure_rollback_eligible(manifest: &SupabaseManifest) -> Result<()> {
+    manifest.validate_schema_v1()?;
+
+    let strict = manifest.recompute_strict_eligibility()?;
+    if !strict.allowed {
+        return Err(SnapshotError::Snapshot(format!(
+            "rollback denied: recomputed manifest eligibility is not allowed (status: {:?})",
+            strict.overall_status
+        )));
+    }
+    manifest.ensure_summary_matches_recomputed(&strict)
+}
+
 #[async_trait]
 impl SnapshotPlugin for SupabasePlugin {
     fn name(&self) -> &'static str {
@@ -136,16 +150,7 @@ impl SnapshotPlugin for SupabasePlugin {
                 ))
             })?;
 
-        // The same eligibility gate `rollback` applies before it acts.
-        manifest.validate_schema_v1()?;
-        let strict = manifest.recompute_strict_eligibility()?;
-        if !strict.allowed {
-            return Err(SnapshotError::Snapshot(format!(
-                "rollback denied: recomputed manifest eligibility is not allowed (status: {:?})",
-                strict.overall_status
-            )));
-        }
-        manifest.ensure_summary_matches_recomputed(&strict)?;
+        ensure_rollback_eligible(&manifest)?;
 
         let dump_path = manifest.resolve_db_artifact_path(&manifest_path)?;
         Ok(local_file_liveness(&dump_path).await)
@@ -167,16 +172,7 @@ impl SnapshotPlugin for SupabasePlugin {
                 ))
             })?;
 
-        manifest.validate_schema_v1()?;
-
-        let strict = manifest.recompute_strict_eligibility()?;
-        if !strict.allowed {
-            return Err(SnapshotError::Snapshot(format!(
-                "rollback denied: recomputed manifest eligibility is not allowed (status: {:?})",
-                strict.overall_status
-            )));
-        }
-        manifest.ensure_summary_matches_recomputed(&strict)?;
+        ensure_rollback_eligible(&manifest)?;
 
         let dump_path = manifest.resolve_db_artifact_path(&manifest_path)?;
         if !dump_path.exists() {

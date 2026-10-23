@@ -426,7 +426,7 @@ impl SnapshotRegistry {
 
     /// Check the Snapshot liveness of one snapshot using the named plugin.
     ///
-    /// The check is bounded at 5 seconds; a check that overruns is
+    /// The check is bounded at [`LIVENESS_TIMEOUT`]; a check that overruns is
     /// [`Liveness::Inconclusive`].
     pub async fn liveness(
         &self,

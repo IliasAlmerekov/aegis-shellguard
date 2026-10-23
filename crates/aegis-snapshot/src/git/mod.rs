@@ -113,8 +113,10 @@ async fn working_tree_is_dirty(cwd: impl AsRef<Path>) -> Result<bool> {
 /// Find the positional `stash@{N}` reference of the entry whose commit is
 /// `hash`, or `None` when the entry is gone.
 async fn find_stash_ref(cwd: impl AsRef<Path>, hash: &str) -> Result<Option<String>> {
+    // kill_on_drop: a liveness timeout drops this future and must not orphan git.
     let list_out = git_command(cwd)
         .args(["stash", "list", "--format=%H %gd"])
+        .kill_on_drop(true)
         .output()
         .await
         .map_err(|e| SnapshotError::Snapshot(format!("git stash list failed: {e}")))?;
