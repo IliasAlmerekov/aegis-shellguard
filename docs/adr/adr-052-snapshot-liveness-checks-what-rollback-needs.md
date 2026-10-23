@@ -61,6 +61,8 @@ the decision below, and ADR-029 removes `sandbox.required`.
    with `--format json`. It exits `0` when every Snapshot is `Present` or
    `Nothing captured`, `1` when any is `Absent`, `5` when any is `Inconclusive`
    and none is `Absent`, and `4` for an unknown or pruned id or an error.
+   When rows differ, `4` wins over `1`, and `1` over `5`: a record Rollback
+   cannot use outranks a missing artifact.
    Exit code `5` joins the public exit-code table; `2` keeps its single
    meaning, Denied.
 6. **`aegis rollback` runs the same check before it writes anything.** On
