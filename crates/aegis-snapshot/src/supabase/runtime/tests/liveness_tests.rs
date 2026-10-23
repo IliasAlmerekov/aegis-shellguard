@@ -111,3 +111,36 @@ async fn liveness_rejects_a_malformed_id() {
             .is_err()
     );
 }
+
+#[tokio::test]
+async fn liveness_is_inconclusive_when_the_manifest_cannot_be_read() {
+    let temp_dir = TempDir::new().unwrap();
+    let manifest_path = manifest_path(&temp_dir);
+    fs::create_dir_all(&manifest_path).unwrap();
+    let snapshot_id = SupabasePlugin::build_snapshot_id(&manifest_path);
+
+    let outcome = liveness_plugin(&temp_dir)
+        .liveness(&snapshot_id)
+        .await
+        .unwrap();
+
+    assert!(
+        matches!(outcome, Liveness::Inconclusive { .. }),
+        "{outcome:?}"
+    );
+}
+
+#[test]
+fn resolve_db_artifact_path_errors_when_the_parent_cannot_be_resolved() {
+    let temp_dir = TempDir::new().unwrap();
+    let manifest_path = write_phase1_manifest_fixture(&temp_dir, &valid_db_dump_checksum());
+    let mut manifest: SupabaseManifest =
+        serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+    let bundle_root = manifest_path.parent().unwrap();
+    fs::write(bundle_root.join("file"), "not a directory").unwrap();
+    manifest.artifacts.db.path = Some("file/sub/dump".to_string());
+
+    let result = manifest.resolve_db_artifact_path(&manifest_path);
+
+    assert!(result.is_err(), "{result:?}");
+}

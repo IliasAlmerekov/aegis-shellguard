@@ -33,6 +33,42 @@ impl SnapshotPlugin for HangingLivenessPlugin {
     }
 }
 
+/// A plugin whose liveness is `Absent`, so dispatch can tell it from the succeeding double.
+struct AbsentLivenessPlugin;
+
+#[async_trait]
+impl SnapshotPlugin for AbsentLivenessPlugin {
+    fn name(&self) -> &'static str {
+        "mock-absent"
+    }
+
+    async fn is_applicable(&self, _cwd: &Path) -> bool {
+        true
+    }
+
+    async fn snapshot(
+        &self,
+        _cwd: &Path,
+        _cmd: &str,
+    ) -> std::result::Result<String, SnapshotError> {
+        Ok(String::new())
+    }
+
+    async fn rollback(&self, _snapshot_id: &str) -> std::result::Result<(), SnapshotError> {
+        Ok(())
+    }
+
+    async fn delete(&self, _snapshot_id: &str) -> std::result::Result<(), SnapshotError> {
+        Ok(())
+    }
+
+    async fn liveness(&self, _snapshot_id: &str) -> std::result::Result<Liveness, SnapshotError> {
+        Ok(Liveness::Absent {
+            reason: "gone".to_string(),
+        })
+    }
+}
+
 #[tokio::test]
 async fn liveness_within_reports_inconclusive_when_the_check_overruns() {
     let outcome = liveness_within(
@@ -52,7 +88,7 @@ async fn liveness_within_reports_inconclusive_when_the_check_overruns() {
 #[tokio::test]
 async fn liveness_dispatches_to_the_named_plugin() {
     let registry = SnapshotRegistry::new_with_plugins(vec![
-        Box::new(AlwaysFailingPlugin),
+        Box::new(AbsentLivenessPlugin),
         Box::new(AlwaysSucceedingPlugin),
     ]);
 

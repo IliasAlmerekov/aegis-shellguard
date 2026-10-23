@@ -199,6 +199,27 @@ fn verify_exits_4_for_an_unknown_id() {
     let output = env.run(&["snapshot", "verify", "no-such-id"]);
 
     assert_eq!(code(&output), 4, "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("error: snapshot verify failed:"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn verify_reports_an_invalid_config_as_a_config_error() {
+    let env = Env::new();
+    env.record("docker", "none");
+    fs::write(env.home.path().join(".aegis.toml"), "not = [valid").unwrap();
+
+    let output = env.run(&["snapshot", "verify"]);
+
+    assert_eq!(code(&output), 4, "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("Fix or remove the invalid config file"),
+        "{}",
+        stderr(&output)
+    );
 }
 
 #[test]
