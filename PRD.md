@@ -197,8 +197,10 @@ invariant; nothing here overrides it.
 - `snapshot_id` is `v3`, using `:` as its separator. Legacy `v2` tab-joined ids
   stay parseable permanently.
 - `aegis rollback '<snapshot-id>'` restores state, behind a preflight that
-  distinguishes "artifact absent" from "check inconclusive". With no TTY,
-  `rollback` fails closed.
+  distinguishes "artifact absent" from "check inconclusive". `rollback` refuses
+  an absent artifact (exit 1). It asks only when the check is inconclusive, and
+  without a TTY that question fails closed (exit 2) unless `--yes` is given;
+  a present Snapshot restores without a terminal.
 - `aegis snapshot list` enumerates available snapshots with their `snapshot_id`,
   provider, and creation time so the opaque id is discoverable.
   `aegis snapshot verify` is the separate, uncached liveness check; liveness is
