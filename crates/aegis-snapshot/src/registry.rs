@@ -437,9 +437,10 @@ impl SnapshotRegistry {
             .plugins
             .iter()
             .find(|plugin| plugin.name() == plugin_name)
+            // Liveness checks what Rollback needs, so an unknown plugin reads as Rollback would report it.
             .ok_or_else(|| {
                 SnapshotError::Snapshot(format!(
-                    "snapshot plugin {plugin_name:?} is not available for liveness"
+                    "snapshot plugin {plugin_name:?} is not available for rollback"
                 ))
             })?;
 
