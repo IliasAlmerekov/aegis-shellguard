@@ -12,8 +12,8 @@ use tokio::process::Command;
 
 use aegis_config::{DockerScope, DockerScopeMode};
 
-use crate::SnapshotPlugin;
 use crate::error::SnapshotError;
+use crate::{Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
@@ -388,6 +388,51 @@ impl SnapshotPlugin for DockerPlugin {
         }
 
         Ok(())
+    }
+
+    async fn liveness(&self, snapshot_id: &str) -> Result<Liveness> {
+        if snapshot_id == NO_CONTAINERS {
+            return Ok(Liveness::NothingCaptured);
+        }
+
+        let mut records = Vec::new();
+        for line in snapshot_id.lines() {
+            let record: ContainerRecord = serde_json::from_str(line).map_err(|e| {
+                SnapshotError::Snapshot(format!("malformed docker snapshot record: {e}"))
+            })?;
+            records.push(record);
+        }
+
+        // `rollback` removes the live container before it runs the recorded
+        // image, so every image must be there; any missing one is `Absent`.
+        for record in &records {
+            let out = match self
+                .run_docker_output(["image", "inspect", &record.image], "docker image inspect")
+                .await
+            {
+                Ok(out) => out,
+                Err(error) => {
+                    return Ok(Liveness::Inconclusive {
+                        reason: error.to_string(),
+                    });
+                }
+            };
+            if out.status.success() {
+                continue;
+            }
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            return Ok(if stderr.to_lowercase().contains("no such image") {
+                Liveness::Absent {
+                    reason: format!("docker image {} no longer exists", record.image),
+                }
+            } else {
+                Liveness::Inconclusive {
+                    reason: format!("docker image inspect failed: {}", stderr.trim()),
+                }
+            });
+        }
+
+        Ok(Liveness::Present)
     }
 
     async fn delete(&self, snapshot_id: &str) -> Result<()> {

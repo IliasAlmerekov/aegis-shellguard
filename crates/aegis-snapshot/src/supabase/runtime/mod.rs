@@ -16,6 +16,7 @@
 
 use super::*;
 use crate::containment::contain_artifact;
+use crate::liveness::local_file_liveness;
 
 use manifest_io::write_manifest_atomically;
 use manifest_state::phase1_complete;
@@ -107,6 +108,47 @@ impl SnapshotPlugin for SupabasePlugin {
         let snapshot_id = Self::build_snapshot_id(&canonical_manifest_path);
         tracing::info!(%snapshot_id, "supabase snapshot created");
         Ok(snapshot_id)
+    }
+
+    async fn liveness(&self, snapshot_id: &str) -> Result<Liveness> {
+        let manifest_path = Self::parse_snapshot_id(snapshot_id)?;
+        let manifest_bytes = match tokio::fs::read(&manifest_path).await {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Liveness::Absent {
+                    reason: format!("manifest {} no longer exists", manifest_path.display()),
+                });
+            }
+            Err(error) => {
+                return Ok(Liveness::Inconclusive {
+                    reason: format!(
+                        "could not read manifest {}: {error}",
+                        manifest_path.display()
+                    ),
+                });
+            }
+        };
+        let manifest: SupabaseManifest =
+            serde_json::from_slice(&manifest_bytes).map_err(|error| {
+                SnapshotError::Snapshot(format!(
+                    "failed to deserialize supabase manifest {}: {error}",
+                    manifest_path.display()
+                ))
+            })?;
+
+        // The same eligibility gate `rollback` applies before it acts.
+        manifest.validate_schema_v1()?;
+        let strict = manifest.recompute_strict_eligibility()?;
+        if !strict.allowed {
+            return Err(SnapshotError::Snapshot(format!(
+                "rollback denied: recomputed manifest eligibility is not allowed (status: {:?})",
+                strict.overall_status
+            )));
+        }
+        manifest.ensure_summary_matches_recomputed(&strict)?;
+
+        let dump_path = manifest.resolve_db_artifact_path(&manifest_path)?;
+        Ok(local_file_liveness(&dump_path).await)
     }
 
     async fn rollback(&self, snapshot_id: &str) -> Result<()> {

@@ -90,6 +90,13 @@ impl aegis_snapshot::SnapshotPlugin for SucceedingPlugin {
     async fn delete(&self, _snapshot_id: &str) -> Result<(), aegis_snapshot::SnapshotError> {
         Ok(())
     }
+
+    async fn liveness(
+        &self,
+        _snapshot_id: &str,
+    ) -> Result<aegis_snapshot::Liveness, aegis_snapshot::SnapshotError> {
+        Ok(aegis_snapshot::Liveness::Present)
+    }
 }
 
 /// A snapshot plugin that always applies and always fails.
@@ -121,6 +128,13 @@ impl aegis_snapshot::SnapshotPlugin for FailingPlugin {
 
     async fn delete(&self, _snapshot_id: &str) -> Result<(), aegis_snapshot::SnapshotError> {
         Ok(())
+    }
+
+    async fn liveness(
+        &self,
+        _snapshot_id: &str,
+    ) -> Result<aegis_snapshot::Liveness, aegis_snapshot::SnapshotError> {
+        Ok(aegis_snapshot::Liveness::Present)
     }
 }
 

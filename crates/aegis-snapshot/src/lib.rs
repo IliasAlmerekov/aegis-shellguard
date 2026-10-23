@@ -38,6 +38,8 @@ pub use supabase::SupabasePlugin;
 mod clock;
 /// Filesystem containment checks for snapshot artifacts.
 mod containment;
+/// Snapshot liveness outcome and shared check helpers.
+mod liveness;
 /// Filesystem path helpers for the snapshot subsystem.
 mod paths;
 /// Snapshot registry materialization and runtime dispatch.
@@ -55,6 +57,8 @@ pub mod testing;
 
 /// Re-export of [`clock::Clock`], [`clock::SystemClock`], [`clock::FixedClock`].
 pub use clock::{Clock, FixedClock, SystemClock};
+/// Re-export of [`liveness::Liveness`].
+pub use liveness::Liveness;
 /// Re-export of [`registry::SnapshotCoverage`], [`registry::SnapshotRegistry`],
 /// [`registry::SnapshotRegistryConfig`], [`registry::available_provider_names`].
 pub use registry::{
@@ -94,6 +98,15 @@ pub trait SnapshotPlugin: Send + Sync {
     /// already been removed. Backend failures are reported as
     /// [`SnapshotError::DeleteFailed`].
     async fn delete(&self, snapshot_id: &str) -> Result<()>;
+
+    /// Check whether `snapshot_id` can still be restored, looking only at what
+    /// [`rollback`](Self::rollback) needs (ADR-052).
+    ///
+    /// Returns `Err` for a record Rollback cannot use: a malformed id, an
+    /// artifact path outside the Snapshot store, or a manifest that fails its
+    /// eligibility check. Required, with no default: a provider must not
+    /// answer "unknown" by omission.
+    async fn liveness(&self, snapshot_id: &str) -> Result<Liveness>;
 }
 
 #[cfg(test)]

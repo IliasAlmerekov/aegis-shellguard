@@ -8,6 +8,7 @@ use aegis_config::{
 use aegis_types::{RecordedSnapshot, SnapshotPolicy, SnapshotRecord};
 
 use crate::error::SnapshotError;
+use crate::liveness::{LIVENESS_TIMEOUT, Liveness};
 use crate::paths::resolve_snapshots_dir;
 use crate::retention::{PrunableRecord, prunable_records_newest_first};
 use crate::{
@@ -179,6 +180,20 @@ fn registry_config_from_parts(
         snapshots_dir,
         docker_scope: config.docker_scope.clone(),
     }
+}
+
+async fn liveness_within(
+    limit: std::time::Duration,
+    plugin: &dyn SnapshotPlugin,
+    snapshot_id: &str,
+) -> std::result::Result<Liveness, SnapshotError> {
+    tokio::time::timeout(limit, plugin.liveness(snapshot_id))
+        .await
+        .unwrap_or_else(|_| {
+            Ok(Liveness::Inconclusive {
+                reason: format!("liveness check did not finish within {limit:?}"),
+            })
+        })
 }
 
 impl SnapshotRegistryConfig {
@@ -409,6 +424,28 @@ impl SnapshotRegistry {
         plugin.delete(snapshot_id).await
     }
 
+    /// Check the Snapshot liveness of one snapshot using the named plugin.
+    ///
+    /// The check is bounded at 5 seconds; a check that overruns is
+    /// [`Liveness::Inconclusive`].
+    pub async fn liveness(
+        &self,
+        plugin_name: &str,
+        snapshot_id: &str,
+    ) -> std::result::Result<Liveness, SnapshotError> {
+        let plugin = self
+            .plugins
+            .iter()
+            .find(|plugin| plugin.name() == plugin_name)
+            .ok_or_else(|| {
+                SnapshotError::Snapshot(format!(
+                    "snapshot plugin {plugin_name:?} is not available for liveness"
+                ))
+            })?;
+
+        liveness_within(LIVENESS_TIMEOUT, plugin.as_ref(), snapshot_id).await
+    }
+
     /// Turn the Snapshot ledger's live records into prune records, newest
     /// first in log order.
     ///
@@ -459,6 +496,13 @@ mod tests {
 
         async fn delete(&self, _snapshot_id: &str) -> std::result::Result<(), SnapshotError> {
             Ok(())
+        }
+
+        async fn liveness(
+            &self,
+            _snapshot_id: &str,
+        ) -> std::result::Result<Liveness, SnapshotError> {
+            Ok(Liveness::Present)
         }
     }
 
@@ -551,6 +595,13 @@ mod tests {
         async fn delete(&self, _snapshot_id: &str) -> std::result::Result<(), SnapshotError> {
             Ok(())
         }
+
+        async fn liveness(
+            &self,
+            _snapshot_id: &str,
+        ) -> std::result::Result<Liveness, SnapshotError> {
+            Ok(Liveness::Present)
+        }
     }
 
     /// A plugin that never applies, so it must not enter the applicable count.
@@ -581,6 +632,90 @@ mod tests {
         async fn delete(&self, _snapshot_id: &str) -> std::result::Result<(), SnapshotError> {
             Ok(())
         }
+
+        async fn liveness(
+            &self,
+            _snapshot_id: &str,
+        ) -> std::result::Result<Liveness, SnapshotError> {
+            Ok(Liveness::Present)
+        }
+    }
+
+    /// A plugin whose liveness check never finishes.
+    struct HangingLivenessPlugin;
+
+    #[async_trait]
+    impl SnapshotPlugin for HangingLivenessPlugin {
+        fn name(&self) -> &'static str {
+            "mock-hanging"
+        }
+
+        async fn is_applicable(&self, _cwd: &Path) -> bool {
+            true
+        }
+
+        async fn snapshot(
+            &self,
+            _cwd: &Path,
+            _cmd: &str,
+        ) -> std::result::Result<String, SnapshotError> {
+            Ok(String::new())
+        }
+
+        async fn rollback(&self, _snapshot_id: &str) -> std::result::Result<(), SnapshotError> {
+            Ok(())
+        }
+
+        async fn delete(&self, _snapshot_id: &str) -> std::result::Result<(), SnapshotError> {
+            Ok(())
+        }
+
+        async fn liveness(
+            &self,
+            _snapshot_id: &str,
+        ) -> std::result::Result<Liveness, SnapshotError> {
+            std::future::pending().await
+        }
+    }
+
+    #[tokio::test]
+    async fn liveness_within_reports_inconclusive_when_the_check_overruns() {
+        let outcome = liveness_within(
+            std::time::Duration::from_millis(20),
+            &HangingLivenessPlugin,
+            "id",
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            matches!(outcome, Liveness::Inconclusive { .. }),
+            "{outcome:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn liveness_dispatches_to_the_named_plugin() {
+        let registry = SnapshotRegistry::new_with_plugins(vec![
+            Box::new(AlwaysFailingPlugin),
+            Box::new(AlwaysSucceedingPlugin),
+        ]);
+
+        let outcome = registry.liveness("mock-succeeding", "id").await.unwrap();
+
+        assert_eq!(outcome, Liveness::Present);
+    }
+
+    #[tokio::test]
+    async fn liveness_for_an_unknown_plugin_is_an_error() {
+        let registry = SnapshotRegistry::new_with_plugins(vec![]);
+
+        let error = registry.liveness("nope", "id").await.unwrap_err();
+
+        assert!(
+            error.to_string().contains("not available for liveness"),
+            "{error}"
+        );
     }
 
     #[test]

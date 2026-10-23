@@ -5,8 +5,8 @@ use std::path::Path;
 use async_trait::async_trait;
 use tokio::process::Command;
 
-use crate::SnapshotPlugin;
 use crate::error::SnapshotError;
+use crate::{Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
@@ -383,6 +383,41 @@ impl SnapshotPlugin for GitPlugin {
 
         tracing::info!(stash_ref = %stash_ref, "git snapshot rolled back");
         Ok(())
+    }
+
+    async fn liveness(&self, snapshot_id: &str) -> Result<Liveness> {
+        if snapshot_id == CLEAN_SENTINEL {
+            return Ok(Liveness::NothingCaptured);
+        }
+
+        let (cwd_str, hash) = snapshot_id.split_once(SEP).ok_or_else(|| {
+            SnapshotError::Snapshot(format!("malformed snapshot_id: {snapshot_id:?}"))
+        })?;
+
+        match tokio::fs::try_exists(cwd_str).await {
+            Ok(true) => {}
+            Ok(false) => {
+                return Ok(Liveness::Absent {
+                    reason: format!("repository directory {cwd_str} no longer exists"),
+                });
+            }
+            Err(error) => {
+                return Ok(Liveness::Inconclusive {
+                    reason: format!("could not stat repository directory {cwd_str}: {error}"),
+                });
+            }
+        }
+
+        // The same lookup `rollback` performs before it touches anything.
+        Ok(match find_stash_ref(cwd_str, hash).await {
+            Ok(Some(_)) => Liveness::Present,
+            Ok(None) => Liveness::Absent {
+                reason: format!("no stash entry for hash {hash}"),
+            },
+            Err(error) => Liveness::Inconclusive {
+                reason: error.to_string(),
+            },
+        })
     }
 
     async fn delete(&self, snapshot_id: &str) -> Result<()> {

@@ -9,10 +9,11 @@ use async_trait::async_trait;
 #[cfg(unix)]
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 
-use crate::SnapshotPlugin;
 use crate::containment::contain_artifact;
 use crate::error::SnapshotError;
+use crate::liveness::local_file_liveness;
 use crate::secure_fs::{create_artifact_file, create_store_dir};
+use crate::{Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
@@ -224,6 +225,12 @@ impl SnapshotPlugin for SqlitePlugin {
         std::io::copy(&mut dump_file, &mut restore_file)?;
         tracing::info!(snapshot_id = snapshot_id, "sqlite snapshot rolled back");
         Ok(())
+    }
+
+    async fn liveness(&self, snapshot_id: &str) -> Result<Liveness> {
+        let (_original_path, dump_path) = Self::parse_snapshot_id(snapshot_id)?;
+        let dump_path = contain_artifact("sqlite", &self.snapshots_dir, &dump_path)?;
+        Ok(local_file_liveness(&dump_path).await)
     }
 
     async fn delete(&self, snapshot_id: &str) -> Result<()> {
@@ -755,5 +762,56 @@ mod tests {
         assert_ne!(first_dump, second_dump);
         assert_eq!(fs::read(first_dump).unwrap(), b"before-snapshot");
         assert_eq!(fs::read(second_dump).unwrap(), b"after-first-snapshot");
+    }
+
+    #[tokio::test]
+    async fn liveness_is_present_when_the_dump_exists() {
+        let temp_dir = TempDir::new().unwrap();
+        let snaps = temp_dir.path().join("snaps");
+        fs::create_dir(&snaps).unwrap();
+        let dump = snaps.join("d.db");
+        write_db(&dump, b"x");
+        let plugin = SqlitePlugin::new(PathBuf::from("/tmp/app.db"), snaps);
+        let id = SqlitePlugin::build_snapshot_id(Path::new("/tmp/app.db"), &dump);
+
+        assert_eq!(plugin.liveness(&id).await.unwrap(), Liveness::Present);
+    }
+
+    #[tokio::test]
+    async fn liveness_is_absent_when_the_dump_is_missing() {
+        let temp_dir = TempDir::new().unwrap();
+        let snaps = temp_dir.path().join("snaps");
+        fs::create_dir(&snaps).unwrap();
+        let plugin = SqlitePlugin::new(PathBuf::from("/tmp/app.db"), snaps.clone());
+        let id = SqlitePlugin::build_snapshot_id(Path::new("/tmp/app.db"), &snaps.join("gone.db"));
+
+        let outcome = plugin.liveness(&id).await.unwrap();
+
+        assert!(matches!(outcome, Liveness::Absent { .. }), "{outcome:?}");
+    }
+
+    #[tokio::test]
+    async fn liveness_rejects_a_dump_outside_the_snapshot_store() {
+        let temp_dir = TempDir::new().unwrap();
+        let snaps = temp_dir.path().join("snaps");
+        fs::create_dir(&snaps).unwrap();
+        let outside = temp_dir.path().join("outside.db");
+        write_db(&outside, b"x");
+        let plugin = SqlitePlugin::new(PathBuf::from("/tmp/app.db"), snaps);
+        let id = SqlitePlugin::build_snapshot_id(Path::new("/tmp/app.db"), &outside);
+
+        let error = plugin.liveness(&id).await.unwrap_err();
+
+        assert!(
+            matches!(error, SnapshotError::PathEscapesSnapshotStore { .. }),
+            "{error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn liveness_rejects_a_malformed_id() {
+        let plugin = SqlitePlugin::new(PathBuf::from("/tmp/app.db"), PathBuf::from("/tmp/snaps"));
+
+        assert!(plugin.liveness("garbage").await.is_err());
     }
 }
