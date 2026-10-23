@@ -683,6 +683,17 @@ established, or `Structural` when a local tool additionally parsed the artifact.
 An absent or unresponsive checking tool yields `PresenceOnly`, never `Invalid`.
 _Avoid_: verification strength, check depth
 
+**Snapshot liveness**:
+Whether a recorded Snapshot can still be restored right now, as judged from its
+artifact: `Present`, `Absent` when the artifact is confirmed gone,
+`Inconclusive` when the check could not finish, or `Nothing captured` when the
+Snapshot recorded that there was nothing to capture. Checked on demand by
+`aegis snapshot verify` and by `aegis rollback` before it restores; never cached
+and never part of the pre-command path. It is a property of the artifact now,
+unlike `Snapshot attempt readiness`, which belongs to one attempt (ADR-026,
+ADR-052).
+_Avoid_: snapshot health, availability, snapshot status
+
 **Recovery opt-out**:
 The trusted, deliberate declining of `Required recovery`, from either of two
 sources: `Mode::Audit`, which declines all enforcement, or a global
