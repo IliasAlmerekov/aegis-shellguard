@@ -503,3 +503,7 @@ mod tests;
 
 #[cfg(test)]
 mod toplevel_tests;
+
+#[cfg(test)]
+#[path = "tests/liveness_tests.rs"]
+mod liveness_tests;

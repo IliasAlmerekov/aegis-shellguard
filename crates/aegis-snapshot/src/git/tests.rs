@@ -3,10 +3,10 @@ use std::fs;
 use tempfile::TempDir;
 
 /// Stand-in for the guarded command. `snapshot()` never reads it.
-const DANGEROUS_CMD: &str = "rm -rf .";
+pub(super) const DANGEROUS_CMD: &str = "rm -rf .";
 
 /// Initialise a bare git repo with an empty initial commit so stash works.
-async fn init_repo(dir: &std::path::Path) {
+pub(super) async fn init_repo(dir: &std::path::Path) {
     git_command(dir).args(["init"]).output().await.unwrap();
     // Set local identity so stash commits don't depend on global git config.
     for (key, val) in [
@@ -32,7 +32,7 @@ async fn init_repo(dir: &std::path::Path) {
 }
 
 /// Write `content` to `name`, stage it, and commit it.
-async fn commit_file(dir: &std::path::Path, name: &str, content: &str) {
+pub(super) async fn commit_file(dir: &std::path::Path, name: &str, content: &str) {
     fs::write(dir.join(name), content).unwrap();
     git_command(dir).args(["add", name]).output().await.unwrap();
     git_command(dir)
@@ -797,58 +797,4 @@ async fn rollback_parks_current_work_before_restoring() {
         list.contains(PRE_ROLLBACK_PREFIX),
         "the work rollback replaced must be parked in a stash entry: {list}"
     );
-}
-
-async fn dirty_snapshot(dir: &std::path::Path) -> String {
-    init_repo(dir).await;
-    commit_file(dir, "a.txt", "one").await;
-    fs::write(dir.join("a.txt"), "two").unwrap();
-    GitPlugin.snapshot(dir, DANGEROUS_CMD).await.unwrap()
-}
-
-#[tokio::test]
-async fn liveness_is_present_for_a_live_stash_entry() {
-    let dir = TempDir::new().unwrap();
-    let id = dirty_snapshot(dir.path()).await;
-
-    assert_eq!(GitPlugin.liveness(&id).await.unwrap(), Liveness::Present);
-}
-
-#[tokio::test]
-async fn liveness_is_absent_after_the_stash_entry_is_dropped() {
-    let dir = TempDir::new().unwrap();
-    let id = dirty_snapshot(dir.path()).await;
-    git_command(dir.path())
-        .args(["stash", "drop"])
-        .output()
-        .await
-        .unwrap();
-
-    let outcome = GitPlugin.liveness(&id).await.unwrap();
-
-    assert!(matches!(outcome, Liveness::Absent { .. }), "{outcome:?}");
-}
-
-#[tokio::test]
-async fn liveness_is_absent_when_the_repo_directory_is_gone() {
-    let dir = TempDir::new().unwrap();
-    let id = dirty_snapshot(dir.path()).await;
-    fs::remove_dir_all(dir.path()).unwrap();
-
-    let outcome = GitPlugin.liveness(&id).await.unwrap();
-
-    assert!(matches!(outcome, Liveness::Absent { .. }), "{outcome:?}");
-}
-
-#[tokio::test]
-async fn liveness_is_nothing_captured_for_the_clean_sentinel() {
-    assert_eq!(
-        GitPlugin.liveness("clean").await.unwrap(),
-        Liveness::NothingCaptured
-    );
-}
-
-#[tokio::test]
-async fn liveness_rejects_a_malformed_id() {
-    assert!(GitPlugin.liveness("no-separator").await.is_err());
 }
