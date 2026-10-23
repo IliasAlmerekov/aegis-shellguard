@@ -775,6 +775,21 @@ async fn liveness_is_absent_when_the_dump_is_missing() {
 }
 
 #[tokio::test]
+async fn liveness_is_absent_when_the_artifact_directory_is_gone() {
+    let temp_dir = TempDir::new().unwrap();
+    let manifest_path = write_phase1_manifest_fixture(&temp_dir, &valid_db_dump_checksum());
+    fs::remove_dir_all(manifest_path.parent().unwrap().join("artifacts")).unwrap();
+    let snapshot_id = SupabasePlugin::build_snapshot_id(&manifest_path);
+
+    let outcome = liveness_plugin(&temp_dir)
+        .liveness(&snapshot_id)
+        .await
+        .unwrap();
+
+    assert!(matches!(outcome, Liveness::Absent { .. }), "{outcome:?}");
+}
+
+#[tokio::test]
 async fn liveness_rejects_a_manifest_that_fails_eligibility() {
     let temp_dir = TempDir::new().unwrap();
     let manifest_path = write_phase1_manifest_fixture(&temp_dir, &valid_db_dump_checksum());
