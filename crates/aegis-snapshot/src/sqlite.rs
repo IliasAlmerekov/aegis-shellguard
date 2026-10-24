@@ -106,6 +106,14 @@ impl SqlitePlugin {
         )
     }
 
+    /// The database file a Snapshot was taken of, or `None` for a malformed id.
+    /// `aegis rollback --last` uses it to bind a sqlite Snapshot to a place.
+    pub fn database_path(snapshot_id: &str) -> Option<PathBuf> {
+        Self::parse_snapshot_id(snapshot_id)
+            .ok()
+            .map(|(original, _dump)| original)
+    }
+
     fn parse_snapshot_id(snapshot_id: &str) -> Result<(PathBuf, PathBuf)> {
         if snapshot_id.starts_with(&format!("{SNAPSHOT_ID_VERSION}{SEP}")) {
             return Self::parse_v2_snapshot_id(snapshot_id);
@@ -764,5 +772,6 @@ mod tests {
         assert_eq!(fs::read(second_dump).unwrap(), b"after-first-snapshot");
     }
 
+    mod database_path_tests;
     mod liveness_tests;
 }
