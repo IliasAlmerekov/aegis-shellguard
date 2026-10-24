@@ -577,6 +577,9 @@ Current mapping:
 - `aegis rollback`: `1` the Snapshot artifact is confirmed absent (`--yes` does not override), `2` the
   liveness check was inconclusive and the operator refused or no terminal was available without `--yes`,
   `4` unknown or pruned id, a liveness error, or a rollback failure
+- `aegis rollback --last`: the same codes per Snapshot (the first failure decides when several fail),
+  `2` also when no terminal is available without `--yes` or the operator declines, and `4` when no
+  command with a Snapshot is recorded for the current location (ADR-053)
 
 These values are also reflected in JSON output:
 

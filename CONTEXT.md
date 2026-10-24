@@ -735,9 +735,18 @@ _Avoid_: always allow, recovery bypass
 
 **Rollback**:
 Restoring the state captured by a previous `Snapshot`, addressed by its
-`snapshot_id`. It restores captured state; it is not a general undo of the
-command that ran afterward.
+`snapshot_id` or chosen by `aegis rollback --last` from the `Command location`.
+It restores captured state; it is not a general undo of the command that ran
+afterward.
 _Avoid_: undo, revert
+
+**Command location**:
+The recorded `cwd` and Git target that tie an `AuditEntry` to a place. Every new
+entry records its `cwd`; a git `Snapshot` also records its Git target. A
+`Snapshot` is bound to the current location when its Git target is the
+repository top level there, or its sqlite file lies beneath it; docker and
+database `Snapshot`s are never bound (ADR-053).
+_Avoid_: working directory (for the recorded field), project
 
 **Snapshot ledger**:
 The single reading of the `Audit log` that answers which `Snapshot`s exist, which

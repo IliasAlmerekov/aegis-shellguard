@@ -86,6 +86,7 @@ corruption and inconsistent edits.
 │ 1. Entrypoint        src/main.rs + CLI/shell glue                       │
 │                      (cli_dispatch.rs, cli_commands.rs,                 │
 │                       shell_compat.rs, shell_wrapper.rs, rollback.rs,   │
+│                       rollback_last.rs,                                 │
 │                       policy_output.rs, toggle.rs, runtime_gate.rs)     │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ 2. Policy Engine     src/decision/  +  src/planning/                  │
@@ -124,6 +125,7 @@ Rollback, Config, Hook, Install}` and `--command <cmd>` to their handlers.
 - `shell_wrapper.rs` — bridges shell-wrapper invocations into planning and
   output rendering.
 - `rollback.rs` — rollback CLI path (`aegis rollback <snapshot-id>`).
+- `rollback_last.rs` — `aegis rollback --last`: picks the latest command bound to the current location and restores its Snapshots (ADR-053).
 - `policy_output.rs` — evaluation-only JSON rendering for `--output json`.
 - `toggle.rs` — file-based on/off switch (`~/.aegis/disabled`); handles
   `aegis on`, `aegis off`, `aegis status`.
@@ -543,7 +545,7 @@ Allowed dependency directions. Arrows point from caller → callee.
 
 ```
 entrypoint (main, cli_dispatch, shell_compat, cli_commands, shell_wrapper,
-            shell_flow, rollback, install, policy_output,
+            shell_flow, rollback, rollback_last, install, policy_output,
             toggle, runtime_gate)
     │
     ├──▶ planning ──▶ decision           (pure; no I/O)
