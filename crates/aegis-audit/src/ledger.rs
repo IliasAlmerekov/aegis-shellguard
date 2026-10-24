@@ -196,6 +196,7 @@ mod tests {
                 .map(|(plugin, id)| AuditSnapshot {
                     plugin: (*plugin).to_string(),
                     snapshot_id: (*id).to_string(),
+                    git_target: None,
                 })
                 .collect(),
             None,

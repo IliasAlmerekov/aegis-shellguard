@@ -332,6 +332,14 @@ impl SnapshotPlugin for GitPlugin {
         Ok(snapshot_id)
     }
 
+    async fn snapshot_target(&self, cwd: &Path) -> Option<String> {
+        let top = match git_toplevel(cwd).await {
+            Some(top) => top,
+            None => cwd.canonicalize().ok()?,
+        };
+        Some(top.to_string_lossy().into_owned())
+    }
+
     async fn rollback(&self, snapshot_id: &str) -> Result<()> {
         if snapshot_id == CLEAN_SENTINEL {
             tracing::info!("git snapshot was clean, nothing to roll back");

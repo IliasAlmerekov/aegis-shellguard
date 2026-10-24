@@ -60,6 +60,7 @@ fn audit_entry_serializes_nested_explanation_sections() {
         vec![AuditSnapshot {
             plugin: "git".to_string(),
             snapshot_id: "snap-1".to_string(),
+            git_target: None,
         }],
         None,
         None,
@@ -102,6 +103,7 @@ fn audit_entry_keeps_existing_top_level_fields_for_backward_compatibility() {
         vec![AuditSnapshot {
             plugin: "git".to_string(),
             snapshot_id: "snap-1".to_string(),
+            git_target: None,
         }],
         None,
         None,

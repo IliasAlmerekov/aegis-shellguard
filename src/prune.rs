@@ -40,6 +40,7 @@ pub(crate) async fn execute(args: crate::PruneArgs) -> Result<Vec<PrunableRecord
                     vec![AuditSnapshot {
                         plugin: record.plugin.clone(),
                         snapshot_id: record.snapshot_id.clone(),
+                        git_target: None,
                     }],
                     None,
                     None,

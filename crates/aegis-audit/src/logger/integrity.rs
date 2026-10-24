@@ -99,16 +99,11 @@ pub(super) struct AuditIntegrityPayload<'a> {
 
 pub(super) fn compute_entry_hash(entry: &AuditEntry, prev_hash: Option<&str>) -> Result<String> {
     let base = entry.as_base();
-    let (source, cwd, id, transport): (Option<&str>, Option<&str>, Option<&str>, Option<&str>) =
-        match entry {
-            AuditEntry::Watch(w) => (
-                w.source.as_deref(),
-                w.cwd.as_deref(),
-                w.id.as_deref(),
-                Some("watch"),
-            ),
-            AuditEntry::Decision(_) => (None, None, None, None),
-        };
+    let (source, id, transport): (Option<&str>, Option<&str>, Option<&str>) = match entry {
+        AuditEntry::Watch(w) => (w.source.as_deref(), w.id.as_deref(), Some("watch")),
+        AuditEntry::Decision(_) => (None, None, None),
+    };
+    let cwd = base.cwd.as_deref();
     let payload = AuditIntegrityPayload {
         timestamp: base.timestamp,
         sequence: base.sequence,

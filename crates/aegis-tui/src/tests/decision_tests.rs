@@ -460,6 +460,7 @@ fn dialog_shows_snapshot_records() {
     let snap = SnapshotRecord {
         plugin: "git",
         snapshot_id: "stash@{0}".to_string(),
+        git_target: None,
     };
 
     let mut output = Vec::new();

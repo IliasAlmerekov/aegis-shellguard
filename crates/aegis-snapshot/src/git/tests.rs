@@ -798,3 +798,18 @@ async fn rollback_parks_current_work_before_restoring() {
         "the work rollback replaced must be parked in a stash entry: {list}"
     );
 }
+
+#[tokio::test]
+async fn snapshot_target_is_the_canonical_repository_top_level() {
+    let dir = TempDir::new().unwrap();
+    init_repo(dir.path()).await;
+    let sub = dir.path().join("a").join("b");
+    fs::create_dir_all(&sub).unwrap();
+
+    let target = GitPlugin.snapshot_target(&sub).await;
+
+    assert_eq!(
+        target.as_deref(),
+        Some(dir.path().canonicalize().unwrap().to_str().unwrap())
+    );
+}

@@ -5,6 +5,8 @@ pub struct SnapshotRecord {
     pub plugin: &'static str,
     /// Opaque identifier returned by the plugin (e.g. stash ref, image tag).
     pub snapshot_id: String,
+    /// The git working tree this Snapshot covers; set only by the git plugin.
+    pub git_target: Option<String>,
 }
 
 /// One live `Snapshot` as the Snapshot ledger reads it from the Audit log.

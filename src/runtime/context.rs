@@ -676,7 +676,14 @@ impl RuntimeContext {
         // language result was merged). Typed Match evidence + detection IDs are
         // carried per-pattern via `From<&MatchResult>` above.
         .with_basis(assessment.basis())
-        .with_analysis(assessment.analysis.clone());
+        .with_analysis(assessment.analysis.clone())
+        // The Command location (#499). A watch entry overwrites it with the
+        // frame's cwd in `with_watch_context`.
+        .with_cwd(
+            std::env::current_dir()
+                .ok()
+                .map(|dir| dir.to_string_lossy().into_owned()),
+        );
 
         match recovery_degradation {
             Some(degradation) => entry.with_recovery_degradation(degradation),
@@ -728,6 +735,7 @@ async fn automatic_prune(config: AegisConfig) -> Result<(), AegisError> {
             vec![AuditSnapshot {
                 plugin: record.plugin,
                 snapshot_id: record.snapshot_id,
+                git_target: None,
             }],
             None,
             None,

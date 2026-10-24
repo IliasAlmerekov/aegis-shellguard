@@ -89,6 +89,13 @@ pub trait SnapshotPlugin: Send + Sync {
     /// Create a snapshot and return its identifier.
     async fn snapshot(&self, cwd: &Path, cmd: &str) -> Result<String>;
 
+    /// The git working tree a Snapshot taken at `cwd` covers, as a canonical
+    /// top-level path (ADR-053). Only the git provider has one; every other
+    /// provider keeps this default.
+    async fn snapshot_target(&self, _cwd: &Path) -> Option<String> {
+        None
+    }
+
     /// Revert to a previously created snapshot.
     async fn rollback(&self, snapshot_id: &str) -> Result<()>;
 

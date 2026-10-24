@@ -126,6 +126,7 @@ fn append_rollback_audit_entry(logger: &AuditLogger, target: &RollbackTarget) ->
         vec![AuditSnapshot {
             plugin: target.plugin.clone(),
             snapshot_id: target.snapshot_id.clone(),
+            git_target: None,
         }],
         None,
         None,
@@ -151,6 +152,7 @@ mod tests {
             vec![AuditSnapshot {
                 plugin: plugin.to_string(),
                 snapshot_id: snapshot_id.to_string(),
+                git_target: None,
             }],
             None,
             None,
@@ -171,6 +173,7 @@ mod tests {
             vec![AuditSnapshot {
                 plugin: plugin.to_string(),
                 snapshot_id: snapshot_id.to_string(),
+                git_target: None,
             }],
             None,
             None,
