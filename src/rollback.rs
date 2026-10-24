@@ -25,7 +25,7 @@ pub(crate) enum RollbackOutcome {
 
 /// The liveness preflight's verdict (ADR-052 §6, §7).
 #[derive(Debug, PartialEq, Eq)]
-enum Preflight {
+pub(crate) enum Preflight {
     Restore,
     Refused { code: i32, message: String },
 }
@@ -59,7 +59,12 @@ pub(crate) async fn execute(snapshot_id: String, yes: bool) -> Result<RollbackOu
 
 /// Decide from the liveness outcome whether Rollback may write. Only a
 /// question needs a terminal: `Inconclusive` asks, everything else does not.
-fn decide(liveness: Liveness, yes: bool, is_tty: bool, input: &mut impl BufRead) -> Preflight {
+pub(crate) fn decide(
+    liveness: Liveness,
+    yes: bool,
+    is_tty: bool,
+    input: &mut impl BufRead,
+) -> Preflight {
     match liveness {
         Liveness::Present | Liveness::NothingCaptured => Preflight::Restore,
         Liveness::Absent { reason } => Preflight::Refused {
@@ -117,7 +122,10 @@ pub(crate) fn find_snapshot_target(
     }
 }
 
-fn append_rollback_audit_entry(logger: &AuditLogger, target: &RollbackTarget) -> Result<()> {
+pub(crate) fn append_rollback_audit_entry(
+    logger: &AuditLogger,
+    target: &RollbackTarget,
+) -> Result<()> {
     Ok(logger.append(AuditEntry::new(
         format!("aegis rollback {}", target.snapshot_id),
         RiskLevel::Safe,

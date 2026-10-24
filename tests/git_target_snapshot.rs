@@ -90,6 +90,17 @@ fn context(rt: &tokio::runtime::Runtime) -> RuntimeContext {
 /// Plan `command` from `cwd`, take the planned Snapshots, and return the
 /// git records' ids.
 fn snapshot(rt: &tokio::runtime::Runtime, cwd: &Path, command: &str) -> Vec<String> {
+    git_records(rt, cwd, command)
+        .into_iter()
+        .map(|record| record.snapshot_id)
+        .collect()
+}
+
+fn git_records(
+    rt: &tokio::runtime::Runtime,
+    cwd: &Path,
+    command: &str,
+) -> Vec<aegis_types::SnapshotRecord> {
     let context = context(rt);
     let outcome = plan_with_context(
         &context,
@@ -111,7 +122,6 @@ fn snapshot(rt: &tokio::runtime::Runtime, cwd: &Path, command: &str) -> Vec<Stri
         .records
         .into_iter()
         .filter(|record| record.plugin == "git")
-        .map(|record| record.snapshot_id)
         .collect()
 }
 
@@ -160,6 +170,26 @@ fn dash_c_snapshot_restores_the_other_repository_and_leaves_the_cwd_alone() {
 
     assert_restored(&world.a);
     assert_untouched(&world.cwd);
+}
+
+/// `aegis rollback --last` binds a git Snapshot by this record (#499, ADR-053).
+#[test]
+fn the_git_record_names_its_git_target() {
+    let rt = runtime();
+    let world = world();
+    dirty(&world.a);
+    let command = format!(
+        "git -C {} filter-branch --index-filter true",
+        world.a.display()
+    );
+
+    let records = git_records(&rt, &world.cwd, &command);
+
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].git_target.as_deref(),
+        Some(world.a.canonicalize().unwrap().to_str().unwrap())
+    );
 }
 
 #[test]
