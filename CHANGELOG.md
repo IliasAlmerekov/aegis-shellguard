@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Added: `aegis snapshot verify [<id>] [--format json]` checks that each recorded Snapshot's artifact still exists (exit 0, 1 absent, 5 inconclusive, 4 error), and `aegis rollback` runs the same check before it writes anything: it refuses an absent artifact, and asks (or needs `--yes` without a terminal) only when the check is inconclusive (#215, ADR-052)
 - Changed: PRD revision 4 leads the product promise with Rollback, lists the Snapshot / Rollback layer first, and defines Recovery as restoring captured state rather than an undo. 1.0 confinement is the `Trusted ceiling`; per-rule derivation and its surfacing move to 1.x (#498, ADR-030 amendment of 2026-10-06)
 - Fixed: The generated Homebrew formula no longer carries an explicit `version` line, which `brew audit` rejects as redundant with the version scanned from the URL and which failed the v0.7.1 install smoke. The tap publication guard now reads the version from the release download URLs (all must agree) and still refuses a downgrade against a tap formula that has the old `version` line (#491)
 

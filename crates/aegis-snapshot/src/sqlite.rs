@@ -9,10 +9,11 @@ use async_trait::async_trait;
 #[cfg(unix)]
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 
-use crate::SnapshotPlugin;
 use crate::containment::contain_artifact;
 use crate::error::SnapshotError;
+use crate::liveness::local_file_liveness;
 use crate::secure_fs::{create_artifact_file, create_store_dir};
+use crate::{Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
@@ -224,6 +225,12 @@ impl SnapshotPlugin for SqlitePlugin {
         std::io::copy(&mut dump_file, &mut restore_file)?;
         tracing::info!(snapshot_id = snapshot_id, "sqlite snapshot rolled back");
         Ok(())
+    }
+
+    async fn liveness(&self, snapshot_id: &str) -> Result<Liveness> {
+        let (_original_path, dump_path) = Self::parse_snapshot_id(snapshot_id)?;
+        let dump_path = contain_artifact("sqlite", &self.snapshots_dir, &dump_path)?;
+        Ok(local_file_liveness(&dump_path).await)
     }
 
     async fn delete(&self, snapshot_id: &str) -> Result<()> {
@@ -756,4 +763,6 @@ mod tests {
         assert_eq!(fs::read(first_dump).unwrap(), b"before-snapshot");
         assert_eq!(fs::read(second_dump).unwrap(), b"after-first-snapshot");
     }
+
+    mod liveness_tests;
 }

@@ -41,11 +41,16 @@ impl SupabaseManifest {
                 "manifest artifacts.db.path has no parent under bundle root: {relative_path}"
             ))
         })?;
-        let parent_canonical = parent.canonicalize().map_err(|error| {
-            SnapshotError::Snapshot(format!(
-                "failed to resolve artifact parent for rollback: {error}"
-            ))
-        })?;
+        let parent_canonical = match parent.canonicalize() {
+            Ok(path) => path,
+            // A parent that is gone cannot point outside the bundle; the caller finds the dump missing.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(resolved),
+            Err(error) => {
+                return Err(SnapshotError::Snapshot(format!(
+                    "failed to resolve artifact parent for rollback: {error}"
+                )));
+            }
+        };
 
         if !parent_canonical.starts_with(&bundle_root_canonical) {
             return Err(SnapshotError::Snapshot(format!(

@@ -3,10 +3,10 @@ use std::fs;
 use tempfile::TempDir;
 
 /// Stand-in for the guarded command. `snapshot()` never reads it.
-const DANGEROUS_CMD: &str = "rm -rf .";
+pub(super) const DANGEROUS_CMD: &str = "rm -rf .";
 
 /// Initialise a bare git repo with an empty initial commit so stash works.
-async fn init_repo(dir: &std::path::Path) {
+pub(super) async fn init_repo(dir: &std::path::Path) {
     git_command(dir).args(["init"]).output().await.unwrap();
     // Set local identity so stash commits don't depend on global git config.
     for (key, val) in [
@@ -32,7 +32,7 @@ async fn init_repo(dir: &std::path::Path) {
 }
 
 /// Write `content` to `name`, stage it, and commit it.
-async fn commit_file(dir: &std::path::Path, name: &str, content: &str) {
+pub(super) async fn commit_file(dir: &std::path::Path, name: &str, content: &str) {
     fs::write(dir.join(name), content).unwrap();
     git_command(dir).args(["add", name]).output().await.unwrap();
     git_command(dir)

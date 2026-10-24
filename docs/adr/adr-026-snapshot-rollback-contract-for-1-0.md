@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. §3 is sharpened by [ADR-052](adr-052-snapshot-liveness-checks-what-rollback-needs.md), which also supersedes its rule that Rollback asks before restoring an absent artifact.
 
 ## Context
 

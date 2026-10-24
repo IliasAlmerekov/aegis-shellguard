@@ -7,9 +7,9 @@ use aegis_audit::{AuditEntry, AuditIntegrityStatus, AuditLogger, AuditQuery, Sna
 use aegis_config::{AegisConfig, ValidationReport, validate_config_layers};
 
 use crate::{
-    AuditArgs, AuditOutputFormat, ConfigArgs, ConfigCommand, ConfigValidateArgs,
-    ConfigValidateOutput, EXIT_DENIED, EXIT_INTERNAL, RollbackArgs, SnapshotArgs, SnapshotCommand,
-    rollback,
+    AuditArgs, AuditOutputFormat, CommandOutputFormat, ConfigArgs, ConfigCommand,
+    ConfigValidateArgs, ConfigValidateOutput, EXIT_DENIED, EXIT_INTERNAL, RollbackArgs,
+    SnapshotArgs, SnapshotCommand, VerifyArgs, rollback,
 };
 
 pub(crate) fn handle_audit_command(args: AuditArgs) -> i32 {
@@ -327,8 +327,12 @@ pub(crate) fn handle_rollback_command(
     args: RollbackArgs,
     runtime: &tokio::runtime::Runtime,
 ) -> i32 {
-    match runtime.block_on(rollback::execute(args.snapshot_id)) {
-        Ok(target) => {
+    match runtime.block_on(rollback::execute(args.snapshot_id, args.yes)) {
+        Ok(rollback::RollbackOutcome::Refused { code, message }) => {
+            eprintln!("error: rollback refused: {message}");
+            code
+        }
+        Ok(rollback::RollbackOutcome::Restored(target)) => {
             println!(
                 "rollback complete: plugin={} snapshot_id={}",
                 target.plugin, target.snapshot_id
@@ -349,6 +353,9 @@ pub(crate) fn handle_snapshot_command(
 ) -> i32 {
     match args.command {
         SnapshotCommand::List => handle_snapshot_list_command(),
+        SnapshotCommand::Verify(verify_args) => {
+            handle_snapshot_verify_command(verify_args, runtime)
+        }
         SnapshotCommand::Prune(prune_args) => {
             match runtime.block_on(crate::prune::execute(prune_args)) {
                 Ok(_) => 0,
@@ -359,6 +366,28 @@ pub(crate) fn handle_snapshot_command(
             }
         }
     }
+}
+
+fn handle_snapshot_verify_command(args: VerifyArgs, runtime: &tokio::runtime::Runtime) -> i32 {
+    let rows = match runtime.block_on(crate::verify::execute(args.snapshot_id)) {
+        Ok(rows) => rows,
+        Err(err) if err.is_config_fault() => return report_config_load_error(&err),
+        Err(err) => {
+            eprintln!("error: snapshot verify failed: {err}");
+            return EXIT_INTERNAL;
+        }
+    };
+    match args.format {
+        CommandOutputFormat::Text => print!("{}", crate::verify::render_text(&rows)),
+        CommandOutputFormat::Json => match serde_json::to_string_pretty(&rows) {
+            Ok(json) => println!("{json}"),
+            Err(err) => {
+                eprintln!("error: failed to serialize verify output: {err}");
+                return EXIT_INTERNAL;
+            }
+        },
+    }
+    crate::verify::exit_code(&rows)
 }
 
 fn handle_snapshot_list_command() -> i32 {

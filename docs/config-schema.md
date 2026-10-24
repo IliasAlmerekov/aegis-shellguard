@@ -567,7 +567,16 @@ Current mapping:
 - `2` — user denied in a prompt path (`prompt` decision)
 - `3` — hard block (`block` decision)
 - `4` — internal/config error (`aegis` error state, validation failure, runtime/setup failure)
-- `1..=255` (except 2, 3, 4) — propagated exit code from the wrapped command
+- `5` — `aegis snapshot verify` only: a Snapshot liveness check was inconclusive and none was absent
+- `1..=255` (except 2, 3, 4, 5) — propagated exit code from the wrapped command
+
+`aegis snapshot verify` and `aegis rollback` reuse `1` and `2` with their own meaning (ADR-052):
+
+- `aegis snapshot verify`: `0` every Snapshot is present or had nothing captured, `1` any is absent,
+  `5` any is inconclusive and none is absent, `4` unknown or pruned id, a liveness error, or an internal error
+- `aegis rollback`: `1` the Snapshot artifact is confirmed absent (`--yes` does not override), `2` the
+  liveness check was inconclusive and the operator refused or no terminal was available without `--yes`,
+  `4` unknown or pruned id, a liveness error, or a rollback failure
 
 These values are also reflected in JSON output:
 

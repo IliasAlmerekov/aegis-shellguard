@@ -5,8 +5,8 @@ use std::path::Path;
 use async_trait::async_trait;
 use tokio::process::Command;
 
-use crate::SnapshotPlugin;
 use crate::error::SnapshotError;
+use crate::{Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
@@ -113,8 +113,10 @@ async fn working_tree_is_dirty(cwd: impl AsRef<Path>) -> Result<bool> {
 /// Find the positional `stash@{N}` reference of the entry whose commit is
 /// `hash`, or `None` when the entry is gone.
 async fn find_stash_ref(cwd: impl AsRef<Path>, hash: &str) -> Result<Option<String>> {
+    // kill_on_drop: a liveness timeout drops this future and must not orphan git.
     let list_out = git_command(cwd)
         .args(["stash", "list", "--format=%H %gd"])
+        .kill_on_drop(true)
         .output()
         .await
         .map_err(|e| SnapshotError::Snapshot(format!("git stash list failed: {e}")))?;
@@ -385,6 +387,41 @@ impl SnapshotPlugin for GitPlugin {
         Ok(())
     }
 
+    async fn liveness(&self, snapshot_id: &str) -> Result<Liveness> {
+        if snapshot_id == CLEAN_SENTINEL {
+            return Ok(Liveness::NothingCaptured);
+        }
+
+        let (cwd_str, hash) = snapshot_id.split_once(SEP).ok_or_else(|| {
+            SnapshotError::Snapshot(format!("malformed snapshot_id: {snapshot_id:?}"))
+        })?;
+
+        match tokio::fs::try_exists(cwd_str).await {
+            Ok(true) => {}
+            Ok(false) => {
+                return Ok(Liveness::Absent {
+                    reason: format!("repository directory {cwd_str} no longer exists"),
+                });
+            }
+            Err(error) => {
+                return Ok(Liveness::Inconclusive {
+                    reason: format!("could not stat repository directory {cwd_str}: {error}"),
+                });
+            }
+        }
+
+        // The same lookup `rollback` performs before it touches anything.
+        Ok(match find_stash_ref(cwd_str, hash).await {
+            Ok(Some(_)) => Liveness::Present,
+            Ok(None) => Liveness::Absent {
+                reason: format!("no stash entry for hash {hash}"),
+            },
+            Err(error) => Liveness::Inconclusive {
+                reason: error.to_string(),
+            },
+        })
+    }
+
     async fn delete(&self, snapshot_id: &str) -> Result<()> {
         if snapshot_id == CLEAN_SENTINEL {
             tracing::info!("git snapshot was clean, nothing to delete");
@@ -468,3 +505,7 @@ mod tests;
 
 #[cfg(test)]
 mod toplevel_tests;
+
+#[cfg(test)]
+#[path = "tests/liveness_tests.rs"]
+mod liveness_tests;

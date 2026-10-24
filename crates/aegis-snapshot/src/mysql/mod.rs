@@ -11,10 +11,11 @@ use tokio::task::JoinHandle;
 #[cfg(unix)]
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 
-use crate::SnapshotPlugin;
 use crate::containment::contain_artifact;
 use crate::error::SnapshotError;
+use crate::liveness::local_file_liveness;
 use crate::secure_fs::{create_artifact_file, create_store_dir, harden_existing_artifact};
+use crate::{Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
@@ -504,6 +505,12 @@ impl SnapshotPlugin for MysqlPlugin {
 
         tracing::info!(snapshot_id = snapshot_id, "mysql snapshot rolled back");
         Ok(())
+    }
+
+    async fn liveness(&self, snapshot_id: &str) -> Result<Liveness> {
+        let target = self.parse_snapshot_id(snapshot_id)?;
+        let dump_path = contain_artifact("mysql", &self.snapshots_dir, &target.dump_path)?;
+        Ok(local_file_liveness(&dump_path).await)
     }
 
     async fn delete(&self, snapshot_id: &str) -> Result<()> {

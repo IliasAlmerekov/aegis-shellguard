@@ -13,12 +13,12 @@ use tokio::process::Command;
 
 use aegis_config::SupabaseSnapshotConfig;
 
-use crate::SnapshotPlugin;
 use crate::containment::contain_artifact;
 use crate::error::SnapshotError;
 use crate::secure_fs::{
     create_artifact_dir, create_artifact_file, create_store_dir, harden_existing_artifact,
 };
+use crate::{Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 

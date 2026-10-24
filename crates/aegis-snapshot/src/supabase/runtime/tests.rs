@@ -718,3 +718,5 @@ async fn rollback_uses_manifest_target_as_source_of_truth() {
         "pg_restore must not use drifted config target values"
     );
 }
+
+mod liveness_tests;

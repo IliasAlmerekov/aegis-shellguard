@@ -16,6 +16,7 @@
 
 use super::*;
 use crate::containment::contain_artifact;
+use crate::liveness::local_file_liveness;
 
 use manifest_io::write_manifest_atomically;
 use manifest_state::phase1_complete;
@@ -26,6 +27,20 @@ mod rollback;
 
 #[cfg(test)]
 mod tests;
+
+/// The manifest gate `rollback` applies before it acts; `liveness` checks the same.
+fn ensure_rollback_eligible(manifest: &SupabaseManifest) -> Result<()> {
+    manifest.validate_schema_v1()?;
+
+    let strict = manifest.recompute_strict_eligibility()?;
+    if !strict.allowed {
+        return Err(SnapshotError::Snapshot(format!(
+            "rollback denied: recomputed manifest eligibility is not allowed (status: {:?})",
+            strict.overall_status
+        )));
+    }
+    manifest.ensure_summary_matches_recomputed(&strict)
+}
 
 #[async_trait]
 impl SnapshotPlugin for SupabasePlugin {
@@ -109,6 +124,38 @@ impl SnapshotPlugin for SupabasePlugin {
         Ok(snapshot_id)
     }
 
+    async fn liveness(&self, snapshot_id: &str) -> Result<Liveness> {
+        let manifest_path = Self::parse_snapshot_id(snapshot_id)?;
+        let manifest_bytes = match tokio::fs::read(&manifest_path).await {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Liveness::Absent {
+                    reason: format!("manifest {} no longer exists", manifest_path.display()),
+                });
+            }
+            Err(error) => {
+                return Ok(Liveness::Inconclusive {
+                    reason: format!(
+                        "could not read manifest {}: {error}",
+                        manifest_path.display()
+                    ),
+                });
+            }
+        };
+        let manifest: SupabaseManifest =
+            serde_json::from_slice(&manifest_bytes).map_err(|error| {
+                SnapshotError::Snapshot(format!(
+                    "failed to deserialize supabase manifest {}: {error}",
+                    manifest_path.display()
+                ))
+            })?;
+
+        ensure_rollback_eligible(&manifest)?;
+
+        let dump_path = manifest.resolve_db_artifact_path(&manifest_path)?;
+        Ok(local_file_liveness(&dump_path).await)
+    }
+
     async fn rollback(&self, snapshot_id: &str) -> Result<()> {
         let manifest_path = Self::parse_snapshot_id(snapshot_id)?;
         let manifest_bytes = fs::read(&manifest_path).map_err(|error| {
@@ -125,16 +172,7 @@ impl SnapshotPlugin for SupabasePlugin {
                 ))
             })?;
 
-        manifest.validate_schema_v1()?;
-
-        let strict = manifest.recompute_strict_eligibility()?;
-        if !strict.allowed {
-            return Err(SnapshotError::Snapshot(format!(
-                "rollback denied: recomputed manifest eligibility is not allowed (status: {:?})",
-                strict.overall_status
-            )));
-        }
-        manifest.ensure_summary_matches_recomputed(&strict)?;
+        ensure_rollback_eligible(&manifest)?;
 
         let dump_path = manifest.resolve_db_artifact_path(&manifest_path)?;
         if !dump_path.exists() {

@@ -8,6 +8,7 @@ use aegis_config::{
 use aegis_types::{RecordedSnapshot, SnapshotPolicy, SnapshotRecord};
 
 use crate::error::SnapshotError;
+use crate::liveness::{LIVENESS_TIMEOUT, Liveness};
 use crate::paths::resolve_snapshots_dir;
 use crate::retention::{PrunableRecord, prunable_records_newest_first};
 use crate::{
@@ -179,6 +180,20 @@ fn registry_config_from_parts(
         snapshots_dir,
         docker_scope: config.docker_scope.clone(),
     }
+}
+
+async fn liveness_within(
+    limit: std::time::Duration,
+    plugin: &dyn SnapshotPlugin,
+    snapshot_id: &str,
+) -> std::result::Result<Liveness, SnapshotError> {
+    tokio::time::timeout(limit, plugin.liveness(snapshot_id))
+        .await
+        .unwrap_or_else(|_| {
+            Ok(Liveness::Inconclusive {
+                reason: format!("liveness check did not finish within {limit:?}"),
+            })
+        })
 }
 
 impl SnapshotRegistryConfig {
@@ -409,6 +424,29 @@ impl SnapshotRegistry {
         plugin.delete(snapshot_id).await
     }
 
+    /// Check the Snapshot liveness of one snapshot using the named plugin.
+    ///
+    /// The check is bounded at [`LIVENESS_TIMEOUT`]; a check that overruns is
+    /// [`Liveness::Inconclusive`].
+    pub async fn liveness(
+        &self,
+        plugin_name: &str,
+        snapshot_id: &str,
+    ) -> std::result::Result<Liveness, SnapshotError> {
+        let plugin = self
+            .plugins
+            .iter()
+            .find(|plugin| plugin.name() == plugin_name)
+            // Liveness checks what Rollback needs, so an unknown plugin reads as Rollback would report it.
+            .ok_or_else(|| {
+                SnapshotError::Snapshot(format!(
+                    "snapshot plugin {plugin_name:?} is not available for rollback"
+                ))
+            })?;
+
+        liveness_within(LIVENESS_TIMEOUT, plugin.as_ref(), snapshot_id).await
+    }
+
     /// Turn the Snapshot ledger's live records into prune records, newest
     /// first in log order.
     ///
@@ -459,6 +497,13 @@ mod tests {
 
         async fn delete(&self, _snapshot_id: &str) -> std::result::Result<(), SnapshotError> {
             Ok(())
+        }
+
+        async fn liveness(
+            &self,
+            _snapshot_id: &str,
+        ) -> std::result::Result<Liveness, SnapshotError> {
+            Ok(Liveness::Present)
         }
     }
 
@@ -551,6 +596,13 @@ mod tests {
         async fn delete(&self, _snapshot_id: &str) -> std::result::Result<(), SnapshotError> {
             Ok(())
         }
+
+        async fn liveness(
+            &self,
+            _snapshot_id: &str,
+        ) -> std::result::Result<Liveness, SnapshotError> {
+            Ok(Liveness::Present)
+        }
     }
 
     /// A plugin that never applies, so it must not enter the applicable count.
@@ -581,7 +633,16 @@ mod tests {
         async fn delete(&self, _snapshot_id: &str) -> std::result::Result<(), SnapshotError> {
             Ok(())
         }
+
+        async fn liveness(
+            &self,
+            _snapshot_id: &str,
+        ) -> std::result::Result<Liveness, SnapshotError> {
+            Ok(Liveness::Present)
+        }
     }
+
+    mod liveness_tests;
 
     #[test]
     fn snapshot_all_counts_a_failed_applicable_plugin_as_partial_coverage() {
