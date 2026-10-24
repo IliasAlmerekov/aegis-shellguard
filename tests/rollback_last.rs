@@ -355,7 +355,6 @@ fn a_failing_provider_does_not_stop_the_others_and_gets_no_audit_entry() {
     assert!(repo.join("kept.txt").exists(), "git must still be restored");
     assert_eq!(fs::read_to_string(repo.join("app.db")).unwrap(), "after");
     assert!(stderr(&output).contains("sqlite"), "{}", stderr(&output));
-    let hash = git_id.split('\t').nth(1).unwrap();
     assert_eq!(
         env.rollback_entries(),
         vec![format!("aegis rollback {git_id}")]
@@ -365,7 +364,6 @@ fn a_failing_provider_does_not_stop_the_others_and_gets_no_audit_entry() {
             .iter()
             .any(|c| c.contains(&sqlite_id))
     );
-    let _ = hash;
 }
 
 #[test]
