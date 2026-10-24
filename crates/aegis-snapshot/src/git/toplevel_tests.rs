@@ -25,3 +25,22 @@ async fn git_toplevel_outside_a_repository_is_none() {
 
     assert_eq!(git_toplevel(dir.path()).await, None);
 }
+
+#[tokio::test]
+async fn snapshot_target_is_the_canonical_repository_top_level() {
+    let dir = TempDir::new().unwrap();
+    git_command(dir.path())
+        .args(["init"])
+        .output()
+        .await
+        .unwrap();
+    let sub = dir.path().join("a").join("b");
+    fs::create_dir_all(&sub).unwrap();
+
+    let target = GitPlugin.snapshot_target(&sub).await;
+
+    assert_eq!(
+        target.as_deref(),
+        Some(dir.path().canonicalize().unwrap().to_str().unwrap())
+    );
+}
