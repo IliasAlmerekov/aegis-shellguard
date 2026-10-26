@@ -182,10 +182,10 @@ fn choose(
     is_tty: bool,
     input: &mut impl BufRead,
 ) -> Choice {
+    eprint!("{}", summary(&candidates[0], location));
     if yes {
         return Choice::Restore(0);
     }
-    eprint!("{}", summary(&candidates[0], location));
     if !is_tty {
         eprint!("{}", listing(candidates));
         return Choice::Refuse {
@@ -203,7 +203,10 @@ fn choose(
             eprint!("{}", listing(candidates));
             let shown = candidates.len().min(LIST_LIMIT);
             match ask(input, "Pick a number (anything else cancels): ").parse::<usize>() {
-                Ok(n) if (1..=shown).contains(&n) => Choice::Restore(n - 1),
+                Ok(n) if (1..=shown).contains(&n) => {
+                    eprint!("{}", summary(&candidates[n - 1], location));
+                    Choice::Restore(n - 1)
+                }
                 _ => cancelled(),
             }
         }

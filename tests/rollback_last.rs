@@ -288,6 +288,22 @@ fn last_with_yes_restores_the_latest_of_two_candidates() {
 }
 
 #[test]
+fn last_with_yes_prints_the_summary_of_what_it_restores() {
+    let env = Env::new();
+    let repo = env.repo("repo");
+    let id = env.snapshot_then_delete(&repo, "newer.txt");
+    env.record("rm newer", Some(&repo), vec![("git", id, Some(&repo))]);
+
+    let output = env.run(&repo, &["rollback", "--last", "--yes"], None);
+
+    let text = stderr(&output);
+    assert!(
+        text.contains("rm newer") && text.contains("Restores:"),
+        "{text}"
+    );
+}
+
+#[test]
 fn last_without_a_candidate_exits_non_zero_naming_the_location() {
     let env = Env::new();
     let repo = env.repo("repo");
