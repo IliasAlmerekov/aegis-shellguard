@@ -46,9 +46,11 @@ fn shell_wrapper_audit_entry_records_the_cwd() {
 
     assert!(output.status.success());
     let entries = read_audit_entries(home.path());
+    // macOS temp dirs sit behind the /var -> /private/var symlink.
+    let work_dir = work.path().canonicalize().unwrap();
     assert_eq!(
         entries[0]["cwd"],
-        serde_json::json!(work.path().to_str().unwrap())
+        serde_json::json!(work_dir.to_str().unwrap())
     );
 }
 
