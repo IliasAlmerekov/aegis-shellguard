@@ -55,3 +55,20 @@ fn rollback_from_a_parent_directory_restores_the_database_the_snapshot_was_taken
     assert_eq!(fs::read(sub.join("app.db")).unwrap(), b"captured-database");
     assert_eq!(fs::read(root.join("app.db")).unwrap(), b"decoy-database");
 }
+
+#[test]
+fn rollback_with_a_parent_relative_configured_path_restores_the_recorded_database() {
+    let temp_dir = TempDir::new().unwrap();
+    let (root, sub, snapshots_dir, artifact) = fixture(&temp_dir);
+    let deeper = sub.join("deeper");
+    fs::create_dir_all(&deeper).unwrap();
+    write_db(&root.join("app.db"), b"damaged-database");
+    write_db(&sub.join("app.db"), b"decoy-database");
+    let plugin = SqlitePlugin::new(PathBuf::from("../app.db"), snapshots_dir);
+    let id = SqlitePlugin::build_snapshot_id(&root.join("app.db"), &artifact);
+
+    plugin.rollback_from(&id, &deeper).unwrap();
+
+    assert_eq!(fs::read(root.join("app.db")).unwrap(), b"captured-database");
+    assert_eq!(fs::read(sub.join("app.db")).unwrap(), b"decoy-database");
+}

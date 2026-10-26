@@ -1,7 +1,7 @@
 //! SQLite snapshot provider.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
@@ -65,13 +65,22 @@ impl SqlitePlugin {
         Ok(())
     }
 
+    /// Whether `original` is the configured database. A relative path matches
+    /// on its components after the last `..`: ids hold canonical paths.
+    pub fn is_configured_database(&self, original: &Path) -> bool {
+        if self.db_path.is_absolute() {
+            return original == self.db_path;
+        }
+        let mut tail: Vec<_> = (self.db_path.components().rev())
+            .take_while(|c| *c != Component::ParentDir)
+            .filter(|c| *c != Component::CurDir)
+            .collect();
+        tail.reverse();
+        original.ends_with(tail.iter().collect::<PathBuf>())
+    }
+
     fn restore_path(&self, original_path: &Path, cwd: &Path) -> PathBuf {
-        let is_configured = if self.db_path.is_relative() {
-            original_path.ends_with(&self.db_path)
-        } else {
-            original_path == self.db_path
-        };
-        if is_configured {
+        if self.is_configured_database(original_path) {
             original_path.to_path_buf()
         } else {
             self.resolve_db_path(cwd)
@@ -99,36 +108,26 @@ impl SqlitePlugin {
     }
 
     fn decode_path(encoded: &str, label: &str) -> Result<PathBuf> {
-        if !encoded.len().is_multiple_of(2) {
-            return Err(SnapshotError::Snapshot(format!(
+        let malformed = || {
+            SnapshotError::Snapshot(format!(
                 "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-            )));
+            ))
+        };
+        if !encoded.len().is_multiple_of(2) {
+            return Err(malformed());
         }
 
         let mut bytes = Vec::with_capacity(encoded.len() / 2);
         for pair in encoded.as_bytes().as_chunks::<2>().0 {
-            let hex = std::str::from_utf8(pair).map_err(|_| {
-                SnapshotError::Snapshot(format!(
-                    "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-                ))
-            })?;
-            let byte = u8::from_str_radix(hex, 16).map_err(|_| {
-                SnapshotError::Snapshot(format!(
-                    "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-                ))
-            })?;
-            bytes.push(byte);
+            let hex = std::str::from_utf8(pair).map_err(|_| malformed())?;
+            bytes.push(u8::from_str_radix(hex, 16).map_err(|_| malformed())?);
         }
 
         #[cfg(unix)]
         let path = PathBuf::from(std::ffi::OsString::from_vec(bytes));
 
         #[cfg(not(unix))]
-        let path = PathBuf::from(String::from_utf8(bytes).map_err(|_| {
-            SnapshotError::Snapshot(format!(
-                "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-            ))
-        })?);
+        let path = PathBuf::from(String::from_utf8(bytes).map_err(|_| malformed())?);
 
         Ok(path)
     }
@@ -153,7 +152,6 @@ impl SqlitePlugin {
         if snapshot_id.starts_with(&format!("{SNAPSHOT_ID_VERSION}{SEP}")) {
             return Self::parse_v2_snapshot_id(snapshot_id);
         }
-
         Self::parse_legacy_snapshot_id(snapshot_id)
     }
 
@@ -164,7 +162,6 @@ impl SqlitePlugin {
                 "malformed snapshot_id: {snapshot_id:?}"
             )));
         }
-
         Ok((
             Self::decode_path(parts[1], "original path")?,
             Self::decode_path(parts[2], "dump path")?,
@@ -175,9 +172,7 @@ impl SqlitePlugin {
         let (original_str, dump_str) = snapshot_id.split_once(SEP).ok_or_else(|| {
             SnapshotError::Snapshot(format!("malformed snapshot_id: {snapshot_id:?}"))
         })?;
-        let original_path = PathBuf::from(original_str);
-        let dump_path = PathBuf::from(dump_str);
-        Ok((original_path, dump_path))
+        Ok((PathBuf::from(original_str), PathBuf::from(dump_str)))
     }
 }
 
