@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Changed: The README now opens with "Roll back what your AI agent broke.", a rollback demo recorded by `docs/demo/rollback.tape`, and the Claude Code plugin as the first install path. Risk level details, effect opacity, Required recovery, and the Sandbox migration text moved to `docs/how-it-works.md` (#501)
 - Fixed: `aegis rollback` no longer reports a restore as failed when only its audit entry could not be written. It prints `rollback complete` and then names the missing audit entry, and still exits 4 (#499)
 - Fixed: A sqlite Rollback run from any directory restores the database the Snapshot was taken of, not `sqlite_snapshot_path` resolved against the current directory. The path in the Snapshot id is used when it is the configured database, wherever the command runs, and a configured path with `..` matches on the part after the last `..`; otherwise the configured path is used as before. `aegis rollback --last` restores a sqlite Snapshot only when it is of the configured database (#546)
 - Added: `aegis rollback --last` restores the Snapshots of the latest command recorded at the current location after a confirmation, through the same liveness preflight as `aegis rollback <id>`. Audit entries now record their `cwd` and git Snapshots their Git target; docker and database Snapshots are listed with their `aegis rollback <id>` line and never restored by `--last` (#499, ADR-053)

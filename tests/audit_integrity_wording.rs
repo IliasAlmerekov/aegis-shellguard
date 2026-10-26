@@ -66,7 +66,7 @@ fn tracked_files() -> Vec<String> {
 const ALLOWED_BINARY_FILES: [&str; 5] = [
     "landing/public/favicon.ico",
     "landing/public/aegis.webp",
-    "src/assets/aegis.gif",
+    "src/assets/rollback.gif",
     "src/assets/howitwork.png",
     "fuzz/corpus/language_bash/non_ascii_native_scanner_crash",
 ];
