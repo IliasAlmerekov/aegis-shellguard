@@ -59,6 +59,9 @@ pub(super) fn build(
                 restored.insert(key, base.timestamp);
             } else {
                 owner.insert(key, index);
+                // A stable id such as git's `clean` is recorded again by a later
+                // command; an earlier restore says nothing about that one.
+                restored.remove(&key);
             }
         }
     }

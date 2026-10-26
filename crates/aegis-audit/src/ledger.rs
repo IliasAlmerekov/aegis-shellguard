@@ -309,6 +309,22 @@ mod tests {
     }
 
     #[test]
+    fn recent_commands_forgets_a_restore_when_a_later_command_records_the_same_pair() {
+        let ledger = SnapshotLedger::from_entries(&[
+            located("first", "/a", &[("git", "clean")]),
+            entry_with_risk(
+                "aegis rollback clean",
+                RiskLevel::Safe,
+                Decision::Approved,
+                &[("git", "clean")],
+            ),
+            located("second", "/a", &[("git", "clean")]),
+        ]);
+
+        assert_eq!(ledger.recent_commands()[0].snapshots[0].restored_at, None);
+    }
+
+    #[test]
     fn recent_commands_keeps_an_entry_without_cwd_with_no_location() {
         let ledger =
             SnapshotLedger::from_entries(&[entry("rm a", Decision::Approved, &[("git", "A")])]);
