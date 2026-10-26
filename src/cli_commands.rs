@@ -342,6 +342,14 @@ pub(crate) fn handle_rollback_command(
             );
             0
         }
+        Ok(rollback::RollbackOutcome::RestoredUnaudited { target, reason }) => {
+            println!(
+                "rollback complete: plugin={} snapshot_id={}",
+                target.plugin, target.snapshot_id
+            );
+            eprintln!("error: restored, but the audit entry was not written: {reason}");
+            EXIT_INTERNAL
+        }
         Err(err) if err.is_config_fault() => report_config_load_error(&err),
         Err(err) => {
             eprintln!("error: rollback failed: {err}");
@@ -363,6 +371,16 @@ fn handle_rollback_last_command(yes: bool, runtime: &tokio::runtime::Runtime) ->
                     target.plugin, target.snapshot_id
                 );
             }
+            for (target, reason) in &report.unaudited {
+                println!(
+                    "rollback complete: plugin={} snapshot_id={}",
+                    target.plugin, target.snapshot_id
+                );
+                eprintln!(
+                    "error: restored, but the audit entry was not written: plugin={} snapshot_id={}: {reason}",
+                    target.plugin, target.snapshot_id
+                );
+            }
             for target in &report.skipped {
                 println!(
                     "not restored, not bound to this location: aegis rollback {}",
@@ -375,7 +393,14 @@ fn handle_rollback_last_command(yes: bool, runtime: &tokio::runtime::Runtime) ->
                     target.plugin, target.snapshot_id
                 );
             }
-            report.failed.first().map_or(0, |(_, code, _)| *code)
+            report.failed.first().map_or(
+                if report.unaudited.is_empty() {
+                    0
+                } else {
+                    EXIT_INTERNAL
+                },
+                |(_, code, _)| *code,
+            )
         }
         Err(err) if err.is_config_fault() => report_config_load_error(&err),
         Err(err) => {

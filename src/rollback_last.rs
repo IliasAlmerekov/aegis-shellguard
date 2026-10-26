@@ -47,6 +47,8 @@ pub(crate) struct LastReport {
     pub(crate) restored: Vec<RollbackTarget>,
     /// Snapshot, exit code, reason.
     pub(crate) failed: Vec<(RollbackTarget, i32, String)>,
+    /// Restored, but the Rollback audit entry was not written: Snapshot, reason.
+    pub(crate) unaudited: Vec<(RollbackTarget, String)>,
     /// Unbound Snapshots of the chosen command; never restored.
     pub(crate) skipped: Vec<RollbackTarget>,
 }
@@ -265,7 +267,8 @@ pub(crate) async fn execute(yes: bool) -> Result<LastOutcome> {
     for snapshot in &chosen.bound {
         let target = target_of(snapshot);
         match restore_one(&registry, &audit_logger, &target, yes, is_tty, &mut input).await {
-            Ok(()) => report.restored.push(target),
+            Ok(None) => report.restored.push(target),
+            Ok(Some(reason)) => report.unaudited.push((target, reason)),
             Err((code, reason)) => report.failed.push((target, code, reason)),
         }
     }
@@ -274,6 +277,7 @@ pub(crate) async fn execute(yes: bool) -> Result<LastOutcome> {
 
 /// Run one Snapshot through the `aegis rollback <id>` preflight and restore.
 /// A failure is returned, not raised, so the other providers still run.
+/// `Ok(Some(reason))` means restored with no audit entry.
 async fn restore_one(
     registry: &SnapshotRegistry,
     logger: &AuditLogger,
@@ -281,9 +285,10 @@ async fn restore_one(
     yes: bool,
     is_tty: bool,
     input: &mut impl BufRead,
-) -> std::result::Result<(), (i32, String)> {
+) -> std::result::Result<Option<String>, (i32, String)> {
     match restore_checked(registry, logger, target, yes, is_tty, input).await {
-        Ok(Preflight::Restore) => Ok(()),
+        Ok(Preflight::Restore) => Ok(None),
+        Ok(Preflight::RestoredUnaudited { reason }) => Ok(Some(reason)),
         Ok(Preflight::Refused { code, message }) => Err((code, message)),
         Err(error) => Err((EXIT_INTERNAL, error.to_string())),
     }
