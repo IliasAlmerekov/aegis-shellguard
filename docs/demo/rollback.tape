@@ -7,8 +7,10 @@
 # That writes src/assets/rollback.gif and needs no other step.
 # Prerequisites: vhs (with ttyd and ffmpeg) and git on PATH, plus a release
 # build of this checkout. The build must contain `aegis rollback --last`, so an
-# older installed aegis does not work. The hidden setup puts the fresh build
-# first on PATH, reading CARGO_TARGET_DIR when you set it.
+# older installed aegis does not work. The hidden setup asks `cargo metadata`
+# for the target directory, so it finds builds that CARGO_TARGET_DIR or
+# ~/.cargo/config.toml redirect, and puts the fresh build first on PATH. It
+# exits, ending the recording, when that build is missing.
 #
 # The hidden setup never touches your real ~/.aegis, git config, or any real
 # repository. It points HOME at a new temp directory and builds a throwaway git
@@ -25,7 +27,7 @@ Set Theme "Dracula"
 Set TypingSpeed 60ms
 
 Hide
-Type `AEGIS_BIN_DIR="${CARGO_TARGET_DIR:-$PWD/target}/release"; test -x "$AEGIS_BIN_DIR/aegis" || echo "build first: cargo build --release"` Enter
+Type `AEGIS_BIN_DIR="$(cargo metadata --format-version 1 --no-deps | grep -o '"target_directory":"[^"]*"' | cut -d'"' -f4)/release"; test -x "$AEGIS_BIN_DIR/aegis" || { echo "build first: cargo build --release"; exit 1; }` Enter
 Type `export HOME="$(mktemp -d)" GIT_CONFIG_GLOBAL="$(mktemp -d)/gitconfig" PATH="$AEGIS_BIN_DIR:$PATH" PS1='$ '` Enter
 Type `git config --global user.name Demo && git config --global user.email demo@aegis.dev && git config --global init.defaultBranch main` Enter
 Type `mkdir -p "$HOME/demo/src" && cd "$HOME/demo"` Enter
