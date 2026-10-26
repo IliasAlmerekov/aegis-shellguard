@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Fixed: `aegis rollback` no longer reports a restore as failed when only its audit entry could not be written. It prints `rollback complete` and then names the missing audit entry, and still exits 4 (#499)
 - Fixed: A sqlite Rollback run from any directory restores the database the Snapshot was taken of, not `sqlite_snapshot_path` resolved against the current directory. The path in the Snapshot id is used when it is the configured database, wherever the command runs; otherwise the configured path is used as before (#546)
 - Added: `aegis rollback --last` restores the Snapshots of the latest command recorded at the current location after a confirmation, through the same liveness preflight as `aegis rollback <id>`. Audit entries now record their `cwd` and git Snapshots their Git target; docker and database Snapshots are listed with their `aegis rollback <id>` line and never restored by `--last` (#499, ADR-053)
 - Added: `aegis snapshot verify [<id>] [--format json]` checks that each recorded Snapshot's artifact still exists (exit 0, 1 absent, 5 inconclusive, 4 error), and `aegis rollback` runs the same check before it writes anything: it refuses an absent artifact, and asks (or needs `--yes` without a terminal) only when the check is inconclusive (#215, ADR-052)
