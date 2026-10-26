@@ -130,7 +130,7 @@ aegis binary and `AEGIS_REAL_SHELL` to your real shell. Remove it with:
 aegis setup-shell --remove
 ```
 
-The convenience installer is Global-first: it installs the binary, writes the managed shell block, and sets up Claude Code and Codex hooks when those config directories already exist. The old Local project-only and Binary-only installer modes have been removed. Package-manager installs are binary-only.
+The convenience installer is Global-first. It installs the binary, writes the managed shell block, and sets up Claude Code and Codex hooks when those config directories already exist. The old Local project-only and Binary-only installer modes have been removed. Package-manager installs are binary-only.
 
 ### Verify it works
 
