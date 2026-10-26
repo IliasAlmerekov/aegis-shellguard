@@ -221,7 +221,7 @@ pub(super) fn append_watch_execution_audit(
         ci_detected: execution.ci_detected,
         sandbox_status,
         source: execution.frame.source.clone(),
-        cwd: execution.frame.cwd.clone(),
+        cwd: super::runner::audit_cwd(execution.cwd),
         id: execution.frame.id.clone(),
     };
     match execution.recovery_degradation {

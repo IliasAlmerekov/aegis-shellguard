@@ -407,6 +407,7 @@ async fn run_watch_plan_with_prompts<C, R>(
                 runtime_decision,
                 ci_detected,
                 &frame,
+                &cwd,
                 &id,
             ) {
                 return;
@@ -428,6 +429,7 @@ async fn run_watch_plan_with_prompts<C, R>(
                 runtime_decision,
                 ci_detected,
                 &frame,
+                &cwd,
                 &id,
             ) {
                 return;
@@ -451,6 +453,7 @@ async fn run_watch_plan_with_prompts<C, R>(
                 runtime_decision,
                 ci_detected,
                 &frame,
+                &cwd,
                 &id,
             ) {
                 return;
@@ -473,6 +476,7 @@ async fn run_watch_plan_with_prompts<C, R>(
                 runtime_decision,
                 ci_detected,
                 &frame,
+                &cwd,
                 &id,
             ) {
                 return;
@@ -496,6 +500,7 @@ fn append_watch_audit_with_empty_snapshots(
     runtime_decision: Decision,
     ci_detected: bool,
     frame: &InputFrame,
+    cwd: &std::path::Path,
     id: &Option<String>,
 ) -> bool {
     if let Err(err) = context.append_watch_audit_entry(
@@ -509,7 +514,7 @@ fn append_watch_audit_with_empty_snapshots(
             ci_detected,
             sandbox_status: sandbox_status_before_preparation(context),
             source: frame.source.clone(),
-            cwd: frame.cwd.clone(),
+            cwd: audit_cwd(cwd),
             id: id.clone(),
         },
     ) {
@@ -540,6 +545,14 @@ fn resolve_frame_cwd(frame: &InputFrame, id: &Option<String>) -> Result<PathBuf,
         Ok(path) => path,
         Err(_) => PathBuf::from("."),
     })
+}
+
+/// The directory to record in the audit entry: absolute, so `aegis rollback
+/// --last` can match it, and `None` when it cannot be made absolute.
+pub(super) fn audit_cwd(cwd: &std::path::Path) -> Option<String> {
+    std::path::absolute(cwd)
+        .ok()
+        .map(|path| path.to_string_lossy().into_owned())
 }
 
 fn watch_execution_cwd(cwd_state: &CwdState) -> PathBuf {

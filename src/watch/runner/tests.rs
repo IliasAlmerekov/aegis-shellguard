@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use serde_json::Value;
 use tempfile::TempDir;
 
-use super::{run_watch_plan_with_prompts, watch_execution_cwd};
+use super::{audit_cwd, run_watch_plan_with_prompts, watch_execution_cwd};
 use crate::planning::{CwdState, PlanningOutcome, PlanningRequest, PreparedPlanner};
 use crate::runtime::RuntimeContext;
 use crate::watch::protocol::InputFrame;
@@ -349,4 +349,61 @@ async fn watch_confirmed_run_with_an_unresolved_git_target_skips_the_recovery_pr
     assert!(!prompted.get(), "a human-approved run is not unattended");
     let entry = read_audit_entry(&audit_path);
     assert_eq!(entry["decision"], "Approved");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_audit_records_the_resolved_cwd_when_the_frame_has_none() {
+    let workspace = TempDir::new().unwrap();
+    let audit_dir = TempDir::new().unwrap();
+    let audit_path = audit_dir.path().join("audit.jsonl");
+    fs::write(workspace.path().join("run.sh"), "printf ran > executed\n").unwrap();
+    let prepared = prepared_with_audit_path(audit_path.clone());
+    let (mut frame, plan) = effect_opaque_plan(&prepared, &workspace).await;
+    frame.cwd = None;
+
+    run_watch_plan_with_prompts(
+        frame,
+        &prepared,
+        plan,
+        false,
+        |_, _| PromptDecision::Approve,
+        |_| RecoveryPromptDecision::Deny,
+    )
+    .await;
+
+    let entry = read_audit_entry(&audit_path);
+    assert_eq!(entry["cwd"], workspace.path().to_string_lossy().as_ref());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_denied_entry_records_the_resolved_cwd_when_the_frame_has_none() {
+    let workspace = TempDir::new().unwrap();
+    let audit_dir = TempDir::new().unwrap();
+    let audit_path = audit_dir.path().join("audit.jsonl");
+    let prepared = prepared_with_audit_path(audit_path.clone());
+    let (mut frame, plan) = plan_for_command(&prepared, &workspace, "rm -rf build").await;
+    frame.cwd = None;
+
+    run_watch_plan_with_prompts(
+        frame,
+        &prepared,
+        plan,
+        false,
+        |_, _| PromptDecision::Deny,
+        |_| RecoveryPromptDecision::Deny,
+    )
+    .await;
+
+    let entry = read_audit_entry(&audit_path);
+    assert_eq!(entry["cwd"], workspace.path().to_string_lossy().as_ref());
+}
+
+#[test]
+fn audit_cwd_makes_a_relative_path_absolute() {
+    let recorded = audit_cwd(std::path::Path::new("sub")).unwrap();
+
+    assert_eq!(
+        PathBuf::from(recorded),
+        std::env::current_dir().unwrap().join("sub")
+    );
 }
