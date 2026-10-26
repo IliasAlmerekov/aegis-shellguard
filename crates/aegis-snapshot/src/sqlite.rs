@@ -76,7 +76,7 @@ impl SqlitePlugin {
             .filter(|c| *c != Component::CurDir)
             .collect();
         tail.reverse();
-        original.ends_with(tail.iter().collect::<PathBuf>())
+        !tail.is_empty() && original.ends_with(tail.iter().collect::<PathBuf>())
     }
 
     fn restore_path(&self, original_path: &Path, cwd: &Path) -> PathBuf {

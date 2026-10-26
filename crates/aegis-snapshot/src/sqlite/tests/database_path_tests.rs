@@ -29,3 +29,15 @@ async fn a_provider_without_a_git_working_tree_has_no_snapshot_target() {
 
     assert_eq!(plugin.snapshot_target(Path::new("/repo")).await, None);
 }
+
+#[test]
+fn a_configured_path_without_a_file_name_matches_no_database() {
+    for configured in ["..", ".", "../.."] {
+        let plugin = SqlitePlugin::new(PathBuf::from(configured), PathBuf::from("/s"));
+
+        assert!(
+            !plugin.is_configured_database(Path::new("/repo/app.db")),
+            "{configured}"
+        );
+    }
+}
