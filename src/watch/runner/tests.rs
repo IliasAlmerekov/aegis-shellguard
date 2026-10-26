@@ -398,6 +398,29 @@ async fn watch_denied_entry_records_the_resolved_cwd_when_the_frame_has_none() {
     assert_eq!(entry["cwd"], workspace.path().to_string_lossy().as_ref());
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_blocked_command_is_audited_as_blocked_with_no_snapshots() {
+    let workspace = TempDir::new().unwrap();
+    let audit_dir = TempDir::new().unwrap();
+    let audit_path = audit_dir.path().join("audit.jsonl");
+    let prepared = prepared_with_audit_path(audit_path.clone());
+    let (frame, plan) = plan_for_command(&prepared, &workspace, "rm -rf /").await;
+
+    run_watch_plan_with_prompts(
+        frame,
+        &prepared,
+        plan,
+        false,
+        |_, _| panic!("a blocked command is never confirmed"),
+        |_| panic!("a blocked command takes no Snapshot"),
+    )
+    .await;
+
+    let entry = read_audit_entry(&audit_path);
+    assert_eq!(entry["decision"], "Blocked");
+    assert_eq!(entry["snapshots"], serde_json::json!([]));
+}
+
 #[test]
 fn audit_cwd_makes_a_relative_path_absolute() {
     let recorded = audit_cwd(std::path::Path::new("sub")).unwrap();

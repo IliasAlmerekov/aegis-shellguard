@@ -119,3 +119,28 @@ fn git_target_round_trips_and_is_absent_when_none() {
     let json = serde_json::to_string(&without).unwrap();
     assert_eq!(json, r#"{"plugin":"git","snapshot_id":"id"}"#);
 }
+
+fn plain_line_with(key: &str) -> AuditEntry {
+    let plain = AuditEntry::new(
+        "ls",
+        RiskLevel::Safe,
+        vec![],
+        Decision::AutoApproved,
+        vec![],
+        None,
+        None,
+    );
+    let mut json = serde_json::to_value(&plain).unwrap();
+    json[key] = serde_json::json!("x");
+    serde_json::from_value(json).unwrap()
+}
+
+#[test]
+fn a_line_with_only_a_source_reads_back_as_a_watch_entry() {
+    assert!(matches!(plain_line_with("source"), AuditEntry::Watch(_)));
+}
+
+#[test]
+fn a_line_with_only_an_id_reads_back_as_a_watch_entry() {
+    assert!(matches!(plain_line_with("id"), AuditEntry::Watch(_)));
+}

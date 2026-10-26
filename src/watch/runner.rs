@@ -422,54 +422,9 @@ async fn run_watch_plan_with_prompts<C, R>(
                 std::process::exit(4);
             }
         }
-        Decision::Blocked => {
-            if !append_watch_audit_with_empty_snapshots(
-                context,
-                &plan,
-                runtime_decision,
-                ci_detected,
-                &frame,
-                &cwd,
-                &id,
-            ) {
-                return;
-            }
-            if emit_frame(&OutputFrame::Result {
-                id,
-                decision: OutputDecision::Blocked,
-                exit_code: 3,
-            })
-            .is_err()
-            {
-                std::process::exit(4);
-            }
-        }
-        Decision::Pruned => {
-            // `Pruned` is not a runtime command decision, but if it ever appears
-            // in this path we fail closed rather than executing.
-            if !append_watch_audit_with_empty_snapshots(
-                context,
-                &plan,
-                runtime_decision,
-                ci_detected,
-                &frame,
-                &cwd,
-                &id,
-            ) {
-                return;
-            }
-            if emit_frame(&OutputFrame::Result {
-                id,
-                decision: OutputDecision::Blocked,
-                exit_code: 3,
-            })
-            .is_err()
-            {
-                std::process::exit(4);
-            }
-        }
         _ => {
-            // Future unknown decision variants are also fail-closed rather than executed.
+            // `Blocked`, `Pruned` (not a runtime command decision) and future unknown
+            // variants fail closed: audit with no Snapshots, answer blocked, never execute.
             if !append_watch_audit_with_empty_snapshots(
                 context,
                 &plan,
