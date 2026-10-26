@@ -6,6 +6,7 @@ fn location(cwd: &str, repo_top: Option<&str>) -> Location {
     Location {
         cwd: PathBuf::from(cwd),
         repo_top: repo_top.map(PathBuf::from),
+        sqlite_db: Some(PathBuf::from("app.db")),
     }
 }
 
@@ -83,6 +84,16 @@ fn outside_git_a_git_snapshot_is_bound_by_the_command_cwd() {
     assert!(is_bound(&here, "/work", &snapshot));
     assert!(is_bound(&here, "/work/deeper", &snapshot));
     assert!(!is_bound(&here, "/elsewhere", &snapshot));
+}
+
+#[test]
+fn sqlite_snapshot_is_not_bound_when_the_configured_database_is_another_file() {
+    let snapshot = command_snapshot("sqlite", "/r/data/app.db\t/store/dump.db", None);
+    let mut here = location("/r", Some("/r"));
+    here.sqlite_db = Some(PathBuf::from("other.db"));
+    assert!(!is_bound(&here, "/r", &snapshot));
+    here.sqlite_db = None;
+    assert!(!is_bound(&here, "/r", &snapshot));
 }
 
 #[test]

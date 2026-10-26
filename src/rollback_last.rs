@@ -23,6 +23,8 @@ const LIST_LIMIT: usize = 10;
 pub(crate) struct Location {
     cwd: PathBuf,
     repo_top: Option<PathBuf>,
+    /// The configured `sqlite_snapshot_path`, if any.
+    sqlite_db: Option<PathBuf>,
 }
 
 /// A command with at least one live Snapshot bound to the [`Location`].
@@ -76,9 +78,16 @@ fn is_bound(location: &Location, command_cwd: &str, snapshot: &CommandSnapshot) 
             (Some(_), None) => false,
             (None, _) => canon(command_cwd).starts_with(&location.cwd),
         },
+        // A restore goes to the configured database, so a Snapshot of any other
+        // file is not bound even when it lies under this location (#546).
         "sqlite" => SqlitePlugin::database_path(&snapshot.snapshot_id).is_some_and(|db| {
             let base = location.repo_top.as_ref().unwrap_or(&location.cwd);
+            let configured = location
+                .sqlite_db
+                .clone()
+                .map(|path| SqlitePlugin::new(path, PathBuf::new()));
             canon(&db.to_string_lossy()).starts_with(base)
+                && configured.is_some_and(|plugin| plugin.is_configured_database(&db))
         }),
         // Docker scoping ignores cwd (ADR-039) and database targets have no directory.
         _ => false,
@@ -237,6 +246,8 @@ pub(crate) async fn execute(yes: bool) -> Result<LastOutcome> {
         })?;
     let location = Location {
         repo_top: git_toplevel(&cwd).await,
+        sqlite_db: Some(PathBuf::from(&config.sqlite_snapshot_path))
+            .filter(|p| !p.as_os_str().is_empty()),
         cwd,
     };
 
