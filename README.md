@@ -36,17 +36,16 @@ Other agents go through `$SHELL` on a best-effort basis.
 
 ## Why Aegis
 
-AI agents move fast, and sometimes in the wrong direction. They delete files and
-directories, rewrite git history, drop databases, and push things you did not
-intend to push. Blocking everything makes the agent useless. Blocking too little
+AI agents delete files and directories, rewrite git history, drop databases, and
+push things you did not intend to push. Blocking everything makes the agent useless. Blocking too little
 leaves you restoring from backups. Aegis does three things:
 
 - It asks first. A destructive command pauses for your decision: approve, deny, or inspect.
-- It takes a Snapshot before damage. Dangerous commands trigger best-effort Snapshots (git, Docker, databases) before they run, so `aegis rollback --last` can restore what they changed.
+- It takes a Snapshot before damage. Dangerous commands trigger best-effort Snapshots (git, Docker, databases) before they run. `aegis rollback --last` restores the git Snapshot, and the sqlite one when it is the configured database. For Docker and the other database Snapshots it prints the `aegis rollback <id>` line to run.
 - It records everything. An append-only Audit log holds every command and every decision.
 
 Aegis decides by heuristics, not by understanding your command. It is not a
-privilege boundary: it does not stop code that already runs as you. See the
+privilege boundary, so it does not stop code that already runs as you. See the
 [threat model](docs/threat-model.md), and [how it works](docs/how-it-works.md)
 for risk levels, effect opacity, and the Sandbox.
 
@@ -55,7 +54,7 @@ for risk levels, effect opacity, and the Sandbox.
 ## Install
 
 > [!IMPORTANT]
-> **Windows:** install inside WSL2. Native PowerShell and `cmd.exe` are not supported, and there is no native Windows build.
+> Windows users: install inside WSL2. Native PowerShell and `cmd.exe` are not supported, and there is no native Windows build.
 
 ### Claude Code plugin
 
@@ -102,7 +101,7 @@ brew install aegis
 
 Homebrew installs the binary only. Like npm and Cargo, it does not run the global shell installer. Opt in with `aegis setup-shell`.
 
-### Quick install (recommended)
+### Quick install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/IliasAlmerekov/aegis-shellguard/main/scripts/install.sh | sh
@@ -238,8 +237,6 @@ into the Cellar; the script leaves it alone and tells you to run
 Neither path touches project-local hooks. Projects where you ran
 `aegis install-hooks --local` keep their `./.claude/settings.json` entries and
 `./.claude/hooks/` files, and need manual cleanup.
-
----
 
 ---
 

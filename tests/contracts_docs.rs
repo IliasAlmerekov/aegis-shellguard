@@ -468,7 +468,7 @@ fn readme_links_to_contract_docs() {
         "find the `shell` field",
         "curl -fsSL",
         "install.sh",
-        "### Quick install (recommended)",
+        "### Quick install",
         "### npm",
         "### Homebrew",
         "### Developer source install",
