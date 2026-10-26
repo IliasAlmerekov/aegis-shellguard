@@ -40,3 +40,18 @@ fn rollback_ignores_an_id_path_that_is_not_the_configured_database() {
     assert_eq!(fs::read(sub.join("app.db")).unwrap(), b"captured-database");
     assert_eq!(fs::read(root.join("other.db")).unwrap(), b"other-database");
 }
+
+#[test]
+fn rollback_from_a_parent_directory_restores_the_database_the_snapshot_was_taken_of() {
+    let temp_dir = TempDir::new().unwrap();
+    let (root, sub, snapshots_dir, artifact) = fixture(&temp_dir);
+    write_db(&root.join("app.db"), b"decoy-database");
+    write_db(&sub.join("app.db"), b"damaged-database");
+    let plugin = SqlitePlugin::new(PathBuf::from("app.db"), snapshots_dir);
+    let id = SqlitePlugin::build_snapshot_id(&sub.join("app.db"), &artifact);
+
+    plugin.rollback_from(&id, &root).unwrap();
+
+    assert_eq!(fs::read(sub.join("app.db")).unwrap(), b"captured-database");
+    assert_eq!(fs::read(root.join("app.db")).unwrap(), b"decoy-database");
+}

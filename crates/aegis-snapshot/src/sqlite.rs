@@ -43,9 +43,8 @@ impl SqlitePlugin {
         }
     }
 
-    /// Restores the Snapshot, resolving the configured database against `cwd`.
-    /// The id's original path wins only when it is that database as seen from
-    /// `cwd` or one of its ancestors, so a subdirectory run hits the right file.
+    /// Restores the Snapshot. The id's original path wins when it is the
+    /// configured database, wherever `cwd` is; otherwise `cwd` resolves it.
     fn rollback_from(&self, snapshot_id: &str, cwd: &Path) -> Result<()> {
         let (original_path, dump_path) = Self::parse_snapshot_id(snapshot_id)?;
         let dump_path = contain_artifact("sqlite", &self.snapshots_dir, &dump_path)?;
@@ -67,12 +66,12 @@ impl SqlitePlugin {
     }
 
     fn restore_path(&self, original_path: &Path, cwd: &Path) -> PathBuf {
-        let original = original_path.canonicalize().ok();
-        let from_ancestor = self.db_path.is_relative()
-            && cwd.ancestors().any(|dir| {
-                dir.join(&self.db_path).canonicalize().ok() == original && original.is_some()
-            });
-        if from_ancestor {
+        let is_configured = if self.db_path.is_relative() {
+            original_path.ends_with(&self.db_path)
+        } else {
+            original_path == self.db_path
+        };
+        if is_configured {
             original_path.to_path_buf()
         } else {
             self.resolve_db_path(cwd)
