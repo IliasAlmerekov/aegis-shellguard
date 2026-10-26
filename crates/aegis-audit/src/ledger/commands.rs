@@ -69,7 +69,10 @@ pub(super) fn build(
         .rev()
         .filter_map(|(index, entry)| {
             let base = entry.as_base();
-            if base.decision == Decision::Pruned || is_rollback_entry(base) {
+            // Only a command that ran can be undone; a Denied entry may still
+            // carry Snapshots from the recovery-degradation path.
+            let ran = matches!(base.decision, Decision::Approved | Decision::AutoApproved);
+            if !ran || is_rollback_entry(base) {
                 return None;
             }
             let snapshots: Vec<CommandSnapshot> = base

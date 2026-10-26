@@ -289,6 +289,16 @@ mod tests {
     }
 
     #[test]
+    fn recent_commands_skips_commands_that_did_not_run() {
+        let ledger = SnapshotLedger::from_entries(&[
+            located("rm a", "/a", &[("git", "A")]),
+            entry("rm b", Decision::Denied, &[("git", "B")]).with_cwd(Some("/b".to_string())),
+        ]);
+
+        assert_eq!(command_names(&ledger), vec!["rm a"]);
+    }
+
+    #[test]
     fn recent_commands_gives_a_re_recorded_pair_to_its_latest_command() {
         let ledger = SnapshotLedger::from_entries(&[
             located("first", "/a", &[("git", "A")]),
