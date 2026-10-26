@@ -1,6 +1,6 @@
 {
   "name": "aegis",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "Route every Claude Code Bash command through Aegis, which asks a human before destructive commands and takes a best-effort Snapshot where a provider applies. Requires the aegis binary on PATH: npm i -g @iliasalmerekov/aegis",
   "author": {
     "name": "Ilias Almerekov"
