@@ -10,7 +10,7 @@ use aegis_audit::{AuditLogger, CommandSnapshot, RecordedCommand, SnapshotLedger}
 use aegis_config::AegisConfig;
 use aegis_snapshot::{SnapshotRegistry, SnapshotRegistryConfig, SqlitePlugin, git_toplevel};
 
-use crate::rollback::{Preflight, RollbackTarget, append_rollback_audit_entry, decide};
+use crate::rollback::{Preflight, RollbackTarget, restore_checked};
 use crate::{EXIT_DENIED, EXIT_INTERNAL};
 
 type Result<T> = std::result::Result<T, AegisError>;
@@ -56,6 +56,9 @@ enum Choice {
     Refuse { code: i32, message: String },
 }
 
+/// Canonical form of a recorded path. A path that no longer exists keeps its
+/// recorded spelling, so a Snapshot of a since-deleted directory still binds
+/// by the same string it was recorded with.
 fn canon(path: &str) -> PathBuf {
     Path::new(path)
         .canonicalize()
@@ -279,19 +282,11 @@ async fn restore_one(
     is_tty: bool,
     input: &mut impl BufRead,
 ) -> std::result::Result<(), (i32, String)> {
-    let internal = |error: AegisError| (EXIT_INTERNAL, error.to_string());
-    let liveness = registry
-        .liveness(&target.plugin, &target.snapshot_id)
-        .await
-        .map_err(|error| internal(error.into()))?;
-    if let Preflight::Refused { code, message } = decide(liveness, yes, is_tty, input) {
-        return Err((code, message));
+    match restore_checked(registry, logger, target, yes, is_tty, input).await {
+        Ok(Preflight::Restore) => Ok(()),
+        Ok(Preflight::Refused { code, message }) => Err((code, message)),
+        Err(error) => Err((EXIT_INTERNAL, error.to_string())),
     }
-    registry
-        .rollback(&target.plugin, &target.snapshot_id)
-        .await
-        .map_err(|error| internal(error.into()))?;
-    append_rollback_audit_entry(logger, target).map_err(internal)
 }
 
 #[cfg(test)]

@@ -38,23 +38,44 @@ pub(crate) async fn execute(snapshot_id: String, yes: bool) -> Result<RollbackOu
     let registry = SnapshotRegistry::from_runtime_config(
         &SnapshotRegistryConfig::for_rollback_from_config(&config)?,
     );
-    let liveness = registry
-        .liveness(&target.plugin, &target.snapshot_id)
-        .await?;
     let is_tty = std::io::stdin().is_terminal();
-    if let Preflight::Refused { code, message } =
-        decide(liveness, yes, is_tty, &mut std::io::stdin().lock())
+    if let Preflight::Refused { code, message } = restore_checked(
+        &registry,
+        &audit_logger,
+        &target,
+        yes,
+        is_tty,
+        &mut std::io::stdin().lock(),
+    )
+    .await?
     {
         return Ok(RollbackOutcome::Refused { code, message });
     }
 
-    registry
-        .rollback(&target.plugin, &target.snapshot_id)
-        .await?;
-
-    append_rollback_audit_entry(&audit_logger, &target)?;
-
     Ok(RollbackOutcome::Restored(target))
+}
+
+/// Run one Snapshot through the liveness preflight, restore it, and record the
+/// restore. `Refused` means nothing was written.
+pub(crate) async fn restore_checked(
+    registry: &SnapshotRegistry,
+    logger: &AuditLogger,
+    target: &RollbackTarget,
+    yes: bool,
+    is_tty: bool,
+    input: &mut impl BufRead,
+) -> Result<Preflight> {
+    let liveness = registry
+        .liveness(&target.plugin, &target.snapshot_id)
+        .await?;
+    let preflight = decide(liveness, yes, is_tty, input);
+    if matches!(preflight, Preflight::Restore) {
+        registry
+            .rollback(&target.plugin, &target.snapshot_id)
+            .await?;
+        append_rollback_audit_entry(logger, target)?;
+    }
+    Ok(preflight)
 }
 
 /// Decide from the liveness outcome whether Rollback may write. Only a
