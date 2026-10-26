@@ -268,6 +268,33 @@ fn summary_says_already_restored_when_every_bound_snapshot_was_restored() {
 }
 
 #[test]
+fn summary_says_already_restored_when_any_bound_snapshot_was_restored() {
+    let ledger = SnapshotLedger::from_entries(&[
+        entry(
+            "danger",
+            Some("/r"),
+            vec![
+                snap("git", "G", Some("/r")),
+                snap("sqlite", "/r/data/app.db\t/store/dump.db", None),
+            ],
+        ),
+        AuditEntry::new(
+            "aegis rollback G",
+            RiskLevel::Safe,
+            Vec::new(),
+            Decision::Approved,
+            vec![snap("git", "G", None)],
+            None,
+            None,
+        ),
+    ]);
+    let here = location("/r", Some("/r"));
+    let found = candidates(&ledger, &here);
+
+    assert!(summary(&found[0], &here).contains("Already restored at "));
+}
+
+#[test]
 fn no_candidate_message_names_the_location_and_the_alternatives() {
     let message = no_candidate_message(&location("/r", Some("/r")));
 

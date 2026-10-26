@@ -145,12 +145,11 @@ fn summary(candidate: &Candidate<'_>, location: &Location) -> String {
             ));
         }
     }
-    let restored: Option<_> = candidate
+    let restored = candidate
         .bound
         .iter()
-        .map(|snapshot| snapshot.restored_at.map(|at| at.to_string()))
-        .collect::<Option<Vec<_>>>()
-        .and_then(|times| times.into_iter().max());
+        .filter_map(|snapshot| snapshot.restored_at)
+        .max();
     if let Some(at) = restored {
         text.push_str(&format!("Already restored at {at}.\n"));
     }
