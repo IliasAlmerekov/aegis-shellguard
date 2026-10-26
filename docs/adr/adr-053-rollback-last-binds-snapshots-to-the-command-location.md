@@ -74,9 +74,12 @@ directory.
 - An entry written before this change has no `cwd`, so `--last` skips it. A
   watch entry from before has a `cwd` but no `git_target`, so inside a git
   repository its git Snapshot is not bound.
-- A Snapshot of a command that was denied is also a candidate, because the
-  ledger records Snapshots taken before the decision. The summary shows the
-  decision.
+- Only an approved or auto-approved command is a candidate. A denied entry
+  can carry Snapshots from the recovery-degradation path, but the command never
+  ran, so there is nothing to undo.
+- A pre-499 binary reads a new shell-wrapper audit line that carries `cwd` as
+  a watch entry. That breaks its integrity chain, so a downgrade past this
+  change fails the integrity check on the log.
 - A git Snapshot with nothing to capture (`clean`) still carries a target, so a
   later no-op command can become the latest candidate. Its restore is a no-op.
 - The restore order follows the order the Snapshots were taken. A git restore
