@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Fixed: A sqlite Rollback run from a subdirectory restores the database the Snapshot was taken of, not `sqlite_snapshot_path` resolved against the current directory. The path in the Snapshot id is used only when it is the configured database as seen from the cwd or one of its ancestors; otherwise the configured path is used as before (#546)
 - Added: `aegis rollback --last` restores the Snapshots of the latest command recorded at the current location after a confirmation, through the same liveness preflight as `aegis rollback <id>`. Audit entries now record their `cwd` and git Snapshots their Git target; docker and database Snapshots are listed with their `aegis rollback <id>` line and never restored by `--last` (#499, ADR-053)
 - Added: `aegis snapshot verify [<id>] [--format json]` checks that each recorded Snapshot's artifact still exists (exit 0, 1 absent, 5 inconclusive, 4 error), and `aegis rollback` runs the same check before it writes anything: it refuses an absent artifact, and asks (or needs `--yes` without a terminal) only when the check is inconclusive (#215, ADR-052)
 - Changed: PRD revision 4 leads the product promise with Rollback, lists the Snapshot / Rollback layer first, and defines Recovery as restoring captured state rather than an undo. 1.0 confinement is the `Trusted ceiling`; per-rule derivation and its surfacing move to 1.x (#498, ADR-030 amendment of 2026-10-06)

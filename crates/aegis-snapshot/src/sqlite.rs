@@ -43,6 +43,42 @@ impl SqlitePlugin {
         }
     }
 
+    /// Restores the Snapshot, resolving the configured database against `cwd`.
+    /// The id's original path wins only when it is that database as seen from
+    /// `cwd` or one of its ancestors, so a subdirectory run hits the right file.
+    fn rollback_from(&self, snapshot_id: &str, cwd: &Path) -> Result<()> {
+        let (original_path, dump_path) = Self::parse_snapshot_id(snapshot_id)?;
+        let dump_path = contain_artifact("sqlite", &self.snapshots_dir, &dump_path)?;
+        if !dump_path.exists() {
+            return Err(SnapshotError::RollbackDumpNotFound {
+                path: dump_path.to_string_lossy().to_string(),
+            });
+        }
+
+        let restore_path = self.restore_path(&original_path, cwd);
+        let mut dump_file = fs::File::open(dump_path)?;
+        let mut restore_file = fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(restore_path)?;
+        std::io::copy(&mut dump_file, &mut restore_file)?;
+        tracing::info!(snapshot_id = snapshot_id, "sqlite snapshot rolled back");
+        Ok(())
+    }
+
+    fn restore_path(&self, original_path: &Path, cwd: &Path) -> PathBuf {
+        let original = original_path.canonicalize().ok();
+        let from_ancestor = self.db_path.is_relative()
+            && cwd.ancestors().any(|dir| {
+                dir.join(&self.db_path).canonicalize().ok() == original && original.is_some()
+            });
+        if from_ancestor {
+            original_path.to_path_buf()
+        } else {
+            self.resolve_db_path(cwd)
+        }
+    }
+
     fn encode_path(path: &Path) -> String {
         #[cfg(unix)]
         {
@@ -215,24 +251,7 @@ impl SnapshotPlugin for SqlitePlugin {
     }
 
     async fn rollback(&self, snapshot_id: &str) -> Result<()> {
-        let (_original_path, dump_path) = Self::parse_snapshot_id(snapshot_id)?;
-        let dump_path = contain_artifact("sqlite", &self.snapshots_dir, &dump_path)?;
-        if !dump_path.exists() {
-            return Err(SnapshotError::RollbackDumpNotFound {
-                path: dump_path.to_string_lossy().to_string(),
-            });
-        }
-
-        let cwd = std::env::current_dir()?;
-        let restore_path = self.resolve_db_path(&cwd);
-        let mut dump_file = fs::File::open(dump_path)?;
-        let mut restore_file = fs::OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .open(restore_path)?;
-        std::io::copy(&mut dump_file, &mut restore_file)?;
-        tracing::info!(snapshot_id = snapshot_id, "sqlite snapshot rolled back");
-        Ok(())
+        self.rollback_from(snapshot_id, &std::env::current_dir()?)
     }
 
     async fn liveness(&self, snapshot_id: &str) -> Result<Liveness> {
@@ -774,4 +793,5 @@ mod tests {
 
     mod database_path_tests;
     mod liveness_tests;
+    mod rollback_location_tests;
 }
