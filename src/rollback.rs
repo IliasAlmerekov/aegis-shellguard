@@ -20,14 +20,29 @@ pub(crate) struct RollbackTarget {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum RollbackOutcome {
     Restored(RollbackTarget),
-    Refused { code: i32, message: String },
+    Refused {
+        code: i32,
+        message: String,
+    },
+    /// Restored, but the Rollback audit entry could not be written.
+    RestoredUnaudited {
+        target: RollbackTarget,
+        reason: String,
+    },
 }
 
 /// The liveness preflight's verdict (ADR-052 §6, §7).
 #[derive(Debug, PartialEq, Eq)]
-enum Preflight {
+pub(crate) enum Preflight {
     Restore,
-    Refused { code: i32, message: String },
+    Refused {
+        code: i32,
+        message: String,
+    },
+    /// Restored, but the Rollback audit entry could not be written.
+    RestoredUnaudited {
+        reason: String,
+    },
 }
 
 pub(crate) async fn execute(snapshot_id: String, yes: bool) -> Result<RollbackOutcome> {
@@ -38,28 +53,60 @@ pub(crate) async fn execute(snapshot_id: String, yes: bool) -> Result<RollbackOu
     let registry = SnapshotRegistry::from_runtime_config(
         &SnapshotRegistryConfig::for_rollback_from_config(&config)?,
     );
+    let is_tty = std::io::stdin().is_terminal();
+    match restore_checked(
+        &registry,
+        &audit_logger,
+        &target,
+        yes,
+        is_tty,
+        &mut std::io::stdin().lock(),
+    )
+    .await?
+    {
+        Preflight::Restore => Ok(RollbackOutcome::Restored(target)),
+        Preflight::Refused { code, message } => Ok(RollbackOutcome::Refused { code, message }),
+        Preflight::RestoredUnaudited { reason } => {
+            Ok(RollbackOutcome::RestoredUnaudited { target, reason })
+        }
+    }
+}
+
+/// Run one Snapshot through the liveness preflight, restore it, and record the
+/// restore. `Refused` means nothing was written.
+pub(crate) async fn restore_checked(
+    registry: &SnapshotRegistry,
+    logger: &AuditLogger,
+    target: &RollbackTarget,
+    yes: bool,
+    is_tty: bool,
+    input: &mut impl BufRead,
+) -> Result<Preflight> {
     let liveness = registry
         .liveness(&target.plugin, &target.snapshot_id)
         .await?;
-    let is_tty = std::io::stdin().is_terminal();
-    if let Preflight::Refused { code, message } =
-        decide(liveness, yes, is_tty, &mut std::io::stdin().lock())
-    {
-        return Ok(RollbackOutcome::Refused { code, message });
+    let preflight = decide(liveness, yes, is_tty, input);
+    if matches!(preflight, Preflight::Restore) {
+        registry
+            .rollback(&target.plugin, &target.snapshot_id)
+            .await?;
+        if let Err(error) = append_rollback_audit_entry(logger, target) {
+            return Ok(Preflight::RestoredUnaudited {
+                reason: error.to_string(),
+            });
+        }
     }
-
-    registry
-        .rollback(&target.plugin, &target.snapshot_id)
-        .await?;
-
-    append_rollback_audit_entry(&audit_logger, &target)?;
-
-    Ok(RollbackOutcome::Restored(target))
+    Ok(preflight)
 }
 
 /// Decide from the liveness outcome whether Rollback may write. Only a
 /// question needs a terminal: `Inconclusive` asks, everything else does not.
-fn decide(liveness: Liveness, yes: bool, is_tty: bool, input: &mut impl BufRead) -> Preflight {
+pub(crate) fn decide(
+    liveness: Liveness,
+    yes: bool,
+    is_tty: bool,
+    input: &mut impl BufRead,
+) -> Preflight {
     match liveness {
         Liveness::Present | Liveness::NothingCaptured => Preflight::Restore,
         Liveness::Absent { reason } => Preflight::Refused {
@@ -117,7 +164,10 @@ pub(crate) fn find_snapshot_target(
     }
 }
 
-fn append_rollback_audit_entry(logger: &AuditLogger, target: &RollbackTarget) -> Result<()> {
+pub(crate) fn append_rollback_audit_entry(
+    logger: &AuditLogger,
+    target: &RollbackTarget,
+) -> Result<()> {
     Ok(logger.append(AuditEntry::new(
         format!("aegis rollback {}", target.snapshot_id),
         RiskLevel::Safe,
@@ -126,6 +176,7 @@ fn append_rollback_audit_entry(logger: &AuditLogger, target: &RollbackTarget) ->
         vec![AuditSnapshot {
             plugin: target.plugin.clone(),
             snapshot_id: target.snapshot_id.clone(),
+            git_target: None,
         }],
         None,
         None,
@@ -151,6 +202,7 @@ mod tests {
             vec![AuditSnapshot {
                 plugin: plugin.to_string(),
                 snapshot_id: snapshot_id.to_string(),
+                git_target: None,
             }],
             None,
             None,
@@ -171,6 +223,7 @@ mod tests {
             vec![AuditSnapshot {
                 plugin: plugin.to_string(),
                 snapshot_id: snapshot_id.to_string(),
+                git_target: None,
             }],
             None,
             None,
@@ -231,7 +284,7 @@ mod tests {
     fn refused_code(preflight: &Preflight) -> Option<i32> {
         match preflight {
             Preflight::Refused { code, .. } => Some(*code),
-            Preflight::Restore => None,
+            Preflight::Restore | Preflight::RestoredUnaudited { .. } => None,
         }
     }
 
@@ -280,7 +333,7 @@ mod tests {
                 assert_eq!(code, 2);
                 assert!(message.contains("--yes"), "{message}");
             }
-            Preflight::Restore => panic!("must fail closed without a TTY"),
+            other => panic!("must fail closed without a TTY: {other:?}"),
         }
     }
 
@@ -292,5 +345,64 @@ mod tests {
                 Preflight::Restore
             );
         }
+    }
+
+    struct Restoring;
+
+    #[async_trait::async_trait]
+    impl aegis_snapshot::SnapshotPlugin for Restoring {
+        fn name(&self) -> &'static str {
+            "stub"
+        }
+        async fn is_applicable(&self, _cwd: &std::path::Path) -> bool {
+            true
+        }
+        async fn snapshot(
+            &self,
+            _cwd: &std::path::Path,
+            _cmd: &str,
+        ) -> std::result::Result<String, aegis_snapshot::SnapshotError> {
+            Ok("S1".to_string())
+        }
+        async fn rollback(
+            &self,
+            _id: &str,
+        ) -> std::result::Result<(), aegis_snapshot::SnapshotError> {
+            Ok(())
+        }
+        async fn delete(
+            &self,
+            _id: &str,
+        ) -> std::result::Result<(), aegis_snapshot::SnapshotError> {
+            Ok(())
+        }
+        async fn liveness(
+            &self,
+            _id: &str,
+        ) -> std::result::Result<Liveness, aegis_snapshot::SnapshotError> {
+            Ok(Liveness::Present)
+        }
+    }
+
+    #[tokio::test]
+    async fn restore_checked_reports_a_restore_whose_audit_entry_was_not_written() {
+        let dir = TempDir::new().unwrap();
+        let blocker = dir.path().join("not-a-dir");
+        std::fs::write(&blocker, b"x").unwrap();
+        let logger = AuditLogger::new(blocker.join("audit.jsonl"));
+        let registry = SnapshotRegistry::new_with_plugins(vec![Box::new(Restoring)]);
+        let target = RollbackTarget {
+            plugin: "stub".to_string(),
+            snapshot_id: "S1".to_string(),
+        };
+
+        let preflight = restore_checked(&registry, &logger, &target, true, false, &mut &b""[..])
+            .await
+            .unwrap();
+
+        assert!(
+            matches!(preflight, Preflight::RestoredUnaudited { .. }),
+            "{preflight:?}"
+        );
     }
 }

@@ -1,7 +1,7 @@
 //! SQLite snapshot provider.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
@@ -43,6 +43,50 @@ impl SqlitePlugin {
         }
     }
 
+    /// Restores the Snapshot. The id's original path wins when it is the
+    /// configured database, wherever `cwd` is; otherwise `cwd` resolves it.
+    fn rollback_from(&self, snapshot_id: &str, cwd: &Path) -> Result<()> {
+        let (original_path, dump_path) = Self::parse_snapshot_id(snapshot_id)?;
+        let dump_path = contain_artifact("sqlite", &self.snapshots_dir, &dump_path)?;
+        if !dump_path.exists() {
+            return Err(SnapshotError::RollbackDumpNotFound {
+                path: dump_path.to_string_lossy().to_string(),
+            });
+        }
+
+        let restore_path = self.restore_path(&original_path, cwd);
+        let mut dump_file = fs::File::open(dump_path)?;
+        let mut restore_file = fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(restore_path)?;
+        std::io::copy(&mut dump_file, &mut restore_file)?;
+        tracing::info!(snapshot_id = snapshot_id, "sqlite snapshot rolled back");
+        Ok(())
+    }
+
+    /// Whether `original` is the configured database. A relative path matches
+    /// on its components after the last `..`: ids hold canonical paths.
+    pub fn is_configured_database(&self, original: &Path) -> bool {
+        if self.db_path.is_absolute() {
+            return original == self.db_path;
+        }
+        let mut tail: Vec<_> = (self.db_path.components().rev())
+            .take_while(|c| *c != Component::ParentDir)
+            .filter(|c| *c != Component::CurDir)
+            .collect();
+        tail.reverse();
+        !tail.is_empty() && original.ends_with(tail.iter().collect::<PathBuf>())
+    }
+
+    fn restore_path(&self, original_path: &Path, cwd: &Path) -> PathBuf {
+        if self.is_configured_database(original_path) {
+            original_path.to_path_buf()
+        } else {
+            self.resolve_db_path(cwd)
+        }
+    }
+
     fn encode_path(path: &Path) -> String {
         #[cfg(unix)]
         {
@@ -64,36 +108,26 @@ impl SqlitePlugin {
     }
 
     fn decode_path(encoded: &str, label: &str) -> Result<PathBuf> {
-        if !encoded.len().is_multiple_of(2) {
-            return Err(SnapshotError::Snapshot(format!(
+        let malformed = || {
+            SnapshotError::Snapshot(format!(
                 "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-            )));
+            ))
+        };
+        if !encoded.len().is_multiple_of(2) {
+            return Err(malformed());
         }
 
         let mut bytes = Vec::with_capacity(encoded.len() / 2);
         for pair in encoded.as_bytes().as_chunks::<2>().0 {
-            let hex = std::str::from_utf8(pair).map_err(|_| {
-                SnapshotError::Snapshot(format!(
-                    "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-                ))
-            })?;
-            let byte = u8::from_str_radix(hex, 16).map_err(|_| {
-                SnapshotError::Snapshot(format!(
-                    "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-                ))
-            })?;
-            bytes.push(byte);
+            let hex = std::str::from_utf8(pair).map_err(|_| malformed())?;
+            bytes.push(u8::from_str_radix(hex, 16).map_err(|_| malformed())?);
         }
 
         #[cfg(unix)]
         let path = PathBuf::from(std::ffi::OsString::from_vec(bytes));
 
         #[cfg(not(unix))]
-        let path = PathBuf::from(String::from_utf8(bytes).map_err(|_| {
-            SnapshotError::Snapshot(format!(
-                "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-            ))
-        })?);
+        let path = PathBuf::from(String::from_utf8(bytes).map_err(|_| malformed())?);
 
         Ok(path)
     }
@@ -106,11 +140,18 @@ impl SqlitePlugin {
         )
     }
 
+    /// The database file a Snapshot was taken of, or `None` for a malformed id.
+    /// `aegis rollback --last` uses it to bind a sqlite Snapshot to a place.
+    pub fn database_path(snapshot_id: &str) -> Option<PathBuf> {
+        Self::parse_snapshot_id(snapshot_id)
+            .ok()
+            .map(|(original, _dump)| original)
+    }
+
     fn parse_snapshot_id(snapshot_id: &str) -> Result<(PathBuf, PathBuf)> {
         if snapshot_id.starts_with(&format!("{SNAPSHOT_ID_VERSION}{SEP}")) {
             return Self::parse_v2_snapshot_id(snapshot_id);
         }
-
         Self::parse_legacy_snapshot_id(snapshot_id)
     }
 
@@ -121,7 +162,6 @@ impl SqlitePlugin {
                 "malformed snapshot_id: {snapshot_id:?}"
             )));
         }
-
         Ok((
             Self::decode_path(parts[1], "original path")?,
             Self::decode_path(parts[2], "dump path")?,
@@ -132,9 +172,7 @@ impl SqlitePlugin {
         let (original_str, dump_str) = snapshot_id.split_once(SEP).ok_or_else(|| {
             SnapshotError::Snapshot(format!("malformed snapshot_id: {snapshot_id:?}"))
         })?;
-        let original_path = PathBuf::from(original_str);
-        let dump_path = PathBuf::from(dump_str);
-        Ok((original_path, dump_path))
+        Ok((PathBuf::from(original_str), PathBuf::from(dump_str)))
     }
 }
 
@@ -207,24 +245,7 @@ impl SnapshotPlugin for SqlitePlugin {
     }
 
     async fn rollback(&self, snapshot_id: &str) -> Result<()> {
-        let (_original_path, dump_path) = Self::parse_snapshot_id(snapshot_id)?;
-        let dump_path = contain_artifact("sqlite", &self.snapshots_dir, &dump_path)?;
-        if !dump_path.exists() {
-            return Err(SnapshotError::RollbackDumpNotFound {
-                path: dump_path.to_string_lossy().to_string(),
-            });
-        }
-
-        let cwd = std::env::current_dir()?;
-        let restore_path = self.resolve_db_path(&cwd);
-        let mut dump_file = fs::File::open(dump_path)?;
-        let mut restore_file = fs::OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .open(restore_path)?;
-        std::io::copy(&mut dump_file, &mut restore_file)?;
-        tracing::info!(snapshot_id = snapshot_id, "sqlite snapshot rolled back");
-        Ok(())
+        self.rollback_from(snapshot_id, &std::env::current_dir()?)
     }
 
     async fn liveness(&self, snapshot_id: &str) -> Result<Liveness> {
@@ -764,5 +785,7 @@ mod tests {
         assert_eq!(fs::read(second_dump).unwrap(), b"after-first-snapshot");
     }
 
+    mod database_path_tests;
     mod liveness_tests;
+    mod rollback_location_tests;
 }

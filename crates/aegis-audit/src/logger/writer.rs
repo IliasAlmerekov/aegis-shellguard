@@ -63,6 +63,7 @@ impl AuditEntry {
             // tests rely on to represent a legacy v1 line.
             basis: None,
             analysis: None,
+            cwd: None,
         })
     }
 
@@ -82,20 +83,20 @@ impl AuditEntry {
         cwd: Option<String>,
         id: Option<String>,
     ) -> Self {
-        match self {
-            AuditEntry::Decision(base) => AuditEntry::Watch(WatchEntry {
-                base,
-                source,
-                cwd,
-                id,
-            }),
+        match self.with_cwd(cwd) {
+            AuditEntry::Decision(base) => AuditEntry::Watch(WatchEntry { base, source, id }),
             AuditEntry::Watch(mut w) => {
                 w.source = source;
-                w.cwd = cwd;
                 w.id = id;
                 AuditEntry::Watch(w)
             }
         }
+    }
+
+    /// Record the directory the command ran in (the `Command location`, #499).
+    pub fn with_cwd(mut self, cwd: Option<String>) -> Self {
+        self.as_base_mut().cwd = cwd;
+        self
     }
 
     /// Attach the evaluated policy context captured at runtime.

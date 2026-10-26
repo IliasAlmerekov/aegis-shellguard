@@ -9,7 +9,7 @@ use aegis_config::{AegisConfig, ValidationReport, validate_config_layers};
 use crate::{
     AuditArgs, AuditOutputFormat, CommandOutputFormat, ConfigArgs, ConfigCommand,
     ConfigValidateArgs, ConfigValidateOutput, EXIT_DENIED, EXIT_INTERNAL, RollbackArgs,
-    SnapshotArgs, SnapshotCommand, VerifyArgs, rollback,
+    SnapshotArgs, SnapshotCommand, VerifyArgs, rollback, rollback_last,
 };
 
 pub(crate) fn handle_audit_command(args: AuditArgs) -> i32 {
@@ -327,7 +327,10 @@ pub(crate) fn handle_rollback_command(
     args: RollbackArgs,
     runtime: &tokio::runtime::Runtime,
 ) -> i32 {
-    match runtime.block_on(rollback::execute(args.snapshot_id, args.yes)) {
+    let Some(snapshot_id) = args.snapshot_id else {
+        return handle_rollback_last_command(args.yes, runtime);
+    };
+    match runtime.block_on(rollback::execute(snapshot_id, args.yes)) {
         Ok(rollback::RollbackOutcome::Refused { code, message }) => {
             eprintln!("error: rollback refused: {message}");
             code
@@ -338,6 +341,66 @@ pub(crate) fn handle_rollback_command(
                 target.plugin, target.snapshot_id
             );
             0
+        }
+        Ok(rollback::RollbackOutcome::RestoredUnaudited { target, reason }) => {
+            println!(
+                "rollback complete: plugin={} snapshot_id={}",
+                target.plugin, target.snapshot_id
+            );
+            eprintln!("error: restored, but the audit entry was not written: {reason}");
+            EXIT_INTERNAL
+        }
+        Err(err) if err.is_config_fault() => report_config_load_error(&err),
+        Err(err) => {
+            eprintln!("error: rollback failed: {err}");
+            EXIT_INTERNAL
+        }
+    }
+}
+
+fn handle_rollback_last_command(yes: bool, runtime: &tokio::runtime::Runtime) -> i32 {
+    match runtime.block_on(rollback_last::execute(yes)) {
+        Ok(rollback_last::LastOutcome::Refused { code, message }) => {
+            eprintln!("error: rollback refused: {message}");
+            code
+        }
+        Ok(rollback_last::LastOutcome::Attempted(report)) => {
+            for target in &report.restored {
+                println!(
+                    "rollback complete: plugin={} snapshot_id={}",
+                    target.plugin, target.snapshot_id
+                );
+            }
+            for (target, reason) in &report.unaudited {
+                println!(
+                    "rollback complete: plugin={} snapshot_id={}",
+                    target.plugin, target.snapshot_id
+                );
+                eprintln!(
+                    "error: restored, but the audit entry was not written: plugin={} snapshot_id={}: {reason}",
+                    target.plugin, target.snapshot_id
+                );
+            }
+            for target in &report.skipped {
+                println!(
+                    "not restored, not bound to this location: aegis rollback {}",
+                    target.snapshot_id
+                );
+            }
+            for (target, _, reason) in &report.failed {
+                eprintln!(
+                    "error: rollback failed: plugin={} snapshot_id={}: {reason}",
+                    target.plugin, target.snapshot_id
+                );
+            }
+            report.failed.first().map_or(
+                if report.unaudited.is_empty() {
+                    0
+                } else {
+                    EXIT_INTERNAL
+                },
+                |(_, code, _)| *code,
+            )
         }
         Err(err) if err.is_config_fault() => report_config_load_error(&err),
         Err(err) => {
@@ -585,6 +648,7 @@ mod tests {
             vec![AuditSnapshot {
                 plugin: plugin.to_string(),
                 snapshot_id: snapshot_id.to_string(),
+                git_target: None,
             }],
             None,
             None,

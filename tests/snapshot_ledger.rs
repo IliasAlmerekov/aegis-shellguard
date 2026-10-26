@@ -51,6 +51,7 @@ fn snapshot_entry(
         vec![AuditSnapshot {
             plugin: plugin.to_string(),
             snapshot_id: snapshot_id.to_string(),
+            git_target: None,
         }],
         None,
         None,
@@ -357,6 +358,7 @@ fn rollback_does_not_refresh_recorded_at() {
             vec![AuditSnapshot {
                 plugin: "git".to_string(),
                 snapshot_id: snapshot_id.clone(),
+                git_target: None,
             }],
             None,
             None,

@@ -116,6 +116,7 @@ the core classification / approval pipeline when enforcement is active.
 | ADR-050 | The git Snapshot follows `cd` steps earlier in the command line; the router's cwd tracking stays stricter | [`adr-050-git-snapshot-follows-cd-steps-in-the-command-line.md`](adr-050-git-snapshot-follows-cd-steps-in-the-command-line.md) |
 | ADR-051 | Classification reads ANSI-C quoting decoded | [`adr-051-classification-reads-ansi-c-quoting-decoded.md`](adr-051-classification-reads-ansi-c-quoting-decoded.md) |
 | ADR-052 | Snapshot liveness checks what Rollback needs, and only a question needs a terminal (sharpens ADR-026) | [`adr-052-snapshot-liveness-checks-what-rollback-needs.md`](adr-052-snapshot-liveness-checks-what-rollback-needs.md) |
+| ADR-053 | `aegis rollback --last` binds Snapshots to the Command location and asks before it restores | [`adr-053-rollback-last-binds-snapshots-to-the-command-location.md`](adr-053-rollback-last-binds-snapshots-to-the-command-location.md) |
 
 `ADR-009` is intentionally absent from the active set; numbering is preserved
 as-is so historical references do not drift.

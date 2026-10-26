@@ -477,6 +477,7 @@ fn append_audit_entry_enriches_explanation_with_runtime_outcome() {
     let snapshots = vec![SnapshotRecord {
         plugin: "git",
         snapshot_id: "snap-1".to_string(),
+        git_target: None,
     }];
     let explanation = CommandExplanation {
         scan: ScanExplanation {

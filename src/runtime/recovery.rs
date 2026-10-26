@@ -77,6 +77,7 @@ mod tests {
         SnapshotRecord {
             plugin,
             snapshot_id: format!("{plugin}-snapshot"),
+            git_target: None,
         }
     }
 
@@ -85,6 +86,7 @@ mod tests {
         let coverage = SnapshotCoverage::complete(vec![SnapshotRecord {
             plugin: "git",
             snapshot_id: "stash@{0}".to_string(),
+            git_target: None,
         }]);
 
         assert_eq!(

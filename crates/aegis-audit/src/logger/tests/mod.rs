@@ -40,6 +40,7 @@ pub fn entry(index: usize, risk: RiskLevel) -> AuditEntry {
         snapshots: vec![AuditSnapshot {
             plugin: "git".to_string(),
             snapshot_id: format!("snap-{index}"),
+            git_target: None,
         }],
         explanation: None,
         mode: None,
@@ -58,6 +59,7 @@ pub fn entry(index: usize, risk: RiskLevel) -> AuditEntry {
         recovery_degradation: None,
         basis: None,
         analysis: None,
+        cwd: None,
     })
 }
 

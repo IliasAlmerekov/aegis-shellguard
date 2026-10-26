@@ -18,6 +18,9 @@ use aegis_types::{Decision, RecordedSnapshot, RiskLevel};
 use crate::error::AuditError;
 use crate::logger::{AuditEntry, AuditLogger, DecisionEntry};
 
+mod commands;
+pub use commands::{CommandSnapshot, RecordedCommand};
+
 const PRUNE_COMMAND_PREFIX: &str = "aegis prune ";
 const ROLLBACK_COMMAND_PREFIX: &str = "aegis rollback ";
 
@@ -39,6 +42,8 @@ pub struct SnapshotLedger {
     pruned_ids: HashSet<String>,
     /// Number of recorded pairs hidden by a prune.
     pruned_count: usize,
+    /// Commands that still have a live Snapshot, latest first.
+    commands: Vec<RecordedCommand>,
 }
 
 impl SnapshotLedger {
@@ -98,6 +103,10 @@ impl SnapshotLedger {
         let pruned_count = recorded.iter().filter(|record| is_pruned(record)).count();
         recorded.retain(|record| !is_pruned(record));
 
+        let commands = commands::build(entries, |plugin, id| {
+            !pruned_pairs.contains(&(plugin, id)) && !legacy_pruned_ids.contains(id)
+        });
+
         let pruned_ids = pruned_pairs
             .iter()
             .map(|(_, id)| *id)
@@ -109,7 +118,15 @@ impl SnapshotLedger {
             live: recorded,
             pruned_ids,
             pruned_count,
+            commands,
         }
+    }
+
+    /// Commands that still have at least one live Snapshot, latest first in
+    /// log order. Each carries its entry's Command location (`cwd`, git
+    /// Snapshot targets) so `aegis rollback --last` reads one ledger (#499).
+    pub fn recent_commands(&self) -> &[RecordedCommand] {
+        &self.commands
     }
 
     /// Live records, oldest first in log order.
@@ -196,6 +213,7 @@ mod tests {
                 .map(|(plugin, id)| AuditSnapshot {
                     plugin: (*plugin).to_string(),
                     snapshot_id: (*id).to_string(),
+                    git_target: None,
                 })
                 .collect(),
             None,
@@ -209,6 +227,109 @@ mod tests {
             .iter()
             .map(|record| (record.plugin.as_str(), record.snapshot_id.as_str()))
             .collect()
+    }
+
+    fn located(command: &str, cwd: &str, pairs: &[(&str, &str)]) -> AuditEntry {
+        entry(command, Decision::Approved, pairs).with_cwd(Some(cwd.to_string()))
+    }
+
+    fn command_names(ledger: &SnapshotLedger) -> Vec<&str> {
+        ledger
+            .recent_commands()
+            .iter()
+            .map(|c| c.command.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn recent_commands_lists_commands_with_live_snapshots_latest_first() {
+        let ledger = SnapshotLedger::from_entries(&[
+            located("rm a", "/a", &[("git", "A")]),
+            located("ls", "/a", &[]),
+            located("rm b", "/b", &[("git", "B"), ("docker", "C")]),
+        ]);
+
+        assert_eq!(command_names(&ledger), vec!["rm b", "rm a"]);
+        let latest = &ledger.recent_commands()[0];
+        assert_eq!(latest.cwd.as_deref(), Some("/b"));
+        assert_eq!(latest.snapshots.len(), 2);
+    }
+
+    #[test]
+    fn recent_commands_drops_pruned_snapshots_and_commands_left_empty() {
+        let ledger = SnapshotLedger::from_entries(&[
+            located("rm a", "/a", &[("git", "A")]),
+            located("rm b", "/b", &[("git", "B"), ("docker", "C")]),
+            entry("aegis prune A", Decision::Pruned, &[("git", "A")]),
+            entry("aegis prune C", Decision::Pruned, &[("docker", "C")]),
+        ]);
+
+        assert_eq!(command_names(&ledger), vec!["rm b"]);
+        assert_eq!(ledger.recent_commands()[0].snapshots.len(), 1);
+    }
+
+    #[test]
+    fn recent_commands_skips_rollback_entries_and_reports_the_restore_time() {
+        let ledger = SnapshotLedger::from_entries(&[
+            located("rm a", "/a", &[("git", "A")]),
+            entry_with_risk(
+                "aegis rollback A",
+                RiskLevel::Safe,
+                Decision::Approved,
+                &[("git", "A")],
+            ),
+        ]);
+
+        assert_eq!(command_names(&ledger), vec!["rm a"]);
+        assert!(
+            ledger.recent_commands()[0].snapshots[0]
+                .restored_at
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn recent_commands_skips_commands_that_did_not_run() {
+        let ledger = SnapshotLedger::from_entries(&[
+            located("rm a", "/a", &[("git", "A")]),
+            entry("rm b", Decision::Denied, &[("git", "B")]).with_cwd(Some("/b".to_string())),
+        ]);
+
+        assert_eq!(command_names(&ledger), vec!["rm a"]);
+    }
+
+    #[test]
+    fn recent_commands_gives_a_re_recorded_pair_to_its_latest_command() {
+        let ledger = SnapshotLedger::from_entries(&[
+            located("first", "/a", &[("git", "A")]),
+            located("second", "/a", &[("git", "A")]),
+        ]);
+
+        assert_eq!(command_names(&ledger), vec!["second"]);
+    }
+
+    #[test]
+    fn recent_commands_forgets_a_restore_when_a_later_command_records_the_same_pair() {
+        let ledger = SnapshotLedger::from_entries(&[
+            located("first", "/a", &[("git", "clean")]),
+            entry_with_risk(
+                "aegis rollback clean",
+                RiskLevel::Safe,
+                Decision::Approved,
+                &[("git", "clean")],
+            ),
+            located("second", "/a", &[("git", "clean")]),
+        ]);
+
+        assert_eq!(ledger.recent_commands()[0].snapshots[0].restored_at, None);
+    }
+
+    #[test]
+    fn recent_commands_keeps_an_entry_without_cwd_with_no_location() {
+        let ledger =
+            SnapshotLedger::from_entries(&[entry("rm a", Decision::Approved, &[("git", "A")])]);
+
+        assert_eq!(ledger.recent_commands()[0].cwd, None);
     }
 
     #[test]

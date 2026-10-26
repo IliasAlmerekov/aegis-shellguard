@@ -185,13 +185,18 @@ pub struct DecisionEntry {
     /// reasons, orthogonal to `RiskLevel` (ADR-022 §5, §10, Audit v2). `None`
     /// on legacy v1 lines and on fresh entries with no language analysis.
     pub analysis: Option<aegis_types::AnalysisSummary>,
+    /// Working directory the command ran in: the `cwd` of a watch frame, or the
+    /// process directory in shell-wrapper mode (the `Command location`, #499).
+    /// `None` on lines that predate the field.
+    pub cwd: Option<String>,
 }
 
 /// Watch-mode audit entry.
 ///
 /// Contains all `DecisionEntry` fields via `base`, plus the watch-frame
-/// correlation fields.  `source`, `cwd` and `id` are `Option<String>` so that
-/// legacy audit log lines which omit them still deserialize correctly.
+/// correlation fields.  `source` and `id` are `Option<String>` so that
+/// legacy audit log lines which omit them still deserialize correctly. The
+/// frame's `cwd` lives in `base.cwd`, shared with shell-wrapper entries.
 /// `transport` is implicit — it is always `"watch"`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WatchEntry {
@@ -199,8 +204,6 @@ pub struct WatchEntry {
     pub base: DecisionEntry,
     /// Agent/caller identity from the watch-mode input frame.
     pub source: Option<String>,
-    /// Working directory from the watch-mode input frame.
-    pub cwd: Option<String>,
     /// Correlation ID from the watch-mode input frame.
     pub id: Option<String>,
 }
@@ -320,7 +323,6 @@ impl From<AuditEntryFlat> for AuditEntry {
     fn from(flat: AuditEntryFlat) -> Self {
         let is_watch = flat.transport.as_deref() == Some("watch")
             || flat.source.is_some()
-            || flat.cwd.is_some()
             || flat.id.is_some();
         let base = DecisionEntry {
             timestamp: flat.timestamp,
@@ -352,12 +354,12 @@ impl From<AuditEntryFlat> for AuditEntry {
             recovery_degradation: flat.recovery_degradation,
             basis: flat.basis,
             analysis: flat.analysis,
+            cwd: flat.cwd,
         };
         if is_watch {
             AuditEntry::Watch(WatchEntry {
                 base,
                 source: flat.source,
-                cwd: flat.cwd,
                 id: flat.id,
             })
         } else {
@@ -369,14 +371,9 @@ impl From<AuditEntryFlat> for AuditEntry {
 impl From<&AuditEntry> for AuditEntryFlat {
     fn from(entry: &AuditEntry) -> Self {
         let base = entry.as_base();
-        let (source, cwd, id, transport) = match entry {
-            AuditEntry::Watch(w) => (
-                w.source.clone(),
-                w.cwd.clone(),
-                w.id.clone(),
-                Some("watch".to_string()),
-            ),
-            AuditEntry::Decision(_) => (None, None, None, None),
+        let (source, id, transport) = match entry {
+            AuditEntry::Watch(w) => (w.source.clone(), w.id.clone(), Some("watch".to_string())),
+            AuditEntry::Decision(_) => (None, None, None),
         };
         Self {
             timestamp: base.timestamp,
@@ -406,7 +403,7 @@ impl From<&AuditEntry> for AuditEntryFlat {
             basis: base.basis.clone(),
             analysis: base.analysis.clone(),
             source,
-            cwd,
+            cwd: base.cwd.clone(),
             id,
             transport,
         }
@@ -538,6 +535,13 @@ pub struct AuditSnapshot {
     pub plugin: String,
     /// Opaque identifier used to restore the snapshot.
     pub snapshot_id: String,
+    /// The git working tree a git Snapshot covers: its resolved Git target
+    /// (ADR-048), as a canonical top-level path. Set only by the git plugin;
+    /// `None` for every other provider and for lines that predate the field.
+    /// `skip_serializing_if` keeps old entries byte-identical, so their
+    /// integrity hash is unchanged (ADR-053).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_target: Option<String>,
 }
 
 /// Policy for rotating the append-only audit log.
@@ -634,6 +638,7 @@ impl From<&SnapshotRecord> for AuditSnapshot {
         Self {
             plugin: snapshot.plugin.to_string(),
             snapshot_id: snapshot.snapshot_id.clone(),
+            git_target: snapshot.git_target.clone(),
         }
     }
 }

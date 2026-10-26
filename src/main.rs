@@ -15,6 +15,7 @@ mod install;
 mod policy_output;
 mod prune;
 mod rollback;
+mod rollback_last;
 mod shell_compat;
 mod shell_flow;
 mod shell_wrapper;
@@ -158,10 +159,16 @@ struct AuditArgs {
 #[derive(Args)]
 struct RollbackArgs {
     /// Snapshot ID copied from `aegis audit`
-    snapshot_id: String,
+    #[arg(required_unless_present = "last", conflicts_with = "last")]
+    snapshot_id: Option<String>,
 
-    /// Attempt the restore without asking when the liveness check is inconclusive.
-    /// It has no effect when the Snapshot is confirmed gone.
+    /// Restore the Snapshots of the latest command recorded at this location
+    #[arg(long)]
+    last: bool,
+
+    /// Attempt the restore without asking: with `--last`, skip the confirmation
+    /// and restore the latest command; otherwise attempt it when the liveness
+    /// check is inconclusive. It has no effect when a Snapshot is confirmed gone.
     #[arg(long)]
     yes: bool,
 }

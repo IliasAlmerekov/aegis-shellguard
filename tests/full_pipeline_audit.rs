@@ -31,6 +31,29 @@ fn planner_migration_keeps_shell_audit_projection_fields() {
     assert_eq!(entries[0]["allowlist_effective"], serde_json::json!(false));
 }
 
+/// The shell wrapper records the directory it ran in, so `aegis rollback --last`
+/// can tie the entry to a place (#499, ADR-053).
+#[test]
+fn shell_wrapper_audit_entry_records_the_cwd() {
+    let home = TempDir::new().unwrap();
+    let work = TempDir::new().unwrap();
+
+    let output = base_command(home.path())
+        .current_dir(work.path())
+        .args(["-c", "printf hello"])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let entries = read_audit_entries(home.path());
+    // macOS temp dirs sit behind the /var -> /private/var symlink.
+    let work_dir = work.path().canonicalize().unwrap();
+    assert_eq!(
+        entries[0]["cwd"],
+        serde_json::json!(work_dir.to_str().unwrap())
+    );
+}
+
 // Audit logger failure ──────────────────────────────────────────────────────
 
 /// If `~/.aegis` is a file instead of a directory, audit append fails.

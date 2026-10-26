@@ -408,6 +408,7 @@ mod tests {
             &[SnapshotRecord {
                 plugin: "git",
                 snapshot_id: "stash@{0}".to_string(),
+                git_target: None,
             }],
         ));
 

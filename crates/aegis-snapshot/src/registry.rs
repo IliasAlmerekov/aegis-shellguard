@@ -356,6 +356,7 @@ impl SnapshotRegistry {
                 Ok(snapshot_id) => coverage.records.push(SnapshotRecord {
                     plugin: plugin.name(),
                     snapshot_id,
+                    git_target: plugin.snapshot_target(cwd).await,
                 }),
                 Err(e) => {
                     tracing::warn!(
@@ -643,6 +644,7 @@ mod tests {
     }
 
     mod liveness_tests;
+    mod targeted_tests;
 
     #[test]
     fn snapshot_all_counts_a_failed_applicable_plugin_as_partial_coverage() {

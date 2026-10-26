@@ -171,6 +171,7 @@ pub fn append_audit_entry(home: &Path, plugin: &str, snapshot_id: &str) {
             vec![AuditSnapshot {
                 plugin: plugin.to_string(),
                 snapshot_id: snapshot_id.to_string(),
+                git_target: None,
             }],
             None,
             None,

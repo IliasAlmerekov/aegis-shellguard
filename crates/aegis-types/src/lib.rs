@@ -50,6 +50,7 @@ mod tests {
         let record = SnapshotRecord {
             plugin: "git",
             snapshot_id: "stash-ref-abc123".to_string(),
+            git_target: None,
         };
         assert_eq!(record.plugin, "git");
     }
