@@ -133,3 +133,26 @@ fn recovery_prompt_names_an_unresolved_git_target_and_denies_without_a_tty() {
         "banner must name the unresolved Git target, not effect opacity: {text}"
     );
 }
+
+#[test]
+fn recovery_prompt_names_a_bad_snapshot_artifact_not_effect_opacity() {
+    for (degradation, expected) in [
+        (
+            RecoveryDegradation::SnapshotArtifactUnavailable,
+            "artifact is gone",
+        ),
+        (
+            RecoveryDegradation::SnapshotArtifactInvalid,
+            "failed validation",
+        ),
+    ] {
+        let mut output = Vec::new();
+        show_recovery_override_with_input(degradation, false, &mut b"r\n".as_ref(), &mut output);
+        let text = strip_ansi(&String::from_utf8_lossy(&output));
+
+        assert!(
+            text.contains(expected) && !text.contains("could not determine the eventual effect"),
+            "banner must name the artifact problem: {text}"
+        );
+    }
+}

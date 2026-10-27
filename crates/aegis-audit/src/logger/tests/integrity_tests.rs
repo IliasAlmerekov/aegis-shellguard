@@ -79,6 +79,7 @@ fn integrity_payload_omits_explanation_key_when_absent() {
         transport: None,
         basis: None,
         analysis: None,
+        snapshot_attempts: None,
     };
 
     let json = serde_json::to_value(&payload).unwrap();
