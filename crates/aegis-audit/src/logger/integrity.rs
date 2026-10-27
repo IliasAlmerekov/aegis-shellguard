@@ -90,11 +90,16 @@ pub(super) struct AuditIntegrityPayload<'a> {
     // byte-for-byte identical to the pre-v2 form, so its hash is unchanged and
     // mixed v1/v2 logs verify. A v2 entry includes them, so tampering basis or
     // analysis breaks the chain. Typed Match evidence and detection IDs are
-    // covered transitively via `matched_patterns` above.
+    // covered transitively via `matched_patterns` above. `snapshot_attempts`
+    // follows the same rule (ADR-031 §11): no historical line carries it, so old
+    // chains keep verifying, and on a new line its elements and their order are
+    // covered.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) basis: Option<&'a aegis_types::AssessmentBasis>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) analysis: Option<&'a aegis_types::AnalysisSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) snapshot_attempts: Option<&'a [aegis_types::SnapshotAttempt]>,
 }
 
 pub(super) fn compute_entry_hash(entry: &AuditEntry, prev_hash: Option<&str>) -> Result<String> {
@@ -128,6 +133,7 @@ pub(super) fn compute_entry_hash(entry: &AuditEntry, prev_hash: Option<&str>) ->
         transport,
         basis: base.basis.as_ref(),
         analysis: base.analysis.as_ref(),
+        snapshot_attempts: base.snapshot_attempts.as_deref(),
     };
 
     let canonical =

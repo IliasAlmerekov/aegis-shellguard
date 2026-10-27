@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Added: The audit schema carries an optional `snapshot_attempts` array, one element per Snapshot plugin attempt (`plugin`, `readiness`, `validation_level`, `structural_check`), covered by the integrity chain on new lines while legacy lines verify unchanged; `RecoveryDegradation` gains `snapshot_artifact_unavailable` and `snapshot_artifact_invalid`. The runtime does not write the field yet (#234, ADR-031)
+
 ## [0.8.0] (2026-10-26)
 
 - Changed: The README now opens with "Roll back what your AI agent broke.", a rollback demo recorded by `docs/demo/rollback.tape`, and the Claude Code plugin as the first install path. Risk level details, effect opacity, Required recovery, and the Sandbox migration text moved to `docs/how-it-works.md` (#501)

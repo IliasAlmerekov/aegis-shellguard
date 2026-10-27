@@ -63,6 +63,7 @@ impl AuditEntry {
             // tests rely on to represent a legacy v1 line.
             basis: None,
             analysis: None,
+            snapshot_attempts: None,
             cwd: None,
         })
     }
@@ -157,6 +158,13 @@ impl AuditEntry {
     /// legacy v1 lines deserialize with `basis = None`.
     pub fn with_basis(mut self, basis: aegis_types::AssessmentBasis) -> Self {
         self.as_base_mut().basis = Some(basis);
+        self
+    }
+
+    /// Record the outcome of each `Snapshot plugin` attempt (ADR-031 §8, §10).
+    /// Covered by the integrity chain on new lines (ADR-031 §11).
+    pub fn with_snapshot_attempts(mut self, attempts: Vec<aegis_types::SnapshotAttempt>) -> Self {
+        self.as_base_mut().snapshot_attempts = Some(attempts);
         self
     }
 

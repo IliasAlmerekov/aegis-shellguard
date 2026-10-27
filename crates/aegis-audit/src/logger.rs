@@ -12,7 +12,7 @@ use aegis_config::AuditIntegrityMode;
 use aegis_explanation::CommandExplanation;
 use aegis_types::{
     Category, Decision, MatchResult, Mode, PatternSource, RecoveryDegradation, RiskLevel,
-    SandboxStatus, SnapshotRecord,
+    SandboxStatus, SnapshotAttempt, SnapshotRecord,
 };
 
 use crate::error::AuditError;
@@ -185,6 +185,10 @@ pub struct DecisionEntry {
     /// reasons, orthogonal to `RiskLevel` (ADR-022 §5, §10, Audit v2). `None`
     /// on legacy v1 lines and on fresh entries with no language analysis.
     pub analysis: Option<aegis_types::AnalysisSummary>,
+    /// One element per `Snapshot plugin` attempt made, in attempt order
+    /// (ADR-031 §8, §10). `None` on lines that predate the field and while the
+    /// runtime does not yet populate it.
+    pub snapshot_attempts: Option<Vec<SnapshotAttempt>>,
     /// Working directory the command ran in: the `cwd` of a watch frame, or the
     /// process directory in shell-wrapper mode (the `Command location`, #499).
     /// `None` on lines that predate the field.
@@ -310,6 +314,8 @@ struct AuditEntryFlat {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     analysis: Option<aegis_types::AnalysisSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    snapshot_attempts: Option<Vec<SnapshotAttempt>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     source: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cwd: Option<String>,
@@ -354,6 +360,7 @@ impl From<AuditEntryFlat> for AuditEntry {
             recovery_degradation: flat.recovery_degradation,
             basis: flat.basis,
             analysis: flat.analysis,
+            snapshot_attempts: flat.snapshot_attempts,
             cwd: flat.cwd,
         };
         if is_watch {
@@ -402,6 +409,7 @@ impl From<&AuditEntry> for AuditEntryFlat {
             recovery_degradation: base.recovery_degradation,
             basis: base.basis.clone(),
             analysis: base.analysis.clone(),
+            snapshot_attempts: base.snapshot_attempts.clone(),
             source,
             cwd: base.cwd.clone(),
             id,

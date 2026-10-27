@@ -59,6 +59,7 @@ pub fn entry(index: usize, risk: RiskLevel) -> AuditEntry {
         recovery_degradation: None,
         basis: None,
         analysis: None,
+        snapshot_attempts: None,
         cwd: None,
     })
 }

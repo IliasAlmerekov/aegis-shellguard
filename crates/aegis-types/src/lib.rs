@@ -33,7 +33,10 @@ pub use command::{InlineScript, ParsedCommand};
 pub use decision::Decision;
 pub use pattern::{Category, Pattern, PatternSource, PatternToken, PrefixPattern};
 pub use policy::{AllowlistOverrideLevel, CiPolicy, Mode, PolicyRuleDecision, SnapshotPolicy};
-pub use recovery::RecoveryDegradation;
+pub use recovery::{
+    RecoveryDegradation, SnapshotAttempt, SnapshotAttemptReadiness, StructuralCheck,
+    ValidationLevel,
+};
 pub use risk::RiskLevel;
 pub use sandbox::SandboxStatus;
 pub use snapshot::{RecordedSnapshot, SnapshotRecord};
