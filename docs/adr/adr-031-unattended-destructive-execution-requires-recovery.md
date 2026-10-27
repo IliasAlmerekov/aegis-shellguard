@@ -141,6 +141,10 @@ tool — is best effort on top of it:
 | no check exists for the format | `Ready` | `PresenceOnly` | `NotSupported` |
 | tool reported corruption | `Invalid` | `PresenceOnly` | `Passed` |
 | check succeeded | `Ready` | `Structural` | `Passed` |
+| presence check failed: artifact missing, unreadable, or no `SnapshotRecord` | `Unavailable` | `PresenceOnly` | `NotRun` |
+| presence check failed: artifact empty | `Invalid` | `PresenceOnly` | `NotRun` |
+
+The structural check runs only after the presence check passes.
 
 A missing checking tool is a fact about the machine, not about the artifact;
 treating it as corruption would block work over an unfound binary. This is
