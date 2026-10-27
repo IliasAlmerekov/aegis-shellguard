@@ -46,9 +46,11 @@ pub enum RecoveryDegradation {
 pub enum SnapshotAttemptReadiness {
     /// The artifact exists and passed the validation that ran.
     Ready,
-    /// The artifact exists but failed validation.
+    /// The artifact was found but failed a minimal check (for example, it is
+    /// empty, or a local tool reported corruption).
     Invalid,
-    /// No artifact exists, or its presence could not be established.
+    /// The artifact is missing or unreadable, or the attempt produced no
+    /// `SnapshotRecord` at all.
     Unavailable,
 }
 
@@ -57,9 +59,11 @@ pub enum SnapshotAttemptReadiness {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ValidationLevel {
-    /// Only the artifact's presence was checked.
+    /// Only existence, readability, and non-emptiness were established. An
+    /// absent or unresponsive checking tool yields this level, never
+    /// `Invalid`; so does a tool that reported corruption.
     PresenceOnly,
-    /// The artifact's structure was checked as well.
+    /// A local tool additionally parsed the artifact and found it sound.
     Structural,
 }
 
@@ -68,7 +72,9 @@ pub enum ValidationLevel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StructuralCheck {
-    /// The structural check ran and passed.
+    /// The structural check ran to completion. The verdict lives in
+    /// `readiness`: a check that reported corruption is also `Passed`, with
+    /// `readiness: Invalid` and `validation_level: PresenceOnly` (ADR-031 §6).
     Passed,
     /// The tool the check needs is not installed.
     ToolUnavailable,
@@ -76,6 +82,10 @@ pub enum StructuralCheck {
     TimedOut,
     /// The plugin has no structural check.
     NotSupported,
+    /// The structural check never ran because the presence check failed: the
+    /// artifact is missing, unreadable, or empty, or the attempt produced no
+    /// `SnapshotRecord` (ADR-031 §6).
+    NotRun,
 }
 
 /// One `Snapshot plugin` attempt and what became of its artifact, recorded in

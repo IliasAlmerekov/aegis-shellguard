@@ -2,6 +2,7 @@
 //! (ADR-031 §8, §10, §11; #234).
 
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use aegis_audit::{AuditEntry, AuditIntegrityStatus, AuditLogger, MatchedPattern};
 use aegis_config::AuditIntegrityMode;
@@ -14,14 +15,14 @@ use tempfile::TempDir;
 
 const LEGACY_LINE: &str = r#"{"timestamp":"2023-11-14T22:13:19Z","sequence":1,"command":"printf one","risk":"Safe","matched_patterns":[],"pattern_ids":[],"decision":"AutoApproved","snapshots":[],"sandbox_status":"NotConfigured"}"#;
 
-fn chained_logger(dir: &TempDir) -> (AuditLogger, std::path::PathBuf) {
+/// Exact line the base code wrote for `LEGACY_LINE` before `snapshot_attempts` existed.
+const LEGACY_WRITTEN: &str = r#"{"timestamp":"2023-11-14T22:13:19Z","sequence":1,"command":"printf one","risk":"Safe","matched_patterns":[],"pattern_ids":[],"decision":"AutoApproved","snapshots":[],"allowlist_matched":false,"allowlist_effective":false,"chain_alg":"sha256","entry_hash":"bc322500ad8eb9775e4bbfe9b7a53296bdbb2afad3f9c66ca451a657ebb2d34c","sandbox_status":"not_configured"}"#;
+
+fn chained_logger(dir: &TempDir) -> (AuditLogger, PathBuf) {
     let path = dir.path().join("audit.jsonl");
     let logger = AuditLogger::new(&path).with_integrity_mode(AuditIntegrityMode::ChainSha256);
     (logger, path)
 }
-
-/// Exact line the base code wrote for `LEGACY_LINE` before `snapshot_attempts` existed.
-const LEGACY_WRITTEN: &str = r#"{"timestamp":"2023-11-14T22:13:19Z","sequence":1,"command":"printf one","risk":"Safe","matched_patterns":[],"pattern_ids":[],"decision":"AutoApproved","snapshots":[],"allowlist_matched":false,"allowlist_effective":false,"chain_alg":"sha256","entry_hash":"bc322500ad8eb9775e4bbfe9b7a53296bdbb2afad3f9c66ca451a657ebb2d34c","sandbox_status":"not_configured"}"#;
 
 fn attempts() -> Vec<SnapshotAttempt> {
     vec![
@@ -35,7 +36,7 @@ fn attempts() -> Vec<SnapshotAttempt> {
             plugin: "docker".to_string(),
             readiness: SnapshotAttemptReadiness::Unavailable,
             validation_level: ValidationLevel::PresenceOnly,
-            structural_check: StructuralCheck::NotSupported,
+            structural_check: StructuralCheck::NotRun,
         },
     ]
 }
@@ -54,14 +55,14 @@ fn entry_with_attempts() -> AuditEntry {
 }
 
 /// Write one chained entry carrying attempts, return the logger and its file.
-fn written_with_attempts(dir: &TempDir) -> (AuditLogger, std::path::PathBuf) {
+fn written_with_attempts(dir: &TempDir) -> (AuditLogger, PathBuf) {
     let (logger, path) = chained_logger(dir);
     logger.append(entry_with_attempts()).unwrap();
     (logger, path)
 }
 
 /// Rewrite the single on-disk line after `edit` changed its `snapshot_attempts`.
-fn tamper_attempts(path: &std::path::Path, edit: impl FnOnce(&mut Vec<Value>)) {
+fn tamper_attempts(path: &Path, edit: impl FnOnce(&mut Vec<Value>)) {
     let mut line: Value = serde_json::from_str(fs::read_to_string(path).unwrap().trim()).unwrap();
     edit(line["snapshot_attempts"].as_array_mut().unwrap());
     fs::write(path, format!("{line}\n")).unwrap();
@@ -157,4 +158,16 @@ fn artifact_degradations_use_snake_case() {
             variant
         );
     }
+}
+
+#[test]
+fn not_run_structural_check_uses_snake_case() {
+    assert_eq!(
+        serde_json::to_value(StructuralCheck::NotRun).unwrap(),
+        json!("not_run")
+    );
+    assert_eq!(
+        serde_json::from_value::<StructuralCheck>(json!("not_run")).unwrap(),
+        StructuralCheck::NotRun
+    );
 }
