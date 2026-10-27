@@ -139,7 +139,7 @@ fn recovery_prompt_names_a_bad_snapshot_artifact_not_effect_opacity() {
     for (degradation, expected) in [
         (
             RecoveryDegradation::SnapshotArtifactUnavailable,
-            "artifact is gone",
+            "artifact is missing or unreadable",
         ),
         (
             RecoveryDegradation::SnapshotArtifactInvalid,

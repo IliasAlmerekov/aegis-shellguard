@@ -97,6 +97,26 @@ fn legacy_line_written_form_is_byte_identical_and_verifies() {
 }
 
 #[test]
+fn attempt_line_appended_to_a_legacy_chain_links_and_verifies() {
+    let dir = TempDir::new().unwrap();
+    let (logger, path) = chained_logger(&dir);
+    fs::write(&path, format!("{LEGACY_WRITTEN}\n")).unwrap();
+
+    logger.append(entry_with_attempts()).unwrap();
+
+    let contents = fs::read_to_string(&path).unwrap();
+    let lines: Vec<Value> = contents
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(lines[1]["prev_hash"], lines[0]["entry_hash"]);
+    assert_eq!(
+        logger.verify_integrity().unwrap().status,
+        AuditIntegrityStatus::Verified
+    );
+}
+
+#[test]
 fn line_with_two_attempts_verifies() {
     let dir = TempDir::new().unwrap();
     let (logger, _) = written_with_attempts(&dir);

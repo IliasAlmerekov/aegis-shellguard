@@ -59,9 +59,10 @@ pub enum SnapshotAttemptReadiness {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ValidationLevel {
-    /// Only existence, readability, and non-emptiness were established. An
-    /// absent or unresponsive checking tool yields this level, never
-    /// `Invalid`; so does a tool that reported corruption.
+    /// No structural check established the artifact as sound. The presence
+    /// check failed (`structural_check: NotRun`), or it passed and the
+    /// structural check was unavailable, timed out, unsupported, or reported
+    /// corruption. `readiness` holds the verdict (ADR-031 §6).
     PresenceOnly,
     /// A local tool additionally parsed the artifact and found it sound.
     Structural,

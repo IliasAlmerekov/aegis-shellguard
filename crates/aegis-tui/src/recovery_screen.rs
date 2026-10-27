@@ -37,7 +37,7 @@ fn degradation_banner(degradation: RecoveryDegradation) -> &'static str {
             "\n  AEGIS REQUIRED RECOVERY IS UNAVAILABLE\n\n  A git command's working tree could not be resolved (a variable, glob, GIT_DIR or\n  missing path), so no git Snapshot covers what it changes. Aegis does not\n  substitute a Snapshot of the current directory. Proceeding would run without recovery."
         }
         RecoveryDegradation::SnapshotArtifactUnavailable => {
-            "\n  AEGIS REQUIRED RECOVERY IS UNAVAILABLE\n\n  A Snapshot was recorded, but its artifact is gone. It cannot be restored.\n  Proceeding would run without a restorable Snapshot."
+            "\n  AEGIS REQUIRED RECOVERY IS UNAVAILABLE\n\n  A Snapshot was recorded, but its artifact is missing or unreadable. It cannot\n  be restored. Proceeding would run without a restorable Snapshot."
         }
         RecoveryDegradation::SnapshotArtifactInvalid => {
             "\n  AEGIS REQUIRED RECOVERY IS INVALID\n\n  A Snapshot was recorded, but its artifact failed validation. It cannot be\n  trusted for a restore. Proceeding would run without a restorable Snapshot."
