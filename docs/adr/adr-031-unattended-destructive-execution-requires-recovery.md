@@ -143,8 +143,21 @@ tool — is best effort on top of it:
 | check succeeded | `Ready` | `Structural` | `Passed` |
 | presence check failed: artifact missing, unreadable, or no `SnapshotRecord` | `Unavailable` | `PresenceOnly` | `NotRun` |
 | presence check failed: artifact empty | `Invalid` | `PresenceOnly` | `NotRun` |
+| presence check exceeded the budget | `Unavailable` | `PresenceOnly` | `NotRun` |
+| the attempt recorded that there was nothing to capture | `Ready` | `PresenceOnly` | `NotSupported` |
 
 The structural check runs only after the presence check passes.
+
+The last two rows were added in
+[#235](https://github.com/IliasAlmerekov/aegis-shellguard/issues/235). Each
+provider owns its check, because not every artifact is a file: the git
+Snapshot is a stash commit and the docker Snapshot is an image. A presence
+check that runs out of time has not shown that the artifact exists, so it
+fails closed. This differs from a structural check that runs out of time:
+there, presence has already been shown. An attempt that recorded a clean git
+working tree or no labelled container leaves nothing to restore and nothing
+to lose, so it meets the obligation; `NotSupported` here means there was no
+artifact to parse.
 
 A missing checking tool is a fact about the machine, not about the artifact;
 treating it as corruption would block work over an unfound binary. This is
@@ -176,9 +189,12 @@ degradation.
   reached), `Invalid` (artifact found, failed a minimal check), `Unavailable` (an
   identifier exists but the artifact is missing or unreadable, or the attempt
   produced no `SnapshotRecord` at all).
-- **Per obligation** — `RecoveryStatus`: `Ready` when at least one attempt is
-  `Ready`, else `Degraded`. (ADR-036 tightens this: `Ready` requires every
-  applicable plugin to have produced a record.)
+- **Per obligation** — `RecoveryStatus`: `Ready` when every applicable plugin
+  produced a record and every attempt is `Ready`, else `Degraded`. (The original
+  rule, "at least one attempt is `Ready`", was tightened by ADR-036 for missing
+  records and by #235 for attempts that are `Invalid` or `Unavailable`, on
+  ADR-036's argument: Aegis cannot judge which provider a command's effect
+  needs.)
 - **Per degradation reason** — `RecoveryDegradation` gains
   `SnapshotArtifactUnavailable` and `SnapshotArtifactInvalid` beside
   `NoSnapshotAvailable`, so the reason stays queryable; the enum is
@@ -187,29 +203,33 @@ degradation.
 
 **9. `recovery_degradation` is never set while the obligation is met.**
 (Superseded in part by
-[ADR-036](adr-036-partial-snapshot-coverage-degrades-required-recovery.md): an
-applicable plugin that produces no `SnapshotRecord` at all now degrades the
-obligation and records `PartialSnapshotCoverage`, so the `recovery_status:
-Ready` column below no longer describes that case. The priority rule for
-picking one main reason is unaffected.)
+[ADR-036](adr-036-partial-snapshot-coverage-degrades-required-recovery.md) and
+[#235](https://github.com/IliasAlmerekov/aegis-shellguard/issues/235). The
+original example below showed `git: Ready, postgres: Invalid` as
+`recovery_status: Ready`. Under ADR-036's argument that pass does not meet the
+obligation, so it is `Degraded`. The rule in the heading stands: the main field
+is set exactly when the obligation is not met.)
 `recovery_status: Ready` with `recovery_degradation: SnapshotArtifactInvalid`
-would be a self-contradictory line. A partial failure lives only in the new
-per-attempt array:
+would be a self-contradictory line. The main field names one reason; the
+per-attempt array carries the provider-specific picture:
 
 ```
 recovery_status: Ready          recovery_status: Degraded
 recovery_degradation: null      recovery_degradation: SnapshotArtifactInvalid
 snapshot_attempts:              snapshot_attempts:
-  - git: Ready                    - git: Unavailable
-  - postgres: Invalid             - postgres: Invalid
+  - git: Ready                    - git: Ready
+  - postgres: Ready               - postgres: Invalid
 ```
 
-When nothing is `Ready`, the single main field takes one value by fixed priority
-— `SnapshotArtifactInvalid` > `SnapshotArtifactUnavailable` >
-`NoSnapshotAvailable` — because an artifact that exists and is provably corrupt
-is the most alarming and the least likely to be noticed. The main field answers
-for the obligation and keeps queries compatible; the array carries the full
-provider-specific picture.
+When the obligation is not met, the single main field takes one value by fixed
+priority: `SnapshotArtifactInvalid` > `SnapshotArtifactUnavailable` >
+`PartialSnapshotCoverage` > `NoSnapshotAvailable`. An artifact that exists and
+is provably corrupt is the most alarming and the least likely to be noticed. A
+recorded artifact that has gone missing outranks a plugin that produced no
+record, because the record claims a recovery path that is not there.
+`UnresolvedGitTarget` is decided before this priority applies, as ADR-048
+describes. The main field answers for the obligation and keeps queries
+compatible; the array carries the full provider-specific picture.
 
 **10. `snapshot_attempts` records attempts, not artifacts.** One element per
 attempt actually made, carrying `plugin`, `readiness`, `validation_level`, and
