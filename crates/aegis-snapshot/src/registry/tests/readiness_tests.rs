@@ -54,8 +54,6 @@ impl SnapshotPlugin for ScriptedPlugin {
     }
 }
 
-const READY: ArtifactReadiness = ArtifactReadiness::NOT_SUPPORTED;
-
 fn scripted(name: &'static str, verdict: ArtifactReadiness) -> Box<ScriptedPlugin> {
     Box::new(ScriptedPlugin {
         name,
@@ -84,7 +82,7 @@ async fn checked_pass(registry: &SnapshotRegistry) -> SnapshotCoverage {
 #[tokio::test]
 async fn each_record_gets_the_attempt_its_plugin_reports() {
     let registry = SnapshotRegistry::new_with_plugins(vec![
-        scripted("ready", READY),
+        scripted("ready", ArtifactReadiness::PRESENT_UNCHECKED),
         scripted("corrupt", ArtifactReadiness::EMPTY),
     ]);
 
@@ -106,11 +104,11 @@ async fn each_record_gets_the_attempt_its_plugin_reports() {
 #[tokio::test]
 async fn a_plugin_that_produced_no_record_is_an_unavailable_not_run_attempt() {
     let registry = SnapshotRegistry::new_with_plugins(vec![
-        scripted("ready", READY),
+        scripted("ready", ArtifactReadiness::PRESENT_UNCHECKED),
         Box::new(ScriptedPlugin {
             name: "failed",
             snapshot_ok: false,
-            verdict: READY,
+            verdict: ArtifactReadiness::PRESENT_UNCHECKED,
             delay: Some(Duration::ZERO),
         }),
     ]);
@@ -134,7 +132,7 @@ async fn a_presence_check_that_never_finishes_is_unavailable_within_the_attempt_
     let registry = SnapshotRegistry::new_with_plugins(vec![Box::new(ScriptedPlugin {
         name: "hanging",
         snapshot_ok: true,
-        verdict: READY,
+        verdict: ArtifactReadiness::PRESENT_UNCHECKED,
         delay: None,
     })]);
 
@@ -157,7 +155,7 @@ async fn a_presence_check_that_never_finishes_is_unavailable_within_the_attempt_
 async fn a_structural_timeout_reported_by_the_plugin_stays_ready() {
     let timed_out = ArtifactReadiness {
         structural_check: StructuralCheck::TimedOut,
-        ..READY
+        ..ArtifactReadiness::PRESENT_UNCHECKED
     };
     let registry = SnapshotRegistry::new_with_plugins(vec![scripted("slow-tool", timed_out)]);
 
@@ -178,7 +176,7 @@ async fn all_checks_of_one_command_share_a_500ms_budget_and_fail_closed() {
     let registry = SnapshotRegistry::new_with_plugins(vec![Box::new(ScriptedPlugin {
         name: "hanging",
         snapshot_ok: true,
-        verdict: READY,
+        verdict: ArtifactReadiness::PRESENT_UNCHECKED,
         delay: None,
     })]);
     let record = SnapshotRecord {
@@ -208,7 +206,10 @@ async fn all_checks_of_one_command_share_a_500ms_budget_and_fail_closed() {
 
 #[tokio::test]
 async fn merged_passes_carry_every_attempt() {
-    let registry = SnapshotRegistry::new_with_plugins(vec![scripted("a", READY)]);
+    let registry = SnapshotRegistry::new_with_plugins(vec![scripted(
+        "a",
+        ArtifactReadiness::PRESENT_UNCHECKED,
+    )]);
     let mut first = checked_pass(&registry).await;
     let second = checked_pass(&registry).await;
 

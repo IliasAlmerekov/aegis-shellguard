@@ -48,12 +48,13 @@ impl ArtifactReadiness {
         structural_check: StructuralCheck::NotRun,
     };
 
-    /// The artifact is present and the plugin has no structural check. Also
-    /// the verdict for an attempt that recorded there was nothing to capture.
+    /// The artifact is present (`Ready`) but no structural check vouched for
+    /// it: the plugin has none. Also the verdict for an attempt that recorded
+    /// there was nothing to capture.
     // shortcut: `NotSupported` stands in for "no artifact to parse" on the
     // clean-tree and no-container sentinels, upgrade if the audit schema gains
     // a dedicated value.
-    pub const NOT_SUPPORTED: Self = Self::present(StructuralCheck::NotSupported);
+    pub const PRESENT_UNCHECKED: Self = Self::present(StructuralCheck::NotSupported);
 
     /// The artifact is present; the structural check ended as `check`
     /// (anything but `Passed`, which needs a verdict).
@@ -102,7 +103,7 @@ async fn check_file_present(path: &Path) -> Result<tokio::fs::File, ArtifactRead
 /// Readiness of a local file with no structural check (mysql).
 pub(crate) async fn file_readiness(path: &Path) -> ArtifactReadiness {
     match check_file_present(path).await {
-        Ok(_) => ArtifactReadiness::NOT_SUPPORTED,
+        Ok(_) => ArtifactReadiness::PRESENT_UNCHECKED,
         Err(failed) => failed,
     }
 }

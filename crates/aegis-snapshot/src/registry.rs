@@ -589,7 +589,7 @@ mod tests {
         }
 
         async fn readiness(&self, _snapshot_id: &str) -> ArtifactReadiness {
-            ArtifactReadiness::NOT_SUPPORTED
+            ArtifactReadiness::PRESENT_UNCHECKED
         }
 
         async fn liveness(
@@ -630,7 +630,7 @@ mod tests {
         }
 
         async fn readiness(&self, _snapshot_id: &str) -> ArtifactReadiness {
-            ArtifactReadiness::NOT_SUPPORTED
+            ArtifactReadiness::PRESENT_UNCHECKED
         }
 
         async fn liveness(
