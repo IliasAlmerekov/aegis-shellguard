@@ -31,13 +31,16 @@ pub fn recovery_status(
         return None;
     }
 
-    // Fixed priority (ADR-031 §9). Only checked record attempts count for the
-    // artifact reasons: a plugin that left no record is Partial or None.
+    // Fixed priority (ADR-031 §9). Only record attempts count for the artifact
+    // reasons: a plugin that left no record is Partial or None. A record with
+    // no readiness verdict fails closed as Unavailable.
     Some(if coverage.records.is_empty() {
         RecoveryStatus::Degraded(RecoveryDegradation::NoSnapshotAvailable)
     } else if coverage.has_attempt(SnapshotAttemptReadiness::Invalid) {
         RecoveryStatus::Degraded(RecoveryDegradation::SnapshotArtifactInvalid)
-    } else if coverage.has_attempt(SnapshotAttemptReadiness::Unavailable) {
+    } else if coverage.has_attempt(SnapshotAttemptReadiness::Unavailable)
+        || coverage.has_unchecked_record()
+    {
         RecoveryStatus::Degraded(RecoveryDegradation::SnapshotArtifactUnavailable)
     } else if coverage.is_partial() {
         RecoveryStatus::Degraded(RecoveryDegradation::PartialSnapshotCoverage)
@@ -92,11 +95,7 @@ mod tests {
 
     #[test]
     fn required_recovery_is_ready_when_a_snapshot_was_created() {
-        let coverage = SnapshotCoverage::complete(vec![SnapshotRecord {
-            plugin: "git",
-            snapshot_id: "stash@{0}".to_string(),
-            git_target: None,
-        }]);
+        let coverage = checked(&[("git", Ready)], &[]);
 
         assert_eq!(
             recovery_status(true, true, &coverage),
@@ -132,11 +131,7 @@ mod tests {
 
     #[test]
     fn one_failure_beside_one_success_reports_partial_coverage() {
-        let coverage = SnapshotCoverage {
-            records: vec![record("git")],
-            applicable: 2,
-            ..Default::default()
-        };
+        let coverage = checked(&[("git", Ready)], &["docker"]);
 
         assert_eq!(
             recovery_status(true, true, &coverage),
@@ -148,11 +143,7 @@ mod tests {
 
     #[test]
     fn every_applicable_plugin_succeeding_stays_ready() {
-        let coverage = SnapshotCoverage {
-            records: vec![record("git"), record("sqlite")],
-            applicable: 2,
-            ..Default::default()
-        };
+        let coverage = checked(&[("git", Ready), ("sqlite", Ready)], &[]);
 
         assert_eq!(
             recovery_status(true, true, &coverage),
@@ -165,9 +156,8 @@ mod tests {
         // Defensive: a caller that assembles coverage by hand cannot turn an
         // undercount of applicable plugins into a spurious degradation.
         let coverage = SnapshotCoverage {
-            records: vec![record("git"), record("sqlite")],
             applicable: 1,
-            ..Default::default()
+            ..checked(&[("git", Ready), ("sqlite", Ready)], &[])
         };
 
         assert_eq!(
@@ -289,6 +279,16 @@ mod tests {
                 Some(RecoveryDegradation::PartialSnapshotCoverage),
                 Some(Unavailable)
             )
+        );
+    }
+
+    #[test]
+    fn a_record_that_was_never_readiness_checked_is_not_ready() {
+        let coverage = SnapshotCoverage::complete(vec![record("git")]);
+
+        assert_eq!(
+            degradation(&coverage),
+            Some(RecoveryDegradation::SnapshotArtifactUnavailable)
         );
     }
 
