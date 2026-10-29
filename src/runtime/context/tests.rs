@@ -1,4 +1,5 @@
 mod audit_error_category;
+mod snapshot_attempts;
 
 use std::fs;
 use std::path::Path;
@@ -521,6 +522,7 @@ fn append_audit_entry_enriches_explanation_with_runtime_outcome() {
             allowlist_effective: false,
             ci_detected: false,
             sandbox_status: SandboxStatus::NotConfigured,
+            snapshot_attempts: &[],
         },
         None,
     );
@@ -598,6 +600,7 @@ fn append_audit_entry_preserves_allowlist_context_fields() {
             allowlist_effective: true,
             ci_detected: false,
             sandbox_status: SandboxStatus::NotConfigured,
+            snapshot_attempts: &[],
         },
         None,
     );
@@ -660,6 +663,7 @@ fn build_audit_entry_records_effect_opaque_and_backstop_state_from_runtime_facts
             allowlist_effective: false,
             ci_detected: false,
             sandbox_status: SandboxStatus::NotConfigured,
+            snapshot_attempts: &[],
         },
         Some(aegis_types::RecoveryDegradation::NoSnapshotAvailable),
     );
@@ -733,6 +737,7 @@ fn build_audit_entry_records_plain_safe_command_without_backstops() {
             allowlist_effective: false,
             ci_detected: false,
             sandbox_status: SandboxStatus::NotConfigured,
+            snapshot_attempts: &[],
         },
         None,
     );

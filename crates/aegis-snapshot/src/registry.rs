@@ -7,9 +7,14 @@ use aegis_config::{
 };
 use aegis_types::{RecordedSnapshot, SnapshotPolicy, SnapshotRecord};
 
+mod coverage;
+pub use coverage::SnapshotCoverage;
+use coverage::{COMMAND_READINESS_BUDGET, attempt};
+
 use crate::error::SnapshotError;
 use crate::liveness::{LIVENESS_TIMEOUT, Liveness};
 use crate::paths::resolve_snapshots_dir;
+use crate::readiness::{ATTEMPT_TIMEOUT, ArtifactReadiness};
 use crate::retention::{PrunableRecord, prunable_records_newest_first};
 use crate::{
     DockerPlugin, GitPlugin, MysqlPlugin, PostgresPlugin, SnapshotPlugin, SqlitePlugin,
@@ -78,52 +83,6 @@ fn materialize_builtin_plugins(
 /// snapshot every command or in every working directory.
 pub struct SnapshotRegistry {
     plugins: Vec<Box<dyn SnapshotPlugin>>,
-}
-
-/// What one [`SnapshotRegistry::snapshot_all`] pass produced and how much of
-/// the applicable provider set it covers.
-///
-/// `records` holds the snapshots that were created. `applicable` counts the
-/// plugins that reported themselves applicable during the same pass, whether
-/// or not their attempt succeeded. `records.len() < applicable` means at least
-/// one applicable plugin failed and the coverage is partial. Both numbers come
-/// from one pass on purpose: sampling applicability again after the attempts
-/// can return a different set, and a recovery decision must not rest on two
-/// disagreeing samples.
-#[derive(Debug, Default, Clone)]
-pub struct SnapshotCoverage {
-    /// The snapshots that were created, one per successful plugin attempt.
-    pub records: Vec<SnapshotRecord>,
-    /// How many plugins reported themselves applicable during the pass.
-    pub applicable: usize,
-}
-
-impl SnapshotCoverage {
-    /// Build a coverage result from records alone, treating every record as a
-    /// successful attempt by an applicable plugin.
-    ///
-    /// For callers that never ran a registry pass, such as a code path that
-    /// short-circuits before snapshot creation.
-    #[must_use]
-    pub fn complete(records: Vec<SnapshotRecord>) -> Self {
-        Self {
-            applicable: records.len(),
-            records,
-        }
-    }
-
-    /// Fold another pass into this one: records append and applicable
-    /// counts add, so partial coverage stays visible across passes.
-    pub fn merge(&mut self, other: SnapshotCoverage) {
-        self.records.extend(other.records);
-        self.applicable += other.applicable;
-    }
-
-    /// Returns `true` when an applicable plugin failed while another succeeded.
-    #[must_use]
-    pub fn is_partial(&self) -> bool {
-        !self.records.is_empty() && self.records.len() < self.applicable
-    }
 }
 
 /// Eager runtime snapshot config used to materialize a [`SnapshotRegistry`].
@@ -359,6 +318,7 @@ impl SnapshotRegistry {
                     git_target: plugin.snapshot_target(cwd).await,
                 }),
                 Err(e) => {
+                    coverage.unrecorded.push(plugin.name());
                     tracing::warn!(
                         plugin = plugin.name(),
                         error = %e,
@@ -369,6 +329,32 @@ impl SnapshotRegistry {
             }
         }
         coverage
+    }
+
+    /// Check the artifact of every record in `coverage` and store the
+    /// verdicts in `coverage.attempts` (ADR-031 §6).
+    ///
+    /// Run once per command, after its passes are merged: each check gets at
+    /// most [`ATTEMPT_TIMEOUT`] and all of them share a 500 ms budget. A
+    /// check that does not finish, or has no budget left, fails closed as
+    /// `Unavailable`. The bound is a timeout here, not trust in the plugin.
+    pub async fn check_readiness(&self, coverage: &mut SnapshotCoverage) {
+        let deadline = tokio::time::Instant::now() + COMMAND_READINESS_BUDGET;
+        let mut attempts = Vec::with_capacity(coverage.records.len());
+        for record in &coverage.records {
+            let limit = ATTEMPT_TIMEOUT
+                .min(deadline.saturating_duration_since(tokio::time::Instant::now()));
+            let outcome = match self.plugins.iter().find(|p| p.name() == record.plugin) {
+                Some(plugin) if !limit.is_zero() => {
+                    tokio::time::timeout(limit, plugin.readiness(&record.snapshot_id))
+                        .await
+                        .unwrap_or(ArtifactReadiness::UNAVAILABLE)
+                }
+                _ => ArtifactReadiness::UNAVAILABLE,
+            };
+            attempts.push(attempt(record.plugin, outcome));
+        }
+        coverage.attempts = attempts;
     }
 
     /// Return the subset of configured providers that are applicable to `cwd`.
@@ -506,6 +492,10 @@ mod tests {
         ) -> std::result::Result<Liveness, SnapshotError> {
             Ok(Liveness::Present)
         }
+
+        async fn readiness(&self, _snapshot_id: &str) -> ArtifactReadiness {
+            ArtifactReadiness::UNAVAILABLE
+        }
     }
 
     /// The fields captured off the single `tracing` event the test expects.
@@ -598,6 +588,10 @@ mod tests {
             Ok(())
         }
 
+        async fn readiness(&self, _snapshot_id: &str) -> ArtifactReadiness {
+            ArtifactReadiness::PRESENT_UNCHECKED
+        }
+
         async fn liveness(
             &self,
             _snapshot_id: &str,
@@ -635,6 +629,10 @@ mod tests {
             Ok(())
         }
 
+        async fn readiness(&self, _snapshot_id: &str) -> ArtifactReadiness {
+            ArtifactReadiness::PRESENT_UNCHECKED
+        }
+
         async fn liveness(
             &self,
             _snapshot_id: &str,
@@ -644,6 +642,7 @@ mod tests {
     }
 
     mod liveness_tests;
+    mod readiness_tests;
     mod targeted_tests;
 
     #[test]
