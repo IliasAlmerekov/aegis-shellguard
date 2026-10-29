@@ -92,7 +92,7 @@ impl aegis_snapshot::SnapshotPlugin for SucceedingPlugin {
     }
 
     async fn readiness(&self, _snapshot_id: &str) -> aegis_snapshot::ArtifactReadiness {
-        aegis_snapshot::ArtifactReadiness::NOT_SUPPORTED
+        aegis_snapshot::ArtifactReadiness::PRESENT_UNCHECKED
     }
 
     async fn liveness(
@@ -135,7 +135,7 @@ impl aegis_snapshot::SnapshotPlugin for FailingPlugin {
     }
 
     async fn readiness(&self, _snapshot_id: &str) -> aegis_snapshot::ArtifactReadiness {
-        aegis_snapshot::ArtifactReadiness::NOT_SUPPORTED
+        aegis_snapshot::ArtifactReadiness::PRESENT_UNCHECKED
     }
 
     async fn liveness(

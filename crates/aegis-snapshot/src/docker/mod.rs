@@ -398,7 +398,7 @@ impl SnapshotPlugin for DockerPlugin {
 
     async fn readiness(&self, snapshot_id: &str) -> ArtifactReadiness {
         if snapshot_id == NO_CONTAINERS {
-            return ArtifactReadiness::NOT_SUPPORTED;
+            return ArtifactReadiness::PRESENT_UNCHECKED;
         }
         for line in snapshot_id.lines() {
             let Ok(record) = serde_json::from_str::<ContainerRecord>(line) else {
@@ -412,7 +412,7 @@ impl SnapshotPlugin for DockerPlugin {
                 return ArtifactReadiness::UNAVAILABLE;
             }
         }
-        ArtifactReadiness::NOT_SUPPORTED
+        ArtifactReadiness::PRESENT_UNCHECKED
     }
 
     async fn liveness(&self, snapshot_id: &str) -> Result<Liveness> {

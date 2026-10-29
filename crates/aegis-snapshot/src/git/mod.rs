@@ -397,7 +397,7 @@ impl SnapshotPlugin for GitPlugin {
 
     async fn readiness(&self, snapshot_id: &str) -> ArtifactReadiness {
         if snapshot_id == CLEAN_SENTINEL {
-            return ArtifactReadiness::NOT_SUPPORTED;
+            return ArtifactReadiness::PRESENT_UNCHECKED;
         }
         let Some((cwd_str, hash)) = snapshot_id.split_once(SEP) else {
             return ArtifactReadiness::UNAVAILABLE;
@@ -412,7 +412,7 @@ impl SnapshotPlugin for GitPlugin {
             .status()
             .await;
         match found {
-            Ok(status) if status.success() => ArtifactReadiness::NOT_SUPPORTED,
+            Ok(status) if status.success() => ArtifactReadiness::PRESENT_UNCHECKED,
             _ => ArtifactReadiness::UNAVAILABLE,
         }
     }
