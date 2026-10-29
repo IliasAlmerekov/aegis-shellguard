@@ -97,5 +97,6 @@ fn minimal_record(container_id: &str, image: &str) -> String {
 
 mod delete_tests;
 mod liveness_tests;
+mod readiness_tests;
 mod rollback_tests;
 mod snapshot_tests;

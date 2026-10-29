@@ -91,6 +91,10 @@ impl aegis_snapshot::SnapshotPlugin for SucceedingPlugin {
         Ok(())
     }
 
+    async fn readiness(&self, _snapshot_id: &str) -> aegis_snapshot::ArtifactReadiness {
+        aegis_snapshot::ArtifactReadiness::NOT_SUPPORTED
+    }
+
     async fn liveness(
         &self,
         _snapshot_id: &str,
@@ -128,6 +132,10 @@ impl aegis_snapshot::SnapshotPlugin for FailingPlugin {
 
     async fn delete(&self, _snapshot_id: &str) -> Result<(), aegis_snapshot::SnapshotError> {
         Ok(())
+    }
+
+    async fn readiness(&self, _snapshot_id: &str) -> aegis_snapshot::ArtifactReadiness {
+        aegis_snapshot::ArtifactReadiness::NOT_SUPPORTED
     }
 
     async fn liveness(

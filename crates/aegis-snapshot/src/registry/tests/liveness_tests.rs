@@ -28,6 +28,10 @@ impl SnapshotPlugin for HangingLivenessPlugin {
         Ok(())
     }
 
+    async fn readiness(&self, _snapshot_id: &str) -> ArtifactReadiness {
+        ArtifactReadiness::NOT_SUPPORTED
+    }
+
     async fn liveness(&self, _snapshot_id: &str) -> std::result::Result<Liveness, SnapshotError> {
         std::future::pending().await
     }
@@ -60,6 +64,10 @@ impl SnapshotPlugin for AbsentLivenessPlugin {
 
     async fn delete(&self, _snapshot_id: &str) -> std::result::Result<(), SnapshotError> {
         Ok(())
+    }
+
+    async fn readiness(&self, _snapshot_id: &str) -> ArtifactReadiness {
+        ArtifactReadiness::NOT_SUPPORTED
     }
 
     async fn liveness(&self, _snapshot_id: &str) -> std::result::Result<Liveness, SnapshotError> {

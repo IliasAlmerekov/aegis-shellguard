@@ -33,6 +33,10 @@ impl SnapshotPlugin for TargetedPlugin {
         Ok(())
     }
 
+    async fn readiness(&self, _snapshot_id: &str) -> ArtifactReadiness {
+        ArtifactReadiness::NOT_SUPPORTED
+    }
+
     async fn liveness(&self, _snapshot_id: &str) -> std::result::Result<Liveness, SnapshotError> {
         Ok(Liveness::Present)
     }

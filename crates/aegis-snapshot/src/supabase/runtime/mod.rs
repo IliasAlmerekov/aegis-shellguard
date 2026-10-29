@@ -15,8 +15,10 @@
 //! trait; the helper logic is split out to keep every file under 800 LoC.
 
 use super::*;
+use crate::ArtifactReadiness;
 use crate::containment::contain_artifact;
 use crate::liveness::local_file_liveness;
+use crate::readiness::pg_dump_readiness;
 
 use manifest_io::write_manifest_atomically;
 use manifest_state::phase1_complete;
@@ -154,6 +156,24 @@ impl SnapshotPlugin for SupabasePlugin {
 
         let dump_path = manifest.resolve_db_artifact_path(&manifest_path)?;
         Ok(local_file_liveness(&dump_path).await)
+    }
+
+    async fn readiness(&self, snapshot_id: &str) -> ArtifactReadiness {
+        // The same manifest gate `liveness` and `rollback` apply; a manifest
+        // that fails it names no artifact Rollback could use.
+        let dump_path = async {
+            let manifest_path = Self::parse_snapshot_id(snapshot_id)?;
+            let manifest_bytes = tokio::fs::read(&manifest_path).await?;
+            let manifest: SupabaseManifest = serde_json::from_slice(&manifest_bytes)
+                .map_err(|error| SnapshotError::Snapshot(error.to_string()))?;
+            ensure_rollback_eligible(&manifest)?;
+            manifest.resolve_db_artifact_path(&manifest_path)
+        }
+        .await;
+        match dump_path {
+            Ok(dump_path) => pg_dump_readiness(&self.pg_restore_bin, &dump_path).await,
+            Err(_) => ArtifactReadiness::UNAVAILABLE,
+        }
     }
 
     async fn rollback(&self, snapshot_id: &str) -> Result<()> {

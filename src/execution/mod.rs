@@ -125,6 +125,7 @@ pub(crate) fn run_planned_shell_command_with_renderer<R: ExecutionRenderer>(
                     plan,
                     Decision::Denied,
                     &[],
+                    &[],
                     sandbox_status_before_preparation(sandbox_config),
                 ) {
                     eprintln!("error: failed to write audit log: {err}");
@@ -139,6 +140,7 @@ pub(crate) fn run_planned_shell_command_with_renderer<R: ExecutionRenderer>(
                 prepared,
                 plan,
                 Decision::Blocked,
+                &[],
                 &[],
                 sandbox_status_before_preparation(sandbox_config),
             ) {
@@ -173,6 +175,8 @@ fn execute_with_snapshots<R: ExecutionRenderer>(
 ) -> i32 {
     let coverage = create_snapshots_for_plan(prepared, plan);
     let snapshots = coverage.records.as_slice();
+    let attempts = coverage.snapshot_attempts();
+    let attempts = attempts.as_slice();
     if let Some(degradation) =
         plan_recovery_degradation(plan, decision == Decision::AutoApproved, &coverage)
     {
@@ -185,6 +189,7 @@ fn execute_with_snapshots<R: ExecutionRenderer>(
                     prepared,
                     plan,
                     snapshots,
+                    attempts,
                     recovery_degradation: Some(degradation),
                 },
                 Decision::Approved,
@@ -196,6 +201,7 @@ fn execute_with_snapshots<R: ExecutionRenderer>(
                     plan,
                     Decision::Denied,
                     snapshots,
+                    attempts,
                     sandbox_status_before_preparation(sandbox_config),
                     degradation,
                 ) {
@@ -215,6 +221,7 @@ fn execute_with_snapshots<R: ExecutionRenderer>(
             prepared,
             plan,
             snapshots,
+            attempts,
             recovery_degradation: None,
         },
         decision,
@@ -229,6 +236,7 @@ struct ShellExecution<'a> {
     prepared: &'a PreparedPlanner,
     plan: &'a InterceptionPlan,
     snapshots: &'a [SnapshotRecord],
+    attempts: &'a [aegis_types::SnapshotAttempt],
     recovery_degradation: Option<aegis_types::RecoveryDegradation>,
 }
 
@@ -244,6 +252,7 @@ fn complete_approved_shell_execution<R: ExecutionRenderer>(
         prepared,
         plan,
         snapshots,
+        attempts,
         recovery_degradation,
     } = execution;
 
@@ -256,10 +265,18 @@ fn complete_approved_shell_execution<R: ExecutionRenderer>(
                 plan,
                 final_decision,
                 snapshots,
+                attempts,
                 sandbox_status,
                 degradation,
             ),
-            None => append_shell_audit(prepared, plan, final_decision, snapshots, sandbox_status),
+            None => append_shell_audit(
+                prepared,
+                plan,
+                final_decision,
+                snapshots,
+                attempts,
+                sandbox_status,
+            ),
         },
         |message| renderer.warn(message),
         exec_prepared_command,
@@ -273,6 +290,7 @@ fn append_shell_recovery_audit(
     plan: &InterceptionPlan,
     decision: Decision,
     snapshots: &[SnapshotRecord],
+    attempts: &[aegis_types::SnapshotAttempt],
     sandbox_status: SandboxStatus,
     degradation: aegis_types::RecoveryDegradation,
 ) -> Result<(), aegis::error::AegisError> {
@@ -287,6 +305,7 @@ fn append_shell_recovery_audit(
                 allowlist_effective: plan.policy_decision().allowlist_effective,
                 ci_detected: plan.decision_context().ci_detected(),
                 sandbox_status,
+                snapshot_attempts: attempts,
             },
             degradation,
         );
@@ -318,6 +337,7 @@ fn append_shell_audit(
     plan: &InterceptionPlan,
     decision: Decision,
     snapshots: &[SnapshotRecord],
+    attempts: &[aegis_types::SnapshotAttempt],
     sandbox_status: SandboxStatus,
 ) -> Result<(), aegis::error::AegisError> {
     if let PreparedPlanner::Ready(context) = prepared {
@@ -331,6 +351,7 @@ fn append_shell_audit(
                 allowlist_effective: plan.policy_decision().allowlist_effective,
                 ci_detected: plan.decision_context().ci_detected(),
                 sandbox_status,
+                snapshot_attempts: attempts,
             },
         );
     }
