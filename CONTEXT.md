@@ -658,8 +658,9 @@ the command is auto-approved, and absent while a persisted approval applies.
 _Avoid_: non-interactive execution, CI execution, headless run
 
 **Required recovery**:
-The obligation to hold at least one `Snapshot` whose `Snapshot attempt readiness`
-is `Ready` before an `Unattended destructive execution` proceeds. The obligation
+The obligation to hold, before an `Unattended destructive execution` proceeds,
+at least one `Snapshot`, and a `Snapshot attempt readiness` of `Ready` for the
+attempt of every applicable `Snapshot plugin`. The obligation
 is independent of whether any `Snapshot plugin` is available or succeeds; a
 `Recovery opt-out` means recovery is not required rather than degraded. An
 interactive `Danger` command is not subject to it — the human decides in the
@@ -669,9 +670,10 @@ _Avoid_: mandatory backup, available snapshot
 **Snapshot attempt readiness**:
 The result of the local check of the expected artifact after one `Snapshot
 plugin` attempt: `Ready` when the artifact passed the `Validation level`
-reached, `Invalid` when it was found but failed a minimal check, `Unavailable`
-when the artifact is missing or unreadable or the attempt produced no
-`SnapshotRecord` at all. A property of the attempt, not of the artifact — an
+reached, or when the attempt recorded that there was nothing to capture,
+`Invalid` when it was found but failed a minimal check, `Unavailable` when the
+artifact is missing or unreadable, its presence could not be confirmed within
+the budget, or the attempt produced no `SnapshotRecord` at all. A property of the attempt, not of the artifact — an
 attempt can be recorded when no artifact exists. It is not a liveness check and
 proves nothing about whether a `Rollback` would succeed.
 _Avoid_: snapshot verification, artifact validity, snapshot health
