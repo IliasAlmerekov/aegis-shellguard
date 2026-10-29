@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use tokio::process::Command;
 
 use crate::error::SnapshotError;
-use crate::{Liveness, SnapshotPlugin};
+use crate::{ArtifactReadiness, Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
@@ -395,6 +395,28 @@ impl SnapshotPlugin for GitPlugin {
         Ok(())
     }
 
+    async fn readiness(&self, snapshot_id: &str) -> ArtifactReadiness {
+        if snapshot_id == CLEAN_SENTINEL {
+            return ArtifactReadiness::NOT_SUPPORTED;
+        }
+        let Some((cwd_str, hash)) = snapshot_id.split_once(SEP) else {
+            return ArtifactReadiness::UNAVAILABLE;
+        };
+        // A stash commit is the artifact: presence is "the commit object exists".
+        let found = git_command(cwd_str)
+            .args(["cat-file", "-e", &format!("{hash}^{{commit}}")])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .status()
+            .await;
+        match found {
+            Ok(status) if status.success() => ArtifactReadiness::NOT_SUPPORTED,
+            _ => ArtifactReadiness::UNAVAILABLE,
+        }
+    }
+
     async fn liveness(&self, snapshot_id: &str) -> Result<Liveness> {
         if snapshot_id == CLEAN_SENTINEL {
             return Ok(Liveness::NothingCaptured);
@@ -517,3 +539,6 @@ mod toplevel_tests;
 #[cfg(test)]
 #[path = "tests/liveness_tests.rs"]
 mod liveness_tests;
+#[cfg(test)]
+#[path = "tests/readiness_tests.rs"]
+mod readiness_tests;

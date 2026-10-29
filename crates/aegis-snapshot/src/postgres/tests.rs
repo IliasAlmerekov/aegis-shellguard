@@ -729,3 +729,5 @@ async fn liveness_rejects_a_malformed_id() {
 
     assert!(plugin.liveness("garbage").await.is_err());
 }
+
+mod readiness_tests;

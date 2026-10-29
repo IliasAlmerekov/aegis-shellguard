@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Added: Every Snapshot attempt's artifact is checked right after creation (presence for all providers, plus `pg_restore --list` for postgres and supabase and a header check for sqlite, within 100 ms per attempt and 500 ms per command) and recorded in `snapshot_attempts` by the Shell and Watch audit writers; `RecoveryStatus` is `Ready` only when every applicable plugin produced a record and every attempt is `Ready`, otherwise `Degraded` with `snapshot_artifact_invalid` > `snapshot_artifact_unavailable` > `partial_snapshot_coverage` > `no_snapshot_available`. `SnapshotPlugin` gains a required `readiness()` method (#557, ADR-031).
 - Added: The audit schema carries an optional `snapshot_attempts` array, one element per Snapshot plugin attempt (`plugin`, `readiness`, `validation_level`, `structural_check`), covered by the integrity chain on new lines while legacy lines verify unchanged; `RecoveryDegradation` gains `snapshot_artifact_unavailable` and `snapshot_artifact_invalid`. The runtime does not write the field yet (#234, ADR-031)
 
 ## [0.8.0] (2026-10-26)
