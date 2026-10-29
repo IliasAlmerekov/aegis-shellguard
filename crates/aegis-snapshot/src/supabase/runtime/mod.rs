@@ -30,8 +30,9 @@ mod rollback;
 #[cfg(test)]
 mod tests;
 
-/// The manifest gate `rollback` applies before it acts; `liveness` checks the same.
-fn ensure_rollback_eligible(manifest: &SupabaseManifest) -> Result<()> {
+/// The manifest gate `rollback`, `liveness` and `readiness` share: the schema
+/// and strict eligibility checks, then the contained dump path.
+fn eligible_dump_path(manifest: &SupabaseManifest, manifest_path: &Path) -> Result<PathBuf> {
     manifest.validate_schema_v1()?;
 
     let strict = manifest.recompute_strict_eligibility()?;
@@ -41,7 +42,8 @@ fn ensure_rollback_eligible(manifest: &SupabaseManifest) -> Result<()> {
             strict.overall_status
         )));
     }
-    manifest.ensure_summary_matches_recomputed(&strict)
+    manifest.ensure_summary_matches_recomputed(&strict)?;
+    manifest.resolve_db_artifact_path(manifest_path)
 }
 
 #[async_trait]
@@ -152,9 +154,7 @@ impl SnapshotPlugin for SupabasePlugin {
                 ))
             })?;
 
-        ensure_rollback_eligible(&manifest)?;
-
-        let dump_path = manifest.resolve_db_artifact_path(&manifest_path)?;
+        let dump_path = eligible_dump_path(&manifest, &manifest_path)?;
         Ok(local_file_liveness(&dump_path).await)
     }
 
@@ -166,8 +166,7 @@ impl SnapshotPlugin for SupabasePlugin {
             let manifest_bytes = tokio::fs::read(&manifest_path).await?;
             let manifest: SupabaseManifest = serde_json::from_slice(&manifest_bytes)
                 .map_err(|error| SnapshotError::Snapshot(error.to_string()))?;
-            ensure_rollback_eligible(&manifest)?;
-            manifest.resolve_db_artifact_path(&manifest_path)
+            eligible_dump_path(&manifest, &manifest_path)
         }
         .await;
         match dump_path {
@@ -192,9 +191,7 @@ impl SnapshotPlugin for SupabasePlugin {
                 ))
             })?;
 
-        ensure_rollback_eligible(&manifest)?;
-
-        let dump_path = manifest.resolve_db_artifact_path(&manifest_path)?;
+        let dump_path = eligible_dump_path(&manifest, &manifest_path)?;
         if !dump_path.exists() {
             return Err(SnapshotError::RollbackDumpNotFound {
                 path: dump_path.to_string_lossy().to_string(),
