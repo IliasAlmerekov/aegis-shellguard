@@ -37,7 +37,8 @@ impl SnapshotCoverage {
     /// successful attempt by an applicable plugin.
     ///
     /// For callers that never ran a registry pass, such as a code path that
-    /// short-circuits before snapshot creation.
+    /// short-circuits before snapshot creation. The records carry no readiness
+    /// verdict, so recovery treats them as not Ready until a check runs.
     #[must_use]
     pub fn complete(records: Vec<SnapshotRecord>) -> Self {
         Self {
@@ -57,15 +58,27 @@ impl SnapshotCoverage {
     }
 
     /// Every attempt this coverage made, one per attempt (ADR-031 §10): the
-    /// checked records, then each failed attempt as `Unavailable` since it
-    /// left no artifact to check.
+    /// checked records, any record never checked, then each failed attempt as
+    /// `Unavailable` since it left no artifact to check. An unchecked record
+    /// reads `Unavailable` too: readiness unknown fails closed.
     #[must_use]
     pub fn snapshot_attempts(&self) -> Vec<SnapshotAttempt> {
-        let failed = self
-            .unrecorded
+        let unchecked = self
+            .records
             .iter()
+            .skip(self.attempts.len())
+            .map(|record| record.plugin);
+        let failed = unchecked
+            .chain(self.unrecorded.iter().copied())
             .map(|plugin| attempt(plugin, ArtifactReadiness::UNAVAILABLE));
         self.attempts.iter().cloned().chain(failed).collect()
+    }
+
+    /// Whether a record has no readiness verdict yet. Such a record is not
+    /// known to be usable, so recovery must not count it as Ready.
+    #[must_use]
+    pub fn has_unchecked_record(&self) -> bool {
+        self.records.len() > self.attempts.len()
     }
 
     /// Whether any checked attempt has this readiness.
