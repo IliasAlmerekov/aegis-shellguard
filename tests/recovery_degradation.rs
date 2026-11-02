@@ -373,7 +373,7 @@ fn evaluation_reports_required_plan_without_simulating_recovery_degradation() {
     assert!(!home.path().join(".aegis").join("audit.jsonl").exists());
 }
 
-const ALLOWLISTED_DANGER: &str = "terraform destroy -target=module.test.api";
+const TERRAFORM_DESTROY: &str = "terraform destroy -target=module.test.api";
 
 /// A workspace whose `terraform` stub drops an `executed` marker, with the
 /// Danger command allowlisted so it is auto-approved (ADR-031 section 1).
@@ -421,7 +421,7 @@ fn allowlisted_danger_without_a_snapshot_provider_halts_without_a_tty() {
         .env("PATH", path)
         .env("AEGIS_TEST_MARKER", &marker)
         .stdin(Stdio::null())
-        .args(["-c", ALLOWLISTED_DANGER])
+        .args(["-c", TERRAFORM_DESTROY])
         .output()
         .unwrap();
 
@@ -445,7 +445,7 @@ fn allowlisted_danger_with_a_ready_snapshot_runs_without_a_prompt() {
         .env("PATH", path)
         .env("AEGIS_TEST_MARKER", &marker)
         .stdin(Stdio::null())
-        .args(["-c", ALLOWLISTED_DANGER])
+        .args(["-c", TERRAFORM_DESTROY])
         .output()
         .unwrap();
 
