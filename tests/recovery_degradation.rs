@@ -29,10 +29,28 @@ fn single_quote(value: &str) -> String {
 }
 
 fn interactive_shell_output(home: &Path, cwd: &Path, response: &[u8]) -> Output {
-    const PROMPT: &[u8] = b"to run once without Recovery";
+    interactive_shell_command_output(
+        home,
+        cwd,
+        "zsh ./run.sh",
+        b"to run once without Recovery",
+        &[],
+        response,
+    )
+}
 
+/// Runs `shell_line` under a PTY, waits for `prompt`, then sends `response`.
+fn interactive_shell_command_output(
+    home: &Path,
+    cwd: &Path,
+    shell_line: &str,
+    prompt: &'static [u8],
+    envs: &[(&str, &str)],
+    response: &[u8],
+) -> Output {
     let mut command = Command::new("script");
     command
+        .envs(envs.iter().copied())
         .env("AEGIS_REAL_SHELL", "/bin/sh")
         .env("AEGIS_CI", "0")
         .env("HOME", home)
@@ -47,7 +65,7 @@ fn interactive_shell_output(home: &Path, cwd: &Path, response: &[u8]) -> Output 
         &format!(
             "{} -c {}",
             single_quote(&aegis_bin().to_string_lossy()),
-            single_quote("zsh ./run.sh")
+            single_quote(shell_line)
         ),
         "/dev/null",
     ]);
@@ -56,14 +74,14 @@ fn interactive_shell_output(home: &Path, cwd: &Path, response: &[u8]) -> Output 
     command
         .args(["-q", "/dev/null"])
         .arg(aegis_bin())
-        .args(["-c", "zsh ./run.sh"]);
+        .args(["-c", shell_line]);
 
     let mut child = command.spawn().unwrap();
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
     let (prompt_sender, prompt_receiver) = mpsc::channel();
-    let stdout_reader = capture_until_prompt(stdout, PROMPT, prompt_sender.clone());
-    let stderr_reader = capture_until_prompt(stderr, PROMPT, prompt_sender);
+    let stdout_reader = capture_until_prompt(stdout, prompt, prompt_sender.clone());
+    let stderr_reader = capture_until_prompt(stderr, prompt, prompt_sender);
 
     if prompt_receiver
         .recv_timeout(Duration::from_secs(10))
@@ -453,5 +471,33 @@ fn allowlisted_danger_with_a_ready_snapshot_runs_without_a_prompt() {
     assert!(marker.exists());
     let entry = read_single_audit_entry(home.path());
     assert_eq!(entry["decision"], "AutoApproved");
+    assert!(entry.get("recovery_degradation").is_none());
+}
+
+#[test]
+fn confirmed_danger_without_a_snapshot_provider_runs_without_a_recovery_prompt() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let cwd = workspace.path().canonicalize().unwrap();
+    let (marker, path) = allowlisted_danger_workspace(home.path(), &cwd);
+    // Drop the allowlist so a human has to confirm the Danger command.
+    fs::remove_file(cwd.join(".aegis.toml")).unwrap();
+    let marker_env = marker.to_string_lossy().into_owned();
+
+    let output = interactive_shell_command_output(
+        home.path(),
+        &cwd,
+        TERRAFORM_DESTROY,
+        b"[y/N/a/d]",
+        &[("PATH", &path), ("AEGIS_TEST_MARKER", &marker_env)],
+        b"y\n",
+    );
+
+    let transcript = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(output.status.code(), Some(0), "{transcript}");
+    assert!(marker.exists(), "confirmed Danger must execute");
+    assert!(!transcript.contains("Type \"yes\""), "{transcript}");
+    let entry = read_single_audit_entry(home.path());
+    assert_eq!(entry["decision"], "Approved");
     assert!(entry.get("recovery_degradation").is_none());
 }
