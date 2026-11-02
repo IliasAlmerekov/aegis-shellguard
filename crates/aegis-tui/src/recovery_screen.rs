@@ -62,7 +62,7 @@ pub fn show_recovery_override_with_input<R: BufRead, W: Write>(
         return RecoveryPromptDecision::Deny;
     }
 
-    if write!(output, "\n  Run once without recovery? [r/N]: ")
+    if write!(output, "\n  Type \"yes\" to run once without Recovery: ")
         .and_then(|()| output.flush())
         .is_err()
     {
@@ -74,9 +74,10 @@ pub fn show_recovery_override_with_input<R: BufRead, W: Write>(
         return RecoveryPromptDecision::Deny;
     }
 
-    match line.trim().to_ascii_lowercase().as_str() {
-        "r" | "run" | "run once" => RecoveryPromptDecision::RunOnceWithoutRecovery,
-        _ => RecoveryPromptDecision::Deny,
+    if line.trim().eq_ignore_ascii_case("yes") {
+        RecoveryPromptDecision::RunOnceWithoutRecovery
+    } else {
+        RecoveryPromptDecision::Deny
     }
 }
 

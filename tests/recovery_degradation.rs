@@ -29,7 +29,7 @@ fn single_quote(value: &str) -> String {
 }
 
 fn interactive_shell_output(home: &Path, cwd: &Path, response: &[u8]) -> Output {
-    const PROMPT: &[u8] = b"Run once without recovery?";
+    const PROMPT: &[u8] = b"to run once without Recovery";
 
     let mut command = Command::new("script");
     command
@@ -208,7 +208,7 @@ fn force_interactive_env_cannot_enable_recovery_override_without_tty() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child.stdin.as_mut().unwrap().write_all(b"r\n").unwrap();
+    child.stdin.as_mut().unwrap().write_all(b"yes\n").unwrap();
     let output = child.wait_with_output().unwrap();
 
     assert_eq!(output.status.code(), Some(2));
@@ -244,7 +244,7 @@ fn interactive_recovery_run_once_executes_and_records_human_approval() {
     let marker = workspace.path().join("executed");
     fs::write(workspace.path().join("run.sh"), "printf ran > executed\n").unwrap();
 
-    let output = interactive_shell_output(home.path(), workspace.path(), b"r\n");
+    let output = interactive_shell_output(home.path(), workspace.path(), b"yes\n");
 
     assert_eq!(
         output.status.code(),
@@ -371,4 +371,87 @@ fn evaluation_reports_required_plan_without_simulating_recovery_degradation() {
     assert_eq!(value["execution"]["will_execute"], false);
     assert!(value.get("recovery_degradation").is_none());
     assert!(!home.path().join(".aegis").join("audit.jsonl").exists());
+}
+
+const ALLOWLISTED_DANGER: &str = "terraform destroy -target=module.test.api";
+
+/// A workspace whose `terraform` stub drops an `executed` marker, with the
+/// Danger command allowlisted so it is auto-approved (ADR-031 section 1).
+fn allowlisted_danger_workspace(home: &Path, workspace: &Path) -> (PathBuf, String) {
+    let bin = workspace.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let stub = bin.join("terraform");
+    fs::write(&stub, "#!/bin/sh\nprintf ran > \"$AEGIS_TEST_MARKER\"\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let config_dir = home.join(".config").join("aegis");
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::write(
+        config_dir.join("config.toml"),
+        "allowlist_override_level = \"Danger\"\n",
+    )
+    .unwrap();
+    fs::write(
+        workspace.join(".aegis.toml"),
+        format!(
+            "[[allow]]\npattern = \"terraform destroy -target=module.test.*\"\ncwd = \"{}\"\nreason = \"test allowlist\"\n",
+            workspace.display()
+        ),
+    )
+    .unwrap();
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    (workspace.join("executed"), path)
+}
+
+#[test]
+fn allowlisted_danger_without_a_snapshot_provider_halts_without_a_tty() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let cwd = workspace.path().canonicalize().unwrap();
+    let (marker, path) = allowlisted_danger_workspace(home.path(), &cwd);
+
+    let output = shell_command(home.path(), &cwd)
+        .env("PATH", path)
+        .env("AEGIS_TEST_MARKER", &marker)
+        .stdin(Stdio::null())
+        .args(["-c", ALLOWLISTED_DANGER])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(!marker.exists(), "halted Danger must not execute");
+    let entry = read_single_audit_entry(home.path());
+    assert_eq!(entry["decision"], "Denied");
+    assert_eq!(entry["recovery_degradation"], "no_snapshot_available");
+}
+
+#[test]
+fn allowlisted_danger_with_a_ready_snapshot_runs_without_a_prompt() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let cwd = workspace.path().canonicalize().unwrap();
+    let (marker, path) = allowlisted_danger_workspace(home.path(), &cwd);
+    fs::write(cwd.join("state.txt"), "before\n").unwrap();
+    init_git_repo(&cwd);
+
+    let output = shell_command(home.path(), &cwd)
+        .env("PATH", path)
+        .env("AEGIS_TEST_MARKER", &marker)
+        .stdin(Stdio::null())
+        .args(["-c", ALLOWLISTED_DANGER])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(marker.exists());
+    let entry = read_single_audit_entry(home.path());
+    assert_eq!(entry["decision"], "AutoApproved");
+    assert!(entry.get("recovery_degradation").is_none());
 }
