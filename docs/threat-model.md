@@ -253,9 +253,12 @@ ADR-016 Required recovery with a general backup guarantee.
 
 **Mitigations:**
 
-- ordinary non-effect-opaque `Danger` Snapshots remain best-effort
-- bounded Effect-opaque execution under active recovery policy must create at
-  least one Snapshot, receive a one-time Recovery override, or deny
+- Snapshots for a human-confirmed, non-effect-opaque `Danger` remain
+  best-effort
+- bounded Effect-opaque execution and auto-approved `Danger` under active
+  recovery policy must create at least one Snapshot, receive a
+  one-time Recovery override (the user types `yes`), or deny; unattended runs
+  deny
 - providers are applicability-checked per environment
 - snapshot records are written to the audit log
 - rollback resolves snapshot targets from the audit log

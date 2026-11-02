@@ -38,8 +38,14 @@ AI agent command
 
 Bounded Effect-opaque execution such as `sh ./cleanup.sh` stays on its normal
 `RiskLevel`, but Protect/Strict requires at least one configured Snapshot before
-it runs. This is Required recovery. If no Snapshot is created, Unattended destructive execution denies, and an interactive user sees only "Run once without recovery"
-or "Deny". Aegis does not inspect the referenced script, and a successful
+it runs. An auto-approved `Danger` command (an allowlist or `Allow` policy rule
+hit) needs a Ready Snapshot too, because no human confirmed it. This is Required
+recovery. A `Danger` command that a human confirms stays best-effort: Snapshots
+are attempted, and the run goes ahead if none is created.
+
+If no Snapshot is created for a run that requires one, Unattended destructive
+execution denies. An interactive user can type `yes` to "Run once without
+recovery", or deny. Aegis does not inspect the referenced script, and a successful
 Snapshot is still not a complete backup or universal undo.
 
 Effect opacity is a separate axis from the risk level: a bounded effect-opaque
