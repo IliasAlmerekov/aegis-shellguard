@@ -16,8 +16,18 @@ fn aegis_watch(input: &[u8]) -> std::process::Output {
 }
 
 fn aegis_watch_in(home: &Path, cwd: &Path, input: &[u8]) -> std::process::Output {
+    aegis_watch_in_env(home, cwd, input, &[])
+}
+
+fn aegis_watch_in_env(
+    home: &Path,
+    cwd: &Path,
+    input: &[u8],
+    envs: &[(&str, &str)],
+) -> std::process::Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_aegis"))
         .arg("watch")
+        .envs(envs.iter().copied())
         .env("AEGIS_REAL_SHELL", "/bin/sh")
         .env("AEGIS_CI", "0")
         .env("AEGIS_FORCE_NO_TTY", "1")
@@ -605,4 +615,61 @@ fn invalid_project_config_in_watch_still_fails_before_emitting_frames() {
     assert!(stderr.contains(&config_path.display().to_string()));
     assert!(stderr.contains("failed to parse"));
     assert!(stderr.contains("Fix or remove the invalid config file"));
+}
+
+#[test]
+fn watch_without_tty_denies_allowlisted_danger_without_a_snapshot_provider() {
+    let home = TempDir::new().unwrap();
+    let cwd = TempDir::new().unwrap();
+    let cwd_path = cwd.path().canonicalize().unwrap();
+    let marker = cwd_path.join("executed");
+    let bin = cwd_path.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let stub = bin.join("terraform");
+    fs::write(&stub, "#!/bin/sh\nprintf ran > executed\n").unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let config_dir = home.path().join(".config").join("aegis");
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::write(
+        config_dir.join("config.toml"),
+        "allowlist_override_level = \"Danger\"\n",
+    )
+    .unwrap();
+    fs::write(
+        cwd_path.join(".aegis.toml"),
+        format!(
+            "[[allow]]\npattern = \"terraform destroy -target=module.test.*\"\ncwd = \"{}\"\nreason = \"test allowlist\"\n",
+            cwd_path.display()
+        ),
+    )
+    .unwrap();
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+
+    let output = aegis_watch_in_env(
+        home.path(),
+        &cwd_path,
+        b"{\"cmd\":\"terraform destroy -target=module.test.api\",\"id\":\"allowed\"}\n",
+        &[("PATH", &path)],
+    );
+
+    let frames = parse_frames(&output.stdout);
+    let result = frames
+        .iter()
+        .find(|frame| frame["type"] == "result")
+        .expect("halted command must emit a result frame");
+    assert_eq!(result["decision"], "denied");
+    assert_eq!(result["exit_code"], 2);
+    assert!(!marker.exists(), "halted Danger must not execute");
+
+    let contents = fs::read_to_string(home.path().join(".aegis").join("audit.jsonl")).unwrap();
+    let entry: serde_json::Value = serde_json::from_str(contents.trim()).unwrap();
+    assert_eq!(entry["decision"], "Denied");
+    assert_eq!(entry["recovery_degradation"], "no_snapshot_available");
 }
