@@ -14,8 +14,9 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use crate::containment::contain_artifact;
 use crate::error::SnapshotError;
 use crate::liveness::local_file_liveness;
+use crate::readiness::file_readiness;
 use crate::secure_fs::{create_artifact_file, create_store_dir, harden_existing_artifact};
-use crate::{Liveness, SnapshotPlugin};
+use crate::{ArtifactReadiness, Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
@@ -511,6 +512,17 @@ impl SnapshotPlugin for MysqlPlugin {
         let target = self.parse_snapshot_id(snapshot_id)?;
         let dump_path = contain_artifact("mysql", &self.snapshots_dir, &target.dump_path)?;
         Ok(local_file_liveness(&dump_path).await)
+    }
+
+    async fn readiness(&self, snapshot_id: &str) -> ArtifactReadiness {
+        let Ok(target) = self.parse_snapshot_id(snapshot_id) else {
+            return ArtifactReadiness::UNAVAILABLE;
+        };
+        let Ok(dump_path) = contain_artifact("mysql", &self.snapshots_dir, &target.dump_path)
+        else {
+            return ArtifactReadiness::UNAVAILABLE;
+        };
+        file_readiness(&dump_path).await
     }
 
     async fn delete(&self, snapshot_id: &str) -> Result<()> {

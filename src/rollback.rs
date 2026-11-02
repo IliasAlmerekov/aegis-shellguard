@@ -376,6 +376,10 @@ mod tests {
         ) -> std::result::Result<(), aegis_snapshot::SnapshotError> {
             Ok(())
         }
+        async fn readiness(&self, _snapshot_id: &str) -> aegis_snapshot::ArtifactReadiness {
+            aegis_snapshot::ArtifactReadiness::PRESENT_UNCHECKED
+        }
+
         async fn liveness(
             &self,
             _id: &str,

@@ -7,7 +7,7 @@ use aegis_types::{RecoveryDegradation, SandboxStatus};
 use crate::planning::InterceptionPlan;
 use crate::runtime::{RuntimeContext, WatchAuditContext};
 use aegis_types::Decision;
-use aegis_types::SnapshotRecord;
+use aegis_types::{SnapshotAttempt, SnapshotRecord};
 
 use super::protocol::{InputFrame, OutputDecision, OutputFrame, emit_frame};
 
@@ -18,6 +18,7 @@ pub(super) struct WatchExecution<'a> {
     pub(super) ci_detected: bool,
     pub(super) cwd: &'a std::path::Path,
     pub(super) snapshots: &'a [SnapshotRecord],
+    pub(super) attempts: &'a [SnapshotAttempt],
     pub(super) recovery_degradation: Option<RecoveryDegradation>,
 }
 
@@ -220,6 +221,7 @@ pub(super) fn append_watch_execution_audit(
         allowlist_effective: execution.plan.policy_decision().allowlist_effective,
         ci_detected: execution.ci_detected,
         sandbox_status,
+        snapshot_attempts: execution.attempts,
         source: execution.frame.source.clone(),
         cwd: super::runner::audit_cwd(execution.cwd),
         id: execution.frame.id.clone(),
