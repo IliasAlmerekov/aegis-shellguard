@@ -37,7 +37,7 @@ fn override_decision(response: &[u8]) -> RecoveryPromptDecision {
 }
 
 #[test]
-fn recovery_prompt_run_once_choice_is_not_persistable() {
+fn recovery_prompt_yes_runs_once_without_recovery() {
     assert_eq!(
         override_decision(b"yes\n"),
         RecoveryPromptDecision::RunOnceWithoutRecovery
@@ -78,9 +78,10 @@ fn recovery_prompt_explains_missing_required_recovery() {
     let text = strip_ansi(&String::from_utf8_lossy(&output));
 
     assert!(
-        text.contains("could not determine the eventual effect")
+        text.contains("requires Recovery")
             && text.contains("No required Snapshot was created")
-            && text.contains("without the ADR-016 recovery backstop"),
+            && !text.contains("eventual effect")
+            && !text.contains("ADR-016"),
         "Recovery prompt must explain the complete degradation: {text}"
     );
 }
@@ -93,6 +94,7 @@ fn recovery_prompt_does_not_claim_zero_snapshots_on_partial_coverage() {
 
     assert!(
         text.contains("At least one applicable snapshot provider failed")
+            && !text.contains("eventual effect")
             && !text.contains("No required Snapshot was created"),
         "Partial coverage must not be reported as a total snapshot failure: {text}"
     );

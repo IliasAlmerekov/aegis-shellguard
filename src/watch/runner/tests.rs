@@ -439,7 +439,7 @@ fn audit_cwd_makes_a_relative_path_absolute() {
     );
 }
 
-const ALLOWLISTED_DANGER: &str = "terraform destroy -target=module.test.api";
+const TERRAFORM_DESTROY: &str = "terraform destroy -target=module.test.api";
 
 /// Danger `terraform destroy` that the allowlist auto-approves (ADR-031 section 1).
 /// `plugins` pins the Snapshot registry so no host state leaks in.
@@ -470,7 +470,7 @@ async fn watch_allowlisted_danger_without_a_snapshot_provider_halts_with_no_snap
     let audit_dir = TempDir::new().unwrap();
     let audit_path = audit_dir.path().join("audit.jsonl");
     let prepared = prepared_with_allowlisted_danger(&workspace, audit_path.clone(), vec![]);
-    let (frame, plan) = plan_for_command(&prepared, &workspace, ALLOWLISTED_DANGER).await;
+    let (frame, plan) = plan_for_command(&prepared, &workspace, TERRAFORM_DESTROY).await;
     let prompted: Cell<Option<aegis_types::RecoveryDegradation>> = Cell::new(None);
 
     run_watch_plan_with_prompts(
@@ -505,7 +505,7 @@ async fn watch_allowlisted_danger_with_a_ready_snapshot_runs_without_a_recovery_
         audit_path.clone(),
         vec![Box::new(SucceedingPlugin)],
     );
-    let (frame, plan) = plan_for_command(&prepared, &workspace, ALLOWLISTED_DANGER).await;
+    let (frame, plan) = plan_for_command(&prepared, &workspace, TERRAFORM_DESTROY).await;
     let prompted = Cell::new(false);
 
     run_watch_plan_with_prompts(
@@ -533,7 +533,7 @@ async fn watch_confirmed_danger_without_a_snapshot_provider_skips_the_recovery_p
     let audit_dir = TempDir::new().unwrap();
     let audit_path = audit_dir.path().join("audit.jsonl");
     let prepared = prepared_without_plugins(audit_path.clone());
-    let (frame, plan) = plan_for_command(&prepared, &workspace, ALLOWLISTED_DANGER).await;
+    let (frame, plan) = plan_for_command(&prepared, &workspace, TERRAFORM_DESTROY).await;
     let prompted = Cell::new(false);
 
     run_watch_plan_with_prompts(
