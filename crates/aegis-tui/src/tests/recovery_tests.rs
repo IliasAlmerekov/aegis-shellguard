@@ -32,12 +32,43 @@ impl Write for FlushFailingWriter {
     }
 }
 
+fn override_decision(response: &[u8]) -> RecoveryPromptDecision {
+    show_recovery_override_with_input(NO_SNAPSHOT, true, &mut &*response, &mut Vec::new())
+}
+
 #[test]
 fn recovery_prompt_run_once_choice_is_not_persistable() {
-    let decision =
-        show_recovery_override_with_input(NO_SNAPSHOT, true, &mut b"r\n".as_ref(), &mut Vec::new());
+    assert_eq!(
+        override_decision(b"yes\n"),
+        RecoveryPromptDecision::RunOnceWithoutRecovery
+    );
+}
 
-    assert_eq!(decision, RecoveryPromptDecision::RunOnceWithoutRecovery);
+#[test]
+fn recovery_prompt_accepts_yes_case_insensitively_and_trimmed() {
+    assert_eq!(
+        override_decision(b"  YES \n"),
+        RecoveryPromptDecision::RunOnceWithoutRecovery
+    );
+}
+
+#[test]
+fn recovery_prompt_rejects_anything_but_the_full_word_yes() {
+    for response in [&b"y\n"[..], b"r\n", b"run\n", b"run once\n", b"\n", b""] {
+        assert_eq!(
+            override_decision(response),
+            RecoveryPromptDecision::Deny,
+            "{response:?}"
+        );
+    }
+}
+
+#[test]
+fn recovery_prompt_asks_for_the_full_word_yes() {
+    let mut output = Vec::new();
+    let _ = show_recovery_override_with_input(NO_SNAPSHOT, true, &mut b"n\n".as_ref(), &mut output);
+
+    assert!(String::from_utf8_lossy(&output).contains("Type \"yes\" to run once without Recovery"));
 }
 
 #[test]
@@ -84,7 +115,7 @@ fn noninteractive_recovery_degradation_denies_even_with_run_input() {
     let decision = show_recovery_override_with_input(
         NO_SNAPSHOT,
         false,
-        &mut b"r\n".as_ref(),
+        &mut b"yes\n".as_ref(),
         &mut Vec::new(),
     );
 
