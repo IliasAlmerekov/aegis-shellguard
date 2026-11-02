@@ -532,7 +532,7 @@ async fn watch_confirmed_danger_without_a_snapshot_provider_skips_the_recovery_p
     let workspace = TempDir::new().unwrap();
     let audit_dir = TempDir::new().unwrap();
     let audit_path = audit_dir.path().join("audit.jsonl");
-    let prepared = prepared_without_plugins(audit_path.clone());
+    let prepared = prepared_with_default_config(audit_path.clone(), vec![]);
     let (frame, plan) = plan_for_command(&prepared, &workspace, TERRAFORM_DESTROY).await;
     let prompted = Cell::new(false);
 
@@ -557,14 +557,48 @@ async fn watch_confirmed_danger_without_a_snapshot_provider_skips_the_recovery_p
     assert_eq!(entry["decision"], "Approved");
 }
 
-/// Default config (no allowlist, so `Danger` prompts), empty registry.
-fn prepared_without_plugins(audit_path: PathBuf) -> PreparedPlanner {
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_confirmed_danger_with_a_failed_snapshot_skips_the_recovery_prompt() {
+    let workspace = TempDir::new().unwrap();
+    let audit_dir = TempDir::new().unwrap();
+    let audit_path = audit_dir.path().join("audit.jsonl");
+    let prepared = prepared_with_default_config(audit_path.clone(), vec![Box::new(FailingPlugin)]);
+    let (frame, plan) = plan_for_command(&prepared, &workspace, TERRAFORM_DESTROY).await;
+    let prompted = Cell::new(false);
+
+    run_watch_plan_with_prompts(
+        frame,
+        &prepared,
+        plan,
+        false,
+        |_, _| PromptDecision::Approve,
+        |_| {
+            prompted.set(true);
+            RecoveryPromptDecision::Deny
+        },
+    )
+    .await;
+
+    assert!(
+        !prompted.get(),
+        "a confirmed Danger stays best-effort when its Snapshot fails"
+    );
+    let entry = read_audit_entry(&audit_path);
+    assert_eq!(entry["decision"], "Approved");
+    assert!(entry.get("recovery_degradation").is_none());
+}
+
+/// Default config (no allowlist, so `Danger` prompts); `plugins` pins the registry.
+fn prepared_with_default_config(
+    audit_path: PathBuf,
+    plugins: Vec<Box<dyn aegis_snapshot::SnapshotPlugin>>,
+) -> PreparedPlanner {
     let context = RuntimeContext::new_with_audit_path(
         AegisConfig::default(),
         tokio::runtime::Handle::current(),
         audit_path,
     )
     .unwrap();
-    context.set_snapshot_registry_for_tests(SnapshotRegistry::new_with_plugins(vec![]));
+    context.set_snapshot_registry_for_tests(SnapshotRegistry::new_with_plugins(plugins));
     PreparedPlanner::Ready(Box::new(context))
 }
