@@ -438,3 +438,133 @@ fn audit_cwd_makes_a_relative_path_absolute() {
         std::env::current_dir().unwrap().join("sub")
     );
 }
+
+const ALLOWLISTED_DANGER: &str = "terraform destroy -target=module.test.api";
+
+/// Danger `terraform destroy` that the allowlist auto-approves (ADR-031 section 1).
+/// `plugins` pins the Snapshot registry so no host state leaks in.
+fn prepared_with_allowlisted_danger(
+    workspace: &TempDir,
+    audit_path: PathBuf,
+    plugins: Vec<Box<dyn aegis_snapshot::SnapshotPlugin>>,
+) -> PreparedPlanner {
+    let mut config = AegisConfig::default();
+    config.allowlist_override_level = aegis_types::AllowlistOverrideLevel::Danger;
+    config.allowlist.push(aegis_config::AllowlistRule {
+        pattern: "terraform destroy -target=module.test.*".to_string(),
+        cwd: Some(workspace.path().to_string_lossy().into_owned()),
+        user: None,
+        expires_at: None,
+        reason: "test allowlist".to_string(),
+    });
+    let context =
+        RuntimeContext::new_with_audit_path(config, tokio::runtime::Handle::current(), audit_path)
+            .unwrap();
+    context.set_snapshot_registry_for_tests(SnapshotRegistry::new_with_plugins(plugins));
+    PreparedPlanner::Ready(Box::new(context))
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_allowlisted_danger_without_a_snapshot_provider_halts_with_no_snapshot_available() {
+    let workspace = TempDir::new().unwrap();
+    let audit_dir = TempDir::new().unwrap();
+    let audit_path = audit_dir.path().join("audit.jsonl");
+    let prepared = prepared_with_allowlisted_danger(&workspace, audit_path.clone(), vec![]);
+    let (frame, plan) = plan_for_command(&prepared, &workspace, ALLOWLISTED_DANGER).await;
+    let prompted: Cell<Option<aegis_types::RecoveryDegradation>> = Cell::new(None);
+
+    run_watch_plan_with_prompts(
+        frame,
+        &prepared,
+        plan,
+        false,
+        |_, _| PromptDecision::Approve,
+        |degradation| {
+            prompted.set(Some(degradation));
+            RecoveryPromptDecision::Deny
+        },
+    )
+    .await;
+
+    assert_eq!(
+        prompted.get(),
+        Some(aegis_types::RecoveryDegradation::NoSnapshotAvailable)
+    );
+    let entry = read_audit_entry(&audit_path);
+    assert_eq!(entry["decision"], "Denied");
+    assert_eq!(entry["recovery_degradation"], "no_snapshot_available");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_allowlisted_danger_with_a_ready_snapshot_runs_without_a_recovery_prompt() {
+    let workspace = TempDir::new().unwrap();
+    let audit_dir = TempDir::new().unwrap();
+    let audit_path = audit_dir.path().join("audit.jsonl");
+    let prepared = prepared_with_allowlisted_danger(
+        &workspace,
+        audit_path.clone(),
+        vec![Box::new(SucceedingPlugin)],
+    );
+    let (frame, plan) = plan_for_command(&prepared, &workspace, ALLOWLISTED_DANGER).await;
+    let prompted = Cell::new(false);
+
+    run_watch_plan_with_prompts(
+        frame,
+        &prepared,
+        plan,
+        false,
+        |_, _| PromptDecision::Approve,
+        |_| {
+            prompted.set(true);
+            RecoveryPromptDecision::Deny
+        },
+    )
+    .await;
+
+    assert!(!prompted.get());
+    let entry = read_audit_entry(&audit_path);
+    assert_eq!(entry["decision"], "AutoApproved");
+    assert!(entry.get("recovery_degradation").is_none());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_confirmed_danger_without_a_snapshot_provider_skips_the_recovery_prompt() {
+    let workspace = TempDir::new().unwrap();
+    let audit_dir = TempDir::new().unwrap();
+    let audit_path = audit_dir.path().join("audit.jsonl");
+    let prepared = prepared_without_plugins(audit_path.clone());
+    let (frame, plan) = plan_for_command(&prepared, &workspace, ALLOWLISTED_DANGER).await;
+    let prompted = Cell::new(false);
+
+    run_watch_plan_with_prompts(
+        frame,
+        &prepared,
+        plan,
+        false,
+        |_, _| PromptDecision::Approve,
+        |_| {
+            prompted.set(true);
+            RecoveryPromptDecision::Deny
+        },
+    )
+    .await;
+
+    assert!(
+        !prompted.get(),
+        "a human-confirmed Danger is not unattended"
+    );
+    let entry = read_audit_entry(&audit_path);
+    assert_eq!(entry["decision"], "Approved");
+}
+
+/// Default config (no allowlist, so `Danger` prompts), empty registry.
+fn prepared_without_plugins(audit_path: PathBuf) -> PreparedPlanner {
+    let context = RuntimeContext::new_with_audit_path(
+        AegisConfig::default(),
+        tokio::runtime::Handle::current(),
+        audit_path,
+    )
+    .unwrap();
+    context.set_snapshot_registry_for_tests(SnapshotRegistry::new_with_plugins(vec![]));
+    PreparedPlanner::Ready(Box::new(context))
+}
