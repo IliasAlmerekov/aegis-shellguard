@@ -178,12 +178,7 @@ fn dot_relative_cd_with_cdpath_set_does_not_halt() {
 
     let output = run_allowlisted(&world, "cd ../plain && rm -rf y", Some("/tmp"));
 
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stderr=\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert_no_unresolved_git_halt(&world, &output);
 }
 
 #[test]
@@ -205,13 +200,7 @@ fn a_plain_directory_does_not_halt_a_non_git_stage() {
 
     let output = run_allowlisted(&world, "cd ../plain && rm -rf y", None);
 
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "stderr=\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert!(audit_entry(world.home.path())["recovery_degradation"].is_null());
+    assert_no_unresolved_git_halt(&world, &output);
 }
 
 #[test]
@@ -298,4 +287,15 @@ fn a_subshell_group_is_denied_for_analysis_not_for_an_unresolved_target() {
         );
         assert_eq!(entry["effect_opaque"], true, "{command:?}");
     }
+}
+
+/// The cd target resolves to a plain directory, so the halt is not an
+/// unresolved git target. With no Snapshot provider the auto-approved Danger
+/// still halts for want of a Snapshot (ADR-031 section 1).
+fn assert_no_unresolved_git_halt(world: &World, output: &std::process::Output) {
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(
+        audit_entry(world.home.path())["recovery_degradation"],
+        "no_snapshot_available"
+    );
 }

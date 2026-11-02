@@ -184,7 +184,7 @@ reason = "cwd-scoped allowlist"
     fs::create_dir_all(&global_config_dir).unwrap();
     fs::write(
         global_config_dir.join("config.toml"),
-        "allowlist_override_level = \"Danger\"\n",
+        "allowlist_override_level = \"Danger\"\nsnapshot_policy = \"None\"\n",
     )
     .unwrap();
     fs::write(
@@ -328,12 +328,14 @@ reason = "snapshot disabled"
         .unwrap();
 
     assert!(enabled_output.status.success());
-    assert!(disabled_output.status.success());
+    // No provider applies, so the auto-approved Danger halts (ADR-031 section 1).
+    assert_eq!(disabled_output.status.code(), Some(2));
 
     let entries = read_audit_entries(home.path());
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0]["decision"], "AutoApproved");
     assert_eq!(entries[0]["snapshots"][0]["plugin"], "git");
-    assert_eq!(entries[1]["decision"], "AutoApproved");
+    assert_eq!(entries[1]["decision"], "Denied");
+    assert_eq!(entries[1]["recovery_degradation"], "no_snapshot_available");
     assert_eq!(entries[1]["snapshots"], serde_json::json!([]));
 }
