@@ -114,18 +114,15 @@ pub(crate) async fn sqlite_readiness(path: Option<&Path>) -> ArtifactReadiness {
     let Some(path) = path else {
         return ArtifactReadiness::UNAVAILABLE;
     };
-    let mut file = match check_file_present(path).await {
+    let file = match check_file_present(path).await {
         Ok(file) => file,
         Err(failed) => return failed,
     };
-    let mut header = [0u8; 16];
-    match file.read_exact(&mut header).await {
-        Ok(_) if &header == SQLITE_HEADER => ArtifactReadiness::STRUCTURAL,
+    let mut header = Vec::with_capacity(SQLITE_HEADER.len());
+    // A file shorter than the header reads short and fails the comparison.
+    match file.take(16).read_to_end(&mut header).await {
+        Ok(_) if header == SQLITE_HEADER => ArtifactReadiness::STRUCTURAL,
         Ok(_) => ArtifactReadiness::CORRUPT,
-        // A file shorter than the header cannot be a database.
-        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
-            ArtifactReadiness::CORRUPT
-        }
         Err(_) => ArtifactReadiness::UNAVAILABLE,
     }
 }

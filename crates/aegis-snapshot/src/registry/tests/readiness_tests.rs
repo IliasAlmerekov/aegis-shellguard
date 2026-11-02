@@ -47,6 +47,8 @@ impl SnapshotPlugin for ScriptedPlugin {
 
     async fn readiness(&self, _snapshot_id: &str) -> ArtifactReadiness {
         match self.delay {
+            // Answer on the first poll, so even a zero timeout would let it through.
+            Some(Duration::ZERO) => {}
             Some(delay) => tokio::time::sleep(delay).await,
             None => std::future::pending().await,
         }
@@ -173,20 +175,21 @@ async fn a_structural_timeout_reported_by_the_plugin_stays_ready() {
 
 #[tokio::test]
 async fn all_checks_of_one_command_share_a_500ms_budget_and_fail_closed() {
-    let registry = SnapshotRegistry::new_with_plugins(vec![Box::new(ScriptedPlugin {
-        name: "hanging",
-        snapshot_ok: true,
-        verdict: ArtifactReadiness::PRESENT_UNCHECKED,
-        delay: None,
-    })]);
-    let record = SnapshotRecord {
-        plugin: "hanging",
-        snapshot_id: "id".to_string(),
-        git_target: None,
-    };
+    let registry = SnapshotRegistry::new_with_plugins(vec![
+        Box::new(ScriptedPlugin {
+            name: "hanging",
+            snapshot_ok: true,
+            verdict: ArtifactReadiness::PRESENT_UNCHECKED,
+            delay: None,
+        }),
+        scripted("instant", ArtifactReadiness::PRESENT_UNCHECKED),
+    ]);
+    let mut records = vec![record("hanging"); 20];
+    // Checked after the budget is spent: even an instant answer is not trusted.
+    records.push(record("instant"));
     let mut coverage = SnapshotCoverage {
-        records: vec![record; 20],
-        applicable: 20,
+        records,
+        applicable: 21,
         ..SnapshotCoverage::default()
     };
 
@@ -196,7 +199,7 @@ async fn all_checks_of_one_command_share_a_500ms_budget_and_fail_closed() {
 
     assert!(elapsed < Duration::from_millis(800), "{elapsed:?}");
     assert!(
-        coverage.attempts.len() == 20
+        coverage.attempts.len() == 21
             && coverage
                 .attempts
                 .iter()
@@ -216,4 +219,71 @@ async fn merged_passes_carry_every_attempt() {
     first.merge(second);
 
     assert_eq!(first.snapshot_attempts().len(), 2);
+}
+
+fn checked(readiness: SnapshotAttemptReadiness) -> SnapshotAttempt {
+    SnapshotAttempt {
+        plugin: "a".to_string(),
+        readiness,
+        validation_level: ValidationLevel::PresenceOnly,
+        structural_check: StructuralCheck::NotRun,
+    }
+}
+
+fn record(plugin: &'static str) -> SnapshotRecord {
+    SnapshotRecord {
+        plugin,
+        snapshot_id: "id".to_string(),
+        git_target: None,
+    }
+}
+
+#[test]
+fn complete_counts_every_record_as_applicable() {
+    let coverage = SnapshotCoverage::complete(vec![record("a"), record("b")]);
+
+    assert_eq!((coverage.records.len(), coverage.applicable), (2, 2));
+}
+
+#[test]
+fn a_record_beyond_the_checked_attempts_is_unchecked() {
+    let coverage = SnapshotCoverage {
+        records: vec![record("a"), record("b")],
+        attempts: vec![checked(SnapshotAttemptReadiness::Ready)],
+        ..SnapshotCoverage::default()
+    };
+
+    assert!(coverage.has_unchecked_record());
+}
+
+#[test]
+fn records_that_all_have_attempts_are_not_unchecked() {
+    let coverage = SnapshotCoverage {
+        records: vec![record("a")],
+        attempts: vec![checked(SnapshotAttemptReadiness::Ready)],
+        ..SnapshotCoverage::default()
+    };
+
+    assert!(!coverage.has_unchecked_record());
+}
+
+#[test]
+fn an_empty_coverage_has_no_unchecked_record() {
+    assert!(!SnapshotCoverage::default().has_unchecked_record());
+}
+
+#[test]
+fn has_attempt_matches_only_the_asked_readiness() {
+    let coverage = SnapshotCoverage {
+        attempts: vec![checked(SnapshotAttemptReadiness::Unavailable)],
+        ..SnapshotCoverage::default()
+    };
+
+    assert_eq!(
+        (
+            coverage.has_attempt(SnapshotAttemptReadiness::Unavailable),
+            coverage.has_attempt(SnapshotAttemptReadiness::Invalid),
+        ),
+        (true, false)
+    );
 }
