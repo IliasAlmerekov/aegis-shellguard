@@ -54,7 +54,7 @@ impl PolicyEngine for DefaultPolicyEngine {
                 PolicyRuleDecision::Allow => {
                     // Preserve snapshot requirements for Danger commands even when a rule
                     // auto-approves — consistent with allowlist-override behaviour.
-                    let snaps = snapshots_required(&input);
+                    let snaps = snapshots_required(&input, true);
                     auto_approve(input, PolicyRationale::PolicyRulesOverride, false, snaps)
                 }
                 // Handled before the language-aware gate so an explicit rule
@@ -90,12 +90,12 @@ pub fn evaluate_policy(input: PolicyInput<'_>) -> PolicyDecision {
 fn evaluate_protect(input: PolicyInput<'_>) -> PolicyDecision {
     match input.assessment.risk {
         RiskLevel::Safe => {
-            let snaps = snapshots_required(&input);
+            let snaps = snapshots_required(&input, true);
             auto_approve(input, PolicyRationale::SafeCommand, false, snaps)
         }
         RiskLevel::Warn => {
             if allowlist_override_applies(&input) {
-                let snaps = snapshots_required(&input);
+                let snaps = snapshots_required(&input, true);
                 auto_approve(input, PolicyRationale::AllowlistOverride, true, snaps)
             } else if input.ci_state.detected && input.config_flags.ci_policy == CiPolicy::Block {
                 block(input, PolicyRationale::ProtectCiPolicy)
@@ -104,7 +104,7 @@ fn evaluate_protect(input: PolicyInput<'_>) -> PolicyDecision {
             }
         }
         RiskLevel::Danger => {
-            let snaps = snapshots_required(&input);
+            let snaps = snapshots_required(&input, true);
             if allowlist_override_applies(&input) {
                 auto_approve(input, PolicyRationale::AllowlistOverride, true, snaps)
             } else if input.ci_state.detected && input.config_flags.ci_policy == CiPolicy::Block {
@@ -122,11 +122,11 @@ fn evaluate_protect(input: PolicyInput<'_>) -> PolicyDecision {
 fn evaluate_strict(input: PolicyInput<'_>) -> PolicyDecision {
     match input.assessment.risk {
         RiskLevel::Safe => {
-            let snaps = snapshots_required(&input);
+            let snaps = snapshots_required(&input, true);
             auto_approve(input, PolicyRationale::SafeCommand, false, snaps)
         }
         RiskLevel::Warn | RiskLevel::Danger => {
-            let snaps = snapshots_required(&input);
+            let snaps = snapshots_required(&input, true);
             if allowlist_override_applies(&input) {
                 auto_approve(input, PolicyRationale::AllowlistOverride, true, snaps)
             } else {
@@ -222,7 +222,7 @@ fn auto_approve(
 }
 
 fn prompt(input: PolicyInput<'_>) -> PolicyDecision {
-    let snaps = snapshots_required(&input);
+    let snaps = snapshots_required(&input, false);
     PolicyDecision {
         decision: PolicyAction::Prompt,
         rationale: PolicyRationale::RequiresConfirmation,
@@ -234,7 +234,7 @@ fn prompt(input: PolicyInput<'_>) -> PolicyDecision {
 }
 
 fn prompt_with_rationale(input: PolicyInput<'_>, rationale: PolicyRationale) -> PolicyDecision {
-    let snaps = snapshots_required(&input);
+    let snaps = snapshots_required(&input, false);
     PolicyDecision {
         decision: PolicyAction::Prompt,
         rationale,
@@ -264,7 +264,8 @@ fn block(_input: PolicyInput<'_>, rationale: PolicyRationale) -> PolicyDecision 
     }
 }
 
-fn snapshots_required(input: &PolicyInput<'_>) -> bool {
+/// `auto_approved` is true when no human decides this run (ADR-031 §1).
+fn snapshots_required(input: &PolicyInput<'_>, auto_approved: bool) -> bool {
     if input.mode == Mode::Audit || input.config_flags.snapshot_policy == SnapshotPolicy::None {
         return false;
     }
@@ -276,17 +277,18 @@ fn snapshots_required(input: &PolicyInput<'_>) -> bool {
         return true;
     }
 
-    if input
-        .execution_context
-        .applicable_snapshot_plugins
-        .is_empty()
-    {
+    if input.assessment.risk != RiskLevel::Danger {
         return false;
     }
 
-    // Ordinary non-effect-opaque Danger snapshots remain best-effort and are
-    // requested only when a plugin is applicable.
-    input.assessment.risk == RiskLevel::Danger
+    // ADR-031 §1: an auto-approved Danger is Required even with no applicable
+    // plugin. A confirmed Danger stays best-effort, requested only when a
+    // plugin applies.
+    auto_approved
+        || !input
+            .execution_context
+            .applicable_snapshot_plugins
+            .is_empty()
 }
 
 #[cfg(test)]

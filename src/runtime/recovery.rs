@@ -1,7 +1,7 @@
 //! Shared post-attempt Required recovery status.
 
 use aegis_snapshot::SnapshotCoverage;
-use aegis_types::{Mode, RecoveryDegradation, SnapshotAttemptReadiness};
+use aegis_types::{Mode, RecoveryDegradation, RiskLevel, SnapshotAttemptReadiness};
 
 use crate::planning::InterceptionPlan;
 
@@ -20,14 +20,15 @@ pub enum RecoveryStatus {
 ///
 /// `coverage` must come from the snapshot pass that ran for this command, so
 /// that the record count and the applicable-plugin count describe the same
-/// moment (ADR-036).
+/// moment (ADR-036). `obligated` is true for effect-opaque execution and for
+/// an unattended `Danger` run (ADR-031 section 1).
 #[must_use]
 pub fn recovery_status(
-    effect_opaque: bool,
+    obligated: bool,
     snapshots_required: bool,
     coverage: &SnapshotCoverage,
 ) -> Option<RecoveryStatus> {
-    if !effect_opaque || !snapshots_required {
+    if !obligated || !snapshots_required {
         return None;
     }
 
@@ -68,8 +69,11 @@ pub fn plan_recovery_degradation(
     if unattended && context.mode() != Mode::Audit && context.git_targets().has_unresolved() {
         return Some(RecoveryDegradation::UnresolvedGitTarget);
     }
+    let assessment = plan.assessment();
+    let obligated =
+        assessment.effect_opaque || (unattended && assessment.risk == RiskLevel::Danger);
     match recovery_status(
-        plan.assessment().effect_opaque,
+        obligated,
         plan.policy_decision().snapshots_required,
         coverage,
     ) {

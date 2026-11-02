@@ -88,8 +88,9 @@ This `mode semantics` section documents the current runtime behavior.
 - read failure denies
 - non-interactive prompt-required flows deny
 - default is deny
-- a Recovery degradation has a separate focused prompt with only
-  `Run once without recovery` and `Deny`; it never offers a persistent rule
+- a Recovery degradation has a separate focused prompt: type `yes` to
+  `Run once without recovery`, anything else denies; it never offers a
+  persistent rule
 
 ## Allowlist semantics
 
@@ -136,11 +137,11 @@ Legacy compatibility:
 
 Snapshot planning has two distinct contracts:
 
-- ordinary non-effect-opaque `Danger` commands use best-effort Snapshots when an
-  applicable plugin is available
-- bounded `Effect-opaque execution` in Protect or Strict uses **Required
-  recovery** under `Selective` / `Full`: at least one Snapshot must be created
-  before execution
+- human-confirmed, non-effect-opaque `Danger` commands use best-effort Snapshots
+  when an applicable plugin is available
+- bounded `Effect-opaque execution` and auto-approved `Danger` (allowlist or
+  `Allow` rule) in Protect or Strict use **Required recovery** under
+  `Selective` / `Full`: at least one Snapshot must be created before execution
 
 - `None` never requests snapshots and is the trusted global recovery opt-out
 - `Selective` honors `auto_snapshot_git` / `auto_snapshot_docker`
@@ -152,12 +153,13 @@ Important details:
 - snapshots are attempted only after the ordinary command decision is approved
   or auto-approved, never for `Block` or a denied ordinary prompt
 - snapshots are created before the command is executed; when a sandbox is configured, the snapshot happens before sandbox confinement is applied
-- if there is no applicable Snapshot plugin, ordinary non-effect-opaque
-  `Danger` behavior remains best-effort, but effect-opaque Required recovery
-  remains active and becomes a Recovery degradation
+- if there is no applicable Snapshot plugin, a human-confirmed
+  non-effect-opaque `Danger` stays best-effort and runs. Effect-opaque
+  execution and auto-approved `Danger` (allowlist or `Allow` rule) keep
+  Required recovery and become a Recovery degradation
 - when no required Snapshot is created, non-interactive execution denies;
-  interactive execution explains the missing recovery and offers only
-  `Run once without recovery` or `Deny`
+  interactive execution explains the missing recovery, and the user can type
+  `yes` to `Run once without recovery` or deny
 - `Mode::Audit` and `SnapshotPolicy::None` are intentional opt-outs and do not
   produce a Recovery degradation
 - `Warn` requests no ordinary Danger Snapshot, but can still require recovery
