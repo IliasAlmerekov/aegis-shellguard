@@ -71,3 +71,32 @@ async fn a_malformed_record_is_unavailable() {
         (R::Unavailable, V::PresenceOnly, S::NotRun)
     );
 }
+
+#[tokio::test]
+async fn an_empty_id_is_unavailable() {
+    assert_eq!(
+        triple(&DockerPlugin::new(), "").await,
+        (R::Unavailable, V::PresenceOnly, S::NotRun)
+    );
+}
+
+#[tokio::test]
+async fn every_image_is_checked_in_one_docker_call() {
+    let dir = TempDir::new().unwrap();
+    // Succeeds only when one call names both images; a call per image fails.
+    write_mock_docker(
+        dir.path(),
+        r#"if [ "$*" = "image inspect snap-a snap-b" ]; then exit 0; fi
+exit 1"#,
+    );
+    let id = format!(
+        "{}\n{}",
+        minimal_record("a", "snap-a"),
+        minimal_record("b", "snap-b")
+    );
+
+    assert_eq!(
+        triple(&plugin(&dir.path().join("docker")), &id).await,
+        (R::Ready, V::PresenceOnly, S::NotSupported)
+    );
+}

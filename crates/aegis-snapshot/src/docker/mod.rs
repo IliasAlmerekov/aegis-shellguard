@@ -400,19 +400,25 @@ impl SnapshotPlugin for DockerPlugin {
         if snapshot_id == NO_CONTAINERS {
             return ArtifactReadiness::PRESENT_UNCHECKED;
         }
+        let mut args = vec!["image".to_string(), "inspect".to_string()];
         for line in snapshot_id.lines() {
             let Ok(record) = serde_json::from_str::<ContainerRecord>(line) else {
                 return ArtifactReadiness::UNAVAILABLE;
             };
-            // The image is the artifact; `image inspect` asks the local daemon only.
-            let found = self
-                .run_docker_output(["image", "inspect", &record.image], "docker image inspect")
-                .await;
-            if !found.is_ok_and(|out| out.status.success()) {
-                return ArtifactReadiness::UNAVAILABLE;
-            }
+            args.push(record.image);
         }
-        ArtifactReadiness::PRESENT_UNCHECKED
+        // An empty id names no image, so there is nothing to call present.
+        if args.len() == 2 {
+            return ArtifactReadiness::UNAVAILABLE;
+        }
+        // The image is the artifact; `image inspect` asks the local daemon only
+        // and fails if any image is missing. One call fits the attempt budget.
+        let found = self.run_docker_output(&args, "docker image inspect").await;
+        if found.is_ok_and(|out| out.status.success()) {
+            ArtifactReadiness::PRESENT_UNCHECKED
+        } else {
+            ArtifactReadiness::UNAVAILABLE
+        }
     }
 
     async fn liveness(&self, snapshot_id: &str) -> Result<Liveness> {
