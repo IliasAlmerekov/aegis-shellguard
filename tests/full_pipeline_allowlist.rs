@@ -36,7 +36,10 @@ exit 0
         .unwrap()
         .display()
         .to_string();
-    write_global_config(home.path(), "allowlist_override_level = \"Danger\"\n");
+    write_global_config(
+        home.path(),
+        "allowlist_override_level = \"Danger\"\nsnapshot_policy = \"None\"\n",
+    );
     fs::write(
         &config_path,
         format!(
@@ -210,7 +213,10 @@ fn verbose_allowlist_match_prints_rule_name() {
         .unwrap()
         .display()
         .to_string();
-    write_global_config(home.path(), "allowlist_override_level = \"Danger\"\n");
+    write_global_config(
+        home.path(),
+        "allowlist_override_level = \"Danger\"\nsnapshot_policy = \"None\"\n",
+    );
     fs::write(
         workspace.path().join(".aegis.toml"),
         format!(
@@ -268,7 +274,10 @@ fn quiet_allowlist_match_suppresses_aegis_diagnostics() {
         .unwrap()
         .display()
         .to_string();
-    write_global_config(home.path(), "allowlist_override_level = \"Danger\"\n");
+    write_global_config(
+        home.path(),
+        "allowlist_override_level = \"Danger\"\nsnapshot_policy = \"None\"\n",
+    );
     fs::write(
         workspace.path().join(".aegis.toml"),
         format!(
@@ -321,7 +330,10 @@ fn verbosity_verbose_allowlist_match_prints_rule_name() {
         .unwrap()
         .display()
         .to_string();
-    write_global_config(home.path(), "allowlist_override_level = \"Danger\"\n");
+    write_global_config(
+        home.path(),
+        "allowlist_override_level = \"Danger\"\nsnapshot_policy = \"None\"\n",
+    );
     fs::write(
         workspace.path().join(".aegis.toml"),
         format!(
@@ -419,7 +431,10 @@ exit 0
         .unwrap()
         .display()
         .to_string();
-    write_global_config(home.path(), "allowlist_override_level = \"Danger\"\n");
+    write_global_config(
+        home.path(),
+        "allowlist_override_level = \"Danger\"\nsnapshot_policy = \"None\"\n",
+    );
     fs::write(
         workspace.path().join(".aegis.toml"),
         format!(
@@ -586,7 +601,10 @@ exit 0
         .unwrap()
         .display()
         .to_string();
-    write_global_config(home.path(), "allowlist_override_level = \"Danger\"\n");
+    write_global_config(
+        home.path(),
+        "allowlist_override_level = \"Danger\"\nsnapshot_policy = \"None\"\n",
+    );
     fs::write(
         workspace.path().join(".aegis.toml"),
         format!(

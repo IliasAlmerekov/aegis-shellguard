@@ -175,7 +175,7 @@ override at session start.
 These limits matter when you decide how far to trust Aegis. The full text is in
 [how it works](docs/how-it-works.md).
 
-- Effect-opaque execution, such as `sh ./cleanup.sh`, needs a Snapshot before it runs. If none is created, you see only "Run once without recovery" or "Deny". Aegis does not inspect the referenced script, and a Snapshot is not a complete backup.
+- Effect-opaque execution, such as `sh ./cleanup.sh`, and auto-approved `Danger` commands need a Snapshot before they run. A `Danger` command you confirm yourself stays best-effort. If a required Snapshot is not created, unattended runs are denied, and in a terminal you can type `yes` to "Run once without recovery" or deny. Aegis does not inspect the referenced script, and a Snapshot is not a complete backup.
 - The Sandbox is a write/network guardrail. It is not a confidentiality boundary and not a privilege boundary.
 - In Aegis 1.0 the Sandbox layer is mandatory ([ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md)). `sandbox.enabled` and `sandbox.required` stay accepted and ignored, each reported as a `deprecated_sandbox_field`.
 - Current pre-1.0 implementation: the 0.x binary still records `sandbox_status = "unavailable"` and warns before running unconfined when confinement is missing.
