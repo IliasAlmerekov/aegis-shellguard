@@ -69,7 +69,7 @@ fn explanation(context: &RuntimeContext, assessment: &Assessment) -> CommandExpl
 }
 
 #[test]
-fn shell_and_watch_entries_for_one_pass_carry_the_same_attempts() {
+fn both_audit_writers_record_the_same_attempts_slice() {
     let dir = TempDir::new().unwrap();
     let audit_path = dir.path().join("audit.jsonl");
     let context = RuntimeContext::new_with_audit_path(

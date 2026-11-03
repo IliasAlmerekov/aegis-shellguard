@@ -438,3 +438,92 @@ fn audit_cwd_makes_a_relative_path_absolute() {
         std::env::current_dir().unwrap().join("sub")
     );
 }
+
+/// The audit entry's `snapshot_attempts` as `(plugin, readiness)` pairs.
+fn audited_attempts(entry: &Value) -> Vec<(String, String)> {
+    entry["snapshot_attempts"]
+        .as_array()
+        .expect("snapshot_attempts")
+        .iter()
+        .map(|a| {
+            (
+                a["plugin"].as_str().unwrap().to_string(),
+                a["readiness"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect()
+}
+
+fn partial_pass_attempts() -> Vec<(String, String)> {
+    vec![
+        ("mock-succeeding".to_string(), "ready".to_string()),
+        ("mock-failing".to_string(), "unavailable".to_string()),
+    ]
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_recovery_deny_audits_the_attempts_of_its_snapshot_pass() {
+    let workspace = TempDir::new().unwrap();
+    let audit_dir = TempDir::new().unwrap();
+    let audit_path = audit_dir.path().join("audit.jsonl");
+    let prepared = prepared_with_partial_coverage(audit_path.clone());
+    let (frame, plan) = effect_opaque_plan(&prepared, &workspace).await;
+
+    run_watch_plan_with_prompts(
+        frame,
+        &prepared,
+        plan,
+        false,
+        |_, _| PromptDecision::Approve,
+        |_| RecoveryPromptDecision::Deny,
+    )
+    .await;
+
+    let entry = read_audit_entry(&audit_path);
+    assert_eq!(audited_attempts(&entry), partial_pass_attempts());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_recovery_run_once_audits_the_attempts_of_its_snapshot_pass() {
+    let workspace = TempDir::new().unwrap();
+    let audit_dir = TempDir::new().unwrap();
+    let audit_path = audit_dir.path().join("audit.jsonl");
+    fs::write(workspace.path().join("run.sh"), "true\n").unwrap();
+    let prepared = prepared_with_partial_coverage(audit_path.clone());
+    let (frame, plan) = effect_opaque_plan(&prepared, &workspace).await;
+
+    run_watch_plan_with_prompts(
+        frame,
+        &prepared,
+        plan,
+        false,
+        |_, _| PromptDecision::Approve,
+        |_| RecoveryPromptDecision::RunOnceWithoutRecovery,
+    )
+    .await;
+
+    let entry = read_audit_entry(&audit_path);
+    assert_eq!(audited_attempts(&entry), partial_pass_attempts());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_approved_run_without_recovery_obligation_audits_the_attempts_of_its_snapshot_pass() {
+    let workspace = TempDir::new().unwrap();
+    let audit_dir = TempDir::new().unwrap();
+    let audit_path = audit_dir.path().join("audit.jsonl");
+    let prepared = prepared_with_partial_coverage(audit_path.clone());
+    let (frame, plan) = plan_for_command(&prepared, &workspace, "rm -rf aegis-557-sentinel").await;
+
+    run_watch_plan_with_prompts(
+        frame,
+        &prepared,
+        plan,
+        false,
+        |_, _| PromptDecision::Approve,
+        |_| panic!("a non-effect-opaque command has no recovery obligation"),
+    )
+    .await;
+
+    let entry = read_audit_entry(&audit_path);
+    assert_eq!(audited_attempts(&entry), partial_pass_attempts());
+}
