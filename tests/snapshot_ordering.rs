@@ -200,7 +200,7 @@ fn test_approved_shell_command_audits_the_attempts_of_its_snapshot_pass() {
     let mut child = base_command(home.path())
         .current_dir(cwd.path())
         .env("AEGIS_FORCE_INTERACTIVE", "1")
-        .args(["-c", &format!("rm -rf {}", sentinel.display())])
+        .args(["-c", "rm -rf sentinel.txt"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
