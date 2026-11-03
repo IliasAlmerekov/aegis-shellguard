@@ -190,6 +190,48 @@ fn test_denied_danger_command_records_no_snapshots() {
 }
 
 #[test]
+fn test_approved_shell_command_audits_the_attempts_of_its_snapshot_pass() {
+    let home = TempDir::new().unwrap();
+    let cwd = TempDir::new().unwrap();
+    init_git_repo(cwd.path());
+    let sentinel = cwd.path().join("sentinel.txt");
+    fs::write(&sentinel, "keep").unwrap();
+
+    let mut child = base_command(home.path())
+        .current_dir(cwd.path())
+        .env("AEGIS_FORCE_INTERACTIVE", "1")
+        .args(["-c", "rm -rf sentinel.txt"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn aegis");
+    child.stdin.as_mut().unwrap().write_all(b"yes\n").unwrap();
+    drop(child.stdin.take());
+    let output = child.wait_with_output().expect("wait for aegis");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let entries = read_audit_entries(home.path());
+    assert_eq!(entries.len(), 1, "exactly one audit entry expected");
+    assert_eq!(entries[0]["decision"], "Approved");
+    let attempts = entries[0]["snapshot_attempts"]
+        .as_array()
+        .expect("snapshot_attempts");
+    assert_eq!(
+        attempts.len(),
+        1,
+        "one git attempt expected, got {attempts:?}"
+    );
+    assert_eq!(attempts[0]["plugin"], "git");
+    assert_eq!(attempts[0]["readiness"], "ready");
+}
+
+#[test]
 fn test_watch_mode_denied_danger_command_records_no_snapshots() {
     let home = TempDir::new().unwrap();
     let cwd = TempDir::new().unwrap();

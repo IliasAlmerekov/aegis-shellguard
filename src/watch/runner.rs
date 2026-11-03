@@ -332,6 +332,8 @@ async fn run_watch_plan_with_prompts<C, R>(
         Decision::Approved | Decision::AutoApproved => {
             let coverage = create_watch_snapshots(context, &plan, cwd.as_path()).await;
             let snapshots = coverage.records.as_slice();
+            let attempts = coverage.snapshot_attempts();
+            let attempts = attempts.as_slice();
             if let Some(degradation) = plan_recovery_degradation(
                 &plan,
                 runtime_decision == Decision::AutoApproved,
@@ -348,6 +350,7 @@ async fn run_watch_plan_with_prompts<C, R>(
                                 ci_detected,
                                 cwd: &cwd,
                                 snapshots,
+                                attempts,
                                 recovery_degradation: Some(degradation),
                             },
                             Decision::Approved,
@@ -363,6 +366,7 @@ async fn run_watch_plan_with_prompts<C, R>(
                             ci_detected,
                             cwd: &cwd,
                             snapshots,
+                            attempts,
                             recovery_degradation: Some(degradation),
                         };
                         if let Err(err) = append_watch_execution_audit(
@@ -394,6 +398,7 @@ async fn run_watch_plan_with_prompts<C, R>(
                     ci_detected,
                     cwd: &cwd,
                     snapshots,
+                    attempts,
                     recovery_degradation: None,
                 },
                 runtime_decision,
@@ -468,6 +473,7 @@ fn append_watch_audit_with_empty_snapshots(
             allowlist_effective: plan.policy_decision().allowlist_effective,
             ci_detected,
             sandbox_status: sandbox_status_before_preparation(context),
+            snapshot_attempts: &[],
             source: frame.source.clone(),
             cwd: audit_cwd(cwd),
             id: id.clone(),

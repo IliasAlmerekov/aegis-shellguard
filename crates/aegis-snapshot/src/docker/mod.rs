@@ -13,7 +13,7 @@ use tokio::process::Command;
 use aegis_config::{DockerScope, DockerScopeMode};
 
 use crate::error::SnapshotError;
-use crate::{Liveness, SnapshotPlugin};
+use crate::{ArtifactReadiness, Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
@@ -394,6 +394,31 @@ impl SnapshotPlugin for DockerPlugin {
         }
 
         Ok(())
+    }
+
+    async fn readiness(&self, snapshot_id: &str) -> ArtifactReadiness {
+        if snapshot_id == NO_CONTAINERS {
+            return ArtifactReadiness::PRESENT_UNCHECKED;
+        }
+        let mut args = vec!["image".to_string(), "inspect".to_string()];
+        for line in snapshot_id.lines() {
+            let Ok(record) = serde_json::from_str::<ContainerRecord>(line) else {
+                return ArtifactReadiness::UNAVAILABLE;
+            };
+            args.push(record.image);
+        }
+        // An empty id names no image, so there is nothing to call present.
+        if args.len() == 2 {
+            return ArtifactReadiness::UNAVAILABLE;
+        }
+        // The image is the artifact; `image inspect` asks the local daemon only
+        // and fails if any image is missing. One call fits the attempt budget.
+        let found = self.run_docker_output(&args, "docker image inspect").await;
+        if found.is_ok_and(|out| out.status.success()) {
+            ArtifactReadiness::PRESENT_UNCHECKED
+        } else {
+            ArtifactReadiness::UNAVAILABLE
+        }
     }
 
     async fn liveness(&self, snapshot_id: &str) -> Result<Liveness> {

@@ -42,6 +42,8 @@ mod containment;
 mod liveness;
 /// Filesystem path helpers for the snapshot subsystem.
 mod paths;
+/// Snapshot attempt readiness outcome and shared check helpers.
+mod readiness;
 /// Snapshot registry materialization and runtime dispatch.
 mod registry;
 /// Snapshot retention policy and prunable-record resolution.
@@ -59,6 +61,8 @@ pub mod testing;
 pub use clock::{Clock, FixedClock, SystemClock};
 /// Re-export of [`liveness::Liveness`].
 pub use liveness::Liveness;
+/// Re-export of [`readiness::ArtifactReadiness`].
+pub use readiness::ArtifactReadiness;
 /// Re-export of [`registry::SnapshotCoverage`], [`registry::SnapshotRegistry`],
 /// [`registry::SnapshotRegistryConfig`], [`registry::available_provider_names`].
 pub use registry::{
@@ -114,6 +118,18 @@ pub trait SnapshotPlugin: Send + Sync {
     /// eligibility check. Required, with no default: a provider must not
     /// answer "unknown" by omission.
     async fn liveness(&self, snapshot_id: &str) -> Result<Liveness>;
+
+    /// Check the artifact `snapshot_id` names, right after creation
+    /// (ADR-031 §6).
+    ///
+    /// Infallible on purpose: an id the plugin cannot parse or an artifact it
+    /// cannot reach is [`ArtifactReadiness::UNAVAILABLE`], not an `Err` the
+    /// caller must interpret. The presence check is mandatory; a structural
+    /// check runs only after it passes and must end within the structural
+    /// timeout, so the registry's per-attempt timeout stays the presence
+    /// bound. Required, with no default: a provider must not answer "ready"
+    /// by omission.
+    async fn readiness(&self, snapshot_id: &str) -> ArtifactReadiness;
 }
 
 #[cfg(test)]

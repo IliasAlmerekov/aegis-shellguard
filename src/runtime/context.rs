@@ -20,7 +20,7 @@ use aegis_snapshot::{
 use aegis_starlark::load_starlark_policy;
 use aegis_types::{
     AllowlistOverrideLevel, Assessment, Decision, RecoveryDegradation, SandboxStatus,
-    SnapshotPolicy, SnapshotRecord,
+    SnapshotAttempt, SnapshotPolicy, SnapshotRecord,
 };
 
 use super::user::detect_effective_user;
@@ -111,6 +111,9 @@ pub struct AuditWriteOptions<'a> {
     pub ci_detected: bool,
     /// Factual confinement state for this command.
     pub sandbox_status: SandboxStatus,
+    /// One element per Snapshot attempt of this command's pass; empty when no
+    /// pass ran (ADR-031 §10).
+    pub snapshot_attempts: &'a [SnapshotAttempt],
 }
 
 /// Watch-mode correlation fields attached to each audit entry in watch transport.
@@ -123,6 +126,9 @@ pub struct WatchAuditContext<'a> {
     pub ci_detected: bool,
     /// Factual Sandbox status for this Watch command.
     pub sandbox_status: SandboxStatus,
+    /// One element per Snapshot attempt of this command's pass; empty when no
+    /// pass ran (ADR-031 §10).
+    pub snapshot_attempts: &'a [SnapshotAttempt],
     /// Origin label for the watch-mode source.
     pub source: Option<String>,
     /// Current working directory at the time of invocation.
@@ -397,7 +403,7 @@ impl RuntimeContext {
     /// persistent async handle.
     pub fn create_snapshots(&self, cwd: &Path, cmd: &str, _verbose: bool) -> SnapshotCoverage {
         self.async_handle
-            .block_on(self.snapshot_registry().snapshot_all(cwd, cmd))
+            .block_on(self.create_snapshots_async(cwd, cmd))
     }
 
     /// Return the names of snapshot plugins that would be eligible for `cwd`
@@ -427,7 +433,10 @@ impl RuntimeContext {
         cwd: &std::path::Path,
         cmd: &str,
     ) -> SnapshotCoverage {
-        self.snapshot_registry().snapshot_all(cwd, cmd).await
+        let registry = self.snapshot_registry();
+        let mut coverage = registry.snapshot_all(cwd, cmd).await;
+        registry.check_readiness(&mut coverage).await;
+        coverage
     }
 
     /// Run the snapshot pass a plan asks for (#471).
@@ -443,10 +452,6 @@ impl RuntimeContext {
         git_targets: &crate::planning::GitTargetPlan,
     ) -> SnapshotCoverage {
         let registry = self.snapshot_registry();
-        if git_targets.targets.is_empty() && git_targets.process_cwd {
-            return registry.snapshot_all(cwd, cmd).await;
-        }
-
         let mut coverage = if git_targets.process_cwd {
             registry.snapshot_all(cwd, cmd).await
         } else {
@@ -455,6 +460,8 @@ impl RuntimeContext {
         for path in git_targets.resolved_paths() {
             coverage.merge(registry.snapshot_plugin_at("git", path, cmd).await);
         }
+        // One check for the whole command: its 500 ms budget spans every pass.
+        registry.check_readiness(&mut coverage).await;
         coverage
     }
 
@@ -555,6 +562,7 @@ impl RuntimeContext {
                     allowlist_effective: watch.allowlist_effective,
                     ci_detected: watch.ci_detected,
                     sandbox_status: watch.sandbox_status,
+                    snapshot_attempts: watch.snapshot_attempts,
                 },
                 None,
             )
@@ -586,6 +594,7 @@ impl RuntimeContext {
                     allowlist_effective: watch.allowlist_effective,
                     ci_detected: watch.ci_detected,
                     sandbox_status: watch.sandbox_status,
+                    snapshot_attempts: watch.snapshot_attempts,
                 },
                 Some(degradation),
             )
@@ -639,7 +648,7 @@ impl RuntimeContext {
             .then(|| options.allowlist_match.map(|m| m.reason.clone()))
             .flatten();
 
-        let entry = AuditEntry::new(
+        let mut entry = AuditEntry::new(
             assessment.command.raw.clone(),
             assessment.risk,
             assessment.matched.iter().map(Into::into).collect(),
@@ -685,6 +694,9 @@ impl RuntimeContext {
                 .map(|dir| dir.to_string_lossy().into_owned()),
         );
 
+        if !options.snapshot_attempts.is_empty() {
+            entry = entry.with_snapshot_attempts(options.snapshot_attempts.to_vec());
+        }
         match recovery_degradation {
             Some(degradation) => entry.with_recovery_degradation(degradation),
             None => entry,

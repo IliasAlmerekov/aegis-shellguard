@@ -12,8 +12,9 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use crate::containment::contain_artifact;
 use crate::error::SnapshotError;
 use crate::liveness::local_file_liveness;
+use crate::readiness::sqlite_readiness;
 use crate::secure_fs::{create_artifact_file, create_store_dir};
-use crate::{Liveness, SnapshotPlugin};
+use crate::{ArtifactReadiness, Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
@@ -252,6 +253,12 @@ impl SnapshotPlugin for SqlitePlugin {
         let (_original_path, dump_path) = Self::parse_snapshot_id(snapshot_id)?;
         let dump_path = contain_artifact("sqlite", &self.snapshots_dir, &dump_path)?;
         Ok(local_file_liveness(&dump_path).await)
+    }
+
+    async fn readiness(&self, snapshot_id: &str) -> ArtifactReadiness {
+        let dump = Self::parse_snapshot_id(snapshot_id)
+            .and_then(|(_, dump)| contain_artifact("sqlite", &self.snapshots_dir, &dump));
+        sqlite_readiness(dump.ok().as_deref()).await
     }
 
     async fn delete(&self, snapshot_id: &str) -> Result<()> {
@@ -787,5 +794,6 @@ mod tests {
 
     mod database_path_tests;
     mod liveness_tests;
+    mod readiness_tests;
     mod rollback_location_tests;
 }
