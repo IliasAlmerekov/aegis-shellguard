@@ -71,3 +71,68 @@ fn recovery_opt_out_danger_rejects_a_typed_always() {
         assert_eq!(decision, PromptDecision::Deny, "typed {typed:?}");
     }
 }
+
+fn opted_out_warn() -> (Assessment, CommandExplanation) {
+    let p = make_match("GIT-009", RiskLevel::Warn, r"git\s+", "Opaque", None);
+    let assessment = make_assessment("git reset", RiskLevel::Warn, vec![p]);
+    let mut explanation = default_explanation_for_assessment(&assessment);
+    explanation.context.recovery_opt_out = true;
+    (assessment, explanation)
+}
+
+#[test]
+fn recovery_opt_out_warn_prompt_hides_always_and_says_why() {
+    let (assessment, explanation) = opted_out_warn();
+
+    let mut output = Vec::new();
+    crate::stdout_renderer::show_confirmation_with_decision(
+        &assessment,
+        &explanation,
+        &[],
+        true,
+        &mut b"n\n".as_ref(),
+        &mut output,
+    );
+
+    let text = strip_ansi(&String::from_utf8_lossy(&output));
+    assert!(
+        text.contains("Persistent approval is unavailable while Snapshot recovery is disabled."),
+        "got:\n{text}"
+    );
+    assert!(text.contains("[y/N/d]:"), "got:\n{text}");
+}
+
+#[test]
+fn recovery_opt_out_warn_rejects_a_typed_always() {
+    let (assessment, explanation) = opted_out_warn();
+
+    let decision = crate::stdout_renderer::show_confirmation_with_decision(
+        &assessment,
+        &explanation,
+        &[],
+        true,
+        &mut b"a\n".as_ref(),
+        &mut Vec::new(),
+    );
+    assert_eq!(decision, PromptDecision::Deny);
+}
+
+#[test]
+fn ordinary_warn_prompt_still_offers_always() {
+    let (assessment, mut explanation) = opted_out_warn();
+    explanation.context.recovery_opt_out = false;
+
+    let mut output = Vec::new();
+    let decision = crate::stdout_renderer::show_confirmation_with_decision(
+        &assessment,
+        &explanation,
+        &[],
+        true,
+        &mut b"a\n".as_ref(),
+        &mut output,
+    );
+
+    let text = strip_ansi(&String::from_utf8_lossy(&output));
+    assert!(text.contains("[y/N/a/d]:"), "got:\n{text}");
+    assert_eq!(decision, PromptDecision::ApproveAlways);
+}

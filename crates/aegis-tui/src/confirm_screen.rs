@@ -238,15 +238,26 @@ pub(super) fn prompt_danger_with_always<R: BufRead, W: Write>(
     }
 }
 
-/// Warn prompt with "Always allow" and "Always deny" options.
+/// Warn prompt with "Always allow" and "Always deny" options. `always` is false
+/// while Recovery is opted out, as for the Danger prompt.
 pub(super) fn prompt_warn_with_always<R: BufRead, W: Write>(
     input: &mut R,
     out: &mut W,
+    always: bool,
 ) -> PromptDecision {
+    let choices = if always {
+        "[y/N/a/d]"
+    } else {
+        let _ = queue!(
+            out,
+            Print("\n  Persistent approval is unavailable while Snapshot recovery is disabled.\n"),
+        );
+        "[y/N/d]"
+    };
     let _ = queue!(
         out,
         SetForegroundColor(Color::Yellow),
-        Print("\n  Execute suspicious command? [y/N/a/d]: "),
+        Print(format!("\n  Execute suspicious command? {choices}: ")),
         ResetColor,
     );
     let _ = out.flush();
@@ -265,7 +276,7 @@ pub(super) fn prompt_warn_with_always<R: BufRead, W: Write>(
 
     match line.trim().to_ascii_lowercase().as_str() {
         "y" | "yes" => PromptDecision::Approve,
-        "a" | "always" => PromptDecision::ApproveAlways,
+        "a" | "always" if always => PromptDecision::ApproveAlways,
         "d" | "denyalways" | "deny-always" => PromptDecision::DenyAlways,
         _ => {
             let _ = queue!(
