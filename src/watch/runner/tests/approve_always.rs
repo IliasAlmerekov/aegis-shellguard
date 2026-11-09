@@ -186,3 +186,26 @@ async fn watch_snapshot_policy_none_still_persists_an_ordinary_warn_approval() {
     assert_eq!(opted_out.get(), Some(false));
     assert!(persisted.get(), "a plain Warn keeps persistent approval");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_snapshot_policy_none_marks_a_denied_danger_audit_entry() {
+    let workspace = TempDir::new().unwrap();
+    let audit = TempDir::new().unwrap().keep().join("audit.jsonl");
+    let prepared = prepared_with_snapshot_policy(audit.clone(), SnapshotPolicy::None, vec![]);
+    let (frame, plan) = plan_for_command(&prepared, &workspace, DANGER).await;
+
+    run_watch_plan_with_persistence(
+        frame,
+        &prepared,
+        plan,
+        false,
+        |_, _| PromptDecision::Deny,
+        |_| RecoveryPromptDecision::Deny,
+        |_, _| {},
+    )
+    .await;
+
+    let entry = read_audit_entry(&audit);
+    assert_eq!(entry["decision"], "Denied");
+    assert_eq!(entry["explanation"]["context"]["recovery_opt_out"], true);
+}
