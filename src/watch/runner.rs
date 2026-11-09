@@ -376,7 +376,7 @@ async fn run_watch_plan_with_persistence<C, R, P>(
             } else {
                 None
             };
-            if approve_always && persistence_block.is_some() {
+            if persistence_block.is_some() {
                 eprintln!("warning: allow rule not saved: Recovery is not ready for this run");
             }
             let degradation = plan_recovery_degradation(

@@ -185,7 +185,7 @@ fn execute_with_snapshots<R: ExecutionRenderer>(
     } else {
         None
     };
-    if approve_always && persistence_block.is_some() {
+    if persistence_block.is_some() {
         renderer.warn("allow rule not saved: Recovery is not ready for this run");
     }
     let degradation =
