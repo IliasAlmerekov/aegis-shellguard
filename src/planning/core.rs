@@ -52,6 +52,19 @@ fn recovery_backstop_applies(
         && snapshot_policy != aegis_types::SnapshotPolicy::None
 }
 
+/// Whether a trusted `snapshot_policy = None` is the only reason this command
+/// carries no `Required recovery` (ADR-031 section 3). `Mode::Audit` is a
+/// separate opt-out and is not marked here.
+fn recovery_opted_out(
+    assessment: &aegis_types::Assessment,
+    mode: aegis_types::Mode,
+    snapshot_policy: aegis_types::SnapshotPolicy,
+) -> bool {
+    snapshot_policy == aegis_types::SnapshotPolicy::None
+        && mode != aegis_types::Mode::Audit
+        && (assessment.risk == aegis_types::RiskLevel::Danger || assessment.effect_opaque)
+}
+
 /// Async variant of `plan_with_context` for callers already inside an async
 /// runtime. Avoids the nested `block_on` panic when resolving applicable
 /// snapshot plugins.
@@ -217,6 +230,11 @@ fn build_planning_outcome(
     applicable_snapshot_plugins: Vec<&'static str>,
     git_targets: GitTargetPlan,
 ) -> PlanningOutcome {
+    let recovery_opt_out = recovery_opted_out(
+        &assessment,
+        context.config().mode,
+        context.config().snapshot_policy,
+    );
     let decision_context = DecisionContext::new(
         context.config().mode,
         request.transport,
@@ -225,7 +243,8 @@ fn build_planning_outcome(
         allowlist_match,
         applicable_snapshot_plugins,
     )
-    .with_git_targets(git_targets);
+    .with_git_targets(git_targets)
+    .with_recovery_opt_out(recovery_opt_out);
 
     let policy_decision = evaluate_policy(PolicyInput {
         assessment: &assessment,

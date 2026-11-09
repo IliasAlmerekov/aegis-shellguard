@@ -184,16 +184,27 @@ pub(super) fn render_dialog<W: Write>(
     let _ = out.flush();
 }
 
-/// Danger prompt with "Always allow" option.
+/// Danger prompt. `always` offers "Always allow"; it is false while Recovery is
+/// opted out, when no persistent approval may exist (ADR-031 section 4).
 pub(super) fn prompt_danger_with_always<R: BufRead, W: Write>(
     input: &mut R,
     out: &mut W,
+    always: bool,
 ) -> PromptDecision {
+    let choices = if always {
+        "[y/N/a/d]"
+    } else {
+        let _ = queue!(
+            out,
+            Print("\n  Persistent approval is unavailable while Snapshot recovery is disabled.\n"),
+        );
+        "[y/N/d]"
+    };
     let _ = queue!(
         out,
         SetForegroundColor(Color::Red),
         SetAttribute(Attribute::Bold),
-        Print("\n  Execute dangerous command? [y/N/a/d]: "),
+        Print(format!("\n  Execute dangerous command? {choices}: ")),
         ResetColor,
     );
     let _ = out.flush();
@@ -212,7 +223,7 @@ pub(super) fn prompt_danger_with_always<R: BufRead, W: Write>(
 
     match line.trim().to_ascii_lowercase().as_str() {
         "y" | "yes" => PromptDecision::Approve,
-        "a" | "always" => PromptDecision::ApproveAlways,
+        "a" | "always" if always => PromptDecision::ApproveAlways,
         "d" | "denyalways" | "deny-always" => PromptDecision::DenyAlways,
         _ => {
             let _ = queue!(

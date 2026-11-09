@@ -63,6 +63,7 @@ fn explanation(context: &RuntimeContext, assessment: &Assessment) -> CommandExpl
             allowlist_match: None,
             applicable_snapshot_plugins: Vec::new(),
             git_targets: Vec::new(),
+            recovery_opt_out: false,
         },
         outcome: None,
     }
