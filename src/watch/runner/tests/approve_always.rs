@@ -159,3 +159,30 @@ async fn watch_snapshot_policy_none_marks_the_danger_dialog_and_audit_and_writes
     assert_eq!(entry["decision"], "Approved");
     assert_eq!(entry["explanation"]["context"]["recovery_opt_out"], true);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_snapshot_policy_none_still_persists_an_ordinary_warn_approval() {
+    let workspace = TempDir::new().unwrap();
+    let audit = TempDir::new().unwrap().keep().join("audit.jsonl");
+    let prepared = prepared_with_snapshot_policy(audit.clone(), SnapshotPolicy::None, vec![]);
+    let (frame, plan) = plan_for_command(&prepared, &workspace, WARN).await;
+    let opted_out = Cell::new(None);
+    let persisted = Cell::new(false);
+
+    run_watch_plan_with_persistence(
+        frame,
+        &prepared,
+        plan,
+        false,
+        |_, explanation| {
+            opted_out.set(Some(explanation.context.recovery_opt_out));
+            PromptDecision::ApproveAlways
+        },
+        |_| RecoveryPromptDecision::Deny,
+        |_, _| persisted.set(true),
+    )
+    .await;
+
+    assert_eq!(opted_out.get(), Some(false));
+    assert!(persisted.get(), "a plain Warn keeps persistent approval");
+}

@@ -371,12 +371,12 @@ async fn run_watch_plan_with_persistence<C, R, P>(
             let snapshots = coverage.records.as_slice();
             let attempts = coverage.snapshot_attempts();
             let attempts = attempts.as_slice();
-            let gate = if approve_always {
+            let persistence_block = if approve_always {
                 allow_rule_persistence_degradation(&plan, &coverage)
             } else {
                 None
             };
-            if approve_always && gate.is_some() {
+            if approve_always && persistence_block.is_some() {
                 eprintln!("warning: allow rule not saved: Recovery is not ready for this run");
             }
             let degradation = plan_recovery_degradation(
@@ -384,7 +384,7 @@ async fn run_watch_plan_with_persistence<C, R, P>(
                 runtime_decision == Decision::AutoApproved,
                 &coverage,
             )
-            .or(gate);
+            .or(persistence_block);
             if approve_always && degradation.is_none() {
                 persist_allow(&frame.cmd, &cwd);
             }
