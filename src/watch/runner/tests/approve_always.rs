@@ -10,6 +10,57 @@ use aegis_types::SnapshotPolicy;
 const DANGER: &str = "terraform destroy -target=module.test.api";
 const WARN: &str = "git stash clear";
 
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_approve_always_writes_the_active_config() {
+    // Config selection reads process-global HOME and cwd; isolate them in a child.
+    const CHILD: &str = "AEGIS_TEST_WATCH_PERSISTENCE_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let home = TempDir::new().unwrap();
+        let cwd = TempDir::new().unwrap();
+        fs::write(cwd.path().join(".aegis.toml"), "").unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                std::thread::current().name().unwrap(),
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .env("HOME", home.path())
+            .current_dir(cwd.path())
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+
+    let workspace = TempDir::new().unwrap();
+    let audit = workspace.path().join("audit.jsonl");
+    let prepared = prepared_with_snapshot_policy(audit, SnapshotPolicy::Selective, vec![]);
+    let (frame, plan) = plan_for_command(&prepared, &workspace, WARN).await;
+    run_watch_plan_with_prompts(
+        frame,
+        &prepared,
+        plan,
+        false,
+        |_, _| PromptDecision::ApproveAlways,
+        |_| panic!("Warn requires no Recovery override"),
+    )
+    .await;
+
+    let config: AegisConfig = toml::from_str(&fs::read_to_string(".aegis.toml").unwrap()).unwrap();
+    assert_eq!(config.allowlist.len(), 1);
+    assert_eq!(config.allowlist[0].pattern, "git stash clear");
+    assert_eq!(
+        config.allowlist[0].cwd.as_deref(),
+        workspace.path().to_str()
+    );
+}
+
 fn prepared_with_snapshot_policy(
     audit_path: PathBuf,
     policy: SnapshotPolicy,
