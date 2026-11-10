@@ -35,30 +35,30 @@ async fn watch_approve_always_writes_the_active_config() {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        return;
+    } else {
+        let workspace = TempDir::new().unwrap();
+        let audit = workspace.path().join("audit.jsonl");
+        let prepared = prepared_with_snapshot_policy(audit, SnapshotPolicy::Selective, vec![]);
+        let (frame, plan) = plan_for_command(&prepared, &workspace, WARN).await;
+        run_watch_plan_with_prompts(
+            frame,
+            &prepared,
+            plan,
+            false,
+            |_, _| PromptDecision::ApproveAlways,
+            |_| panic!("Warn requires no Recovery override"),
+        )
+        .await;
+
+        let config: AegisConfig =
+            toml::from_str(&fs::read_to_string(".aegis.toml").unwrap()).unwrap();
+        assert_eq!(config.allowlist.len(), 1);
+        assert_eq!(config.allowlist[0].pattern, "git stash clear");
+        assert_eq!(
+            config.allowlist[0].cwd.as_deref(),
+            workspace.path().to_str()
+        );
     }
-
-    let workspace = TempDir::new().unwrap();
-    let audit = workspace.path().join("audit.jsonl");
-    let prepared = prepared_with_snapshot_policy(audit, SnapshotPolicy::Selective, vec![]);
-    let (frame, plan) = plan_for_command(&prepared, &workspace, WARN).await;
-    run_watch_plan_with_prompts(
-        frame,
-        &prepared,
-        plan,
-        false,
-        |_, _| PromptDecision::ApproveAlways,
-        |_| panic!("Warn requires no Recovery override"),
-    )
-    .await;
-
-    let config: AegisConfig = toml::from_str(&fs::read_to_string(".aegis.toml").unwrap()).unwrap();
-    assert_eq!(config.allowlist.len(), 1);
-    assert_eq!(config.allowlist[0].pattern, "git stash clear");
-    assert_eq!(
-        config.allowlist[0].cwd.as_deref(),
-        workspace.path().to_str()
-    );
 }
 
 fn prepared_with_snapshot_policy(
