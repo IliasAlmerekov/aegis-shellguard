@@ -236,6 +236,22 @@ mod tests {
         assert!(artifact.is_file());
     }
 
+    #[test]
+    fn existing_artifact_is_not_overwritten() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let store = temp_dir.path().join("snapshots");
+        let artifact = store.join("artifact.dump");
+        create_store_dir("test", &store).unwrap();
+        fs::write(&artifact, b"existing-artifact").unwrap();
+
+        let error = create_artifact_file("test", &artifact).unwrap_err();
+
+        assert!(
+            matches!(error, SnapshotError::Io(error) if error.kind() == std::io::ErrorKind::AlreadyExists)
+        );
+        assert_eq!(fs::read(artifact).unwrap(), b"existing-artifact");
+    }
+
     #[cfg(unix)]
     #[test]
     fn mode_hardening_failure_removes_the_reserved_artifact() {
