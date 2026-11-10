@@ -64,6 +64,7 @@ impl InterceptionPlan {
             policy_decision,
         );
         explanation.context.git_targets = decision_context.git_targets.explain();
+        explanation.context.recovery_opt_out = decision_context.recovery_opt_out;
 
         Self {
             assessment: Box::new(assessment),
@@ -146,6 +147,7 @@ pub struct DecisionContext {
     allowlist_match: Option<AllowlistMatch>,
     applicable_snapshot_plugins: Vec<&'static str>,
     git_targets: GitTargetPlan,
+    recovery_opt_out: bool,
 }
 
 impl DecisionContext {
@@ -166,12 +168,19 @@ impl DecisionContext {
             allowlist_match,
             applicable_snapshot_plugins,
             git_targets: GitTargetPlan::default(),
+            recovery_opt_out: false,
         }
     }
 
     /// Attach the resolved Git targets of the command's git stages.
     pub(crate) fn with_git_targets(mut self, git_targets: GitTargetPlan) -> Self {
         self.git_targets = git_targets;
+        self
+    }
+
+    /// Mark the command as carrying a `Recovery opt-out` (ADR-031 section 3).
+    pub(crate) fn with_recovery_opt_out(mut self, recovery_opt_out: bool) -> Self {
+        self.recovery_opt_out = recovery_opt_out;
         self
     }
 

@@ -32,6 +32,7 @@ fn audit_entry_serializes_nested_explanation_sections() {
             allowlist_match: None,
             applicable_snapshot_plugins: vec!["git".to_string()],
             git_targets: Vec::new(),
+            recovery_opt_out: false,
         },
         outcome: Some(ExecutionOutcomeExplanation {
             decision: ExecutionDecisionExplanation::Approved,
@@ -138,6 +139,7 @@ fn audit_entry_keeps_existing_top_level_fields_for_backward_compatibility() {
             allowlist_match: None,
             applicable_snapshot_plugins: vec!["git".to_string()],
             git_targets: Vec::new(),
+            recovery_opt_out: false,
         },
         outcome: Some(ExecutionOutcomeExplanation {
             decision: ExecutionDecisionExplanation::Approved,
@@ -406,5 +408,35 @@ fn audit_entry_discloses_git_targets_in_the_explanation_context() {
             {"status": "resolved", "path": "/work/other"},
             {"status": "unresolved", "reason": "a path does not exist"}
         ])
+    );
+}
+
+#[test]
+fn audit_entry_marks_a_recovery_opt_out_and_omits_it_otherwise() {
+    let entry = |opt_out: bool| {
+        let mut explanation = explanation_with_match_text("terraform destroy");
+        explanation.context.recovery_opt_out = opt_out;
+        let entry = AuditEntry::new(
+            "terraform destroy",
+            RiskLevel::Danger,
+            Vec::new(),
+            Decision::Approved,
+            Vec::new(),
+            None,
+            None,
+        )
+        .with_explanation(explanation);
+        serde_json::to_value(&entry).unwrap()
+    };
+
+    assert_eq!(
+        entry(true)["explanation"]["context"]["recovery_opt_out"],
+        true
+    );
+    assert!(
+        entry(false)["explanation"]["context"]
+            .get("recovery_opt_out")
+            .is_none(),
+        "a legacy line must serialize without the marker so its hash is unchanged"
     );
 }

@@ -66,6 +66,7 @@ pub fn build_explanation_from_plan(
                 .map(|plugin| (*plugin).to_string())
                 .collect(),
             git_targets: Vec::new(),
+            recovery_opt_out: false,
         },
         outcome: None,
     }
@@ -199,6 +200,7 @@ mod tests {
                 allowlist_match: None,
                 applicable_snapshot_plugins: vec!["git".to_string()],
                 git_targets: Vec::new(),
+                recovery_opt_out: false,
             },
             outcome: None,
         }
@@ -396,6 +398,7 @@ mod tests {
                 allowlist_match: None,
                 applicable_snapshot_plugins: vec!["git".to_string()],
                 git_targets: Vec::new(),
+                recovery_opt_out: false,
             },
             outcome: None,
         };

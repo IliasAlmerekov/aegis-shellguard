@@ -82,6 +82,33 @@ pub fn plan_recovery_degradation(
     }
 }
 
+/// The reason an `ApproveAlways` rule must not be saved for this run, if any
+/// (ADR-031 section 4, persistence gate).
+///
+/// A human confirmed this command, so [`plan_recovery_degradation`] stays
+/// silent for a confirmed `Danger`. Persisting its rule is a stronger act, so
+/// it waits for `Recovery status = Ready` with the obligation forced on:
+/// `Danger` with no applicable provider counts as `NoSnapshotAvailable`.
+/// `None` means the rule may be written. A command outside the obligation
+/// (for example `Warn`) always may.
+#[must_use]
+pub fn allow_rule_persistence_degradation(
+    plan: &InterceptionPlan,
+    coverage: &SnapshotCoverage,
+) -> Option<RecoveryDegradation> {
+    let assessment = plan.assessment();
+    if !(assessment.effect_opaque || assessment.risk == RiskLevel::Danger) {
+        return None;
+    }
+    if plan.decision_context().git_targets().has_unresolved() {
+        return Some(RecoveryDegradation::UnresolvedGitTarget);
+    }
+    match recovery_status(true, true, coverage) {
+        Some(RecoveryStatus::Degraded(degradation)) => Some(degradation),
+        Some(RecoveryStatus::Ready) | None => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

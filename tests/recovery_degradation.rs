@@ -501,3 +501,200 @@ fn confirmed_danger_without_a_snapshot_provider_runs_without_a_recovery_prompt()
     assert_eq!(entry["decision"], "Approved");
     assert!(entry.get("recovery_degradation").is_none());
 }
+
+/// `allowlisted_danger_workspace` without the project allowlist, so a human
+/// confirms the Danger command. Returns the marker, `PATH`, and the global
+/// config path where `ApproveAlways` writes its rule.
+fn confirming_danger_workspace(home: &Path, cwd: &Path) -> (PathBuf, String, PathBuf) {
+    let (marker, path) = allowlisted_danger_workspace(home, cwd);
+    fs::remove_file(cwd.join(".aegis.toml")).unwrap();
+    (
+        marker,
+        path,
+        home.join(".config").join("aegis").join("config.toml"),
+    )
+}
+
+fn approve_always_on_danger(
+    home: &Path,
+    cwd: &Path,
+    marker: &Path,
+    path: &str,
+    prompt: &'static [u8],
+    response: &[u8],
+) -> Output {
+    let marker_env = marker.to_string_lossy().into_owned();
+    interactive_shell_command_output(
+        home,
+        cwd,
+        TERRAFORM_DESTROY,
+        prompt,
+        &[("PATH", path), ("AEGIS_TEST_MARKER", &marker_env)],
+        response,
+    )
+}
+
+#[test]
+fn approve_always_on_danger_with_a_ready_snapshot_writes_the_rule() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let cwd = workspace.path().canonicalize().unwrap();
+    let (marker, path, config) = confirming_danger_workspace(home.path(), &cwd);
+    fs::write(cwd.join("state.txt"), "before\n").unwrap();
+    init_git_repo(&cwd);
+
+    let output = approve_always_on_danger(home.path(), &cwd, &marker, &path, b"[y/N/a/d]", b"a\n");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(marker.exists());
+    assert!(
+        fs::read_to_string(config)
+            .unwrap()
+            .contains("terraform destroy")
+    );
+}
+
+#[test]
+fn approve_always_on_danger_with_a_degraded_snapshot_writes_no_rule_then_shows_the_override() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let cwd = workspace.path().canonicalize().unwrap();
+    let (marker, path, config) = confirming_danger_workspace(home.path(), &cwd);
+
+    let output =
+        approve_always_on_danger(home.path(), &cwd, &marker, &path, b"[y/N/a/d]", b"a\nn\n");
+
+    let transcript = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(output.status.code(), Some(2), "{transcript}");
+    assert!(!marker.exists());
+    assert!(
+        !fs::read_to_string(config)
+            .unwrap()
+            .contains("terraform destroy")
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let all = format!("{transcript}{stderr}");
+    let saved = all.find("allow rule not saved").expect(&all);
+    let override_prompt = all.find("to run once without Recovery").expect(&all);
+    assert!(saved < override_prompt, "{all}");
+}
+
+#[test]
+fn approve_always_on_danger_run_once_without_recovery_executes_but_writes_no_rule() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let cwd = workspace.path().canonicalize().unwrap();
+    let (marker, path, config) = confirming_danger_workspace(home.path(), &cwd);
+
+    let output =
+        approve_always_on_danger(home.path(), &cwd, &marker, &path, b"[y/N/a/d]", b"a\nyes\n");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(marker.exists());
+    assert!(
+        !fs::read_to_string(config)
+            .unwrap()
+            .contains("terraform destroy")
+    );
+    assert_eq!(
+        read_single_audit_entry(home.path())["recovery_degradation"],
+        "no_snapshot_available"
+    );
+}
+
+#[test]
+fn approve_always_on_warn_writes_the_rule_with_no_snapshot() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let cwd = workspace.path().canonicalize().unwrap();
+    let (_, path, config) = confirming_danger_workspace(home.path(), &cwd);
+    let stub = cwd.join("bin").join("git");
+    fs::write(&stub, "#!/bin/sh\nexit 0\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let output = interactive_shell_command_output(
+        home.path(),
+        &cwd,
+        "git stash clear",
+        b"[y/N/a/d]",
+        &[("PATH", &path)],
+        b"a\n",
+    );
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(fs::read_to_string(config).unwrap().contains("git stash"));
+    let entry = read_single_audit_entry(home.path());
+    assert_eq!(entry["snapshots"], serde_json::json!([]));
+    assert!(entry.get("recovery_degradation").is_none());
+}
+
+const PERSISTENT_APPROVAL_UNAVAILABLE: &str =
+    "Persistent approval is unavailable while Snapshot recovery is disabled.";
+
+fn snapshot_policy_none_workspace(home: &Path, cwd: &Path) -> (PathBuf, String, PathBuf) {
+    let (marker, path, config) = confirming_danger_workspace(home, cwd);
+    let mut contents = fs::read_to_string(&config).unwrap();
+    contents.push_str("snapshot_policy = \"None\"\n");
+    fs::write(&config, contents).unwrap();
+    (marker, path, config)
+}
+
+#[test]
+fn snapshot_policy_none_does_not_offer_always_and_a_one_time_approval_runs_and_is_marked() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let cwd = workspace.path().canonicalize().unwrap();
+    let (marker, path, config) = snapshot_policy_none_workspace(home.path(), &cwd);
+
+    let output = approve_always_on_danger(
+        home.path(),
+        &cwd,
+        &marker,
+        &path,
+        PERSISTENT_APPROVAL_UNAVAILABLE.as_bytes(),
+        b"y\n",
+    );
+
+    let transcript = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(output.status.code(), Some(0), "{transcript}");
+    assert!(!transcript.contains("[y/N/a/d]"), "{transcript}");
+    assert!(marker.exists());
+    assert!(
+        !fs::read_to_string(config)
+            .unwrap()
+            .contains("terraform destroy")
+    );
+    let entry = read_single_audit_entry(home.path());
+    assert_eq!(entry["decision"], "Approved");
+    assert_eq!(entry["explanation"]["context"]["recovery_opt_out"], true);
+    assert!(entry.get("recovery_degradation").is_none());
+}
+
+#[test]
+fn snapshot_policy_none_rejects_a_typed_always() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let cwd = workspace.path().canonicalize().unwrap();
+    let (marker, path, config) = snapshot_policy_none_workspace(home.path(), &cwd);
+
+    let output = approve_always_on_danger(
+        home.path(),
+        &cwd,
+        &marker,
+        &path,
+        PERSISTENT_APPROVAL_UNAVAILABLE.as_bytes(),
+        b"a\n",
+    );
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(!marker.exists());
+    assert!(
+        !fs::read_to_string(config)
+            .unwrap()
+            .contains("terraform destroy")
+    );
+}

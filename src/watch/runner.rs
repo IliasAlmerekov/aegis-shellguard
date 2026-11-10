@@ -9,7 +9,10 @@ use crate::planning::{
     CwdState, ExecutionDisposition, InterceptionPlan, PlanningOutcome, PreparedPlanner,
     SetupFailurePlan,
 };
-use crate::runtime::{RuntimeContext, WatchAuditContext, plan_recovery_degradation};
+use crate::runtime::{
+    RuntimeContext, WatchAuditContext, allow_rule_persistence_degradation,
+    plan_recovery_degradation,
+};
 use aegis_config::amend::{
     AppendOutcome, active_config_path_for_append, append_allow_rule, append_block_rule,
 };
@@ -235,38 +238,72 @@ async fn run_watch_plan_with_prompts<C, R>(
     C: FnOnce(&aegis_types::Assessment, &aegis_explanation::CommandExplanation) -> PromptDecision,
     R: FnOnce(aegis_types::RecoveryDegradation) -> RecoveryPromptDecision,
 {
+    run_watch_plan_with_persistence(
+        frame,
+        prepared,
+        plan,
+        ci_detected,
+        confirmation_prompt,
+        recovery_prompt,
+        persist_allow_rule,
+    )
+    .await;
+}
+
+/// Append an allow rule for `cmd` to the active config; reports, never fails.
+fn persist_allow_rule(cmd: &str, cwd: &std::path::Path) {
+    let Some(config_path) = active_config_path_for_append() else {
+        eprintln!("warning: cannot persist allow rule: no config file found");
+        return;
+    };
+    let tokens = split_tokens(cmd);
+    let prefix = extract_prefix(&tokens);
+    match append_allow_rule(&config_path, &prefix, cwd) {
+        Ok(AppendOutcome::Conflict {
+            pattern,
+            existing_location,
+        }) => {
+            let location = match existing_location {
+                aegis_config::allowlist::ConfigSourceLayer::Project => "project",
+                aegis_config::allowlist::ConfigSourceLayer::Global => "global",
+            };
+            eprintln!(
+                "warning: conflicting rule for '{pattern}' already exists in {location} config"
+            );
+        }
+        Ok(AppendOutcome::SkippedDuplicate | AppendOutcome::Appended) => {}
+        Err(err) => eprintln!("error: failed to append allow rule: {err}"),
+    }
+}
+
+/// `persist_allow` is the seam that writes an `ApproveAlways` rule, so tests
+/// can observe it without touching the process-global config path.
+async fn run_watch_plan_with_persistence<C, R, P>(
+    frame: InputFrame,
+    prepared: &PreparedPlanner,
+    plan: InterceptionPlan,
+    ci_detected: bool,
+    confirmation_prompt: C,
+    recovery_prompt: R,
+    persist_allow: P,
+) where
+    C: FnOnce(&aegis_types::Assessment, &aegis_explanation::CommandExplanation) -> PromptDecision,
+    R: FnOnce(aegis_types::RecoveryDegradation) -> RecoveryPromptDecision,
+    P: FnOnce(&str, &std::path::Path),
+{
     let id = frame.id.clone();
     let context = runtime_context(prepared);
     let cwd = watch_execution_cwd(plan.decision_context().cwd_state());
 
+    let mut approve_always = false;
     let runtime_decision = match plan.execution_disposition() {
         ExecutionDisposition::Execute => Decision::AutoApproved,
         ExecutionDisposition::RequiresApproval => {
             let decision = confirmation_prompt(plan.assessment(), plan.explanation());
-            if decision == PromptDecision::ApproveAlways {
-                if let Some(config_path) = active_config_path_for_append() {
-                    let tokens = split_tokens(&frame.cmd);
-                    let prefix = extract_prefix(&tokens);
-                    match append_allow_rule(&config_path, &prefix, &cwd) {
-                        Ok(AppendOutcome::Conflict {
-                            pattern,
-                            existing_location,
-                        }) => {
-                            let location = match existing_location {
-                                aegis_config::allowlist::ConfigSourceLayer::Project => "project",
-                                aegis_config::allowlist::ConfigSourceLayer::Global => "global",
-                            };
-                            eprintln!(
-                                "warning: conflicting rule for '{pattern}' already exists in {location} config"
-                            );
-                        }
-                        Ok(AppendOutcome::SkippedDuplicate | AppendOutcome::Appended) => {}
-                        Err(err) => eprintln!("error: failed to append allow rule: {err}"),
-                    }
-                } else {
-                    eprintln!("warning: cannot persist allow rule: no config file found");
-                }
-            }
+            // ADR-031 section 4: the rule waits for the Snapshot pass, and
+            // never exists while Recovery is opted out.
+            approve_always = decision == PromptDecision::ApproveAlways
+                && !plan.explanation().context.recovery_opt_out;
             if decision == PromptDecision::DenyAlways {
                 if let Some(config_path) = active_config_path_for_append() {
                     let tokens = split_tokens(&frame.cmd);
@@ -334,11 +371,24 @@ async fn run_watch_plan_with_prompts<C, R>(
             let snapshots = coverage.records.as_slice();
             let attempts = coverage.snapshot_attempts();
             let attempts = attempts.as_slice();
-            if let Some(degradation) = plan_recovery_degradation(
+            let persistence_block = if approve_always {
+                allow_rule_persistence_degradation(&plan, &coverage)
+            } else {
+                None
+            };
+            if persistence_block.is_some() {
+                eprintln!("warning: allow rule not saved: Recovery is not ready for this run");
+            }
+            let degradation = plan_recovery_degradation(
                 &plan,
                 runtime_decision == Decision::AutoApproved,
                 &coverage,
-            ) {
+            )
+            .or(persistence_block);
+            if approve_always && degradation.is_none() {
+                persist_allow(&frame.cmd, &cwd);
+            }
+            if let Some(degradation) = degradation {
                 let recovery_decision = recovery_prompt(degradation);
                 match recovery_decision {
                     RecoveryPromptDecision::RunOnceWithoutRecovery => {

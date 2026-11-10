@@ -1,7 +1,9 @@
 use std::path::Path;
 
 use aegis::planning::{CwdState, ExecutionDisposition, InterceptionPlan, PreparedPlanner};
-use aegis::runtime::{AuditWriteOptions, plan_recovery_degradation};
+use aegis::runtime::{
+    AuditWriteOptions, allow_rule_persistence_degradation, plan_recovery_degradation,
+};
 use aegis_config::amend::{
     AppendOutcome, active_config_path_for_append, append_allow_rule, append_block_rule,
 };
@@ -88,17 +90,13 @@ pub(crate) fn run_planned_shell_command_with_renderer<R: ExecutionRenderer>(
             plan,
             launch,
             Decision::AutoApproved,
+            false,
             sandbox_config,
             renderer,
         ),
         ExecutionDisposition::RequiresApproval => {
             let prompt_decision =
                 renderer.show_confirmation(plan.assessment(), plan.explanation(), &[]);
-            if prompt_decision == PromptDecision::ApproveAlways
-                && let Err(err) = persist_rule(cmd, plan, append_allow_rule, "allow")
-            {
-                eprintln!("error: failed to append allow rule: {err}");
-            }
             if prompt_decision == PromptDecision::DenyAlways
                 && let Err(err) = persist_rule(cmd, plan, append_block_rule, "block")
             {
@@ -116,6 +114,10 @@ pub(crate) fn run_planned_shell_command_with_renderer<R: ExecutionRenderer>(
                     plan,
                     launch,
                     Decision::Approved,
+                    // ADR-031 section 4: the rule waits for the Snapshot pass,
+                    // and never exists while Recovery is opted out.
+                    prompt_decision == PromptDecision::ApproveAlways
+                        && !plan.explanation().context.recovery_opt_out,
                     sandbox_config,
                     renderer,
                 )
@@ -170,6 +172,7 @@ fn execute_with_snapshots<R: ExecutionRenderer>(
     plan: &InterceptionPlan,
     launch: &ShellLaunchOptions,
     decision: Decision,
+    approve_always: bool,
     sandbox_config: Option<&aegis_sandbox::SandboxConfig>,
     renderer: &R,
 ) -> i32 {
@@ -177,9 +180,24 @@ fn execute_with_snapshots<R: ExecutionRenderer>(
     let snapshots = coverage.records.as_slice();
     let attempts = coverage.snapshot_attempts();
     let attempts = attempts.as_slice();
-    if let Some(degradation) =
+    let persistence_block = if approve_always {
+        allow_rule_persistence_degradation(plan, &coverage)
+    } else {
+        None
+    };
+    if persistence_block.is_some() {
+        renderer.warn("allow rule not saved: Recovery is not ready for this run");
+    }
+    let degradation =
         plan_recovery_degradation(plan, decision == Decision::AutoApproved, &coverage)
+            .or(persistence_block);
+    if approve_always
+        && degradation.is_none()
+        && let Err(err) = persist_rule(cmd, plan, append_allow_rule, "allow")
     {
+        eprintln!("error: failed to append allow rule: {err}");
+    }
+    if let Some(degradation) = degradation {
         return match renderer.show_recovery_override(degradation) {
             RecoveryPromptDecision::RunOnceWithoutRecovery => complete_approved_shell_execution(
                 ShellExecution {

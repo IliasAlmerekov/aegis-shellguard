@@ -156,11 +156,20 @@ pub fn show_confirmation_with_decision<R: BufRead, W: Write>(
         }
         RiskLevel::Danger => {
             render_dialog(assessment, explanation, snapshots, output);
-            super::confirm_screen::prompt_danger_with_always(input, output)
+            // ADR-031 section 4: no persistent approval while Recovery is opted out.
+            super::confirm_screen::prompt_danger_with_always(
+                input,
+                output,
+                !explanation.context.recovery_opt_out,
+            )
         }
         RiskLevel::Warn => {
             render_dialog(assessment, explanation, snapshots, output);
-            super::confirm_screen::prompt_warn_with_always(input, output)
+            super::confirm_screen::prompt_warn_with_always(
+                input,
+                output,
+                !explanation.context.recovery_opt_out,
+            )
         }
         // Safe commands should not reach the dialog — auto-approve.
         _ => PromptDecision::Approve,

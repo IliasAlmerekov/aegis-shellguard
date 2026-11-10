@@ -219,6 +219,7 @@ pub fn make_explanation(
             allowlist_match,
             applicable_snapshot_plugins: Vec::new(),
             git_targets: Vec::new(),
+            recovery_opt_out: false,
         },
         outcome: None,
     }
@@ -257,6 +258,7 @@ pub fn strip_ansi(s: &str) -> String {
 mod block_tests;
 mod danger_tests;
 mod decision_tests;
+mod opt_out_tests;
 mod recovery_tests;
 mod render_tests;
 mod warn_tests;

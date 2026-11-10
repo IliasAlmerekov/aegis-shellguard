@@ -691,3 +691,5 @@ async fn watch_approved_run_without_recovery_obligation_audits_the_attempts_of_i
     let entry = read_audit_entry(&audit_path);
     assert_eq!(audited_attempts(&entry), partial_pass_attempts());
 }
+
+mod approve_always;

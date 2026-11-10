@@ -113,6 +113,11 @@ pub struct ExecutionContextExplanation {
     /// git stage (#471). Empty when no git stage redirects its working tree.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub git_targets: Vec<GitTargetExplanation>,
+    /// `Recovery opt-out` (ADR-031 section 3): the command would carry
+    /// `Required recovery`, but a global `snapshot_policy = None` declines it.
+    /// Omitted when false, so legacy audit lines and their hashes are unchanged.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub recovery_opt_out: bool,
 }
 
 /// One Git target as disclosed to the operator and the audit log.
