@@ -34,8 +34,8 @@ async fn a_live_stash_commit_is_present_with_no_structural_check() {
 async fn a_stash_commit_that_is_gone_is_unavailable() {
     let dir = TempDir::new().unwrap();
     let id = dirty_snapshot(dir.path()).await;
-    let (cwd, _hash) = id.split_once(SEP).unwrap();
-    let bogus = format!("{cwd}{SEP}{}", "0".repeat(40));
+    let (cwd, _hash) = parse_snapshot_id(&id).unwrap();
+    let bogus = build_snapshot_id(&cwd, &"0".repeat(40));
 
     assert_eq!(
         triple(GitPlugin.readiness(&bogus).await),
