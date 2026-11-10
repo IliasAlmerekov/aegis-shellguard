@@ -66,7 +66,7 @@ fn write_phase1_manifest_fixture(temp_dir: &TempDir, checksum: &str) -> PathBuf 
 }
 
 #[test]
-fn snapshot_id_v1_round_trips_manifest_path() {
+fn snapshot_id_v3_round_trips_manifest_path() {
     let temp_dir = TempDir::new().unwrap();
     let manifest_path = manifest_path(&temp_dir);
     fs::create_dir_all(manifest_path.parent().unwrap()).unwrap();
@@ -76,6 +76,33 @@ fn snapshot_id_v1_round_trips_manifest_path() {
     let decoded = SupabasePlugin::parse_snapshot_id(&snapshot_id).unwrap();
 
     assert_eq!(decoded, manifest_path);
+}
+
+#[test]
+fn build_snapshot_id_writes_v3_layout() {
+    assert_eq!(
+        SupabasePlugin::build_snapshot_id(Path::new("/tmp/m/manifest.json")),
+        "v3:2f746d702f6d2f6d616e69666573742e6a736f6e"
+    );
+}
+
+#[test]
+fn parse_snapshot_id_reads_v3_and_legacy_to_the_same_manifest() {
+    for id in [
+        "v3:2f746d702f6d2f6d616e69666573742e6a736f6e",
+        "supabase-v1\t2f746d702f6d2f6d616e69666573742e6a736f6e",
+    ] {
+        assert_eq!(
+            SupabasePlugin::parse_snapshot_id(id).unwrap(),
+            Path::new("/tmp/m/manifest.json"),
+            "{id}"
+        );
+    }
+}
+
+#[test]
+fn parse_snapshot_id_rejects_v3_with_wrong_component_count() {
+    assert!(SupabasePlugin::parse_snapshot_id("v3:2f6d:2f6d").is_err());
 }
 
 #[test]
