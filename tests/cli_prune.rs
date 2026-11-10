@@ -62,7 +62,7 @@ fn write_prune_policy(home: &Path) {
 }
 
 fn git_snapshot_id(home: &Path, name: &str) -> String {
-    // Git snapshot ids are encoded as "<cwd>\t<stash-hash>". Use a non-existent
+    // A hand-built legacy git id, "<cwd>\t<stash-hash>", still parses. Use a non-existent
     // cwd so that GitPlugin::delete treats the artifact as already removed and
     // prune can append a Pruned audit entry idempotently.
     format!("{}\t{name}", home.join("nonexistent-repo").display())

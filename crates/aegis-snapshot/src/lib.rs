@@ -50,6 +50,8 @@ mod registry;
 mod retention;
 /// Owner-only filesystem creation helpers for snapshot artifacts.
 mod secure_fs;
+/// The shared `snapshot_id` codec: hex components, `v3` layout, legacy splits.
+mod snapshot_id;
 /// Shared fake-executable helpers for the snapshot plugins' own tests.
 #[cfg(test)]
 mod test_support;
@@ -140,14 +142,6 @@ mod tests {
 
     use super::*;
 
-    fn hex_encode_path(path: &std::path::Path) -> String {
-        path.to_string_lossy()
-            .as_bytes()
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect()
-    }
-
     #[tokio::test]
     async fn test_git_plugin_delete_missing_artifact_is_idempotent() {
         let result = GitPlugin
@@ -183,7 +177,7 @@ mod tests {
         let result = plugin
             .delete(&format!(
                 "v2\t6462\t6c6f63616c686f7374\t5432\t75736572\t{}",
-                hex_encode_path(&missing_dump)
+                crate::snapshot_id::encode_path(&missing_dump)
             ))
             .await;
         assert!(
@@ -206,7 +200,7 @@ mod tests {
         let result = plugin
             .delete(&format!(
                 "v2\t6462\t6c6f63616c686f7374\t3306\t75736572\t{}",
-                hex_encode_path(&missing_dump)
+                crate::snapshot_id::encode_path(&missing_dump)
             ))
             .await;
         assert!(
@@ -223,7 +217,7 @@ mod tests {
         let result = plugin
             .delete(&format!(
                 "v2\t2f746d702f6170702e6462\t{}",
-                hex_encode_path(&missing_dump)
+                crate::snapshot_id::encode_path(&missing_dump)
             ))
             .await;
         assert!(

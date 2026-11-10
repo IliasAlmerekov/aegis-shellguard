@@ -8,20 +8,16 @@ use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::process::{ChildStderr, Command};
 use tokio::task::JoinHandle;
 
-#[cfg(unix)]
-use std::os::unix::ffi::{OsStrExt, OsStringExt};
-
 use crate::containment::contain_artifact;
 use crate::error::SnapshotError;
 use crate::liveness::local_file_liveness;
 use crate::readiness::file_readiness;
 use crate::secure_fs::{create_artifact_file, create_store_dir, harden_existing_artifact};
+use crate::snapshot_id;
 use crate::{ArtifactReadiness, Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
-const SEP: char = '\t';
-const SNAPSHOT_ID_VERSION: &str = "v2";
 const EXECUTABLE_BUSY_ERRNO: i32 = 26;
 const BUSY_RETRY_ATTEMPTS: usize = 12;
 const BUSY_RETRY_DELAY_MS: u64 = 25;
@@ -144,51 +140,6 @@ impl MysqlPlugin {
             .collect()
     }
 
-    fn encode_component(component: &str) -> String {
-        component
-            .as_bytes()
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect()
-    }
-
-    fn decode_component(encoded: &str, label: &str) -> Result<String> {
-        if !encoded.len().is_multiple_of(2) {
-            return Err(SnapshotError::Snapshot(format!(
-                "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-            )));
-        }
-
-        let mut bytes = Vec::with_capacity(encoded.len() / 2);
-        for pair in encoded.as_bytes().as_chunks::<2>().0 {
-            let hex = std::str::from_utf8(pair).map_err(|_| {
-                SnapshotError::Snapshot(format!(
-                    "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-                ))
-            })?;
-            let byte = u8::from_str_radix(hex, 16).map_err(|_| {
-                SnapshotError::Snapshot(format!(
-                    "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-                ))
-            })?;
-            bytes.push(byte);
-        }
-
-        String::from_utf8(bytes).map_err(|_| {
-            SnapshotError::Snapshot(format!(
-                "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-            ))
-        })
-    }
-
-    fn encode_database(database: &str) -> String {
-        Self::encode_component(database)
-    }
-
-    fn decode_database(encoded: &str) -> Result<String> {
-        Self::decode_component(encoded, "database")
-    }
-
     fn validate_dump_file_name(dump_file_name: &str) -> Result<()> {
         let path = Path::new(dump_file_name);
         let mut components = path.components();
@@ -206,98 +157,39 @@ impl MysqlPlugin {
         Ok(())
     }
 
-    fn encode_path(path: &Path) -> String {
-        #[cfg(unix)]
-        {
-            path.as_os_str()
-                .as_bytes()
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect()
-        }
-
-        #[cfg(not(unix))]
-        {
-            Self::encode_component(&path.to_string_lossy())
-        }
-    }
-
-    fn decode_path(encoded: &str, label: &str) -> Result<PathBuf> {
-        if !encoded.len().is_multiple_of(2) {
-            return Err(SnapshotError::Snapshot(format!(
-                "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-            )));
-        }
-
-        let mut bytes = Vec::with_capacity(encoded.len() / 2);
-        for pair in encoded.as_bytes().as_chunks::<2>().0 {
-            let hex = std::str::from_utf8(pair).map_err(|_| {
-                SnapshotError::Snapshot(format!(
-                    "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-                ))
-            })?;
-            let byte = u8::from_str_radix(hex, 16).map_err(|_| {
-                SnapshotError::Snapshot(format!(
-                    "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-                ))
-            })?;
-            bytes.push(byte);
-        }
-
-        #[cfg(unix)]
-        let path = PathBuf::from(std::ffi::OsString::from_vec(bytes));
-
-        #[cfg(not(unix))]
-        let path = PathBuf::from(String::from_utf8(bytes).map_err(|_| {
-            SnapshotError::Snapshot(format!(
-                "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-            ))
-        })?);
-
-        Ok(path)
-    }
-
     fn is_executable_busy(error: &std::io::Error) -> bool {
         error.raw_os_error() == Some(EXECUTABLE_BUSY_ERRNO)
     }
 
     fn build_snapshot_id(&self, dump_path: &Path) -> String {
-        format!(
-            "{SNAPSHOT_ID_VERSION}{SEP}{}{SEP}{}{SEP}{}{SEP}{}{SEP}{}",
-            Self::encode_database(&self.database),
-            Self::encode_component(&self.host),
-            self.port,
-            Self::encode_component(&self.user),
-            Self::encode_path(dump_path)
-        )
+        snapshot_id::join_v3(&[
+            &snapshot_id::encode_bytes(self.database.as_bytes()),
+            &snapshot_id::encode_bytes(self.host.as_bytes()),
+            &self.port.to_string(),
+            &snapshot_id::encode_bytes(self.user.as_bytes()),
+            &snapshot_id::encode_path(dump_path),
+        ])
     }
 
-    fn parse_snapshot_id(&self, snapshot_id: &str) -> Result<MysqlRollbackTarget> {
-        if snapshot_id.starts_with(&format!("{SNAPSHOT_ID_VERSION}{SEP}")) {
-            return Self::parse_v2_snapshot_id(snapshot_id);
-        }
+    fn parse_snapshot_id(&self, id: &str) -> Result<MysqlRollbackTarget> {
+        let parts = if snapshot_id::is_v3(id) {
+            snapshot_id::split_v3(id, 5)?
+        } else if snapshot_id::is_v2(id) {
+            snapshot_id::split_v2(id, 5)?
+        } else {
+            return self.parse_legacy_snapshot_id(id);
+        };
 
-        self.parse_legacy_snapshot_id(snapshot_id)
-    }
-
-    fn parse_v2_snapshot_id(snapshot_id: &str) -> Result<MysqlRollbackTarget> {
-        let parts: Vec<_> = snapshot_id.split(SEP).collect();
-        if parts.len() != 6 || parts[0] != SNAPSHOT_ID_VERSION {
-            return Err(SnapshotError::Snapshot(format!(
-                "malformed snapshot_id: {snapshot_id:?}"
-            )));
-        }
-
-        let _database = Self::decode_database(parts[1])?;
-        let host = Self::decode_component(parts[2], "host")?;
-        let port = parts[3].parse::<u16>().map_err(|_| {
+        let _database = snapshot_id::decode_string(parts[0], "database")?;
+        let host = snapshot_id::decode_string(parts[1], "host")?;
+        let port = parts[2].parse::<u16>().map_err(|_| {
             SnapshotError::Snapshot(format!(
                 "malformed snapshot_id: invalid port {:?}",
-                parts[3]
+                parts[2]
             ))
         })?;
-        let user = Self::decode_component(parts[4], "user")?;
-        let dump_path = Self::decode_path(parts[5], "dump path")?;
+        let user = snapshot_id::decode_string(parts[3], "user")?;
+        let dump_path = snapshot_id::decode_path(parts[4], "dump path")?;
 
         Ok(MysqlRollbackTarget {
             host,
@@ -308,12 +200,13 @@ impl MysqlPlugin {
     }
 
     fn parse_legacy_snapshot_id(&self, snapshot_id: &str) -> Result<MysqlRollbackTarget> {
-        let (database_encoded, dump_ref_encoded) =
-            snapshot_id.split_once(SEP).ok_or_else(|| {
+        let (database_encoded, dump_ref_encoded) = snapshot_id
+            .split_once(snapshot_id::LEGACY_SEP)
+            .ok_or_else(|| {
                 SnapshotError::Snapshot(format!("malformed snapshot_id: {snapshot_id:?}"))
             })?;
-        let _database = Self::decode_database(database_encoded)?;
-        let dump_file_name = Self::decode_component(dump_ref_encoded, "dump reference")?;
+        let _database = snapshot_id::decode_string(database_encoded, "database")?;
+        let dump_file_name = snapshot_id::decode_string(dump_ref_encoded, "dump reference")?;
         Self::validate_dump_file_name(&dump_file_name)?;
 
         Ok(MysqlRollbackTarget {

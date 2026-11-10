@@ -18,12 +18,12 @@ use crate::error::SnapshotError;
 use crate::secure_fs::{
     create_artifact_dir, create_artifact_file, create_store_dir, harden_existing_artifact,
 };
+use crate::snapshot_id;
 use crate::{Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
-const SNAPSHOT_ID_VERSION: &str = "supabase-v1";
-const SNAPSHOT_ID_SEP: char = '\t';
+const LEGACY_SNAPSHOT_ID_VERSION: &str = "supabase-v1";
 const MANIFEST_FILE_NAME: &str = "manifest.json";
 
 #[cfg(test)]
@@ -31,8 +31,6 @@ thread_local! {
     static INJECT_MANIFEST_WRITE_FAILURE_FOR_TESTS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-#[cfg(unix)]
-use std::os::unix::ffi::{OsStrExt, OsStringExt};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
@@ -200,62 +198,6 @@ impl SupabasePlugin {
         }
     }
 
-    fn encode_path(path: &Path) -> String {
-        #[cfg(unix)]
-        {
-            path.as_os_str()
-                .as_bytes()
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect()
-        }
-
-        #[cfg(not(unix))]
-        {
-            path.to_string_lossy()
-                .as_bytes()
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect()
-        }
-    }
-
-    fn decode_path(encoded: &str, label: &str) -> Result<PathBuf> {
-        if !encoded.len().is_multiple_of(2) {
-            return Err(SnapshotError::Snapshot(format!(
-                "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-            )));
-        }
-
-        let mut bytes = Vec::with_capacity(encoded.len() / 2);
-        for pair in encoded.as_bytes().as_chunks::<2>().0 {
-            let hex = std::str::from_utf8(pair).map_err(|_| {
-                SnapshotError::Snapshot(format!(
-                    "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-                ))
-            })?;
-            let byte = u8::from_str_radix(hex, 16).map_err(|_| {
-                SnapshotError::Snapshot(format!(
-                    "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-                ))
-            })?;
-            bytes.push(byte);
-        }
-
-        #[cfg(unix)]
-        let path = PathBuf::from(std::ffi::OsString::from_vec(bytes));
-
-        #[cfg(not(unix))]
-        let path = PathBuf::from(String::from_utf8(bytes).map_err(|_| {
-            SnapshotError::Snapshot(format!(
-                "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-            ))
-        })?);
-
-        Self::validate_manifest_path(&path, label)?;
-        Ok(path)
-    }
-
     fn validate_manifest_path(path: &Path, label: &str) -> Result<()> {
         if !path.is_absolute()
             || path.file_name() != Some(MANIFEST_FILE_NAME.as_ref())
@@ -275,24 +217,28 @@ impl SupabasePlugin {
     }
 
     fn build_snapshot_id(manifest_path: &Path) -> String {
-        format!(
-            "{SNAPSHOT_ID_VERSION}{SNAPSHOT_ID_SEP}{}",
-            Self::encode_path(manifest_path)
-        )
+        snapshot_id::join_v3(&[&snapshot_id::encode_path(manifest_path)])
     }
 
-    fn parse_snapshot_id(snapshot_id: &str) -> Result<PathBuf> {
-        let (version, encoded_path) = snapshot_id.split_once(SNAPSHOT_ID_SEP).ok_or_else(|| {
-            SnapshotError::Snapshot(format!("malformed snapshot_id: {snapshot_id:?}"))
-        })?;
+    fn parse_snapshot_id(id: &str) -> Result<PathBuf> {
+        let encoded_path = if snapshot_id::is_v3(id) {
+            snapshot_id::split_v3(id, 1)?[0]
+        } else {
+            let (version, encoded_path) = id
+                .split_once(snapshot_id::LEGACY_SEP)
+                .ok_or_else(|| SnapshotError::Snapshot(format!("malformed snapshot_id: {id:?}")))?;
+            if version != LEGACY_SNAPSHOT_ID_VERSION {
+                return Err(SnapshotError::Snapshot(format!(
+                    "unsupported snapshot_id version {version:?}"
+                )));
+            }
+            encoded_path
+        };
 
-        if version != SNAPSHOT_ID_VERSION {
-            return Err(SnapshotError::Snapshot(format!(
-                "unsupported snapshot_id version {version:?}"
-            )));
-        }
-
-        Self::decode_path(encoded_path, "manifest path")
+        let label = "manifest path";
+        let path = snapshot_id::decode_path(encoded_path, label)?;
+        Self::validate_manifest_path(&path, label)?;
+        Ok(path)
     }
 
     async fn validate_preflight(&self) -> Result<()> {

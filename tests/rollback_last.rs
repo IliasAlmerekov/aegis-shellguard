@@ -203,8 +203,26 @@ fn two_agents_last_restores_repo_a_and_never_the_container() {
     );
 }
 
+fn hex(path: &Path) -> String {
+    path.to_string_lossy()
+        .bytes()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
 #[test]
 fn multi_provider_last_restores_git_and_sqlite_and_prints_the_docker_line() {
+    restores_git_and_sqlite_via_last(false);
+}
+
+#[test]
+fn last_binds_git_and_sqlite_v3_ids_to_the_current_location() {
+    restores_git_and_sqlite_via_last(true);
+}
+
+/// `v3` ids are the ones Aegis writes now; the tab ids are every Snapshot
+/// recorded before (ADR-026 section 2) and must keep working.
+fn restores_git_and_sqlite_via_last(v3: bool) {
     let env = Env::new();
     let repo = env.repo("repo");
     env.use_sqlite_in(&repo);
@@ -214,13 +232,18 @@ fn multi_provider_last_restores_git_and_sqlite_and_prints_the_docker_line() {
     let dump = store.canonicalize().unwrap().join("app-1.db");
     fs::write(&dump, "before").unwrap();
     fs::write(repo.join("app.db"), "after").unwrap();
-    let hex = |p: &Path| {
-        p.to_string_lossy()
-            .bytes()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>()
+    let (git_id, sqlite_id) = if v3 {
+        let (_cwd, hash) = git_id.split_once('\t').unwrap();
+        (
+            format!("v3:{}:{hash}", hex(&repo)),
+            format!("v3:{}:{}", hex(&repo.join("app.db")), hex(&dump)),
+        )
+    } else {
+        (
+            git_id,
+            format!("v2\t{}\t{}", hex(&repo.join("app.db")), hex(&dump)),
+        )
     };
-    let sqlite_id = format!("v2\t{}\t{}", hex(&repo.join("app.db")), hex(&dump));
     env.record(
         "terraform destroy",
         Some(&repo),
@@ -346,12 +369,6 @@ fn a_failing_provider_does_not_stop_the_others_and_gets_no_audit_entry() {
     let git_id = env.snapshot_then_delete(&repo, "kept.txt");
     let store = env.home.path().join(".aegis").join("snapshots");
     fs::create_dir_all(&store).unwrap();
-    let hex = |p: &Path| {
-        p.to_string_lossy()
-            .bytes()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>()
-    };
     let missing_dump = store.canonicalize().unwrap().join("gone.db");
     let sqlite_id = format!("v2\t{}\t{}", hex(&repo.join("app.db")), hex(&missing_dump));
     // The failing provider comes first, so a stop-on-error loop would never reach git.

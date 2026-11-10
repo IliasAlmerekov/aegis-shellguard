@@ -72,6 +72,10 @@ parser happens to find.
 append-only and is a v1 public contract; an id recorded before this change must
 stay recoverable after it.
 
+*Note, 2026-11-10 (issue #286):* only path and name components are
+hex-encoded. Numeric components (the postgres and mysql port), the git commit
+hash and the git `clean` sentinel keep their form.
+
 `aegis snapshot list` additionally prints a ready-to-use `aegis rollback '<id>'`
 line per row. `list` stays cheap: it reports *recorded* snapshots and hides
 pruned ones, and it does not check whether artifacts still exist. Contacting six

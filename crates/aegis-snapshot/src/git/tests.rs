@@ -655,10 +655,7 @@ async fn rollback_errors_when_stash_entry_not_found() {
     let dir = TempDir::new().unwrap();
     init_repo(dir.path()).await;
 
-    let snapshot_id = format!(
-        "{}\t0000000000000000000000000000000000000000",
-        dir.path().display()
-    );
+    let snapshot_id = build_snapshot_id(dir.path(), &"0".repeat(40));
     let err = GitPlugin
         .rollback(&snapshot_id)
         .await
@@ -733,7 +730,7 @@ async fn snapshot_leaves_working_tree_unchanged() {
         "scratch\n"
     );
 
-    let (_, hash) = snapshot_id.split_once(SEP).unwrap();
+    let (_, hash) = parse_snapshot_id(&snapshot_id).unwrap();
     assert!(
         stash_list_contains(dir.path(), hash).await,
         "the stash entry must stay available for rollback"

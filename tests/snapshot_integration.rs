@@ -191,8 +191,13 @@ reason = "subdir snapshot test"
         .as_str()
         .unwrap()
         .to_string();
+    let cwd_hex: String = subdir_cwd
+        .to_string_lossy()
+        .bytes()
+        .map(|b| format!("{b:02x}"))
+        .collect();
     assert!(
-        snapshot_id.starts_with(&format!("{}{}", subdir_cwd.display(), '\t')),
+        snapshot_id.starts_with(&format!("v3:{cwd_hex}:")),
         "snapshot id should encode the subdir cwd: {snapshot_id}"
     );
 

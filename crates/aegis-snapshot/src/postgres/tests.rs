@@ -18,38 +18,14 @@ fn plugin_with_user(temp_dir: &TempDir, user: &str) -> PostgresPlugin {
     )
 }
 
-fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-fn encode_str(value: &str) -> String {
-    hex_encode(value.as_bytes())
-}
-
-fn decode_hex(encoded: &str) -> String {
-    let mut bytes = Vec::with_capacity(encoded.len() / 2);
-    for pair in encoded.as_bytes().as_chunks::<2>().0 {
-        let hex = std::str::from_utf8(pair).unwrap();
-        let byte = u8::from_str_radix(hex, 16).unwrap();
-        bytes.push(byte);
-    }
-
-    String::from_utf8(bytes).unwrap()
-}
-
-fn encode_path(path: &Path) -> String {
-    encode_str(&path.to_string_lossy())
-}
-
 fn snapshot_id_for(database: &str, host: &str, port: u16, user: &str, dump_path: &Path) -> String {
-    format!(
-        "v2{SEP}{}{SEP}{}{SEP}{}{SEP}{}{SEP}{}",
-        encode_str(database),
-        encode_str(host),
-        port,
-        encode_str(user),
-        encode_path(dump_path)
-    )
+    snapshot_id::join_v3(&[
+        &snapshot_id::encode_bytes(database.as_bytes()),
+        &snapshot_id::encode_bytes(host.as_bytes()),
+        &port.to_string(),
+        &snapshot_id::encode_bytes(user.as_bytes()),
+        &snapshot_id::encode_path(dump_path),
+    ])
 }
 
 #[tokio::test]
@@ -218,7 +194,7 @@ fn reserve_dump_path_sanitizes_database_name_for_filenames() {
 }
 
 #[test]
-fn snapshot_id_v2_round_trips_target_fields_and_dump_path() {
+fn snapshot_id_v3_round_trips_target_fields_and_dump_path() {
     let dump_path = Path::new("/tmp/pg\tbackup.dump");
     let snapshot_id = snapshot_id_for(
         "app/\tname:prod",
@@ -227,15 +203,25 @@ fn snapshot_id_v2_round_trips_target_fields_and_dump_path() {
         "postgres\tadmin",
         dump_path,
     );
-    let parts: Vec<_> = snapshot_id.split(SEP).collect();
+    let parts = snapshot_id::split_v3(&snapshot_id, 5).unwrap();
 
-    assert_eq!(parts.len(), 6);
-    assert_eq!(parts[0], "v2");
-    assert_eq!(decode_hex(parts[1]), "app/\tname:prod");
-    assert_eq!(decode_hex(parts[2]), "db\tprimary");
-    assert_eq!(parts[3], "5432");
-    assert_eq!(decode_hex(parts[4]), "postgres\tadmin");
-    assert_eq!(PathBuf::from(decode_hex(parts[5])), dump_path);
+    assert_eq!(
+        snapshot_id::decode_string(parts[0], "x").unwrap(),
+        "app/\tname:prod"
+    );
+    assert_eq!(
+        snapshot_id::decode_string(parts[1], "x").unwrap(),
+        "db\tprimary"
+    );
+    assert_eq!(parts[2], "5432");
+    assert_eq!(
+        snapshot_id::decode_string(parts[3], "x").unwrap(),
+        "postgres\tadmin"
+    );
+    assert_eq!(
+        snapshot_id::decode_path(parts[4], "dump path").unwrap(),
+        dump_path
+    );
 }
 
 #[tokio::test]
@@ -308,19 +294,23 @@ async fn snapshot_uses_pg_dump_and_creates_dump_file() {
         .snapshot(temp_dir.path(), "dangerous command")
         .await
         .unwrap();
-    let parts: Vec<_> = snapshot_id.split(SEP).collect();
+    let parts = snapshot_id::split_v3(&snapshot_id, 5).unwrap();
     let logged_args = fs::read_to_string(&log_path).unwrap();
 
-    assert_eq!(parts.len(), 6);
-    assert_eq!(parts[0], "v2");
-    assert_eq!(decode_hex(parts[1]), "app");
-    assert_eq!(decode_hex(parts[2]), "localhost");
-    assert_eq!(parts[3], "5432");
-    assert_eq!(decode_hex(parts[4]), "postgres");
+    assert_eq!(snapshot_id::decode_string(parts[0], "x").unwrap(), "app");
+    assert_eq!(
+        snapshot_id::decode_string(parts[1], "x").unwrap(),
+        "localhost"
+    );
+    assert_eq!(parts[2], "5432");
+    assert_eq!(
+        snapshot_id::decode_string(parts[3], "x").unwrap(),
+        "postgres"
+    );
     assert!(logged_args.lines().any(|line| line == "-Fc"));
     assert!(logged_args.lines().any(|line| line == "-f"));
     assert!(logged_args.lines().any(|line| line == "app"));
-    let dump_path = PathBuf::from(decode_hex(parts[5]));
+    let dump_path = snapshot_id::decode_path(parts[4], "dump path").unwrap();
     assert_eq!(fs::read_to_string(&dump_path).unwrap(), "dump-data");
     assert_eq!(
         fs::metadata(dump_path.parent().unwrap())
@@ -368,7 +358,7 @@ async fn snapshot_retries_when_pg_dump_binary_is_temporarily_busy() {
         .unwrap();
 
     let _ = holder.wait();
-    assert!(snapshot_id.starts_with("v2\t"));
+    assert!(snapshot_id.starts_with("v3:"));
 }
 
 #[cfg(unix)]
@@ -463,11 +453,7 @@ async fn rollback_restores_legacy_artifact_inside_snapshot_store() {
     let pg_restore = stub_bin(temp_dir.path(), "pg_restore", "exit 0");
     let mut plugin = plugin_with_user(&temp_dir, "postgres");
     plugin.pg_restore_bin = pg_restore.display().to_string();
-    let snapshot_id = format!(
-        "{}{SEP}{}",
-        PostgresPlugin::encode_database("app"),
-        dump_path.display()
-    );
+    let snapshot_id = format!("617070\t{}", dump_path.display());
 
     plugin.rollback(&snapshot_id).await.unwrap();
 }
@@ -655,10 +641,10 @@ async fn snapshot_generates_distinct_ids_for_back_to_back_calls() {
         .snapshot(temp_dir.path(), "dangerous command")
         .await
         .unwrap();
-    let first_parts: Vec<_> = first_id.split(SEP).collect();
-    let second_parts: Vec<_> = second_id.split(SEP).collect();
-    let first_dump = decode_hex(first_parts[5]);
-    let second_dump = decode_hex(second_parts[5]);
+    let first_parts = snapshot_id::split_v3(&first_id, 5).unwrap();
+    let second_parts = snapshot_id::split_v3(&second_id, 5).unwrap();
+    let first_dump = snapshot_id::decode_string(first_parts[4], "x").unwrap();
+    let second_dump = snapshot_id::decode_string(second_parts[4], "x").unwrap();
 
     assert_ne!(first_id, second_id);
     assert_ne!(first_dump, second_dump);
@@ -731,3 +717,54 @@ async fn liveness_rejects_a_malformed_id() {
 }
 
 mod readiness_tests;
+
+#[test]
+fn build_snapshot_id_writes_v3_layout() {
+    let temp_dir = TempDir::new().unwrap();
+    let plugin = plugin_with_user(&temp_dir, "postgres");
+
+    assert_eq!(
+        plugin.build_snapshot_id(Path::new("/tmp/d.dump")),
+        "v3:617070:6c6f63616c686f7374:5432:706f737467726573:2f746d702f642e64756d70"
+    );
+}
+
+#[test]
+fn parse_snapshot_id_reads_v3_and_v2_to_the_same_target() {
+    let temp_dir = TempDir::new().unwrap();
+    let plugin = plugin_with_user(&temp_dir, "postgres");
+
+    for id in [
+        "v3:617070:6c6f63616c686f7374:5432:706f737467726573:2f746d702f642e64756d70",
+        "v2\t617070\t6c6f63616c686f7374\t5432\t706f737467726573\t2f746d702f642e64756d70",
+    ] {
+        let target = plugin.parse_snapshot_id(id).unwrap();
+        assert_eq!(target.host, "localhost", "{id}");
+        assert_eq!(target.port, 5432, "{id}");
+        assert_eq!(target.user, "postgres", "{id}");
+        assert_eq!(target.dump_path, Path::new("/tmp/d.dump"), "{id}");
+    }
+}
+
+#[test]
+fn parse_snapshot_id_rejects_v3_with_wrong_component_count() {
+    let temp_dir = TempDir::new().unwrap();
+    let plugin = plugin_with_user(&temp_dir, "postgres");
+
+    assert!(
+        plugin
+            .parse_snapshot_id("v3:617070:6c6f63616c686f7374")
+            .is_err()
+    );
+}
+
+#[test]
+fn parse_snapshot_id_reads_unversioned_legacy_id_with_a_raw_dump_path() {
+    let temp_dir = TempDir::new().unwrap();
+    let plugin = plugin_with_user(&temp_dir, "postgres");
+
+    let target = plugin.parse_snapshot_id("617070\t/tmp/d.dump").unwrap();
+
+    assert_eq!(target.dump_path, Path::new("/tmp/d.dump"));
+    assert_eq!(target.user, "postgres");
+}

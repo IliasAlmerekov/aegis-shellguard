@@ -1,11 +1,12 @@
 //! Git snapshot provider — creates stashes before dangerous commands.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use tokio::process::Command;
 
 use crate::error::SnapshotError;
+use crate::snapshot_id;
 use crate::{ArtifactReadiness, Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
@@ -13,11 +14,6 @@ type Result<T> = std::result::Result<T, SnapshotError>;
 /// Sentinel value stored when the working tree had no changes to stash.
 /// A real stash hash is always a 40-char hex string, so this cannot collide.
 const CLEAN_SENTINEL: &str = "clean";
-
-/// Separator between the encoded `cwd` and the stash hash in a `snapshot_id`.
-/// Tab is not a valid path component on Unix or Windows, so it is safe to use
-/// as an unambiguous delimiter.
-const SEP: char = '\t';
 
 /// Environment variables git reads to locate a repository instead of walking
 /// up from `cwd`. This is the exact output of `git rev-parse --local-env-vars`
@@ -110,6 +106,23 @@ async fn working_tree_is_dirty(cwd: impl AsRef<Path>) -> Result<bool> {
     Ok(!status_out.stdout.iter().all(|b| b.is_ascii_whitespace()))
 }
 
+/// `v3:<hex cwd>:<commit hash>`. The hash is already hex and stays as is.
+fn build_snapshot_id(cwd: &Path, hash: &str) -> String {
+    snapshot_id::join_v3(&[&snapshot_id::encode_path(cwd), hash])
+}
+
+/// The one parser of git ids: `v3:` ids, and the legacy `<raw cwd><TAB><hash>`.
+fn parse_snapshot_id(id: &str) -> Result<(PathBuf, &str)> {
+    if snapshot_id::is_v3(id) {
+        let parts = snapshot_id::split_v3(id, 2)?;
+        return Ok((snapshot_id::decode_path(parts[0], "cwd")?, parts[1]));
+    }
+    let (cwd, hash) = id
+        .split_once(snapshot_id::LEGACY_SEP)
+        .ok_or_else(|| SnapshotError::Snapshot(format!("malformed snapshot_id: {id:?}")))?;
+    Ok((PathBuf::from(cwd), hash))
+}
+
 /// Find the positional `stash@{N}` reference of the entry whose commit is
 /// `hash`, or `None` when the entry is gone.
 async fn find_stash_ref(cwd: impl AsRef<Path>, hash: &str) -> Result<Option<String>> {
@@ -154,10 +167,10 @@ async fn apply_stash(cwd: impl AsRef<Path>, hash: &str) -> Result<Option<String>
 /// Move the current working-tree state into a stash entry of its own, so the
 /// tree is back at HEAD and a snapshot entry can be applied onto it. Returns
 /// the entry's commit hash, or `None` when the tree was already clean.
-async fn park_current_work(cwd: &str) -> Result<Option<String>> {
+async fn park_current_work(cwd: &Path) -> Result<Option<String>> {
     if !working_tree_is_dirty(cwd).await? {
         tracing::debug!(
-            cwd,
+            cwd = %cwd.display(),
             "working tree is clean before rollback, nothing to park"
         );
         return Ok(None);
@@ -187,7 +200,7 @@ async fn park_current_work(cwd: &str) -> Result<Option<String>> {
         Ok(output) => output,
         Err(error) => {
             return Err(SnapshotError::SnapshotNotRestoredUnknown {
-                cwd: cwd.to_string(),
+                cwd: cwd.display().to_string(),
                 details: format!("git rev-parse failed after parking current work: {error}"),
             });
         }
@@ -195,14 +208,14 @@ async fn park_current_work(cwd: &str) -> Result<Option<String>> {
 
     if !rev_out.status.success() {
         return Err(SnapshotError::SnapshotNotRestoredUnknown {
-            cwd: cwd.to_string(),
+            cwd: cwd.display().to_string(),
             details: "could not resolve the stash entry that parked the working tree".to_string(),
         });
     }
 
     let hash = String::from_utf8_lossy(&rev_out.stdout).trim().to_string();
     tracing::info!(
-        cwd,
+        cwd = %cwd.display(),
         %message,
         stash_hash = %hash,
         "parked the current working tree in a stash entry before rollback"
@@ -327,7 +340,7 @@ impl SnapshotPlugin for GitPlugin {
             });
         }
 
-        let snapshot_id = format!("{}{SEP}{hash}", cwd.display());
+        let snapshot_id = build_snapshot_id(cwd, &hash);
         tracing::info!(%snapshot_id, "git snapshot created");
         Ok(snapshot_id)
     }
@@ -346,13 +359,11 @@ impl SnapshotPlugin for GitPlugin {
             return Ok(());
         }
 
-        let (cwd_str, hash) = snapshot_id.split_once(SEP).ok_or_else(|| {
-            SnapshotError::Snapshot(format!("malformed snapshot_id: {snapshot_id:?}"))
-        })?;
+        let (cwd, hash) = parse_snapshot_id(snapshot_id)?;
 
         // Resolve the entry before anything is written: a rollback that cannot
         // find its snapshot must fail without touching the working tree.
-        find_stash_ref(cwd_str, hash).await?.ok_or_else(|| {
+        find_stash_ref(&cwd, hash).await?.ok_or_else(|| {
             SnapshotError::Snapshot(format!("stash entry not found for hash {hash}"))
         })?;
 
@@ -360,16 +371,16 @@ impl SnapshotPlugin for GitPlugin {
         // disk now would make `git stash apply` refuse to overwrite it. Park
         // that state in its own stash entry first: a rollback replaces the
         // current state with the captured one, it never destroys it.
-        park_current_work(cwd_str).await?;
+        park_current_work(&cwd).await?;
 
         // Parking shifts every `stash@{N}`, so resolve the positional ref again.
-        let stash_ref = find_stash_ref(cwd_str, hash).await?.ok_or_else(|| {
+        let stash_ref = find_stash_ref(&cwd, hash).await?.ok_or_else(|| {
             SnapshotError::Snapshot(format!(
                 "stash entry disappeared while parking current work; parked work was retained and rollback stopped for hash {hash}"
             ))
         })?;
 
-        if let Some(details) = apply_stash(cwd_str, hash).await? {
+        if let Some(details) = apply_stash(&cwd, hash).await? {
             tracing::error!(
                 stash_ref = %stash_ref,
                 details = %details,
@@ -378,12 +389,12 @@ impl SnapshotPlugin for GitPlugin {
 
             return Err(SnapshotError::RollbackConflict {
                 stash_ref,
-                cwd: cwd_str.to_string(),
+                cwd: cwd.display().to_string(),
                 details,
             });
         }
 
-        let drop_out = git_command(cwd_str)
+        let drop_out = git_command(&cwd)
             .args(["stash", "drop", &stash_ref])
             .output()
             .await;
@@ -399,11 +410,11 @@ impl SnapshotPlugin for GitPlugin {
         if snapshot_id == CLEAN_SENTINEL {
             return ArtifactReadiness::PRESENT_UNCHECKED;
         }
-        let Some((cwd_str, hash)) = snapshot_id.split_once(SEP) else {
+        let Ok((cwd, hash)) = parse_snapshot_id(snapshot_id) else {
             return ArtifactReadiness::UNAVAILABLE;
         };
         // A stash commit is the artifact: presence is "the commit object exists".
-        let found = git_command(cwd_str)
+        let found = git_command(&cwd)
             .args(["cat-file", "-e", &format!("{hash}^{{commit}}")])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
@@ -422,26 +433,27 @@ impl SnapshotPlugin for GitPlugin {
             return Ok(Liveness::NothingCaptured);
         }
 
-        let (cwd_str, hash) = snapshot_id.split_once(SEP).ok_or_else(|| {
-            SnapshotError::Snapshot(format!("malformed snapshot_id: {snapshot_id:?}"))
-        })?;
+        let (cwd, hash) = parse_snapshot_id(snapshot_id)?;
 
-        match tokio::fs::try_exists(cwd_str).await {
+        match tokio::fs::try_exists(&cwd).await {
             Ok(true) => {}
             Ok(false) => {
                 return Ok(Liveness::Absent {
-                    reason: format!("repository directory {cwd_str} no longer exists"),
+                    reason: format!("repository directory {} no longer exists", cwd.display()),
                 });
             }
             Err(error) => {
                 return Ok(Liveness::Inconclusive {
-                    reason: format!("could not stat repository directory {cwd_str}: {error}"),
+                    reason: format!(
+                        "could not stat repository directory {}: {error}",
+                        cwd.display()
+                    ),
                 });
             }
         }
 
         // The same lookup `rollback` performs before it touches anything.
-        Ok(match find_stash_ref(cwd_str, hash).await {
+        Ok(match find_stash_ref(&cwd, hash).await {
             Ok(Some(_)) => Liveness::Present,
             Ok(None) => Liveness::Absent {
                 reason: format!("no stash entry for hash {hash}"),
@@ -458,17 +470,14 @@ impl SnapshotPlugin for GitPlugin {
             return Ok(());
         }
 
-        let (cwd_str, hash) = snapshot_id.split_once(SEP).ok_or_else(|| {
-            SnapshotError::Snapshot(format!("malformed snapshot_id: {snapshot_id:?}"))
-        })?;
+        let (cwd, hash) = parse_snapshot_id(snapshot_id)?;
 
-        let cwd_path = Path::new(cwd_str);
-        if !cwd_path.exists() {
+        if !cwd.exists() {
             tracing::info!(%snapshot_id, "git repository no longer exists, nothing to delete");
             return Ok(());
         }
 
-        let list_out = git_command(cwd_path)
+        let list_out = git_command(&cwd)
             .args(["stash", "list", "--format=%H %gd"])
             .output()
             .await
@@ -496,7 +505,7 @@ impl SnapshotPlugin for GitPlugin {
             return Ok(());
         };
 
-        let drop_out = git_command(cwd_path)
+        let drop_out = git_command(&cwd)
             .args(["stash", "drop", &stash_ref])
             .output()
             .await;
@@ -542,3 +551,6 @@ mod liveness_tests;
 #[cfg(test)]
 #[path = "tests/readiness_tests.rs"]
 mod readiness_tests;
+#[cfg(test)]
+#[path = "tests/snapshot_id_tests.rs"]
+mod snapshot_id_tests;
