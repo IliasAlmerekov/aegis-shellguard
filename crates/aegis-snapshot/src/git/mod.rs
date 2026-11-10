@@ -551,3 +551,6 @@ mod liveness_tests;
 #[cfg(test)]
 #[path = "tests/readiness_tests.rs"]
 mod readiness_tests;
+#[cfg(test)]
+#[path = "tests/snapshot_id_tests.rs"]
+mod snapshot_id_tests;
