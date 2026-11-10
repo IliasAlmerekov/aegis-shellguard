@@ -237,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    fn existing_artifact_is_not_overwritten() {
+    fn create_artifact_file_refuses_an_existing_artifact_and_keeps_its_contents() {
         let temp_dir = tempfile::tempdir().unwrap();
         let store = temp_dir.path().join("snapshots");
         let artifact = store.join("artifact.dump");

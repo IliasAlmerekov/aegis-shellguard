@@ -762,7 +762,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn snapshot_preserves_existing_artifact_on_name_collision() {
+    async fn snapshot_never_overwrites_an_existing_artifact_with_the_preferred_name() {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("app.db");
         let snapshots_dir = temp_dir.path().join("snaps");
