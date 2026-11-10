@@ -50,6 +50,8 @@ mod registry;
 mod retention;
 /// Owner-only filesystem creation helpers for snapshot artifacts.
 mod secure_fs;
+/// The shared `snapshot_id` codec: hex components, `v3` layout, legacy splits.
+mod snapshot_id;
 /// Shared fake-executable helpers for the snapshot plugins' own tests.
 #[cfg(test)]
 mod test_support;

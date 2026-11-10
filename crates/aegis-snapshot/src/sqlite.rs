@@ -6,20 +6,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 
-#[cfg(unix)]
-use std::os::unix::ffi::{OsStrExt, OsStringExt};
-
 use crate::containment::contain_artifact;
 use crate::error::SnapshotError;
 use crate::liveness::local_file_liveness;
 use crate::readiness::sqlite_readiness;
 use crate::secure_fs::{create_artifact_file, create_store_dir};
+use crate::snapshot_id;
 use crate::{ArtifactReadiness, Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
-
-const SEP: char = '\t';
-const SNAPSHOT_ID_VERSION: &str = "v2";
 
 /// Snapshot plugin for SQLite database files.
 pub struct SqlitePlugin {
@@ -88,57 +83,11 @@ impl SqlitePlugin {
         }
     }
 
-    fn encode_path(path: &Path) -> String {
-        #[cfg(unix)]
-        {
-            path.as_os_str()
-                .as_bytes()
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect()
-        }
-
-        #[cfg(not(unix))]
-        {
-            path.to_string_lossy()
-                .as_bytes()
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect()
-        }
-    }
-
-    fn decode_path(encoded: &str, label: &str) -> Result<PathBuf> {
-        let malformed = || {
-            SnapshotError::Snapshot(format!(
-                "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-            ))
-        };
-        if !encoded.len().is_multiple_of(2) {
-            return Err(malformed());
-        }
-
-        let mut bytes = Vec::with_capacity(encoded.len() / 2);
-        for pair in encoded.as_bytes().as_chunks::<2>().0 {
-            let hex = std::str::from_utf8(pair).map_err(|_| malformed())?;
-            bytes.push(u8::from_str_radix(hex, 16).map_err(|_| malformed())?);
-        }
-
-        #[cfg(unix)]
-        let path = PathBuf::from(std::ffi::OsString::from_vec(bytes));
-
-        #[cfg(not(unix))]
-        let path = PathBuf::from(String::from_utf8(bytes).map_err(|_| malformed())?);
-
-        Ok(path)
-    }
-
     fn build_snapshot_id(original_path: &Path, dump_path: &Path) -> String {
-        format!(
-            "{SNAPSHOT_ID_VERSION}{SEP}{}{SEP}{}",
-            Self::encode_path(original_path),
-            Self::encode_path(dump_path)
-        )
+        snapshot_id::join_v3(&[
+            &snapshot_id::encode_path(original_path),
+            &snapshot_id::encode_path(dump_path),
+        ])
     }
 
     /// The database file a Snapshot was taken of, or `None` for a malformed id.
@@ -149,30 +98,31 @@ impl SqlitePlugin {
             .map(|(original, _dump)| original)
     }
 
-    fn parse_snapshot_id(snapshot_id: &str) -> Result<(PathBuf, PathBuf)> {
-        if snapshot_id.starts_with(&format!("{SNAPSHOT_ID_VERSION}{SEP}")) {
-            return Self::parse_v2_snapshot_id(snapshot_id);
+    fn parse_snapshot_id(id: &str) -> Result<(PathBuf, PathBuf)> {
+        if snapshot_id::is_v3(id) {
+            let parts = snapshot_id::split_v3(id, 2)?;
+            return Ok((
+                snapshot_id::decode_path(parts[0], "original path")?,
+                snapshot_id::decode_path(parts[1], "dump path")?,
+            ));
         }
-        Self::parse_legacy_snapshot_id(snapshot_id)
-    }
-
-    fn parse_v2_snapshot_id(snapshot_id: &str) -> Result<(PathBuf, PathBuf)> {
-        let parts: Vec<_> = snapshot_id.split(SEP).collect();
-        if parts.len() != 3 || parts[0] != SNAPSHOT_ID_VERSION {
-            return Err(SnapshotError::Snapshot(format!(
-                "malformed snapshot_id: {snapshot_id:?}"
-            )));
+        if snapshot_id::is_v2(id) {
+            let parts = snapshot_id::split_v2(id, 2)?;
+            return Ok((
+                snapshot_id::decode_path(parts[0], "original path")?,
+                snapshot_id::decode_path(parts[1], "dump path")?,
+            ));
         }
-        Ok((
-            Self::decode_path(parts[1], "original path")?,
-            Self::decode_path(parts[2], "dump path")?,
-        ))
+        Self::parse_legacy_snapshot_id(id)
     }
 
     fn parse_legacy_snapshot_id(snapshot_id: &str) -> Result<(PathBuf, PathBuf)> {
-        let (original_str, dump_str) = snapshot_id.split_once(SEP).ok_or_else(|| {
-            SnapshotError::Snapshot(format!("malformed snapshot_id: {snapshot_id:?}"))
-        })?;
+        let (original_str, dump_str) =
+            snapshot_id
+                .split_once(snapshot_id::LEGACY_SEP)
+                .ok_or_else(|| {
+                    SnapshotError::Snapshot(format!("malformed snapshot_id: {snapshot_id:?}"))
+                })?;
         Ok((PathBuf::from(original_str), PathBuf::from(dump_str)))
     }
 }
@@ -293,17 +243,6 @@ mod tests {
         fs::write(path, contents).unwrap();
     }
 
-    fn decode_hex(encoded: &str) -> String {
-        let mut bytes = Vec::with_capacity(encoded.len() / 2);
-        for pair in encoded.as_bytes().as_chunks::<2>().0 {
-            let hex = std::str::from_utf8(pair).unwrap();
-            let byte = u8::from_str_radix(hex, 16).unwrap();
-            bytes.push(byte);
-        }
-
-        String::from_utf8(bytes).unwrap()
-    }
-
     #[tokio::test]
     async fn is_applicable_when_file_exists() {
         let temp_dir = TempDir::new().unwrap();
@@ -349,14 +288,15 @@ mod tests {
             .snapshot(temp_dir.path(), "sqlite-command")
             .await
             .unwrap();
-        let parts: Vec<_> = snapshot_id.split(SEP).collect();
+        let parts = snapshot_id::split_v3(&snapshot_id, 2).unwrap();
         let canonical_db_path = db_path.canonicalize().unwrap();
         let canonical_snapshots_dir = snapshots_dir.canonicalize().unwrap();
 
-        assert_eq!(parts.len(), 3);
-        assert_eq!(parts[0], "v2");
-        assert_eq!(decode_hex(parts[1]), canonical_db_path.to_string_lossy());
-        let dump = PathBuf::from(decode_hex(parts[2]));
+        assert_eq!(
+            snapshot_id::decode_path(parts[0], "original path").unwrap(),
+            canonical_db_path
+        );
+        let dump = snapshot_id::decode_path(parts[1], "dump path").unwrap();
         assert_eq!(dump.parent().unwrap(), canonical_snapshots_dir.as_path());
         assert_eq!(fs::read(&dump).unwrap(), b"before-snapshot");
         assert_eq!(
@@ -673,8 +613,8 @@ mod tests {
             .snapshot(temp_dir.path(), "sqlite-command")
             .await
             .unwrap();
-        let parts: Vec<_> = snapshot_id.split(SEP).collect();
-        let dump_path = PathBuf::from(decode_hex(parts[2]));
+        let parts = snapshot_id::split_v3(&snapshot_id, 2).unwrap();
+        let dump_path = snapshot_id::decode_path(parts[1], "dump path").unwrap();
         fs::remove_file(&dump_path).unwrap();
 
         let err = plugin.rollback(&snapshot_id).await.unwrap_err();
@@ -708,6 +648,35 @@ mod tests {
         assert_eq!(fs::read(&db_path).unwrap(), b"before-snapshot");
     }
 
+    #[test]
+    fn build_snapshot_id_writes_v3_layout() {
+        let id = SqlitePlugin::build_snapshot_id(Path::new("/tmp/a.db"), Path::new("/tmp/s/d.db"));
+
+        assert_eq!(id, "v3:2f746d702f612e6462:2f746d702f732f642e6462");
+    }
+
+    #[test]
+    fn parse_snapshot_id_reads_every_format_to_the_same_target() {
+        let expected = (PathBuf::from("/tmp/a.db"), PathBuf::from("/tmp/s/d.db"));
+        for id in [
+            "v3:2f746d702f612e6462:2f746d702f732f642e6462",
+            "v2\t2f746d702f612e6462\t2f746d702f732f642e6462",
+            "/tmp/a.db\t/tmp/s/d.db",
+        ] {
+            assert_eq!(
+                SqlitePlugin::parse_snapshot_id(id).unwrap(),
+                expected,
+                "{id}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_snapshot_id_rejects_v3_with_wrong_component_count() {
+        assert!(SqlitePlugin::parse_snapshot_id("v3:2f746d70").is_err());
+        assert!(SqlitePlugin::parse_snapshot_id("v3:2f:2f:2f").is_err());
+    }
+
     #[tokio::test]
     async fn rollback_accepts_legacy_snapshot_ids() {
         let temp_dir = TempDir::new().unwrap();
@@ -717,7 +686,7 @@ mod tests {
         write_db(&db_path, b"before-snapshot");
         write_db(&dump_path, b"legacy-snapshot");
         let plugin = SqlitePlugin::new(db_path.clone(), temp_dir.path().join("snaps"));
-        let snapshot_id = format!("{}{SEP}{}", db_path.display(), dump_path.display());
+        let snapshot_id = format!("{}\t{}", db_path.display(), dump_path.display());
 
         plugin.rollback(&snapshot_id).await.unwrap();
 
@@ -774,8 +743,8 @@ mod tests {
             .snapshot(temp_dir.path(), "sqlite-command")
             .await
             .unwrap();
-        let first_parts: Vec<_> = first_id.split(SEP).collect();
-        let first_dump = PathBuf::from(decode_hex(first_parts[2]));
+        let first_parts = snapshot_id::split_v3(&first_id, 2).unwrap();
+        let first_dump = snapshot_id::decode_path(first_parts[1], "dump path").unwrap();
 
         write_db(&db_path, b"after-first-snapshot");
 
@@ -783,8 +752,8 @@ mod tests {
             .snapshot(temp_dir.path(), "sqlite-command")
             .await
             .unwrap();
-        let second_parts: Vec<_> = second_id.split(SEP).collect();
-        let second_dump = PathBuf::from(decode_hex(second_parts[2]));
+        let second_parts = snapshot_id::split_v3(&second_id, 2).unwrap();
+        let second_dump = snapshot_id::decode_path(second_parts[1], "dump path").unwrap();
 
         assert_ne!(first_id, second_id);
         assert_ne!(first_dump, second_dump);
