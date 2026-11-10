@@ -260,8 +260,14 @@ fn a_cd_in_a_pipeline_stage_leaves_the_process_cwd_snapshot() {
     assert!(entry["recovery_degradation"].is_null(), "{entry}");
     let ids = snapshot_ids(&entry);
     assert_eq!(ids.len(), 1, "{entry}");
+    let cwd_hex: String = world
+        .cwd
+        .to_string_lossy()
+        .bytes()
+        .map(|b| format!("{b:02x}"))
+        .collect();
     assert!(
-        ids[0].starts_with(&world.cwd.display().to_string()),
+        ids[0].starts_with(&format!("v3:{cwd_hex}:")),
         "the Snapshot must be of the process cwd, not `other`: {ids:?}"
     );
 }
