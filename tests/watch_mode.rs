@@ -673,3 +673,36 @@ fn watch_without_tty_denies_allowlisted_danger_without_a_snapshot_provider() {
     assert_eq!(entry["decision"], "Denied");
     assert_eq!(entry["recovery_degradation"], "no_snapshot_available");
 }
+
+#[cfg(unix)]
+#[test]
+fn disabled_watch_without_cwd_reports_error_and_does_not_execute() {
+    let home = TempDir::new().unwrap();
+    let cwd = TempDir::new().unwrap();
+    let marker = home.path().join("executed");
+    write_disabled_toggle(home.path());
+    let mut child = Command::new("/bin/sh")
+        .args(["-c", "cd \"$1\" && rmdir \"$1\" && exec \"$2\" watch", "sh"])
+        .arg(cwd.path())
+        .arg(env!("CARGO_BIN_EXE_aegis"))
+        .env("HOME", home.path())
+        .env("AEGIS_REAL_SHELL", "/bin/sh")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let frame = serde_json::json!({"cmd": format!("touch {}", marker.display()), "id": "missing"});
+    writeln!(child.stdin.take().unwrap(), "{frame}").unwrap();
+    let output = child.wait_with_output().unwrap();
+    let frames: Vec<serde_json::Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0]["type"], "error");
+    assert_eq!(frames[0]["message"], "cwd unavailable");
+    assert_eq!(frames[0]["id"], "missing");
+    assert!(!marker.exists());
+}

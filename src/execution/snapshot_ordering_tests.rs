@@ -53,3 +53,65 @@ fn effect_opaque_non_danger_plan_requests_recovery_snapshot() {
         }
     );
 }
+
+#[test]
+fn unavailable_cwd_cannot_persist_shell_rules() {
+    const CHILD: &str = "AEGIS_TEST_UNAVAILABLE_SHELL_RULE_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let home = tempfile::TempDir::new().unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                std::thread::current().name().unwrap(),
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .env("HOME", home.path())
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.lines().any(
+            |line| line == "warning: cannot persist allow rule: working directory unavailable"
+        ));
+        assert!(stderr.lines().any(
+            |line| line == "warning: cannot persist block rule: working directory unavailable"
+        ));
+    } else {
+        let workspace = tempfile::TempDir::new().unwrap();
+        let config_path = workspace.path().join(".aegis.toml");
+        std::fs::write(&config_path, "").unwrap();
+        std::env::set_current_dir(workspace.path()).unwrap();
+        let context = RuntimeContext::new(AegisConfig::default(), test_handle()).unwrap();
+        let PlanningOutcome::Planned(plan) = aegis::planning::plan_with_context(
+            &context,
+            PlanningRequest {
+                command: "git stash clear",
+                cwd_state: CwdState::Unavailable,
+                transport: ExecutionTransport::Shell,
+                ci_detected: false,
+            },
+        ) else {
+            panic!("expected plan")
+        };
+        super::persist_rule(
+            "git stash clear",
+            &plan,
+            aegis_config::amend::append_allow_rule,
+            "allow",
+        )
+        .unwrap();
+        super::persist_rule(
+            "git stash clear",
+            &plan,
+            aegis_config::amend::append_block_rule,
+            "block",
+        )
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(config_path).unwrap(), "");
+    }
+}

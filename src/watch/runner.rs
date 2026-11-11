@@ -302,13 +302,21 @@ async fn run_watch_plan_with_persistence<C, R, P>(
             let decision = confirmation_prompt(plan.assessment(), plan.explanation());
             // ADR-031 section 4: the rule waits for the Snapshot pass, and
             // never exists while Recovery is opted out.
+            if decision == PromptDecision::ApproveAlways && cwd.is_none() {
+                eprintln!("warning: cannot persist allow rule: working directory unavailable");
+            }
             approve_always = decision == PromptDecision::ApproveAlways
+                && cwd.is_some()
                 && !plan.explanation().context.recovery_opt_out;
             if decision == PromptDecision::DenyAlways {
-                if let Some(config_path) = active_config_path_for_append() {
+                if cwd.is_none() {
+                    eprintln!("warning: cannot persist block rule: working directory unavailable");
+                } else if let (Some(cwd), Some(config_path)) =
+                    (cwd, active_config_path_for_append())
+                {
                     let tokens = split_tokens(&frame.cmd);
                     let prefix = extract_prefix(&tokens);
-                    match append_block_rule(&config_path, &prefix, &cwd) {
+                    match append_block_rule(&config_path, &prefix, cwd) {
                         Ok(AppendOutcome::Conflict {
                             pattern,
                             existing_location,
@@ -367,7 +375,11 @@ async fn run_watch_plan_with_persistence<C, R, P>(
     // audit entries with an empty snapshot list.
     match runtime_decision {
         Decision::Approved | Decision::AutoApproved => {
-            let coverage = create_watch_snapshots(context, &plan, cwd.as_path()).await;
+            let coverage = if let Some(cwd) = cwd {
+                create_watch_snapshots(context, &plan, cwd).await
+            } else {
+                aegis_snapshot::SnapshotCoverage::default()
+            };
             let snapshots = coverage.records.as_slice();
             let attempts = coverage.snapshot_attempts();
             let attempts = attempts.as_slice();
@@ -386,7 +398,9 @@ async fn run_watch_plan_with_persistence<C, R, P>(
             )
             .or(persistence_block);
             if approve_always && degradation.is_none() {
-                persist_allow(&frame.cmd, &cwd);
+                if let Some(cwd) = cwd {
+                    persist_allow(&frame.cmd, cwd);
+                }
             }
             if let Some(degradation) = degradation {
                 let recovery_decision = recovery_prompt(degradation);
@@ -398,7 +412,7 @@ async fn run_watch_plan_with_persistence<C, R, P>(
                                 context,
                                 plan: &plan,
                                 ci_detected,
-                                cwd: &cwd,
+                                cwd,
                                 snapshots,
                                 attempts,
                                 recovery_degradation: Some(degradation),
@@ -414,7 +428,7 @@ async fn run_watch_plan_with_persistence<C, R, P>(
                             context,
                             plan: &plan,
                             ci_detected,
-                            cwd: &cwd,
+                            cwd,
                             snapshots,
                             attempts,
                             recovery_degradation: Some(degradation),
@@ -446,7 +460,7 @@ async fn run_watch_plan_with_persistence<C, R, P>(
                     context,
                     plan: &plan,
                     ci_detected,
-                    cwd: &cwd,
+                    cwd,
                     snapshots,
                     attempts,
                     recovery_degradation: None,
@@ -462,7 +476,7 @@ async fn run_watch_plan_with_persistence<C, R, P>(
                 runtime_decision,
                 ci_detected,
                 &frame,
-                &cwd,
+                cwd,
                 &id,
             ) {
                 return;
@@ -486,7 +500,7 @@ async fn run_watch_plan_with_persistence<C, R, P>(
                 runtime_decision,
                 ci_detected,
                 &frame,
-                &cwd,
+                cwd,
                 &id,
             ) {
                 return;
@@ -510,7 +524,7 @@ fn append_watch_audit_with_empty_snapshots(
     runtime_decision: Decision,
     ci_detected: bool,
     frame: &InputFrame,
-    cwd: &std::path::Path,
+    cwd: Option<&std::path::Path>,
     id: &Option<String>,
 ) -> bool {
     if let Err(err) = context.append_watch_audit_entry(
@@ -525,7 +539,7 @@ fn append_watch_audit_with_empty_snapshots(
             sandbox_status: sandbox_status_before_preparation(context),
             snapshot_attempts: &[],
             source: frame.source.clone(),
-            cwd: audit_cwd(cwd),
+            cwd: cwd.and_then(audit_cwd),
             id: id.clone(),
         },
     ) {
@@ -552,9 +566,8 @@ fn resolve_frame_cwd(frame: &InputFrame, id: &Option<String>) -> Result<PathBuf,
         return Ok(path);
     }
 
-    Ok(match std::env::current_dir() {
-        Ok(path) => path,
-        Err(_) => PathBuf::from("."),
+    std::env::current_dir().map_err(|_| {
+        emit_error_or_exit(id.clone(), "cwd unavailable".to_string());
     })
 }
 
@@ -566,10 +579,10 @@ pub(super) fn audit_cwd(cwd: &std::path::Path) -> Option<String> {
         .map(|path| path.to_string_lossy().into_owned())
 }
 
-fn watch_execution_cwd(cwd_state: &CwdState) -> PathBuf {
+fn watch_execution_cwd(cwd_state: &CwdState) -> Option<&std::path::Path> {
     match cwd_state {
-        CwdState::Resolved(path) => path.clone(),
-        CwdState::Unavailable => PathBuf::from("."),
+        CwdState::Resolved(path) => Some(path.as_path()),
+        CwdState::Unavailable => None,
     }
 }
 
@@ -604,7 +617,7 @@ async fn execute_and_emit(cmd: &str, cwd: &std::path::Path, id: Option<String>) 
             return;
         }
     };
-    execute_prepared_and_emit(command, cwd, id).await;
+    execute_prepared_and_emit(command, Some(cwd), id).await;
 }
 
 /// Emit an `Error` frame with exit code 4. If stdout is gone, nothing can carry
@@ -623,15 +636,17 @@ fn emit_error_or_exit(id: Option<String>, message: String) {
 
 pub(super) async fn execute_prepared_and_emit(
     mut command: std::process::Command,
-    cwd: &std::path::Path,
+    cwd: Option<&std::path::Path>,
     id: Option<String>,
 ) {
     #[cfg(unix)]
     use std::os::unix::process::ExitStatusExt;
     use tokio::process::Command;
 
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
     command
-        .current_dir(cwd)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());

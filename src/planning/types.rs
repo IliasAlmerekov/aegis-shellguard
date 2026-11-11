@@ -41,14 +41,19 @@ impl InterceptionPlan {
         // stays in the explanation.
         let unresolved_gap =
             decision_context.git_targets.has_unresolved() && decision_context.mode != Mode::Audit;
-        let snapshot_plan = if policy_decision.snapshots_required || unresolved_gap {
-            SnapshotPlan::Required {
-                applicable_plugins: decision_context.applicable_snapshot_plugins.clone(),
-                git_targets: decision_context.git_targets.clone(),
-            }
-        } else {
-            SnapshotPlan::NotRequired
-        };
+        let unavailable_gap = matches!(decision_context.cwd_state, CwdState::Unavailable)
+            && decision_context.mode != Mode::Audit
+            && !decision_context.recovery_opt_out
+            && (assessment.risk == aegis_types::RiskLevel::Danger || assessment.effect_opaque);
+        let snapshot_plan =
+            if policy_decision.snapshots_required || unresolved_gap || unavailable_gap {
+                SnapshotPlan::Required {
+                    applicable_plugins: decision_context.applicable_snapshot_plugins.clone(),
+                    git_targets: decision_context.git_targets.clone(),
+                }
+            } else {
+                SnapshotPlan::NotRequired
+            };
         let execution_disposition = match policy_decision.decision {
             PolicyAction::AutoApprove => ExecutionDisposition::Execute,
             PolicyAction::Prompt => ExecutionDisposition::RequiresApproval,

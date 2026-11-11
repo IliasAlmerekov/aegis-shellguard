@@ -19,14 +19,14 @@ fn watch_execution_cwd_returns_resolved_path() {
     let path = PathBuf::from("/srv/project");
     let cwd_state = CwdState::Resolved(path.clone());
 
-    assert_eq!(watch_execution_cwd(&cwd_state), path);
+    assert_eq!(watch_execution_cwd(&cwd_state), Some(path.as_path()));
 }
 
 #[test]
-fn watch_execution_cwd_returns_dot_when_unavailable() {
+fn watch_execution_cwd_is_unavailable_when_unavailable() {
     let cwd_state = CwdState::Unavailable;
 
-    assert_eq!(watch_execution_cwd(&cwd_state), PathBuf::from("."));
+    assert_eq!(watch_execution_cwd(&cwd_state), None);
 }
 
 /// Build a [`PreparedPlanner`] whose snapshot registry is pinned to `GitPlugin`
@@ -81,6 +81,47 @@ impl aegis_snapshot::SnapshotPlugin for SucceedingPlugin {
         _cmd: &str,
     ) -> Result<String, aegis_snapshot::SnapshotError> {
         Ok("mock-snapshot-id".to_string())
+    }
+
+    async fn rollback(&self, _snapshot_id: &str) -> Result<(), aegis_snapshot::SnapshotError> {
+        Ok(())
+    }
+
+    async fn delete(&self, _snapshot_id: &str) -> Result<(), aegis_snapshot::SnapshotError> {
+        Ok(())
+    }
+
+    async fn readiness(&self, _snapshot_id: &str) -> aegis_snapshot::ArtifactReadiness {
+        aegis_snapshot::ArtifactReadiness::PRESENT_UNCHECKED
+    }
+
+    async fn liveness(
+        &self,
+        _snapshot_id: &str,
+    ) -> Result<aegis_snapshot::Liveness, aegis_snapshot::SnapshotError> {
+        Ok(aegis_snapshot::Liveness::Present)
+    }
+}
+
+/// A snapshot plugin that always applies and always succeeds.
+struct ForbiddenPlugin;
+
+#[async_trait::async_trait]
+impl aegis_snapshot::SnapshotPlugin for ForbiddenPlugin {
+    fn name(&self) -> &'static str {
+        "mock-succeeding"
+    }
+
+    async fn is_applicable(&self, _cwd: &std::path::Path) -> bool {
+        panic!("snapshot applicability must not run")
+    }
+
+    async fn snapshot(
+        &self,
+        _cwd: &std::path::Path,
+        _cmd: &str,
+    ) -> Result<String, aegis_snapshot::SnapshotError> {
+        panic!("snapshot must not run")
     }
 
     async fn rollback(&self, _snapshot_id: &str) -> Result<(), aegis_snapshot::SnapshotError> {
@@ -693,3 +734,57 @@ async fn watch_approved_run_without_recovery_obligation_audits_the_attempts_of_i
 }
 
 mod approve_always;
+
+#[tokio::test(flavor = "multi_thread")]
+async fn unavailable_cwd_denies_watch_and_audits_recovery_degradation() {
+    let audit_dir = TempDir::new().unwrap();
+    let audit_path = audit_dir.path().join("audit.jsonl");
+    let context = RuntimeContext::new_with_audit_path(
+        AegisConfig::default(),
+        tokio::runtime::Handle::current(),
+        audit_path.clone(),
+    )
+    .unwrap();
+    context.set_snapshot_registry_for_tests(SnapshotRegistry::new_with_plugins(vec![Box::new(
+        ForbiddenPlugin,
+    )]));
+    let prepared = PreparedPlanner::Ready(Box::new(context));
+    let PlanningOutcome::Planned(plan) = prepared
+        .plan_async(PlanningRequest {
+            command: "rm -rf target",
+            cwd_state: CwdState::Unavailable,
+            transport: ExecutionTransport::Watch,
+            ci_detected: false,
+        })
+        .await
+    else {
+        panic!("expected plan")
+    };
+    let prompted = Cell::new(None);
+    run_watch_plan_with_prompts(
+        InputFrame {
+            cmd: "rm -rf target".into(),
+            cwd: None,
+            interactive: None,
+            source: None,
+            id: None,
+        },
+        &prepared,
+        plan,
+        false,
+        |_, _| PromptDecision::Approve,
+        |degradation| {
+            prompted.set(Some(degradation));
+            RecoveryPromptDecision::Deny
+        },
+    )
+    .await;
+    assert_eq!(
+        prompted.get(),
+        Some(aegis_types::RecoveryDegradation::UnavailableCwd)
+    );
+    let entry = read_audit_entry(&audit_path);
+    assert_eq!(entry["decision"], "Denied");
+    assert_eq!(entry["recovery_degradation"], "unavailable_cwd");
+    assert_eq!(entry["cwd"], Value::Null);
+}

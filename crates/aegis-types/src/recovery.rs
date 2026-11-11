@@ -31,6 +31,8 @@ pub enum RecoveryDegradation {
     /// or glob path, `GIT_DIR`, a missing path). Nothing covers it, and Aegis
     /// does not substitute a Snapshot of the process cwd (#471).
     UnresolvedGitTarget,
+    /// The command working directory could not be determined (#220).
+    UnavailableCwd,
     /// A required Snapshot was recorded, but its artifact is gone: the
     /// Snapshot cannot be restored (ADR-031 §8).
     SnapshotArtifactUnavailable,

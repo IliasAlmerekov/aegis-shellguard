@@ -260,3 +260,69 @@ async fn watch_snapshot_policy_none_marks_a_denied_danger_audit_entry() {
     assert_eq!(entry["decision"], "Denied");
     assert_eq!(entry["explanation"]["context"]["recovery_opt_out"], true);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn unavailable_cwd_never_persists_watch_rules() {
+    const CHILD: &str = "AEGIS_TEST_UNAVAILABLE_RULE_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let home = TempDir::new().unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                std::thread::current().name().unwrap(),
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .env("HOME", home.path())
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.lines().any(
+            |line| line == "warning: cannot persist allow rule: working directory unavailable"
+        ));
+        assert!(stderr.lines().any(
+            |line| line == "warning: cannot persist block rule: working directory unavailable"
+        ));
+    } else {
+        let temp = TempDir::new().unwrap();
+        let config = temp.path().join(".aegis.toml");
+        fs::write(&config, "").unwrap();
+        std::env::set_current_dir(temp.path()).unwrap();
+        let audit = temp.path().join("audit.jsonl");
+        let prepared = prepared_with_snapshot_policy(audit, SnapshotPolicy::Selective, vec![]);
+        for decision in [PromptDecision::ApproveAlways, PromptDecision::DenyAlways] {
+            let PlanningOutcome::Planned(plan) = prepared
+                .plan_async(PlanningRequest {
+                    command: WARN,
+                    cwd_state: CwdState::Unavailable,
+                    transport: ExecutionTransport::Watch,
+                    ci_detected: false,
+                })
+                .await
+            else {
+                panic!("expected plan")
+            };
+            run_watch_plan_with_prompts(
+                InputFrame {
+                    cmd: WARN.into(),
+                    cwd: None,
+                    interactive: None,
+                    source: None,
+                    id: None,
+                },
+                &prepared,
+                plan,
+                false,
+                |_, _| decision,
+                |_| panic!("Warn needs no recovery"),
+            )
+            .await;
+        }
+        assert_eq!(fs::read_to_string(config).unwrap(), "");
+    }
+}

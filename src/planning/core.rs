@@ -1,6 +1,6 @@
 //! Pure planning logic: build a planning outcome from a runtime context.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::planning::git_target::{GitTargetPlan, GitTargetUnresolved};
 use crate::planning::policy_rules::evaluate_policy_rules;
@@ -91,16 +91,9 @@ pub async fn plan_with_context_async(
         CwdState::Unavailable => context.is_blocked_for_command(request.command, None),
     };
     let backstop = recovery_backstop_applies(&assessment, context.config().snapshot_policy);
-    let snapshot_cwd = match &request.cwd_state {
-        CwdState::Resolved(path) => path.clone(),
-        CwdState::Unavailable => Path::new(".").to_path_buf(),
-    };
-    let mut applicable_snapshot_plugins = if backstop {
-        context
-            .applicable_snapshot_plugins_async(&snapshot_cwd)
-            .await
-    } else {
-        Vec::new()
+    let mut applicable_snapshot_plugins = match (&request.cwd_state, backstop) {
+        (CwdState::Resolved(path), true) => context.applicable_snapshot_plugins_async(path).await,
+        _ => Vec::new(),
     };
 
     // #471: the git Snapshot follows the Git target. Resolution (which
@@ -113,6 +106,8 @@ pub async fn plan_with_context_async(
         // unattended run. Disabling one provider is not the Audit opt-out.
         let report = context.git_stage_report(request.command, &assessment);
         git_targets = GitTargetPlan::resolve(&report, &request.cwd_state);
+    }
+    if backstop && matches!(request.cwd_state, CwdState::Resolved(_)) {
         // A resolved target that is not a git working tree is a gap whether
         // or not the git provider is enabled: report it as unresolved. A
         // directory inside a repository is replaced by the repository top
@@ -429,7 +424,7 @@ mod tests {
     }
 
     #[test]
-    fn unavailable_cwd_uses_legacy_snapshot_plugin_fallback_in_plan() {
+    fn unavailable_cwd_plans_recovery_without_snapshot_plugins() {
         let _guard = CURRENT_DIR_TEST_MUTEX.lock().unwrap();
         let original_cwd = std::env::current_dir().unwrap();
         let workspace = TempDir::new().unwrap();
@@ -465,7 +460,7 @@ mod tests {
         assert_eq!(
             plan.snapshot_plan(),
             SnapshotPlan::Required {
-                applicable_plugins: vec!["git"],
+                applicable_plugins: vec![],
                 git_targets: GitTargetPlan::default(),
             }
         );

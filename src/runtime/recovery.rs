@@ -66,6 +66,13 @@ pub fn plan_recovery_degradation(
     coverage: &SnapshotCoverage,
 ) -> Option<RecoveryDegradation> {
     let context = plan.decision_context();
+    if context.mode() != Mode::Audit
+        && matches!(context.cwd_state(), crate::planning::CwdState::Unavailable)
+        && !plan.explanation().context.recovery_opt_out
+        && (plan.assessment().risk == RiskLevel::Danger || plan.assessment().effect_opaque)
+    {
+        return Some(RecoveryDegradation::UnavailableCwd);
+    }
     if unattended && context.mode() != Mode::Audit && context.git_targets().has_unresolved() {
         return Some(RecoveryDegradation::UnresolvedGitTarget);
     }
@@ -96,6 +103,12 @@ pub fn allow_rule_persistence_degradation(
     plan: &InterceptionPlan,
     coverage: &SnapshotCoverage,
 ) -> Option<RecoveryDegradation> {
+    if matches!(
+        plan.decision_context().cwd_state(),
+        crate::planning::CwdState::Unavailable
+    ) {
+        return Some(RecoveryDegradation::UnavailableCwd);
+    }
     let assessment = plan.assessment();
     if !(assessment.effect_opaque || assessment.risk == RiskLevel::Danger) {
         return None;
@@ -376,6 +389,36 @@ mod tests {
         });
         let PlanningOutcome::Planned(plan) = outcome else {
             panic!("expected a normal plan");
+        };
+        plan
+    }
+
+    #[test]
+    fn unavailable_cwd_halts_unattended_danger() {
+        let plan = plan_with_unavailable_cwd();
+        assert_eq!(
+            plan_recovery_degradation(&plan, true, &SnapshotCoverage::default()),
+            Some(RecoveryDegradation::UnavailableCwd)
+        );
+    }
+
+    fn plan_with_unavailable_cwd() -> InterceptionPlan {
+        use crate::planning::{CwdState, PlanningOutcome, PlanningRequest, plan_with_context};
+        use crate::runtime::RuntimeContext;
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let context =
+            RuntimeContext::new(aegis_config::AegisConfig::default(), rt.handle().clone()).unwrap();
+        let outcome = plan_with_context(
+            &context,
+            PlanningRequest {
+                command: "rm -rf target",
+                cwd_state: CwdState::Unavailable,
+                transport: aegis_policy::ExecutionTransport::Shell,
+                ci_detected: true,
+            },
+        );
+        let PlanningOutcome::Planned(plan) = outcome else {
+            panic!("expected plan")
         };
         plan
     }

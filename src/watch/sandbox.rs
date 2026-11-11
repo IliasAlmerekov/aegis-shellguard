@@ -16,7 +16,7 @@ pub(super) struct WatchExecution<'a> {
     pub(super) context: &'a RuntimeContext,
     pub(super) plan: &'a InterceptionPlan,
     pub(super) ci_detected: bool,
-    pub(super) cwd: &'a std::path::Path,
+    pub(super) cwd: Option<&'a std::path::Path>,
     pub(super) snapshots: &'a [SnapshotRecord],
     pub(super) attempts: &'a [SnapshotAttempt],
     pub(super) recovery_degradation: Option<RecoveryDegradation>,
@@ -223,7 +223,7 @@ pub(super) fn append_watch_execution_audit(
         sandbox_status,
         snapshot_attempts: execution.attempts,
         source: execution.frame.source.clone(),
-        cwd: super::runner::audit_cwd(execution.cwd),
+        cwd: execution.cwd.and_then(super::runner::audit_cwd),
         id: execution.frame.id.clone(),
     };
     match execution.recovery_degradation {
