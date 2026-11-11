@@ -7,7 +7,8 @@ use time::OffsetDateTime;
 
 use crate::AegisConfig;
 use crate::allowlist::{
-    Allowlist, ConfigSourceLayer, analyze_allowlist_rule, validate_single_block_rule, validate_single_rule,
+    Allowlist, ConfigSourceLayer, analyze_allowlist_rule, validate_single_block_rule,
+    validate_single_rule,
 };
 use crate::error::ConfigError;
 use crate::model::PolicyRule;

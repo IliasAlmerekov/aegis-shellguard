@@ -69,15 +69,17 @@ fn compile_fields(
 
     validate_scope_fields(rule_type, cwd.as_deref(), user.as_deref())?;
 
-    aegis_scanner::check_pattern_length(pattern)
-        .map_err(|error| ConfigError::Config(format!("invalid {rule_type} rule pattern: {error}")))?;
-
-    let regex = aegis_scanner::compile_untrusted_regex(&glob_to_regex(pattern)).map_err(|error| {
-        ConfigError::Config(format!(
-            "invalid {rule_type} rule pattern {:?}: {error}",
-            pattern
-        ))
+    aegis_scanner::check_pattern_length(pattern).map_err(|error| {
+        ConfigError::Config(format!("invalid {rule_type} rule pattern: {error}"))
     })?;
+
+    let regex =
+        aegis_scanner::compile_untrusted_regex(&glob_to_regex(pattern)).map_err(|error| {
+            ConfigError::Config(format!(
+                "invalid {rule_type} rule pattern {:?}: {error}",
+                pattern
+            ))
+        })?;
 
     Ok(CompiledRule {
         pattern: pattern.to_string(),

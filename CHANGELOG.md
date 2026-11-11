@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Changed: A config with a custom, allowlist, or blocklist pattern over 256 bytes now fails to load; untrusted regexes compile under explicit size budgets (#217).
+
 - Fixed: Unavailable working directories no longer fall back to `.` for Recovery, rule persistence, or Watch frames (#220, ADR-036).
 
 - Fixed: The confirmation renderer denies unknown risk levels instead of approving them (#219).

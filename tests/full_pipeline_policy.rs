@@ -268,6 +268,43 @@ description = "Conflicts with built-in pattern id"
     );
 }
 
+/// A project-layer pattern over the 256-byte Pattern length limit fails closed
+/// on the command path (issue #217).
+#[test]
+fn oversized_project_custom_pattern_aborts_shell_wrapper() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+
+    fs::write(
+        workspace.path().join(".aegis.toml"),
+        format!(
+            r#"
+[[custom_patterns]]
+id = "USR-LONG"
+category = "Filesystem"
+risk = "Warn"
+pattern = "{}"
+description = "One byte over the pattern length limit"
+"#,
+            "a".repeat(257)
+        ),
+    )
+    .unwrap();
+
+    let output = base_command(home.path())
+        .current_dir(workspace.path())
+        .args(["-c", "echo hello"])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(4));
+    assert!(output.stdout.is_empty(), "command must not execute");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("error: failed to load config"), "{stderr}");
+    assert!(stderr.contains("257 bytes"), "{stderr}");
+    assert!(stderr.contains("256"), "{stderr}");
+}
+
 /// A custom pattern that is valid alone in each layer, but conflicts once
 /// both layers are merged, must still abort startup and attribute the
 /// failure to the project config file — the layer that completed the
