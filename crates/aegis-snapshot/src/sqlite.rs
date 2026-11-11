@@ -761,6 +761,7 @@ mod tests {
         assert_eq!(fs::read(second_dump).unwrap(), b"after-first-snapshot");
     }
 
+    mod collision_tests;
     mod database_path_tests;
     mod liveness_tests;
     mod readiness_tests;
