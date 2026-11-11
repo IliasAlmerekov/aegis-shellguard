@@ -172,6 +172,11 @@ pub fn show_confirmation_with_decision<R: BufRead, W: Write>(
             )
         }
         // Safe commands should not reach the dialog — auto-approve.
-        _ => PromptDecision::Approve,
+        RiskLevel::Safe => PromptDecision::Approve,
+        // Unknown risk levels fail closed.
+        _ => {
+            render_block(assessment, explanation, output);
+            PromptDecision::Deny
+        }
     }
 }
