@@ -122,7 +122,12 @@ pub fn show_confirmation_with_decision<R: BufRead, W: Write>(
     input: &mut R,
     output: &mut W,
 ) -> PromptDecision {
-    if explanation.policy.rationale == PolicyRationale::AnalysisConfirmationRequired {
+    // Unknown risk levels must reach the fail-closed dispatch below.
+    let known_risk = matches!(
+        assessment.risk,
+        RiskLevel::Safe | RiskLevel::Warn | RiskLevel::Danger | RiskLevel::Block
+    );
+    if known_risk && explanation.policy.rationale == PolicyRationale::AnalysisConfirmationRequired {
         if !is_interactive {
             render_noninteractive_analysis_denial(assessment, explanation, output);
             return PromptDecision::Deny;
@@ -132,7 +137,7 @@ pub fn show_confirmation_with_decision<R: BufRead, W: Write>(
         return super::confirm_screen::prompt_analysis_confirmation(input, output);
     }
 
-    if explanation.policy.rationale == PolicyRationale::AnalysisOverrideRequired {
+    if known_risk && explanation.policy.rationale == PolicyRationale::AnalysisOverrideRequired {
         if !is_interactive {
             render_noninteractive_analysis_denial(assessment, explanation, output);
             return PromptDecision::Deny;
@@ -172,6 +177,11 @@ pub fn show_confirmation_with_decision<R: BufRead, W: Write>(
             )
         }
         // Safe commands should not reach the dialog — auto-approve.
-        _ => PromptDecision::Approve,
+        RiskLevel::Safe => PromptDecision::Approve,
+        // Unknown risk levels fail closed.
+        _ => {
+            render_block(assessment, explanation, output);
+            PromptDecision::Deny
+        }
     }
 }
