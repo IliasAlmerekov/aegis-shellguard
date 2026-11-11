@@ -40,3 +40,15 @@ pub fn compile_untrusted_regex(regex: &str) -> Result<Regex, regex::Error> {
         .dfa_size_limit(REGEX_DFA_SIZE_LIMIT)
         .build()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The regex crate does not expose its defaults, so pin the values copied from regex 1.13.
+    #[test]
+    fn budgets_equal_the_regex_crate_defaults() {
+        assert_eq!(REGEX_SIZE_LIMIT, 10_485_760);
+        assert_eq!(REGEX_DFA_SIZE_LIMIT, 2_097_152);
+    }
+}
