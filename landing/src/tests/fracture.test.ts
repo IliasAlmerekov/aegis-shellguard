@@ -4,10 +4,11 @@ import { CUBE, FRACTURE, HOVER } from '../lib/scene/config'
 import {
   MAX_UP_BIAS,
   QUADRANTS,
-  buildPart,
+  buildShard,
   displaceVertex,
   edgeProximity,
   partDirection,
+  shardGrid,
 } from '../lib/scene/fracture'
 import { fbm3, noise3 } from '../lib/scene/noise'
 
@@ -94,55 +95,111 @@ describe('vertex displacement', () => {
  * jag. It is checked not by "looks about right" but bit for bit — for any
  * point falling into both parts, the displaced position must be identical.
  */
-describe('interlocking of the parts', () => {
+describe('interlocking of the shards', () => {
   const SUBDIVISION = 12
+  const built = shardGrid().map((shard) => buildShard(shard, SUBDIVISION))
 
-  function restMap(quadrantIndex: number): Map<string, [number, number, number]> {
-    const part = buildPart(QUADRANTS[quadrantIndex], SUBDIVISION)
-    const map = new Map<string, [number, number, number]>()
-    for (let i = 0; i < part.rest.length; i += 3) {
-      const key = [part.rest[i], part.rest[i + 1], part.rest[i + 2]].join('|')
-      map.set(key, [part.position[i], part.position[i + 1], part.position[i + 2]])
+  it('cuts the cube into shards that keep the four quarters', () => {
+    const grid = shardGrid()
+    expect(grid.length).toBeGreaterThan(QUADRANTS.length * 4)
+    for (const quadrant of QUADRANTS) {
+      expect(grid.some((shard) => shard.quadrant === quadrant)).toBe(true)
     }
-    return map
-  }
+    for (const shard of grid) {
+      // No shard straddles the planes X = 0 and Y = 0: the quarters still
+      // open along them.
+      expect(shard.min[0] * shard.max[0]).toBeGreaterThanOrEqual(0)
+      expect(shard.min[1] * shard.max[1]).toBeGreaterThanOrEqual(0)
+    }
+  })
 
-  it.each([
-    ['top-left and top-right', 0, 1],
-    ['bottom-left and bottom-right', 2, 3],
-    ['top-left and bottom-left', 0, 2],
-    ['top-right and bottom-right', 1, 3],
-  ])('%s coincide on their shared surface', (_name, a, b) => {
-    const first = restMap(a)
-    const second = restMap(b)
-
+  it('makes neighbours coincide on every shared surface', () => {
+    const seen = new Map<string, [number, number, number]>()
     let shared = 0
-    for (const [key, position] of first) {
-      const other = second.get(key)
-      if (!other) continue
-      shared += 1
-      expect(position).toEqual(other)
+    for (const part of built) {
+      for (let i = 0; i < part.rest.length; i += 3) {
+        const key = [part.rest[i], part.rest[i + 1], part.rest[i + 2]].join('|')
+        const position: [number, number, number] = [
+          part.position[i],
+          part.position[i + 1],
+          part.position[i + 2],
+        ]
+        const other = seen.get(key)
+        if (other) {
+          shared += 1
+          expect(position).toEqual(other)
+        } else {
+          seen.set(key, position)
+        }
+      }
     }
 
     // If no shared points were found, the test checked nothing.
+    expect(shared).toBeGreaterThan(built.length * SUBDIVISION)
+  })
+
+  /**
+   * At rest the cuts between shards of one quarter are closed, so the outer
+   * surface has to shade as one piece. Normals taken from each shard's own
+   * triangles alone would differ along every cut and draw the grid on the
+   * stone.
+   */
+  it('shades the outer surface continuously across a closed cut', () => {
+    const seen = new Map<string, [number, number, number]>()
+    let shared = 0
+    for (const part of built) {
+      for (let i = 0; i < part.rest.length; i += 3) {
+        if (part.cut[i / 3] === 1) continue
+        const rest = [part.rest[i], part.rest[i + 1], part.rest[i + 2]]
+        // Cube edges and corners are sharp on purpose: only face interiors count.
+        if (rest.filter((v) => Math.abs(v) === HALF).length !== 1) continue
+        const key = rest.join('|')
+        const normal: [number, number, number] = [
+          part.normal[i],
+          part.normal[i + 1],
+          part.normal[i + 2],
+        ]
+        const other = seen.get(key)
+        if (other) {
+          shared += 1
+          for (let axis = 0; axis < 3; axis += 1) {
+            expect(normal[axis]).toBeCloseTo(other[axis], 5)
+          }
+        } else {
+          seen.set(key, normal)
+        }
+      }
+    }
     expect(shared).toBeGreaterThan(SUBDIVISION)
   })
 })
 
-describe('building a quarter', () => {
+describe('building a shard', () => {
   const SUBDIVISION = 8
-  const part = buildPart(QUADRANTS[0], SUBDIVISION)
+  const grid = shardGrid()
+  const inner = (shard: (typeof grid)[number]) =>
+    [...shard.min, ...shard.max].every((v) => Math.abs(v) < HALF)
+  const cornerShard = grid.find(
+    (shard) =>
+      [0, 1, 2].every((a) => shard.min[a] === -HALF || shard.max[a] === HALF)
+  )!
+  const part = buildShard(cornerShard, SUBDIVISION)
 
-  it('counts six faces with no shared vertices', () => {
-    const perFace = (SUBDIVISION + 1) * (SUBDIVISION + 1)
-    expect(part.rest.length / 3).toBe(perFace * 6)
-    expect(part.triangles).toBe(SUBDIVISION * SUBDIVISION * 2 * 6)
+  it('marks every face of a buried shard as a fracture surface', () => {
+    const buried = buildShard(grid.find(inner)!, SUBDIVISION)
+    expect(buried.cut.every((v) => v === 1)).toBe(true)
   })
 
-  it('marks exactly two faces as fracture surfaces', () => {
-    const perFace = (SUBDIVISION + 1) * (SUBDIVISION + 1)
-    const marked = part.cut.reduce((sum, v) => sum + v, 0)
-    expect(marked).toBe(perFace * 2)
+  it('marks only faces on the cube surface as outer', () => {
+    let outer = 0
+    for (let i = 0; i < part.cut.length; i += 1) {
+      if (part.cut[i] === 1) continue
+      outer += 1
+      const rest = [part.rest[i * 3], part.rest[i * 3 + 1], part.rest[i * 3 + 2]]
+      expect(rest.some((v) => Math.abs(v) === HALF)).toBe(true)
+    }
+    expect(outer).toBeGreaterThan(0)
+    expect(outer).toBeLessThan(part.cut.length)
   })
 
   it('produces unit normals', () => {
@@ -153,45 +210,52 @@ describe('building a quarter', () => {
   })
 
   /**
-   * Winding. Outer faces have to look outward, fracture surfaces into the gap.
-   * A reversed winding does not crash and does not paint anything red: the
-   * outer faces are simply culled as back-facing, the fracture surfaces become
-   * front-facing, and the stone looks hollow. Which is exactly what happened.
+   * Winding. Every face has to look away from its own shard: outer faces
+   * outward, fracture surfaces into the gap. A reversed winding does not crash
+   * and does not paint anything red: the faces are simply culled as
+   * back-facing and the stone looks hollow. Which is exactly what happened.
    */
-  it('orients the faces outward and the fracture into the gap', () => {
-    const quadrant = QUADRANTS[1] // sx = +1, sy = +1
-    const built = buildPart(quadrant, 6)
-    const perFace = 7 * 7
+  it.each(grid.map((shard, index) => [index, shard] as const))(
+    'orients every face of shard %i away from it',
+    (_index, shard) => {
+      const built = buildShard(shard, 6)
+      const centre = [0, 1, 2].map((a) => (shard.min[a] + shard.max[a]) / 2)
+      const at = (vertex: number, axis: number) => built.position[vertex * 3 + axis]
 
-    // Face order in `faces()`: outer X, outer Y, +Z, −Z, fracture X, fracture Y.
-    const expected: [number, number, number][] = [
-      [quadrant.sx, 0, 0],
-      [0, quadrant.sy, 0],
-      [0, 0, 1],
-      [0, 0, -1],
-      [-quadrant.sx, 0, 0],
-      [0, -quadrant.sy, 0],
-    ]
-
-    expected.forEach((want, face) => {
-      let sum = 0
-      let count = 0
-      for (let i = 0; i < perFace; i += 1) {
-        const slot = (face * perFace + i) * 3
-        sum +=
-          built.normal[slot] * want[0] +
-          built.normal[slot + 1] * want[1] +
-          built.normal[slot + 2] * want[2]
-        count += 1
+      for (let i = 0; i < built.index.length; i += 3) {
+        const [a, b, c] = [built.index[i], built.index[i + 1], built.index[i + 2]]
+        const e1 = [0, 1, 2].map((k) => at(b, k) - at(a, k))
+        const e2 = [0, 1, 2].map((k) => at(c, k) - at(a, k))
+        const normal = [
+          e1[1] * e2[2] - e1[2] * e2[1],
+          e1[2] * e2[0] - e1[0] * e2[2],
+          e1[0] * e2[1] - e1[1] * e2[0],
+        ]
+        // The triangle's vertex normals follow its winding, and the relief
+        // rocks them only a little: all three have to agree with it.
+        for (const vertex of [a, b, c]) {
+          const dot =
+            normal[0] * built.normal[vertex * 3] +
+            normal[1] * built.normal[vertex * 3 + 1] +
+            normal[2] * built.normal[vertex * 3 + 2]
+          expect(dot).toBeGreaterThan(0)
+        }
       }
-      // The relief rocks individual normals, so the average over the face is
-      // what is checked: it has to point the declared way with ample margin.
-      expect(sum / count).toBeGreaterThan(0.5)
-    })
-  })
+
+      // And the faces as a whole look away from the shard's centre.
+      let away = 0
+      for (let vertex = 0; vertex < built.rest.length / 3; vertex += 1) {
+        for (let k = 0; k < 3; k += 1) {
+          away += built.normal[vertex * 3 + k] * (built.rest[vertex * 3 + k] - centre[k])
+        }
+      }
+      expect(away).toBeGreaterThan(0)
+    }
+  )
 
   it('references only existing vertices', () => {
     const vertices = part.rest.length / 3
+    expect(part.index.length).toBe(part.triangles * 3)
     for (const i of part.index) {
       expect(i).toBeLessThan(vertices)
     }

@@ -1,5 +1,5 @@
 /**
- * Building the geometry of one quarter of the fractured cube.
+ * Building the geometry of the shards of the fractured cube.
  *
  * Pure functions over typed arrays: no three.js and no React here, so all of
  * it is checkable by test rather than by eye.
@@ -21,7 +21,7 @@
  * would either pull the surfaces apart or push one into the other.
  */
 
-import { FRACTURE, CUBE } from './config'
+import { FRACTURE, CUBE, SHATTER } from './config'
 import { displacement3, fbm3 } from './noise'
 
 export type Quadrant = {
@@ -193,107 +193,93 @@ export function displaceVertex(
   return out
 }
 
-type Face = {
-  /** The face's corner in whole-cube coordinates. */
-  origin: [number, number, number]
-  /** The two vectors spanning the face. */
-  u: [number, number, number]
-  v: [number, number, number]
-  /** Outward for outer faces, into the gap for fracture surfaces. */
-  normal: [number, number, number]
-  cut: boolean
-}
-
-function faces(quadrant: Quadrant, half: number): Face[] {
-  const { sx, sy } = quadrant
-  const h = half
-  const x0 = 0
-  const x1 = sx * h
-  const y0 = 0
-  const y1 = sy * h
-
-  return [
-    // Outer face along X.
-    {
-      origin: [x1, y0, -h],
-      u: [0, y1 - y0, 0],
-      v: [0, 0, 2 * h],
-      normal: [sx, 0, 0],
-      cut: false,
-    },
-    // Outer face along Y.
-    {
-      origin: [x0, y1, -h],
-      u: [x1 - x0, 0, 0],
-      v: [0, 0, 2 * h],
-      normal: [0, sy, 0],
-      cut: false,
-    },
-    // Outer faces along Z — the lid and the floor.
-    {
-      origin: [x0, y0, h],
-      u: [x1 - x0, 0, 0],
-      v: [0, y1 - y0, 0],
-      normal: [0, 0, 1],
-      cut: false,
-    },
-    {
-      origin: [x0, y0, -h],
-      u: [x1 - x0, 0, 0],
-      v: [0, y1 - y0, 0],
-      normal: [0, 0, -1],
-      cut: false,
-    },
-    // Fracture surface on the plane X = 0: faces into the gap, i.e. away from
-    // the part.
-    {
-      origin: [x0, y0, -h],
-      u: [0, y1 - y0, 0],
-      v: [0, 0, 2 * h],
-      normal: [-sx, 0, 0],
-      cut: true,
-    },
-    // Fracture surface on the plane Y = 0.
-    {
-      origin: [x0, y0, -h],
-      u: [x1 - x0, 0, 0],
-      v: [0, 0, 2 * h],
-      normal: [0, -sy, 0],
-      cut: true,
-    },
-  ]
-}
-
-function cross(
-  a: [number, number, number],
-  b: [number, number, number]
-): [number, number, number] {
-  return [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  ]
-}
-
-function dot(a: [number, number, number], b: [number, number, number]): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+export type Shard = {
+  /** The quarter the shard belongs to: it opens together with that quarter. */
+  quadrant: Quadrant
+  /** Opposite corners of the shard, in whole-cube coordinates before displacement. */
+  min: [number, number, number]
+  max: [number, number, number]
 }
 
 /**
- * Builds one quarter.
+ * The cube cut into boxes by the planes of `SHATTER.cuts`.
+ *
+ * The planes run through the whole cube, so two neighbours always share an
+ * entire face: there are no T-junctions, and the argument at the top of this
+ * file covers every cut, not only the two the quarters open along.
+ */
+export function shardGrid(): Shard[] {
+  const half = CUBE.size / 2
+  const bounds = ([0, 1, 2] as const).map((axis) => [
+    -half,
+    ...SHATTER.cuts[axis].map((cut) => cut * half),
+    half,
+  ])
+
+  const grid: Shard[] = []
+  for (let iz = 0; iz + 1 < bounds[2].length; iz += 1) {
+    for (let iy = 0; iy + 1 < bounds[1].length; iy += 1) {
+      for (let ix = 0; ix + 1 < bounds[0].length; ix += 1) {
+        const min: Shard['min'] = [bounds[0][ix], bounds[1][iy], bounds[2][iz]]
+        const max: Shard['max'] = [bounds[0][ix + 1], bounds[1][iy + 1], bounds[2][iz + 1]]
+        const sx = min[0] + max[0] > 0 ? 1 : -1
+        const sy = min[1] + max[1] > 0 ? 1 : -1
+        const quadrant = QUADRANTS.find((q) => q.sx === sx && q.sy === sy)
+        if (quadrant) grid.push({ quadrant, min, max })
+      }
+    }
+  }
+  return grid
+}
+
+/**
+ * Builds one shard.
+ *
+ * Every vertex sits on one lattice shared by the whole cube: `2n` steps across
+ * X and Y, `n` across Z. Shard bounds snap to it, so coincident vertices of two
+ * shards are computed from the same integers and come out bit-identical.
  *
  * Faces do not share vertices with one another: the cube has to have sharp
- * edges, and a chip only reads as a facet with a normal of its own. So normals
- * are averaged within a face and never across its boundary.
+ * edges, and a chip only reads as a facet with a normal of its own. Within one
+ * plane the surface does continue into the neighbouring shard, so each face is
+ * built one lattice step wider than it is, normals are taken there, and the
+ * extra ring is dropped. Two shards then shade a closed cut identically.
  */
-export function buildPart(quadrant: Quadrant, subdivision: number): PartGeometry {
+export function buildShard(shard: Shard, subdivision: number): PartGeometry {
   const half = CUBE.size / 2
   const n = Math.max(1, Math.floor(subdivision))
-  const perFaceVerts = (n + 1) * (n + 1)
-  const list = faces(quadrant, half)
+  const count = [2 * n, 2 * n, n]
+  const step = [half / n, half / n, (2 * half) / n]
+  const lo = shard.min.map((v, axis) => Math.round((v + half) / step[axis]))
+  const hi = shard.max.map((v, axis) => Math.round((v + half) / step[axis]))
 
-  const vertexCount = perFaceVerts * list.length
-  const triangleCount = n * n * 2 * list.length
+  const faces = ([0, 1, 2] as const).flatMap((axis) =>
+    ([-1, 1] as const).map((side) => {
+      // e_u × e_v has to equal the face normal `side · e_axis`.
+      const u = (axis + (side > 0 ? 1 : 2)) % 3
+      const v = (axis + (side > 0 ? 2 : 1)) % 3
+      const plane = side > 0 ? hi[axis] : lo[axis]
+      return {
+        axis,
+        u,
+        v,
+        plane,
+        cut: plane !== 0 && plane !== count[axis],
+        // The ring of extra vertices, where the plane goes on past the shard.
+        u0: lo[u] - (lo[u] > 0 ? 1 : 0),
+        u1: hi[u] + (hi[u] < count[u] ? 1 : 0),
+        v0: lo[v] - (lo[v] > 0 ? 1 : 0),
+        v1: hi[v] + (hi[v] < count[v] ? 1 : 0),
+      }
+    })
+  )
+
+  let vertexCount = 0
+  let triangleCount = 0
+  for (const face of faces) {
+    vertexCount += (hi[face.u] - lo[face.u] + 1) * (hi[face.v] - lo[face.v] + 1)
+    triangleCount += (hi[face.u] - lo[face.u]) * (hi[face.v] - lo[face.v]) * 2
+  }
 
   const position = new Float32Array(vertexCount * 3)
   const normal = new Float32Array(vertexCount * 3)
@@ -304,65 +290,67 @@ export function buildPart(quadrant: Quadrant, subdivision: number): PartGeometry
   let vertexBase = 0
   let indexCursor = 0
   const displaced: [number, number, number] = [0, 0, 0]
+  const point: [number, number, number] = [0, 0, 0]
 
-  for (const face of list) {
-    // The winding is chosen so that u × v matches the declared normal —
-    // together with the triangle order below, that is what makes the normals
-    // point outward.
-    let u = face.u
-    let v = face.v
-    if (dot(cross(u, v), face.normal) < 0) {
-      const swap = u
-      u = v
-      v = swap
-    }
+  for (const face of faces) {
+    const wideU = face.u1 - face.u0 + 1
+    const wideV = face.v1 - face.v0 + 1
+    const widePosition = new Float32Array(wideU * wideV * 3)
+    const wideNormal = new Float32Array(wideU * wideV * 3)
+    const wideIndex = new Uint32Array((wideU - 1) * (wideV - 1) * 6)
 
-    for (let iv = 0; iv <= n; iv += 1) {
-      const tv = iv / n
-      for (let iu = 0; iu <= n; iu += 1) {
-        const tu = iu / n
-        const rx = face.origin[0] + u[0] * tu + v[0] * tv
-        const ry = face.origin[1] + u[1] * tu + v[1] * tv
-        const rz = face.origin[2] + u[2] * tu + v[2] * tv
-
-        displaceVertex(rx, ry, rz, half, displaced)
-
-        const slot = (vertexBase + iv * (n + 1) + iu) * 3
-        position[slot] = displaced[0]
-        position[slot + 1] = displaced[1]
-        position[slot + 2] = displaced[2]
-        rest[slot] = rx
-        rest[slot + 1] = ry
-        rest[slot + 2] = rz
-        cut[vertexBase + iv * (n + 1) + iu] = face.cut ? 1 : 0
+    point[face.axis] = -half + face.plane * step[face.axis]
+    for (let iv = face.v0; iv <= face.v1; iv += 1) {
+      for (let iu = face.u0; iu <= face.u1; iu += 1) {
+        point[face.u] = -half + iu * step[face.u]
+        point[face.v] = -half + iv * step[face.v]
+        displaceVertex(point[0], point[1], point[2], half, displaced)
+        widePosition.set(displaced, ((iv - face.v0) * wideU + (iu - face.u0)) * 3)
       }
     }
 
-    for (let iv = 0; iv < n; iv += 1) {
-      for (let iu = 0; iu < n; iu += 1) {
-        const a = vertexBase + iv * (n + 1) + iu
-        const b = a + 1
-        const c = a + (n + 1)
-        const d = c + 1
-        // The order has to produce the normal `u × v` and not its opposite:
-        // (a,b,c) gives (b−a) × (c−a) = u × v. The reverse order would turn
-        // every face inside out — outer faces would become back-facing and be
-        // culled, fracture surfaces would become front-facing, and the stone
-        // would look hollow.
-        index[indexCursor] = a
-        index[indexCursor + 1] = b
-        index[indexCursor + 2] = c
-        index[indexCursor + 3] = b
-        index[indexCursor + 4] = d
-        index[indexCursor + 5] = c
-        indexCursor += 6
+    // (a,b,c) gives (b−a) × (c−a) = u × v, the face normal. The reverse order
+    // would turn every face inside out and the stone would look hollow.
+    const quad = (out: Uint32Array, cursor: number, a: number, row: number) => {
+      out[cursor] = a
+      out[cursor + 1] = a + 1
+      out[cursor + 2] = a + row
+      out[cursor + 3] = a + 1
+      out[cursor + 4] = a + row + 1
+      out[cursor + 5] = a + row
+    }
+
+    let wideCursor = 0
+    for (let iv = 0; iv + 1 < wideV; iv += 1) {
+      for (let iu = 0; iu + 1 < wideU; iu += 1) {
+        quad(wideIndex, wideCursor, iv * wideU + iu, wideU)
+        wideCursor += 6
+      }
+    }
+    computeNormals(widePosition, wideIndex, wideNormal)
+
+    const nu = hi[face.u] - lo[face.u]
+    const nv = hi[face.v] - lo[face.v]
+    for (let iv = 0; iv <= nv; iv += 1) {
+      for (let iu = 0; iu <= nu; iu += 1) {
+        const vertex = vertexBase + iv * (nu + 1) + iu
+        const wide =
+          ((iv + lo[face.v] - face.v0) * wideU + (iu + lo[face.u] - face.u0)) * 3
+        position.set(widePosition.subarray(wide, wide + 3), vertex * 3)
+        normal.set(wideNormal.subarray(wide, wide + 3), vertex * 3)
+        rest[vertex * 3 + face.axis] = point[face.axis]
+        rest[vertex * 3 + face.u] = -half + (iu + lo[face.u]) * step[face.u]
+        rest[vertex * 3 + face.v] = -half + (iv + lo[face.v]) * step[face.v]
+        cut[vertex] = face.cut ? 1 : 0
+        if (iu < nu && iv < nv) {
+          quad(index, indexCursor, vertex, nu + 1)
+          indexCursor += 6
+        }
       }
     }
 
-    vertexBase += perFaceVerts
+    vertexBase += (nu + 1) * (nv + 1)
   }
-
-  computeNormals(position, index, normal)
 
   return { position, normal, rest, cut, index, triangles: triangleCount }
 }

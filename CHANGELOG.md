@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Changed: Landing hero opens on the stone in 48 shards adrift across the frame, and the scroll gathers them into one seamless cube before the page moves on. The camera approach, the copy fly-past, the cursor response, the glowing fissure, the lock pulse and the fade to black are gone, with their defocus and aberration passes.
 - Changed: git, sqlite, postgres, mysql and supabase Snapshots now write `v3:` ids joined with `:` through one shared codec, with path and name components hex-encoded; every earlier tab-joined id still rolls back (#286, ADR-026)
 - Added: A Watch `ApproveAlways` regression test verifies the saved allow rule and its working-directory scope in the active configuration file. (#559, ADR-031)
 - Changed: `ApproveAlways` on a `Danger` or effect-opaque command writes its allow rule only after the Snapshot pass leaves Recovery `Ready`, in Shell and Watch; otherwise no rule is saved, the human is told, and the Recovery override follows. Under `snapshot_policy = "None"` a destructive command is approved once only ("Persistent approval is unavailable while Snapshot recovery is disabled."), and its Audit entry carries `explanation.context.recovery_opt_out` (#559, ADR-031)

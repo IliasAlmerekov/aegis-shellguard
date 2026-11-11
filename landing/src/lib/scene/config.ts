@@ -30,6 +30,15 @@ export const CUBE = {
    * height above centre.
    */
   centerY: 1.14,
+
+  /**
+   * The share of the frame's width the gathered stone may take. The rest is
+   * margin for the chips on its edges and for the balancing sway.
+   */
+  fit: 0.72,
+
+  /** How far a stone scaled to nothing would rise, in scene units. See `stoneLift`. */
+  narrowLift: 1,
 } as const
 
 /**
@@ -210,6 +219,60 @@ export const HOVER = {
 } as const
 
 /**
+ * The shatter: the page opens on the stone in pieces, adrift, and the scroll
+ * gathers them into one, the rollback the page is about.
+ */
+export const SHATTER = {
+  /**
+   * Cut planes per axis, as fractions of the half-extent. X and Y must keep
+   * the plane at 0: the quarters open along it for the lock and the canyon.
+   * The other planes close for good once the stone is gathered.
+   * Uneven on purpose: an even grid shatters into bricks.
+   */
+  cuts: [
+    [-0.42, 0, 0.36],
+    [-0.38, 0, 0.46],
+    [-0.3, 0.38],
+  ],
+
+  /**
+   * How far a shard drifts from its place, per axis, as a multiple of its
+   * distance from the cube's centre. Scaling the centres apart keeps their
+   * order, so no shard has to cross another on the way home.
+   *
+   * X is sized to a 16:9 frame: at the resting camera the frame is about 11
+   * units wide, and the outermost shards have to reach its edges. Narrower
+   * frames scale it down, see `StoneCube`.
+   */
+  spread: [5.2, 1.1, 1.6],
+  /** The frame shape `spread[0]` is sized for. */
+  spreadAspect: 16 / 9,
+
+  /**
+   * Each shard takes its own share of the spread, between these two. The
+   * range is wide so the columns of the cut grid smear into an even field.
+   */
+  share: [0.35, 1.65],
+
+  /** A shard's turn away from its place at full spread, radians. */
+  spin: 1.4,
+
+  /**
+   * The drift while in pieces: each shard rocks and bobs on its own clock.
+   * Both are bounded swings rather than a steady spin, so a visitor who
+   * waits a minute and one who scrolls at once gather the same stone.
+   */
+  drift: {
+    /** Rocking, radians. */
+    turn: 0.5,
+    /** Bobbing, scene units. */
+    bob: 0.16,
+    /** The slowest and the fastest shard, seconds per swing. */
+    period: [11, 23],
+  },
+} as const
+
+/**
  * The core inside the stone.
  *
  * The light lives on the fracture surfaces, and its brightness rises **toward
@@ -295,7 +358,7 @@ export const GLOW = {
    * even linear falloff would give a broad washed-out wash.
    */
   spillWidth: 0.055,
-  spillIntensity: 0.85,
+  spillIntensity: 0,
   spillFalloff: 1.5,
 } as const
 
@@ -431,7 +494,7 @@ const APPROACH = { from: 0.1, to: 0.65 } as const
 
 export const SCROLL = {
   /** Pin length. A string for ScrollTrigger. */
-  pin: '+=200%',
+  pin: '+=70%',
   /**
    * Scrub smoothing, seconds. A mouse wheel is a fifty-pixel jump with no
    * intermediate values, and without smoothing the scene has nothing to draw
@@ -452,11 +515,18 @@ export const SCROLL = {
    */
   copy: APPROACH,
   approach: APPROACH,
+  /**
+   * The shards coming together. It starts with the first pixel of scroll, so
+   * the page answers at once. It ends a little before the pin does: the
+   * scrub trails the scroll by `scrub` seconds, and the stone has to be whole
+   * by the time the page starts to move.
+   */
+  gather: { from: 0, to: 0.9 },
   opening: { from: 0.6, to: 0.78 },
   /** The cube opens fully, then the guardrail snaps the parts back inward. */
-  lock: { from: 0.78, to: 0.88 },
+  lock: { from: 0.55, to: 0.68 },
   /** A wave runs along the fracture at the same time as the lock. */
-  pulse: { from: 0.78, to: 0.9 },
+  pulse: { from: 0.55, to: 0.72 },
   /** The camera resumes only after the lock's impact has read. */
   handoff: { from: 0.86, to: 0.96 },
 
@@ -581,7 +651,7 @@ export const SCROLL = {
    * on approach and at the moment the clearance is already wide, not in the
    * first frames of the parts separating.
    */
-  accent: { from: 0.58, peak: 0.79, to: 0.9, gain: 2.6 },
+  accent: { from: 0.4, peak: 0.6, to: 0.76, gain: 2.6 },
 
   /**
    * The camera at the finale — the "canyon": a vertical fissure filling the
@@ -816,8 +886,11 @@ export type TierSettings = {
 }
 
 /**
- * Triangles: 4 parts × 6 faces × subdivision² × 2.
- * 64 → 197k · 48 → 111k · 32 → 49k.
+ * Triangles: the six outer faces plus both sides of all eight cuts, about
+ * 112 × subdivision². 32 → 115k, 24 → 65k, 16 → 29k.
+ *
+ * The camera never closes in, so the stone stays a few hundred pixels tall:
+ * past 32 a triangle is smaller than two pixels and buys nothing.
  *
  * Faces do not share vertices with one another — the cube has to have sharp
  * edges, and a chip only reads as a facet with a normal of its own. Duplicated
@@ -841,7 +914,7 @@ export type TierSettings = {
  */
 export const TIER_SETTINGS: Record<Tier, TierSettings> = {
   full: {
-    subdivision: 64,
+    subdivision: 32,
     maxDpr: 1.5,
     pixelBudget: 4_000_000,
     bloom: true,
@@ -851,7 +924,7 @@ export const TIER_SETTINGS: Record<Tier, TierSettings> = {
     dofResolution: 0.4,
   },
   reduced: {
-    subdivision: 48,
+    subdivision: 24,
     maxDpr: 1.25,
     pixelBudget: 2_600_000,
     bloom: true,
@@ -861,7 +934,7 @@ export const TIER_SETTINGS: Record<Tier, TierSettings> = {
     dofResolution: 0.4,
   },
   low: {
-    subdivision: 32,
+    subdivision: 16,
     maxDpr: 1,
     pixelBudget: 1_800_000,
     bloom: true,
@@ -877,7 +950,7 @@ export const TIER_SETTINGS: Record<Tier, TierSettings> = {
    * `PostProcessing.tsx`.
    */
   still: {
-    subdivision: 32,
+    subdivision: 16,
     maxDpr: 1,
     pixelBudget: 1_800_000,
     bloom: false,

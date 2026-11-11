@@ -92,7 +92,6 @@ function FirstFrame({ onReady }: { onReady?: () => void }) {
 export function HeroScene({ className, progress, onReady }: Props) {
   const [tier, setTier] = useState<Tier>('full')
   const [freeze, setFreeze] = useState<number | undefined>(undefined)
-  const [interactive, setInteractive] = useState(false)
   const [reducedMotion, setReducedMotion] = useState(false)
   const [visible, setVisible] = useState(true)
 
@@ -125,11 +124,6 @@ export function HeroScene({ className, progress, onReady }: Props) {
     )
     setFreeze(freezeFromSearch(search) ?? undefined)
     setReducedMotion(reduced)
-
-    // The cursor response exists only where there is a cursor. On a touch
-    // device, telling a tap from a swipe costs around 200 ms, and a reaction
-    // 200 ms after a light lift is lag, not response.
-    setInteractive(window.matchMedia('(hover: hover)').matches && !reduced)
   }, [])
 
   const downgrade = useCallback(
@@ -320,14 +314,13 @@ export function HeroScene({ className, progress, onReady }: Props) {
           position={[...LIGHT.top.position]}
           color={LIGHT.top.color}
         />
-        <CameraRig progress={progress} />
+        <CameraRig />
         <StoneCube
           tier={tier}
           freeze={freeze ?? (reducedMotion ? STILL_TIME : undefined)}
-          interactive={interactive}
           progress={progress}
         />
-        <PostProcessing tier={tier} progress={progress} />
+        <PostProcessing tier={tier} />
         {reducedMotion ? null : <QualityLadder tier={tier} onDowngrade={downgrade} />}
         <FirstFrame onReady={onReady} />
       </Suspense>

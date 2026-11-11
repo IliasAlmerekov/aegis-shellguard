@@ -146,6 +146,21 @@ describe('scene state', () => {
     expect(stage.exit).toBe(1)
   })
 
+  it('starts shattered and gathers the stone into one piece before the pin ends', () => {
+    const sceneAt = (scene: number) => stageAt(scene, SCROLL, (p) => p)
+    expect(at(0).shatter).toBe(1)
+    expect(sceneAt(SCROLL.gather.to).shatter).toBe(0)
+    expect(SCROLL.gather.to).toBeLessThan(1)
+    expect(at(1).shatter).toBe(0)
+
+    let previous = 1
+    for (let scene = 0; scene <= 1; scene += 0.01) {
+      const shatter = sceneAt(scene).shatter
+      expect(shatter).toBeLessThanOrEqual(previous)
+      previous = shatter
+    }
+  })
+
   it('drives the copy by the same span as the camera approach', () => {
     // This is the whole content of the fly-past: the copy stands in the
     // stone's space, and it is the camera's motion that carries it off, not a
@@ -188,23 +203,6 @@ describe('scene state', () => {
     expect(approachDone).toBeLessThan(exitStarted)
   })
 
-  it('starts the Policy Lock only after the opening is nearly complete', () => {
-    let lockStarted = 1
-    for (let i = 0; i <= 1000; i += 1) {
-      const p = i / 1000
-      if (at(p).lock > 0) {
-        lockStarted = p
-        break
-      }
-    }
-
-    expect(at(lockStarted).opening).toBeGreaterThan(0.9)
-    // What is left after the impact is a narrow slit of light, not the former
-    // near-full opening: otherwise the new gesture is visually
-    // indistinguishable from the old scene.
-    expect(SCROLL.lockRecoil).toBeGreaterThan(SCROLL.open * 0.7)
-    expect(SCROLL.lockRecoil).toBeLessThan(SCROLL.open)
-  })
 
   it('starts the handoff only after the lock’s main impact', () => {
     expect(SCROLL.handoff.from).toBeGreaterThan(SCROLL.lock.from)

@@ -114,6 +114,8 @@ export type Stage = {
   readonly opening: number
   /** The parts' answering move: the guardrail locks an opening already begun. */
   readonly lock: number
+  /** How far apart the shards are: 1 on arrival, 0 once the stone is one piece. */
+  readonly shatter: number
   /** Position of the light pulse travelling from centre to edges. */
   readonly pulse: number
   /** The camera's final run to the locked fissure. */
@@ -125,6 +127,7 @@ export type Stage = {
 export type Choreography = {
   readonly copy: Span
   readonly approach: Span
+  readonly gather: Span
   readonly opening: Span
   readonly lock: Span
   readonly pulse: Span
@@ -149,6 +152,7 @@ export function stageAt(progress: number, plan: Choreography, map: (p: number) =
     approach: smoothstep(spanProgress(scene, plan.approach)),
     opening: smoothstep(spanProgress(scene, plan.opening)),
     lock: smoothstep(spanProgress(scene, plan.lock)),
+    shatter: 1 - smoothstep(spanProgress(scene, plan.gather)),
     pulse: smoothstep(spanProgress(scene, plan.pulse)),
     handoff: smoothstep(spanProgress(scene, plan.handoff)),
     exit: easeOut(spanProgress(scene, plan.exit)),
