@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use aegis::planning::{CwdState, ExecutionDisposition, InterceptionPlan, PreparedPlanner};
 use aegis::runtime::{
     AuditWriteOptions, allow_rule_persistence_degradation, plan_recovery_degradation,
@@ -28,15 +26,15 @@ fn persist_rule(
     ) -> Result<AppendOutcome, aegis_config::ConfigError>,
     label: &str,
 ) -> Result<(), String> {
+    let CwdState::Resolved(cwd) = plan.decision_context().cwd_state() else {
+        eprintln!("warning: cannot persist {label} rule: working directory unavailable");
+        return Ok(());
+    };
     match active_config_path_for_append() {
         Some(config_path) => {
             let tokens = split_tokens(cmd);
             let prefix = extract_prefix(&tokens);
-            let cwd = match plan.decision_context().cwd_state() {
-                CwdState::Resolved(path) => path.clone(),
-                CwdState::Unavailable => std::path::PathBuf::from("."),
-            };
-            match append_fn(&config_path, &prefix, &cwd) {
+            match append_fn(&config_path, &prefix, cwd) {
                 Ok(AppendOutcome::Conflict {
                     pattern,
                     existing_location,
@@ -116,8 +114,7 @@ pub(crate) fn run_planned_shell_command_with_renderer<R: ExecutionRenderer>(
                     Decision::Approved,
                     // ADR-031 section 4: the rule waits for the Snapshot pass,
                     // and never exists while Recovery is opted out.
-                    prompt_decision == PromptDecision::ApproveAlways
-                        && !plan.explanation().context.recovery_opt_out,
+                    prompt_decision == PromptDecision::ApproveAlways,
                     sandbox_config,
                     renderer,
                 )
@@ -180,6 +177,12 @@ fn execute_with_snapshots<R: ExecutionRenderer>(
     let snapshots = coverage.records.as_slice();
     let attempts = coverage.snapshot_attempts();
     let attempts = attempts.as_slice();
+    let unavailable = matches!(plan.decision_context().cwd_state(), CwdState::Unavailable);
+    if approve_always && unavailable {
+        eprintln!("warning: cannot persist allow rule: working directory unavailable");
+    }
+    let approve_always =
+        approve_always && !unavailable && !plan.explanation().context.recovery_opt_out;
     let persistence_block = if approve_always {
         allow_rule_persistence_degradation(plan, &coverage)
     } else {
@@ -340,9 +343,8 @@ fn create_snapshots_for_plan(
     };
     match prepared {
         PreparedPlanner::Ready(context) => {
-            let cwd = match plan.decision_context().cwd_state() {
-                CwdState::Resolved(path) => path.as_path(),
-                CwdState::Unavailable => Path::new("."),
+            let CwdState::Resolved(cwd) = plan.decision_context().cwd_state() else {
+                return SnapshotCoverage::default();
             };
             context.create_snapshots_for_plan(cwd, &plan.assessment().command.raw, &git_targets)
         }

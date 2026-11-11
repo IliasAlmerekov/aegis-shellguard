@@ -750,6 +750,11 @@ repository top level there, or its sqlite file lies beneath it; docker and
 database `Snapshot`s are never bound (ADR-053).
 _Avoid_: working directory (for the recorded field), project
 
+**Unavailable working directory**:
+The state where Aegis cannot determine the directory a command runs in: the process
+`current_dir()` failed and no explicit `cwd` was given. Aegis never replaces it with
+`.`. Snapshot, allowlist scope and Approve-always all treat it as unknown.
+
 **Snapshot ledger**:
 The single reading of the `Audit log` that answers which `Snapshot`s exist, which
 were pruned, and which record a `snapshot_id` resolves to.

@@ -19,14 +19,14 @@ fn watch_execution_cwd_returns_resolved_path() {
     let path = PathBuf::from("/srv/project");
     let cwd_state = CwdState::Resolved(path.clone());
 
-    assert_eq!(watch_execution_cwd(&cwd_state), path);
+    assert_eq!(watch_execution_cwd(&cwd_state), Some(path.as_path()));
 }
 
 #[test]
-fn watch_execution_cwd_returns_dot_when_unavailable() {
+fn watch_execution_cwd_is_unavailable_when_unavailable() {
     let cwd_state = CwdState::Unavailable;
 
-    assert_eq!(watch_execution_cwd(&cwd_state), PathBuf::from("."));
+    assert_eq!(watch_execution_cwd(&cwd_state), None);
 }
 
 /// Build a [`PreparedPlanner`] whose snapshot registry is pinned to `GitPlugin`
@@ -693,3 +693,5 @@ async fn watch_approved_run_without_recovery_obligation_audits_the_attempts_of_i
 }
 
 mod approve_always;
+
+mod unavailable_cwd;

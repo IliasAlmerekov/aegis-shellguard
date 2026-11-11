@@ -189,3 +189,17 @@ fn recovery_prompt_names_a_bad_snapshot_artifact_not_effect_opacity() {
         );
     }
 }
+
+#[test]
+fn recovery_prompt_names_unavailable_working_directory() {
+    let mut output = Vec::new();
+    let decision = show_recovery_override_with_input(
+        RecoveryDegradation::UnavailableCwd,
+        false,
+        &mut b"yes\n".as_ref(),
+        &mut output,
+    );
+    let text = strip_ansi(&String::from_utf8_lossy(&output));
+    assert_eq!(decision, RecoveryPromptDecision::Deny);
+    assert!(text.contains("working directory is unavailable"), "{text}");
+}

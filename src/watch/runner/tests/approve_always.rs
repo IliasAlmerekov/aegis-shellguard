@@ -260,3 +260,100 @@ async fn watch_snapshot_policy_none_marks_a_denied_danger_audit_entry() {
     assert_eq!(entry["decision"], "Denied");
     assert_eq!(entry["explanation"]["context"]["recovery_opt_out"], true);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn unavailable_cwd_never_persists_watch_rules() {
+    const CHILD: &str = "AEGIS_TEST_UNAVAILABLE_RULE_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let home = TempDir::new().unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        let marker = home.path().join("runs");
+        let git = home.path().join("git");
+        fs::write(
+            &git,
+            format!("#!/bin/sh\nprintf 'ran\\n' >> {}\n", marker.display()),
+        )
+        .unwrap();
+        fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                std::thread::current().name().unwrap(),
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .env("HOME", home.path())
+            .env("AEGIS_REAL_SHELL", "/bin/sh")
+            .env(
+                "PATH",
+                format!(
+                    "{}:{}",
+                    home.path().display(),
+                    std::env::var("PATH").unwrap_or_default()
+                ),
+            )
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read_to_string(marker).unwrap(), "ran\n");
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        let (before_deny, after_deny) = stderr.split_once("deny-always begins").unwrap();
+        assert_eq!(
+            before_deny
+                .lines()
+                .filter(|line| *line
+                    == "warning: cannot persist allow rule: working directory unavailable")
+                .count(),
+            1
+        );
+        assert!(!after_deny.lines().any(
+            |line| line == "warning: cannot persist allow rule: working directory unavailable"
+        ));
+        assert!(stderr.lines().any(
+            |line| line == "warning: cannot persist block rule: working directory unavailable"
+        ));
+    } else {
+        let temp = TempDir::new().unwrap();
+        let config = temp.path().join(".aegis.toml");
+        fs::write(&config, "").unwrap();
+        std::env::set_current_dir(temp.path()).unwrap();
+        let audit = temp.path().join("audit.jsonl");
+        let prepared = prepared_with_snapshot_policy(audit, SnapshotPolicy::Selective, vec![]);
+        for decision in [PromptDecision::ApproveAlways, PromptDecision::DenyAlways] {
+            if decision == PromptDecision::DenyAlways {
+                eprintln!("deny-always begins");
+            }
+            let PlanningOutcome::Planned(plan) = prepared
+                .plan_async(PlanningRequest {
+                    command: WARN,
+                    cwd_state: CwdState::Unavailable,
+                    transport: ExecutionTransport::Watch,
+                    ci_detected: false,
+                })
+                .await
+            else {
+                panic!("expected plan")
+            };
+            run_watch_plan_with_prompts(
+                InputFrame {
+                    cmd: WARN.into(),
+                    cwd: None,
+                    interactive: None,
+                    source: None,
+                    id: None,
+                },
+                &prepared,
+                plan,
+                false,
+                |_, _| decision,
+                |_| panic!("Warn needs no recovery"),
+            )
+            .await;
+        }
+        assert_eq!(fs::read_to_string(config).unwrap(), "");
+    }
+}

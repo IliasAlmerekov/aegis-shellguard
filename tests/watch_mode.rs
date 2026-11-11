@@ -673,3 +673,7 @@ fn watch_without_tty_denies_allowlisted_danger_without_a_snapshot_provider() {
     assert_eq!(entry["decision"], "Denied");
     assert_eq!(entry["recovery_degradation"], "no_snapshot_available");
 }
+
+#[cfg(unix)]
+#[path = "watch_mode/unavailable_cwd.rs"]
+mod unavailable_cwd;

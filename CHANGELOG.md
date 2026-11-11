@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Fixed: Unavailable working directories no longer fall back to `.` for Recovery, rule persistence, or Watch frames (#220, ADR-036).
+
 - Fixed: The confirmation renderer denies unknown risk levels instead of approving them (#219).
 - Changed: Landing hero opens on the stone in 48 shards adrift across the frame, and the scroll gathers them into one seamless cube before the page moves on. The camera approach, the copy fly-past, the cursor response, the glowing fissure, the lock pulse and the fade to black are gone, with their defocus and aberration passes.
 - Changed: git, sqlite, postgres, mysql and supabase Snapshots now write `v3:` ids joined with `:` through one shared codec, with path and name components hex-encoded; every earlier tab-joined id still rolls back (#286, ADR-026)

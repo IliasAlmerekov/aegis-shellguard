@@ -52,13 +52,10 @@ pub fn recovery_status(
 
 /// The Recovery degradation, if any, that must stop or interrupt this run.
 ///
-/// Two sources. An unresolved Git target on an unattended run means the
-/// Recovery obligation cannot be met: no git Snapshot covers the working tree
-/// the command changes, and other Snapshots that succeeded do not change that
-/// (#471). Otherwise the post-attempt [`recovery_status`] decides. `unattended`
-/// is true when no human decided: the run was auto-approved. A confirmed run
-/// keeps the weaker attended promise and discloses the gap in the dialog and
-/// the audit entry instead. `Mode::Audit` declines all enforcement.
+/// An unavailable working directory degrades required Recovery for attended and
+/// unattended runs (#220). An unresolved Git target degrades an unattended run
+/// (#471). Otherwise post-attempt [`recovery_status`] decides. `Mode::Audit`
+/// declines enforcement; a confirmed run can use the Recovery override.
 #[must_use]
 pub fn plan_recovery_degradation(
     plan: &InterceptionPlan,
@@ -66,6 +63,13 @@ pub fn plan_recovery_degradation(
     coverage: &SnapshotCoverage,
 ) -> Option<RecoveryDegradation> {
     let context = plan.decision_context();
+    if context.mode() != Mode::Audit
+        && matches!(context.cwd_state(), crate::planning::CwdState::Unavailable)
+        && !plan.explanation().context.recovery_opt_out
+        && (plan.assessment().risk == RiskLevel::Danger || plan.assessment().effect_opaque)
+    {
+        return Some(RecoveryDegradation::UnavailableCwd);
+    }
     if unattended && context.mode() != Mode::Audit && context.git_targets().has_unresolved() {
         return Some(RecoveryDegradation::UnresolvedGitTarget);
     }
@@ -85,17 +89,21 @@ pub fn plan_recovery_degradation(
 /// The reason an `ApproveAlways` rule must not be saved for this run, if any
 /// (ADR-031 section 4, persistence gate).
 ///
-/// A human confirmed this command, so [`plan_recovery_degradation`] stays
-/// silent for a confirmed `Danger`. Persisting its rule is a stronger act, so
-/// it waits for `Recovery status = Ready` with the obligation forced on:
-/// `Danger` with no applicable provider counts as `NoSnapshotAvailable`.
-/// `None` means the rule may be written. A command outside the obligation
-/// (for example `Warn`) always may.
+/// An unavailable working directory blocks persistence for every risk level.
+/// Otherwise a `Danger` or effect-opaque command waits for `Recovery status =
+/// Ready`; commands outside that obligation need no Recovery check (ADR-031).
+/// `None` means the rule may be written.
 #[must_use]
 pub fn allow_rule_persistence_degradation(
     plan: &InterceptionPlan,
     coverage: &SnapshotCoverage,
 ) -> Option<RecoveryDegradation> {
+    if matches!(
+        plan.decision_context().cwd_state(),
+        crate::planning::CwdState::Unavailable
+    ) {
+        return Some(RecoveryDegradation::UnavailableCwd);
+    }
     let assessment = plan.assessment();
     if !(assessment.effect_opaque || assessment.risk == RiskLevel::Danger) {
         return None;
@@ -376,6 +384,36 @@ mod tests {
         });
         let PlanningOutcome::Planned(plan) = outcome else {
             panic!("expected a normal plan");
+        };
+        plan
+    }
+
+    #[test]
+    fn unavailable_cwd_halts_unattended_danger() {
+        let plan = plan_with_unavailable_cwd();
+        assert_eq!(
+            plan_recovery_degradation(&plan, true, &SnapshotCoverage::default()),
+            Some(RecoveryDegradation::UnavailableCwd)
+        );
+    }
+
+    fn plan_with_unavailable_cwd() -> InterceptionPlan {
+        use crate::planning::{CwdState, PlanningOutcome, PlanningRequest, plan_with_context};
+        use crate::runtime::RuntimeContext;
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let context =
+            RuntimeContext::new(aegis_config::AegisConfig::default(), rt.handle().clone()).unwrap();
+        let outcome = plan_with_context(
+            &context,
+            PlanningRequest {
+                command: "rm -rf target",
+                cwd_state: CwdState::Unavailable,
+                transport: aegis_policy::ExecutionTransport::Shell,
+                ci_detected: true,
+            },
+        );
+        let PlanningOutcome::Planned(plan) = outcome else {
+            panic!("expected plan")
         };
         plan
     }
