@@ -1,5 +1,19 @@
 use super::*;
 
+#[test]
+fn safe_with_empty_input_returns_approve() {
+    let assessment = make_assessment("ls -la", RiskLevel::Safe, vec![]);
+    let decision = crate::stdout_renderer::show_confirmation_with_decision(
+        &assessment,
+        &default_explanation_for_assessment(&assessment),
+        &[],
+        true,
+        &mut b"".as_ref(),
+        &mut Vec::new(),
+    );
+    assert_eq!(decision, PromptDecision::Approve);
+}
+
 // ── Highlighting ──────────────────────────────────────────────────────────
 
 #[test]
