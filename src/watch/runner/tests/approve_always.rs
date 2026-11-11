@@ -301,7 +301,16 @@ async fn unavailable_cwd_never_persists_watch_rules() {
         );
         assert_eq!(fs::read_to_string(marker).unwrap(), "ran\n");
         let stderr = String::from_utf8(output.stderr).unwrap();
-        assert!(stderr.lines().any(
+        let (before_deny, after_deny) = stderr.split_once("deny-always begins").unwrap();
+        assert_eq!(
+            before_deny
+                .lines()
+                .filter(|line| *line
+                    == "warning: cannot persist allow rule: working directory unavailable")
+                .count(),
+            1
+        );
+        assert!(!after_deny.lines().any(
             |line| line == "warning: cannot persist allow rule: working directory unavailable"
         ));
         assert!(stderr.lines().any(
@@ -315,6 +324,9 @@ async fn unavailable_cwd_never_persists_watch_rules() {
         let audit = temp.path().join("audit.jsonl");
         let prepared = prepared_with_snapshot_policy(audit, SnapshotPolicy::Selective, vec![]);
         for decision in [PromptDecision::ApproveAlways, PromptDecision::DenyAlways] {
+            if decision == PromptDecision::DenyAlways {
+                eprintln!("deny-always begins");
+            }
             let PlanningOutcome::Planned(plan) = prepared
                 .plan_async(PlanningRequest {
                     command: WARN,

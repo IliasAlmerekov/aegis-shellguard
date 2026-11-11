@@ -1,4 +1,39 @@
 use super::*;
+use std::io::{BufRead, BufReader, Read};
+use std::time::Duration;
+
+fn wait_for_ready(child: &mut std::process::Child) -> BufReader<std::process::ChildStdout> {
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let result = loop {
+            let mut line = String::new();
+            match stdout.read_line(&mut line) {
+                Ok(0) => break Err("watch closed before ready".to_owned()),
+                Err(err) => break Err(err.to_string()),
+                Ok(_) => match serde_json::from_str::<serde_json::Value>(&line) {
+                    Ok(frame) if frame["type"] == "result" && frame["id"] == "ready" => {
+                        if frame["exit_code"] == 0 {
+                            break Ok(stdout);
+                        }
+                        break Err(format!("ready frame failed: {frame}"));
+                    }
+                    Ok(_) => {}
+                    Err(err) => break Err(err.to_string()),
+                },
+            }
+        };
+        let _ = tx.send(result);
+    });
+    match rx.recv_timeout(Duration::from_secs(10)) {
+        Ok(Ok(stdout)) => stdout,
+        outcome => {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("watch did not become ready: {outcome:?}");
+        }
+    }
+}
 
 #[cfg(unix)]
 #[test]
@@ -18,32 +53,13 @@ fn disabled_watch_without_cwd_reports_error_and_does_not_execute() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    use std::io::{BufRead, BufReader, Read};
-    let mut stdout = BufReader::new(child.stdout.take().unwrap());
     writeln!(
         child.stdin.as_mut().unwrap(),
         "{}",
         serde_json::json!({"cmd": "true", "cwd": home.path(), "id": "ready"})
     )
     .unwrap();
-    loop {
-        let mut line = String::new();
-        if stdout.read_line(&mut line).unwrap() == 0 {
-            let mut err = String::new();
-            child
-                .stderr
-                .take()
-                .unwrap()
-                .read_to_string(&mut err)
-                .unwrap();
-            panic!("watch exited before ready: {err}");
-        }
-        let frame: serde_json::Value = serde_json::from_str(&line).unwrap();
-        if frame["type"] == "result" && frame["id"] == "ready" {
-            assert_eq!(frame["exit_code"], 0);
-            break;
-        }
-    }
+    let mut stdout = wait_for_ready(&mut child);
     fs::remove_dir(cwd.path()).unwrap();
     let frame = serde_json::json!({"cmd": format!("touch {}", marker.display()), "id": "missing"});
     writeln!(child.stdin.take().unwrap(), "{frame}").unwrap();
@@ -105,8 +121,6 @@ fn enabled_watch_without_cwd_denies_unattended_danger() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    use std::io::{BufRead, BufReader, Read};
-    let mut stdout = BufReader::new(child.stdout.take().unwrap());
     let stdin = child.stdin.as_mut().unwrap();
     writeln!(
         stdin,
@@ -114,23 +128,7 @@ fn enabled_watch_without_cwd_denies_unattended_danger() {
         serde_json::json!({"cmd":"true", "cwd": home.path(), "id":"ready"})
     )
     .unwrap();
-    loop {
-        let mut line = String::new();
-        if stdout.read_line(&mut line).unwrap() == 0 {
-            let mut err = String::new();
-            child
-                .stderr
-                .take()
-                .unwrap()
-                .read_to_string(&mut err)
-                .unwrap();
-            panic!("{err}");
-        }
-        let frame: serde_json::Value = serde_json::from_str(&line).unwrap();
-        if frame["type"] == "result" && frame["id"] == "ready" {
-            break;
-        }
-    }
+    let mut stdout = wait_for_ready(&mut child);
     fs::remove_dir(cwd.path()).unwrap();
     writeln!(
         child.stdin.take().unwrap(),

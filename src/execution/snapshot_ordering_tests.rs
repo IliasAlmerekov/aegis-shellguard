@@ -92,11 +92,16 @@ fn unavailable_cwd_cannot_persist_shell_rules() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert_eq!(std::fs::read_to_string(marker).unwrap(), "ran\n");
+        assert_eq!(std::fs::read_to_string(marker).unwrap(), "ran\nran\n");
         let stderr = String::from_utf8(output.stderr).unwrap();
-        assert!(stderr.lines().any(
-            |line| line == "warning: cannot persist allow rule: working directory unavailable"
-        ));
+        assert_eq!(
+            stderr
+                .lines()
+                .filter(|line| *line
+                    == "warning: cannot persist allow rule: working directory unavailable")
+                .count(),
+            1
+        );
         assert!(stderr.lines().any(
             |line| line == "warning: cannot persist block rule: working directory unavailable"
         ));
@@ -110,6 +115,7 @@ fn unavailable_cwd_cannot_persist_shell_rules() {
         let renderer = aegis_tui::TestRenderer::new();
         for decision in [
             aegis_tui::PromptDecision::ApproveAlways,
+            aegis_tui::PromptDecision::Approve,
             aegis_tui::PromptDecision::DenyAlways,
         ] {
             let PlanningOutcome::Planned(plan) = prepared.plan(PlanningRequest {
@@ -131,10 +137,10 @@ fn unavailable_cwd_cannot_persist_shell_rules() {
             );
             assert_eq!(
                 exit,
-                if decision == aegis_tui::PromptDecision::ApproveAlways {
-                    0
-                } else {
+                if decision == aegis_tui::PromptDecision::DenyAlways {
                     crate::EXIT_DENIED
+                } else {
+                    0
                 }
             );
         }
