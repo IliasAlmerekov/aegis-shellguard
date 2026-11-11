@@ -266,6 +266,15 @@ async fn unavailable_cwd_never_persists_watch_rules() {
     const CHILD: &str = "AEGIS_TEST_UNAVAILABLE_RULE_CHILD";
     if std::env::var_os(CHILD).is_none() {
         let home = TempDir::new().unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        let marker = home.path().join("runs");
+        let git = home.path().join("git");
+        fs::write(
+            &git,
+            format!("#!/bin/sh\nprintf 'ran\\n' >> {}\n", marker.display()),
+        )
+        .unwrap();
+        fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).unwrap();
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
@@ -274,6 +283,15 @@ async fn unavailable_cwd_never_persists_watch_rules() {
             ])
             .env(CHILD, "1")
             .env("HOME", home.path())
+            .env("AEGIS_REAL_SHELL", "/bin/sh")
+            .env(
+                "PATH",
+                format!(
+                    "{}:{}",
+                    home.path().display(),
+                    std::env::var("PATH").unwrap_or_default()
+                ),
+            )
             .output()
             .unwrap();
         assert!(
@@ -281,6 +299,7 @@ async fn unavailable_cwd_never_persists_watch_rules() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
+        assert_eq!(fs::read_to_string(marker).unwrap(), "ran\n");
         let stderr = String::from_utf8(output.stderr).unwrap();
         assert!(stderr.lines().any(
             |line| line == "warning: cannot persist allow rule: working directory unavailable"

@@ -52,13 +52,10 @@ pub fn recovery_status(
 
 /// The Recovery degradation, if any, that must stop or interrupt this run.
 ///
-/// Two sources. An unresolved Git target on an unattended run means the
-/// Recovery obligation cannot be met: no git Snapshot covers the working tree
-/// the command changes, and other Snapshots that succeeded do not change that
-/// (#471). Otherwise the post-attempt [`recovery_status`] decides. `unattended`
-/// is true when no human decided: the run was auto-approved. A confirmed run
-/// keeps the weaker attended promise and discloses the gap in the dialog and
-/// the audit entry instead. `Mode::Audit` declines all enforcement.
+/// An unavailable working directory degrades required Recovery for attended and
+/// unattended runs (#220). An unresolved Git target degrades an unattended run
+/// (#471). Otherwise post-attempt [`recovery_status`] decides. `Mode::Audit`
+/// declines enforcement; a confirmed run can use the Recovery override.
 #[must_use]
 pub fn plan_recovery_degradation(
     plan: &InterceptionPlan,
@@ -92,12 +89,10 @@ pub fn plan_recovery_degradation(
 /// The reason an `ApproveAlways` rule must not be saved for this run, if any
 /// (ADR-031 section 4, persistence gate).
 ///
-/// A human confirmed this command, so [`plan_recovery_degradation`] stays
-/// silent for a confirmed `Danger`. Persisting its rule is a stronger act, so
-/// it waits for `Recovery status = Ready` with the obligation forced on:
-/// `Danger` with no applicable provider counts as `NoSnapshotAvailable`.
-/// `None` means the rule may be written. A command outside the obligation
-/// (for example `Warn`) always may.
+/// An unavailable working directory blocks persistence for every risk level.
+/// Otherwise a `Danger` or effect-opaque command waits for `Recovery status =
+/// Ready`; commands outside that obligation need no Recovery check (ADR-031).
+/// `None` means the rule may be written.
 #[must_use]
 pub fn allow_rule_persistence_degradation(
     plan: &InterceptionPlan,

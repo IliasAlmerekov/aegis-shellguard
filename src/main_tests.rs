@@ -456,7 +456,7 @@ allowlist_override_level = "Danger"
 }
 
 #[test]
-fn unavailable_cwd_shell_plan_carries_snapshot_fallback_in_plan() {
+fn unavailable_cwd_shell_plan_requires_recovery_without_plugins() {
     let original_cwd = env::current_dir().unwrap();
     let workspace = TempDir::new().unwrap();
     Command::new("git")
@@ -490,7 +490,7 @@ auto_snapshot_docker = false
     assert_eq!(
         plan.snapshot_plan(),
         aegis::planning::SnapshotPlan::Required {
-            applicable_plugins: vec!["git"],
+            applicable_plugins: vec![],
             git_targets: aegis::planning::GitTargetPlan::default(),
         }
     );

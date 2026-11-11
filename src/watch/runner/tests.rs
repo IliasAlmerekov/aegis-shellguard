@@ -103,7 +103,7 @@ impl aegis_snapshot::SnapshotPlugin for SucceedingPlugin {
     }
 }
 
-/// A snapshot plugin that always applies and always succeeds.
+/// A snapshot plugin that fails the test if probed or invoked.
 struct ForbiddenPlugin;
 
 #[async_trait::async_trait]
@@ -749,6 +749,23 @@ async fn unavailable_cwd_denies_watch_and_audits_recovery_degradation() {
         ForbiddenPlugin,
     )]));
     let prepared = PreparedPlanner::Ready(Box::new(context));
+    let PlanningOutcome::Planned(shell_plan) = prepared
+        .plan_async(PlanningRequest {
+            command: "rm -rf target",
+            cwd_state: CwdState::Unavailable,
+            transport: ExecutionTransport::Shell,
+            ci_detected: false,
+        })
+        .await
+    else {
+        panic!("expected shell plan")
+    };
+    assert!(
+        shell_plan
+            .decision_context()
+            .applicable_snapshot_plugins()
+            .is_empty()
+    );
     let PlanningOutcome::Planned(plan) = prepared
         .plan_async(PlanningRequest {
             command: "rm -rf target",
