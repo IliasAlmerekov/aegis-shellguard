@@ -5,7 +5,6 @@ import { useCallback, useRef, useState } from 'react'
 
 import { gsap, ScrollTrigger, useGSAP } from '../../lib/gsap'
 import { SCROLL } from '../../lib/scene/config'
-import { clamp01, densityMap, smoothstep, spanProgress } from '../../lib/scene/progress'
 
 const INSTALL_CMD = 'npm i -g @iliasalmerekov/aegis'
 
@@ -53,43 +52,8 @@ export function Hero() {
        * scene meanwhile stays at full quality, simply motionless.
        */
       mm.add('(prefers-reduced-motion: no-preference)', () => {
-        const map = densityMap(SCROLL.accent)
-
-        /**
-         * The markup and the scene run on **one clock**.
-         *
-         * The timeline is deliberately not scrubbed by ScrollTrigger: a scrub
-         * would follow pin progress, whereas the scene reads progress passed
-         * through the density map. Over the accent the map takes the extra
-         * scroll, so the darkness used to start creeping in before the scene
-         * had reached its exit. Here the timeline's position is set by the
-         * same mapped number that goes into the scene, and the two cannot
-         * drift apart.
-         */
-        const timeline = gsap.timeline({ paused: true, defaults: { ease: 'none' } })
-
-        /**
-         * The curtain is the only thing driven by **raw** scroll.
-         *
-         * Everything else here runs on smoothed progress, and rightly so: a
-         * mouse wheel gives a fifty-pixel jump with no intermediate values,
-         * and the scene needs something to fill the frames in between. But
-         * smoothing is lag, and the pin releases on exactly its last pixel and
-         * knows no lag at all. A curtain running with everyone else physically
-         * cannot finish closing by the handoff: measurement put it at one at
-         * 103.3% of the pin, when the page was already moving.
-         *
-         * The curtain has the right to leave the common clock, and it is the
-         * same right the scrim has: it is not an object in space but a
-         * darkening of the frame. Objects must not drift apart from one
-         * another; a darkening has nothing to drift from.
-         *
-         * `quickSetter` instead of a tween: the value is rewritten on every
-         * frame of the scroll, and setting up an animation for it would mean
-         * building and discarding an object each time.
-         */
-        const setCurtain = gsap.quickSetter('[data-hero-curtain]', 'opacity')
-
+        // The scroll moves the stone and nothing else: the copy stands, the
+        // frame keeps its light, and the pin lets go as the stone closes.
         ScrollTrigger.create({
           trigger: pinRef.current,
           start: 'top top',
@@ -98,127 +62,9 @@ export function Hero() {
           scrub: SCROLL.scrub,
           anticipatePin: 1,
           onUpdate: (self) => {
-            const scene = map(self.progress)
             progress.current = self.progress
-            timeline.progress(scene)
-
-            // The raw pin position: `self.progress` is already smoothed, while
-            // the bounds are document pixels and `self.scroll()` returns the
-            // real position.
-            const raw = (self.scroll() - self.start) / (self.end - self.start)
-            setCurtain(spanProgress(map(clamp01(raw)), SCROLL.exit))
-          },
-          /**
-           * The fly-past depth is computed from the frame height, and the
-           * frame height changes.
-           *
-           * Three steps, and their order is mandatory. `invalidate` makes GSAP
-           * re-read the function values below, but it also makes it forget
-           * where the animation started from — and it recalls that from the
-           * DOM state at the first render. If the recalculation caught the
-           * copy mid-flight (rotating a phone halfway through the pin is an
-           * everyday event), the middle of the flight would be recorded as its
-           * start, and the copy could never return to rest. Hence the return
-           * to zero first, and only then the re-read.
-           *
-           * The third step restores the position: the timeline is paused, we
-           * set its position ourselves, and without this it would be left
-           * standing at zero.
-           */
-          onRefresh: (self) => {
-            timeline.progress(0)
-            timeline.invalidate()
-            timeline.progress(map(self.progress))
-            setCurtain(spanProgress(map(self.progress), SCROLL.exit))
           },
         })
-
-        const flySpan = SCROLL.approach.to - SCROLL.approach.from
-
-        /**
-         * The copy flies past the camera.
-         *
-         * It is driven by **the same phase and the same curve** as the camera
-         * approach: the ease is exactly the `smoothstep` that `stageAt` uses
-         * for `approach`, and the span is the same `SCROLL.approach`. So the
-         * text and the stone cannot drift apart: they do not have two
-         * coordinated animations, they have one.
-         *
-         * Two quantities move the copy, and both are taken from the camera's
-         * motion: depth is the approach, `y` is the aim rising from zero to
-         * the cube's centre. There is no scaling by hand here: the
-         * magnification is done entirely by perspective, because the motion of
-         * a fronto-parallel plane in depth projects to exactly a uniform
-         * magnification about the vanishing point.
-         *
-         * Depth alone is not enough, and that has been verified frame by
-         * frame: a copy block half a frame tall straddles the vanishing point,
-         * so its upper half diverges **upward** and the block never leaves
-         * through the bottom edge at any magnification. The rise carries it
-         * out whole.
-         *
-         * The quantities are functions rather than numbers because they are
-         * computed from the frame height, and the height changes. `onRefresh`
-         * above re-reads them.
-         *
-         * There are still no filters: a blur would be recomputed on every
-         * frame, on a canvas that is already busy with the scene.
-         */
-        timeline.to(
-          '[data-hero-copy]',
-          {
-            z: () => SCROLL.fly.travel * SCROLL.fly.perspective * window.innerHeight,
-            y: () => SCROLL.fly.rise * window.innerHeight,
-            ease: smoothstep,
-            duration: flySpan,
-          },
-          SCROLL.approach.from
-        )
-
-        /**
-         * The copy stops catching the pointer the moment it starts moving.
-         *
-         * The departed block is clipped by the pin's edge, but it is clipped
-         * *visually*: the link and the copy button would remain under the
-         * cursor in whatever band of the frame they were carried to. This used
-         * to be hidden behind zero opacity, which does not cancel clicks
-         * either.
-         */
-        timeline.set('[data-hero-copy]', { pointerEvents: 'none' }, SCROLL.approach.from)
-
-        // Insurance for viewports where the divergence did not carry the block
-        // out in full.
-        timeline.to(
-          '[data-hero-copy]',
-          {
-            opacity: 0,
-            duration: (SCROLL.fly.fade.to - SCROLL.fly.fade.from) * flySpan,
-          },
-          SCROLL.approach.from + SCROLL.fly.fade.from * flySpan
-        )
-
-        // The scrim is a darkening of the frame, not an object in it: it fades,
-        // it does not fly.
-        timeline.to(
-          '[data-hero-floor]',
-          { opacity: 0, duration: SCROLL.floor.to - SCROLL.floor.from },
-          SCROLL.floor.from
-        )
-
-        // The curtain is deliberately absent from the timeline: it is driven
-        // by raw scroll in `onUpdate` above — see the note on `setCurtain`.
-
-        // The timeline must be exactly 1 long: its position is set as a
-        // fraction, not in seconds. The filler makes up the length when the
-        // spans do not cover it.
-        timeline.set({}, {}, 1)
-
-        // The curtain is written as an inline style, bypassing the timeline,
-        // so it has to be cleared by hand as well: `revert` only knows about
-        // tweens.
-        return () => {
-          gsap.set('[data-hero-curtain]', { clearProps: 'opacity' })
-        }
       })
 
       /**
@@ -327,12 +173,6 @@ export function Hero() {
           }}
         />
 
-        <div
-          data-hero-curtain
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-20 opacity-0"
-          style={{ background: SCROLL.fadeTo }}
-        />
 
         {/*
           The wrapper exists for the vanishing point, and for nothing else.
@@ -356,7 +196,7 @@ export function Hero() {
           the stone included, and the stone has to answer the cursor.
         */}
         <div
-          className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-end"
+          className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-start sm:justify-end"
           style={{
             perspective: `${SCROLL.fly.perspective * 100}svh`,
             perspectiveOrigin: `50% ${SCROLL.fly.originY * 100}%`,
@@ -364,7 +204,11 @@ export function Hero() {
         >
         <div
           data-hero-copy
-          className="pointer-events-auto flex w-full justify-center px-gutter pb-[8svh]"
+          // On a phone the stone is scaled to the frame's width and lifted
+          // (see `fit.ts`), so the copy hangs from the top by the same two
+          // measures, a little under the stone. The second term keeps the
+          // block on a short screen: 24rem is its own height.
+          className="pointer-events-auto flex w-full justify-center px-gutter pt-[min(31svh_+_38vw,100svh_-_24rem)] sm:pt-0 sm:pb-[8svh]"
         >
           <div className="flex max-w-[720px] flex-col items-center text-center">
             <h1

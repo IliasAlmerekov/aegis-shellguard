@@ -84,17 +84,10 @@ uniform float uGlowIntensity;
 uniform float uMouthLevel;
 uniform float uConcentration;
 uniform float uGlowGain;
-uniform float uLockPhase;
-uniform float uLockStrength;
 uniform float uCrackScale;
 uniform float uCrackDarken;
 uniform float uCrackRelief;
 uniform float uCrackRoughen;
-uniform float uCrackVeinReach;
-uniform float uCrackVeinIntensity;
-uniform float uSpillWidth;
-uniform float uSpillIntensity;
-uniform float uSpillFalloff;
 
 vec2 rotateUv(vec2 uv, float turns) {
   float a = turns * 6.2831853;
@@ -327,43 +320,7 @@ if (vCut > 0.5) {
 
   float core = pow(inner, uConcentration);
   glow = mix(uMouthLevel, 1.0, core);
-} else {
-  // The spill across the stone. This is what is visible in the reference: not
-  // a slot, but a lit lip of the break and a soft falloff across the slab. The
-  // falloff exponent presses the light against the lip itself — a linear
-  // falloff would give a broad washed-out wash.
-  float toSeam = min(abs(vRest.x), abs(vRest.y)) / uHalf;
-  float lip = 1.0 - smoothstep(0.0, uSpillWidth, toSeam);
-  glow = uSpillIntensity * pow(lip, uSpillFalloff);
-
-  // The spill's unevenness comes from the crack network below, not from a
-  // random lattice.
-  //
-  // There used to be a hash lattice here: a random value per cell with no
-  // filtering at all. Such a lattice aliases at any distance where a cell
-  // becomes smaller than a pixel: sparkle in stills, shimmer in motion, and no
-  // mipmap saves it, because it is computed rather than sampled from a
-  // texture. The crack network comes from a texture and is mipmap-filtered.
-
-  // Veins. Light leaves the fracture **along the rock's real cracks**, fading
-  // with distance. This is what separates a photograph from a drawn outline:
-  // in a photograph the main fracture is not alone, a network with junctions
-  // and dead ends runs off it, glowing more faintly the further from the
-  // source.
-  float reach = 1.0 - smoothstep(0.0, uCrackVeinReach, toSeam);
-  glow += uCrackVeinIntensity * crack * reach * reach;
 }
-
-// Policy Lock — one wave from the centre to the edges of the fracture. Its
-// position depends only on scroll progress, so scrolling back rewinds the
-// pulse honestly.
-float lockDistance = length(vRest.xy) / (uHalf * 1.41421356);
-float lockBand = 1.0 - smoothstep(0.0, 0.085, abs(lockDistance - uLockPhase));
-// The wave lights not only the already-glowing lip but the crack network on
-// the rock as well. Otherwise multiplying a near-zero emissive gave near zero
-// and the pulse vanished.
-float lockVein = mix(0.075, 0.42, crack);
-glow += lockBand * lockVein * uLockStrength;
 
 // The colour is biased toward blue: cyan is reserved for the hottest places. A
 // linear mix carried the whole fissure into turquoise, whereas in the

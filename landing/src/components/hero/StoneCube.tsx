@@ -13,9 +13,11 @@ import {
   Matrix3,
   Matrix4,
   MeshStandardMaterial,
+  Quaternion,
   RepeatWrapping,
   SRGBColorSpace,
   Texture,
+  Vector3,
 } from 'three'
 
 import {
@@ -23,15 +25,15 @@ import {
   CUBE,
   GAP,
   GLOW,
-  HOVER,
   LIGHT,
   SCROLL,
+  SHATTER,
   STONE,
   TIER_SETTINGS,
   type Tier,
 } from '../../lib/scene/config'
-import { QUADRANTS, buildPart, partDirection } from '../../lib/scene/fracture'
-import { approach, tauFor } from '../../lib/scene/hover'
+import { stoneLift, stoneScale } from '../../lib/scene/fit'
+import { buildShard, shardGrid } from '../../lib/scene/fracture'
 import { densityMap, stageAt } from '../../lib/scene/progress'
 import {
   STONE_FRAGMENT_AO,
@@ -48,11 +50,6 @@ import {
 type Props = {
   tier: Tier
   /**
-   * Whether the stone answers the cursor. False on touch devices and under
-   * `prefers-reduced-motion`.
-   */
-  interactive: boolean
-  /**
    * Pin progress, 0..1. A ref rather than a value: scroll arrives per frame,
    * and React state would re-render the whole scene every frame for the sake
    * of a single number.
@@ -65,9 +62,6 @@ type Props = {
    */
   freeze?: number
 }
-
-/** Opting out of raycasting, by three's convention: the ray simply finds nothing. */
-const NO_RAYCAST = () => {}
 
 /**
  * The normal map, sized to the screen. Built by `scripts/textures.mjs`.
@@ -121,17 +115,10 @@ function createUniforms() {
     uConcentration: { value: GLOW.concentration },
     // Changes every frame — the type has to be wider than the config literal.
     uGlowGain: { value: GLOW.restGain as number },
-    uLockPhase: { value: 0 },
-    uLockStrength: { value: 0 },
     uCrackScale: { value: STONE.crackScale },
     uCrackDarken: { value: STONE.crackDarken },
     uCrackRelief: { value: STONE.crackRelief },
     uCrackRoughen: { value: STONE.crackRoughen },
-    uCrackVeinReach: { value: GLOW.veinReach },
-    uCrackVeinIntensity: { value: GLOW.veinIntensity },
-    uSpillWidth: { value: GLOW.spillWidth },
-    uSpillIntensity: { value: GLOW.spillIntensity },
-    uSpillFalloff: { value: GLOW.spillFalloff },
   }
 }
 
@@ -139,7 +126,7 @@ function createUniforms() {
  * Each part gets its own material rather than sharing one, because the core's
  * emissive has to intensify for the part that was lifted — that is, it belongs
  * to that part's state rather than to the cube's. The program is still
- * compiled once: `customProgramCacheKey` is the same for all four.
+ * compiled once: `customProgramCacheKey` is the same for all of them.
  *
  * The material is `MeshStandardMaterial`, not `MeshPhysicalMaterial`.
  *
@@ -192,7 +179,7 @@ function createMaterial(uniforms: PartUniforms) {
   return material
 }
 
-export function StoneCube({ tier, freeze, interactive, progress }: Props) {
+export function StoneCube({ tier, freeze, progress }: Props) {
   const groupRef = useRef<Group>(null)
   const settings = TIER_SETTINGS[tier]
   const subdivision = settings.subdivision
@@ -200,8 +187,8 @@ export function StoneCube({ tier, freeze, interactive, progress }: Props) {
 
   const geometries = useMemo(
     () =>
-      QUADRANTS.map((quadrant) => {
-        const part = buildPart(quadrant, subdivision)
+      shardGrid().map((shard) => {
+        const part = buildShard(shard, subdivision)
         const geometry = new BufferGeometry()
         geometry.setAttribute('position', new BufferAttribute(part.position, 3))
         geometry.setAttribute('normal', new BufferAttribute(part.normal, 3))
@@ -216,28 +203,32 @@ export function StoneCube({ tier, freeze, interactive, progress }: Props) {
 
   const parts = useMemo(
     () =>
-      QUADRANTS.map((quadrant) => {
+      shardGrid().map(({ min, max }, index) => {
         const uniforms = createUniforms()
-        const [dx, dy, dz] = partDirection(quadrant, 0)
-        // The lift direction is constant: `upBias` is a config constant.
-        // Computing it per frame would mean building the same array four times
-        // a frame for the same result.
-        const [lx, ly, lz] = partDirection(quadrant, HOVER.upBias)
         return {
           uniforms,
           material: createMaterial(uniforms),
-          rest: [dx * GAP.rest, dy * GAP.rest, dz * GAP.rest] as [
-            number,
-            number,
-            number,
-          ],
-          lift: [lx, ly, lz] as [number, number, number],
+          centre: new Vector3().addVectors(new Vector3(...min), new Vector3(...max)).multiplyScalar(0.5),
+          // Any fixed spread of axes and shares will do, as long as no two
+          // neighbours turn alike: the golden angle never repeats.
+          spinAxis: new Vector3().setFromSphericalCoords(1, 1 + index * 2.4, index * 2.4),
+          spinShare: 0.4 + 0.6 * ((index * 0.618) % 1),
+          flyShare:
+            SHATTER.share[0] +
+            (SHATTER.share[1] - SHATTER.share[0]) * ((index * 0.382) % 1),
+          // Radians per second, and where in its swing the shard starts.
+          driftRate:
+            (Math.PI * 2) /
+            (SHATTER.drift.period[0] +
+              (SHATTER.drift.period[1] - SHATTER.drift.period[0]) * ((index * 0.755) % 1)),
+          driftPhase: index * 2.4,
         }
       }),
     []
   )
 
   const invalidate = useThree((state) => state.invalidate)
+  const aspect = useThree((state) => state.viewport.aspect)
 
   const [albedo, normal, orm] = useTexture([
     '/textures/rock/albedo.webp',
@@ -286,114 +277,75 @@ export function StoneCube({ tier, freeze, interactive, progress }: Props) {
 
   const meshRefs = useRef<(Mesh | null)[]>([])
 
-  /**
-   * The opening amount — one value for the whole stone, because all four parts
-   * move apart at once regardless of where the pointer landed.
-   *
-   * A `ref`, not state: the gesture runs per frame, and a React re-render on
-   * every frame of motion is both unnecessary and harmful — it would churn the
-   * entire scene subtree for a number only `useFrame` reads.
-   */
-  const lift = useRef(0)
-  const hovered = useRef(false)
-
   const modelView = useMemo(() => new Matrix4(), [])
-  // The normal matrix is the same for all four parts — the parts only
-  // translate. The inverse-transpose is computed once per frame rather than
-  // four times, and there is nothing left for it to drift against.
-  const normalMatrix = useMemo(() => new Matrix3(), [])
+  const partView = useMemo(() => new Matrix4(), [])
+  const pivot = useMemo(() => new Vector3(), [])
+  const identity = useMemo(() => new Quaternion(), [])
   const map = useMemo(() => densityMap(SCROLL.accent), [])
 
-  useFrame(({ clock, camera }, delta) => {
+  useFrame(({ clock, camera }) => {
     const group = groupRef.current
     if (!group) return
 
     const time = freeze ?? clock.getElapsedTime()
     const stage = stageAt(progress.current ?? 0, SCROLL, map)
 
-    // The balancing fades out as the camera closes in, while the pose turns to
-    // face front. Two systems rotating one object at once produce jitter where
-    // they meet; here the second enters exactly as much as the first leaves.
-    const idle = 1 - stage.approach
-    const wobble = (axis: number) =>
-      Math.sin((time / BALANCE.period[axis]) * Math.PI * 2) * BALANCE.amplitude[axis] * idle
+    const swing = (axis: number) =>
+      BALANCE.pose[axis] +
+      Math.sin((time / BALANCE.period[axis]) * Math.PI * 2) * BALANCE.amplitude[axis]
 
-    const toFace = (axis: number) => {
-      const rest = BALANCE.pose[axis] + wobble(axis)
-      return rest + (SCROLL.facePose[axis] - rest) * stage.approach
-    }
-
-    group.rotation.set(toFace(0), toFace(1), toFace(2))
+    group.rotation.set(swing(0), swing(1), swing(2))
 
     group.position.y =
       CUBE.centerY +
-      Math.sin((time / BALANCE.floatPeriod) * Math.PI * 2) * BALANCE.floatAmplitude * idle
+      stoneLift(aspect) +
+      Math.sin((time / BALANCE.floatPeriod) * Math.PI * 2) * BALANCE.floatAmplitude
 
     const breath =
       1 + GAP.breathAmplitude * Math.sin((time / GAP.breathPeriod) * Math.PI * 2)
 
-    // One normal matrix for all four parts: the parts only translate, and
-    // translation does not affect it. Only the group rotates, identically for
-    // all of them.
+    group.scale.setScalar(stoneScale(aspect))
     group.updateMatrixWorld()
     modelView.multiplyMatrices(camera.matrixWorldInverse, group.matrixWorld)
 
-    // The cursor response is released as soon as the scroll starts: the parts'
-    // displacement must have exactly one author per frame. Otherwise the
-    // scene's main gesture lands on a pose that is already taken, and "the
-    // stone came apart" reads more weakly — it has partly happened already.
-    const restingStill = (progress.current ?? 0) < 0.02
-    const target = interactive && restingStill && hovered.current ? 1 : 0
-    const hoverAmount = approach(
-      lift.current,
-      target,
-      delta,
-      tauFor(lift.current, target)
-    )
-    lift.current = hoverAmount
-
-    // Scroll and cursor move the parts along the same direction, so their
-    // contributions add without risk of intersection: the proof that
-    // neighbours cannot meet is about direction, not magnitude.
-    const spread =
-      HOVER.lift * hoverAmount +
-      SCROLL.open * stage.opening -
-      SCROLL.lockRecoil * stage.lock
-    const amount = spread / HOVER.lift
-
-    // Halfway through the lock the whole stone compresses for one beat, then
-    // returns to its scale. That makes the moment of contact legible even
-    // where the light pulse is lost on a bright display.
-    const lockImpact = Math.sin(Math.PI * stage.lock)
-    const impactScale = 1 - SCROLL.lockImpactScale * lockImpact
-    group.scale.setScalar(impactScale)
-
-    normalMatrix.getNormalMatrix(modelView)
+    const shatter = stage.shatter
+    // A phone frame is a third as wide: the same field would fly off it.
+    const spreadX = SHATTER.spread[0] * Math.min(1, aspect / SHATTER.spreadAspect)
 
     for (let index = 0; index < parts.length; index += 1) {
       const part = parts[index]
-      part.uniforms.uNormalMatrix.value.copy(normalMatrix)
-      part.uniforms.uLockPhase.value = stage.pulse
-      part.uniforms.uLockStrength.value =
-        Math.sin(Math.PI * stage.pulse) * GLOW.lockPulse
-
       const mesh = meshRefs.current[index]
       if (mesh) {
+        // A shard turns about its own centre, while the mesh turns about the
+        // cube's: the pivot term moves the centre back to where the flight
+        // put it.
+        const drift = Math.sin(time * part.driftRate + part.driftPhase)
+        if (shatter > 0) {
+          mesh.quaternion.setFromAxisAngle(
+            part.spinAxis,
+            (SHATTER.spin * part.spinShare + SHATTER.drift.turn * drift) * shatter
+          )
+        } else {
+          mesh.quaternion.copy(identity)
+        }
+        pivot.copy(part.centre).applyQuaternion(mesh.quaternion)
+        const fly = shatter * part.flyShare
+        const bob = SHATTER.drift.bob * drift * shatter
         mesh.position.set(
-          part.rest[0] + part.lift[0] * spread,
-          part.rest[1] + part.lift[1] * spread,
-          part.rest[2] + part.lift[2] * spread
+          part.centre.x * (1 + spreadX * fly) - pivot.x,
+          part.centre.y * (1 + SHATTER.spread[1] * fly) - pivot.y + bob,
+          part.centre.z * (1 + SHATTER.spread[2] * fly) - pivot.z
         )
+        // Each shard turns on its own, so each needs its own normal matrix.
+        mesh.updateMatrix()
+        partView.multiplyMatrices(modelView, mesh.matrix)
+        part.uniforms.uNormalMatrix.value.getNormalMatrix(partView)
       }
 
-      // The brightness is not animated separately: it is a consequence of a
-      // departing part exposing a deeper — and therefore brighter — band of
-      // fracture surface to the camera. The multiplier only brings the effect
-      // up to the required strength, which is why motion and flash cannot fall
-      // out of step.
-      const opened = Math.min(1, amount)
+      // A shard in flight shows its fracture faces lit; the light settles as
+      // the stone closes over them.
       part.uniforms.uGlowGain.value =
-        GLOW.restGain * breath + (GLOW.hoverGain - GLOW.restGain * breath) * opened
+        GLOW.restGain * breath + (GLOW.hoverGain - GLOW.restGain * breath) * shatter
     }
   })
 
@@ -407,42 +359,10 @@ export function StoneCube({ tier, freeze, interactive, progress }: Props) {
           }}
           geometry={geometry}
           material={parts[index].material}
-          position={parts[index].rest}
-          // The stone is taken out of the ray's path: hits are computed
-          // against the four simple boxes below. Otherwise every mouse move
-          // would run a ray across two hundred thousand triangles.
-          raycast={NO_RAYCAST}
+          // The frame loop writes every shard's matrix itself.
+          matrixAutoUpdate={false}
         />
       ))}
-
-      {/*
-        The cursor trap. One box for the whole cube rather than four per
-        quarter: all the parts open at once, and there is no need to know which
-        one the pointer hit — it is enough that it is on the stone.
-
-        A plain box instead of the displaced mesh: the error at the boundary is
-        smaller than a jag of the fracture, and it costs twelve triangles
-        instead of two hundred thousand.
-
-        Not `visible={false}`: three excludes invisible objects from
-        raycasting, and the trap would stop trapping. So the object is visible
-        but writes nothing — neither colour nor depth.
-      */}
-      <mesh
-        onPointerOver={() => {
-          hovered.current = true
-        }}
-        onPointerMove={() => {
-          hovered.current = true
-        }}
-        onPointerOut={() => {
-          hovered.current = false
-        }}
-      >
-        <boxGeometry args={[CUBE.size, CUBE.size, CUBE.size]} />
-        <meshBasicMaterial colorWrite={false} depthWrite={false} transparent opacity={0} />
-      </mesh>
-
     </group>
   )
 }
