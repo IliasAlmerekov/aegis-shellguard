@@ -196,6 +196,12 @@ The fast first pass — an Aho-Corasick multi-pattern scan with no allocations, 
 the `Assessment budget`. Never uses regex.
 _Avoid_: prefilter, fast match
 
+**Pattern length limit**:
+The longest a user-supplied pattern may be: 256 bytes of UTF-8. It applies to custom
+`Pattern`s and to allowlist and blocklist rule patterns, never to built-in ones. A longer
+pattern makes the config fail to load.
+_Avoid_: pattern size cap, regex limit
+
 **Assessment budget**:
 The upper bound on what one `assess` call may cost, on any input including the worst
 one. It bounds classification only, not the process that performs it (ADR-034). The

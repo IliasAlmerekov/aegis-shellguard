@@ -133,6 +133,13 @@ Legacy compatibility:
 - `Never`: non-safe allowlist auto-approval is disabled
 - `Block` never bypasses in `Protect` or `Strict`
 
+## Pattern length limit
+
+A `pattern` from `custom_patterns`, `[[allow]]`, or `[[block]]` is at most 256 bytes, counted as UTF-8 bytes of the pattern as written. The limit is fixed and has no config key. Built-in patterns are exempt.
+
+- A longer pattern makes the config fail to load, at every config layer. `aegis config validate` reports `invalid_custom_pattern` or `invalid_allowlist_rule` with the location, the pattern's byte length, and the limit. At runtime the command does not run.
+- Untrusted patterns also compile under the `regex` crate's default size budgets (10 MiB compiled size, 2 MiB lazy-DFA cache). A short pattern that expands past them fails the same way.
+
 ## Snapshot policy
 
 Snapshot planning has two distinct contracts:

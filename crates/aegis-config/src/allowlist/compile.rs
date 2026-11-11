@@ -1,6 +1,5 @@
 //! Compilation helpers for allowlist and blocklist rules.
 
-use regex::Regex;
 use time::OffsetDateTime;
 
 use super::{CompiledRule, ConfigSourceLayer, LayeredAllowlistRule, LayeredBlocklistRule};
@@ -24,6 +23,10 @@ pub(crate) fn validate_scope_fields(
 
 pub(crate) fn validate_single_rule(rule: LayeredAllowlistRule) -> Result<()> {
     compile_rule(rule).map(|_| ())
+}
+
+pub(crate) fn validate_single_block_rule(rule: LayeredBlocklistRule) -> Result<()> {
+    compile_block_rule(rule).map(|_| ())
 }
 
 pub(super) fn compile_rule(rule: LayeredAllowlistRule) -> Result<CompiledRule> {
@@ -66,12 +69,17 @@ fn compile_fields(
 
     validate_scope_fields(rule_type, cwd.as_deref(), user.as_deref())?;
 
-    let regex = Regex::new(&glob_to_regex(pattern)).map_err(|error| {
-        ConfigError::Config(format!(
-            "invalid {rule_type} rule pattern {:?}: {error}",
-            pattern
-        ))
+    aegis_scanner::check_pattern_length(pattern).map_err(|error| {
+        ConfigError::Config(format!("invalid {rule_type} rule pattern: {error}"))
     })?;
+
+    let regex =
+        aegis_scanner::compile_untrusted_regex(&glob_to_regex(pattern)).map_err(|error| {
+            ConfigError::Config(format!(
+                "invalid {rule_type} rule pattern {:?}: {error}",
+                pattern
+            ))
+        })?;
 
     Ok(CompiledRule {
         pattern: pattern.to_string(),
