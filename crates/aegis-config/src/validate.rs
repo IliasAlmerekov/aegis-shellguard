@@ -7,7 +7,7 @@ use time::OffsetDateTime;
 
 use crate::AegisConfig;
 use crate::allowlist::{
-    Allowlist, ConfigSourceLayer, analyze_allowlist_rule, validate_single_rule,
+    Allowlist, ConfigSourceLayer, analyze_allowlist_rule, validate_single_block_rule, validate_single_rule,
 };
 use crate::error::ConfigError;
 use crate::model::PolicyRule;
@@ -43,6 +43,7 @@ pub struct ValidationReport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigSourceMap {
     allowlist_locations: Vec<String>,
+    blocklist_locations: Vec<String>,
     custom_pattern_locations: Vec<String>,
     audit_max_file_size_bytes_location: String,
     audit_retention_files_location: String,
@@ -72,6 +73,14 @@ impl ConfigSourceMap {
             global_path.as_deref(),
         );
 
+        let blocklist_locations = vector_locations(
+            config.blocklist.len(),
+            &config.blocklist_layers,
+            "blocklist",
+            project_path.as_deref(),
+            global_path.as_deref(),
+        );
+
         let custom_pattern_locations = vector_locations(
             config.custom_patterns.len(),
             &config.custom_pattern_layers,
@@ -95,6 +104,7 @@ impl ConfigSourceMap {
 
         Self {
             allowlist_locations,
+            blocklist_locations,
             custom_pattern_locations,
             audit_max_file_size_bytes_location,
             audit_retention_files_location,
@@ -106,6 +116,13 @@ impl ConfigSourceMap {
             .get(index)
             .cloned()
             .unwrap_or_else(|| format!("allowlist[{index}]"))
+    }
+
+    fn blocklist_location(&self, index: usize) -> String {
+        self.blocklist_locations
+            .get(index)
+            .cloned()
+            .unwrap_or_else(|| format!("blocklist[{index}]"))
     }
 
     /// Location string for `custom_patterns[index]` — which config layer
@@ -264,6 +281,10 @@ pub fn validate_config(config: &AegisConfig, source_map: &ConfigSourceMap) -> Va
         errors.push(issue);
     }
 
+    if let Some(issue) = first_invalid_blocklist_issue(config, source_map) {
+        errors.push(issue);
+    }
+
     if let Err((index, err)) = validate_policy_rules(&config.rules) {
         errors.push(ValidationIssue {
             code: "invalid_policy_rule",
@@ -393,6 +414,25 @@ fn first_invalid_allowlist_issue(
     }
 
     None
+}
+
+fn first_invalid_blocklist_issue(
+    config: &AegisConfig,
+    source_map: &ConfigSourceMap,
+) -> Option<ValidationIssue> {
+    config
+        .layered_blocklist_rules()
+        .into_iter()
+        .enumerate()
+        .find_map(|(index, rule)| {
+            validate_single_block_rule(rule)
+                .err()
+                .map(|err| ValidationIssue {
+                    code: "invalid_allowlist_rule",
+                    message: err.to_string(),
+                    location: source_map.blocklist_location(index),
+                })
+        })
 }
 
 fn merge_report(target: &mut ValidationReport, incoming: ValidationReport) {
