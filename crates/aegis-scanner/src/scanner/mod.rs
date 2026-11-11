@@ -112,14 +112,19 @@ impl Scanner {
     /// cover at least what the regex's does (e.g. make the Aho-Corasick build
     /// Unicode-case-insensitive too), or constrain such keywords to ASCII.
     fn compile_regex(pattern: &Pattern) -> Result<Regex, ScannerError> {
-        let mut builder = RegexBuilder::new(pattern.pattern.as_ref());
-        if pattern.source == PatternSource::Builtin {
-            builder.case_insensitive(true);
-        }
-        builder.build().map_err(|e| ScannerError::InvalidPattern {
+        let invalid = |reason: String| ScannerError::InvalidPattern {
             id: pattern.id.to_string(),
-            reason: format!("invalid regex: {e}"),
-        })
+            reason,
+        };
+        if pattern.source == PatternSource::Builtin {
+            return RegexBuilder::new(pattern.pattern.as_ref())
+                .case_insensitive(true)
+                .build()
+                .map_err(|e| invalid(format!("invalid regex: {e}")));
+        }
+        crate::untrusted::check_pattern_length(pattern.pattern.as_ref()).map_err(&invalid)?;
+        crate::untrusted::compile_untrusted_regex(pattern.pattern.as_ref())
+            .map_err(|e| invalid(format!("invalid regex: {e}")))
     }
 
     /// Build a [`Scanner`] from a compiled [`PatternSet`].

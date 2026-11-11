@@ -445,3 +445,50 @@ fn nested_execution_recursive_payloads_escalate_to_inner_risk() {
         );
     }
 }
+
+fn custom_with_regex(regex: String) -> Pattern {
+    Pattern {
+        id: "USR-LEN".into(),
+        category: Category::Process,
+        risk: RiskLevel::Danger,
+        pattern: regex.into(),
+        description: "Pattern length limit probe".into(),
+        safe_alt: None,
+        justification: None,
+        source: PatternSource::Custom,
+    }
+}
+
+fn try_new_error(regex: String) -> Option<String> {
+    let patterns = PatternSet::from_sources(&[custom_with_regex(regex)]).expect("fields valid");
+    Scanner::try_new(patterns).err().map(|e| e.to_string())
+}
+
+#[test]
+fn custom_pattern_of_256_bytes_is_accepted() {
+    assert_eq!(try_new_error("a".repeat(256)), None);
+}
+
+#[test]
+fn custom_pattern_of_257_bytes_is_rejected_naming_length_and_limit() {
+    let message = try_new_error("a".repeat(257)).expect("must be rejected");
+    assert!(message.contains("USR-LEN"), "{message}");
+    assert!(message.contains("257 bytes"), "{message}");
+    assert!(message.contains("256"), "{message}");
+}
+
+#[test]
+fn custom_pattern_length_is_counted_in_utf8_bytes_not_characters() {
+    // 129 two-byte characters: 129 chars, 258 bytes.
+    let message = try_new_error("é".repeat(129)).expect("must be rejected");
+    assert!(message.contains("258 bytes"), "{message}");
+}
+
+#[test]
+fn custom_pattern_over_the_compile_budget_fails_with_an_error_not_a_panic() {
+    // 40 bytes, far under the length limit, but it expands past size_limit.
+    let regex = r"((\pL{100}){100}){100}".to_string();
+    assert!(regex.len() < 256);
+    let message = try_new_error(regex).expect("must be rejected");
+    assert!(message.contains("invalid regex"), "{message}");
+}

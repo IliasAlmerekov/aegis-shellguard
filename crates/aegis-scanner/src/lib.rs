@@ -15,6 +15,7 @@ mod error;
 mod nested;
 mod patterns;
 mod scanner;
+mod untrusted;
 
 use std::sync::{Arc, LazyLock};
 
@@ -22,6 +23,10 @@ use aegis_types::{Assessment, Pattern};
 
 pub use error::ScannerError;
 pub use patterns::{PatternSet, PrefixRule};
+pub use untrusted::{
+    MAX_PATTERN_LEN, REGEX_DFA_SIZE_LIMIT, REGEX_SIZE_LIMIT, check_pattern_length,
+    compile_untrusted_regex,
+};
 pub use scanner::{
     CdUnresolved, DangerStage, DangerStageTarget, GitStageReport, Scanner, StageDir,
     path_is_dynamic, try_new_call_count_for_tests,
