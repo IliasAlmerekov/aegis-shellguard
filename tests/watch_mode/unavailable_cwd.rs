@@ -12,6 +12,7 @@ fn disabled_watch_without_cwd_reports_error_and_does_not_execute() {
         .current_dir(cwd.path())
         .env("HOME", home.path())
         .env("AEGIS_REAL_SHELL", "/bin/sh")
+        .env("AEGIS_CI", "0")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -58,7 +59,7 @@ fn disabled_watch_without_cwd_reports_error_and_does_not_execute() {
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
-    assert_eq!(frames.len(), 1);
+    assert_eq!(frames.len(), 1, "frames: {frames:?}");
     assert_eq!(frames[0]["type"], "error");
     assert_eq!(frames[0]["message"], "cwd unavailable");
     assert_eq!(frames[0]["id"], "missing");
