@@ -397,10 +397,11 @@ async fn run_watch_plan_with_persistence<C, R, P>(
                 &coverage,
             )
             .or(persistence_block);
-            if approve_always && degradation.is_none() {
-                if let Some(cwd) = cwd {
-                    persist_allow(&frame.cmd, cwd);
-                }
+            if approve_always
+                && degradation.is_none()
+                && let Some(cwd) = cwd
+            {
+                persist_allow(&frame.cmd, cwd);
             }
             if let Some(degradation) = degradation {
                 let recovery_decision = recovery_prompt(degradation);

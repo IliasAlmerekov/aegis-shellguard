@@ -425,6 +425,7 @@ mod tests {
 
     #[test]
     fn unavailable_cwd_plans_recovery_without_snapshot_plugins() {
+        aegis_snapshot::testing::reset_registry_build_count();
         let _guard = CURRENT_DIR_TEST_MUTEX.lock().unwrap();
         let original_cwd = std::env::current_dir().unwrap();
         let workspace = TempDir::new().unwrap();
@@ -457,6 +458,7 @@ mod tests {
         let PlanningOutcome::Planned(plan) = outcome else {
             panic!("danger command must produce a normal plan");
         };
+        assert_eq!(aegis_snapshot::testing::registry_build_count(), 0);
         assert_eq!(
             plan.snapshot_plan(),
             SnapshotPlan::Required {
@@ -491,7 +493,7 @@ mod tests {
             &context,
             super::PlanningRequest {
                 command: "terraform destroy -target=module.prod.api",
-                cwd_state: CwdState::Unavailable,
+                cwd_state: CwdState::Resolved(workspace.path().to_path_buf()),
                 transport: ExecutionTransport::Shell,
                 ci_detected: false,
             },
@@ -539,7 +541,7 @@ mod tests {
             &context,
             super::PlanningRequest {
                 command: "sh ./cleanup.sh",
-                cwd_state: CwdState::Unavailable,
+                cwd_state: CwdState::Resolved(workspace.path().to_path_buf()),
                 transport: ExecutionTransport::Shell,
                 ci_detected: false,
             },
