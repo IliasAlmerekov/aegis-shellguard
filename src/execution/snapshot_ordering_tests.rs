@@ -162,60 +162,60 @@ fn unavailable_cwd_denies_unattended_shell_without_snapshot_plugin() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        return;
-    }
-    use aegis_tui::ExecutionRendererCall;
-    let workspace = tempfile::TempDir::new().unwrap();
-    let marker = workspace.path().join("marker");
-    std::fs::write(&marker, "keep").unwrap();
-    let command = format!("rm -rf {}", marker.display());
-    let user = std::process::Command::new("id")
-        .arg("-un")
-        .output()
+    } else {
+        use aegis_tui::ExecutionRendererCall;
+        let workspace = tempfile::TempDir::new().unwrap();
+        let marker = workspace.path().join("marker");
+        std::fs::write(&marker, "keep").unwrap();
+        let command = format!("rm -rf {}", marker.display());
+        let user = std::process::Command::new("id")
+            .arg("-un")
+            .output()
+            .unwrap();
+        let user = String::from_utf8(user.stdout).unwrap();
+        let mut config = AegisConfig::default();
+        config.allowlist_override_level = aegis_types::AllowlistOverrideLevel::Danger;
+        config.allowlist.push(aegis_config::AllowlistRule {
+            pattern: command.clone(),
+            cwd: None,
+            user: Some(user.trim().into()),
+            expires_at: None,
+            reason: "test".into(),
+        });
+        let context = RuntimeContext::new(config, test_handle()).unwrap();
+        let prepared = aegis::planning::PreparedPlanner::Ready(Box::new(context));
+        let PlanningOutcome::Planned(plan) = prepared.plan(PlanningRequest {
+            command: &command,
+            cwd_state: CwdState::Unavailable,
+            transport: ExecutionTransport::Shell,
+            ci_detected: false,
+        }) else {
+            panic!("expected plan")
+        };
+        assert_eq!(plan.execution_disposition(), ExecutionDisposition::Execute);
+        let renderer = aegis_tui::TestRenderer::new();
+        let exit = super::run_planned_shell_command_with_renderer(
+            &command,
+            false,
+            &prepared,
+            &plan,
+            &crate::shell_compat::ShellLaunchOptions::default(),
+            &renderer,
+        );
+        assert_eq!(exit, crate::EXIT_DENIED);
+        assert_eq!(
+            renderer.calls(),
+            vec![ExecutionRendererCall::RecoveryOverride(
+                aegis_types::RecoveryDegradation::UnavailableCwd
+            )]
+        );
+        assert!(marker.exists());
+        let audit = std::fs::read_to_string(
+            std::path::PathBuf::from(std::env::var_os("HOME").unwrap()).join(".aegis/audit.jsonl"),
+        )
         .unwrap();
-    let user = String::from_utf8(user.stdout).unwrap();
-    let mut config = AegisConfig::default();
-    config.allowlist_override_level = aegis_types::AllowlistOverrideLevel::Danger;
-    config.allowlist.push(aegis_config::AllowlistRule {
-        pattern: command.clone(),
-        cwd: None,
-        user: Some(user.trim().into()),
-        expires_at: None,
-        reason: "test".into(),
-    });
-    let context = RuntimeContext::new(config, test_handle()).unwrap();
-    let prepared = aegis::planning::PreparedPlanner::Ready(Box::new(context));
-    let PlanningOutcome::Planned(plan) = prepared.plan(PlanningRequest {
-        command: &command,
-        cwd_state: CwdState::Unavailable,
-        transport: ExecutionTransport::Shell,
-        ci_detected: false,
-    }) else {
-        panic!("expected plan")
-    };
-    assert_eq!(plan.execution_disposition(), ExecutionDisposition::Execute);
-    let renderer = aegis_tui::TestRenderer::new();
-    let exit = super::run_planned_shell_command_with_renderer(
-        &command,
-        false,
-        &prepared,
-        &plan,
-        &crate::shell_compat::ShellLaunchOptions::default(),
-        &renderer,
-    );
-    assert_eq!(exit, crate::EXIT_DENIED);
-    assert_eq!(
-        renderer.calls(),
-        vec![ExecutionRendererCall::RecoveryOverride(
-            aegis_types::RecoveryDegradation::UnavailableCwd
-        )]
-    );
-    assert!(marker.exists());
-    let audit = std::fs::read_to_string(
-        std::path::PathBuf::from(std::env::var_os("HOME").unwrap()).join(".aegis/audit.jsonl"),
-    )
-    .unwrap();
-    let entry: serde_json::Value = serde_json::from_str(audit.trim()).unwrap();
-    assert_eq!(entry["decision"], "Denied");
-    assert_eq!(entry["recovery_degradation"], "unavailable_cwd");
+        let entry: serde_json::Value = serde_json::from_str(audit.trim()).unwrap();
+        assert_eq!(entry["decision"], "Denied");
+        assert_eq!(entry["recovery_degradation"], "unavailable_cwd");
+    }
 }
