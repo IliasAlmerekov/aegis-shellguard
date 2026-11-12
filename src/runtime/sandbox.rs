@@ -83,7 +83,7 @@ pub fn sandbox_ceiling(config: &aegis_config::AegisConfig, cwd: &Path) -> Option
     Some(SandboxCeiling {
         config: aegis_sandbox::SandboxConfig {
             allow_write: to_sandbox(&ceiling.roots),
-            trusted_roots: Some(to_sandbox(&ceiling.trusted)),
+            trusted_roots: to_sandbox(&ceiling.trusted),
             allow_network: config.sandbox.allow_network,
             required: config.sandbox.required,
         },

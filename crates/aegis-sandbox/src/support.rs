@@ -86,20 +86,17 @@ pub struct ResolvedAllowWrite {
 /// root. Shared by bwrap, Landlock and Seatbelt, which bind the resolved path,
 /// never the configured one, to avoid symlink confusion.
 pub fn resolve_allow_write(config: &SandboxConfig) -> ResolvedAllowWrite {
-    let trusted: Option<Vec<PathBuf>> = config.trusted_roots.as_ref().map(|roots| {
-        roots
-            .iter()
-            .filter_map(|root| root.path.canonicalize().ok())
-            .collect()
-    });
+    let trusted: Vec<PathBuf> = config
+        .trusted_roots
+        .iter()
+        .filter_map(|root| root.path.canonicalize().ok())
+        .collect();
     let mut out = ResolvedAllowWrite::default();
     for root in &config.allow_write {
         let reason = match root.path.canonicalize() {
             Err(_) => OmitReason::NotFound,
             Ok(canonical) => {
-                let inside = trusted
-                    .as_ref()
-                    .is_none_or(|t| t.iter().any(|t| canonical.starts_with(t)));
+                let inside = trusted.iter().any(|t| canonical.starts_with(t));
                 if inside {
                     if !out.paths.contains(&canonical) {
                         out.paths.push(canonical);
@@ -277,7 +274,7 @@ mod tests {
 
         let resolved = super::resolve_allow_write(&SandboxConfig {
             allow_write: vec![root(&link, "project", "/p/.aegis.toml")],
-            trusted_roots: Some(vec![root(&ws, "global", "/g/config.toml")]),
+            trusted_roots: vec![root(&ws, "global", "/g/config.toml")],
             ..Default::default()
         });
 
@@ -301,13 +298,23 @@ mod tests {
     }
 
     #[test]
+    fn a_config_without_trusted_roots_admits_no_root() {
+        let resolved = super::resolve_allow_write(&SandboxConfig {
+            allow_write: vec![WriteRoot::new("/tmp")],
+            ..Default::default()
+        });
+        assert!(resolved.paths.is_empty());
+        assert_eq!(resolved.omitted.len(), 1);
+    }
+
+    #[test]
     fn root_inside_a_trusted_root_is_kept_canonical() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().canonicalize().unwrap();
         std::fs::create_dir_all(base.join("src")).unwrap();
         let resolved = super::resolve_allow_write(&SandboxConfig {
             allow_write: vec![WriteRoot::new(base.join("src"))],
-            trusted_roots: Some(vec![WriteRoot::new(&base)]),
+            trusted_roots: vec![WriteRoot::new(&base)],
             ..Default::default()
         });
         assert_eq!(resolved.paths, vec![base.join("src")]);

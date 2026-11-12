@@ -255,6 +255,7 @@ mod tests {
     fn test_build_seatbelt_profile_allows_write_path_when_configured() {
         let cfg = SandboxConfig {
             allow_write: vec![crate::WriteRoot::new("/tmp")],
+            trusted_roots: vec![crate::WriteRoot::new("/tmp")],
             ..Default::default()
         };
         let profile =
@@ -279,6 +280,7 @@ mod tests {
     fn test_build_seatbelt_profile_omits_nonexistent_allow_write_path() {
         let cfg = SandboxConfig {
             allow_write: vec![crate::WriteRoot::new("/nonexistent_aegis_test_path_xyz")],
+            trusted_roots: vec![crate::WriteRoot::new("/nonexistent_aegis_test_path_xyz")],
             ..Default::default()
         };
 
@@ -548,6 +550,7 @@ mod tests {
         let dir = std::env::temp_dir();
         let cfg = SandboxConfig {
             allow_write: vec![crate::WriteRoot::new(dir.clone())],
+            trusted_roots: vec![crate::WriteRoot::new(dir.clone())],
             ..Default::default()
         };
         let executor = SandboxExecutor::new(SandboxProfile::from_config(&cfg));

@@ -130,8 +130,8 @@ pub struct SandboxConfig {
     /// Effective writable roots (after project narrowing).
     pub allow_write: Vec<WriteRoot>,
     /// The trusted roots (global layer or computed default) every canonical
-    /// effective root must lie under. `None` skips the containment check.
-    pub trusted_roots: Option<Vec<WriteRoot>>,
+    /// effective root must lie under. Required: an empty list admits no root.
+    pub trusted_roots: Vec<WriteRoot>,
     /// Whether the sandboxed process is allowed to access the network.
     pub allow_network: bool,
     /// If `true`, failure to set up the sandbox is a hard error rather than a

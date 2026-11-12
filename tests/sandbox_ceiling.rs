@@ -28,6 +28,7 @@ fn outside_tmp() -> Option<TempDir> {
 fn confinement_available() -> bool {
     let probe = aegis_sandbox::SandboxConfig {
         allow_write: vec![aegis_sandbox::WriteRoot::new("/tmp")],
+        trusted_roots: vec![aegis_sandbox::WriteRoot::new("/tmp")],
         ..Default::default()
     };
     let ok = aegis_sandbox::sandbox_available_for(&probe);

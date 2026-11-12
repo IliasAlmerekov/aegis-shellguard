@@ -386,6 +386,8 @@ pub(crate) fn run_inner_landlock_wrapper() -> i32 {
         }
     };
     let config = SandboxConfig {
+        // Already canonical and contained: both sets are the resolved paths.
+        trusted_roots: allow_write.iter().map(crate::WriteRoot::new).collect(),
         allow_write: allow_write.into_iter().map(crate::WriteRoot::new).collect(),
         ..Default::default()
     };
@@ -449,6 +451,7 @@ mod tests {
         }
         let cfg = SandboxConfig {
             allow_write: vec![crate::WriteRoot::new("/tmp")],
+            trusted_roots: vec![crate::WriteRoot::new("/tmp")],
             ..Default::default()
         };
         assert!(

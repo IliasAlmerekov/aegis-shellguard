@@ -94,6 +94,7 @@ fn production_bwrap_options() -> Vec<OsString> {
     let maximal = SandboxConfig {
         allow_network: true,
         allow_write: vec![crate::WriteRoot::new("/tmp")],
+        trusted_roots: vec![crate::WriteRoot::new("/tmp")],
         ..SandboxConfig::default()
     };
     // `/tmp` exists on every Linux host, so this build cannot fail in

@@ -249,6 +249,7 @@ mod tests {
     fn bwrap_args_include_bind_for_tmp_when_in_allow_write() {
         let cfg = SandboxConfig {
             allow_write: vec![crate::WriteRoot::new("/tmp")],
+            trusted_roots: vec![crate::WriteRoot::new("/tmp")],
             ..Default::default()
         };
         let args = build_bwrap_args(&cfg).expect("build_bwrap_args failed");
@@ -278,6 +279,7 @@ mod tests {
     fn bwrap_args_share_net_appears_before_bind_when_both_present() {
         let cfg = SandboxConfig {
             allow_write: vec![crate::WriteRoot::new("/tmp")],
+            trusted_roots: vec![crate::WriteRoot::new("/tmp")],
             allow_network: true,
             ..Default::default()
         };
@@ -304,6 +306,7 @@ mod tests {
     fn bwrap_args_omit_nonexistent_allow_write_path() {
         let cfg = SandboxConfig {
             allow_write: vec![crate::WriteRoot::new("/nonexistent_aegis_test_path_xyz")],
+            trusted_roots: vec![crate::WriteRoot::new("/nonexistent_aegis_test_path_xyz")],
             ..Default::default()
         };
         let args = build_bwrap_args(&cfg).expect("an omitted root is not an error");
@@ -410,6 +413,7 @@ mod tests {
     fn test_bwrap_args_include_allow_write_paths() {
         let cfg = SandboxConfig {
             allow_write: vec![crate::WriteRoot::new("/tmp")],
+            trusted_roots: vec![crate::WriteRoot::new("/tmp")],
             ..Default::default()
         };
         let args = build_bwrap_args(&cfg).expect("build_bwrap_args must succeed for /tmp");
@@ -441,6 +445,7 @@ mod tests {
     fn test_share_net_appears_before_bind_mounts() {
         let cfg = SandboxConfig {
             allow_write: vec![crate::WriteRoot::new("/tmp")],
+            trusted_roots: vec![crate::WriteRoot::new("/tmp")],
             allow_network: true,
             ..Default::default()
         };
