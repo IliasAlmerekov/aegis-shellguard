@@ -10,6 +10,7 @@ use crate::allowlist::{
     Allowlist, ConfigSourceLayer, analyze_allowlist_rule, validate_single_block_rule,
     validate_single_rule,
 };
+use crate::ceiling::{CeilingWarning, compute_trusted_ceiling};
 use crate::error::ConfigError;
 use crate::model::PolicyRule;
 use crate::pattern_match::policy_pattern_matches;
@@ -254,8 +255,41 @@ pub fn validate_config_layers(current_dir: &Path, home_dir: Option<&Path>) -> Va
         }
     }
 
+    // Until #229 makes the Sandbox mandatory, no `.git` search runs unless it
+    // is enabled.
+    if merged.sandbox.enabled {
+        for warning in compute_trusted_ceiling(&merged.sandbox, current_dir).warnings {
+            push_unique_issue(&mut report.warnings, ceiling_issue(&warning));
+        }
+    }
+
     report.valid = report.errors.is_empty();
     report
+}
+
+/// Render a typed ceiling warning as a `config validate` issue.
+fn ceiling_issue(warning: &CeilingWarning) -> ValidationIssue {
+    match warning {
+        CeilingWarning::PathOmitted(omitted) => ValidationIssue {
+            code: "trusted_ceiling_path_omitted",
+            message: format!(
+                "`{}` ({} layer) left out of the trusted ceiling: {}",
+                omitted.path.display(),
+                omitted.layer.as_str(),
+                omitted.reason.as_str()
+            ),
+            location: omitted.location.clone(),
+        },
+        CeilingWarning::WorkspaceUnresolved { reason, cwd } => ValidationIssue {
+            code: "workspace_unresolved",
+            message: format!(
+                "no workspace for `{}`: {}; the trusted ceiling holds only the temporary directory",
+                cwd.display(),
+                reason.as_str()
+            ),
+            location: cwd.to_string_lossy().into_owned(),
+        },
+    }
 }
 
 /// Validate an effective config.
@@ -632,6 +666,8 @@ pub fn validate_policy_rules(rules: &[PolicyRule]) -> Result<(), (usize, ConfigE
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod ceiling_tests;
 #[cfg(test)]
 mod length_tests;
 

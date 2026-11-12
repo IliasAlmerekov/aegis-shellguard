@@ -55,6 +55,9 @@ pub enum WorkspaceResolution {
     Unresolved(WorkspaceUnresolvedReason),
 }
 
+/// `st_dev` of a directory, injectable so mount boundaries can be tested.
+pub type DeviceFn = Box<dyn Fn(&Path, &Metadata) -> u64>;
+
 /// Environment the resolver reads, injectable so tests are hermetic.
 pub struct ResolverInputs {
     /// Home directory used for the degenerate-workspace rule.
@@ -62,7 +65,7 @@ pub struct ResolverInputs {
     /// Temporary directories of the computed default (never from `TMPDIR`).
     pub temp_dirs: Vec<PathBuf>,
     /// `st_dev` of a path; the upward search stops where it changes.
-    pub device: Box<dyn Fn(&Path, &Metadata) -> u64>,
+    pub device: DeviceFn,
 }
 
 /// Resolve the workspace of `cwd` with the real system inputs.

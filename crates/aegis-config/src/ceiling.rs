@@ -20,8 +20,8 @@ pub use compute::{
     compute_trusted_ceiling_with,
 };
 pub use workspace::{
-    ResolverInputs, Workspace, WorkspaceResolution, WorkspaceUnresolvedReason, resolve_workspace,
-    resolve_workspace_with,
+    DeviceFn, ResolverInputs, Workspace, WorkspaceResolution, WorkspaceUnresolvedReason,
+    resolve_workspace, resolve_workspace_with,
 };
 
 use serde::{Deserialize, Serialize};
@@ -37,6 +37,17 @@ pub enum CeilingLayer {
     /// Root computed by Aegis (worktree root, verified gitdir, temporary
     /// directory), not read from any config file.
     Computed,
+}
+
+impl CeilingLayer {
+    /// Stable machine-readable name.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Global => "global",
+            Self::Project => "project",
+            Self::Computed => "computed",
+        }
+    }
 }
 
 /// One writable root of the `Trusted ceiling`, with its provenance.
