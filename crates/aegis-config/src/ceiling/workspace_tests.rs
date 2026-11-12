@@ -75,6 +75,20 @@ fn workspace_rooted_at_home_is_rejected() {
 }
 
 #[test]
+fn workspace_reached_through_a_symlink_to_home_is_rejected() {
+    // Enforcement canonicalises the root, so a lexical root `/…/link` that
+    // resolves to the home would make the home writable.
+    let (tmp, root) = repo_with_dot_git_dir();
+    let link = canon(tmp.path()).join("link");
+    std::os::unix::fs::symlink(&root, &link).unwrap();
+    let why = unresolved(resolve_workspace_with(
+        &link.join("src"),
+        &inputs(Some(root.clone()), tmp.path()),
+    ));
+    assert_eq!(why, WorkspaceUnresolvedReason::Home);
+}
+
+#[test]
 fn workspace_that_is_an_ancestor_of_home_is_rejected() {
     let (tmp, root) = repo_with_dot_git_dir();
     let why = unresolved(resolve_workspace_with(

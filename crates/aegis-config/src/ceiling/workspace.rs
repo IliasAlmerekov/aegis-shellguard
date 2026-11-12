@@ -86,15 +86,19 @@ pub fn resolve_workspace_with(cwd: &Path, inputs: &ResolverInputs) -> WorkspaceR
     let Some(root) = find_worktree_root(cwd, inputs) else {
         return Unresolved(NoWorktree);
     };
-    if let Some(home) = &inputs.home {
-        let reason = classify_root(&root, Some(home)).or_else(|| {
-            let canonical = fs::canonicalize(home).ok()?;
-            classify_root(&root, Some(&canonical))
-        });
-        if let Some(reason) = reason {
-            return Unresolved(reason);
-        }
-    } else if let Some(reason) = classify_root(&root, None) {
+    // Enforcement canonicalises the root, so the degenerate-workspace rule
+    // must judge the canonical one: a cwd reached through a symlink can
+    // resolve to the home or `/`. One extra `realpath`, no tree walk.
+    let canonical_root = fs::canonicalize(&root).ok();
+    let canonical_home = inputs.home.as_deref().and_then(|h| fs::canonicalize(h).ok());
+    let roots = std::iter::once(&root).chain(canonical_root.as_ref());
+    let homes = inputs.home.iter().chain(canonical_home.iter());
+    let reason = roots.clone().find_map(|r| classify_root(r, None)).or_else(|| {
+        homes
+            .flat_map(|h| roots.clone().map(move |r| (r, h)))
+            .find_map(|(r, h)| classify_root(r, Some(h)))
+    });
+    if let Some(reason) = reason {
         return Unresolved(reason);
     }
     WorkspaceResolution::Resolved(workspace_for(root))
