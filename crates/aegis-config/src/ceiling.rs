@@ -8,10 +8,17 @@
 
 use std::path::{Component, Path, PathBuf};
 
+mod compute;
+#[cfg(test)]
+mod compute_tests;
 mod workspace;
 #[cfg(test)]
 mod workspace_tests;
 
+pub use compute::{
+    CeilingOmitReason, CeilingWarning, PathOmitted, TrustedCeiling, compute_trusted_ceiling,
+    compute_trusted_ceiling_with,
+};
 pub use workspace::{
     ResolverInputs, Workspace, WorkspaceResolution, WorkspaceUnresolvedReason, resolve_workspace,
     resolve_workspace_with,
