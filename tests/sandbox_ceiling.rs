@@ -337,3 +337,70 @@ fn config_validate_reports_the_enforcement_omission_without_failing() {
     assert!(output.status.success(), "{stdout}");
     assert!(stdout.contains("outside_trusted_ceiling"), "{stdout}");
 }
+
+/// Runs a write to the worktree and to `/tmp` under `config` and returns
+/// whether each landed: `(worktree, tmp)`. `None` when there is no confinement.
+fn writes_under(config: &str, tag: &str) -> Option<(bool, bool)> {
+    let base = outside_tmp()?;
+    if !confinement_available() {
+        return None;
+    }
+    let home = TempDir::new().unwrap();
+    write_global_config(home.path(), config);
+    let repo = base.path().join("repo");
+    init_repo(home.path(), &repo);
+    let tmp_file = unique_tmp_file(tag);
+    let command = format!(
+        "echo a > {repo}/x.txt; echo b > {tmp}",
+        repo = repo.display(),
+        tmp = tmp_file.display()
+    );
+    run_in(home.path(), &repo, &command);
+    let landed = (repo.join("x.txt").exists(), tmp_file.exists());
+    let _ = fs::remove_file(&tmp_file);
+    Some(landed)
+}
+
+#[test]
+fn an_explicit_empty_allow_write_leaves_nothing_writable() {
+    let config = "[sandbox]\nenabled = true\nallow_write = []\n";
+    if let Some(landed) = writes_under(config, "empty") {
+        assert_eq!(landed, (false, false), "worktree, tmp");
+    }
+}
+
+#[test]
+fn an_allow_write_list_whose_entries_are_all_omitted_leaves_nothing_writable() {
+    let config = "[sandbox]\nenabled = true\n\
+                  allow_write = [\"relative/dir\", \"/var/tmp/aegis-no-such-dir-242\", \"/tmp/../var\"]\n";
+    if let Some(landed) = writes_under(config, "omitted") {
+        assert_eq!(landed, (false, false), "worktree, tmp");
+    }
+}
+
+#[test]
+fn ceiling_warnings_never_surface_in_the_shell_wrapper_path() {
+    // A missing entry and a cwd outside any worktree each produce a warning
+    // for `status` and `config validate`, never for `$SHELL -c`.
+    let Some(base) = outside_tmp() else { return };
+    if !confinement_available() {
+        return;
+    }
+    let missing = "[sandbox]\nenabled = true\nallow_write = [\"/tmp\", \"/var/tmp/aegis-no-such-dir-242\"]\n";
+    for config in [missing, ENABLED] {
+        let home = TempDir::new().unwrap();
+        write_global_config(home.path(), config);
+        let cwd = base.path().join("plain");
+        fs::create_dir_all(&cwd).unwrap();
+        let output = run_in(home.path(), &cwd, "echo hi");
+        let all = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(all.contains("hi"), "the command must have run: {all}");
+        for code in ["trusted_ceiling_path_omitted", "workspace_unresolved"] {
+            assert!(!all.contains(code), "{code} leaked into -c output: {all}");
+        }
+    }
+}
