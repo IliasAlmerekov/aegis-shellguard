@@ -361,6 +361,16 @@ pub(crate) fn build_landlock_wrapper_args(
     Ok(out)
 }
 
+/// The config the inner wrapper enforces. The paths are already canonical and
+/// contained, so both sets are the resolved paths.
+fn inner_config(allow_write: Vec<PathBuf>) -> SandboxConfig {
+    SandboxConfig {
+        trusted_roots: allow_write.iter().map(crate::WriteRoot::new).collect(),
+        allow_write: allow_write.into_iter().map(crate::WriteRoot::new).collect(),
+        ..Default::default()
+    }
+}
+
 /// Run the inner landlock wrapper (the re-exec'd innermost process inside
 /// bwrap's mount namespace). Reads the serialized `allow_write` config from
 /// the environment, applies Landlock, then execs the real program from argv.
@@ -385,12 +395,7 @@ pub(crate) fn run_inner_landlock_wrapper() -> i32 {
             return crate::EXIT_INTERNAL;
         }
     };
-    let config = SandboxConfig {
-        // Already canonical and contained: both sets are the resolved paths.
-        trusted_roots: allow_write.iter().map(crate::WriteRoot::new).collect(),
-        allow_write: allow_write.into_iter().map(crate::WriteRoot::new).collect(),
-        ..Default::default()
-    };
+    let config = inner_config(allow_write);
     if let Err(e) = apply_landlock_restrictions(&config) {
         eprintln!("aegis: failed to apply landlock: {e}");
         return crate::EXIT_INTERNAL;
@@ -431,9 +436,22 @@ mod tests {
     use crate::SandboxConfig;
 
     use super::{
-        apply_landlock_restrictions, build_landlock_wrapper_args, parse_allow_write,
+        apply_landlock_restrictions, build_landlock_wrapper_args, inner_config, parse_allow_write,
         serialize_allow_write,
     };
+
+    #[test]
+    fn inner_config_makes_the_paths_both_writable_and_trusted() {
+        let config = inner_config(vec!["/srv/a".into(), "/srv/b".into()]);
+        let paths =
+            |roots: &[crate::WriteRoot]| roots.iter().map(|r| r.path.clone()).collect::<Vec<_>>();
+        let expected = vec![
+            std::path::PathBuf::from("/srv/a"),
+            std::path::PathBuf::from("/srv/b"),
+        ];
+        assert_eq!(paths(&config.allow_write), expected);
+        assert_eq!(paths(&config.trusted_roots), expected);
+    }
 
     #[test]
     fn apply_landlock_restrictions_ok_on_empty_allow_write() {

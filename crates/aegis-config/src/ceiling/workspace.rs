@@ -229,7 +229,7 @@ fn core_worktree(config: &str) -> Option<String> {
 }
 
 /// Read a small text file; larger files are truncated, never fully loaded.
-fn read_small(path: &Path) -> Option<String> {
+pub(super) fn read_small(path: &Path) -> Option<String> {
     const LIMIT: u64 = 256 * 1024;
     let mut text = String::new();
     fs::File::open(path)

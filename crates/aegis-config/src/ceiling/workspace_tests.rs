@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 
-use super::workspace::{WorkspaceResolution as R, passwd_home, system_home};
+use super::workspace::{WorkspaceResolution as R, passwd_home, read_small, system_home};
 use super::*;
 
 const NO_HOME: Option<PathBuf> = None;
@@ -261,4 +261,12 @@ fn system_temp_dirs_start_with_tmp_and_ignore_tmpdir() {
     let dirs = ResolverInputs::system().temp_dirs;
     assert_eq!(dirs.first(), Some(&PathBuf::from("/tmp")));
     assert!(dirs.iter().all(|d| d.is_absolute()), "{dirs:?}");
+}
+
+#[test]
+fn read_small_truncates_at_256_kib() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("big");
+    fs::write(&file, vec![b'a'; 256 * 1024 + 100]).unwrap();
+    assert_eq!(read_small(&file).unwrap().len(), 256 * 1024);
 }

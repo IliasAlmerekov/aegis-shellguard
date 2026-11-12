@@ -351,6 +351,17 @@ mod tests {
     }
 
     #[test]
+    fn production_options_include_the_flags_of_network_and_writable_binds() {
+        let options = super::production_bwrap_options();
+        for flag in ["--share-net", "--bind"] {
+            assert!(
+                options.iter().any(|option| option == flag),
+                "missing {flag} in {options:?}"
+            );
+        }
+    }
+
+    #[test]
     fn system_bwrap_resolver_skips_bwrap_inside_cwd() {
         let base = std::env::temp_dir().join(format!("aegis_bwrap_test_{}", std::process::id()));
         let outside = base.join("outside");

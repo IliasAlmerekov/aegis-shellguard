@@ -105,3 +105,14 @@ pub(crate) fn intersect(base: &[WriteRoot], overlay: &[WriteRoot]) -> Vec<WriteR
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn write_root_converts_into_its_path() {
+        let root = WriteRoot::new(PathBuf::from("/srv/app"), CeilingLayer::Global, "cfg");
+        assert_eq!(PathBuf::from(root), PathBuf::from("/srv/app"));
+    }
+}

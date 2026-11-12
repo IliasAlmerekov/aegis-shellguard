@@ -144,6 +144,16 @@ mod tests {
     };
     use aegis_types::CeilingLayer;
 
+    #[test]
+    fn omit_reason_names_are_the_stable_wire_strings() {
+        use crate::support::OmitReason;
+        assert_eq!(OmitReason::NotFound.as_str(), "not_found");
+        assert_eq!(
+            OmitReason::OutsideTrustedCeiling.as_str(),
+            "outside_trusted_ceiling"
+        );
+    }
+
     // ── SandboxConfig defaults ────────────────────────────────────────────────
 
     #[test]
