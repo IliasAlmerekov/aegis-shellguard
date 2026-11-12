@@ -1,0 +1,18 @@
+# Mutants that cannot be killed on the Linux CI runner. Each regex matches the
+# mutant name as `cargo mutants --list` prints it, without the file position.
+exclude_re = [
+    # getpwuid_r ERANGE retry arithmetic: needs a passwd entry longer than the
+    # initial buffer; the null-result and home-value mutants stay in scope.
+    "replace .* in passwd_home",
+    # macOS-only confstr branch, compiled out on Linux; macOS CI runs it.
+    "replace .* in system_temp_dirs",
+    # In-process Landlock apply would confine the test process; covered by
+    # tests/sandbox_ceiling.rs where Landlock exists.
+    "replace apply_landlock_restrictions",
+    "replace .* in apply_landlock_restrictions",
+    # Inner re-exec wrapper, runs only inside bwrap/Landlock; same e2e coverage.
+    "replace run_inner_landlock_wrapper",
+    "replace .* in run_inner_landlock_wrapper",
+    # macOS-only Seatbelt profile builder; macOS CI covers it.
+    "replace build_seatbelt_profile",
+]
