@@ -151,7 +151,8 @@ mod syscalls {
 /// process.
 pub(crate) fn apply_landlock_restrictions(config: &SandboxConfig) -> Result<(), SandboxError> {
     // Nothing to restrict if no write paths are configured.
-    if config.allow_write.is_empty() {
+    let roots = crate::support::resolve_allow_write(config).paths;
+    if roots.is_empty() {
         return Ok(());
     }
 
@@ -192,23 +193,31 @@ pub(crate) fn apply_landlock_restrictions(config: &SandboxConfig) -> Result<(), 
     let ruleset = syscalls::create_ruleset(&attr, size)
         .map_err(|e| SandboxError::Execution(format!("landlock create_ruleset: {e}")))?;
 
-    for path in &config.allow_write {
-        let canonical = path.canonicalize().map_err(|e| {
-            SandboxError::Execution(format!("canonicalize {}: {e}", path.display()))
-        })?;
-        let dir_file = std::fs::File::open(&canonical)
-            .map_err(|e| SandboxError::Execution(format!("open {}: {e}", canonical.display())))?;
-
-        use std::os::unix::io::{AsFd, AsRawFd};
+    use std::os::unix::io::{AsFd, AsRawFd};
+    let add_rule = |path: &std::path::Path, access: u64| -> Result<(), SandboxError> {
+        let file = std::fs::File::open(path)
+            .map_err(|e| SandboxError::Execution(format!("open {}: {e}", path.display())))?;
         let rule_attr = syscalls::PathBeneathAttr {
-            allowed_access: handled_fs,
-            parent_fd: dir_file.as_raw_fd(),
+            allowed_access: access,
+            parent_fd: file.as_raw_fd(),
         };
         syscalls::add_path_beneath(ruleset.as_fd(), &rule_attr)
-            .map_err(|e| SandboxError::Execution(format!("landlock add_rule: {e}")))?;
+            .map_err(|e| SandboxError::Execution(format!("landlock add_rule: {e}")))
+    };
+    for canonical in &roots {
+        add_rule(canonical, handled_fs)?;
     }
+    // `/dev/null` is a sink every tool opens for writing (git does at startup);
+    // it is not a writable root of the ceiling. A device file accepts only file
+    // rights, never directory ones. A host without it just goes without.
+    let null_access = syscalls::ACCESS_FS_WRITE_FILE
+        | if abi >= 3 {
+            syscalls::ACCESS_FS_TRUNCATE
+        } else {
+            0
+        };
+    let _ = add_rule(std::path::Path::new("/dev/null"), null_access);
 
-    use std::os::unix::io::AsFd;
     syscalls::restrict_self(ruleset.as_fd())
         .map_err(|e| SandboxError::Execution(format!("landlock restrict_self: {e}")))?;
 
@@ -332,19 +341,11 @@ pub(crate) fn parse_allow_write(encoded: &[u8]) -> Result<Vec<PathBuf>, SandboxE
 /// The resolved `current_exe` is bound read-only into the namespace so the
 /// re-exec'd binary is visible, then invoked with the internal flag followed by
 /// the real program and its args. The inner wrapper applies Landlock and execs
-/// the program. Canonicalizes each `allow_write` path up front so a missing
-/// path fails closed at prepare time.
+/// the program.
 pub(crate) fn build_landlock_wrapper_args(
-    config: &SandboxConfig,
     program: &OsStr,
     args: &[OsString],
 ) -> Result<Vec<OsString>, SandboxError> {
-    for path in &config.allow_write {
-        path.canonicalize().map_err(|e| {
-            SandboxError::Execution(format!("allow_write path {}: {e}", path.display()))
-        })?;
-    }
-
     let exe = std::env::current_exe()
         .map_err(|e| SandboxError::Execution(format!("current_exe: {e}")))?;
 
@@ -385,7 +386,7 @@ pub(crate) fn run_inner_landlock_wrapper() -> i32 {
         }
     };
     let config = SandboxConfig {
-        allow_write,
+        allow_write: allow_write.into_iter().map(crate::WriteRoot::new).collect(),
         ..Default::default()
     };
     if let Err(e) = apply_landlock_restrictions(&config) {
@@ -447,7 +448,7 @@ mod tests {
             return;
         }
         let cfg = SandboxConfig {
-            allow_write: vec![PathBuf::from("/tmp")],
+            allow_write: vec![crate::WriteRoot::new("/tmp")],
             ..Default::default()
         };
         assert!(
@@ -487,13 +488,8 @@ mod tests {
     fn build_landlock_wrapper_args_emits_ro_bind_and_inner_command() {
         use std::ffi::{OsStr, OsString};
 
-        let cfg = SandboxConfig {
-            allow_write: vec![PathBuf::from("/tmp")],
-            ..Default::default()
-        };
         let exe = std::env::current_exe().expect("current_exe must resolve in tests");
         let args = build_landlock_wrapper_args(
-            &cfg,
             OsStr::new("/bin/sh"),
             &[OsString::from("-c"), OsString::from("echo hi")],
         )
@@ -508,20 +504,6 @@ mod tests {
         assert_eq!(args[5].as_os_str(), "/bin/sh");
         assert_eq!(args[6].as_os_str(), "-c");
         assert_eq!(args[7].as_os_str(), "echo hi");
-    }
-
-    #[test]
-    fn build_landlock_wrapper_args_fails_for_nonexistent_allow_write() {
-        use std::ffi::OsStr;
-
-        let cfg = SandboxConfig {
-            allow_write: vec![PathBuf::from("/nonexistent_aegis_test_path_xyz")],
-            ..Default::default()
-        };
-        assert!(
-            build_landlock_wrapper_args(&cfg, OsStr::new("/bin/sh"), &[]).is_err(),
-            "expected Err for non-existent allow_write path"
-        );
     }
 
     #[test]

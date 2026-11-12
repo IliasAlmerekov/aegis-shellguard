@@ -4,9 +4,9 @@
 //! "sandbox unavailable" code paths through [`run_unavailable_result`] and
 //! [`run_unavailable_result`] so typed behavior stays consistent across targets.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use crate::{SandboxError, SandboxResult};
+use crate::{SandboxConfig, SandboxError, SandboxResult, WriteRoot};
 
 // ── Test injection ────────────────────────────────────────────────────────────
 //
@@ -44,15 +44,77 @@ pub(crate) fn run_unavailable_result(required: bool) -> Result<SandboxResult, Sa
     }
 }
 
-/// Canonicalize a configured `allow_write` path, shared by the Linux bwrap
-/// and macOS Seatbelt profile builders (both bind/allow the resolved path,
-/// not the configured one, to avoid symlink confusion).
-pub(crate) fn canonicalize_allow_write_path(path: &Path) -> Result<PathBuf, SandboxError> {
-    path.canonicalize()
-        .map_err(|source| SandboxError::AllowWritePath {
-            path: path.display().to_string(),
-            source,
-        })
+/// Why a root was left out at enforcement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OmitReason {
+    /// The root could not be canonicalized (it does not exist).
+    NotFound,
+    /// The canonical root lies outside every canonical trusted root.
+    OutsideTrustedCeiling,
+}
+
+impl OmitReason {
+    /// Stable machine-readable name, equal to the config crate's.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NotFound => "not_found",
+            Self::OutsideTrustedCeiling => "outside_trusted_ceiling",
+        }
+    }
+}
+
+/// A root left out at enforcement, with its provenance.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OmittedRoot {
+    /// Why it was left out.
+    pub reason: OmitReason,
+    /// The root as configured, with its layer and location.
+    pub root: WriteRoot,
+}
+
+/// The canonical writable paths enforcement binds, and what it left out.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ResolvedAllowWrite {
+    /// Canonical roots that passed. Empty stays empty: there is no fallback.
+    pub paths: Vec<PathBuf>,
+    /// Roots left out; surfaced by `status`, never printed by `-c`.
+    pub omitted: Vec<OmittedRoot>,
+}
+
+/// Canonicalize the effective roots and the trusted roots, and keep an
+/// effective root only if its canonical path lies under a canonical trusted
+/// root. Shared by bwrap, Landlock and Seatbelt, which bind the resolved path,
+/// never the configured one, to avoid symlink confusion.
+pub fn resolve_allow_write(config: &SandboxConfig) -> ResolvedAllowWrite {
+    let trusted: Option<Vec<PathBuf>> = config.trusted_roots.as_ref().map(|roots| {
+        roots
+            .iter()
+            .filter_map(|root| root.path.canonicalize().ok())
+            .collect()
+    });
+    let mut out = ResolvedAllowWrite::default();
+    for root in &config.allow_write {
+        let reason = match root.path.canonicalize() {
+            Err(_) => OmitReason::NotFound,
+            Ok(canonical) => {
+                let inside = trusted
+                    .as_ref()
+                    .is_none_or(|t| t.iter().any(|t| canonical.starts_with(t)));
+                if inside {
+                    if !out.paths.contains(&canonical) {
+                        out.paths.push(canonical);
+                    }
+                    continue;
+                }
+                OmitReason::OutsideTrustedCeiling
+            }
+        };
+        out.omitted.push(OmittedRoot {
+            reason,
+            root: root.clone(),
+        });
+    }
+    out
 }
 
 // ── Shared test helpers ────────────────────────────────────────────────────────
@@ -80,7 +142,9 @@ pub(crate) mod test_helpers {
 #[cfg(test)]
 mod tests {
     use crate::support::run_unavailable_result;
-    use crate::{SandboxConfig, SandboxError, SandboxExecutor, SandboxProfile, SandboxResult};
+    use crate::{
+        SandboxConfig, SandboxError, SandboxExecutor, SandboxProfile, SandboxResult, WriteRoot,
+    };
 
     // ── SandboxConfig defaults ────────────────────────────────────────────────
 
@@ -188,5 +252,64 @@ mod tests {
                 panic!("run_unavailable_result(true) must return Err(Required), got {other:?}")
             }
         }
+    }
+
+    // ── resolve_allow_write ───────────────────────────────────────────────────
+
+    fn root(path: &std::path::Path, layer: &str, location: &str) -> WriteRoot {
+        WriteRoot {
+            path: path.to_path_buf(),
+            layer: layer.into(),
+            location: location.into(),
+        }
+    }
+
+    #[test]
+    fn symlink_inside_the_ceiling_that_resolves_outside_is_omitted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().canonicalize().unwrap();
+        let ws = base.join("ws");
+        let outside = base.join("outside");
+        std::fs::create_dir_all(&ws).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, ws.join("link")).unwrap();
+        let link = ws.join("link");
+
+        let resolved = super::resolve_allow_write(&SandboxConfig {
+            allow_write: vec![root(&link, "project", "/p/.aegis.toml")],
+            trusted_roots: Some(vec![root(&ws, "global", "/g/config.toml")]),
+            ..Default::default()
+        });
+
+        assert!(resolved.paths.is_empty());
+        assert_eq!(
+            resolved.omitted,
+            vec![super::OmittedRoot {
+                reason: super::OmitReason::OutsideTrustedCeiling,
+                root: root(&link, "project", "/p/.aegis.toml"),
+            }]
+        );
+    }
+
+    #[test]
+    fn missing_root_is_omitted_as_not_found_not_an_error() {
+        let resolved = super::resolve_allow_write(&SandboxConfig {
+            allow_write: vec![WriteRoot::new("/nonexistent_aegis_test_path_xyz")],
+            ..Default::default()
+        });
+        assert_eq!(resolved.omitted[0].reason, super::OmitReason::NotFound);
+    }
+
+    #[test]
+    fn root_inside_a_trusted_root_is_kept_canonical() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().canonicalize().unwrap();
+        std::fs::create_dir_all(base.join("src")).unwrap();
+        let resolved = super::resolve_allow_write(&SandboxConfig {
+            allow_write: vec![WriteRoot::new(base.join("src"))],
+            trusted_roots: Some(vec![WriteRoot::new(&base)]),
+            ..Default::default()
+        });
+        assert_eq!(resolved.paths, vec![base.join("src")]);
     }
 }

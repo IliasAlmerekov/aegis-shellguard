@@ -130,6 +130,7 @@ dependencies = [
  "cc",
  "libc",
  "pkg-config",
+ "tempfile",
  "thiserror",
 ]
 

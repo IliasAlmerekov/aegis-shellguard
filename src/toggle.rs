@@ -38,6 +38,8 @@ pub struct ToggleStatusView {
     pub config_status: String,
     /// Whether CI is overriding the local toggle.
     pub ci_override_active: bool,
+    /// Trusted ceiling warnings; empty unless the Sandbox is enabled.
+    pub ceiling_issues: Vec<aegis_config::validate::ValidationIssue>,
 }
 
 /// Resolve the global toggle flag path under the current user's home directory.
@@ -82,7 +84,22 @@ pub fn status_view(ci_override_active: bool) -> Result<ToggleStatusView> {
         flag_path: disabled_flag_path()?,
         config_status: config_status()?,
         ci_override_active,
+        ceiling_issues: ceiling_issues_here(),
     })
+}
+
+/// Ceiling warnings for the current directory. A config that does not load is
+/// reported by `config_status`, so it yields no warnings here.
+fn ceiling_issues_here() -> Vec<aegis_config::validate::ValidationIssue> {
+    let Ok(cwd) = env::current_dir() else {
+        return Vec::new();
+    };
+    let Ok(config) = AegisConfig::load_for_inspection(&cwd, home_dir_optional().as_deref()) else {
+        return Vec::new();
+    };
+    crate::runtime::sandbox_ceiling(&config, &cwd)
+        .map(|ceiling| crate::runtime::ceiling_issues(&ceiling))
+        .unwrap_or_default()
 }
 
 /// Append an audit entry for a toggle command using the effective audit config.
