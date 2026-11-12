@@ -52,7 +52,14 @@ impl From<&AegisConfig> for RuntimeConfig {
             .sandbox
             .enabled
             .then(|| aegis_sandbox::SandboxConfig {
-                allow_write: config.sandbox.allow_write.clone(),
+                // Interim bridge: part B replaces this with the resolved ceiling.
+                allow_write: config
+                    .sandbox
+                    .allow_write
+                    .iter()
+                    .flatten()
+                    .map(|root| root.path.clone())
+                    .collect(),
                 allow_network: config.sandbox.allow_network,
                 required: config.sandbox.required,
             });

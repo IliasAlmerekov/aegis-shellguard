@@ -10,6 +10,7 @@
 
 pub mod allowlist;
 pub mod amend;
+pub mod ceiling;
 /// Typed configuration errors.
 pub mod error;
 /// Config data model — [`AegisConfig`] and related types.

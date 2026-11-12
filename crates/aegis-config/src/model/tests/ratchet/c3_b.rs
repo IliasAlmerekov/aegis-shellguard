@@ -433,10 +433,10 @@ fn project_sandbox_allow_write_can_tighten_to_subset() {
     let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
 
     assert_eq!(
-        config.sandbox.allow_write,
+        allow_write_paths(&config),
         vec![std::path::PathBuf::from("/opt")],
         "project allow_write tightening to a subset must be honored; got {:?}",
-        config.sandbox.allow_write
+        allow_write_paths(&config)
     );
     assert_no_warning_for(&warnings, "sandbox.allow_write", "C3-02 tighten-subset");
 }
@@ -465,10 +465,10 @@ fn project_sandbox_allow_write_expansion_dropped_and_warned() {
     let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
 
     assert_eq!(
-        config.sandbox.allow_write,
+        allow_write_paths(&config),
         vec![std::path::PathBuf::from("/opt")],
         "project allow_write expansion must be dropped to the intersection; got {:?}",
-        config.sandbox.allow_write
+        allow_write_paths(&config)
     );
     assert_has_warning_for(&warnings, "sandbox.allow_write", "C3-02 expansion-dropped");
 }
@@ -498,11 +498,103 @@ fn project_sandbox_allow_write_disjoint_tightens_to_empty() {
     let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
 
     assert!(
-        config.sandbox.allow_write.is_empty(),
+        allow_write_paths(&config).is_empty(),
         "project allow_write disjoint from base must tighten to empty; got {:?}",
-        config.sandbox.allow_write
+        allow_write_paths(&config)
     );
     assert_has_warning_for(&warnings, "sandbox.allow_write", "C3-02 disjoint-empty");
+}
+
+#[test]
+fn project_sandbox_allow_write_narrower_trusted_root_survives_wider_project_root() {
+    // #242: trusted `/workspace/src` + project `/workspace` is a widening
+    // attempt. The path-tree intersection keeps `/workspace/src` (with its
+    // global provenance) and only `project_security_ratchet` is raised.
+    let workspace = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
+    fs::create_dir_all(&global_dir).unwrap();
+    fs::write(
+        global_dir.join(GLOBAL_CONFIG_FILE),
+        "[sandbox]\nallow_write = [\"/workspace/src\"]\n",
+    )
+    .unwrap();
+    fs::write(
+        workspace.path().join(PROJECT_CONFIG_FILE),
+        "[sandbox]\nallow_write = [\"/workspace\"]\n",
+    )
+    .unwrap();
+
+    let base = load_global_base(home.path());
+    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
+    let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
+
+    assert_eq!(
+        allow_write_paths(&config),
+        vec![std::path::PathBuf::from("/workspace/src")]
+    );
+    assert_eq!(warnings, vec!["sandbox.allow_write".to_string()]);
+    let root = &config.sandbox.allow_write.as_ref().unwrap()[0];
+    assert_eq!(root.layer, crate::ceiling::CeilingLayer::Global);
+}
+
+#[test]
+fn project_sandbox_allow_write_narrows_to_deeper_project_root_without_warning() {
+    // Trusted `/workspace` + project `/workspace/src` is a tightening: the
+    // narrower root wins, keeps project provenance, and raises no warning.
+    let workspace = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
+    fs::create_dir_all(&global_dir).unwrap();
+    fs::write(
+        global_dir.join(GLOBAL_CONFIG_FILE),
+        "[sandbox]\nallow_write = [\"/workspace\"]\n",
+    )
+    .unwrap();
+    fs::write(
+        workspace.path().join(PROJECT_CONFIG_FILE),
+        "[sandbox]\nallow_write = [\"/workspace/src\"]\n",
+    )
+    .unwrap();
+
+    let base = load_global_base(home.path());
+    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
+    let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
+
+    assert_eq!(
+        allow_write_paths(&config),
+        vec![std::path::PathBuf::from("/workspace/src")]
+    );
+    assert!(warnings.is_empty(), "tightening must not warn: {warnings:?}");
+    let root = &config.sandbox.allow_write.as_ref().unwrap()[0];
+    assert_eq!(root.layer, crate::ceiling::CeilingLayer::Project);
+}
+
+#[test]
+fn project_sandbox_allow_write_parent_dir_entry_is_clamped_not_folded() {
+    // `/opt/../etc` starts with `/opt` component-wise but must never count as
+    // inside it: `..` is not folded lexically.
+    let workspace = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
+    fs::create_dir_all(&global_dir).unwrap();
+    fs::write(
+        global_dir.join(GLOBAL_CONFIG_FILE),
+        "[sandbox]\nallow_write = [\"/opt\"]\n",
+    )
+    .unwrap();
+    fs::write(
+        workspace.path().join(PROJECT_CONFIG_FILE),
+        "[sandbox]\nallow_write = [\"/opt/../etc\"]\n",
+    )
+    .unwrap();
+
+    let base = load_global_base(home.path());
+    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
+    let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
+
+    assert!(allow_write_paths(&config).is_empty());
+    assert_has_warning_for(&warnings, "sandbox.allow_write", "parent_dir clamp");
 }
 
 // ── C3-03: misspelled [sandbox] fields must be rejected ─────────────────

@@ -7,6 +7,7 @@
 use std::path::PathBuf;
 
 use crate::allowlist::ConfigSourceLayer;
+use crate::ceiling::{CeilingLayer, WriteRoot, contains, intersect};
 
 use super::super::SandboxSettings;
 use super::super::partial::PartialSandboxSettings;
@@ -15,51 +16,63 @@ use super::direction::{
 };
 use super::warning::{RatchetSink, is_project};
 
-/// Ratchet `sandbox.allow_write` (a `Vec<PathBuf>` — more entries = weaker).
+/// Ratchet `sandbox.allow_write` (a list of path trees — more or wider roots =
+/// weaker).
 ///
-/// - Global layer: last-wins (`overlay` replaces `base` when present).
-/// - Project layer: keep the intersection (`base` filtered to entries present
-///   in `overlay`, preserving base order). This honors project tightening to a
-///   subset (including the empty set) while preventing any expansion beyond the
-///   trusted base.
+/// - Global layer: last-wins (a present overlay replaces the base, including
+///   an explicit `[]`).
+/// - Project layer: the base is narrowed by component-wise path-tree
+///   intersection (no filesystem access: a ceiling path need not exist yet),
+///   so trusted `/workspace/src` with project `/workspace` stays
+///   `/workspace/src`. Any requested root not inside a trusted root is a
+///   widening attempt: it is clamped and raises `project_security_ratchet`.
+/// - Project list over an absent trusted list: the trusted base is the
+///   computed default, unknown at merge. The list is kept with
+///   `narrows_computed = true` and intersected with the computed default when
+///   the ceiling is resolved, so the project can still only narrow.
+///
+/// Returns the merged list and the `narrows_computed` flag.
 pub(crate) fn custom_allow_write(
-    base: Vec<PathBuf>,
+    base: Option<Vec<WriteRoot>>,
+    base_narrows_computed: bool,
     overlay: Option<Vec<PathBuf>>,
     layer: ConfigSourceLayer,
     location: &str,
     sink: &mut RatchetSink,
-) -> Vec<PathBuf> {
+) -> (Option<Vec<WriteRoot>>, bool) {
     sink.touch("sandbox.allow_write");
-    let kept = match layer {
-        ConfigSourceLayer::Global => overlay.clone().unwrap_or_else(|| base.clone()),
-        ConfigSourceLayer::Project => match &overlay {
-            None => base.clone(),
-            Some(requested) => base
-                .iter()
-                .filter(|path| requested.contains(path))
-                .cloned()
-                .collect(),
-        },
+    let Some(requested) = overlay else {
+        return (base, base_narrows_computed);
+    };
+    let ceiling_layer = match layer {
+        ConfigSourceLayer::Global => CeilingLayer::Global,
+        ConfigSourceLayer::Project => CeilingLayer::Project,
+    };
+    let requested_roots: Vec<WriteRoot> = requested
+        .iter()
+        .map(|path| WriteRoot::new(path.clone(), ceiling_layer, location))
+        .collect();
+    if !is_project(layer) {
+        return (Some(requested_roots), false);
+    }
+    let Some(trusted) = base else {
+        return (Some(requested_roots), true);
     };
 
-    if is_project(layer)
-        && let Some(requested) = &overlay
-    {
-        // Gate on genuine expansion (some requested path is outside the
-        // trusted base) rather than a Debug-string inequality, so a
-        // reordered-but-equal subset does not spuriously warn.
-        let weakened = requested.iter().any(|path| !base.contains(path));
-        if weakened {
-            sink.warn(
-                "sandbox.allow_write",
-                format!("{requested:?}"),
-                format!("{kept:?}"),
-                location,
-            );
-        }
+    let kept = intersect(&trusted, &requested_roots);
+    let widens = requested
+        .iter()
+        .any(|path| !trusted.iter().any(|root| contains(&root.path, path)));
+    if widens {
+        let kept_paths: Vec<&PathBuf> = kept.iter().map(|root| &root.path).collect();
+        sink.warn(
+            "sandbox.allow_write",
+            format!("{requested:?}"),
+            format!("{kept_paths:?}"),
+            location,
+        );
     }
-
-    kept
+    (Some(kept), base_narrows_computed)
 }
 
 /// Merge one layer's `[sandbox]` overlay into the trusted base. The
@@ -76,6 +89,7 @@ pub(crate) fn merge_sandbox(
         enabled: base_enabled,
         required: base_required,
         allow_write: base_allow_write,
+        allow_write_narrows_computed: base_narrows_computed,
         allow_network: base_allow_network,
     } = base;
     let PartialSandboxSettings {
@@ -84,6 +98,15 @@ pub(crate) fn merge_sandbox(
         allow_write: req_allow_write,
         allow_network: req_allow_network,
     } = overlay;
+
+    let (allow_write, allow_write_narrows_computed) = custom_allow_write(
+        base_allow_write,
+        base_narrows_computed,
+        req_allow_write,
+        layer,
+        location,
+        sink,
+    );
 
     SandboxSettings {
         enabled: Tighten::new(bool_true_is_stricter, format_display).merge(
@@ -102,7 +125,8 @@ pub(crate) fn merge_sandbox(
             location,
             sink,
         ),
-        allow_write: custom_allow_write(base_allow_write, req_allow_write, layer, location, sink),
+        allow_write,
+        allow_write_narrows_computed,
         allow_network: Tighten::new(bool_false_is_stricter, format_display).merge(
             "sandbox.allow_network",
             base_allow_network,

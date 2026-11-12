@@ -367,7 +367,7 @@ fn project_sandbox_allow_write_reordered_subset_no_warning() {
     let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
     let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
 
-    let mut effective = config.sandbox.allow_write.clone();
+    let mut effective = allow_write_paths(&config).clone();
     effective.sort();
     let mut expected = vec![
         std::path::PathBuf::from("/opt"),
@@ -377,7 +377,7 @@ fn project_sandbox_allow_write_reordered_subset_no_warning() {
     assert_eq!(
         effective, expected,
         "reordered equal allow_write set must be preserved as a set; got {:?}",
-        config.sandbox.allow_write
+        allow_write_paths(&config)
     );
     assert_no_warning_for(
         &warnings,
