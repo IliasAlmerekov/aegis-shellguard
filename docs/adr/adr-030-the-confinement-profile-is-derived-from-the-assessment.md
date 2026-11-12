@@ -269,7 +269,11 @@ write authority with `cd`. Seven points close that.
 **1. The `Workspace` is the root of the enclosing git worktree.** Aegis walks up
 from the working directory to the first `.git` entry, file or directory, using
 `stat` only. It never spawns `git`: confinement runs on every command, and a
-subprocess would break the safe-path latency budget.
+subprocess would break the safe-path latency budget. Like git, the search stops
+where the filesystem changes (`st_dev`), so the workspace is the repository that
+git and Snapshot see. Until
+[#229](https://github.com/IliasAlmerekov/aegis-shellguard/issues/229) makes the
+Sandbox mandatory, Aegis resolves the workspace only when the Sandbox applies.
 
 **2. No enclosing worktree means no workspace.** There is no fallback to the
 working directory. Otherwise `cd ~/.ssh` followed by any command would make
@@ -279,7 +283,9 @@ the ceiling already refuses.
 
 **3. A degenerate root is not a workspace.** A worktree root equal to `/`, to the
 user's home, or to an ancestor of the home yields no workspace either. This covers
-a dotfiles repository at `$HOME`.
+a dotfiles repository at `$HOME`. The home comes from the passwd entry of the
+current uid. The `HOME` variable is used only when the uid has no passwd entry, as
+in a container started with an arbitrary uid.
 
 **4. A linked worktree or submodule brings its git directories.** When `.git` is a
 file, its `gitdir` and the `commondir` read from that gitdir join the ceiling, so a
@@ -287,7 +293,8 @@ commit can write objects and refs. Aegis accepts the gitdir only when it points
 back at this worktree: the `gitdir` file of a linked worktree, or `core.worktree`
 of a submodule. A `.git` file the agent wrote cannot pass that check, because
 forging the back-pointer needs a write inside the target. A gitdir that fails the
-check is left out, and the worktree root stays.
+check is left out with `trusted_ceiling_path_omitted { reason: gitdir_unverified }`,
+and the worktree root stays.
 
 **5. Environment variables do not move the workspace.** `GIT_DIR`,
 `GIT_WORK_TREE`, and `GIT_COMMON_DIR` are ignored. The agent sets the
@@ -301,7 +308,9 @@ environment, so it is not a trusted input to the ceiling.
 `workspace_unresolved` warning carrying its reason (`no_worktree`, `root`, `home`,
 `home_ancestor`) and the working directory. It surfaces where the other ceiling
 warnings do: `aegis config validate` and `aegis status`, never `$SHELL -c`. A
-gitdir rejected under point 4 is reported the same way.
+computed root (the worktree root, a gitdir, or the temporary directory) that cannot
+enter the ceiling is reported as `trusted_ceiling_path_omitted` with the layer
+`Computed`, because no config layer supplied it.
 
 **Accepted risk.** The agent can still `cd` into any existing repository the user
 owns and write there. Aegis has no session state that would pin the workspace to
