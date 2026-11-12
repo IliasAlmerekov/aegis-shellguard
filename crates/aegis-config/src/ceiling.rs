@@ -8,6 +8,15 @@
 
 use std::path::{Component, Path, PathBuf};
 
+mod workspace;
+#[cfg(test)]
+mod workspace_tests;
+
+pub use workspace::{
+    ResolverInputs, Workspace, WorkspaceResolution, WorkspaceUnresolvedReason, resolve_workspace,
+    resolve_workspace_with,
+};
+
 use serde::{Deserialize, Serialize};
 
 /// Where a ceiling root came from.
