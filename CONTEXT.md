@@ -530,6 +530,14 @@ network off, because a mandatory `Sandbox` whose default forbids all writes cann
 run ordinary work (ADR-030).
 _Avoid_: static profile, base profile, session profile
 
+**Workspace**:
+The directory tree a command works in, admitted by the default `Trusted ceiling`. It
+is the root of the git worktree that contains the command's working directory. There
+is no workspace when no worktree encloses that directory, or when the root is `/`,
+the user's home, or an ancestor of the home: the default ceiling then admits only
+the temporary directory.
+_Avoid_: project root, repo root, cwd
+
 **Confinement restriction**:
 An optional declaration on a Rule stating how the `Trusted ceiling` narrows when that
 Rule matches. It can only subtract. Targets are located by a named
