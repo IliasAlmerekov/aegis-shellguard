@@ -39,7 +39,6 @@
     "aegis-tui",
     "aegis-audit",
     "aegis-snapshot",
-    "aegis-starlark",
     "aegis-sandbox",
     "aegis-language"
   ],

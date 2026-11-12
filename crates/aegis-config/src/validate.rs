@@ -159,7 +159,7 @@ fn unsupported_policy_star_message(path: &Path) -> String {
 
 /// Fail closed when `<home>/.aegis/policy.star` exists (ADR-028).
 ///
-/// The Starlark policy DSL is removed; the file is never ignored or downgraded
+/// The policy DSL is removed; the file is never ignored or downgraded
 /// to a warning. Runtime construction and `aegis config validate` both call
 /// this so their check and text stay identical.
 pub fn reject_policy_star(home: Option<&Path>) -> Result<(), ConfigError> {
@@ -626,3 +626,6 @@ mod tests;
 
 #[cfg(test)]
 mod length_tests;
+
+#[cfg(test)]
+mod policy_star_tests;

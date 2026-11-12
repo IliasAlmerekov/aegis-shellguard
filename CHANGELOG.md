@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Removed: The Starlark policy DSL (`aegis-starlark` crate and `starlark-policy` feature) is gone; an existing `~/.aegis/policy.star` is now a config error, also reported by `aegis config validate` as `unsupported_policy_star`, that points at `[[rules]]` in `aegis.toml`. (#225, ADR-028)
+
 - Changed: A config with a custom, allowlist, or blocklist pattern over 256 bytes now fails to load; untrusted regexes compile under explicit size budgets (#217).
 
 - Fixed: Unavailable working directories no longer fall back to `.` for Recovery, rule persistence, or Watch frames (#220, ADR-036).

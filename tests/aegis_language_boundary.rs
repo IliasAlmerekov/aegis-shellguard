@@ -32,7 +32,6 @@ const OTHER_WORKSPACE_CRATES: &[&str] = &[
     "aegis-tui",
     "aegis-audit",
     "aegis-snapshot",
-    "aegis-starlark",
     "aegis-sandbox",
 ];
 

@@ -81,8 +81,7 @@ patterns), `aegis-policy` (pure `PolicyEngine`), `aegis-config` (config model,
 loader, validation, schema, `amend`), `aegis-explanation` (`CommandExplanation`
 and related types), `aegis-tui` (crossterm confirmation dialog), `aegis-snapshot`
 (six snapshot backends), `aegis-audit` (`AuditLogger`, append-only JSONL with
-optional hash-chain integrity), `aegis-starlark` (Starlark policy DSL loader
-for `~/.aegis/policy.star`), `aegis-sandbox` (bwrap + Landlock on Linux,
+optional hash-chain integrity), `aegis-sandbox` (bwrap + Landlock on Linux,
 sandbox-exec on macOS; opt-in execution confinement in 0.x, mandatory in 1.0
 per ADR-029 and #229), and `aegis-language`
 (the focused Tree-sitter boundary for language-aware analysis — an additive
@@ -92,8 +91,7 @@ root binary crate. DAG boundaries for the first nine core crates plus the
 `aegis-language` leaf are enforced by `tests/architecture_boundaries.rs`
 (`aegis-language` must not be depended on by any other workspace member, and
 must not itself depend on any other workspace member — ADR-022 §4);
-`aegis-sandbox` is covered by `tests/platform_scope.rs`, and `aegis-starlark`
-is not yet asserted in either.
+`aegis-sandbox` is covered by `tests/platform_scope.rs`.
 
 Current module responsibilities:
 
