@@ -139,6 +139,7 @@ pub(crate) mod test_helpers {
 #[cfg(test)]
 mod tests {
     use crate::support::run_unavailable_result;
+    use aegis_types::CeilingLayer;
     use crate::{
         SandboxConfig, SandboxError, SandboxExecutor, SandboxProfile, SandboxResult, WriteRoot,
     };
@@ -253,10 +254,10 @@ mod tests {
 
     // ── resolve_allow_write ───────────────────────────────────────────────────
 
-    fn root(path: &std::path::Path, layer: &str, location: &str) -> WriteRoot {
+    fn root(path: &std::path::Path, layer: CeilingLayer, location: &str) -> WriteRoot {
         WriteRoot {
             path: path.to_path_buf(),
-            layer: layer.into(),
+            layer,
             location: location.into(),
         }
     }
@@ -273,8 +274,8 @@ mod tests {
         let link = ws.join("link");
 
         let resolved = super::resolve_allow_write(&SandboxConfig {
-            allow_write: vec![root(&link, "project", "/p/.aegis.toml")],
-            trusted_roots: vec![root(&ws, "global", "/g/config.toml")],
+            allow_write: vec![root(&link, CeilingLayer::Project, "/p/.aegis.toml")],
+            trusted_roots: vec![root(&ws, CeilingLayer::Global, "/g/config.toml")],
             ..Default::default()
         });
 
@@ -283,7 +284,7 @@ mod tests {
             resolved.omitted,
             vec![super::OmittedRoot {
                 reason: super::OmitReason::OutsideTrustedCeiling,
-                root: root(&link, "project", "/p/.aegis.toml"),
+                root: root(&link, CeilingLayer::Project, "/p/.aegis.toml"),
             }]
         );
     }

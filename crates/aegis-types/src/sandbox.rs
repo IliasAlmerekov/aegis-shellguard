@@ -97,3 +97,44 @@ mod tests {
         );
     }
 }
+
+/// Where a writable root of the `Trusted ceiling` came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CeilingLayer {
+    /// Entry of the global config file.
+    Global,
+    /// Entry of the project config file.
+    Project,
+    /// Root computed by Aegis (worktree root, verified gitdir, temporary
+    /// directory), not read from any config file.
+    Computed,
+}
+
+impl CeilingLayer {
+    /// Stable machine-readable name.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Global => "global",
+            Self::Project => "project",
+            Self::Computed => "computed",
+        }
+    }
+}
+
+#[cfg(test)]
+mod ceiling_layer_tests {
+    use super::CeilingLayer;
+
+    #[test]
+    fn names_are_stable_and_match_the_serialised_form() {
+        for (layer, name) in [
+            (CeilingLayer::Global, "global"),
+            (CeilingLayer::Project, "project"),
+            (CeilingLayer::Computed, "computed"),
+        ] {
+            assert_eq!(layer.as_str(), name);
+            assert_eq!(serde_json::to_string(&layer).unwrap(), format!("\"{name}\""));
+        }
+    }
+}

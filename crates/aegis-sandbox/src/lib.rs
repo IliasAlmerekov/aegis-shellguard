@@ -17,7 +17,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
-use aegis_types::SandboxStatus;
+use aegis_types::{CeilingLayer, SandboxStatus};
 
 mod support;
 
@@ -102,13 +102,13 @@ pub enum SandboxError {
 /// One writable root with the provenance needed to explain its omission.
 ///
 /// Sandbox-side mirror of the config crate's `WriteRoot`: this crate must not
-/// depend on `aegis-config`, and plain strings keep the type to three fields.
+/// depend on `aegis-config`; the layer type is shared through `aegis-types`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WriteRoot {
     /// The configured or computed path.
     pub path: PathBuf,
-    /// Layer the root came from (`global`, `project`, `computed`).
-    pub layer: String,
+    /// Layer the root came from.
+    pub layer: CeilingLayer,
     /// Config file or computed-root label the root came from.
     pub location: String,
 }
@@ -118,7 +118,7 @@ impl WriteRoot {
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
-            layer: String::new(),
+            layer: CeilingLayer::Computed,
             location: String::new(),
         }
     }

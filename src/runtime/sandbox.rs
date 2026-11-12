@@ -75,7 +75,7 @@ pub fn sandbox_ceiling(config: &aegis_config::AegisConfig, cwd: &Path) -> Option
             .iter()
             .map(|root| aegis_sandbox::WriteRoot {
                 path: root.path.clone(),
-                layer: root.layer.as_str().to_owned(),
+                layer: root.layer,
                 location: root.location.clone(),
             })
             .collect::<Vec<_>>()
@@ -95,7 +95,7 @@ pub fn sandbox_ceiling(config: &aegis_config::AegisConfig, cwd: &Path) -> Option
 /// ceiling warnings plus the roots enforcement would omit (a symlink that
 /// resolves outside the trusted roots). Never printed on the `-c` path.
 pub fn ceiling_issues(ceiling: &SandboxCeiling) -> Vec<aegis_config::validate::ValidationIssue> {
-    use aegis_config::ceiling::{CeilingLayer, CeilingOmitReason, CeilingWarning, PathOmitted};
+    use aegis_config::ceiling::{CeilingOmitReason, CeilingWarning, PathOmitted};
     use aegis_sandbox::OmitReason;
 
     let enforcement = aegis_sandbox::resolve_allow_write(&ceiling.config)
@@ -107,11 +107,7 @@ pub fn ceiling_issues(ceiling: &SandboxCeiling) -> Vec<aegis_config::validate::V
                     OmitReason::NotFound => CeilingOmitReason::NotFound,
                     OmitReason::OutsideTrustedCeiling => CeilingOmitReason::OutsideTrustedCeiling,
                 },
-                layer: match omitted.root.layer.as_str() {
-                    "global" => CeilingLayer::Global,
-                    "project" => CeilingLayer::Project,
-                    _ => CeilingLayer::Computed,
-                },
+                layer: omitted.root.layer,
                 location: omitted.root.location,
                 path: omitted.root.path,
             })

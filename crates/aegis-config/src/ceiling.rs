@@ -24,31 +24,8 @@ pub use workspace::{
     resolve_workspace, resolve_workspace_with,
 };
 
+pub use aegis_types::CeilingLayer;
 use serde::{Deserialize, Serialize};
-
-/// Where a ceiling root came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CeilingLayer {
-    /// Entry of the global config file.
-    Global,
-    /// Entry of the project config file.
-    Project,
-    /// Root computed by Aegis (worktree root, verified gitdir, temporary
-    /// directory), not read from any config file.
-    Computed,
-}
-
-impl CeilingLayer {
-    /// Stable machine-readable name.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Global => "global",
-            Self::Project => "project",
-            Self::Computed => "computed",
-        }
-    }
-}
 
 /// One writable root of the `Trusted ceiling`, with its provenance.
 ///
