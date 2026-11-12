@@ -163,10 +163,18 @@ fn unsupported_policy_star_message(path: &Path) -> String {
 /// to a warning. Runtime construction and `aegis config validate` both call
 /// this so their check and text stay identical.
 pub fn reject_policy_star(home: Option<&Path>) -> Result<(), ConfigError> {
-    match home.map(policy_star_path).filter(|path| path.exists()) {
-        Some(path) => Err(ConfigError::Config(unsupported_policy_star_message(&path))),
+    match home.map(policy_star_path) {
+        Some(path) => reject_policy_star_at(&path),
         None => Ok(()),
     }
+}
+
+/// Fail closed when the given `policy.star` path exists (ADR-028).
+pub fn reject_policy_star_at(path: &Path) -> Result<(), ConfigError> {
+    if path.exists() {
+        return Err(ConfigError::Config(unsupported_policy_star_message(path)));
+    }
+    Ok(())
 }
 
 /// Validate file-backed config using the same layer-by-layer checkpoints as runtime loading.

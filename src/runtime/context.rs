@@ -232,10 +232,8 @@ impl RuntimeContext {
         let current_user = detect_effective_user();
 
         // policy.star is retired (ADR-028): its presence is a config error.
-        // The path is always `<home>/.aegis/policy.star`, so the shared check
-        // takes the home two levels up.
-        if let Some(star_path) = explicit_policy_path.filter(|p| p.exists()) {
-            aegis_config::reject_policy_star(star_path.parent().and_then(std::path::Path::parent))?;
+        if let Some(star_path) = explicit_policy_path {
+            aegis_config::reject_policy_star_at(star_path)?;
         }
         let policy_rules = config.rules.clone();
 
