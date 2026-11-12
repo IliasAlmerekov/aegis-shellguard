@@ -7,7 +7,9 @@
 use std::path::PathBuf;
 
 use crate::allowlist::ConfigSourceLayer;
-use crate::ceiling::{CeilingLayer, WriteRoot, contains, intersect, is_lexically_invalid};
+use aegis_types::CeilingLayer;
+
+use crate::ceiling::{WriteRoot, contains, intersect, is_lexically_invalid};
 
 use super::super::SandboxSettings;
 use super::super::partial::PartialSandboxSettings;

@@ -535,7 +535,7 @@ fn project_sandbox_allow_write_narrower_trusted_root_survives_wider_project_root
     );
     assert_eq!(warnings, vec!["sandbox.allow_write".to_string()]);
     let root = &config.sandbox.allow_write.as_ref().unwrap()[0];
-    assert_eq!(root.layer, crate::ceiling::CeilingLayer::Global);
+    assert_eq!(root.layer, aegis_types::CeilingLayer::Global);
 }
 
 #[test]
@@ -567,7 +567,7 @@ fn project_sandbox_allow_write_narrows_to_deeper_project_root_without_warning() 
     );
     assert!(warnings.is_empty(), "tightening must not warn: {warnings:?}");
     let root = &config.sandbox.allow_write.as_ref().unwrap()[0];
-    assert_eq!(root.layer, crate::ceiling::CeilingLayer::Project);
+    assert_eq!(root.layer, aegis_types::CeilingLayer::Project);
 }
 
 #[test]

@@ -24,7 +24,7 @@ pub use workspace::{
     resolve_workspace, resolve_workspace_with,
 };
 
-pub use aegis_types::CeilingLayer;
+use aegis_types::CeilingLayer;
 use serde::{Deserialize, Serialize};
 
 /// One writable root of the `Trusted ceiling`, with its provenance.
