@@ -270,6 +270,8 @@ fn git_and_tmp_environment_variables_do_not_change_the_ceiling() {
     let f = fixture();
     let repo = f.repo();
     let before = compute_trusted_ceiling(&SandboxSettings::default(), &repo);
+    let keys = ["GIT_WORK_TREE", "GIT_DIR", "GIT_COMMON_DIR", "TMPDIR"];
+    let saved: Vec<_> = keys.iter().map(std::env::var_os).collect();
     // SAFETY: this test is the only one in the crate that reads or writes
     // these variables; TMPDIR points at a real directory so concurrent
     // tempfile use in other tests keeps working.
@@ -281,12 +283,18 @@ fn git_and_tmp_environment_variables_do_not_change_the_ceiling() {
     }
     let after = compute_trusted_ceiling(&SandboxSettings::default(), &repo);
     unsafe {
-        for key in ["GIT_WORK_TREE", "GIT_DIR", "GIT_COMMON_DIR", "TMPDIR"] {
-            std::env::remove_var(key);
+        for (key, value) in keys.iter().zip(saved) {
+            match value {
+                Some(value) => std::env::set_var(key, value),
+                None => std::env::remove_var(key),
+            }
         }
     }
     assert_eq!(after, before);
-    assert_eq!(paths(&after), vec![repo, PathBuf::from("/tmp")]);
+    // The OS temp dirs: `/tmp`, plus the per-user one from `confstr` on macOS.
+    let mut expected = vec![repo];
+    expected.extend(ResolverInputs::system().temp_dirs);
+    assert_eq!(paths(&after), expected);
 }
 
 #[test]
