@@ -16,8 +16,6 @@ use aegis_scanner::Scanner;
 use aegis_snapshot::{
     Clock, RetentionPolicy, SnapshotCoverage, SnapshotRegistry, SnapshotRegistryConfig, SystemClock,
 };
-#[cfg(feature = "starlark-policy")]
-use aegis_starlark::load_starlark_policy;
 use aegis_types::{
     AllowlistOverrideLevel, Assessment, Decision, RecoveryDegradation, SandboxStatus,
     SnapshotAttempt, SnapshotPolicy, SnapshotRecord,
@@ -146,7 +144,7 @@ impl RuntimeContext {
 
     /// Build a runtime context from an already resolved config.
     pub fn new(config: AegisConfig, handle: Handle) -> Result<Self, AegisError> {
-        let policy_path = starlark_policy_path();
+        let policy_path = policy_star_path();
         Self::new_with_policy_path(config, handle, policy_path.as_deref())
     }
 
@@ -233,29 +231,13 @@ impl RuntimeContext {
         })?;
         let current_user = detect_effective_user();
 
-        // Merge TOML [[rules]] with rules from ~/.aegis/policy.star when present.
-        #[cfg(feature = "starlark-policy")]
-        let mut policy_rules = config.rules.clone();
-        #[cfg(not(feature = "starlark-policy"))]
+        // policy.star is retired (ADR-028): its presence is a config error.
+        // The path is always `<home>/.aegis/policy.star`, so the shared check
+        // takes the home two levels up.
+        if let Some(star_path) = explicit_policy_path.filter(|p| p.exists()) {
+            aegis_config::reject_policy_star(star_path.parent().and_then(std::path::Path::parent))?;
+        }
         let policy_rules = config.rules.clone();
-        #[cfg(feature = "starlark-policy")]
-        if let Some(star_path) = explicit_policy_path.filter(|p| p.exists()) {
-            let star_rules = load_starlark_policy(star_path).map_err(|e| {
-                AegisError::Config(aegis_config::error::ConfigError::Config(format!(
-                    "policy.star: {e}"
-                )))
-            })?;
-            policy_rules.extend(star_rules);
-        }
-        #[cfg(not(feature = "starlark-policy"))]
-        if let Some(star_path) = explicit_policy_path.filter(|p| p.exists()) {
-            return Err(AegisError::Internal {
-                detail: format!(
-                    "policy.star exists at {} but this Aegis build was compiled without the starlark-policy feature",
-                    star_path.display()
-                ),
-            });
-        }
 
         Ok(Self {
             auto_prune_config: config.clone(),
@@ -772,7 +754,7 @@ fn home_dir_for_error_attribution() -> Option<std::path::PathBuf> {
 }
 
 /// Resolve `~/.aegis/policy.star`, returning `None` when `HOME` is unset.
-fn starlark_policy_path() -> Option<std::path::PathBuf> {
+fn policy_star_path() -> Option<std::path::PathBuf> {
     std::env::var_os("HOME").map(|h| {
         std::path::PathBuf::from(h)
             .join(".aegis")

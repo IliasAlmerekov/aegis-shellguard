@@ -756,14 +756,12 @@ fn now_utc() -> OffsetDateTime {
     OffsetDateTime::now_utc()
 }
 
-// This build lacks the `starlark-policy` feature (the default for
-// `cargo test --workspace`), so an explicit `policy.star` path takes the
-// "compiled without the feature" branch below rather than a real load.
-#[cfg(not(feature = "starlark-policy"))]
 #[test]
-fn policy_star_without_the_starlark_feature_is_an_internal_error_not_a_config_error() {
-    let workspace = TempDir::new().unwrap();
-    let policy_path = workspace.path().join("policy.star");
+fn policy_star_is_a_config_error_pointing_at_rules() {
+    let home = TempDir::new().unwrap();
+    let aegis_dir = home.path().join(".aegis");
+    fs::create_dir_all(&aegis_dir).unwrap();
+    let policy_path = aegis_dir.join("policy.star");
     fs::write(&policy_path, "").unwrap();
 
     let err = match RuntimeContext::new_with_policy_path(
@@ -771,19 +769,16 @@ fn policy_star_without_the_starlark_feature_is_an_internal_error_not_a_config_er
         test_handle(),
         Some(&policy_path),
     ) {
-        Ok(_) => panic!("a policy.star path must fail closed without the starlark-policy feature"),
+        Ok(_) => panic!("an existing policy.star must fail closed"),
         Err(err) => err,
     };
 
     assert_eq!(
         err.to_string(),
         format!(
-            "internal error: policy.star exists at {} but this Aegis build was compiled without the starlark-policy feature",
+            "config error: policy.star at {} is no longer supported: Aegis reads Policy rules only from [[rules]] in aegis.toml. Move the rules there and delete the file.",
             policy_path.display()
         )
     );
-    assert!(
-        !err.is_config_fault(),
-        "compiling without an optional feature is Aegis's own fault, not a config fault"
-    );
+    assert!(err.is_config_fault());
 }
