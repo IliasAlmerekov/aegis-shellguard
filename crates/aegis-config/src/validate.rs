@@ -144,6 +144,39 @@ impl ConfigSourceMap {
     }
 }
 
+/// Path of the retired `<home>/.aegis/policy.star` file.
+fn policy_star_path(home: &Path) -> std::path::PathBuf {
+    home.join(".aegis").join("policy.star")
+}
+
+/// Text of the unsupported-`policy.star` error, shared by every caller.
+fn unsupported_policy_star_message(path: &Path) -> String {
+    format!(
+        "policy.star at {} is no longer supported: Aegis reads Policy rules only from [[rules]] in aegis.toml. Move the rules there and delete the file.",
+        path.display()
+    )
+}
+
+/// Fail closed when `<home>/.aegis/policy.star` exists (ADR-028).
+///
+/// The policy DSL is removed; the file is never ignored or downgraded
+/// to a warning. Runtime construction and `aegis config validate` both call
+/// this so their check and text stay identical.
+pub fn reject_policy_star(home: Option<&Path>) -> Result<(), ConfigError> {
+    match home.map(policy_star_path) {
+        Some(path) => reject_policy_star_at(&path),
+        None => Ok(()),
+    }
+}
+
+/// Fail closed when the given `policy.star` path exists (ADR-028).
+pub fn reject_policy_star_at(path: &Path) -> Result<(), ConfigError> {
+    if path.exists() {
+        return Err(ConfigError::Config(unsupported_policy_star_message(path)));
+    }
+    Ok(())
+}
+
 /// Validate file-backed config using the same layer-by-layer checkpoints as runtime loading.
 pub fn validate_config_layers(current_dir: &Path, home_dir: Option<&Path>) -> ValidationReport {
     let mut report = ValidationReport {
@@ -151,6 +184,21 @@ pub fn validate_config_layers(current_dir: &Path, home_dir: Option<&Path>) -> Va
         errors: Vec::new(),
         warnings: Vec::new(),
     };
+
+    // Seeded first: every later return path keeps it, and `merge_report`
+    // derives `valid` from the error list.
+    if let Err(err) = reject_policy_star(home_dir) {
+        report.valid = false;
+        report.errors.push(ValidationIssue {
+            code: "unsupported_policy_star",
+            message: err.to_string(),
+            location: home_dir
+                .map(policy_star_path)
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+        });
+    }
 
     let layer_paths = AegisConfig::layer_paths_for(current_dir, home_dir);
     let mut merged = AegisConfig::defaults();
@@ -586,3 +634,6 @@ mod tests;
 
 #[cfg(test)]
 mod length_tests;
+
+#[cfg(test)]
+mod policy_star_tests;

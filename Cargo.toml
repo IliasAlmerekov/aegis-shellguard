@@ -28,7 +28,6 @@ members = [
     "crates/aegis-tui",
     "crates/aegis-audit",
     "crates/aegis-snapshot",
-    "crates/aegis-starlark",
     "crates/aegis-sandbox",
     "crates/aegis-language",
 ]
@@ -56,13 +55,11 @@ aegis-explanation = { version = "0.8.0", path = "crates/aegis-explanation" }
 aegis-tui = { version = "0.8.0", path = "crates/aegis-tui" }
 aegis-audit = { version = "0.8.0", path = "crates/aegis-audit" }
 aegis-snapshot = { version = "0.8.0", path = "crates/aegis-snapshot" }
-aegis-starlark = { version = "0.8.0", path = "crates/aegis-starlark" }
 aegis-sandbox = { version = "0.8.0", path = "crates/aegis-sandbox" }
 aegis-language = { version = "0.8.0", path = "crates/aegis-language" }
 
 [features]
 default = []
-starlark-policy = ["dep:aegis-starlark"]
 
 [dependencies]
 aegis-types.workspace = true
@@ -74,7 +71,6 @@ aegis-explanation.workspace = true
 aegis-tui.workspace = true
 aegis-audit.workspace = true
 aegis-snapshot.workspace = true
-aegis-starlark = { workspace = true, optional = true }
 aegis-sandbox.workspace = true
 aegis-language.workspace = true
 base64 = "0.23"

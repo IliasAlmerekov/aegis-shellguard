@@ -175,38 +175,10 @@ The `Live snapshot/rollback (Docker + SQLite)` CI job closes the live snapshot/r
 
 ### Evidence recorded 2026-06-23
 
-- `rtk cargo audit`: exits 0. 4 unmaintained warnings visible in the full
-  `Cargo.lock` output (RUSTSEC-2023-0089, RUSTSEC-2024-0388, RUSTSEC-2025-0057,
-  RUSTSEC-2024-0436), all routing through `starlark 0.14.2`, which is reachable
-  only via the optional `starlark-policy` feature. These warnings are not present
-  in the default-feature build.
 - `rtk cargo deny check`: exits 0, **zero warnings**. The default-feature graph
   excludes optional crates, so no advisory, ban, license, or source findings arise.
 - CI security job updated from `cargo deny check bans licenses sources` to
   `cargo deny check` (full check, including advisories), matching the local gate.
-
-### Release binary behavior (policy.star)
-
-Published release binaries are built without `--features starlark-policy`.
-This means:
-
-- The `starlark-policy` feature is **not included** in official releases.
-- If a user has `~/.aegis/policy.star`, the release binary will return a clear
-  `AegisError::Config` at startup rather than silently ignoring the policy (fail-closed).
-- Users who need Starlark policy support must build from source with
-  `cargo install --features starlark-policy`.
-
-This was an intentional product decision: the default supply-chain gate is clean,
-and users who opt into the advisory-tainted dependency chain do so explicitly.
-
-**Withdrawn before 1.0.** The Starlark DSL is deleted from the tree rather than
-kept behind a feature
-([ADR-028](adr/adr-028-the-starlark-policy-dsl-is-removed-before-1-0.md),
-[#225](https://github.com/IliasAlmerekov/aegis-shellguard/issues/225)); the typed
-TOML DSL is the only rule-authoring path in 1.0. The fail-closed startup error on
-`~/.aegis/policy.star` is **kept permanently** — never a warning, never a silent
-ignore — so an upgraded installation cannot lose its rules quietly. The
-build-from-source escape hatch above disappears with the feature.
 
 ## Homebrew tap validation
 

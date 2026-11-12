@@ -1,8 +1,5 @@
 # cargo-audit handles the full Cargo.lock scan (including optional crates) in CI.
-# cargo-deny checks the resolved default-feature graph. aegis-starlark and its
-# transitive crates (atomic-polyfill, derivative, fxhash, paste) are reachable
-# only via the optional starlark-policy feature and are excluded from the default
-# graph, so no advisory findings are present here.
+# cargo-deny checks the resolved default-feature graph.
 #
 # The Tree-sitter chain added by `aegis-language` (tree-sitter, the four pinned
 # grammars, tree-sitter-language, streaming-iterator, and the `cc` build driver —

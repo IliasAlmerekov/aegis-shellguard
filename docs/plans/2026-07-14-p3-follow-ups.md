@@ -47,6 +47,8 @@ Keep `deny.toml` exceptions scoped to the opt-in dependency chain and record
 upstream status. Remove/replace only when a supported migration exists; do not
 weaken default `cargo audit`/`cargo deny` gates.
 
+P3-7 is eliminated by #225 (the Starlark DSL is removed, ADR-028).
+
 ## P3-8 — Destructive SQL follow-ups
 
 Evaluate comment separators, `DROP VIEW`, `DROP INDEX`, and the `dropdb` client as
