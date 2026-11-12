@@ -571,9 +571,10 @@ fn project_sandbox_allow_write_narrows_to_deeper_project_root_without_warning() 
 }
 
 #[test]
-fn project_sandbox_allow_write_parent_dir_entry_is_clamped_not_folded() {
+fn project_sandbox_allow_write_parent_dir_entry_is_kept_for_omission_not_folded() {
     // `/opt/../etc` starts with `/opt` component-wise but must never count as
-    // inside it: `..` is not folded lexically.
+    // inside it: `..` is not folded lexically. It is not a widening attempt
+    // either: it stays as written so the ceiling omits it with `parent_dir`.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -593,8 +594,11 @@ fn project_sandbox_allow_write_parent_dir_entry_is_clamped_not_folded() {
     let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
     let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
 
-    assert!(allow_write_paths(&config).is_empty());
-    assert_has_warning_for(&warnings, "sandbox.allow_write", "parent_dir clamp");
+    assert_eq!(
+        allow_write_paths(&config),
+        vec![std::path::PathBuf::from("/opt/../etc")]
+    );
+    assert_no_warning_for(&warnings, "sandbox.allow_write", "parent_dir kept");
 }
 
 // ── C3-03: misspelled [sandbox] fields must be rejected ─────────────────

@@ -22,8 +22,8 @@ pub enum CeilingOmitReason {
     NotFound,
     /// `.git` file names a gitdir that does not point back at the worktree.
     GitdirUnverified,
-    /// Entry lies outside the trusted roots (merge clamp, or canonical escape
-    /// at enforcement).
+    /// Entry resolves outside the trusted roots at enforcement (canonical
+    /// escape through a symlink).
     OutsideTrustedCeiling,
 }
 
@@ -58,6 +58,14 @@ pub struct PathOmitted {
 pub enum CeilingWarning {
     /// `trusted_ceiling_path_omitted`.
     PathOmitted(PathOmitted),
+    /// A project `allow_write` entry outside the computed default: clamped,
+    /// and reported as the existing `project_security_ratchet` warning.
+    ProjectEntryClamped {
+        /// The clamped entry, as written.
+        path: PathBuf,
+        /// Project config file it came from.
+        location: String,
+    },
     /// `workspace_unresolved { reason, cwd }`.
     WorkspaceUnresolved {
         /// Why there is no workspace.
@@ -95,7 +103,7 @@ pub fn compute_trusted_ceiling(sandbox: &SandboxSettings, cwd: &Path) -> Trusted
 ///   resolved. An explicit `[]`, or a list emptied by omissions, stays empty.
 /// - Project list over an absent trusted list
 ///   (`allow_write_narrows_computed`): intersected with the computed default;
-///   entries outside it are reported as `outside_trusted_ceiling`.
+///   entries outside it are clamped and reported as `ProjectEntryClamped`.
 ///
 /// Nothing here is a startup error: every rejected path becomes a warning.
 pub fn compute_trusted_ceiling_with(
@@ -108,9 +116,18 @@ pub fn compute_trusted_ceiling_with(
         Some(list) if !sandbox.allow_write_narrows_computed => {
             out.roots = valid_entries(list, &mut out.warnings);
             out.trusted = match &sandbox.allow_write_trusted {
-                // Entries the merge already clamped lexically; any warning for
-                // the global list itself is not repeated here.
-                Some(base) => valid_entries(base, &mut Vec::new()),
+                // The global list a project list narrowed: its own invalid
+                // entries still deserve their warning.
+                Some(base) => {
+                    let mut base_warnings = Vec::new();
+                    let kept = valid_entries(base, &mut base_warnings);
+                    for warning in base_warnings {
+                        if !out.warnings.contains(&warning) {
+                            out.warnings.push(warning);
+                        }
+                    }
+                    kept
+                }
                 None => out.roots.clone(),
             };
         }
@@ -119,8 +136,10 @@ pub fn compute_trusted_ceiling_with(
             let default = computed_default(cwd, inputs, &mut out.warnings);
             for entry in &entries {
                 if !default.iter().any(|root| contains(&root.path, &entry.path)) {
-                    out.warnings
-                        .push(omitted(CeilingOmitReason::OutsideTrustedCeiling, entry));
+                    out.warnings.push(CeilingWarning::ProjectEntryClamped {
+                        path: entry.path.clone(),
+                        location: entry.location.clone(),
+                    });
                 }
             }
             out.roots = intersect(&default, &entries);

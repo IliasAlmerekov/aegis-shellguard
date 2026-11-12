@@ -280,6 +280,14 @@ pub fn ceiling_issue(warning: &CeilingWarning) -> ValidationIssue {
             ),
             location: omitted.location.clone(),
         },
+        CeilingWarning::ProjectEntryClamped { path, location } => ValidationIssue {
+            code: "project_security_ratchet",
+            message: format!(
+                "project config attempted to weaken `sandbox.allow_write`: `{}` is outside the computed trusted ceiling; clamped",
+                path.display()
+            ),
+            location: location.clone(),
+        },
         CeilingWarning::WorkspaceUnresolved { reason, cwd } => ValidationIssue {
             code: "workspace_unresolved",
             message: format!(

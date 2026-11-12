@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use crate::allowlist::ConfigSourceLayer;
-use crate::ceiling::{CeilingLayer, WriteRoot, contains, intersect};
+use crate::ceiling::{CeilingLayer, WriteRoot, contains, intersect, is_lexically_invalid};
 
 use super::super::SandboxSettings;
 use super::super::partial::PartialSandboxSettings;
@@ -26,6 +26,8 @@ use super::warning::{RatchetSink, is_project};
 ///   so trusted `/workspace/src` with project `/workspace` stays
 ///   `/workspace/src`. Any requested root not inside a trusted root is a
 ///   widening attempt: it is clamped and raises `project_security_ratchet`.
+///   A relative or `..` entry is not clamped: it is kept so the ceiling
+///   computation omits it with reason `relative` / `parent_dir`.
 /// - Project list over an absent trusted list: the trusted base is the
 ///   computed default, unknown at merge. The list is kept with
 ///   `narrows_computed = true` and intersected with the computed default when
@@ -61,19 +63,26 @@ pub(crate) fn custom_allow_write(
         return (Some(requested_roots), true, None);
     };
 
-    let kept = intersect(&trusted, &requested_roots);
-    let widens = requested
+    // Relative and `..` entries are not widening attempts: they are kept
+    // as written so the ceiling computation omits them with their own reason.
+    let (invalid, requested_roots): (Vec<_>, Vec<_>) = requested_roots
+        .into_iter()
+        .partition(|root| is_lexically_invalid(&root.path));
+    let mut kept = intersect(&trusted, &requested_roots);
+    let widens = requested_roots
         .iter()
-        .any(|path| !trusted.iter().any(|root| contains(&root.path, path)));
+        .any(|req| !trusted.iter().any(|root| contains(&root.path, &req.path)));
     if widens {
+        let requested_paths: Vec<&PathBuf> = requested_roots.iter().map(|r| &r.path).collect();
         let kept_paths: Vec<&PathBuf> = kept.iter().map(|root| &root.path).collect();
         sink.warn(
             "sandbox.allow_write",
-            format!("{requested:?}"),
+            format!("{requested_paths:?}"),
             format!("{kept_paths:?}"),
             location,
         );
     }
+    kept.extend(invalid);
     (
         Some(kept),
         base_narrows_computed,

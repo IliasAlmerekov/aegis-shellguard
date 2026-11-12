@@ -258,12 +258,10 @@ fn a_project_list_cannot_widen_the_computed_default() {
     assert!(c.roots.is_empty());
     assert_eq!(
         c.warnings,
-        vec![omitted(
-            Why::OutsideTrustedCeiling,
-            CeilingLayer::Project,
-            ".aegis.toml",
-            outside.to_str().unwrap()
-        )]
+        vec![CeilingWarning::ProjectEntryClamped {
+            path: outside,
+            location: ".aegis.toml".to_string(),
+        }]
     );
 }
 

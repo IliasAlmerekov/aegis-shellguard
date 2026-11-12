@@ -96,6 +96,11 @@ pub(crate) fn has_parent_dir(path: &Path) -> bool {
     path.components().any(|c| matches!(c, Component::ParentDir))
 }
 
+/// An entry that can never enter the ceiling: not absolute, or holding `..`.
+pub(crate) fn is_lexically_invalid(path: &Path) -> bool {
+    !path.is_absolute() || has_parent_dir(path)
+}
+
 /// Component-wise containment, no filesystem access. A path with a `..`
 /// component is never contained: `..` is not folded lexically.
 pub(crate) fn contains(outer: &Path, inner: &Path) -> bool {
