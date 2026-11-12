@@ -87,7 +87,11 @@ fn project_entry_outside_the_computed_default_raises_the_ratchet_warning() {
     let ratchet = with_code(&warnings, "project_security_ratchet");
     assert_eq!(ratchet.len(), 1, "{warnings:#?}");
     assert!(ratchet[0].message.contains("sandbox.allow_write"));
-    assert!(ratchet[0].location.ends_with(".aegis.toml"), "{}", ratchet[0].location);
+    assert!(
+        ratchet[0].location.ends_with(".aegis.toml"),
+        "{}",
+        ratchet[0].location
+    );
     assert!(
         with_code(&warnings, "trusted_ceiling_path_omitted").is_empty(),
         "the lexical case is not double-reported: {warnings:#?}"
@@ -102,8 +106,12 @@ fn project_relative_and_parent_dir_entries_are_omitted_not_clamped() {
     );
     let omitted = with_code(&warnings, "trusted_ceiling_path_omitted");
     assert_eq!(omitted.len(), 2, "{warnings:#?}");
-    assert!(omitted[0].message.contains("relative") && omitted[0].message.contains("project layer"));
-    assert!(omitted[1].message.contains("parent_dir") && omitted[1].message.contains("project layer"));
+    assert!(
+        omitted[0].message.contains("relative") && omitted[0].message.contains("project layer")
+    );
+    assert!(
+        omitted[1].message.contains("parent_dir") && omitted[1].message.contains("project layer")
+    );
     assert!(omitted.iter().all(|w| w.location.ends_with(".aegis.toml")));
     assert!(
         with_code(&warnings, "project_security_ratchet").is_empty(),

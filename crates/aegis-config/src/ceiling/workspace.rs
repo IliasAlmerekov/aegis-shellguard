@@ -90,14 +90,20 @@ pub fn resolve_workspace_with(cwd: &Path, inputs: &ResolverInputs) -> WorkspaceR
     // must judge the canonical one: a cwd reached through a symlink can
     // resolve to the home or `/`. One extra `realpath`, no tree walk.
     let canonical_root = fs::canonicalize(&root).ok();
-    let canonical_home = inputs.home.as_deref().and_then(|h| fs::canonicalize(h).ok());
+    let canonical_home = inputs
+        .home
+        .as_deref()
+        .and_then(|h| fs::canonicalize(h).ok());
     let roots = std::iter::once(&root).chain(canonical_root.as_ref());
     let homes = inputs.home.iter().chain(canonical_home.iter());
-    let reason = roots.clone().find_map(|r| classify_root(r, None)).or_else(|| {
-        homes
-            .flat_map(|h| roots.clone().map(move |r| (r, h)))
-            .find_map(|(r, h)| classify_root(r, Some(h)))
-    });
+    let reason = roots
+        .clone()
+        .find_map(|r| classify_root(r, None))
+        .or_else(|| {
+            homes
+                .flat_map(|h| roots.clone().map(move |r| (r, h)))
+                .find_map(|(r, h)| classify_root(r, Some(h)))
+        });
     if let Some(reason) = reason {
         return Unresolved(reason);
     }

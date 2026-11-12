@@ -139,10 +139,10 @@ pub(crate) mod test_helpers {
 #[cfg(test)]
 mod tests {
     use crate::support::run_unavailable_result;
-    use aegis_types::CeilingLayer;
     use crate::{
         SandboxConfig, SandboxError, SandboxExecutor, SandboxProfile, SandboxResult, WriteRoot,
     };
+    use aegis_types::CeilingLayer;
 
     // ── SandboxConfig defaults ────────────────────────────────────────────────
 

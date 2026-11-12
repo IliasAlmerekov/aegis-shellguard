@@ -134,7 +134,10 @@ mod ceiling_layer_tests {
             (CeilingLayer::Computed, "computed"),
         ] {
             assert_eq!(layer.as_str(), name);
-            assert_eq!(serde_json::to_string(&layer).unwrap(), format!("\"{name}\""));
+            assert_eq!(
+                serde_json::to_string(&layer).unwrap(),
+                format!("\"{name}\"")
+            );
         }
     }
 }

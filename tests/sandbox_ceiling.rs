@@ -387,7 +387,8 @@ fn ceiling_warnings_never_surface_in_the_shell_wrapper_path() {
     if !confinement_available() {
         return;
     }
-    let missing = "[sandbox]\nenabled = true\nallow_write = [\"/tmp\", \"/var/tmp/aegis-no-such-dir-242\"]\n";
+    let missing =
+        "[sandbox]\nenabled = true\nallow_write = [\"/tmp\", \"/var/tmp/aegis-no-such-dir-242\"]\n";
     for config in [missing, ENABLED] {
         let home = TempDir::new().unwrap();
         write_global_config(home.path(), config);
