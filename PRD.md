@@ -241,7 +241,10 @@ errors remain fail-closed.
 what any command may be granted, never a command's final profile. Its default is a
 working one, because a mandatory layer whose default forbids all writes is
 unusable: writes within the workspace tree and `/tmp`, with network access
-disabled. A `cwd` of `/` does not implicitly make `/` a workspace. The project
+disabled. The workspace is the root of the git worktree enclosing the working
+directory; outside a worktree, or when that root is `/`, the home, or an ancestor
+of the home, there is no workspace and only the temporary directory is writable
+(ADR-030 refinement of 2026-11-12). The project
 config layer may only narrow the ceiling, never widen it.
 
 **The 1.0 effective profile.** The effective profile is the `Trusted ceiling`
@@ -283,7 +286,9 @@ promise to hide readable files or secrets from a command.
 **Configuration.** An existing `[sandbox]` section keeps loading under the
 mandatory layer, and the two flags that could switch the layer off leave the 1.0
 configuration contract. One invariant governs every field below: migration may
-only ever reduce authority, never grant it.
+only ever reduce authority, never grant it, with one recorded exception: a
+pre-1.0 config with `enabled = true` and no `allow_write` gains the computed
+default ceiling (ADR-030 refinement of 2026-11-12).
 
 - **`sandbox.enabled` and `sandbox.required` are not part of the 1.0
   configuration contract.** A mandatory layer cannot also be skippable, so no

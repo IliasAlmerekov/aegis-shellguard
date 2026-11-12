@@ -181,6 +181,10 @@ carries the matching refinement.
 **E. Migration may only ever reduce authority, never grant it.** Every rule above
 obeys this invariant, and it is the reason an emptied ceiling gets no fallback and
 a symlink escape is caught at enforcement rather than trusted at merge.
+One exception is recorded in the
+[ADR-030 refinement of 2026-11-12](adr-030-the-confinement-profile-is-derived-from-the-assessment.md):
+a pre-1.0 config with `enabled = true` and no `allow_write` gains the computed
+default ceiling.
 
 Consequences of the amendment: [ADR-013](adr-013-project-config-security-ratchet.md)
 loses two of its ratcheted fields and gains a semantic-intersection rule for

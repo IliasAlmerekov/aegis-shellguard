@@ -256,3 +256,61 @@ a destructive command, but none of them restores the effects of a shell command.
 needs a program-specific extractor for every restriction, and a wrong one is a
 hard command failure with no dialog in front of it (Consequences above). It is
 not needed to keep the 1.0 promise.
+
+## Refinement — 2026-11-12: what the workspace is
+
+Decided in the triage of
+[#242](https://github.com/IliasAlmerekov/aegis-shellguard/issues/242). Decision 2
+gave the default `Trusted ceiling` "the workspace tree plus `/tmp`" and said only
+that a `cwd` of `/` is not a workspace. The agent controls its working directory
+across calls, so a ceiling root taken from it as-is lets the agent choose its own
+write authority with `cd`. Seven points close that.
+
+**1. The `Workspace` is the root of the enclosing git worktree.** Aegis walks up
+from the working directory to the first `.git` entry, file or directory, using
+`stat` only. It never spawns `git`: confinement runs on every command, and a
+subprocess would break the safe-path latency budget.
+
+**2. No enclosing worktree means no workspace.** There is no fallback to the
+working directory. Otherwise `cd ~/.ssh` followed by any command would make
+`~/.ssh` writable. Without a workspace the default ceiling admits only the
+temporary directory. Creating a repository to get around this needs a write that
+the ceiling already refuses.
+
+**3. A degenerate root is not a workspace.** A worktree root equal to `/`, to the
+user's home, or to an ancestor of the home yields no workspace either. This covers
+a dotfiles repository at `$HOME`.
+
+**4. A linked worktree or submodule brings its git directories.** When `.git` is a
+file, its `gitdir` and the `commondir` read from that gitdir join the ceiling, so a
+commit can write objects and refs. Aegis accepts the gitdir only when it points
+back at this worktree: the `gitdir` file of a linked worktree, or `core.worktree`
+of a submodule. A `.git` file the agent wrote cannot pass that check, because
+forging the back-pointer needs a write inside the target. A gitdir that fails the
+check is left out, and the worktree root stays.
+
+**5. Environment variables do not move the workspace.** `GIT_DIR`,
+`GIT_WORK_TREE`, and `GIT_COMMON_DIR` are ignored. The agent sets the
+environment, so it is not a trusted input to the ceiling.
+
+**6. The temporary directory comes from the OS, not from `TMPDIR`.** On Linux it is
+`/tmp`. On macOS it is `/tmp` plus the per-user temporary directory returned by
+`confstr(_CS_DARWIN_USER_TEMP_DIR)`.
+
+**7. A missing workspace is never silent.** It raises a typed
+`workspace_unresolved` warning carrying its reason (`no_worktree`, `root`, `home`,
+`home_ancestor`) and the working directory. It surfaces where the other ceiling
+warnings do: `aegis config validate` and `aegis status`, never `$SHELL -c`. A
+gitdir rejected under point 4 is reported the same way.
+
+**Accepted risk.** The agent can still `cd` into any existing repository the user
+owns and write there. Aegis has no session state that would pin the workspace to
+the directory the agent started in, and adding one is out of scope for 1.0.
+
+**One exception to ADR-029 invariant E.** A 0.6.x config with `enabled = true` and
+no `allow_write` confines writes to zero roots today. Under the computed default
+the same file gets the workspace and the temporary directory, so this migration
+grants authority. The exception is accepted: an empty default makes a mandatory
+layer unusable for ordinary work, and only installations that opted in to the
+Sandbox before 1.0 are affected. A config that wants the old posture writes
+`allow_write = []`.
