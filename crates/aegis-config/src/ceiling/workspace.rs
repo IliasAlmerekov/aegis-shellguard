@@ -256,7 +256,7 @@ pub(super) fn system_home(passwd: Option<PathBuf>, env: Option<PathBuf>) -> Opti
     passwd.or(env)
 }
 
-fn passwd_home() -> Option<PathBuf> {
+pub(super) fn passwd_home() -> Option<PathBuf> {
     let mut buf = vec![0u8; 1024];
     loop {
         // SAFETY: `pwd` and `buf` outlive the call; `getpwuid_r` writes only

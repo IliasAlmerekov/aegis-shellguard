@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 
-use super::workspace::{WorkspaceResolution as R, system_home};
+use super::workspace::{WorkspaceResolution as R, passwd_home, system_home};
 use super::*;
 
 const NO_HOME: Option<PathBuf> = None;
@@ -222,4 +222,43 @@ fn forged_commondir_pointing_outside_the_worktree_layout_is_omitted() {
     let ws = resolved(resolve_workspace_with(&sub, &inputs(NO_HOME, &base)));
     assert_eq!(ws.gitdirs, vec![fake]);
     assert_eq!(ws.unverified_gitdir, Some(secret));
+}
+
+#[test]
+fn forged_gitdir_under_a_worktrees_dir_cannot_name_an_outside_commondir() {
+    // The layout check needs both parts: a parent named `worktrees` AND that
+    // parent's parent being the commondir.
+    let tmp = TempDir::new().unwrap();
+    let base = canon(tmp.path());
+    let ws_root = base.join("ws");
+    let sub = ws_root.join("b");
+    let fake = ws_root.join("worktrees/g");
+    let secret = base.join("home/.ssh");
+    fs::create_dir_all(&sub).unwrap();
+    fs::create_dir_all(&fake).unwrap();
+    fs::create_dir_all(&secret).unwrap();
+    fs::write(sub.join(".git"), format!("gitdir: {}\n", fake.display())).unwrap();
+    fs::write(
+        fake.join("gitdir"),
+        format!("{}\n", sub.join(".git").display()),
+    )
+    .unwrap();
+    fs::write(fake.join("commondir"), "../../../home/.ssh\n").unwrap();
+
+    let ws = resolved(resolve_workspace_with(&sub, &inputs(NO_HOME, &base)));
+    assert_eq!(ws.gitdirs, vec![fake]);
+    assert_eq!(ws.unverified_gitdir, Some(secret));
+}
+
+#[test]
+fn passwd_home_reads_the_current_uid_entry() {
+    let home = passwd_home().expect("the test user has a passwd entry");
+    assert!(home.is_absolute(), "{home:?}");
+}
+
+#[test]
+fn system_temp_dirs_start_with_tmp_and_ignore_tmpdir() {
+    let dirs = ResolverInputs::system().temp_dirs;
+    assert_eq!(dirs.first(), Some(&PathBuf::from("/tmp")));
+    assert!(dirs.iter().all(|d| d.is_absolute()), "{dirs:?}");
 }
