@@ -31,18 +31,20 @@ use super::warning::{RatchetSink, is_project};
 ///   `narrows_computed = true` and intersected with the computed default when
 ///   the ceiling is resolved, so the project can still only narrow.
 ///
-/// Returns the merged list and the `narrows_computed` flag.
+/// Returns the merged list, the `narrows_computed` flag, and the trusted list
+/// a project list narrowed (kept for the canonical containment check).
 pub(crate) fn custom_allow_write(
     base: Option<Vec<WriteRoot>>,
     base_narrows_computed: bool,
+    base_trusted: Option<Vec<WriteRoot>>,
     overlay: Option<Vec<PathBuf>>,
     layer: ConfigSourceLayer,
     location: &str,
     sink: &mut RatchetSink,
-) -> (Option<Vec<WriteRoot>>, bool) {
+) -> (Option<Vec<WriteRoot>>, bool, Option<Vec<WriteRoot>>) {
     sink.touch("sandbox.allow_write");
     let Some(requested) = overlay else {
-        return (base, base_narrows_computed);
+        return (base, base_narrows_computed, base_trusted);
     };
     let ceiling_layer = match layer {
         ConfigSourceLayer::Global => CeilingLayer::Global,
@@ -53,10 +55,10 @@ pub(crate) fn custom_allow_write(
         .map(|path| WriteRoot::new(path.clone(), ceiling_layer, location))
         .collect();
     if !is_project(layer) {
-        return (Some(requested_roots), false);
+        return (Some(requested_roots), false, None);
     }
     let Some(trusted) = base else {
-        return (Some(requested_roots), true);
+        return (Some(requested_roots), true, None);
     };
 
     let kept = intersect(&trusted, &requested_roots);
@@ -72,7 +74,11 @@ pub(crate) fn custom_allow_write(
             location,
         );
     }
-    (Some(kept), base_narrows_computed)
+    (
+        Some(kept),
+        base_narrows_computed,
+        base_trusted.or(Some(trusted)),
+    )
 }
 
 /// Merge one layer's `[sandbox]` overlay into the trusted base. The
@@ -90,6 +96,7 @@ pub(crate) fn merge_sandbox(
         required: base_required,
         allow_write: base_allow_write,
         allow_write_narrows_computed: base_narrows_computed,
+        allow_write_trusted: base_trusted,
         allow_network: base_allow_network,
     } = base;
     let PartialSandboxSettings {
@@ -99,9 +106,10 @@ pub(crate) fn merge_sandbox(
         allow_network: req_allow_network,
     } = overlay;
 
-    let (allow_write, allow_write_narrows_computed) = custom_allow_write(
+    let (allow_write, allow_write_narrows_computed, allow_write_trusted) = custom_allow_write(
         base_allow_write,
         base_narrows_computed,
+        base_trusted,
         req_allow_write,
         layer,
         location,
@@ -127,6 +135,7 @@ pub(crate) fn merge_sandbox(
         ),
         allow_write,
         allow_write_narrows_computed,
+        allow_write_trusted,
         allow_network: Tighten::new(bool_false_is_stricter, format_display).merge(
             "sandbox.allow_network",
             base_allow_network,

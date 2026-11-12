@@ -290,3 +290,30 @@ fn git_and_tmp_environment_variables_do_not_change_the_ceiling() {
     assert_eq!(after, before);
     assert_eq!(paths(&after), vec![repo, PathBuf::from("/tmp")]);
 }
+
+#[test]
+fn trusted_roots_are_the_computed_default_when_a_project_list_narrows_it() {
+    let f = fixture();
+    let repo = f.repo();
+    let c = f.ceiling(&narrowing(&[&repo.join("src")]), &repo);
+    assert_eq!(
+        c.trusted.iter().map(|r| r.path.clone()).collect::<Vec<_>>(),
+        vec![repo, f.temp.clone()]
+    );
+}
+
+#[test]
+fn trusted_roots_keep_the_global_list_a_project_list_narrowed() {
+    let f = fixture();
+    let repo = f.repo();
+    let src = repo.join("src");
+    let root = |p: &Path, l| WriteRoot::new(p.to_path_buf(), l, "x.toml");
+    let sandbox = SandboxSettings {
+        allow_write: Some(vec![root(&src, CeilingLayer::Project)]),
+        allow_write_trusted: Some(vec![root(&repo, CeilingLayer::Global)]),
+        ..SandboxSettings::default()
+    };
+    let c = f.ceiling(&sandbox, &repo);
+    assert_eq!(paths(&c), vec![src]);
+    assert_eq!(c.trusted, vec![root(&repo, CeilingLayer::Global)]);
+}

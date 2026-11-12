@@ -210,6 +210,11 @@ pub struct SandboxSettings {
     /// ceiling resolution (not known at merge). Not part of the wire format.
     #[serde(skip)]
     pub allow_write_narrows_computed: bool,
+    /// The list a project `allow_write` narrowed, kept so enforcement can check
+    /// canonical containment against it. `None` when no project list narrowed
+    /// a present trusted list. Not part of the wire format.
+    #[serde(skip)]
+    pub allow_write_trusted: Option<Vec<crate::ceiling::WriteRoot>>,
     /// Whether the sandboxed process may access the network.
     pub allow_network: bool,
 }

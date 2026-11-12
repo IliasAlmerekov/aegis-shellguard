@@ -72,6 +72,9 @@ pub enum CeilingWarning {
 pub struct TrustedCeiling {
     /// Writable roots, each with its provenance. Empty means no writable root.
     pub roots: Vec<WriteRoot>,
+    /// The roots before project narrowing (global list or computed default);
+    /// enforcement checks every canonical root against them.
+    pub trusted: Vec<WriteRoot>,
     /// Everything that could not enter the ceiling.
     pub warnings: Vec<CeilingWarning>,
 }
@@ -104,6 +107,12 @@ pub fn compute_trusted_ceiling_with(
     match &sandbox.allow_write {
         Some(list) if !sandbox.allow_write_narrows_computed => {
             out.roots = valid_entries(list, &mut out.warnings);
+            out.trusted = match &sandbox.allow_write_trusted {
+                // Entries the merge already clamped lexically; any warning for
+                // the global list itself is not repeated here.
+                Some(base) => valid_entries(base, &mut Vec::new()),
+                None => out.roots.clone(),
+            };
         }
         Some(list) => {
             let entries = valid_entries(list, &mut out.warnings);
@@ -115,8 +124,12 @@ pub fn compute_trusted_ceiling_with(
                 }
             }
             out.roots = intersect(&default, &entries);
+            out.trusted = default;
         }
-        None => out.roots = computed_default(cwd, inputs, &mut out.warnings),
+        None => {
+            out.roots = computed_default(cwd, inputs, &mut out.warnings);
+            out.trusted = out.roots.clone();
+        }
     }
     out
 }

@@ -268,7 +268,7 @@ pub fn validate_config_layers(current_dir: &Path, home_dir: Option<&Path>) -> Va
 }
 
 /// Render a typed ceiling warning as a `config validate` issue.
-fn ceiling_issue(warning: &CeilingWarning) -> ValidationIssue {
+pub fn ceiling_issue(warning: &CeilingWarning) -> ValidationIssue {
     match warning {
         CeilingWarning::PathOmitted(omitted) => ValidationIssue {
             code: "trusted_ceiling_path_omitted",
