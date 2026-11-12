@@ -42,7 +42,8 @@ pub struct Workspace {
     /// Empty for a plain `.git` directory (it lies inside `root`).
     pub gitdirs: Vec<PathBuf>,
     /// Set when `.git` is a file whose `gitdir:` target does not point back at
-    /// this worktree; the claimed path is carried for the warning.
+    /// this worktree, or whose `commondir` is not the git layout's parent of
+    /// the gitdir; the rejected path is carried for the warning.
     pub unverified_gitdir: Option<PathBuf>,
 }
 
@@ -154,9 +155,21 @@ fn workspace_for(root: PathBuf) -> Workspace {
         Some(gitdir) => {
             let common = read_small(&gitdir.join("commondir"))
                 .and_then(|text| fs::canonicalize(gitdir.join(text.trim())).ok());
+            // A forged gitdir can name any commondir: accept it only in git's
+            // real layout, `<commondir>/worktrees/<name>`.
+            let layout_ok = |common: &Path| {
+                gitdir.parent().is_some_and(|p| {
+                    p.file_name().is_some_and(|n| n == "worktrees") && p.parent() == Some(common)
+                })
+            };
+            let rejected = common.clone().filter(|c| !layout_ok(c));
             ws.gitdirs.push(gitdir);
-            ws.gitdirs
-                .extend(common.filter(|c| !ws.gitdirs.contains(c)));
+            if rejected.is_some() {
+                ws.unverified_gitdir = rejected;
+            } else {
+                ws.gitdirs
+                    .extend(common.filter(|c| !ws.gitdirs.contains(c)));
+            }
         }
         None => ws.unverified_gitdir = Some(claimed),
     }

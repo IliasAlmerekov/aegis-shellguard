@@ -185,3 +185,27 @@ fn forged_gitdir_without_back_pointer_adds_nothing_and_keeps_the_root() {
     assert!(ws.gitdirs.is_empty());
     assert_eq!(ws.unverified_gitdir, Some(victim));
 }
+
+#[test]
+fn forged_commondir_pointing_outside_the_worktree_layout_is_omitted() {
+    let tmp = TempDir::new().unwrap();
+    let base = canon(tmp.path());
+    let ws_root = base.join("ws");
+    let sub = ws_root.join("b");
+    let fake = ws_root.join("g");
+    let secret = base.join("home/.ssh");
+    fs::create_dir_all(&sub).unwrap();
+    fs::create_dir_all(&fake).unwrap();
+    fs::create_dir_all(&secret).unwrap();
+    fs::write(sub.join(".git"), format!("gitdir: {}\n", fake.display())).unwrap();
+    fs::write(
+        fake.join("gitdir"),
+        format!("{}\n", sub.join(".git").display()),
+    )
+    .unwrap();
+    fs::write(fake.join("commondir"), "../../home/.ssh\n").unwrap();
+
+    let ws = resolved(resolve_workspace_with(&sub, &inputs(NO_HOME, &base)));
+    assert_eq!(ws.gitdirs, vec![fake]);
+    assert_eq!(ws.unverified_gitdir, Some(secret));
+}
