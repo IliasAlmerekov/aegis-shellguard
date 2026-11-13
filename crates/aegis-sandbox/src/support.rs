@@ -36,12 +36,8 @@ pub(crate) fn is_forced_sandbox_unavailable() -> bool {
 
 // ── Shared unavailable/bypass helpers ─────────────────────────────────────────
 
-pub(crate) fn run_unavailable_result(required: bool) -> Result<SandboxResult, SandboxError> {
-    if required {
-        Err(SandboxError::Required)
-    } else {
-        Ok(SandboxResult::Unavailable)
-    }
+pub(crate) fn run_unavailable_result() -> Result<SandboxResult, SandboxError> {
+    Err(SandboxError::Required)
 }
 
 /// Why a root was left out at enforcement.
@@ -139,9 +135,7 @@ pub(crate) mod test_helpers {
 #[cfg(test)]
 mod tests {
     use crate::support::run_unavailable_result;
-    use crate::{
-        SandboxConfig, SandboxError, SandboxExecutor, SandboxProfile, SandboxResult, WriteRoot,
-    };
+    use crate::{SandboxConfig, SandboxError, SandboxExecutor, SandboxProfile, WriteRoot};
     use aegis_types::CeilingLayer;
 
     #[test]
@@ -166,11 +160,6 @@ mod tests {
         assert!(!SandboxConfig::default().allow_network);
     }
 
-    #[test]
-    fn sandbox_config_default_not_required() {
-        assert!(!SandboxConfig::default().required);
-    }
-
     // ── SandboxProfile / SandboxExecutor construction ─────────────────────────
 
     #[test]
@@ -187,17 +176,9 @@ mod tests {
     // ── run_unavailable_result behavior ───────────────────────────────────────
 
     #[test]
-    fn run_unavailable_result_returns_unavailable_when_not_required() {
+    fn run_unavailable_result_always_returns_required_error() {
         assert!(matches!(
-            run_unavailable_result(false),
-            Ok(SandboxResult::Unavailable)
-        ));
-    }
-
-    #[test]
-    fn run_unavailable_result_returns_required_error_when_required() {
-        assert!(matches!(
-            run_unavailable_result(true),
+            run_unavailable_result(),
             Err(SandboxError::Required)
         ));
     }
@@ -223,11 +204,6 @@ mod tests {
     }
 
     #[test]
-    fn test_sandbox_config_default_not_required() {
-        assert!(!SandboxConfig::default().required);
-    }
-
-    #[test]
     fn test_sandbox_profile_builds_from_config() {
         let _profile = SandboxProfile::from_config(&SandboxConfig::default());
     }
@@ -248,16 +224,10 @@ mod tests {
 
     #[test]
     fn test_run_non_linux_unavailable_logic() {
-        match run_unavailable_result(false) {
-            Ok(SandboxResult::Unavailable) => {}
-            other => {
-                panic!("run_unavailable_result(false) must return Ok(Unavailable), got {other:?}")
-            }
-        }
-        match run_unavailable_result(true) {
+        match run_unavailable_result() {
             Err(SandboxError::Required) => {}
             other => {
-                panic!("run_unavailable_result(true) must return Err(Required), got {other:?}")
+                panic!("run_unavailable_result() must return Err(Required), got {other:?}")
             }
         }
     }

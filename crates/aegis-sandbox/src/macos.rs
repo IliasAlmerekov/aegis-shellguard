@@ -25,7 +25,7 @@ pub(crate) fn sandbox_available_for(config: &SandboxConfig) -> bool {
 
 pub(crate) fn run(config: &SandboxConfig, cmd: &str) -> Result<SandboxResult, SandboxError> {
     if is_forced_sandbox_unavailable() || !is_sandbox_exec_available() {
-        return run_unavailable_result(config.required);
+        return run_unavailable_result();
     }
     let profile = build_seatbelt_profile(config)?;
     // The profile was already validated by sandbox_available_for() and by
@@ -67,15 +67,10 @@ fn prepare(
 ) -> Result<PreparedSandboxCommand, SandboxError> {
     let profile = build_seatbelt_profile(config)?;
     if is_forced_sandbox_unavailable() || !is_sandbox_exec_available() {
-        if config.required {
-            if !is_forced_sandbox_unavailable() && seatbelt_unavailable_is_nested_refusal() {
-                return Err(SandboxError::RequiredNestedUnderOuterSandbox);
-            }
-            return Err(SandboxError::Required);
+        if !is_forced_sandbox_unavailable() && seatbelt_unavailable_is_nested_refusal() {
+            return Err(SandboxError::RequiredNestedUnderOuterSandbox);
         }
-        let mut cmd = std::process::Command::new(program);
-        cmd.args(args);
-        return Ok(PreparedSandboxCommand::unavailable(cmd));
+        return Err(SandboxError::Required);
     }
     if !exec_true_in_profile(&profile) {
         return Err(SandboxError::SetupFailed(
@@ -363,41 +358,16 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn test_run_macos_forced_unavailable_required_false_returns_unavailable() {
+    fn test_run_macos_forced_unavailable_returns_required_error() {
         set_force_sandbox_unavailable(true);
         let _guard = ForceUnavailableGuard;
 
-        // Verify is_sandbox_exec_available() exists as part of Phase 6.2.
-        // This call will fail to compile until the function is implemented.
         let _ = super::is_sandbox_exec_available();
 
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig {
-            required: false,
-            ..Default::default()
-        }));
-        assert!(
-            matches!(executor.run("true"), Ok(SandboxResult::Unavailable)),
-            "run() must return Ok(Unavailable) when forced-unavailable and required=false"
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn test_run_macos_forced_unavailable_required_true_returns_required_error() {
-        set_force_sandbox_unavailable(true);
-        let _guard = ForceUnavailableGuard;
-
-        // Verify is_sandbox_exec_available() exists as part of Phase 6.2.
-        // This call will fail to compile until the function is implemented.
-        let _ = super::is_sandbox_exec_available();
-
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig {
-            required: true,
-            ..Default::default()
-        }));
+        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig::default()));
         assert!(
             matches!(executor.run("true"), Err(SandboxError::Required)),
-            "run() must return Err(SandboxError::Required) when forced-unavailable and required=true"
+            "run() must return Err(SandboxError::Required) when forced-unavailable"
         );
     }
 
@@ -405,52 +375,20 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn test_prepare_for_exec_macos_unavailable_required_false_returns_direct_command() {
+    fn test_prepare_for_exec_macos_unavailable_returns_required_error() {
         use std::ffi::{OsStr, OsString};
 
         set_force_sandbox_unavailable(true);
         let _guard = ForceUnavailableGuard;
 
-        let cfg = SandboxConfig {
-            required: false,
-            ..Default::default()
-        };
-        let program = OsStr::new("echo");
-        let args: Vec<OsString> = vec![OsString::from("hello")];
-
-        let result = super::prepare_for_exec(&cfg, program, &args);
-        assert!(
-            result.is_ok(),
-            "prepare_for_exec must return Ok when forced-unavailable and required=false, got: {result:?}"
-        );
-        let cmd = result.expect("checked above");
-        // The program must NOT be sandbox-exec — it should be a direct command.
-        assert_ne!(
-            cmd.command.get_program(),
-            OsStr::new("sandbox-exec"),
-            "prepare_for_exec must return a direct (non-sandbox-exec) command when sandbox is unavailable"
-        );
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn test_prepare_for_exec_macos_unavailable_required_true_returns_required_error() {
-        use std::ffi::{OsStr, OsString};
-
-        set_force_sandbox_unavailable(true);
-        let _guard = ForceUnavailableGuard;
-
-        let cfg = SandboxConfig {
-            required: true,
-            ..Default::default()
-        };
+        let cfg = SandboxConfig::default();
         let program = OsStr::new("echo");
         let args: Vec<OsString> = vec![OsString::from("hello")];
 
         let result = super::prepare_for_exec(&cfg, program, &args);
         assert!(
             matches!(result, Err(SandboxError::Required)),
-            "prepare_for_exec must return Err(SandboxError::Required) when forced-unavailable and required=true, got: {result:?}"
+            "prepare_for_exec must return Err(SandboxError::Required) when forced-unavailable, got: {result:?}"
         );
     }
 

@@ -95,7 +95,6 @@ fn production_bwrap_options() -> Vec<OsString> {
         allow_network: true,
         allow_write: vec![crate::WriteRoot::new("/tmp")],
         trusted_roots: vec![crate::WriteRoot::new("/tmp")],
-        ..SandboxConfig::default()
     };
     // `/tmp` exists on every Linux host, so this build cannot fail in
     // practice; the empty fallback keeps a hypothetical failure from panicking
