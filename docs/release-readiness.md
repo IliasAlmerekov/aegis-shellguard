@@ -186,18 +186,18 @@ The `Live snapshot/rollback (Docker + SQLite)` CI job closes the live snapshot/r
       GitHub Release tag. The release workflow does this and pushes it to the
       tap; the tap holds the only copy.
 - [x] The published tap contains that `Formula/aegis.rb`.
-- [ ] `brew audit --strict --online --formula aegis` passes in the tap.
-- [ ] `brew install IliasAlmerekov/aegis/aegis` succeeds on macOS.
-- [ ] `brew install IliasAlmerekov/aegis/aegis` succeeds on Linux.
-- [ ] `brew test IliasAlmerekov/aegis/aegis` passes on both platforms.
+- [x] `brew audit --strict --online --formula aegis` passes in the tap.
+- [x] `brew install IliasAlmerekov/aegis/aegis` succeeds on macOS.
+- [x] `brew install IliasAlmerekov/aegis/aegis` succeeds on Linux.
+- [x] `brew test IliasAlmerekov/aegis/aegis` passes on both platforms.
 
 The `smoke-install` job in the release workflow runs these checks on macOS
 arm64, macOS Intel, and Linux after every stable tag. It runs the gated live
 test in `tests/homebrew_live.rs`, which a release operator can also run by
 hand:
 `AEGIS_TEST_LIVE_HOMEBREW=1 AEGIS_TEST_EXPECTED_VERSION=X.Y.Z cargo test --test homebrew_live -- --nocapture`.
-The boxes above stay open until the first stable release run passes that job.
-Record its run URL here: _pending, tracked in #412_.
+The first stable release run to pass that job was v0.8.0; its evidence is
+recorded below.
 
 ### Evidence recorded 2026-06-22 (Linux x64 / WSL2, release v0.5.6)
 
@@ -231,7 +231,18 @@ The identical formula was published to
 in commit `41adf056f387b57770ca4043c0cdc362547833ee`. This Linux host has no
 `brew` executable, so `brew audit`, install, test, version, and notice-delivery
 evidence remain open for Linux; the required real-macOS operator smoke is also
-open. The `smoke-install` job closes them on the next stable release.
+open. The v0.8.0 evidence below closes both.
+
+### Evidence recorded 2026-10-26 (release v0.8.0)
+
+The `smoke-install` job passed on `macos-26`, `macos-26-intel`, and
+`ubuntu-24.04` in the v0.8.0
+[Release workflow run](https://github.com/IliasAlmerekov/aegis-shellguard/actions/runs/40376570806) (#412).
+On each runner `live_homebrew_tap_installs_and_tests_aegis` in
+`tests/homebrew_live.rs` passed with `AEGIS_TEST_EXPECTED_VERSION=0.8.0`. That
+test runs `brew audit --strict --online`, `brew install
+IliasAlmerekov/aegis/aegis`, and `brew test`, then fails unless
+`aegis --version` prints the expected version.
 
 ## Homebrew tap publish runbook
 
@@ -352,7 +363,7 @@ formula is generated deterministically by `scripts/update-homebrew-formula.sh`.
       `packaging/npm/checksums.json` from the selected release tag.
 - [ ] `npm publish --dry-run` succeeds from `packaging/npm`.
 - [x] `npm i -g @iliasalmerekov/aegis` succeeds on Linux x64.
-- [ ] `npm i -g @iliasalmerekov/aegis` succeeds on macOS arm64 or x64.
+- [x] `npm i -g @iliasalmerekov/aegis` succeeds on macOS arm64 or x64.
 - [x] `aegis --version` prints the selected release version after npm install.
 - [x] npm install does not mutate shell startup files or agent config.
 
@@ -401,16 +412,24 @@ tarball; `tests/npm_package.rs` was updated to assert the same form.
 `packaging/npm/checksums.json` from the published sidecars. A clean isolated
 registry install, `rtk npm install --prefix /tmp/aegis-v063-npm-smoke
 @iliasalmerekov/aegis@0.6.3`, added one package; its wrapper printed
-`aegis 0.6.3`. The macOS registry install remains open.
+`aegis 0.6.3`. The macOS registry install was still open then; the v0.8.0
+evidence below closes it.
 
 The `smoke-install` job in the release workflow installs the published
 registry package on macOS arm64, macOS Intel, and Linux after every stable tag,
 and after an npm recovery dispatch. Network-free contract tests live in
 `tests/npm_package.rs`; the gated live test
 (`AEGIS_TEST_LIVE_NPM=1 AEGIS_TEST_EXPECTED_VERSION=X.Y.Z`) lives in
-`tests/npm_live.rs`. Both keep default `cargo test` network-free. The macOS box
-above stays open until the first stable release run passes the job; record its
-run URL here: _pending, tracked in #412_.
+`tests/npm_live.rs`. Both keep default `cargo test` network-free.
+
+### Evidence recorded 2026-10-26 (release v0.8.0)
+
+The `smoke-install` job passed on `macos-26`, `macos-26-intel`, and
+`ubuntu-24.04` in the v0.8.0
+[Release workflow run](https://github.com/IliasAlmerekov/aegis-shellguard/actions/runs/40376570806) (#412).
+On each runner `live_npm_package_installs_and_runs_aegis` in
+`tests/npm_live.rs` installed `@iliasalmerekov/aegis@0.8.0` from the npm
+registry and passed its `aegis --version` check against `0.8.0`.
 
 ## Cargo install validation
 
