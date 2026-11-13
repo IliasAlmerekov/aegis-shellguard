@@ -40,10 +40,7 @@ fn embedded_bwrap_confines_when_no_system_bwrap_on_path() {
     // SAFETY: single-threaded test; PATH is restored before the test returns.
     unsafe { std::env::set_var("PATH", &no_bwrap) };
 
-    let config = SandboxConfig {
-        required: true,
-        ..Default::default()
-    };
+    let config = SandboxConfig::default();
 
     // Skip, not panic, when this host cannot confine at all. The probe runs
     // under the no-bwrap PATH, so it also proves the embedded build is the
@@ -51,6 +48,11 @@ fn embedded_bwrap_confines_when_no_system_bwrap_on_path() {
     // on. A host that passes this probe but still fails below is a genuine
     // defect, and the panics stay for exactly that case.
     if !aegis_sandbox::sandbox_available_for(&config) {
+        assert!(
+            std::env::var_os("AEGIS_CI_REQUIRE_SANDBOX").as_deref()
+                != Some(std::ffi::OsStr::new("1")),
+            "AEGIS_CI_REQUIRE_SANDBOX=1 is set, but embedded bwrap cannot confine on this host"
+        );
         eprintln!(
             "skipped: this host cannot create the user namespaces the sandbox \
              needs, so the embedded-build confinement contract is untestable here"

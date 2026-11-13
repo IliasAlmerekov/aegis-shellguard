@@ -80,6 +80,26 @@ pub(crate) fn run_planned_shell_command_with_renderer<R: ExecutionRenderer>(
         PreparedPlanner::Ready(context) => context.config().sandbox.as_ref(),
         PreparedPlanner::SetupFailure(_) => None,
     };
+    run_planned_shell_command_with_sandbox(
+        cmd,
+        verbose,
+        prepared,
+        plan,
+        launch,
+        sandbox_config,
+        renderer,
+    )
+}
+
+fn run_planned_shell_command_with_sandbox<R: ExecutionRenderer>(
+    cmd: &str,
+    verbose: bool,
+    prepared: &PreparedPlanner,
+    plan: &InterceptionPlan,
+    launch: &ShellLaunchOptions,
+    sandbox_config: Option<&aegis_sandbox::SandboxConfig>,
+    renderer: &R,
+) -> i32 {
     match plan.execution_disposition() {
         ExecutionDisposition::Execute => execute_with_snapshots(
             cmd,
@@ -299,7 +319,6 @@ fn complete_approved_shell_execution<R: ExecutionRenderer>(
                 sandbox_status,
             ),
         },
-        |message| renderer.warn(message),
         exec_prepared_command,
         crate::shell_compat::wait_for_child,
         |message| renderer.report_error(message),
@@ -389,28 +408,10 @@ fn sandbox_status_before_preparation(
     }
 }
 
-/// The warning to emit when the sandbox is unavailable, naming the WSL1 cause
-/// when it applies so the user gets a practical remedy (use WSL2) rather than
-/// the generic message (ADR-029 §3).
-fn sandbox_unavailable_warning() -> &'static str {
-    sandbox_unavailable_warning_for(aegis_sandbox::wsl1_unavailable())
-}
-
-/// The unavailable-warning selection, split out so both branches are testable
-/// on any host: the WSL1 verdict comes from the caller, not from this host.
-fn sandbox_unavailable_warning_for(is_wsl1: bool) -> &'static str {
-    if is_wsl1 {
-        aegis::runtime::SANDBOX_WSL1_UNAVAILABLE_MESSAGE
-    } else {
-        aegis::runtime::SANDBOX_UNAVAILABLE_MESSAGE
-    }
-}
-
 fn complete_shell_execution<C, X, AuditError>(
     decision: Decision,
     prepare: impl FnOnce() -> Result<(C, SandboxStatus), aegis_sandbox::SandboxError>,
     append_audit: impl FnOnce(Decision, SandboxStatus) -> Result<(), AuditError>,
-    warn: impl FnOnce(&str),
     execute: impl FnOnce(C) -> Result<(X, SandboxStatus), aegis_sandbox::SandboxError>,
     wait: impl FnOnce(X) -> i32,
     report_error: impl FnOnce(&str),
@@ -431,9 +432,6 @@ where
                 if let Err(err) = append_audit(decision, prep_status) {
                     report_error(&format!("failed to write audit log: {err}"));
                     return EXIT_INTERNAL;
-                }
-                if prep_status == SandboxStatus::Unavailable {
-                    warn(sandbox_unavailable_warning());
                 }
                 return match execute(command) {
                     Ok((child, _)) => wait(child),
@@ -462,9 +460,6 @@ where
                     if let Err(err) = append_audit(decision, actual_status) {
                         report_error(&format!("failed to write audit log: {err}"));
                         return EXIT_INTERNAL;
-                    }
-                    if actual_status == SandboxStatus::Unavailable {
-                        warn(sandbox_unavailable_warning());
                     }
                     wait(child)
                 }

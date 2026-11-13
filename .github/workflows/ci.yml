@@ -396,6 +396,12 @@ jobs:
       - name: Pull Docker fixture image
         run: docker pull alpine
 
+      - name: Enable unprivileged user namespaces for sandbox tests
+        run: |
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
       - name: Run live Docker snapshot rollback test
         env:
           AEGIS_DOCKER_TESTS: "1"

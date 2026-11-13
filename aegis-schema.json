@@ -155,9 +155,7 @@
       "description": "Sandbox layer settings.",
       "$ref": "#/$defs/SandboxSettings",
       "default": {
-        "allow_network": false,
-        "enabled": false,
-        "required": false
+        "allow_network": false
       }
     },
     "snapshot_policy": {
@@ -737,7 +735,7 @@
       ]
     },
     "SandboxSettings": {
-      "description": "Sandbox configuration — controls whether commands run inside a bwrap sandbox.",
+      "description": "Sandbox configuration — controls the Trusted ceiling for mandatory Sandbox confinement.",
       "type": "object",
       "properties": {
         "allow_network": {
@@ -756,14 +754,16 @@
           }
         },
         "enabled": {
-          "description": "Enable the sandbox layer.",
+          "description": "Deprecated: Aegis ignores this value; the Sandbox is always applied\noutside `Mode::Audit` (ADR-029). Kept for schema v1 compatibility.",
           "type": "boolean",
-          "default": false
+          "deprecated": true,
+          "writeOnly": true
         },
         "required": {
-          "description": "Fail hard if the sandbox cannot be set up (instead of falling back to unsandboxed exec).",
+          "description": "Deprecated: Aegis ignores this value; Sandbox unavailability always\nblocks outside `Mode::Audit` (ADR-029). Kept for schema v1 compatibility.",
           "type": "boolean",
-          "default": false
+          "deprecated": true,
+          "writeOnly": true
         }
       },
       "additionalProperties": false

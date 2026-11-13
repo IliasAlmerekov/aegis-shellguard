@@ -316,3 +316,22 @@ exec time with a confusing error.
   statement about a mandatory layer.
 - **Binary size grows** on Linux by the bundled bubblewrap, and the default-build
   size figure has to be re-measured.
+
+## Amendment (2026-11-13) — Enforcement scope and `Mode::Audit`
+
+Issue #229 ships the mandatory Sandbox in 0.9.0 and removes `sandbox.enabled` and
+`sandbox.required` as behaviour fields (they remain deserializable as ignored
+deprecated shims with `deprecated_sandbox_field` warnings in `aegis config validate`
+and `aegis status`, never on `-c` or `Session-start notice`).
+
+This amendment clarifies the three unconfined paths that remain by design:
+
+1. **`Mode::Audit`** (`mode = "Audit"`): observe-only mode builds no Sandbox
+   (`SandboxStatus::NotConfigured`) and emits no per-command Sandbox warning.
+   Amendment A's reference to `Toggle` as the observe-only escape is superseded by
+   `Mode::Audit` for observe-only operation; `Disabled passthrough` remains the
+   emergency bypass.
+2. **`Disabled passthrough`**: `aegis disable` / `.aegis/disabled` skips Aegis
+   enforcement in both shell and watch mode.
+3. **Interactive/login shell session without `-c`**: Aegis execs the real shell
+   directly rather than confining the outer shell process.

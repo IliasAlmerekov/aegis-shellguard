@@ -521,10 +521,12 @@ _Avoid_: session warning, startup banner, session audit
 
 **Sandbox**:
 The OS-level layer that restricts what an executed command may write and whether it
-may reach the network. Mandatory on Linux and macOS (ADR-029): confinement is
-attempted for every executed command, and unavailability blocks rather than
-degrading to an unconfined run. Not a security or confidentiality boundary; it does
-not promise that file reads or secrets are hidden from the command.
+may reach the network. Mandatory on Linux and macOS outside `Mode::Audit` (ADR-029):
+confinement is attempted for every executed command (outside `Mode::Audit`,
+`Disabled passthrough`, and a shell session without `-c`), and unavailability
+blocks rather than degrading to an unconfined run. Not a security or
+confidentiality boundary; it does not promise that file reads or secrets are hidden
+from the command.
 _Avoid_: jail, container, confinement profile (the profile is the
 `Effective confinement profile`; the Sandbox is the layer that applies it)
 
@@ -572,20 +574,13 @@ _Avoid_: extractor failure, profile fallback
 
 **Sandbox status**:
 The confinement path selected during command preparation (`SandboxStatus`),
-recorded in every audit entry: `Active`, `Unavailable`, `NotConfigured`, or
-`NotAttempted`. `Active` means the confined launch path was prepared, not that a
-later OS-level exec or spawn succeeded. `NotConfigured` means Sandbox was
-disabled; `NotAttempted` means it was enabled but neither a confined nor
-fallback launch path was used, including fail-closed preparation errors.
+recorded in every audit entry: `Active`, `NotConfigured`, `NotAttempted`, or
+(for pre-0.9.0 entries only) `Unavailable`. `Active` means the confined launch path
+was prepared, not that a later OS-level exec or spawn succeeded. `NotConfigured`
+means the command ran in `Mode::Audit` (no Sandbox was built); `NotAttempted` means
+confinement was configured but not launched, including fail-closed preparation
+errors.
 _Avoid_: sandbox state
-
-**Sandbox bypass**:
-Execution through the prepared unconfined fallback after Sandbox infrastructure
-was unavailable (`SandboxStatus::Unavailable`). A mandatory layer has no such
-path — under ADR-029 unavailability blocks, so this term describes only the
-**current pre-1.0 implementation** and retires with it. It never named a
-successful escape from an applied profile.
-_Avoid_: sandbox failure, escape
 
 **Config fault**:
 An error caused by invalid or unreadable user configuration, something a user

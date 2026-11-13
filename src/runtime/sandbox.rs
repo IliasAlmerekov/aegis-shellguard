@@ -1,18 +1,7 @@
-//! Stable active-channel diagnostics for optional Sandbox execution, and the
+//! Stable active-channel diagnostics for mandatory Sandbox execution, and the
 //! Sandbox config built for one working directory.
 
 use std::path::Path;
-
-/// Stable diagnostic code for optional Sandbox degradation.
-pub const SANDBOX_UNAVAILABLE_CODE: &str = "sandbox_unavailable";
-
-/// Stable message emitted when optional confinement is unavailable.
-///
-/// Names no config remedy: `sandbox.required` left the config contract in
-/// #240 and is now accepted-but-ignored, so telling a user to set it would be
-/// stale, misleading advice.
-pub const SANDBOX_UNAVAILABLE_MESSAGE: &str =
-    "Sandbox unavailable; proceeding without confinement.";
 
 /// Stable diagnostic code for Sandbox unavailability caused by WSL1, which
 /// cannot create the user namespaces bubblewrap needs.
@@ -59,14 +48,14 @@ pub struct SandboxCeiling {
     pub warnings: Vec<aegis_config::ceiling::CeilingWarning>,
 }
 
-/// Build the Sandbox config for `cwd`, or `None` when the Sandbox is disabled.
+/// Build the Sandbox config for `cwd`, or `None` in `Mode::Audit`.
 ///
-/// The workspace (a `.git` search) is resolved here, only when the Sandbox is
-/// enabled, never on the disabled command path.
+/// The workspace (a `.git` search) is resolved here for every mode outside
+/// `Mode::Audit`, never in `Mode::Audit`.
 pub fn sandbox_ceiling(config: &aegis_config::AegisConfig, cwd: &Path) -> Option<SandboxCeiling> {
     use aegis_config::ceiling::{WriteRoot, compute_trusted_ceiling};
 
-    if !config.sandbox.enabled {
+    if config.mode == aegis_types::Mode::Audit {
         return None;
     }
     let ceiling = compute_trusted_ceiling(&config.sandbox, cwd);
@@ -85,7 +74,6 @@ pub fn sandbox_ceiling(config: &aegis_config::AegisConfig, cwd: &Path) -> Option
             allow_write: to_sandbox(&ceiling.roots),
             trusted_roots: to_sandbox(&ceiling.trusted),
             allow_network: config.sandbox.allow_network,
-            required: config.sandbox.required,
         },
         warnings: ceiling.warnings,
     })

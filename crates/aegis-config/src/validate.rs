@@ -208,56 +208,73 @@ pub fn validate_config_layers(current_dir: &Path, home_dir: Option<&Path>) -> Va
         let source_map =
             ConfigSourceMap::for_config_with_paths(&merged, Some(current_dir), home_dir);
         merge_report(&mut report, validate_config(&merged, &source_map));
-        return report;
-    }
+    } else {
+        for layer in layer_paths {
+            // One merge produces both the next config and the layer warnings
+            // (ratchet weakening + deprecated sandbox keys) — no separate re-parse.
+            match AegisConfig::merge_layer_path_with_all_warnings(merged, &layer) {
+                Ok((next, warnings, deprecated_sandbox)) => {
+                    for warning in warnings {
+                        push_unique_issue(
+                            &mut report.warnings,
+                            ValidationIssue {
+                                code: "project_security_ratchet",
+                                message: format!(
+                                    "project config attempted to weaken `{}` from {} to {}; keeping {}",
+                                    warning.field, warning.kept, warning.requested, warning.kept
+                                ),
+                                location: warning.location,
+                            },
+                        );
+                    }
+                    for deprecated in deprecated_sandbox {
+                        let layer_name = match deprecated.layer {
+                            ConfigSourceLayer::Global => "global",
+                            ConfigSourceLayer::Project => "project",
+                        };
+                        push_unique_issue(
+                            &mut report.warnings,
+                            ValidationIssue {
+                                code: "deprecated_sandbox_field",
+                                message: format!(
+                                    "`{}` ({layer_name} layer) is deprecated and ignored by Aegis (the Sandbox is mandatory outside `Mode::Audit`); set `mode = \"Audit\"` for observe-only use",
+                                    deprecated.field
+                                ),
+                                location: deprecated.location,
+                            },
+                        );
+                    }
 
-    for layer in layer_paths {
-        // One merge produces both the next config and the project-layer
-        // weakening warnings (empty for Global) — no separate re-parse.
-        match AegisConfig::merge_layer_path_with_warnings(merged, &layer) {
-            Ok((next, warnings)) => {
-                for warning in warnings {
+                    merged = next;
+                    let source_map = ConfigSourceMap::for_config_with_paths(
+                        &merged,
+                        Some(current_dir),
+                        home_dir,
+                    );
+                    let checkpoint = validate_config(&merged, &source_map);
+                    let checkpoint_has_errors = !checkpoint.errors.is_empty();
+                    merge_report(&mut report, checkpoint);
+                    if checkpoint_has_errors {
+                        return report;
+                    }
+                }
+                Err(err) => {
                     push_unique_issue(
-                        &mut report.warnings,
+                        &mut report.errors,
                         ValidationIssue {
-                            code: "project_security_ratchet",
-                            message: format!(
-                                "project config attempted to weaken `{}` from {} to {}; keeping {}",
-                                warning.field, warning.kept, warning.requested, warning.kept
-                            ),
-                            location: warning.location,
+                            code: config_load_error_code(&err),
+                            message: err.to_string(),
+                            location: layer.path.to_string_lossy().into_owned(),
                         },
                     );
-                }
-
-                merged = next;
-                let source_map =
-                    ConfigSourceMap::for_config_with_paths(&merged, Some(current_dir), home_dir);
-                let checkpoint = validate_config(&merged, &source_map);
-                let checkpoint_has_errors = !checkpoint.errors.is_empty();
-                merge_report(&mut report, checkpoint);
-                if checkpoint_has_errors {
+                    report.valid = false;
                     return report;
                 }
-            }
-            Err(err) => {
-                push_unique_issue(
-                    &mut report.errors,
-                    ValidationIssue {
-                        code: config_load_error_code(&err),
-                        message: err.to_string(),
-                        location: layer.path.to_string_lossy().into_owned(),
-                    },
-                );
-                report.valid = false;
-                return report;
             }
         }
     }
 
-    // Until #229 makes the Sandbox mandatory, no `.git` search runs unless it
-    // is enabled.
-    if merged.sandbox.enabled {
+    if merged.mode != aegis_types::Mode::Audit {
         for warning in compute_trusted_ceiling(&merged.sandbox, current_dir).warnings {
             push_unique_issue(&mut report.warnings, ceiling_issue(&warning));
         }
