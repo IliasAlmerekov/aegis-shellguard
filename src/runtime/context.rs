@@ -38,7 +38,7 @@ pub struct RuntimeConfig {
     pub strict_allowlist_override: AllowlistOverrideLevel,
     /// Effective snapshot policy.
     pub snapshot_policy: SnapshotPolicy,
-    /// Effective sandbox config, or `None` if the sandbox is disabled.
+    /// Effective sandbox config, or `None` in `Mode::Audit`.
     pub sandbox: Option<aegis_sandbox::SandboxConfig>,
     /// Trusted interpreter aliases forwarded to language-aware routing.
     pub language_analysis_aliases: Vec<(String, String)>,
@@ -49,7 +49,7 @@ pub struct RuntimeConfig {
 impl From<&AegisConfig> for RuntimeConfig {
     fn from(config: &AegisConfig) -> Self {
         // The workspace is resolved here, where the working directory is
-        // known, and only when the Sandbox is enabled.
+        // known, outside `Mode::Audit`.
         let cwd = config
             .source_current_dir()
             .map(Path::to_path_buf)
