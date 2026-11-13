@@ -4,6 +4,8 @@
 //! dangerous command is approved and before it runs; blocked and denied commands
 //! must never create snapshots.
 
+mod support;
+
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -26,35 +28,6 @@ fn base_command_with_shell(home: &Path, shell: &Path) -> Command {
     command.env("AEGIS_CI", "0");
     command.env("HOME", home);
     command
-}
-
-#[cfg(unix)]
-fn sandbox_backend_available() -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        Command::new("bwrap")
-            .arg("--version")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-    }
-    #[cfg(target_os = "macos")]
-    {
-        const PROBE: &str = "(version 1)\n(deny default)\n(allow process*)\n(allow file-read*)\n";
-        Command::new("/usr/bin/sandbox-exec")
-            .args(["-p", PROBE, "/usr/bin/true"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    {
-        false
-    }
 }
 
 fn read_audit_entries(home: &Path) -> Vec<Value> {
@@ -593,7 +566,7 @@ reason = "approved shell before-exec test"
 #[cfg(unix)]
 #[test]
 fn test_sandboxed_approved_danger_command_records_snapshots_before_exec() {
-    if !sandbox_backend_available() {
+    if !support::confinement_available() {
         println!("sandbox backend not available on this host; skipping");
         return;
     }

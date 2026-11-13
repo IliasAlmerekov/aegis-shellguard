@@ -15,27 +15,13 @@ use std::process::{Command, Output};
 
 use tempfile::TempDir;
 
-use support::{base_command, write_global_config};
+use support::{base_command, confinement_available, write_global_config};
 
 const ENABLED: &str = "[sandbox]\nenabled = true\n";
 
 /// A directory outside `/tmp`, or `None` when `/var/tmp` is unusable.
 fn outside_tmp() -> Option<TempDir> {
     TempDir::new_in("/var/tmp").ok()
-}
-
-/// True when this host can confine a command; prints the skip reason if not.
-fn confinement_available() -> bool {
-    let probe = aegis_sandbox::SandboxConfig {
-        allow_write: vec![aegis_sandbox::WriteRoot::new("/tmp")],
-        trusted_roots: vec![aegis_sandbox::WriteRoot::new("/tmp")],
-        ..Default::default()
-    };
-    let ok = aegis_sandbox::sandbox_available_for(&probe);
-    if !ok {
-        eprintln!("skipping: no usable confinement backend on this host");
-    }
-    ok
 }
 
 /// `git` with every inherited repository variable and config removed.
@@ -249,9 +235,10 @@ fn git_work_tree_and_tmpdir_variables_do_not_widen_the_ceiling() {
 }
 
 #[test]
-fn status_shows_no_workspace_warning_when_the_sandbox_is_disabled() {
+fn status_shows_no_workspace_warning_when_in_audit_mode() {
     let Some(base) = outside_tmp() else { return };
     let home = TempDir::new().unwrap();
+    write_global_config(home.path(), "mode = \"Audit\"\n");
     let cwd = base.path().join("plain");
     fs::create_dir_all(&cwd).unwrap();
 
@@ -261,9 +248,9 @@ fn status_shows_no_workspace_warning_when_the_sandbox_is_disabled() {
 }
 
 #[test]
-fn disabled_sandbox_builds_no_ceiling_so_no_git_search_runs() {
-    let config = aegis_config::AegisConfig::default();
-    assert!(!config.sandbox.enabled);
+fn audit_mode_builds_no_ceiling_so_no_git_search_runs() {
+    let mut config = aegis_config::AegisConfig::default();
+    config.mode = aegis_types::Mode::Audit;
     assert!(aegis::runtime::sandbox_ceiling(&config, Path::new("/tmp")).is_none());
     assert!(
         aegis::runtime::RuntimeConfig::from(&config)

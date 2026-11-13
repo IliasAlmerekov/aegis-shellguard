@@ -178,3 +178,30 @@ pub fn append_audit_entry(home: &Path, plugin: &str, snapshot_id: &str) {
         ))
         .unwrap();
 }
+
+/// `true` when this host can confine a command with `config`.
+///
+/// On a developer host without usable confinement, prints the skip reason and
+/// returns `false`. When `AEGIS_CI_REQUIRE_SANDBOX=1` is set (in CI), a
+/// missing backend panics so CI never silently skips confinement tests.
+pub fn confinement_available_for(config: &aegis_sandbox::SandboxConfig) -> bool {
+    let ok = aegis_sandbox::sandbox_available_for(config);
+    if !ok {
+        assert!(
+            std::env::var_os("AEGIS_CI_REQUIRE_SANDBOX").as_deref()
+                != Some(std::ffi::OsStr::new("1")),
+            "AEGIS_CI_REQUIRE_SANDBOX=1 is set, but no usable confinement backend is available on this host"
+        );
+        eprintln!("skipping: no usable confinement backend on this host");
+    }
+    ok
+}
+
+pub fn confinement_available() -> bool {
+    let probe = aegis_sandbox::SandboxConfig {
+        allow_write: vec![aegis_sandbox::WriteRoot::new("/tmp")],
+        trusted_roots: vec![aegis_sandbox::WriteRoot::new("/tmp")],
+        ..Default::default()
+    };
+    confinement_available_for(&probe)
+}
