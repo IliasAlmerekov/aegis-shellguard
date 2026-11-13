@@ -567,7 +567,6 @@ reason = "approved shell before-exec test"
 #[test]
 fn test_sandboxed_approved_danger_command_records_snapshots_before_exec() {
     if !support::confinement_available() {
-        println!("sandbox backend not available on this host; skipping");
         return;
     }
 

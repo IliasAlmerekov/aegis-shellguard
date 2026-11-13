@@ -197,6 +197,11 @@ pub fn confinement_available_for(config: &aegis_sandbox::SandboxConfig) -> bool 
     ok
 }
 
+/// `true` when this host can confine a command under `/tmp`.
+///
+/// Delegates to [`confinement_available_for`], printing the skip reason on
+/// developer hosts without confinement and panicking when
+/// `AEGIS_CI_REQUIRE_SANDBOX=1` is set.
 pub fn confinement_available() -> bool {
     let probe = aegis_sandbox::SandboxConfig {
         allow_write: vec![aegis_sandbox::WriteRoot::new("/tmp")],

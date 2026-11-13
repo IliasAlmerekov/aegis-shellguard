@@ -232,3 +232,49 @@ fn execution_audits_the_inner_wrapper_status_before_waiting_for_the_child() {
         ]
     );
 }
+
+#[test]
+fn unavailable_sandbox_blocks_across_deprecated_field_permutations() {
+    let dir = tempfile::TempDir::new().unwrap();
+    for body in [
+        "",
+        "[sandbox]\nenabled = true\nrequired = true\n",
+        "[sandbox]\nenabled = false\nrequired = false\n",
+    ] {
+        let config: aegis_config::AegisConfig = toml::from_str(body).unwrap();
+        assert_ne!(config.mode, aegis_types::Mode::Audit);
+        let sandbox = aegis::runtime::sandbox_ceiling(&config, dir.path())
+            .expect("every config outside Mode::Audit must build SandboxConfig");
+        assert!(
+            !sandbox.config.trusted_roots.is_empty(),
+            "SandboxConfig must be populated for {body:?}"
+        );
+
+        let events = RefCell::new(Vec::new());
+        let exit_code = complete_shell_execution(
+            Decision::Approved,
+            || Err::<((), SandboxStatus), _>(aegis_sandbox::SandboxError::Required),
+            |decision, status| {
+                events
+                    .borrow_mut()
+                    .push(format!("audit:{decision:?}:{status:?}"));
+                Ok::<_, String>(())
+            },
+            |_: ()| unreachable!("unavailable sandbox must not execute"),
+            |_: ()| unreachable!("unavailable sandbox must not wait"),
+            |message| events.borrow_mut().push(format!("error:{message}")),
+        );
+        assert_eq!(exit_code, EXIT_BLOCKED, "failed for {body:?}");
+        assert_eq!(
+            events.into_inner(),
+            vec![
+                "audit:Blocked:Unavailable".to_string(),
+                format!(
+                    "error:{}",
+                    aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE
+                ),
+            ],
+            "failed for {body:?}"
+        );
+    }
+}

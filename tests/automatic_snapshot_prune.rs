@@ -284,7 +284,6 @@ fn watch_automatic_prune_uses_the_same_git_retention_policy() {
 #[test]
 fn sandboxed_shell_automatic_prune_uses_the_same_git_retention_policy() {
     if !support::confinement_available() {
-        println!("sandbox backend not available on this host; skipping");
         return;
     }
 
