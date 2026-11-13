@@ -188,7 +188,8 @@ fn sandboxed_command_runs_and_denies_write_outside_allow_write() {
     // not on the regression. ADR-029 makes the backend mandatory, and once CI
     // installs bubblewrap this skip stops firing there.
     if !aegis_sandbox::sandbox_available_for(&aegis_sandbox::SandboxConfig {
-        allow_write: vec![workspace.path().to_path_buf()],
+        allow_write: vec![aegis_sandbox::WriteRoot::new(workspace.path())],
+        trusted_roots: vec![aegis_sandbox::WriteRoot::new(workspace.path())],
         ..Default::default()
     }) {
         eprintln!("skipping: no usable confinement backend on this host");

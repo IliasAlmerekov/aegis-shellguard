@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Changed: An enabled Sandbox with no `[sandbox] allow_write` now confines a command to the computed default ceiling, the enclosing git worktree plus the temporary directory; a present `allow_write` replaces that default instead of adding to it, a project list narrows it by path-tree intersection, and `aegis status` and `aegis config validate` report the new `trusted_ceiling_path_omitted` and `workspace_unresolved` warnings (#242, ADR-030).
+
 - Removed: The Starlark policy DSL (`aegis-starlark` crate and `starlark-policy` feature) is gone; an existing `~/.aegis/policy.star` is now a config error, also reported by `aegis config validate` as `unsupported_policy_star`, that points at `[[rules]]` in `aegis.toml`. (#225, ADR-028)
 
 - Changed: A config with a custom, allowlist, or blocklist pattern over 256 bytes now fails to load; untrusted regexes compile under explicit size budgets (#217).

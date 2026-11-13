@@ -70,6 +70,7 @@ dependencies = [
  "aegis-parser",
  "aegis-scanner",
  "aegis-types",
+ "libc",
  "regex",
  "schemars",
  "serde",
@@ -129,6 +130,7 @@ dependencies = [
  "cc",
  "libc",
  "pkg-config",
+ "tempfile",
  "thiserror",
 ]
 

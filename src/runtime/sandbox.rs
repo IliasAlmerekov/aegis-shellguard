@@ -1,4 +1,7 @@
-//! Stable active-channel diagnostics for optional Sandbox execution.
+//! Stable active-channel diagnostics for optional Sandbox execution, and the
+//! Sandbox config built for one working directory.
+
+use std::path::Path;
 
 /// Stable diagnostic code for optional Sandbox degradation.
 pub const SANDBOX_UNAVAILABLE_CODE: &str = "sandbox_unavailable";
@@ -46,3 +49,74 @@ pub const SANDBOX_REQUIRED_NESTED_UNAVAILABLE_CODE: &str = "sandbox_required_nes
 /// every Codex-on-macOS session hits this unconditionally, with no bypass to
 /// name.
 pub const SANDBOX_REQUIRED_NESTED_UNAVAILABLE_MESSAGE: &str = "Required Sandbox unavailable: this process is already nested under an active outer sandbox, which refuses a second, nested confinement layer. Under Claude Code, disable /sandbox and retry. Under Codex, this is unconditional on macOS today and has no bypass. Command not executed.";
+
+/// The effective Sandbox config for one working directory, with the warnings
+/// the ceiling computation raised.
+pub struct SandboxCeiling {
+    /// What enforcement receives.
+    pub config: aegis_sandbox::SandboxConfig,
+    /// Typed ceiling warnings (config level).
+    pub warnings: Vec<aegis_config::ceiling::CeilingWarning>,
+}
+
+/// Build the Sandbox config for `cwd`, or `None` when the Sandbox is disabled.
+///
+/// The workspace (a `.git` search) is resolved here, only when the Sandbox is
+/// enabled, never on the disabled command path.
+pub fn sandbox_ceiling(config: &aegis_config::AegisConfig, cwd: &Path) -> Option<SandboxCeiling> {
+    use aegis_config::ceiling::{WriteRoot, compute_trusted_ceiling};
+
+    if !config.sandbox.enabled {
+        return None;
+    }
+    let ceiling = compute_trusted_ceiling(&config.sandbox, cwd);
+    let to_sandbox = |roots: &[WriteRoot]| {
+        roots
+            .iter()
+            .map(|root| aegis_sandbox::WriteRoot {
+                path: root.path.clone(),
+                layer: root.layer,
+                location: root.location.clone(),
+            })
+            .collect::<Vec<_>>()
+    };
+    Some(SandboxCeiling {
+        config: aegis_sandbox::SandboxConfig {
+            allow_write: to_sandbox(&ceiling.roots),
+            trusted_roots: to_sandbox(&ceiling.trusted),
+            allow_network: config.sandbox.allow_network,
+            required: config.sandbox.required,
+        },
+        warnings: ceiling.warnings,
+    })
+}
+
+/// Diagnostics for `aegis status` and `config validate`: the config-level
+/// ceiling warnings plus the roots enforcement would omit (a symlink that
+/// resolves outside the trusted roots). Never printed on the `-c` path.
+pub fn ceiling_issues(ceiling: &SandboxCeiling) -> Vec<aegis_config::validate::ValidationIssue> {
+    use aegis_config::ceiling::{CeilingOmitReason, CeilingWarning, PathOmitted};
+    use aegis_sandbox::OmitReason;
+
+    let enforcement = aegis_sandbox::resolve_allow_write(&ceiling.config)
+        .omitted
+        .into_iter()
+        .map(|omitted| {
+            CeilingWarning::PathOmitted(PathOmitted {
+                reason: match omitted.reason {
+                    OmitReason::NotFound => CeilingOmitReason::NotFound,
+                    OmitReason::OutsideTrustedCeiling => CeilingOmitReason::OutsideTrustedCeiling,
+                },
+                layer: omitted.root.layer,
+                location: omitted.root.location,
+                path: omitted.root.path,
+            })
+        });
+    ceiling
+        .warnings
+        .iter()
+        .cloned()
+        .chain(enforcement)
+        .map(|warning| aegis_config::validate::ceiling_issue(&warning))
+        .collect()
+}

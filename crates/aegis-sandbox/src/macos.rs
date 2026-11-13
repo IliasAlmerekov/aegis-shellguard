@@ -92,8 +92,8 @@ fn prepare(
 /// Generate a Seatbelt SBPL profile string from `config`.
 ///
 /// Canonicalizes each path in `allow_write` to prevent relative-path or
-/// symlink confusion (mirrors the bwrap builder on Linux). Returns an error
-/// if a path cannot be canonicalized (e.g. it does not exist).
+/// symlink confusion (mirrors the bwrap builder on Linux). A root that does
+/// not exist or escapes the trusted roots is left out, not an error.
 ///
 /// The profile always denies by default, allows file reads (needed for system
 /// libraries) and process execution. Network access is allowed or denied based
@@ -109,8 +109,7 @@ pub(crate) fn build_seatbelt_profile(config: &SandboxConfig) -> Result<String, S
     } else {
         profile.push_str("(deny network*)\n");
     }
-    for path in &config.allow_write {
-        let canonical = crate::support::canonicalize_allow_write_path(path)?;
+    for canonical in crate::support::resolve_allow_write(config).paths {
         let escaped = escape_sbpl_path(&canonical)?;
         profile.push_str(&format!("(allow file-write* (subpath \"{escaped}\"))\n"));
     }
@@ -255,7 +254,8 @@ mod tests {
     #[test]
     fn test_build_seatbelt_profile_allows_write_path_when_configured() {
         let cfg = SandboxConfig {
-            allow_write: vec![PathBuf::from("/tmp")],
+            allow_write: vec![crate::WriteRoot::new("/tmp")],
+            trusted_roots: vec![crate::WriteRoot::new("/tmp")],
             ..Default::default()
         };
         let profile =
@@ -277,15 +277,16 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn test_build_seatbelt_profile_reports_allow_write_path_for_nonexistent_path() {
+    fn test_build_seatbelt_profile_omits_nonexistent_allow_write_path() {
         let cfg = SandboxConfig {
-            allow_write: vec![PathBuf::from("/nonexistent_aegis_test_path_xyz")],
+            allow_write: vec![crate::WriteRoot::new("/nonexistent_aegis_test_path_xyz")],
+            trusted_roots: vec![crate::WriteRoot::new("/nonexistent_aegis_test_path_xyz")],
             ..Default::default()
         };
 
-        let result = super::build_seatbelt_profile(&cfg);
+        let profile = super::build_seatbelt_profile(&cfg).expect("omitted root is not an error");
 
-        assert!(matches!(result, Err(SandboxError::AllowWritePath { .. })));
+        assert!(!profile.contains("allow file-write*"));
     }
 
     #[cfg(target_os = "macos")]
@@ -548,7 +549,8 @@ mod tests {
         }
         let dir = std::env::temp_dir();
         let cfg = SandboxConfig {
-            allow_write: vec![dir.clone()],
+            allow_write: vec![crate::WriteRoot::new(dir.clone())],
+            trusted_roots: vec![crate::WriteRoot::new(dir.clone())],
             ..Default::default()
         };
         let executor = SandboxExecutor::new(SandboxProfile::from_config(&cfg));

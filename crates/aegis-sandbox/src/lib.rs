@@ -17,9 +17,11 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
-use aegis_types::SandboxStatus;
+use aegis_types::{CeilingLayer, SandboxStatus};
 
 mod support;
+
+pub use support::{OmitReason, OmittedRoot, ResolvedAllowWrite, resolve_allow_write};
 
 #[cfg(target_os = "linux")]
 mod bwrap;
@@ -92,28 +94,44 @@ pub enum SandboxError {
         source: std::io::Error,
     },
 
-    /// A configured `allow_write` path could not be canonicalized (e.g. it
-    /// does not exist). Keeps the `io::Error` as `source` — and `path` as
-    /// plain data — instead of folding both into an `Execution(String)`.
-    #[error("allow_write path {path}: {source}")]
-    AllowWritePath {
-        /// The configured path that failed to canonicalize.
-        path: String,
-        /// The underlying I/O error.
-        #[source]
-        source: std::io::Error,
-    },
-
     /// Wrapped I/O error.
     #[error("sandbox I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
 
+/// One writable root with the provenance needed to explain its omission.
+///
+/// Sandbox-side mirror of the config crate's `WriteRoot`: this crate must not
+/// depend on `aegis-config`; the layer type is shared through `aegis-types`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WriteRoot {
+    /// The configured or computed path.
+    pub path: PathBuf,
+    /// Layer the root came from.
+    pub layer: CeilingLayer,
+    /// Config file or computed-root label the root came from.
+    pub location: String,
+}
+
+impl WriteRoot {
+    /// A root without provenance.
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            layer: CeilingLayer::Computed,
+            location: String::new(),
+        }
+    }
+}
+
 /// Configuration for the sandbox layer.
 #[derive(Debug, Clone, Default)]
 pub struct SandboxConfig {
-    /// Paths the sandboxed process is allowed to write to.
-    pub allow_write: Vec<PathBuf>,
+    /// Effective writable roots (after project narrowing).
+    pub allow_write: Vec<WriteRoot>,
+    /// The trusted roots (global layer or computed default) every canonical
+    /// effective root must lie under. Required: an empty list admits no root.
+    pub trusted_roots: Vec<WriteRoot>,
     /// Whether the sandboxed process is allowed to access the network.
     pub allow_network: bool,
     /// If `true`, failure to set up the sandbox is a hard error rather than a

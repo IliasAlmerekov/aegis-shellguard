@@ -82,10 +82,25 @@ fn bench_runtime_context_custom_pattern_construction(c: &mut Criterion) {
     });
 }
 
+// The Sandbox-enabled hot path: the `.git` search plus the ceiling
+// computation, from a directory nested six levels below the worktree root.
+fn bench_sandbox_ceiling_nested_worktree(c: &mut Criterion) {
+    let repo = TempDir::new().expect("temp repo must be created");
+    std::fs::create_dir(repo.path().join(".git")).expect(".git must be created");
+    let cwd = repo.path().join("a/b/c/d/e/f");
+    std::fs::create_dir_all(&cwd).expect("nested dir must be created");
+    let mut config = AegisConfig::default();
+    config.sandbox.enabled = true;
+
+    c.bench_function("sandbox_ceiling_nested_worktree", |b| {
+        b.iter(|| black_box(aegis::runtime::sandbox_ceiling(&config, black_box(&cwd))))
+    });
+}
+
 criterion_group! {
     name = construction_benches;
     config = Criterion::default();
-    targets = bench_scanner_construction, bench_runtime_context_construction, bench_runtime_context_custom_pattern_construction
+    targets = bench_scanner_construction, bench_runtime_context_construction, bench_runtime_context_custom_pattern_construction, bench_sandbox_ceiling_nested_worktree
 }
 
 // Group 2: one full process invocation per iteration, dominated by process

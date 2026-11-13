@@ -156,7 +156,6 @@
       "$ref": "#/$defs/SandboxSettings",
       "default": {
         "allow_network": false,
-        "allow_write": [],
         "enabled": false,
         "required": false
       }
@@ -747,9 +746,11 @@
           "default": false
         },
         "allow_write": {
-          "description": "Paths the sandboxed process is allowed to write to.",
-          "type": "array",
-          "default": [],
+          "description": "Writable roots of the Trusted ceiling. Absent means the computed\ndefault (workspace plus temporary directory); a present list replaces\nthat default, and an explicit `[]` means zero writable roots.",
+          "type": [
+            "array",
+            "null"
+          ],
           "items": {
             "type": "string"
           }

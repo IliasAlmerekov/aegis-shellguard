@@ -38,7 +38,7 @@ pub use recovery::{
     ValidationLevel,
 };
 pub use risk::RiskLevel;
-pub use sandbox::SandboxStatus;
+pub use sandbox::{CeilingLayer, SandboxStatus};
 pub use snapshot::{RecordedSnapshot, SnapshotRecord};
 
 #[cfg(test)]

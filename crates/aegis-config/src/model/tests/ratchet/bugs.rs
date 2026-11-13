@@ -367,7 +367,7 @@ fn project_sandbox_allow_write_reordered_subset_no_warning() {
     let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
     let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
 
-    let mut effective = config.sandbox.allow_write.clone();
+    let mut effective = allow_write_paths(&config).clone();
     effective.sort();
     let mut expected = vec![
         std::path::PathBuf::from("/opt"),
@@ -377,12 +377,46 @@ fn project_sandbox_allow_write_reordered_subset_no_warning() {
     assert_eq!(
         effective, expected,
         "reordered equal allow_write set must be preserved as a set; got {:?}",
-        config.sandbox.allow_write
+        allow_write_paths(&config)
     );
     assert_no_warning_for(
         &warnings,
         "sandbox.allow_write",
         "regressions-01 reordered equal subset no warning",
+    );
+}
+
+#[test]
+fn project_allow_write_narrowing_keeps_the_global_list_as_trusted_base() {
+    let workspace = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
+    fs::create_dir_all(&global_dir).unwrap();
+    fs::write(
+        global_dir.join(GLOBAL_CONFIG_FILE),
+        "[sandbox]\nallow_write = [\"/opt\", \"/tmp\"]\n",
+    )
+    .unwrap();
+    fs::write(
+        workspace.path().join(PROJECT_CONFIG_FILE),
+        "[sandbox]\nallow_write = [\"/tmp\"]\n",
+    )
+    .unwrap();
+
+    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
+    let trusted: Vec<_> = config
+        .sandbox
+        .allow_write_trusted
+        .iter()
+        .flatten()
+        .map(|root| root.path.clone())
+        .collect();
+    assert_eq!(
+        trusted,
+        vec![
+            std::path::PathBuf::from("/opt"),
+            std::path::PathBuf::from("/tmp")
+        ]
     );
 }
 

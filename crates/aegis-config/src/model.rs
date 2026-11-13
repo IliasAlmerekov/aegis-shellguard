@@ -199,8 +199,22 @@ pub struct SandboxSettings {
     pub enabled: bool,
     /// Fail hard if the sandbox cannot be set up (instead of falling back to unsandboxed exec).
     pub required: bool,
-    /// Paths the sandboxed process is allowed to write to.
-    pub allow_write: Vec<PathBuf>,
+    /// Writable roots of the Trusted ceiling. Absent means the computed
+    /// default (workspace plus temporary directory); a present list replaces
+    /// that default, and an explicit `[]` means zero writable roots.
+    #[schemars(with = "Option<Vec<PathBuf>>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allow_write: Option<Vec<crate::ceiling::WriteRoot>>,
+    /// True when `allow_write` is a project list over an absent trusted list:
+    /// it can only narrow the computed default, which is intersected at
+    /// ceiling resolution (not known at merge). Not part of the wire format.
+    #[serde(skip)]
+    pub allow_write_narrows_computed: bool,
+    /// The list a project `allow_write` narrowed, kept so enforcement can check
+    /// canonical containment against it. `None` when no project list narrowed
+    /// a present trusted list. Not part of the wire format.
+    #[serde(skip)]
+    pub allow_write_trusted: Option<Vec<crate::ceiling::WriteRoot>>,
     /// Whether the sandboxed process may access the network.
     pub allow_network: bool,
 }

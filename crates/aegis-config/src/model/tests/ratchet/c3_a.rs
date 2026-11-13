@@ -254,9 +254,9 @@ fn project_sandbox_allow_write_cannot_expand_global_base() {
     let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
 
     assert_eq!(
-        config.sandbox.allow_write,
+        allow_write_paths(&config),
         vec![std::path::PathBuf::from("/opt/data")],
         "project allow_write must not expand the writable set beyond the global base; got {:?}",
-        config.sandbox.allow_write
+        allow_write_paths(&config)
     );
 }

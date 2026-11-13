@@ -48,14 +48,14 @@ pub struct RuntimeConfig {
 
 impl From<&AegisConfig> for RuntimeConfig {
     fn from(config: &AegisConfig) -> Self {
-        let sandbox = config
-            .sandbox
-            .enabled
-            .then(|| aegis_sandbox::SandboxConfig {
-                allow_write: config.sandbox.allow_write.clone(),
-                allow_network: config.sandbox.allow_network,
-                required: config.sandbox.required,
-            });
+        // The workspace is resolved here, where the working directory is
+        // known, and only when the Sandbox is enabled.
+        let cwd = config
+            .source_current_dir()
+            .map(Path::to_path_buf)
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_default();
+        let sandbox = super::sandbox_ceiling(config, &cwd).map(|ceiling| ceiling.config);
         Self {
             mode: config.mode,
             ci_policy: config.ci_policy,

@@ -189,6 +189,12 @@ pub(crate) fn handle_toggle_status_command() -> i32 {
              only settings hooks guard Bash"
         );
     }
+    if !view.ceiling_issues.is_empty() {
+        println!("sandbox warnings:");
+        for issue in &view.ceiling_issues {
+            println!("- [{}] {}: {}", issue.code, issue.location, issue.message);
+        }
+    }
     0
 }
 
@@ -518,7 +524,19 @@ pub(crate) fn handle_config_validate_command(args: ConfigValidateArgs) -> i32 {
         .or_else(|| env::var_os("USERPROFILE"))
         .filter(|value| !value.is_empty())
         .map(PathBuf::from);
-    let report = validate_config_layers(&current_dir, home_dir.as_deref());
+    let mut report = validate_config_layers(&current_dir, home_dir.as_deref());
+    // Roots that only enforcement can reject (a symlink resolving outside the
+    // trusted roots) are not visible to the config-level check.
+    if report.errors.is_empty()
+        && let Ok(config) = AegisConfig::load_for_inspection(&current_dir, home_dir.as_deref())
+        && let Some(ceiling) = aegis::runtime::sandbox_ceiling(&config, &current_dir)
+    {
+        for issue in aegis::runtime::ceiling_issues(&ceiling) {
+            if !report.warnings.contains(&issue) {
+                report.warnings.push(issue);
+            }
+        }
+    }
 
     let render_result = match args.output {
         ConfigValidateOutput::Text => {

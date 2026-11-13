@@ -1,5 +1,6 @@
 use super::ratchet_helpers::{
-    assert_has_warning_for, assert_no_warning_for, load_global_base, project_ratchet_warnings,
+    allow_write_paths, assert_has_warning_for, assert_no_warning_for, load_global_base,
+    project_ratchet_warnings,
 };
 use super::*;
 

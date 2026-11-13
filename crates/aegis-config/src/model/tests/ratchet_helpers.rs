@@ -59,3 +59,14 @@ pub(super) fn project_ratchet_warning_strings(
         .find(|w| w.field == field)
         .map(|w| (w.requested, w.kept))
 }
+
+/// The merged `allow_write` paths without provenance (empty when absent).
+pub(super) fn allow_write_paths(config: &AegisConfig) -> Vec<std::path::PathBuf> {
+    config
+        .sandbox
+        .allow_write
+        .iter()
+        .flatten()
+        .map(|root| root.path.clone())
+        .collect()
+}

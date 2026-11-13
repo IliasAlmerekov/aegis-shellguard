@@ -97,11 +97,11 @@ fn prepare(
     let mut cmd = std::process::Command::new(bwrap_program);
 
     if use_landlock_wrapper {
-        bwrap_args.extend(crate::landlock::build_landlock_wrapper_args(
-            config, program, args,
-        )?);
+        bwrap_args.extend(crate::landlock::build_landlock_wrapper_args(program, args)?);
 
-        let encoded = crate::landlock::serialize_allow_write(&config.allow_write);
+        let encoded = crate::landlock::serialize_allow_write(
+            &crate::support::resolve_allow_write(config).paths,
+        );
         if encoded.len() > crate::landlock::MAX_ALLOW_WRITE_ENV_LEN {
             return Err(SandboxError::Execution(
                 "allow_write config too large to pass to the inner wrapper".into(),
@@ -125,9 +125,8 @@ fn prepare(
 
 /// Build the `bwrap` argument list for the given `config`.
 ///
-/// Canonicalizes each path in `allow_write` to prevent relative-path or
-/// symlink confusion. Returns an error if a path cannot be canonicalized
-/// (e.g. it does not exist).
+/// Binds only the canonical roots that pass `resolve_allow_write`; a root that
+/// does not exist or escapes the trusted roots is left out, not an error.
 pub(crate) fn build_bwrap_args(config: &SandboxConfig) -> Result<Vec<OsString>, SandboxError> {
     // A read-only view of the whole filesystem (docs/history/roadmap.md §6.1), with
     // `allow_write` paths bound writable on top. Binding `/` (rather than a
@@ -148,8 +147,7 @@ pub(crate) fn build_bwrap_args(config: &SandboxConfig) -> Result<Vec<OsString>, 
         args.push("--share-net".into());
     }
 
-    for path in &config.allow_write {
-        let canonical = crate::support::canonicalize_allow_write_path(path)?;
+    for canonical in crate::support::resolve_allow_write(config).paths {
         args.push("--bind".into());
         args.push(canonical.as_os_str().to_owned());
         args.push(canonical.as_os_str().to_owned());
@@ -162,7 +160,6 @@ pub(crate) fn build_bwrap_args(config: &SandboxConfig) -> Result<Vec<OsString>, 
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
 
     use crate::support::test_helpers::ForceUnavailableGuard;
     use crate::support::{is_forced_sandbox_unavailable, set_force_sandbox_unavailable};
@@ -251,7 +248,8 @@ mod tests {
     #[test]
     fn bwrap_args_include_bind_for_tmp_when_in_allow_write() {
         let cfg = SandboxConfig {
-            allow_write: vec![PathBuf::from("/tmp")],
+            allow_write: vec![crate::WriteRoot::new("/tmp")],
+            trusted_roots: vec![crate::WriteRoot::new("/tmp")],
             ..Default::default()
         };
         let args = build_bwrap_args(&cfg).expect("build_bwrap_args failed");
@@ -280,7 +278,8 @@ mod tests {
     #[test]
     fn bwrap_args_share_net_appears_before_bind_when_both_present() {
         let cfg = SandboxConfig {
-            allow_write: vec![PathBuf::from("/tmp")],
+            allow_write: vec![crate::WriteRoot::new("/tmp")],
+            trusted_roots: vec![crate::WriteRoot::new("/tmp")],
             allow_network: true,
             ..Default::default()
         };
@@ -304,15 +303,14 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn bwrap_args_fails_for_nonexistent_allow_write_path() {
+    fn bwrap_args_omit_nonexistent_allow_write_path() {
         let cfg = SandboxConfig {
-            allow_write: vec![PathBuf::from("/nonexistent_aegis_test_path_xyz")],
+            allow_write: vec![crate::WriteRoot::new("/nonexistent_aegis_test_path_xyz")],
+            trusted_roots: vec![crate::WriteRoot::new("/nonexistent_aegis_test_path_xyz")],
             ..Default::default()
         };
-        assert!(
-            build_bwrap_args(&cfg).is_err(),
-            "expected Err for non-existent allow_write path"
-        );
+        let args = build_bwrap_args(&cfg).expect("an omitted root is not an error");
+        assert!(!args.iter().any(|a| a.as_os_str() == "--bind"));
     }
 
     // ── Linux: sysctl probe ───────────────────────────────────────────────────
@@ -414,7 +412,8 @@ mod tests {
     #[test]
     fn test_bwrap_args_include_allow_write_paths() {
         let cfg = SandboxConfig {
-            allow_write: vec![std::path::PathBuf::from("/tmp")],
+            allow_write: vec![crate::WriteRoot::new("/tmp")],
+            trusted_roots: vec![crate::WriteRoot::new("/tmp")],
             ..Default::default()
         };
         let args = build_bwrap_args(&cfg).expect("build_bwrap_args must succeed for /tmp");
@@ -445,7 +444,8 @@ mod tests {
     #[test]
     fn test_share_net_appears_before_bind_mounts() {
         let cfg = SandboxConfig {
-            allow_write: vec![std::path::PathBuf::from("/tmp")],
+            allow_write: vec![crate::WriteRoot::new("/tmp")],
+            trusted_roots: vec![crate::WriteRoot::new("/tmp")],
             allow_network: true,
             ..Default::default()
         };
@@ -520,23 +520,5 @@ mod tests {
             .expect("optional unavailability must prepare the direct command");
 
         assert_eq!(prepared.status, SandboxStatus::Unavailable);
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn optional_unavailability_does_not_hide_invalid_profile() {
-        use std::ffi::OsStr;
-
-        set_force_sandbox_unavailable(true);
-        let _guard = ForceUnavailableGuard;
-        let cfg = SandboxConfig {
-            allow_write: vec![PathBuf::from("/nonexistent_aegis_test_path_xyz")],
-            required: false,
-            ..Default::default()
-        };
-
-        let result = prepare_for_exec(&cfg, OsStr::new("/usr/bin/true"), &[]);
-
-        assert!(matches!(result, Err(SandboxError::AllowWritePath { .. })));
     }
 }
