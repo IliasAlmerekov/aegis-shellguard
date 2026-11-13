@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Changed: `docs/release-readiness.md` records the v0.8.0 release run in which the Homebrew and npm install smokes first passed on macOS arm64, macOS Intel, and Linux, and checks the Homebrew and macOS npm boxes that waited on it (#412).
+
 - Changed: An enabled Sandbox with no `[sandbox] allow_write` now confines a command to the computed default ceiling, the enclosing git worktree plus the temporary directory; a present `allow_write` replaces that default instead of adding to it, a project list narrows it by path-tree intersection, and `aegis status` and `aegis config validate` report the new `trusted_ceiling_path_omitted` and `workspace_unresolved` warnings (#242, ADR-030).
 
 - Removed: The Starlark policy DSL (`aegis-starlark` crate and `starlark-policy` feature) is gone; an existing `~/.aegis/policy.star` is now a config error, also reported by `aegis config validate` as `unsupported_policy_star`, that points at `[[rules]]` in `aegis.toml`. (#225, ADR-028)
