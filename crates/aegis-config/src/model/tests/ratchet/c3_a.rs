@@ -1,70 +1,8 @@
 // ── C3 ratchet expansion: neighboring un-ratcheted fields ───────────────
 // The existing ratchet covers mode, allowlist_override_level, snapshot_policy,
-// ci_policy, and sandbox.required. Sibling fields (sandbox.enabled,
-// auto_snapshot_*, sandbox.allow_network, sandbox.allow_write) are currently
-// last-wins, which lets a project config silently defeat a stricter global
-// base. These tests pin the expanded ratchet behavior.
-//
-// The two `sandbox.enabled` tests below pin behavior the ADR-029 amendment of
-// 2026-08-20 removes: `sandbox.enabled` and `sandbox.required` leave the 1.0
-// configuration contract entirely, so neither stays a ratcheted field. They hold
-// until the fields leave `SandboxSettings`
-// (<https://github.com/IliasAlmerekov/aegis-shellguard/issues/229>), and they go
-// with that removal rather than being weakened ahead of it: while the field still
-// constructs the layer as `enabled.then(|| SandboxConfig { .. })`, a project layer
-// that can weaken it is still the C3 bypass. Every other test in this file is
-// unaffected by the amendment.
-
-#[test]
-fn project_sandbox_enabled_cannot_weaken_global_enabled_true() {
-    // F1: a project setting `enabled = false` must NOT disable a globally
-    // enabled sandbox — that would bypass the inherited `required` ratchet
-    // entirely (runtime builds the sandbox as `enabled.then(...)`).
-    let workspace = TempDir::new().unwrap();
-    let home = TempDir::new().unwrap();
-    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
-    fs::create_dir_all(&global_dir).unwrap();
-
-    fs::write(
-        global_dir.join(GLOBAL_CONFIG_FILE),
-        "[sandbox]\nenabled = true\n",
-    )
-    .unwrap();
-    fs::write(
-        workspace.path().join(PROJECT_CONFIG_FILE),
-        "[sandbox]\nenabled = false\n",
-    )
-    .unwrap();
-
-    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
-
-    assert!(
-        config.sandbox.enabled,
-        "project sandbox.enabled must not weaken a globally enabled sandbox; got {:?}",
-        config.sandbox.enabled
-    );
-}
-
-#[test]
-fn project_sandbox_enabled_can_tighten_default_false_to_true() {
-    // Guard: tightening (default false → project true) must still work after
-    // the ratchet expansion is implemented.
-    let workspace = TempDir::new().unwrap();
-    let home = TempDir::new().unwrap();
-
-    fs::write(
-        workspace.path().join(PROJECT_CONFIG_FILE),
-        "[sandbox]\nenabled = true\n",
-    )
-    .unwrap();
-
-    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
-
-    assert!(
-        config.sandbox.enabled,
-        "project must be able to enable the sandbox when the base leaves it disabled"
-    );
-}
+// ci_policy, auto_snapshot_*, sandbox.allow_network, and sandbox.allow_write.
+// (`sandbox.enabled` and `sandbox.required` left the 1.0 contract per ADR-029
+// and #229.)
 
 #[test]
 fn project_auto_snapshot_git_cannot_weaken_global_true() {

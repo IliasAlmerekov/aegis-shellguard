@@ -18,15 +18,27 @@ pub(crate) struct SecurityRatchetWarning {
     pub(crate) location: String,
 }
 
+/// A deprecated `[sandbox]` key (`enabled` or `required`) was present in a
+/// config layer and ignored by Aegis (ADR-029).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DeprecatedSandboxFieldWarning {
+    pub(crate) field: &'static str,
+    pub(crate) layer: ConfigSourceLayer,
+    pub(crate) location: String,
+}
+
 /// Recording sink threaded through one layer merge.
 ///
 /// `warnings` accumulates only the fields where the project layer's request
-/// was not honored. `touched` (test builds only) accumulates every field
-/// path a `Ratchet` direction ran for, whether or not it warned — this is
-/// the record the coverage test diffs against the config's JSON schema.
+/// was not honored. `deprecated_sandbox_fields` accumulates occurrences of
+/// deprecated `sandbox.enabled` / `sandbox.required` in any layer. `touched`
+/// (test builds only) accumulates every field path a `Ratchet` direction ran
+/// for, whether or not it warned — this is the record the coverage test diffs
+/// against the config's JSON schema.
 #[derive(Debug, Default)]
 pub(crate) struct RatchetSink {
     warnings: Vec<SecurityRatchetWarning>,
+    deprecated_sandbox_fields: Vec<DeprecatedSandboxFieldWarning>,
     #[cfg(test)]
     pub(crate) touched: Vec<&'static str>,
 }
@@ -62,8 +74,34 @@ impl RatchetSink {
         }
     }
 
+    /// Record a deprecated `[sandbox]` key (`enabled` or `required`) in any
+    /// layer. Aegis ignores the value and applies the Sandbox outside
+    /// `Mode::Audit`.
+    pub(crate) fn warn_deprecated_sandbox(
+        &mut self,
+        field: &'static str,
+        layer: ConfigSourceLayer,
+        location: &str,
+    ) {
+        self.deprecated_sandbox_fields
+            .push(DeprecatedSandboxFieldWarning {
+                field,
+                layer,
+                location: location.to_string(),
+            });
+    }
+
     pub(crate) fn into_warnings(self) -> Vec<SecurityRatchetWarning> {
         self.warnings
+    }
+
+    pub(crate) fn into_all_warnings(
+        self,
+    ) -> (
+        Vec<SecurityRatchetWarning>,
+        Vec<DeprecatedSandboxFieldWarning>,
+    ) {
+        (self.warnings, self.deprecated_sandbox_fields)
     }
 }
 

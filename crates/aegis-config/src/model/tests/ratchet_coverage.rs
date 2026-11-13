@@ -46,6 +46,11 @@ fn collect_leaf_paths(node: &Value, defs: Option<&Value>, prefix: &str, out: &mu
 
     if let Some(properties) = node.get("properties").and_then(Value::as_object) {
         for (key, sub_schema) in properties {
+            // Deprecated input-only shims (sandbox.enabled, sandbox.required)
+            // are ignored at runtime and intentionally excluded from the ratchet.
+            if sub_schema.get("deprecated").and_then(Value::as_bool) == Some(true) {
+                continue;
+            }
             let path = if prefix.is_empty() {
                 key.clone()
             } else {

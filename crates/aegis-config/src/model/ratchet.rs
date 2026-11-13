@@ -36,7 +36,7 @@ mod targets;
 mod warning;
 
 pub(crate) use context::RatchetContext;
-pub(crate) use warning::SecurityRatchetWarning;
+pub(crate) use warning::{DeprecatedSandboxFieldWarning, SecurityRatchetWarning};
 
 pub(super) use audit::merge_audit;
 pub(super) use docker::custom_docker_scope;
