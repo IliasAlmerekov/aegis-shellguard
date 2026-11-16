@@ -77,6 +77,15 @@ fn prepare(
             "sandbox-exec rejected the configured profile".to_string(),
         ));
     }
+    // sandbox-exec execs the program itself and exits 71 when it is missing,
+    // which hides the cause; report a missing explicit path as an I/O error.
+    let path = std::path::Path::new(program);
+    if path.components().count() > 1 && !path.exists() {
+        return Err(SandboxError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("program not found: {}", path.display()),
+        )));
+    }
     let mut cmd = std::process::Command::new("/usr/bin/sandbox-exec");
     cmd.arg("-p").arg(&profile).arg(program).args(args);
     Ok(PreparedSandboxCommand::active(cmd))
@@ -629,6 +638,22 @@ mod tests {
         assert!(
             !status.success(),
             "write to /tmp must be blocked when allow_write is empty"
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn prepare_for_exec_reports_a_missing_program_path_as_not_found() {
+        use std::ffi::OsStr;
+
+        let result = super::prepare_for_exec(
+            &SandboxConfig::default(),
+            OsStr::new("/nonexistent/shell/binary"),
+            &[],
+        );
+        assert!(
+            matches!(&result, Err(SandboxError::Io(err)) if err.kind() == std::io::ErrorKind::NotFound),
+            "a missing program path must fail before sandbox-exec runs, got: {result:?}"
         );
     }
 
