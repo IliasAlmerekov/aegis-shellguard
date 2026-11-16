@@ -153,6 +153,15 @@ jobs:
 
       - uses: ./.github/actions/install-libcap
 
+      # The Sandbox is mandatory (ADR-029), so tests that execute commands
+      # need bwrap, which Ubuntu 24.04 AppArmor blocks by default.
+      - name: Enable unprivileged user namespaces for sandbox tests
+        shell: bash
+        run: |
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
       - uses: ./.github/actions/install-cargo-tool
         with:
           tool: cargo-llvm-cov
@@ -286,6 +295,14 @@ jobs:
         run: |
           if ! command -v zsh >/dev/null 2>&1; then
             sudo apt-get update && sudo apt-get install -y zsh
+          fi
+
+      # Same reason as in the coverage job: mandatory Sandbox needs bwrap.
+      - name: Enable unprivileged user namespaces for sandbox tests
+        shell: bash
+        run: |
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
 
       - uses: ./.github/actions/install-cargo-tool

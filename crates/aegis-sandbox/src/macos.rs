@@ -632,25 +632,6 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn prepare_for_exec_falls_back_to_direct_when_forced_unavailable() {
-        use std::ffi::OsStr;
-        set_force_sandbox_unavailable(true);
-        let _guard = ForceUnavailableGuard;
-        let cfg = SandboxConfig {
-            required: false,
-            ..Default::default()
-        };
-        let cmd = super::prepare_for_exec(&cfg, OsStr::new("/usr/bin/true"), &[])
-            .expect("must return Ok when required=false and sandbox unavailable");
-        assert_ne!(
-            cmd.command.get_program(),
-            OsStr::new("/usr/bin/sandbox-exec"),
-            "must return direct command (not sandbox-exec) when forced unavailable"
-        );
-    }
-
     // ── macOS: nested-refusal cause recognition ───────────────────────────────
 
     #[test]
@@ -683,10 +664,7 @@ mod tests {
         set_force_sandbox_unavailable(true);
         let _guard = ForceUnavailableGuard;
 
-        let cfg = SandboxConfig {
-            required: true,
-            ..Default::default()
-        };
+        let cfg = SandboxConfig::default();
         let program = OsStr::new("echo");
         let args: Vec<OsString> = vec![OsString::from("hello")];
 
