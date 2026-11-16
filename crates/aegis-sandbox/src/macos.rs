@@ -100,14 +100,17 @@ fn prepare(
 /// not exist or escapes the trusted roots is left out, not an error.
 ///
 /// The profile always denies by default, allows file reads (needed for system
-/// libraries) and process execution. Network access is allowed or denied based
-/// on `config.allow_network`. Each path in `config.allow_write` gets a
-/// `(allow file-write* (subpath "…"))` rule.
+/// libraries), process execution, sysctl reads, and writes to `/dev/null`.
+/// Network access is allowed or denied based on `config.allow_network`. Each
+/// path in `config.allow_write` gets a `(allow file-write* (subpath "…"))` rule.
 pub(crate) fn build_seatbelt_profile(config: &SandboxConfig) -> Result<String, SandboxError> {
     let mut profile = String::from("(version 1)\n");
     profile.push_str("(deny default)\n");
     profile.push_str("(allow file-read*)\n");
     profile.push_str("(allow process*)\n");
+    // zsh exits silently without sysctl reads; commands redirect to /dev/null.
+    profile.push_str("(allow sysctl-read)\n");
+    profile.push_str("(allow file-write-data (literal \"/dev/null\"))\n");
     if config.allow_network {
         profile.push_str("(allow network*)\n");
     } else {
@@ -617,6 +620,25 @@ mod tests {
         // Use spawn+wait instead of exec() so the test process is not replaced.
         let status = cmd.command.status().expect("spawned command must run");
         assert!(status.success(), "sandboxed /usr/bin/true must exit 0");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn prepare_for_exec_runs_zsh_with_a_dev_null_redirect() {
+        use std::ffi::{OsStr, OsString};
+        // zsh exits 1 silently when sysctl reads are denied, and every
+        // `>/dev/null` fails when /dev/null is not writable.
+        if super::sandbox_available_for(&SandboxConfig::default()) {
+            let args = vec![OsString::from("-c"), OsString::from("print ok >/dev/null")];
+            let mut cmd =
+                super::prepare_for_exec(&SandboxConfig::default(), OsStr::new("/bin/zsh"), &args)
+                    .expect("prepare_for_exec must succeed");
+            let status = cmd.command.status().expect("spawned command must run");
+            assert!(
+                status.success(),
+                "sandboxed zsh with a /dev/null redirect must exit 0"
+            );
+        }
     }
 
     #[cfg(target_os = "macos")]
