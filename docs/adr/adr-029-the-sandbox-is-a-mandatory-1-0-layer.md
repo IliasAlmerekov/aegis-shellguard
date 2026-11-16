@@ -328,6 +328,8 @@ This amendment clarifies the three unconfined paths that remain by design:
 
 1. **`Mode::Audit`** (`mode = "Audit"`): observe-only mode builds no Sandbox
    (`SandboxStatus::NotConfigured`) and emits no per-command Sandbox warning.
+   This supersedes the last sentence of decision 6: no active-channel warning
+   for `NotConfigured` or `Mode::Audit` existed before #229, and none is added.
    Amendment A's reference to `Toggle` as the observe-only escape is superseded by
    `Mode::Audit` for observe-only operation; `Disabled passthrough` remains the
    emergency bypass.

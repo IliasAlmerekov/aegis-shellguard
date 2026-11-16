@@ -13,5 +13,5 @@ pub use sandbox::{
     SANDBOX_REQUIRED_NESTED_UNAVAILABLE_CODE, SANDBOX_REQUIRED_NESTED_UNAVAILABLE_MESSAGE,
     SANDBOX_REQUIRED_UNAVAILABLE_CODE, SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
     SANDBOX_WSL1_UNAVAILABLE_CODE, SANDBOX_WSL1_UNAVAILABLE_MESSAGE, SandboxCeiling,
-    ceiling_issues, sandbox_ceiling,
+    ceiling_issues, sandbox_ceiling, sandbox_unavailable_code_and_message,
 };

@@ -21,6 +21,23 @@ pub const SANDBOX_REQUIRED_UNAVAILABLE_CODE: &str = "sandbox_required_unavailabl
 pub const SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE: &str =
     "Required Sandbox unavailable; command not executed.";
 
+/// The unavailability code and message, naming the WSL1 cause when it applies
+/// so the operator gets a practical remedy (use WSL2) rather than the generic
+/// message (ADR-029 §3). Shared by the shell and watch paths.
+pub fn sandbox_unavailable_code_and_message(is_wsl1: bool) -> (&'static str, &'static str) {
+    if is_wsl1 {
+        (
+            SANDBOX_WSL1_UNAVAILABLE_CODE,
+            SANDBOX_WSL1_UNAVAILABLE_MESSAGE,
+        )
+    } else {
+        (
+            SANDBOX_REQUIRED_UNAVAILABLE_CODE,
+            SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
+        )
+    }
+}
+
 /// Stable diagnostic code for required Sandbox unavailability caused
 /// specifically by nesting under an already-active outer sandbox.
 pub const SANDBOX_REQUIRED_NESTED_UNAVAILABLE_CODE: &str = "sandbox_required_nested_unavailable";

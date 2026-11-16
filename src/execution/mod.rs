@@ -482,7 +482,12 @@ where
                 report_error(&format!("failed to write audit log: {err}"));
                 return EXIT_INTERNAL;
             }
-            report_error(aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE);
+            report_error(
+                aegis::runtime::sandbox_unavailable_code_and_message(
+                    aegis_sandbox::wsl1_unavailable(),
+                )
+                .1,
+            );
             EXIT_BLOCKED
         }
         Err(aegis_sandbox::SandboxError::RequiredNestedUnderOuterSandbox) => {

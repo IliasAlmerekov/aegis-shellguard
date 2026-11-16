@@ -98,23 +98,6 @@ pub(super) async fn complete_watch_approved_execution(
     .await;
 }
 
-/// The unavailable-warning frame fields, naming the WSL1 cause when it applies
-/// so the operator gets a practical remedy (use WSL2) rather than the generic
-/// message (ADR-029 §3). Split out so both branches are testable on any host.
-fn unavailable_warning_code_and_message(is_wsl1: bool) -> (&'static str, &'static str) {
-    if is_wsl1 {
-        (
-            crate::runtime::SANDBOX_WSL1_UNAVAILABLE_CODE,
-            crate::runtime::SANDBOX_WSL1_UNAVAILABLE_MESSAGE,
-        )
-    } else {
-        (
-            crate::runtime::SANDBOX_REQUIRED_UNAVAILABLE_CODE,
-            crate::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
-        )
-    }
-}
-
 /// The session-startup unavailability verdict (ADR-029 §3): `Some` warning
 /// fields when a configured Sandbox cannot confine on this host, `None` when
 /// confinement is not configured (nothing is expected) or the probe succeeds.
@@ -128,7 +111,9 @@ pub(super) fn startup_unavailability(
     if available(config) {
         return None;
     }
-    Some(unavailable_warning_code_and_message(is_wsl1))
+    Some(crate::runtime::sandbox_unavailable_code_and_message(
+        is_wsl1,
+    ))
 }
 
 /// Warn once at watch-session startup when a configured Sandbox has no usable
@@ -298,11 +283,11 @@ mod tests {
 
     #[test]
     fn unavailable_warning_selects_the_wsl1_code_and_message_on_wsl1() {
-        let (code, message) = unavailable_warning_code_and_message(true);
+        let (code, message) = crate::runtime::sandbox_unavailable_code_and_message(true);
         assert_eq!(code, crate::runtime::SANDBOX_WSL1_UNAVAILABLE_CODE);
         assert_eq!(message, crate::runtime::SANDBOX_WSL1_UNAVAILABLE_MESSAGE);
 
-        let (code, message) = unavailable_warning_code_and_message(false);
+        let (code, message) = crate::runtime::sandbox_unavailable_code_and_message(false);
         assert_eq!(code, crate::runtime::SANDBOX_REQUIRED_UNAVAILABLE_CODE);
         assert_eq!(
             message,
