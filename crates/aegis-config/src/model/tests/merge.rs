@@ -1,13 +1,11 @@
 use super::*;
 
 #[test]
-fn sandbox_project_allow_network_does_not_reset_global_enabled() {
-    // When global config sets [sandbox] enabled = true and allow_network = true
-    // (a trusted opt-in), and the project config sets a different sandbox field
-    // (required = true, a tightening), the per-field merge must keep enabled =
-    // true and allow_network = true from the global layer. `allow_network` is a
-    // weakening direction, so it can only be opted in globally — a project
-    // cannot enable it over a denied base (see ADR-013).
+fn sandbox_project_overlay_does_not_reset_global_allow_network() {
+    // When global config sets [sandbox] allow_network = true (a trusted opt-in),
+    // and the project config sets a different sandbox field (even a legacy one
+    // like required = true), the per-field merge must keep allow_network = true
+    // from the global layer.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -27,16 +25,12 @@ fn sandbox_project_allow_network_does_not_reset_global_enabled() {
     let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
 
     assert!(
-        config.sandbox.enabled,
-        "global sandbox.enabled must survive a project overlay that only sets required"
+        !config.sandbox.enabled && !config.sandbox.required,
+        "deprecated sandbox.enabled and sandbox.required must be ignored"
     );
     assert!(
         config.sandbox.allow_network,
         "global sandbox.allow_network (trusted opt-in) must survive a project overlay"
-    );
-    assert!(
-        config.sandbox.required,
-        "project sandbox.required tightening must be kept by the ratchet"
     );
 }
 
@@ -272,36 +266,27 @@ fn project_sandbox_required_cannot_weaken_global_required_true() {
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
     fs::create_dir_all(&global_dir).unwrap();
 
-    fs::write(
-        global_dir.join(GLOBAL_CONFIG_FILE),
-        "[sandbox]\nrequired = true\n",
-    )
-    .unwrap();
-    fs::write(
-        workspace.path().join(PROJECT_CONFIG_FILE),
-        "[sandbox]\nrequired = false\n",
-    )
-    .unwrap();
+    let global_file = global_dir.join(GLOBAL_CONFIG_FILE);
+    let project_file = workspace.path().join(PROJECT_CONFIG_FILE);
+    let global_bytes = b"[sandbox]\nenabled = false\nrequired = true\n";
+    let project_bytes = b"[sandbox]\nenabled = true\nrequired = false\n";
+    fs::write(&global_file, global_bytes).unwrap();
+    fs::write(&project_file, project_bytes).unwrap();
 
     let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
 
-    assert!(config.sandbox.required);
+    assert!(!config.sandbox.enabled);
+    assert!(!config.sandbox.required);
+    assert_eq!(fs::read(&global_file).unwrap(), global_bytes);
+    assert_eq!(fs::read(&project_file).unwrap(), project_bytes);
 }
 
 #[test]
-fn project_sandbox_required_can_tighten_default_false_to_true() {
-    let workspace = TempDir::new().unwrap();
-    let home = TempDir::new().unwrap();
-
-    fs::write(
-        workspace.path().join(PROJECT_CONFIG_FILE),
-        "[sandbox]\nrequired = true\n",
-    )
-    .unwrap();
-
-    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
-
-    assert!(config.sandbox.required);
+fn deprecated_sandbox_fields_are_omitted_from_serialization() {
+    let config = AegisConfig::defaults();
+    let toml_str = toml::to_string_pretty(&config.sandbox).unwrap();
+    assert!(!toml_str.contains("enabled"));
+    assert!(!toml_str.contains("required"));
 }
 
 // --- partial override cases ---

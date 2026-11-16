@@ -514,40 +514,26 @@ required = true
 // allow_write). The effective-value ratchet is asserted in model::tests::merge;
 // here we assert the validation report surfaces an advisory warning too.
 //
-// `validate_warns_when_project_disables_globally_enabled_sandbox` pins
-// pre-amendment behavior: under the ADR-029 amendment of 2026-08-20 a present
-// `sandbox.enabled` raises `deprecated_sandbox_field` instead, at any value and in
-// any layer, because the field no longer has an effective value to ratchet. The
-// swap lands with the field removal
-// (<https://github.com/IliasAlmerekov/aegis-shellguard/issues/229>) rather than
-// ahead of it — dropping the ratchet warning first would leave a project able to
-// weaken a live flag silently.
-
 #[test]
 fn validate_warns_when_project_disables_globally_enabled_sandbox() {
-    // F1: project `sandbox.enabled = false` over global `enabled = true`
-    // defeats the inherited sandbox entirely and must emit a ratchet warning.
+    // Under the ADR-029 amendment of 2026-08-20, `sandbox.enabled` in any
+    // layer raises `deprecated_sandbox_field` (never `project_security_ratchet`),
+    // carries layer + location, and names `mode = "Audit"` for observe-only use.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
     fs::create_dir_all(&global_dir).unwrap();
 
-    fs::write(
-        global_dir.join(GLOBAL_CONFIG_FILE),
-        "[sandbox]\nenabled = true\n",
-    )
-    .unwrap();
-    fs::write(
-        workspace.path().join(PROJECT_CONFIG_FILE),
-        "[sandbox]\nenabled = false\n",
-    )
-    .unwrap();
+    let global_path = global_dir.join(GLOBAL_CONFIG_FILE);
+    let project_path = workspace.path().join(PROJECT_CONFIG_FILE);
+    fs::write(&global_path, "[sandbox]\nenabled = true\n").unwrap();
+    fs::write(&project_path, "[sandbox]\nenabled = false\n").unwrap();
 
     let report = validate_config_layers(workspace.path(), Some(home.path()));
 
     assert!(
         report.valid,
-        "config must remain valid; ratchet weakening is advisory, got errors: {:#?}",
+        "config must remain valid; deprecated_sandbox_field is advisory, got errors: {:#?}",
         report.errors
     );
     assert!(
@@ -556,13 +542,36 @@ fn validate_warns_when_project_disables_globally_enabled_sandbox() {
         report.errors
     );
     assert!(
-        report
+        !report
             .warnings
             .iter()
             .any(|w| w.code == "project_security_ratchet" && w.message.contains("sandbox.enabled")),
-        "expected ratchet warning for sandbox.enabled, got {:#?}",
+        "sandbox.enabled must not raise project_security_ratchet: {:#?}",
         report.warnings
     );
+    let deprecated: Vec<_> = report
+        .warnings
+        .iter()
+        .filter(|w| w.code == "deprecated_sandbox_field")
+        .collect();
+    assert_eq!(
+        deprecated.len(),
+        2,
+        "expected one deprecated_sandbox_field warning per layer, got {:#?}",
+        report.warnings
+    );
+    assert!(deprecated.iter().any(|w| {
+        w.location == global_path.to_string_lossy()
+            && w.message.contains("sandbox.enabled")
+            && w.message.contains("global")
+            && w.message.contains("mode = \"Audit\"")
+    }));
+    assert!(deprecated.iter().any(|w| {
+        w.location == project_path.to_string_lossy()
+            && w.message.contains("sandbox.enabled")
+            && w.message.contains("project")
+            && w.message.contains("mode = \"Audit\"")
+    }));
 }
 
 #[test]
@@ -676,46 +685,53 @@ fn validate_warns_when_project_expands_allow_write_over_global_base() {
 }
 
 #[test]
-fn validate_warns_when_project_relaxes_globally_required_sandbox() {
-    // F8 coverage gap: all current ratchet tests use an empty home dir so
-    // `base.sandbox.required` is always false. This test sets a NON-empty
-    // global config with `required = true` and a project `required = false`,
-    // exercising the `base.required == true && requested == false` branch.
-    // Current code already emits this warning (kept = true || false = true,
-    // kept != requested), so this is a GUARD test — it must stay green after
-    // the ratchet expansion lands.
+fn validate_warns_deprecated_sandbox_field_for_required_without_ratchet_warning() {
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
     fs::create_dir_all(&global_dir).unwrap();
 
-    fs::write(
-        global_dir.join(GLOBAL_CONFIG_FILE),
-        "[sandbox]\nrequired = true\n",
-    )
-    .unwrap();
-    fs::write(
-        workspace.path().join(PROJECT_CONFIG_FILE),
-        "[sandbox]\nrequired = false\n",
-    )
-    .unwrap();
+    let global_path = global_dir.join(GLOBAL_CONFIG_FILE);
+    let project_path = workspace.path().join(PROJECT_CONFIG_FILE);
+    fs::write(&global_path, "[sandbox]\nrequired = true\n").unwrap();
+    fs::write(&project_path, "[sandbox]\nrequired = false\n").unwrap();
 
     let report = validate_config_layers(workspace.path(), Some(home.path()));
 
     assert!(
         report.valid,
-        "config must remain valid; ratchet weakening is advisory, got errors: {:#?}",
+        "config must remain valid; deprecated_sandbox_field is advisory, got errors: {:#?}",
         report.errors
     );
     assert!(
-        report
+        !report
             .warnings
             .iter()
-            .any(|w| w.code == "project_security_ratchet"
-                && w.message.contains("sandbox.required")
-                && w.message.contains("true")
-                && w.message.contains("false")),
-        "expected ratchet warning for sandbox.required (true kept, false requested), got {:#?}",
+            .any(|w| w.code == "project_security_ratchet" && w.message.contains("sandbox.required")),
+        "sandbox.required must not raise project_security_ratchet: {:#?}",
         report.warnings
     );
+    let deprecated: Vec<_> = report
+        .warnings
+        .iter()
+        .filter(|w| w.code == "deprecated_sandbox_field")
+        .collect();
+    assert_eq!(
+        deprecated.len(),
+        2,
+        "expected one deprecated_sandbox_field warning per layer, got {:#?}",
+        report.warnings
+    );
+    assert!(deprecated.iter().any(|w| {
+        w.location == global_path.to_string_lossy()
+            && w.message.contains("sandbox.required")
+            && w.message.contains("global")
+            && w.message.contains("mode = \"Audit\"")
+    }));
+    assert!(deprecated.iter().any(|w| {
+        w.location == project_path.to_string_lossy()
+            && w.message.contains("sandbox.required")
+            && w.message.contains("project")
+            && w.message.contains("mode = \"Audit\"")
+    }));
 }

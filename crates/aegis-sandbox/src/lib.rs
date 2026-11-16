@@ -57,15 +57,15 @@ pub const EXIT_INTERNAL: i32 = 4;
 /// Typed error for sandbox operations.
 #[derive(Debug, thiserror::Error)]
 pub enum SandboxError {
-    /// The sandbox was marked `required = true` but is unavailable on this system.
+    /// The sandbox is unavailable on this system.
     #[error("sandbox is required but unavailable on this system")]
     Required,
 
-    /// The sandbox was marked `required = true` but is unavailable because this
-    /// process is already confined by an active outer Seatbelt profile, which
-    /// refuses the nested `sandbox_apply` call Aegis needs to make (macOS only).
-    /// Kept distinct from [`Self::Required`] because, unlike a missing or broken
-    /// `sandbox-exec`, this cause has a practical remedy to name.
+    /// The sandbox is unavailable because this process is already confined by an
+    /// active outer Seatbelt profile, which refuses the nested `sandbox_apply`
+    /// call Aegis needs to make (macOS only). Kept distinct from
+    /// [`Self::Required`] because, unlike a missing or broken `sandbox-exec`,
+    /// this cause has a practical remedy to name.
     #[error("sandbox is required but nested under an active outer sandbox")]
     RequiredNestedUnderOuterSandbox,
 
@@ -134,9 +134,6 @@ pub struct SandboxConfig {
     pub trusted_roots: Vec<WriteRoot>,
     /// Whether the sandboxed process is allowed to access the network.
     pub allow_network: bool,
-    /// If `true`, failure to set up the sandbox is a hard error rather than a
-    /// graceful fallback.
-    pub required: bool,
 }
 
 /// A compiled sandbox profile derived from a [`SandboxConfig`].
@@ -243,15 +240,6 @@ impl PreparedSandboxCommand {
         }
     }
 
-    fn unavailable(command: std::process::Command) -> Self {
-        Self {
-            command,
-            status: SandboxStatus::Unavailable,
-            #[cfg(target_os = "linux")]
-            reports_status: false,
-        }
-    }
-
     /// Replace the current process with the prepared command.
     ///
     /// On Linux the Landlock layer is applied by the innermost re-exec'd
@@ -286,14 +274,17 @@ impl PreparedSandboxCommand {
             });
         }
 
-        // Set up the status-report pipe.
+        // Set up the status-report pipe and release gate with O_CLOEXEC so the
+        // child never inherits the parent's ends (otherwise dropping
+        // ReportedSandboxChild without calling release() would deadlock
+        // wait_for_release() waiting for EOF on gate_read_fd).
         let mut fds = [0; 2];
-        if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
+        if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
             return Err(SandboxError::Io(std::io::Error::last_os_error()));
         }
         let (read_fd, write_fd) = (fds[0], fds[1]);
         let mut gate_fds = [0; 2];
-        if unsafe { libc::pipe(gate_fds.as_mut_ptr()) } != 0 {
+        if unsafe { libc::pipe2(gate_fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
             unsafe { libc::close(read_fd) };
             unsafe { libc::close(write_fd) };
             return Err(SandboxError::Io(std::io::Error::last_os_error()));
@@ -425,12 +416,9 @@ impl SandboxExecutor {
 /// `program` and `args` inside the sandbox described by `config`.
 ///
 /// On Linux, Landlock is deferred until [`PreparedSandboxCommand::exec`] so
-/// preparation cannot restrict the caller before its Audit append. When
-/// unavailable and `required` is `false`, returns a direct command with
-/// `SandboxStatus::Unavailable`. Required unavailability returns
-/// `Err(SandboxError::Required)`.
+/// preparation cannot restrict the caller before its Audit append.
 ///
-/// Returns [`SandboxError::Required`] when required infrastructure is
+/// Returns [`SandboxError::Required`] when sandbox infrastructure is
 /// unavailable, [`SandboxError::Execution`] when configured paths or profile
 /// construction fail, and [`SandboxError::SetupFailed`] when a platform
 /// launcher rejects the prepared profile.

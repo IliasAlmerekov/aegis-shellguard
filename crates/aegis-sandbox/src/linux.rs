@@ -13,7 +13,7 @@ pub(crate) fn sandbox_available_for(config: &SandboxConfig) -> bool {
 
 pub(crate) fn run(config: &SandboxConfig, cmd: &str) -> Result<SandboxResult, SandboxError> {
     let Some(program) = crate::bwrap::available_bwrap_program(config) else {
-        return run_unavailable_result(config.required);
+        return run_unavailable_result();
     };
 
     // NOTE: Landlock is NOT applied here. This legacy subprocess path stays
@@ -80,12 +80,7 @@ fn prepare(
 ) -> Result<PreparedSandboxCommand, SandboxError> {
     let mut bwrap_args = build_bwrap_args(config)?;
     let Some(bwrap_program) = crate::bwrap::available_bwrap_program(config) else {
-        if config.required {
-            return Err(SandboxError::Required);
-        }
-        let mut cmd = std::process::Command::new(program);
-        cmd.args(args);
-        return Ok(PreparedSandboxCommand::unavailable(cmd));
+        return Err(SandboxError::Required);
     };
 
     // The Shell exec path applies Landlock in the innermost re-exec'd wrapper
@@ -175,58 +170,23 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn forced_unavailable_with_required_true_returns_required_error() {
+    fn forced_unavailable_returns_required_error() {
         set_force_sandbox_unavailable(true);
         let _guard = ForceUnavailableGuard;
 
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig {
-            required: true,
-            ..Default::default()
-        }));
+        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig::default()));
         assert!(matches!(executor.run("true"), Err(SandboxError::Required)));
     }
 
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn forced_unavailable_with_required_false_returns_unavailable() {
-        set_force_sandbox_unavailable(true);
-        let _guard = ForceUnavailableGuard;
-
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig {
-            required: false,
-            ..Default::default()
-        }));
-        assert!(matches!(
-            executor.run("true"),
-            Ok(SandboxResult::Unavailable)
-        ));
-    }
-
-    // ── Linux: run() accepts both outcomes when sandbox may or may not work ───
+    // ── Linux: run() never returns Ok(Unavailable) ───────────────────────────
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn run_with_required_false_never_returns_hard_error_from_unavailability() {
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig {
-            required: false,
-            ..Default::default()
-        }));
-        match executor.run("true") {
-            Ok(SandboxResult::Unavailable) | Ok(SandboxResult::Success(_)) => {}
-            Err(e) => panic!("unexpected error when required=false: {e}"),
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn run_with_required_true_never_returns_unavailable_ok() {
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig {
-            required: true,
-            ..Default::default()
-        }));
+    fn run_never_returns_unavailable_ok() {
+        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig::default()));
         match executor.run("true") {
             Ok(SandboxResult::Unavailable) => {
-                panic!("Ok(Unavailable) must never be returned when required=true")
+                panic!("Ok(Unavailable) must never be returned")
             }
             Ok(SandboxResult::Success(_)) | Err(_) => {}
         }
@@ -281,7 +241,6 @@ mod tests {
             allow_write: vec![crate::WriteRoot::new("/tmp")],
             trusted_roots: vec![crate::WriteRoot::new("/tmp")],
             allow_network: true,
-            ..Default::default()
         };
         let args = build_bwrap_args(&cfg).expect("build_bwrap_args failed");
 
@@ -332,31 +291,13 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn test_sandbox_unavailable_is_non_fatal_when_not_required() {
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig {
-            required: false,
-            ..Default::default()
-        }));
-        match executor.run("true") {
-            Ok(SandboxResult::Unavailable) | Ok(SandboxResult::Success(_)) => {}
-            Err(e) => {
-                panic!("expected Ok(Unavailable) or Ok(Success) when required=false, got Err({e})")
-            }
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn test_sandbox_unavailable_is_error_when_required() {
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig {
-            required: true,
-            ..Default::default()
-        }));
+    fn test_sandbox_unavailable_is_error() {
+        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig::default()));
         match executor.run("true") {
             Err(SandboxError::Required) => {}
             Ok(SandboxResult::Success(_)) => {}
             Ok(SandboxResult::Unavailable) => {
-                panic!("expected Err(SandboxError::Required) or Ok(Success) when required=true")
+                panic!("expected Err(SandboxError::Required) or Ok(Success)")
             }
             Err(other) => {
                 panic!("expected Err(SandboxError::Required) or Ok(Success), got Err({other})")
@@ -366,45 +307,19 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn test_forced_unavailable_with_required_returns_error() {
+    fn test_forced_unavailable_returns_error() {
         set_force_sandbox_unavailable(true);
         let _guard = ForceUnavailableGuard;
 
         assert!(is_forced_sandbox_unavailable());
 
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig {
-            required: true,
-            ..Default::default()
-        }));
+        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig::default()));
         match executor.run("true") {
             Err(SandboxError::Required) => {}
-            Ok(_) => panic!(
-                "expected Err(SandboxError::Required) when forced-unavailable and required=true"
-            ),
+            Ok(_) => panic!("expected Err(SandboxError::Required) when forced-unavailable"),
             Err(other) => panic!(
                 "expected Err(SandboxError::Required) when forced-unavailable, got Err({other})"
             ),
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn test_forced_unavailable_without_required_returns_unavailable() {
-        set_force_sandbox_unavailable(true);
-        let _guard = ForceUnavailableGuard;
-
-        assert!(is_forced_sandbox_unavailable());
-
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig {
-            required: false,
-            ..Default::default()
-        }));
-        match executor.run("true") {
-            Ok(SandboxResult::Unavailable) => {}
-            Ok(SandboxResult::Success(code)) => {
-                panic!("expected Ok(Unavailable) when forced-unavailable, got Ok(Success({code}))")
-            }
-            Err(e) => panic!("expected Ok(Unavailable) when forced-unavailable, got Err({e})"),
         }
     }
 
@@ -447,7 +362,6 @@ mod tests {
             allow_write: vec![crate::WriteRoot::new("/tmp")],
             trusted_roots: vec![crate::WriteRoot::new("/tmp")],
             allow_network: true,
-            ..Default::default()
         };
         let args = build_bwrap_args(&cfg).expect("build_bwrap_args must succeed");
 
@@ -490,35 +404,30 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn prepare_for_exec_reports_optional_unavailability_without_rendering() {
-        use aegis_types::SandboxStatus;
+    fn prepare_for_exec_fails_closed_when_unavailable() {
         use std::ffi::OsStr;
 
         set_force_sandbox_unavailable(true);
         let _guard = ForceUnavailableGuard;
-        let cfg = SandboxConfig {
-            required: false,
-            ..Default::default()
-        };
-        let prepared = prepare_for_exec(&cfg, OsStr::new("/usr/bin/true"), &[])
-            .expect("optional unavailability must prepare the direct command");
+        let cfg = SandboxConfig::default();
+        let err = prepare_for_exec(&cfg, OsStr::new("/usr/bin/true"), &[])
+            .expect_err("unavailability must fail closed with SandboxError::Required");
 
-        assert_eq!(prepared.status, SandboxStatus::Unavailable);
+        assert!(matches!(err, SandboxError::Required));
     }
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn prepare_for_spawn_reports_optional_unavailability() {
-        use aegis_types::SandboxStatus;
+    fn prepare_for_spawn_fails_closed_when_unavailable() {
         use std::ffi::OsStr;
 
         set_force_sandbox_unavailable(true);
         let _guard = ForceUnavailableGuard;
         let cfg = SandboxConfig::default();
 
-        let prepared = super::prepare_for_spawn(&cfg, OsStr::new("/usr/bin/true"), &[])
-            .expect("optional unavailability must prepare the direct command");
+        let err = super::prepare_for_spawn(&cfg, OsStr::new("/usr/bin/true"), &[])
+            .expect_err("unavailability must fail closed with SandboxError::Required");
 
-        assert_eq!(prepared.status, SandboxStatus::Unavailable);
+        assert!(matches!(err, SandboxError::Required));
     }
 }

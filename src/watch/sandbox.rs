@@ -24,7 +24,6 @@ pub(super) struct WatchExecution<'a> {
 
 #[derive(Debug, PartialEq, Eq)]
 enum WatchSandboxEvent {
-    Warning,
     RequiredBlocked,
     RequiredBlockedNested,
     SetupFailed(String),
@@ -45,9 +44,6 @@ async fn complete_watch_sandbox_lifecycle<C, AuditError, SpawnFuture>(
             if let Err(err) = append_audit(decision, status) {
                 report_audit_error(&err);
                 return;
-            }
-            if status == SandboxStatus::Unavailable {
-                emit_event(WatchSandboxEvent::Warning);
             }
             spawn(command).await;
         }
@@ -102,23 +98,6 @@ pub(super) async fn complete_watch_approved_execution(
     .await;
 }
 
-/// The unavailable-warning frame fields, naming the WSL1 cause when it applies
-/// so the operator gets a practical remedy (use WSL2) rather than the generic
-/// message (ADR-029 §3). Split out so both branches are testable on any host.
-fn unavailable_warning_code_and_message(is_wsl1: bool) -> (&'static str, &'static str) {
-    if is_wsl1 {
-        (
-            crate::runtime::SANDBOX_WSL1_UNAVAILABLE_CODE,
-            crate::runtime::SANDBOX_WSL1_UNAVAILABLE_MESSAGE,
-        )
-    } else {
-        (
-            crate::runtime::SANDBOX_UNAVAILABLE_CODE,
-            crate::runtime::SANDBOX_UNAVAILABLE_MESSAGE,
-        )
-    }
-}
-
 /// The session-startup unavailability verdict (ADR-029 §3): `Some` warning
 /// fields when a configured Sandbox cannot confine on this host, `None` when
 /// confinement is not configured (nothing is expected) or the probe succeeds.
@@ -132,7 +111,9 @@ pub(super) fn startup_unavailability(
     if available(config) {
         return None;
     }
-    Some(unavailable_warning_code_and_message(is_wsl1))
+    Some(crate::runtime::sandbox_unavailable_code_and_message(
+        is_wsl1,
+    ))
 }
 
 /// Warn once at watch-session startup when a configured Sandbox has no usable
@@ -174,16 +155,6 @@ pub(super) async fn warn_if_sandbox_unavailable_at_startup(context: &RuntimeCont
 
 fn emit_watch_sandbox_event(event: WatchSandboxEvent, id: &Option<String>) {
     let result = match event {
-        WatchSandboxEvent::Warning => {
-            let (code, message) =
-                unavailable_warning_code_and_message(aegis_sandbox::wsl1_unavailable());
-            emit_frame(&OutputFrame::Warning {
-                id: id.clone(),
-                code,
-                sandbox_status: SandboxStatus::Unavailable,
-                message,
-            })
-        }
         WatchSandboxEvent::RequiredBlocked => emit_frame(&OutputFrame::SandboxResult {
             id: id.clone(),
             decision: OutputDecision::Blocked,
@@ -312,13 +283,16 @@ mod tests {
 
     #[test]
     fn unavailable_warning_selects_the_wsl1_code_and_message_on_wsl1() {
-        let (code, message) = unavailable_warning_code_and_message(true);
+        let (code, message) = crate::runtime::sandbox_unavailable_code_and_message(true);
         assert_eq!(code, crate::runtime::SANDBOX_WSL1_UNAVAILABLE_CODE);
         assert_eq!(message, crate::runtime::SANDBOX_WSL1_UNAVAILABLE_MESSAGE);
 
-        let (code, message) = unavailable_warning_code_and_message(false);
-        assert_eq!(code, crate::runtime::SANDBOX_UNAVAILABLE_CODE);
-        assert_eq!(message, crate::runtime::SANDBOX_UNAVAILABLE_MESSAGE);
+        let (code, message) = crate::runtime::sandbox_unavailable_code_and_message(false);
+        assert_eq!(code, crate::runtime::SANDBOX_REQUIRED_UNAVAILABLE_CODE);
+        assert_eq!(
+            message,
+            crate::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE
+        );
     }
 
     #[test]
@@ -337,8 +311,11 @@ mod tests {
         let config = aegis_sandbox::SandboxConfig::default();
         let (code, message) =
             startup_unavailability(Some(&config), false, |_| false).expect("must warn");
-        assert_eq!(code, crate::runtime::SANDBOX_UNAVAILABLE_CODE);
-        assert_eq!(message, crate::runtime::SANDBOX_UNAVAILABLE_MESSAGE);
+        assert_eq!(code, crate::runtime::SANDBOX_REQUIRED_UNAVAILABLE_CODE);
+        assert_eq!(
+            message,
+            crate::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE
+        );
     }
 
     #[test]
@@ -348,33 +325,6 @@ mod tests {
             startup_unavailability(Some(&config), true, |_| false).expect("must warn");
         assert_eq!(code, crate::runtime::SANDBOX_WSL1_UNAVAILABLE_CODE);
         assert_eq!(message, crate::runtime::SANDBOX_WSL1_UNAVAILABLE_MESSAGE);
-    }
-
-    #[tokio::test]
-    async fn optional_unavailability_audits_then_warns_then_spawns() {
-        let events = RefCell::new(Vec::new());
-
-        complete_watch_sandbox_lifecycle(
-            Decision::AutoApproved,
-            Ok(((), SandboxStatus::Unavailable)),
-            |decision, status| {
-                events
-                    .borrow_mut()
-                    .push(format!("audit:{decision:?}:{status:?}"));
-                Ok::<_, String>(())
-            },
-            |event| events.borrow_mut().push(format!("event:{event:?}")),
-            |()| async {
-                events.borrow_mut().push("spawn".to_string());
-            },
-            |err| events.borrow_mut().push(format!("audit-error:{err}")),
-        )
-        .await;
-
-        assert_eq!(
-            events.into_inner(),
-            ["audit:AutoApproved:Unavailable", "event:Warning", "spawn",]
-        );
     }
 
     #[tokio::test]
@@ -466,12 +416,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn audit_failure_prevents_warning_and_spawn() {
+    async fn audit_failure_prevents_spawn() {
         let events = RefCell::new(Vec::new());
 
         complete_watch_sandbox_lifecycle(
             Decision::AutoApproved,
-            Ok(((), SandboxStatus::Unavailable)),
+            Ok(((), SandboxStatus::NotConfigured)),
             |_decision, _status| Err::<(), _>("permission denied".to_string()),
             |event| events.borrow_mut().push(format!("event:{event:?}")),
             |()| async {

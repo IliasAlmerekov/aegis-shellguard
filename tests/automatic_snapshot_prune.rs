@@ -1,5 +1,7 @@
 //! Automatic Snapshot retention through the public command transports.
 
+mod support;
+
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -148,35 +150,6 @@ fn run_watch(home: &Path, repo: &Path) -> Output {
     child.wait_with_output().unwrap()
 }
 
-#[cfg(unix)]
-fn sandbox_backend_available() -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        Command::new("bwrap")
-            .arg("--version")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false)
-    }
-    #[cfg(target_os = "macos")]
-    {
-        const PROBE: &str = "(version 1)\n(deny default)\n(allow process*)\n(allow file-read*)\n";
-        Command::new("/usr/bin/sandbox-exec")
-            .args(["-p", PROBE, "/usr/bin/true"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false)
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    {
-        false
-    }
-}
-
 fn assert_auto_pruned_old_snapshot(home: &Path, repo: &Path, old_hash: &str, old_id: &str) {
     let hashes = stash_hashes(repo);
     assert!(
@@ -310,8 +283,7 @@ fn watch_automatic_prune_uses_the_same_git_retention_policy() {
 #[cfg(unix)]
 #[test]
 fn sandboxed_shell_automatic_prune_uses_the_same_git_retention_policy() {
-    if !sandbox_backend_available() {
-        println!("sandbox backend not available on this host; skipping");
+    if !support::confinement_available() {
         return;
     }
 

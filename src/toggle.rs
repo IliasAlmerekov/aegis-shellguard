@@ -38,7 +38,7 @@ pub struct ToggleStatusView {
     pub config_status: String,
     /// Whether CI is overriding the local toggle.
     pub ci_override_active: bool,
-    /// Trusted ceiling warnings; empty unless the Sandbox is enabled.
+    /// Trusted ceiling and deprecated sandbox warnings.
     pub ceiling_issues: Vec<aegis_config::validate::ValidationIssue>,
 }
 
@@ -88,18 +88,24 @@ pub fn status_view(ci_override_active: bool) -> Result<ToggleStatusView> {
     })
 }
 
-/// Ceiling warnings for the current directory. A config that does not load is
-/// reported by `config_status`, so it yields no warnings here.
+/// Sandbox warnings for the current directory: trusted ceiling warnings
+/// (outside `Mode::Audit`) plus any `deprecated_sandbox_field` warnings.
 fn ceiling_issues_here() -> Vec<aegis_config::validate::ValidationIssue> {
     let Ok(cwd) = env::current_dir() else {
         return Vec::new();
     };
-    let Ok(config) = AegisConfig::load_for_inspection(&cwd, home_dir_optional().as_deref()) else {
-        return Vec::new();
-    };
-    crate::runtime::sandbox_ceiling(&config, &cwd)
-        .map(|ceiling| crate::runtime::ceiling_issues(&ceiling))
-        .unwrap_or_default()
+    let home = home_dir_optional();
+    let mut issues: Vec<_> = aegis_config::validate_config_layers(&cwd, home.as_deref())
+        .warnings
+        .into_iter()
+        .filter(|w| w.code == "deprecated_sandbox_field")
+        .collect();
+    if let Ok(config) = AegisConfig::load_for_inspection(&cwd, home.as_deref())
+        && let Some(ceiling) = crate::runtime::sandbox_ceiling(&config, &cwd)
+    {
+        issues.extend(crate::runtime::ceiling_issues(&ceiling));
+    }
+    issues
 }
 
 /// Append an audit entry for a toggle command using the effective audit config.

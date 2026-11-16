@@ -338,29 +338,6 @@ mod tests {
     }
 
     #[test]
-    fn sandbox_unavailable_warning_serializes_as_protocol_frame() {
-        let frame = OutputFrame::Warning {
-            id: Some("sandbox-1".to_string()),
-            code: crate::runtime::SANDBOX_UNAVAILABLE_CODE,
-            sandbox_status: aegis_types::SandboxStatus::Unavailable,
-            message: crate::runtime::SANDBOX_UNAVAILABLE_MESSAGE,
-        };
-
-        let value = serde_json::to_value(frame).unwrap();
-
-        assert_eq!(
-            value,
-            serde_json::json!({
-                "type": "warning",
-                "id": "sandbox-1",
-                "code": "sandbox_unavailable",
-                "sandbox_status": "unavailable",
-                "message": "Sandbox unavailable; proceeding without confinement."
-            })
-        );
-    }
-
-    #[test]
     fn required_sandbox_block_serializes_diagnostics_on_result() {
         let frame = OutputFrame::SandboxResult {
             id: Some("sandbox-2".to_string()),

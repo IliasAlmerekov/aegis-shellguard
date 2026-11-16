@@ -1,8 +1,8 @@
 //! Field-group merge for `SandboxSettings`. `enabled`/`required` are
-//! `Tighten` (current behaviour — #229 tracks folding the Sandbox's mandatory
-//! posture in here directly). `allow_write` is `Custom` (a set that can only
-//! narrow, not last-wins). `allow_network` is `Tighten` with `false` as the
-//! stricter direction.
+//! deprecated input-only shims (ADR-029): they are ignored at any value and
+//! raise `deprecated_sandbox_field` instead of participating in the ratchet.
+//! `allow_write` is `Custom` (a set that can only narrow, not last-wins).
+//! `allow_network` is `Tighten` with `false` as the stricter direction.
 
 use std::path::PathBuf;
 
@@ -13,9 +13,7 @@ use crate::ceiling::{WriteRoot, contains, intersect, is_lexically_invalid};
 
 use super::super::SandboxSettings;
 use super::super::partial::PartialSandboxSettings;
-use super::direction::{
-    Ratchet, Tighten, bool_false_is_stricter, bool_true_is_stricter, format_display,
-};
+use super::direction::{Ratchet, Tighten, bool_false_is_stricter, format_display};
 use super::warning::{RatchetSink, is_project};
 
 /// Ratchet `sandbox.allow_write` (a list of path trees — more or wider roots =
@@ -103,8 +101,8 @@ pub(crate) fn merge_sandbox(
     sink: &mut RatchetSink,
 ) -> SandboxSettings {
     let SandboxSettings {
-        enabled: base_enabled,
-        required: base_required,
+        enabled: _,
+        required: _,
         allow_write: base_allow_write,
         allow_write_narrows_computed: base_narrows_computed,
         allow_write_trusted: base_trusted,
@@ -117,6 +115,13 @@ pub(crate) fn merge_sandbox(
         allow_network: req_allow_network,
     } = overlay;
 
+    if req_enabled.is_some() {
+        sink.warn_deprecated_sandbox("sandbox.enabled", layer, location);
+    }
+    if req_required.is_some() {
+        sink.warn_deprecated_sandbox("sandbox.required", layer, location);
+    }
+
     let (allow_write, allow_write_narrows_computed, allow_write_trusted) = custom_allow_write(
         base_allow_write,
         base_narrows_computed,
@@ -128,22 +133,8 @@ pub(crate) fn merge_sandbox(
     );
 
     SandboxSettings {
-        enabled: Tighten::new(bool_true_is_stricter, format_display).merge(
-            "sandbox.enabled",
-            base_enabled,
-            req_enabled,
-            layer,
-            location,
-            sink,
-        ),
-        required: Tighten::new(bool_true_is_stricter, format_display).merge(
-            "sandbox.required",
-            base_required,
-            req_required,
-            layer,
-            location,
-            sink,
-        ),
+        enabled: false,
+        required: false,
         allow_write,
         allow_write_narrows_computed,
         allow_write_trusted,

@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Changed: The Sandbox is now mandatory outside `Mode::Audit` (and `Disabled passthrough` / non-`-c` shell sessions), removing `sandbox.required` and ignoring `sandbox.enabled` and `sandbox.required` at any value with a `deprecated_sandbox_field` warning in `aegis config validate` and `aegis status`; commands are confined to the `Trusted ceiling` (enclosing git worktree plus temporary directory, network off, configurable via `allow_write` and `allow_network`) and block fail-closed when confinement is unavailable, shipping in 0.9.0 with no softer default and no runtime notice (#229, ADR-029).
+
 - Changed: `docs/release-readiness.md` records the v0.8.0 release run in which the Homebrew and npm install smokes first passed on macOS arm64, macOS Intel, and Linux, and checks the Homebrew and macOS npm boxes that waited on it (#412).
 
 - Changed: An enabled Sandbox with no `[sandbox] allow_write` now confines a command to the computed default ceiling, the enclosing git worktree plus the temporary directory; a present `allow_write` replaces that default instead of adding to it, a project list narrows it by path-tree intersection, and `aegis status` and `aegis config validate` report the new `trusted_ceiling_path_omitted` and `workspace_unresolved` warnings (#242, ADR-030).

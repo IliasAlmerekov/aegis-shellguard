@@ -2,4 +2,6 @@
 (deny default)
 (allow file-read*)
 (allow process*)
+(allow sysctl-read)
+(allow file-write-data (literal "/dev/null"))
 (deny network*)

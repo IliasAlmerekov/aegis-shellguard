@@ -127,12 +127,13 @@ fn unavailable_cwd_cannot_persist_shell_rules() {
                 panic!("expected plan")
             };
             renderer.set_confirmation_decision(decision);
-            let exit = super::run_planned_shell_command_with_renderer(
+            let exit = super::run_planned_shell_command_with_sandbox(
                 "git stash clear",
                 false,
                 &prepared,
                 &plan,
                 &crate::shell_compat::ShellLaunchOptions::default(),
+                None,
                 &renderer,
             );
             assert_eq!(

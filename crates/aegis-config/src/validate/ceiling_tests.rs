@@ -41,8 +41,8 @@ fn enabled_sandbox_outside_a_worktree_warns_workspace_unresolved() {
 }
 
 #[test]
-fn disabled_sandbox_does_no_workspace_search_and_raises_no_workspace_warning() {
-    let (warnings, valid) = run("[sandbox]\nenabled = false\n");
+fn audit_mode_does_no_workspace_search_and_raises_no_workspace_warning() {
+    let (warnings, valid) = run("mode = \"Audit\"\n");
     assert!(valid);
     assert!(
         !codes(&warnings).contains(&"workspace_unresolved"),

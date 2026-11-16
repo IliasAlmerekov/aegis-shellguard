@@ -15,8 +15,8 @@ pub(crate) fn sandbox_available_for(config: &SandboxConfig) -> bool {
     false
 }
 
-pub(crate) fn run(config: &SandboxConfig, _cmd: &str) -> Result<SandboxResult, SandboxError> {
-    run_unavailable_result(config.required)
+pub(crate) fn run(_config: &SandboxConfig, _cmd: &str) -> Result<SandboxResult, SandboxError> {
+    run_unavailable_result()
 }
 
 pub(crate) fn prepare_for_exec(
@@ -36,14 +36,9 @@ pub(crate) fn prepare_for_spawn(
 }
 
 fn prepare(
-    config: &SandboxConfig,
-    program: &OsStr,
-    args: &[OsString],
+    _config: &SandboxConfig,
+    _program: &OsStr,
+    _args: &[OsString],
 ) -> Result<PreparedSandboxCommand, SandboxError> {
-    if config.required {
-        return Err(SandboxError::Required);
-    }
-    let mut command = std::process::Command::new(program);
-    command.args(args);
-    Ok(PreparedSandboxCommand::unavailable(command))
+    Err(SandboxError::Required)
 }

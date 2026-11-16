@@ -191,13 +191,19 @@ pub struct ConfigLayerPath {
     pub path: PathBuf,
 }
 
-/// Sandbox configuration — controls whether commands run inside a bwrap sandbox.
+/// Sandbox configuration — controls the Trusted ceiling for mandatory Sandbox confinement.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct SandboxSettings {
-    /// Enable the sandbox layer.
+    /// Deprecated: Aegis ignores this value; the Sandbox is always applied
+    /// outside `Mode::Audit` (ADR-029). Kept for schema v1 compatibility.
+    #[serde(default, skip_serializing)]
+    #[schemars(extend("deprecated" = true))]
     pub enabled: bool,
-    /// Fail hard if the sandbox cannot be set up (instead of falling back to unsandboxed exec).
+    /// Deprecated: Aegis ignores this value; Sandbox unavailability always
+    /// blocks outside `Mode::Audit` (ADR-029). Kept for schema v1 compatibility.
+    #[serde(default, skip_serializing)]
+    #[schemars(extend("deprecated" = true))]
     pub required: bool,
     /// Writable roots of the Trusted ceiling. Absent means the computed
     /// default (workspace plus temporary directory); a present list replaces
@@ -511,13 +517,26 @@ impl AegisConfig {
         base: Self,
         layer: &ConfigLayerPath,
     ) -> Result<(Self, Vec<SecurityRatchetWarning>)> {
+        let (config, warnings, _) = Self::merge_layer_path_with_all_warnings(base, layer)?;
+        Ok((config, warnings))
+    }
+
+    pub(crate) fn merge_layer_path_with_all_warnings(
+        base: Self,
+        layer: &ConfigLayerPath,
+    ) -> Result<(
+        Self,
+        Vec<SecurityRatchetWarning>,
+        Vec<ratchet::DeprecatedSandboxFieldWarning>,
+    )> {
         let overlay = PartialConfig::from_path(&layer.path)?;
-        Ok(Self::merge_layer(
+        let (config, ratchet, deprecated) = Self::merge_layer_all_warnings(
             base,
             overlay,
             layer.source_layer,
             &layer.path.to_string_lossy(),
-        ))
+        );
+        Ok((config, ratchet, deprecated))
     }
 
     fn load_for_internal(
