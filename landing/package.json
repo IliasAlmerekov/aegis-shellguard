@@ -18,13 +18,13 @@
     "@react-three/fiber": "^9.8.2",
     "@react-three/postprocessing": "^3.2.2",
     "gsap": "^3.15.1",
-    "next": "^16.4.5",
+    "next": "^16.4.6",
     "react": "^19.2.9",
     "react-dom": "^19.2.9",
     "three": "^0.187.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.4",
+    "@tailwindcss/postcss": "^4.3.5",
     "@types/node": "^26.6.6",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
