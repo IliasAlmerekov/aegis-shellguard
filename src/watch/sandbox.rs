@@ -75,11 +75,20 @@ pub(super) async fn complete_watch_approved_execution(
     execution: WatchExecution<'_>,
     decision: Decision,
 ) {
-    let preparation = prepare_watch_command(
-        &execution.frame.cmd,
-        execution.context.config().sandbox.as_ref(),
-    )
-    .await;
+    let cmd = execution.frame.cmd.clone();
+    let config = execution.context.effective_config().clone();
+    let cwd = execution.cwd.map(std::path::Path::to_path_buf);
+    let preparation = tokio::task::spawn_blocking(move || {
+        let sandbox = frame_sandbox(&config, cwd.as_deref());
+        prepare_watch_command_blocking(&cmd, sandbox.as_ref())
+    })
+    .await
+    .map_err(|err| {
+        aegis_sandbox::SandboxError::Execution(format!(
+            "Watch Sandbox preparation task failed: {err}"
+        ))
+    })
+    .and_then(|result| result);
     let event_id = execution.frame.id.clone();
     let spawn_id = execution.frame.id.clone();
     let audit_id = execution.frame.id.clone();
@@ -255,6 +264,48 @@ pub(super) fn sandbox_status_before_preparation(context: &RuntimeContext) -> San
     }
 }
 
+fn frame_sandbox(
+    config: &aegis_config::AegisConfig,
+    cwd: Option<&std::path::Path>,
+) -> Option<aegis_sandbox::SandboxConfig> {
+    if config.mode == aegis_types::Mode::Audit {
+        return None;
+    }
+    let canonical = cwd.and_then(|path| std::fs::canonicalize(path).ok());
+    let mut sandbox = crate::runtime::sandbox_ceiling(
+        config,
+        canonical.as_deref().unwrap_or(std::path::Path::new("")),
+    )?
+    .config;
+    if canonical.is_none() {
+        let mut default = config.clone();
+        default.sandbox.allow_write = None;
+        let temporary = crate::runtime::sandbox_ceiling(&default, std::path::Path::new(""))?.config;
+        sandbox.allow_write = sandbox
+            .allow_write
+            .into_iter()
+            .flat_map(|root| {
+                let canonical_root = std::fs::canonicalize(&root.path).ok();
+                temporary.allow_write.iter().filter_map(move |temp| {
+                    let path = canonical_root.as_ref()?;
+                    let temp = std::fs::canonicalize(&temp.path).ok()?;
+                    let intersection = if path.starts_with(&temp) {
+                        path
+                    } else if temp.starts_with(path) {
+                        &temp
+                    } else {
+                        return None;
+                    };
+                    let mut root = root.clone();
+                    root.path = intersection.to_path_buf();
+                    Some(root)
+                })
+            })
+            .collect();
+    }
+    Some(sandbox)
+}
+
 pub(super) async fn prepare_watch_command(
     cmd: &str,
     sandbox: Option<&aegis_sandbox::SandboxConfig>,
@@ -297,6 +348,125 @@ mod tests {
     use std::cell::RefCell;
 
     use super::*;
+
+    #[tokio::test]
+    async fn frame_ceiling_uses_frame_worktree() {
+        let worktree = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(worktree.path().join(".git")).unwrap();
+        let context = RuntimeContext::new_with_audit_path(
+            aegis_config::AegisConfig::default(),
+            tokio::runtime::Handle::current(),
+            worktree.path().join("audit.jsonl"),
+        )
+        .unwrap();
+        let startup = context.config().sandbox.as_ref().unwrap();
+        let process_cwd = std::env::current_dir().unwrap();
+        let same = frame_sandbox(context.effective_config(), Some(&process_cwd)).unwrap();
+        assert_eq!(same.allow_write, startup.allow_write);
+        assert_eq!(same.trusted_roots, startup.trusted_roots);
+        assert_eq!(same.allow_network, startup.allow_network);
+        let sandbox = frame_sandbox(context.effective_config(), Some(worktree.path())).unwrap();
+        assert!(
+            !sandbox
+                .allow_write
+                .iter()
+                .any(|root| root.path == process_cwd)
+        );
+        assert!(
+            sandbox
+                .allow_write
+                .iter()
+                .any(|root| root.path == std::fs::canonicalize(worktree.path()).unwrap())
+        );
+    }
+
+    #[tokio::test]
+    async fn frame_ceiling_uses_effective_config() {
+        let worktree = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(worktree.path().join(".git")).unwrap();
+        let mut config = aegis_config::AegisConfig::default();
+        config.sandbox.allow_write = Some(vec![]);
+        let context = RuntimeContext::new_with_audit_path(
+            config,
+            tokio::runtime::Handle::current(),
+            worktree.path().join("audit.jsonl"),
+        )
+        .unwrap();
+        let sandbox = frame_sandbox(context.effective_config(), Some(worktree.path())).unwrap();
+        assert!(sandbox.allow_write.is_empty());
+    }
+
+    #[test]
+    fn frame_ceiling_canonicalizes_relative_and_symlink_cwd() {
+        use std::os::unix::fs::symlink;
+        let base = tempfile::tempdir_in(".").unwrap();
+        let repo = base.path().join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let link = base.path().join("link");
+        symlink("repo", &link).unwrap();
+        let expected = std::fs::canonicalize(&repo).unwrap();
+        for cwd in [&repo, &link] {
+            let sandbox = frame_sandbox(&aegis_config::AegisConfig::default(), Some(cwd)).unwrap();
+            assert!(sandbox.allow_write.iter().any(|root| root.path == expected));
+        }
+    }
+
+    #[test]
+    fn missing_frame_cwd_keeps_only_temporary_roots() {
+        let missing = std::path::Path::new("/aegis-nonexistent-frame-cwd");
+        let sandbox = frame_sandbox(&aegis_config::AegisConfig::default(), Some(missing)).unwrap();
+        assert!(
+            sandbox
+                .allow_write
+                .iter()
+                .all(|root| root.path.starts_with("/tmp")
+                    || root.path.starts_with("/private/tmp")
+                    || root.path.starts_with("/private/var/folders")
+                    || root.path.starts_with("/var/folders"))
+        );
+        assert!(!sandbox.allow_write.is_empty());
+    }
+
+    #[test]
+    fn missing_frame_cwd_never_grants_configured_non_temp_roots() {
+        use aegis_config::ceiling::WriteRoot;
+        use aegis_types::CeilingLayer;
+        let mut config = aegis_config::AegisConfig::default();
+        config.sandbox.allow_write = Some(vec![WriteRoot::new(
+            "/var/tmp".into(),
+            CeilingLayer::Global,
+            "global.toml",
+        )]);
+        let missing = std::path::Path::new("/aegis-nonexistent-frame-cwd");
+        let sandbox = frame_sandbox(&config, Some(missing)).unwrap();
+        assert!(sandbox.allow_write.is_empty());
+        config.sandbox.allow_write = Some(vec![WriteRoot::new(
+            "/".into(),
+            CeilingLayer::Global,
+            "global.toml",
+        )]);
+        let sandbox = frame_sandbox(&config, Some(missing)).unwrap();
+        assert!(
+            sandbox
+                .allow_write
+                .iter()
+                .any(|root| root.path == std::fs::canonicalize("/tmp").unwrap())
+        );
+        config.sandbox.allow_write = Some(vec![]);
+        assert!(
+            frame_sandbox(&config, Some(missing))
+                .unwrap()
+                .allow_write
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn audit_frame_has_no_sandbox() {
+        let mut config = aegis_config::AegisConfig::default();
+        config.mode = aegis_types::Mode::Audit;
+        assert!(frame_sandbox(&config, Some(std::path::Path::new("/nonexistent"))).is_none());
+    }
 
     #[test]
     fn unavailable_warning_selects_the_wsl1_code_and_message_on_wsl1() {
