@@ -46,6 +46,8 @@ vendored C sources and run from an in-memory file. Linux mounts the whole
 filesystem read-only, unshares every namespace, and binds each `allow_write`
 path writable. It shares the network namespace only when `allow_network` is set.
 
+On Ubuntu 24.04 and other hosts with `kernel.apparmor_restrict_unprivileged_userns=1`, AppArmor can prevent bubblewrap from creating user namespaces. The embedded memfd executable cannot match a path-based profile. If the Sandbox probe fails and the sysctl is `1`, Aegis reports this as a possible cause, not proof. Use a system `bwrap` on `PATH` with a loaded AppArmor profile permitting user namespaces; profile availability and policy vary by installation. Alternatively, an administrator may set the sysctl to `0`, which weakens system-wide kernel exploit mitigation. See the [Ubuntu release notes](https://documentation.ubuntu.com/release-notes/24.04/) and [Ubuntu security guidance](https://discourse.ubuntu.com/t/understanding-apparmor-user-namespace-restriction/58007). Aegis does not install profiles.
+
 On macOS, the Seatbelt profile denies by default and allows file reads and
 process execution. It allows writes under each `allow_write` path, and network
 access only when `allow_network` is set.

@@ -392,6 +392,21 @@ pub fn wsl1_unavailable() -> bool {
     }
 }
 
+/// Whether the AppArmor user namespace restriction sysctl reads `1`.
+///
+/// An absent or unreadable sysctl returns `false` (unknown), not proof that
+/// AppArmor imposes no restriction. Non-Linux targets also return `false`.
+pub fn apparmor_userns_restricted() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        bwrap::apparmor_userns_restricted()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
 // ── Implementation ────────────────────────────────────────────────────────────
 
 impl SandboxProfile {

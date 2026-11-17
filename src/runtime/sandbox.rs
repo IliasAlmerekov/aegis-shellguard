@@ -12,6 +12,12 @@ pub const SANDBOX_WSL1_UNAVAILABLE_CODE: &str = "sandbox_wsl1_unavailable";
 /// unavailability message.
 pub const SANDBOX_WSL1_UNAVAILABLE_MESSAGE: &str = "Sandbox unavailable: WSL1 cannot create the user namespaces bubblewrap needs. Use WSL2 for sandboxed commands.";
 
+/// Stable diagnostic code for a possible AppArmor user namespace restriction.
+pub const SANDBOX_APPARMOR_UNAVAILABLE_CODE: &str = "sandbox_apparmor_unavailable";
+
+/// Stable message for a possible AppArmor user namespace restriction.
+pub const SANDBOX_APPARMOR_UNAVAILABLE_MESSAGE: &str = "Sandbox unavailable: kernel.apparmor_restrict_unprivileged_userns=1 may prevent bubblewrap from creating user namespaces. Use a system bwrap with an AppArmor profile permitting user namespaces, or set the sysctl to 0 (reduces system security). Command not executed.";
+
 /// Stable diagnostic code for required Sandbox unavailability.
 pub const SANDBOX_REQUIRED_UNAVAILABLE_CODE: &str = "sandbox_required_unavailable";
 
@@ -24,11 +30,19 @@ pub const SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE: &str =
 /// The unavailability code and message, naming the WSL1 cause when it applies
 /// so the operator gets a practical remedy (use WSL2) rather than the generic
 /// message (ADR-029 §3). Shared by the shell and watch paths.
-pub fn sandbox_unavailable_code_and_message(is_wsl1: bool) -> (&'static str, &'static str) {
+pub fn sandbox_unavailable_code_and_message(
+    is_wsl1: bool,
+    apparmor_restricted: bool,
+) -> (&'static str, &'static str) {
     if is_wsl1 {
         (
             SANDBOX_WSL1_UNAVAILABLE_CODE,
             SANDBOX_WSL1_UNAVAILABLE_MESSAGE,
+        )
+    } else if apparmor_restricted {
+        (
+            SANDBOX_APPARMOR_UNAVAILABLE_CODE,
+            SANDBOX_APPARMOR_UNAVAILABLE_MESSAGE,
         )
     } else {
         (

@@ -275,6 +275,30 @@ fn proc_version_indicates_wsl1(proc_version: &str) -> bool {
     proc_version.contains("microsoft") && !proc_version.contains("microsoft-standard")
 }
 
+#[cfg(test)]
+thread_local! {
+    static APPARMOR_SYSCTL_PATH: std::cell::RefCell<Option<std::path::PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn set_apparmor_sysctl_path(path: Option<std::path::PathBuf>) {
+    APPARMOR_SYSCTL_PATH.with(|value| *value.borrow_mut() = path);
+}
+
+pub(crate) fn apparmor_userns_restricted() -> bool {
+    let path = std::path::Path::new("/proc/sys/kernel/apparmor_restrict_unprivileged_userns");
+    #[cfg(test)]
+    let path = APPARMOR_SYSCTL_PATH
+        .with(|value| value.borrow().clone())
+        .unwrap_or_else(|| path.to_path_buf());
+    let content = std::fs::read_to_string(path).ok();
+    apparmor_sysctl_restricted(content.as_deref())
+}
+
+fn apparmor_sysctl_restricted(content: Option<&str>) -> bool {
+    content.is_some_and(|value| value.trim() == "1")
+}
+
 /// Whether unprivileged user namespaces are enabled on this kernel. Absent the
 /// sysctl file (older kernels), assume they are.
 pub(crate) fn sysctl_userns_available() -> bool {
@@ -286,6 +310,28 @@ pub(crate) fn sysctl_userns_available() -> bool {
 #[cfg(test)]
 mod tests {
     use super::{find_system_bwrap_in_paths, proc_version_indicates_wsl1};
+
+    #[test]
+    fn apparmor_public_probe_reads_both_sysctl_states() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("apparmor_sysctl");
+        super::set_apparmor_sysctl_path(Some(path.clone()));
+        std::fs::write(&path, "1\n").unwrap();
+        assert!(crate::apparmor_userns_restricted());
+        std::fs::write(&path, "0\n").unwrap();
+        assert!(!crate::apparmor_userns_restricted());
+        std::fs::remove_file(&path).unwrap();
+        assert!(!crate::apparmor_userns_restricted());
+        super::set_apparmor_sysctl_path(None);
+    }
+
+    #[test]
+    fn apparmor_restriction_parses_sysctl_content() {
+        assert!(super::apparmor_sysctl_restricted(Some("1")));
+        assert!(super::apparmor_sysctl_restricted(Some("1\n")));
+        assert!(!super::apparmor_sysctl_restricted(Some("0")));
+        assert!(!super::apparmor_sysctl_restricted(None));
+    }
 
     #[test]
     fn wsl1_detection_recognizes_wsl1_markers() {
