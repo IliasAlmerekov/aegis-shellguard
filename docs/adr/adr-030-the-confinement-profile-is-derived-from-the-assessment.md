@@ -264,7 +264,7 @@ Decided in the triage of
 gave the default `Trusted ceiling` "the workspace tree plus `/tmp`" and said only
 that a `cwd` of `/` is not a workspace. The agent controls its working directory
 across calls, so a ceiling root taken from it as-is lets the agent choose its own
-write authority with `cd`. Seven points close that.
+write authority with `cd`. Eight points close that.
 
 **1. The `Workspace` is the root of the enclosing git worktree.** Aegis walks up
 from the working directory to the first `.git` entry, file or directory, using
@@ -311,6 +311,12 @@ warnings do: `aegis config validate` and `aegis status`, never `$SHELL -c`. A
 computed root (the worktree root, a gitdir, or the temporary directory) that cannot
 enter the ceiling is reported as `trusted_ceiling_path_omitted` with the layer
 `Computed`, because no config layer supplied it.
+
+**8. Watch resolves the frame working directory.** The working directory is the
+canonical form of the frame's `cwd`, or the process directory when the frame has
+no `cwd`. A failed canonicalization leaves no workspace and restricts writes to
+the intersection of configured roots and temporary directories; it does not prevent
+the command from running ([#582](https://github.com/IliasAlmerekov/aegis-shellguard/issues/582)).
 
 **Accepted risk.** The agent can still `cd` into any existing repository the user
 owns and write there. Aegis has no session state that would pin the workspace to

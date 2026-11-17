@@ -257,6 +257,10 @@ impl RuntimeContext {
         &self.runtime_config
     }
 
+    pub(crate) fn effective_config(&self) -> &AegisConfig {
+        &self.auto_prune_config
+    }
+
     /// Return the typed `[[rules]]` entries from the effective config.
     pub fn policy_rules(&self) -> &[aegis_config::PolicyRule] {
         &self.policy_rules
