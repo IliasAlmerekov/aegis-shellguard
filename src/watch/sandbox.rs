@@ -376,8 +376,24 @@ mod tests {
             sandbox
                 .allow_write
                 .iter()
-                .any(|root| root.path == worktree.path())
+                .any(|root| root.path == std::fs::canonicalize(worktree.path()).unwrap())
         );
+    }
+
+    #[tokio::test]
+    async fn frame_ceiling_uses_effective_config() {
+        let worktree = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(worktree.path().join(".git")).unwrap();
+        let mut config = aegis_config::AegisConfig::default();
+        config.sandbox.allow_write = Some(vec![]);
+        let context = RuntimeContext::new_with_audit_path(
+            config,
+            tokio::runtime::Handle::current(),
+            worktree.path().join("audit.jsonl"),
+        )
+        .unwrap();
+        let sandbox = frame_sandbox(context.effective_config(), Some(worktree.path())).unwrap();
+        assert!(sandbox.allow_write.is_empty());
     }
 
     #[test]

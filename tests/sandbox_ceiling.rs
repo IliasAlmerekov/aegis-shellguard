@@ -442,6 +442,39 @@ fn watch_uses_each_frame_cwd_and_defaults_to_process_cwd() {
         "{}",
         String::from_utf8_lossy(&output.stdout)
     );
+
+    write_global_config(home.path(), "[sandbox]\nallow_write = []\n");
+    let mut child = base_command(home.path())
+        .arg("watch")
+        .env("AEGIS_FORCE_NO_TTY", "1")
+        .current_dir(&a)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    writeln!(
+        child.stdin.take().unwrap(),
+        "{}",
+        serde_json::json!({
+            "cwd": b, "cmd": format!("touch {}/restricted", b.display())
+        })
+    )
+    .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.lines().any(|line| {
+            serde_json::from_str::<serde_json::Value>(line).is_ok_and(|frame| {
+                frame["type"] == "result"
+                    && frame["decision"] == "approved"
+                    && frame["exit_code"] == 1
+            })
+        }),
+        "{stdout}"
+    );
+    assert!(!b.join("restricted").exists(), "{stdout}");
 }
 
 #[test]
