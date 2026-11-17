@@ -105,6 +105,7 @@ pub(super) async fn complete_watch_approved_execution(
 pub(super) fn startup_unavailability(
     sandbox: Option<&aegis_sandbox::SandboxConfig>,
     is_wsl1: bool,
+    apparmor_restricted: bool,
     available: impl FnOnce(&aegis_sandbox::SandboxConfig) -> bool,
 ) -> Option<(&'static str, &'static str)> {
     let config = sandbox?;
@@ -113,6 +114,7 @@ pub(super) fn startup_unavailability(
     }
     Some(crate::runtime::sandbox_unavailable_code_and_message(
         is_wsl1,
+        apparmor_restricted,
     ))
 }
 
@@ -129,6 +131,7 @@ pub(super) async fn warn_if_sandbox_unavailable_at_startup(context: &RuntimeCont
         startup_unavailability(
             sandbox.as_ref(),
             aegis_sandbox::wsl1_unavailable(),
+            aegis_sandbox::apparmor_userns_restricted(),
             aegis_sandbox::sandbox_available_for,
         )
     })
@@ -283,11 +286,11 @@ mod tests {
 
     #[test]
     fn unavailable_warning_selects_the_wsl1_code_and_message_on_wsl1() {
-        let (code, message) = crate::runtime::sandbox_unavailable_code_and_message(true);
+        let (code, message) = crate::runtime::sandbox_unavailable_code_and_message(true, false);
         assert_eq!(code, crate::runtime::SANDBOX_WSL1_UNAVAILABLE_CODE);
         assert_eq!(message, crate::runtime::SANDBOX_WSL1_UNAVAILABLE_MESSAGE);
 
-        let (code, message) = crate::runtime::sandbox_unavailable_code_and_message(false);
+        let (code, message) = crate::runtime::sandbox_unavailable_code_and_message(false, false);
         assert_eq!(code, crate::runtime::SANDBOX_REQUIRED_UNAVAILABLE_CODE);
         assert_eq!(
             message,
@@ -296,21 +299,46 @@ mod tests {
     }
 
     #[test]
+    fn apparmor_unavailability_selector_and_watch_warning() {
+        let config = aegis_sandbox::SandboxConfig::default();
+        let expected = (
+            "sandbox_apparmor_unavailable",
+            crate::runtime::SANDBOX_APPARMOR_UNAVAILABLE_MESSAGE,
+        );
+        assert_eq!(
+            crate::runtime::sandbox_unavailable_code_and_message(false, true),
+            expected
+        );
+        assert_eq!(
+            startup_unavailability(Some(&config), false, true, |_| false),
+            Some(expected)
+        );
+        assert_eq!(
+            crate::runtime::sandbox_unavailable_code_and_message(true, true).0,
+            "sandbox_wsl1_unavailable"
+        );
+        assert_eq!(
+            crate::runtime::sandbox_unavailable_code_and_message(false, false).0,
+            "sandbox_required_unavailable"
+        );
+    }
+
+    #[test]
     fn startup_unavailability_is_none_when_sandbox_is_not_configured() {
-        assert!(startup_unavailability(None, false, |_| false).is_none());
+        assert!(startup_unavailability(None, false, false, |_| false).is_none());
     }
 
     #[test]
     fn startup_unavailability_is_none_when_the_probe_succeeds() {
         let config = aegis_sandbox::SandboxConfig::default();
-        assert!(startup_unavailability(Some(&config), false, |_| true).is_none());
+        assert!(startup_unavailability(Some(&config), false, false, |_| true).is_none());
     }
 
     #[test]
     fn startup_unavailability_warns_generically_when_not_wsl1() {
         let config = aegis_sandbox::SandboxConfig::default();
         let (code, message) =
-            startup_unavailability(Some(&config), false, |_| false).expect("must warn");
+            startup_unavailability(Some(&config), false, false, |_| false).expect("must warn");
         assert_eq!(code, crate::runtime::SANDBOX_REQUIRED_UNAVAILABLE_CODE);
         assert_eq!(
             message,
@@ -322,7 +350,7 @@ mod tests {
     fn startup_unavailability_names_wsl1_when_the_host_is_wsl1() {
         let config = aegis_sandbox::SandboxConfig::default();
         let (code, message) =
-            startup_unavailability(Some(&config), true, |_| false).expect("must warn");
+            startup_unavailability(Some(&config), true, false, |_| false).expect("must warn");
         assert_eq!(code, crate::runtime::SANDBOX_WSL1_UNAVAILABLE_CODE);
         assert_eq!(message, crate::runtime::SANDBOX_WSL1_UNAVAILABLE_MESSAGE);
     }

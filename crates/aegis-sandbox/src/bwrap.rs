@@ -275,6 +275,16 @@ fn proc_version_indicates_wsl1(proc_version: &str) -> bool {
     proc_version.contains("microsoft") && !proc_version.contains("microsoft-standard")
 }
 
+pub(crate) fn apparmor_userns_restricted() -> bool {
+    let content =
+        std::fs::read_to_string("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").ok();
+    apparmor_sysctl_restricted(content.as_deref())
+}
+
+fn apparmor_sysctl_restricted(content: Option<&str>) -> bool {
+    content.is_some_and(|value| value.trim() == "1")
+}
+
 /// Whether unprivileged user namespaces are enabled on this kernel. Absent the
 /// sysctl file (older kernels), assume they are.
 pub(crate) fn sysctl_userns_available() -> bool {
@@ -286,6 +296,14 @@ pub(crate) fn sysctl_userns_available() -> bool {
 #[cfg(test)]
 mod tests {
     use super::{find_system_bwrap_in_paths, proc_version_indicates_wsl1};
+
+    #[test]
+    fn apparmor_restriction_parses_sysctl_content() {
+        assert!(super::apparmor_sysctl_restricted(Some("1")));
+        assert!(super::apparmor_sysctl_restricted(Some("1\n")));
+        assert!(!super::apparmor_sysctl_restricted(Some("0")));
+        assert!(!super::apparmor_sysctl_restricted(None));
+    }
 
     #[test]
     fn wsl1_detection_recognizes_wsl1_markers() {

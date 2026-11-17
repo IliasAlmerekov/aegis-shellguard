@@ -20,6 +20,7 @@ fn required_unavailability_is_audited_as_blocked_and_never_executes() {
         |_: ()| unreachable!("required preparation must not execute"),
         |_: ()| unreachable!("required preparation must not wait"),
         |message| events.borrow_mut().push(format!("error:{message}")),
+        || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
     );
 
     assert_eq!(exit_code, EXIT_BLOCKED);
@@ -31,6 +32,36 @@ fn required_unavailability_is_audited_as_blocked_and_never_executes() {
                 "error:{}",
                 aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE
             ),
+        ]
+    );
+}
+
+#[test]
+fn apparmor_unavailability_blocks_and_audits() {
+    let events = RefCell::new(Vec::new());
+    let exit = complete_shell_execution(
+        Decision::Approved,
+        || Err::<((), SandboxStatus), _>(aegis_sandbox::SandboxError::Required),
+        |decision, status| {
+            events
+                .borrow_mut()
+                .push(format!("audit:{decision:?}:{status:?}"));
+            Ok::<_, String>(())
+        },
+        |_: ()| unreachable!(),
+        |_: ()| unreachable!(),
+        |message| events.borrow_mut().push(format!("error:{message}")),
+        || aegis::runtime::sandbox_unavailable_code_and_message(false, true).1,
+    );
+    assert_eq!(exit, EXIT_BLOCKED);
+    assert_eq!(
+        events.into_inner(),
+        vec![
+            "audit:Blocked:Unavailable".to_string(),
+            format!(
+                "error:{}",
+                aegis::runtime::SANDBOX_APPARMOR_UNAVAILABLE_MESSAGE
+            )
         ]
     );
 }
@@ -55,6 +86,7 @@ fn required_nested_unavailability_names_the_cause_and_never_executes() {
         |_: ()| unreachable!("required preparation must not execute"),
         |_: ()| unreachable!("required preparation must not wait"),
         |message| events.borrow_mut().push(format!("error:{message}")),
+        || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
     );
 
     assert_eq!(exit_code, EXIT_BLOCKED);
@@ -90,6 +122,7 @@ fn setup_failure_is_audited_as_not_attempted_and_never_executes() {
         |_: ()| unreachable!("failed preparation must not execute"),
         |_: ()| unreachable!("failed preparation must not wait"),
         |message| events.borrow_mut().push(format!("error:{message}")),
+        || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
     );
 
     assert_eq!(exit_code, EXIT_INTERNAL);
@@ -120,6 +153,7 @@ fn audit_failure_prevents_child_spawn() {
             0
         },
         |message| events.borrow_mut().push(format!("error:{message}")),
+        || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
     );
 
     assert_eq!(exit_code, EXIT_INTERNAL);
@@ -156,6 +190,7 @@ fn missing_inner_wrapper_report_is_audited_as_blocked_before_reaping_the_child()
             0
         },
         |message| events.borrow_mut().push(format!("error:{message}")),
+        || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
     );
 
     assert_eq!(exit_code, EXIT_INTERNAL);
@@ -188,6 +223,7 @@ fn unconfigured_sandbox_is_silent() {
             0
         },
         |message| events.borrow_mut().push(format!("error:{message}")),
+        || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
     );
 
     assert_eq!(exit_code, 0);
@@ -220,6 +256,7 @@ fn execution_audits_the_inner_wrapper_status_before_waiting_for_the_child() {
             17
         },
         |message| events.borrow_mut().push(format!("error:{message}")),
+        || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
     );
 
     assert_eq!(exit_code, 17);
@@ -263,6 +300,7 @@ fn unavailable_sandbox_blocks_across_deprecated_field_permutations() {
             |_: ()| unreachable!("unavailable sandbox must not execute"),
             |_: ()| unreachable!("unavailable sandbox must not wait"),
             |message| events.borrow_mut().push(format!("error:{message}")),
+            || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
         );
         assert_eq!(exit_code, EXIT_BLOCKED, "failed for {body:?}");
         assert_eq!(

@@ -322,6 +322,13 @@ fn complete_approved_shell_execution<R: ExecutionRenderer>(
         exec_prepared_command,
         crate::shell_compat::wait_for_child,
         |message| renderer.report_error(message),
+        || {
+            aegis::runtime::sandbox_unavailable_code_and_message(
+                aegis_sandbox::wsl1_unavailable(),
+                aegis_sandbox::apparmor_userns_restricted(),
+            )
+            .1
+        },
     )
 }
 
@@ -415,6 +422,7 @@ fn complete_shell_execution<C, X, AuditError>(
     execute: impl FnOnce(C) -> Result<(X, SandboxStatus), aegis_sandbox::SandboxError>,
     wait: impl FnOnce(X) -> i32,
     report_error: impl FnOnce(&str),
+    unavailable_message: impl FnOnce() -> &'static str,
 ) -> i32
 where
     AuditError: std::fmt::Display,
@@ -482,12 +490,7 @@ where
                 report_error(&format!("failed to write audit log: {err}"));
                 return EXIT_INTERNAL;
             }
-            report_error(
-                aegis::runtime::sandbox_unavailable_code_and_message(
-                    aegis_sandbox::wsl1_unavailable(),
-                )
-                .1,
-            );
+            report_error(unavailable_message());
             EXIT_BLOCKED
         }
         Err(aegis_sandbox::SandboxError::RequiredNestedUnderOuterSandbox) => {

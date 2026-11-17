@@ -219,6 +219,8 @@ is the honest, already-decided consequence of a mandatory layer meeting a
 platform where it is provably unobtainable — not a new failure mode invented for
 macOS.
 
+**AppArmor user namespace restriction (#584).** On Ubuntu 24.04 and other hosts, `kernel.apparmor_restrict_unprivileged_userns=1` can prevent bubblewrap from creating user namespaces. The embedded memfd cannot match a path-based profile. After a failed probe, Aegis identifies the sysctl as a possible cause, while WSL1 takes precedence. A system `bwrap` on `PATH` with a loaded AppArmor profile permitting user namespaces can work; profile availability depends on the installation. Setting the sysctl to `0` is an alternative but weakens system-wide kernel exploit mitigation. Aegis installs no profile. See [Ubuntu release notes](https://documentation.ubuntu.com/release-notes/24.04/) and [Ubuntu security guidance](https://discourse.ubuntu.com/t/understanding-apparmor-user-namespace-restriction/58007).
+
 **G. The diagnostic must name the cause.** `sandbox_available_for`
 (`crates/aegis-sandbox/src/macos.rs:10-24`) already probes by executing the real
 per-command profile, so the fact that failure means "already nested under an

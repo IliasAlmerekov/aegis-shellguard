@@ -392,6 +392,18 @@ pub fn wsl1_unavailable() -> bool {
     }
 }
 
+/// Whether AppArmor restricts unprivileged user namespaces on this host.
+pub fn apparmor_userns_restricted() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        bwrap::apparmor_userns_restricted()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
 // ── Implementation ────────────────────────────────────────────────────────────
 
 impl SandboxProfile {
