@@ -392,7 +392,10 @@ pub fn wsl1_unavailable() -> bool {
     }
 }
 
-/// Whether AppArmor restricts unprivileged user namespaces on this host.
+/// Whether the AppArmor user namespace restriction sysctl reads `1`.
+///
+/// An absent or unreadable sysctl returns `false` (unknown), not proof that
+/// AppArmor imposes no restriction. Non-Linux targets also return `false`.
 pub fn apparmor_userns_restricted() -> bool {
     #[cfg(target_os = "linux")]
     {
