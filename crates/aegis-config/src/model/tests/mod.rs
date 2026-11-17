@@ -1,6 +1,5 @@
 use std::fs;
 
-use super::migration::{find_toml_array_bounds, migrate_deprecated_allowlist_in_file};
 use super::partial::PartialConfig;
 
 pub use super::*;

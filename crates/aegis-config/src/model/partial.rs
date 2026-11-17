@@ -5,7 +5,6 @@ use serde::Deserialize;
 
 use crate::error::ConfigError;
 
-use super::migration::migrate_deprecated_allowlist_in_file;
 use super::serde_helpers::{deserialize_allowlist_rules, deserialize_optional_config_version};
 use super::{
     AllowlistOverrideLevel, AllowlistRule, AuditIntegrityMode, BlockRule, CiPolicy, DockerScope,
@@ -144,11 +143,6 @@ impl PartialConfig {
             path: path.display().to_string(),
             source: Box::new(error),
         })?;
-
-        let deprecated = contents.contains("[[allowlist]]") || contents.contains("allowlist = [");
-        if deprecated {
-            migrate_deprecated_allowlist_in_file(&contents, path, &config.allowlist)?;
-        }
 
         Ok(config)
     }

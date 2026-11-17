@@ -28,18 +28,6 @@ reason = "ephemeral test teardown"
 }
 
 #[test]
-fn legacy_string_allowlist_is_migrated_to_structured_rules() {
-    let config: AegisConfig = toml::from_str(r#"allowlist = ["terraform destroy *"]"#).unwrap();
-
-    assert_eq!(config.allowlist.len(), 1);
-    assert_eq!(config.allowlist[0].pattern, "terraform destroy *");
-    assert_eq!(
-        config.allowlist[0].reason,
-        "migrated from legacy allowlist entry"
-    );
-}
-
-#[test]
 fn legacy_allowlist_table_name_deserializes_into_allow_field() {
     let config: AegisConfig = toml::from_str(
         r#"
@@ -117,14 +105,6 @@ fn unscoped_allowlist_rule_is_invalid_for_runtime_validation() {
         }],
         ..AegisConfig::defaults()
     };
-
-    let err = config.validate_runtime_requirements().unwrap_err();
-    assert!(err.to_string().contains("must declare cwd or user scope"));
-}
-
-#[test]
-fn legacy_allowlist_remains_parseable_but_fails_runtime_requirements() {
-    let config: AegisConfig = toml::from_str(r#"allowlist = ["terraform destroy *"]"#).unwrap();
 
     let err = config.validate_runtime_requirements().unwrap_err();
     assert!(err.to_string().contains("must declare cwd or user scope"));
@@ -495,4 +475,36 @@ fn db_snapshot_fields_merge_by_replacement_and_scalar_override() {
 
     assert!(merged.auto_snapshot_sqlite);
     assert_eq!(merged.sqlite_snapshot_path, "db/app.db");
+}
+
+#[cfg(unix)]
+#[test]
+fn legacy_table_load_is_read_only() {
+    use std::os::unix::fs::PermissionsExt;
+    let workspace = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let path = workspace.path().join(PROJECT_CONFIG_FILE);
+    let original = "[[allowlist]]\npattern = \"git status\"\ncwd = \"/tmp\"\nreason = \"test\"\n";
+    fs::write(&path, original).unwrap();
+    fs::set_permissions(workspace.path(), fs::Permissions::from_mode(0o555)).unwrap();
+    let result = AegisConfig::load_for(workspace.path(), Some(home.path()));
+    fs::set_permissions(workspace.path(), fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), original);
+    assert_eq!(result.unwrap().allowlist.len(), 1);
+}
+
+#[test]
+fn legacy_string_array_load_error_names_file_and_replacement_without_writing() {
+    let workspace = TempDir::new().unwrap();
+    let home = TempDir::new().unwrap();
+    let path = workspace.path().join(PROJECT_CONFIG_FILE);
+    let original = "allowlist = [\"git push\"]\n";
+    fs::write(&path, original).unwrap();
+    let error = AegisConfig::load_for(workspace.path(), Some(home.path()))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains(&path.display().to_string()), "{error}");
+    assert!(error.contains("[[allow]]"), "{error}");
+    assert!(error.contains("cwd") && error.contains("user"), "{error}");
+    assert_eq!(fs::read_to_string(path).unwrap(), original);
 }

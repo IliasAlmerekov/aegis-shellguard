@@ -20,8 +20,7 @@ allowlist_override_level = "Warn" # Protect/Strict allowlist ceiling: Warn | Dan
 
 # Structured allow rules use array-of-tables entries.
 # Every runtime-effective allow rule must declare cwd or user scope.
-# Legacy string-array allowlist entries stay readable for migration and
-# inspection, but they are invalid for runtime until you add scope.
+# Replace legacy string-array entries with scoped [[allow]] tables.
 # [[allow]]
 # pattern = "terraform destroy -target=module.test.*"
 # cwd = "/srv/infra"

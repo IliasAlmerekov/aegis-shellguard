@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Fixed: config loading no longer rewrites legacy allowlist tables, and rule appends preserve legacy headers (#249).
+
 - Fixed: compute each Watch frame's Trusted ceiling from its working directory (#582, ADR-030).
 
 - Fixed: Sandbox unavailability diagnostics name a possible AppArmor user namespace restriction and remedies (#584, ADR-029).
