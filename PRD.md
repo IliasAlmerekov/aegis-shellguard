@@ -174,7 +174,7 @@ path, but team features are not shipped in 1.0.
 - Deduplication on write: a duplicate is skipped silently; a conflict (same
   pattern, different decision) emits a warning with the existing rule's location.
 - The scanner cache is invalidated; the new rule takes effect immediately.
-- The legacy `allowlist` is migrated to `[[allow]]` with a deprecation warning.
+- `[[allowlist]]` is accepted as an alias for `[[allow]]`; legacy string arrays are rejected with guidance to use scoped `[[allow]]` tables.
 
 ### 5.4 Snapshot / rollback
 

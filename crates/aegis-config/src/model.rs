@@ -55,7 +55,6 @@ pub(crate) fn validate_builtin_scanner() -> Result<()> {
 
 mod enums;
 mod merge;
-mod migration;
 mod partial;
 mod ratchet;
 mod rules;

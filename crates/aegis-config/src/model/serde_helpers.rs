@@ -3,8 +3,6 @@ use serde::Deserialize;
 use super::AllowlistRule;
 use super::CURRENT_CONFIG_VERSION;
 
-const LEGACY_ALLOWLIST_REASON: &str = "migrated from legacy allowlist entry";
-
 pub(super) fn deserialize_allowlist_rules<'de, D>(
     deserializer: D,
 ) -> std::result::Result<Vec<AllowlistRule>, D::Error>
@@ -22,16 +20,11 @@ where
     Ok(match field {
         None => Vec::new(),
         Some(AllowlistField::Structured(rules)) => rules,
-        Some(AllowlistField::Legacy(patterns)) => patterns
-            .into_iter()
-            .map(|pattern| AllowlistRule {
-                pattern,
-                cwd: None,
-                user: None,
-                expires_at: None,
-                reason: LEGACY_ALLOWLIST_REASON.to_string(),
-            })
-            .collect(),
+        Some(AllowlistField::Legacy(_patterns)) => {
+            return Err(serde::de::Error::custom(
+                "replace legacy string array with [[allow]] tables that declare cwd or user scope",
+            ));
+        }
     })
 }
 

@@ -1,5 +1,5 @@
 //! Config subcommand behavior: `config show`/`init`/`validate` projection,
-//! layered config source attribution, legacy allowlist migration, and
+//! layered config source attribution, legacy allowlist rejection, and
 //! per-rule error location reporting.
 //!
 //! Split from the original `tests/full_pipeline.rs` (behavior-preserving move).
@@ -51,7 +51,7 @@ reason = "ephemeral test teardown"
 }
 
 #[test]
-fn config_validate_reports_missing_scope_as_error_for_legacy_allowlist() {
+fn config_validate_reports_legacy_string_allowlist_as_error() {
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
 
@@ -74,12 +74,12 @@ fn config_validate_reports_missing_scope_as_error_for_legacy_allowlist() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|e| e["code"] == "missing_scope")
+            .any(|e| e["code"] == "config_parse_error")
     );
 }
 
 #[test]
-fn config_show_uses_inspection_path_for_legacy_allowlist() {
+fn config_show_rejects_legacy_string_allowlist() {
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
 
@@ -95,11 +95,10 @@ fn config_show_uses_inspection_path_for_legacy_allowlist() {
         .output()
         .unwrap();
 
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("[[allow]]"));
-    assert!(stdout.contains("pattern = \"terraform destroy *\""));
-    assert!(stdout.contains("reason = \"migrated from legacy allowlist entry\""));
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("[[allow]]"));
+    assert!(stderr.contains("cwd or user"));
 }
 
 #[test]
@@ -589,38 +588,4 @@ reason = "broad warning only"
     assert!(stdout.contains("warnings:"));
     assert!(stdout.contains("[broad_pattern]"));
     assert!(!stdout.contains("errors:"));
-}
-
-#[test]
-fn legacy_allowlist_schema_is_migrated_by_config_show() {
-    let home = TempDir::new().unwrap();
-    let workspace = TempDir::new().unwrap();
-
-    fs::write(
-        workspace.path().join(".aegis.toml"),
-        r#"
-mode = "Strict"
-allowlist = ["terraform destroy *"]
-"#,
-    )
-    .unwrap();
-
-    let output = base_command(home.path())
-        .current_dir(workspace.path())
-        .args(["config", "show"])
-        .output()
-        .unwrap();
-
-    assert!(output.status.success());
-    assert!(
-        output.stderr.is_empty(),
-        "legacy config should migrate cleanly"
-    );
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("config_version = 1"));
-    assert!(stdout.contains("[[allow]]"));
-    assert!(stdout.contains("pattern = \"terraform destroy *\""));
-    assert!(stdout.contains("reason = \"migrated from legacy allowlist entry\""));
-    assert!(!stdout.contains("allowlist = ["));
 }

@@ -121,10 +121,8 @@ Runtime rules:
 
 Legacy compatibility:
 
-- legacy examples may still appear as `allowlist = ["..."]` during migration discussions
-- legacy string-array allowlists remain parseable for migration and inspection
-- legacy string-array entries are normalized internally to structured rules with reason `migrated from legacy allowlist entry`
-- legacy entries are `readable for migration, invalid for runtime` until they gain `cwd` and/or `user` scope
+- `[[allowlist]]` is an alias for `[[allow]]` and requires the same scope.
+- Legacy string arrays are rejected; replace each entry with an `[[allow]]` table declaring `cwd` or `user` scope.
 
 `allowlist_override_level` controls when allowlist matches change policy outcomes in `Protect` and `Strict`:
 

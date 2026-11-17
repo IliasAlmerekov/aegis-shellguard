@@ -34,10 +34,11 @@ fn config_schema_doc_exists_and_describes_versioning_and_migration() {
     for needle in [
         "config_version",
         "schema evolution",
-        "allowlist = [",
+        "[[allowlist]]",
+        "Legacy string arrays are rejected",
         "[[allow]]",
         "cwd or user scope",
-        "readable for migration, invalid for runtime",
+        "declaring `cwd` or `user` scope",
         "mode semantics",
         "postgres_snapshot",
         "mysql_snapshot",

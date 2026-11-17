@@ -66,11 +66,19 @@ fn append_rule(
     let pattern = prefix.join(" ");
     let cwd_str = cwd.to_string_lossy().into_owned();
     let mut existing_content: Option<String> = None;
+    let mut legacy_header = false;
 
     if config_path.exists() {
         let contents = fs::read_to_string(config_path)?;
         let config: AegisConfig = toml::from_str(&contents)
             .map_err(|e| ConfigError::Config(format!("failed to parse config: {e}")))?;
+
+        let table: toml::Table = toml::from_str(&contents)
+            .map_err(|e| ConfigError::Config(format!("failed to parse config: {e}")))?;
+        legacy_header = table.contains_key(match kind {
+            TableKind::Allow => "allowlist",
+            TableKind::Blocklist => "blocklist",
+        });
 
         if let Some(outcome) = check_dedup_and_conflict(
             &config,
@@ -87,11 +95,19 @@ fn append_rule(
 
     let (header, reason) = match kind {
         TableKind::Allow => (
-            "[[allow]]",
+            if legacy_header {
+                "[[allowlist]]"
+            } else {
+                "[[allow]]"
+            },
             allow_reason_for_date(OffsetDateTime::now_utc()),
         ),
         TableKind::Blocklist => (
-            "[[block]]",
+            if legacy_header {
+                "[[blocklist]]"
+            } else {
+                "[[block]]"
+            },
             block_reason_for_date(OffsetDateTime::now_utc()),
         ),
     };
@@ -134,6 +150,41 @@ mod tests {
     use tempfile::TempDir;
 
     type TomlTables<'a> = Vec<(&'a str, Vec<(&'a str, &'a str, &'a str)>)>;
+
+    #[test]
+    fn append_preserves_legacy_headers_and_ignores_comments() {
+        for (header, comment, allow) in [
+            ("allowlist", "", true),
+            ("blocklist", "", false),
+            ("allow", "# [[allowlist]]\n", true),
+        ] {
+            let dir = TempDir::new().unwrap();
+            let home = TempDir::new().unwrap();
+            let path = dir.path().join(".aegis.toml");
+            let original = format!(
+                "{comment}[[{header}]]\npattern = \"git status\"\ncwd = \"/tmp\"\nreason = \"test\"\n"
+            );
+            fs::write(&path, &original).unwrap();
+            let prefix = vec!["git".to_string(), "push".to_string()];
+            if allow {
+                append_allow_rule(&path, &prefix, dir.path()).unwrap();
+            } else {
+                append_block_rule(&path, &prefix, dir.path()).unwrap();
+            }
+            let contents = fs::read_to_string(&path).unwrap();
+            assert!(contents.starts_with(&original));
+            assert!(contents[original.len()..].contains(&format!("[[{header}]]")));
+            let config = AegisConfig::load_for(dir.path(), Some(home.path())).unwrap();
+            assert_eq!(
+                if allow {
+                    config.allowlist.len()
+                } else {
+                    config.blocklist.len()
+                },
+                2
+            );
+        }
+    }
 
     #[test]
     fn append_allow_rule_adds_allow_header() {
