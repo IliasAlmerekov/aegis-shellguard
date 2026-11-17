@@ -275,7 +275,21 @@ fn proc_version_indicates_wsl1(proc_version: &str) -> bool {
     proc_version.contains("microsoft") && !proc_version.contains("microsoft-standard")
 }
 
+#[cfg(test)]
+thread_local! {
+    static APPARMOR_SYSCTL_OVERRIDE: std::cell::Cell<Option<Option<&'static str>>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+fn set_apparmor_sysctl_override(value: Option<Option<&'static str>>) {
+    APPARMOR_SYSCTL_OVERRIDE.set(value);
+}
+
 pub(crate) fn apparmor_userns_restricted() -> bool {
+    #[cfg(test)]
+    if let Some(content) = APPARMOR_SYSCTL_OVERRIDE.get() {
+        return apparmor_sysctl_restricted(content);
+    }
     let content =
         std::fs::read_to_string("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").ok();
     apparmor_sysctl_restricted(content.as_deref())
@@ -296,6 +310,17 @@ pub(crate) fn sysctl_userns_available() -> bool {
 #[cfg(test)]
 mod tests {
     use super::{find_system_bwrap_in_paths, proc_version_indicates_wsl1};
+
+    #[test]
+    fn apparmor_public_probe_reads_both_sysctl_states() {
+        super::set_apparmor_sysctl_override(Some(Some("1")));
+        assert!(crate::apparmor_userns_restricted());
+        super::set_apparmor_sysctl_override(Some(Some("0")));
+        assert!(!crate::apparmor_userns_restricted());
+        super::set_apparmor_sysctl_override(Some(None));
+        assert!(!crate::apparmor_userns_restricted());
+        super::set_apparmor_sysctl_override(None);
+    }
 
     #[test]
     fn apparmor_restriction_parses_sysctl_content() {

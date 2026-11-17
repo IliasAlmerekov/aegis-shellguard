@@ -118,6 +118,10 @@ pub(super) fn startup_unavailability(
     ))
 }
 
+#[cfg(test)]
+static TEST_STARTUP_UNAVAILABLE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// Warn once at watch-session startup when a configured Sandbox has no usable
 /// bwrap path (ADR-029 §3: warn at startup, refuse per command). Emitted
 /// before the first input frame so the unavailability is visible even when
@@ -128,6 +132,10 @@ pub(super) async fn warn_if_sandbox_unavailable_at_startup(context: &RuntimeCont
     // the async runtime thread (CONVENTION.md §3); this module's prepare path
     // already routes blocking sandbox work through spawn_blocking.
     let unavailability = tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        if TEST_STARTUP_UNAVAILABLE.load(std::sync::atomic::Ordering::SeqCst) {
+            return startup_unavailability(sandbox.as_ref(), false, true, |_| false);
+        }
         startup_unavailability(
             sandbox.as_ref(),
             aegis_sandbox::wsl1_unavailable(),
@@ -296,6 +304,55 @@ mod tests {
             message,
             crate::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE
         );
+    }
+
+    #[test]
+    fn startup_warning_is_emitted() {
+        const CHILD: &str = "AEGIS_TEST_STARTUP_WARNING_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            super::TEST_STARTUP_UNAVAILABLE.store(true, std::sync::atomic::Ordering::SeqCst);
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                let dir = tempfile::TempDir::new().unwrap();
+                let context = crate::runtime::RuntimeContext::new_with_audit_path(
+                    aegis_config::AegisConfig::default(),
+                    tokio::runtime::Handle::current(),
+                    dir.path().join("audit.jsonl"),
+                )
+                .unwrap();
+                warn_if_sandbox_unavailable_at_startup(&context).await;
+            });
+        } else {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "watch::sandbox::tests::startup_warning_is_emitted",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let stdout = String::from_utf8(output.stdout).unwrap();
+            let frame = stdout
+                .lines()
+                .find_map(|line| {
+                    line.find('{')
+                        .and_then(|i| serde_json::from_str::<serde_json::Value>(&line[i..]).ok())
+                })
+                .expect("startup warning frame");
+            assert_eq!(frame["type"], "warning");
+            assert_eq!(frame["code"], "sandbox_apparmor_unavailable");
+            assert_eq!(frame["sandbox_status"], "unavailable");
+            assert_eq!(
+                frame["message"],
+                crate::runtime::SANDBOX_APPARMOR_UNAVAILABLE_MESSAGE
+            );
+        }
     }
 
     #[test]
