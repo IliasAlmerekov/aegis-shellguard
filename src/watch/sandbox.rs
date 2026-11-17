@@ -132,16 +132,22 @@ pub(super) async fn warn_if_sandbox_unavailable_at_startup(context: &RuntimeCont
     // the async runtime thread (CONVENTION.md §3); this module's prepare path
     // already routes blocking sandbox work through spawn_blocking.
     let unavailability = tokio::task::spawn_blocking(move || {
+        let is_wsl1 = aegis_sandbox::wsl1_unavailable();
+        let apparmor_restricted = aegis_sandbox::apparmor_userns_restricted();
+        let available: fn(&aegis_sandbox::SandboxConfig) -> bool =
+            aegis_sandbox::sandbox_available_for;
         #[cfg(test)]
-        if TEST_STARTUP_UNAVAILABLE.load(std::sync::atomic::Ordering::SeqCst) {
-            return startup_unavailability(sandbox.as_ref(), false, true, |_| false);
-        }
-        startup_unavailability(
-            sandbox.as_ref(),
-            aegis_sandbox::wsl1_unavailable(),
-            aegis_sandbox::apparmor_userns_restricted(),
-            aegis_sandbox::sandbox_available_for,
-        )
+        let (is_wsl1, apparmor_restricted, available) =
+            if TEST_STARTUP_UNAVAILABLE.load(std::sync::atomic::Ordering::SeqCst) {
+                (
+                    false,
+                    true,
+                    (|_| false) as fn(&aegis_sandbox::SandboxConfig) -> bool,
+                )
+            } else {
+                (is_wsl1, apparmor_restricted, available)
+            };
+        startup_unavailability(sandbox.as_ref(), is_wsl1, apparmor_restricted, available)
     })
     .await
     // A join failure means the probe never answered; the startup warning is

@@ -277,21 +277,21 @@ fn proc_version_indicates_wsl1(proc_version: &str) -> bool {
 
 #[cfg(test)]
 thread_local! {
-    static APPARMOR_SYSCTL_OVERRIDE: std::cell::Cell<Option<Option<&'static str>>> = const { std::cell::Cell::new(None) };
+    static APPARMOR_SYSCTL_PATH: std::cell::RefCell<Option<std::path::PathBuf>> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(test)]
-fn set_apparmor_sysctl_override(value: Option<Option<&'static str>>) {
-    APPARMOR_SYSCTL_OVERRIDE.set(value);
+fn set_apparmor_sysctl_path(path: Option<std::path::PathBuf>) {
+    APPARMOR_SYSCTL_PATH.with(|value| *value.borrow_mut() = path);
 }
 
 pub(crate) fn apparmor_userns_restricted() -> bool {
+    let path = std::path::Path::new("/proc/sys/kernel/apparmor_restrict_unprivileged_userns");
     #[cfg(test)]
-    if let Some(content) = APPARMOR_SYSCTL_OVERRIDE.get() {
-        return apparmor_sysctl_restricted(content);
-    }
-    let content =
-        std::fs::read_to_string("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").ok();
+    let path = APPARMOR_SYSCTL_PATH
+        .with(|value| value.borrow().clone())
+        .unwrap_or_else(|| path.to_path_buf());
+    let content = std::fs::read_to_string(path).ok();
     apparmor_sysctl_restricted(content.as_deref())
 }
 
@@ -313,13 +313,16 @@ mod tests {
 
     #[test]
     fn apparmor_public_probe_reads_both_sysctl_states() {
-        super::set_apparmor_sysctl_override(Some(Some("1")));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("apparmor_sysctl");
+        super::set_apparmor_sysctl_path(Some(path.clone()));
+        std::fs::write(&path, "1\n").unwrap();
         assert!(crate::apparmor_userns_restricted());
-        super::set_apparmor_sysctl_override(Some(Some("0")));
+        std::fs::write(&path, "0\n").unwrap();
         assert!(!crate::apparmor_userns_restricted());
-        super::set_apparmor_sysctl_override(Some(None));
+        std::fs::remove_file(&path).unwrap();
         assert!(!crate::apparmor_userns_restricted());
-        super::set_apparmor_sysctl_override(None);
+        super::set_apparmor_sysctl_path(None);
     }
 
     #[test]
