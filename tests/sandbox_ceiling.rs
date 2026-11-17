@@ -10,8 +10,9 @@
 mod support;
 
 use std::fs;
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 use tempfile::TempDir;
 
@@ -392,4 +393,108 @@ fn ceiling_warnings_never_surface_in_the_shell_wrapper_path() {
             assert!(!all.contains(code), "{code} leaked into -c output: {all}");
         }
     }
+}
+
+#[test]
+fn watch_uses_each_frame_cwd_and_defaults_to_process_cwd() {
+    let Some(base) = outside_tmp() else { return };
+    if !confinement_available() {
+        return;
+    }
+    let home = hermetic_home();
+    let a = base.path().join("a");
+    let b = base.path().join("b");
+    init_repo(home.path(), &a);
+    init_repo(home.path(), &b);
+    let frames = [
+        serde_json::json!({"id": "b-own", "cwd": b, "cmd": format!("touch {}/b-own", b.display())}),
+        serde_json::json!({"id": "b-other", "cwd": b, "cmd": format!("touch {}/b-other", a.display())}),
+        serde_json::json!({"id": "default", "cmd": format!("touch {}/default", a.display())}),
+    ];
+    let mut child = base_command(home.path())
+        .arg("watch")
+        .env("AEGIS_FORCE_NO_TTY", "1")
+        .current_dir(&a)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    for frame in frames {
+        writeln!(stdin, "{frame}").unwrap();
+    }
+    drop(stdin);
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        b.join("b-own").exists(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(!a.join("b-other").exists());
+    assert!(
+        a.join("default").exists(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+#[test]
+fn watch_runs_when_frame_cwd_cannot_be_canonicalized() {
+    if !confinement_available() {
+        return;
+    }
+    let home = hermetic_home();
+    let base = TempDir::new().unwrap();
+    let cwd = base.path().join("cwd");
+    fs::create_dir(&cwd).unwrap();
+    let mut child = base_command(home.path())
+        .arg("watch")
+        .env("AEGIS_FORCE_NO_TTY", "1")
+        .current_dir(&cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    writeln!(stdin, "{}", serde_json::json!({"id":"ready", "cmd":"true"})).unwrap();
+    let mut line = String::new();
+    loop {
+        line.clear();
+        assert!(stdout.read_line(&mut line).unwrap() > 0);
+        let frame: serde_json::Value = serde_json::from_str(&line).unwrap();
+        if frame["type"] == "result" && frame["id"] == "ready" {
+            break;
+        }
+    }
+    fs::remove_dir(&cwd).unwrap();
+    let process_cwd = format!("/proc/{}/cwd", child.id());
+    assert!(Path::new(&process_cwd).is_dir());
+    assert!(fs::canonicalize(&process_cwd).is_err());
+    writeln!(
+        stdin,
+        "{}",
+        serde_json::json!({"id":"missing", "cwd":"/proc/self/cwd", "cmd":"true"})
+    )
+    .unwrap();
+    drop(stdin);
+    let mut frames = Vec::new();
+    for line in stdout.lines() {
+        frames.push(serde_json::from_str::<serde_json::Value>(&line.unwrap()).unwrap());
+    }
+    let status = child.wait().unwrap();
+    assert!(status.success());
+    assert!(
+        frames.iter().any(|frame| frame["type"] == "result"
+            && frame["id"] == "missing"
+            && frame["exit_code"] == 0),
+        "{frames:?}"
+    );
 }
