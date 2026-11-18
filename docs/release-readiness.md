@@ -63,44 +63,9 @@ path, not the 1.0 release:
 - [x] Threat-model and limitation language is visible, honest, and easy to
       find.
 
-## Language-aware analysis re-entry conditions (ADR-022)
+## Language-aware analysis
 
-Language-aware analysis is an opt-in 1.x feature, not a 1.0 launch blocker.
-These items remain unchecked until runtime implementation and qualification are
-verified; the ADR and implementation plan alone do not satisfy the conditions
-for enabling it by default in a later release.
-
-- [ ] The additive analysis foundation preserves existing Scanner results,
-      starts no worker on the no-source safe path, and keeps that path under
-      2 ms.
-- [ ] The ephemeral parsing worker, source reader, recursive queue, typed
-      degradation, Policy/TUI/Watch/Hook/CI behavior, and Audit v1/v2
-      compatibility pass their production qualification matrix.
-- [ ] Python is production-qualified and included in every official release
-      target.
-- [ ] JavaScript is production-qualified and included in every official release
-      target.
-- [ ] TypeScript is production-qualified and included in every official release
-      target.
-- [ ] Shell/Bash is production-qualified and included in every official release
-      target.
-- [ ] The pinned Tree-sitter runtime and grammar manifest pass license,
-      supply-chain, ABI, corpus, fuzz, binary-size, memory, latency, and all-four-
-      target release gates.
-- [ ] Documentation states the residual dynamic-code, dependency, encoding,
-      TOCTOU, privacy, and unsupported-language limits without implying program
-      verification or sandbox guarantees.
-
-#### Iteration 10 qualification evidence (not release enablement)
-
-`docs/performance-baseline.md` records the current local measurements for the
-four foundation adapters under qualification: the worker-free safe path, each grammar's parse row,
-cold-worker RSS/start evidence, the aggregate-timeout boundary, and native
-release-binary size. This is **not a release-enable claim**. The unchecked gate
-above stays authoritative until the required CI contexts have produced the
-all-four-target release, performance, installer, snapshot/rollback, and fuzz
-evidence. In particular, a local native binary size is not a substitute for
-the release artifacts on the two Linux musl and two macOS targets.
+See [`docs/language-qualification.md`](language-qualification.md) for the conditions that gate turning language-aware analysis on by default.
 
 ## GitHub Release asset validation
 
@@ -536,4 +501,3 @@ aegis audit --verify-integrity
 - `docs/ci.md`
 - `docs/troubleshooting.md`
 - `docs/threat-model.md`
-- `docs/releases/current-line.md`

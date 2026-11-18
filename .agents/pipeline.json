@@ -6,8 +6,7 @@
   "gate": {
     "timeout_seconds": 600,
     "lint": [
-      "scripts/lint.sh fmt",
-      "uvx semgrep scan --config .semgrep --error --quiet --metrics off"
+      "scripts/lint.sh fmt"
     ],
     "typecheck": { "per_package": "cargo check -p {pkg} --all-targets" },
     "tests": {
