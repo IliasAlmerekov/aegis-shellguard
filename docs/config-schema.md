@@ -457,6 +457,7 @@ integrity_mode = "Off"
 Guidance:
 
 - `Off` disables integrity chaining.
+- A confirmation without an applicable Snapshot provider records the uncoloured disclosure in `explanation.context.no_rollback_disclosure`; older entries omit this optional field (#251, ADR-026).
 - `ChainSha256` links audit entries and rotated segments to detect corruption
   and inconsistent edits; it is not a keyed or remote anchor.
 - verify the active and rotated logs with `aegis audit --verify-integrity`.

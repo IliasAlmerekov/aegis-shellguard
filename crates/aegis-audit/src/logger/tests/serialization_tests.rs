@@ -33,6 +33,7 @@ fn audit_entry_serializes_nested_explanation_sections() {
             applicable_snapshot_plugins: vec!["git".to_string()],
             git_targets: Vec::new(),
             recovery_opt_out: false,
+            no_rollback_disclosure: None,
         },
         outcome: Some(ExecutionOutcomeExplanation {
             decision: ExecutionDecisionExplanation::Approved,
@@ -140,6 +141,7 @@ fn audit_entry_keeps_existing_top_level_fields_for_backward_compatibility() {
             applicable_snapshot_plugins: vec!["git".to_string()],
             git_targets: Vec::new(),
             recovery_opt_out: false,
+            no_rollback_disclosure: None,
         },
         outcome: Some(ExecutionOutcomeExplanation {
             decision: ExecutionDecisionExplanation::Approved,

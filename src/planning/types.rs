@@ -70,6 +70,19 @@ impl InterceptionPlan {
         );
         explanation.context.git_targets = decision_context.git_targets.explain();
         explanation.context.recovery_opt_out = decision_context.recovery_opt_out;
+        if assessment.risk == aegis_types::RiskLevel::Danger
+            && policy_decision.decision == PolicyAction::Prompt
+            && !matches!(
+                policy_decision.rationale,
+                aegis_policy::PolicyRationale::AnalysisConfirmationRequired
+                    | aegis_policy::PolicyRationale::AnalysisOverrideRequired
+            )
+            && !decision_context.recovery_opt_out
+            && decision_context.applicable_snapshot_plugins.is_empty()
+        {
+            explanation.context.no_rollback_disclosure =
+                Some(aegis_explanation::NO_ROLLBACK_DISCLOSURE.to_string());
+        }
 
         Self {
             assessment: Box::new(assessment),
@@ -297,6 +310,70 @@ mod tests {
             context.applicable_snapshot_plugins(),
             applicable_snapshot_plugins.as_slice()
         );
+    }
+
+    #[test]
+    fn danger_without_provider_records_no_rollback_disclosure() {
+        let assessment = aegis_scanner::assess("rm -rf ./tmp").unwrap();
+        let context = DecisionContext::new(
+            Mode::Protect,
+            ExecutionTransport::Shell,
+            false,
+            CwdState::Resolved(PathBuf::from(".")),
+            None,
+            vec![],
+        );
+        let decision = PolicyDecision {
+            decision: PolicyAction::Prompt,
+            rationale: PolicyRationale::RequiresConfirmation,
+            requires_confirmation: true,
+            snapshots_required: true,
+            confinement_required: false,
+            allowlist_effective: false,
+        };
+        let plan = InterceptionPlan::from_policy(assessment, context, decision);
+        let json = serde_json::to_value(plan.explanation()).unwrap();
+        assert_eq!(
+            json["context"]["no_rollback_disclosure"],
+            "No Snapshot provider applies: this command cannot be rolled back."
+        );
+    }
+
+    #[test]
+    fn danger_with_provider_or_recovery_opt_out_has_no_no_rollback_disclosure() {
+        use crate::planning::git_target::{GitTarget, GitTargetPlan, GitTargetUnresolved};
+        let decision = PolicyDecision {
+            decision: PolicyAction::Prompt,
+            rationale: PolicyRationale::RequiresConfirmation,
+            requires_confirmation: true,
+            snapshots_required: true,
+            confinement_required: false,
+            allowlist_effective: false,
+        };
+        for (plugins, opt_out, unresolved) in [
+            (vec!["git"], false, false),
+            (vec![], true, false),
+            (vec!["docker"], false, true),
+        ] {
+            let mut context = DecisionContext::new(
+                Mode::Protect,
+                ExecutionTransport::Shell,
+                false,
+                CwdState::Resolved(PathBuf::from(".")),
+                None,
+                plugins,
+            )
+            .with_recovery_opt_out(opt_out);
+            if unresolved {
+                context = context.with_git_targets(GitTargetPlan {
+                    targets: vec![GitTarget::Unresolved(GitTargetUnresolved::DynamicPath)],
+                    ..GitTargetPlan::default()
+                });
+            }
+            let assessment = aegis_scanner::assess("rm -rf ./tmp").unwrap();
+            let plan = InterceptionPlan::from_policy(assessment, context, decision);
+            assert!(plan.explanation().context.no_rollback_disclosure.is_none());
+        }
     }
 
     #[test]

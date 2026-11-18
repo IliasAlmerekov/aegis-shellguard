@@ -705,6 +705,15 @@ unlike `Snapshot attempt readiness`, which belongs to one attempt (ADR-026,
 ADR-052).
 _Avoid_: snapshot health, availability, snapshot status
 
+**No-rollback disclosure**:
+The warning, shown in red at the confirmation of a `Danger` command, that the
+command cannot be rolled back because no `Snapshot plugin` applies. It is shown
+only when no `Recovery opt-out` is in effect, and approval then requires the
+full word `yes`. The same text without colour reaches stderr and the `Audit
+log`. An unresolved Git target alongside an applicable plugin is not a
+no-rollback disclosure (ADR-026 §4).
+_Avoid_: irreversible warning, snapshot gap
+
 **Recovery opt-out**:
 The trusted, deliberate declining of `Required recovery`, from either of two
 sources: `Mode::Audit`, which declines all enforcement, or a global

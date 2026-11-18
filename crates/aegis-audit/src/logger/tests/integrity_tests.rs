@@ -133,3 +133,28 @@ fn verify_integrity_rejects_a_symlinked_gzip_segment() {
             if path == archive.to_string_lossy()
     ));
 }
+
+#[test]
+fn legacy_explanation_chain_remains_valid_and_disclosure_is_hashed() {
+    let dir = TempDir::new().unwrap();
+    let logger = AuditLogger::new(dir.path().join("audit.jsonl"))
+        .with_integrity_mode(AuditIntegrityMode::ChainSha256);
+    let old = entry(0, RiskLevel::Danger).with_explanation(explanation_with_match_text("rm -rf"));
+    logger.append(old).unwrap();
+    let raw = std::fs::read_to_string(dir.path().join("audit.jsonl")).unwrap();
+    assert!(!raw.contains("no_rollback_disclosure"));
+    let parsed: AuditEntry = serde_json::from_str(raw.trim()).unwrap();
+    assert_eq!(serde_json::to_string(&parsed).unwrap(), raw.trim());
+    let mut explanation = explanation_with_match_text("rm -rf");
+    explanation.context.no_rollback_disclosure =
+        Some(aegis_explanation::NO_ROLLBACK_DISCLOSURE.to_string());
+    let changed = entry(0, RiskLevel::Danger).with_explanation(explanation);
+    assert_ne!(
+        compute_entry_hash(&parsed, None).unwrap(),
+        compute_entry_hash(&changed, None).unwrap()
+    );
+    assert_eq!(
+        logger.verify_integrity().unwrap().status,
+        AuditIntegrityStatus::Verified
+    );
+}
