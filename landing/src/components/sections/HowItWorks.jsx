@@ -21,6 +21,8 @@ import { Reveal } from '../ui/Reveal'
    eleven-pixel type. See `--color-electric-text`. */
 const NOTE_HELD = 'var(--color-electric-text)'
 
+const RELEASE = '0.9.0'
+
 const STEPS = [
   {
     num: '01',
@@ -29,7 +31,12 @@ const STEPS = [
     held: false,
     lines: [
       { who: 'you', text: 'npm i -g @iliasalmerekov/aegis' },
-      { mark: '+', text: '@iliasalmerekov/aegis@0.8.0' },
+      {
+        mark: '+',
+        text: `@iliasalmerekov/aegis@${RELEASE}`,
+        // The GitHub Release body is this version's CHANGELOG section.
+        href: `https://github.com/IliasAlmerekov/aegis-shellguard/releases/tag/v${RELEASE}`,
+      },
     ],
   },
   {
@@ -143,7 +150,18 @@ function Line({ line }) {
           line.sub ? 'text-cloud-dim text-[12px] md:text-[13px]' : 'text-cloud'
         }`}
       >
-        {line.text}
+        {line.href ? (
+          <a
+            href={line.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-cloud-dim/50 underline-offset-4 hover:decoration-cloud focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-neon"
+          >
+            {line.text}
+          </a>
+        ) : (
+          line.text
+        )}
       </span>
     </div>
   )

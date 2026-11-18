@@ -7,6 +7,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+## [0.9.0] (2026-11-18)
+
+- Changed: The landing install example links its version to the GitHub Release, whose notes are this version's CHANGELOG section.
+
 - Added: disclose commands without an applicable Snapshot provider and require full-word confirmation (#251, ADR-026).
 
 - Fixed: config loading no longer rewrites legacy allowlist tables, and rule appends preserve legacy headers (#249).
