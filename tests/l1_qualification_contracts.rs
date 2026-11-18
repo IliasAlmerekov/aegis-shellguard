@@ -464,14 +464,13 @@ fn production_qualification_record_covers_all_remaining_iteration_10_measurement
         );
     }
 
-    // Collapse line wraps so the phrases match across them.
-    let qualification = read_repo_file("docs/language-qualification.md")
+    let unwrapped_qualification = read_repo_file("docs/language-qualification.md")
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
     for needle in ["**not** release enablement", "required CI contexts"] {
         assert!(
-            qualification.contains(needle),
+            unwrapped_qualification.contains(needle),
             "language qualification must state the Iteration 10 qualification boundary `{needle}`"
         );
     }

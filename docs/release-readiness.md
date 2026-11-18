@@ -65,7 +65,8 @@ path, not the 1.0 release:
 
 ## Language-aware analysis
 
-See [`docs/language-qualification.md`](language-qualification.md) for the conditions that gate turning language-aware analysis on by default.
+See [`docs/language-qualification.md`](language-qualification.md) for the
+conditions that gate turning language-aware analysis on by default.
 
 ## GitHub Release asset validation
 
