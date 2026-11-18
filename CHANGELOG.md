@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Added: Evaluation golden test pins the verdicts of a fixed command corpus in Protect and Strict (#610).
+
 ## [0.9.0] (2026-11-18)
 
 - Changed: The landing install example links its version to the GitHub Release, whose notes are this version's CHANGELOG section.

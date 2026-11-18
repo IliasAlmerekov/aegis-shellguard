@@ -487,6 +487,16 @@ The recorded outcome of the interception flow: `Approved`, `Denied`, `AutoApprov
 from the scanner's `Assessment`.
 _Avoid_: result, outcome, verdict (those belong to the scanner stage)
 
+**Evaluation**:
+The result of running one command through `aegis -c <command> --output json`: Aegis
+assesses and decides but never executes the command.
+_Avoid_: dry run, simulation
+
+**Evaluation golden**:
+The committed file that pins the `Evaluation` of a fixed command corpus in `Protect` and
+`Strict`. A change to it is a change of behaviour; a cleanup never edits it.
+_Avoid_: snapshot file, baseline, expected output
+
 **Toggle**:
 The global on/off switch checked at command boundaries; when off, Aegis passes commands
 through unguarded (ADR-005).
