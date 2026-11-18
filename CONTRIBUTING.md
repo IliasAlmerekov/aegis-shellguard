@@ -104,8 +104,9 @@ scripts/lint.sh
 ```
 
 The script runs rustfmt and clippy, over every target and feature, on the
-Rust version pinned in `.github/versions.env`. These are the same commands CI
-runs. If that version is missing, the script prints the `rustup` command that
+Rust version pinned in `.github/versions.env`, then the text checks
+(`scripts/lint.sh text`, no `.rs` file over 800 lines). These are the same
+commands CI runs. If that version is missing, the script prints the `rustup` command that
 installs it. Pass `fmt` or `clippy` to run one of the two.
 
 ## Run benchmarks
@@ -136,7 +137,7 @@ Fuzzing guidance and current status are documented in [`docs/adr/README.md#verif
 
 CI runs every gate on each pull request, and all of them must pass to merge:
 
-- `scripts/lint.sh` (rustfmt and clippy on the pinned toolchain)
+- `scripts/lint.sh` (rustfmt and clippy on the pinned toolchain, then the text checks)
 - `cargo test --workspace`, which covers the root package and every member crate
 - `cargo audit` and `cargo deny check`
 - a regenerated `aegis-schema.json`, which must match the committed file

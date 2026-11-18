@@ -279,7 +279,7 @@ Minimum expectations:
 
 Quality gates, all run by CI and required to merge:
 
-- `scripts/lint.sh` (rustfmt and clippy)
+- `scripts/lint.sh` (rustfmt, clippy, and `scripts/lint.sh text`, the grep-and-find checks clippy cannot make, such as the 800-line `.rs` limit)
 - `cargo test --workspace`
 - `cargo audit`
 - `cargo deny check`

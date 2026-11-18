@@ -108,7 +108,7 @@ pub fn analyze(source: &str) -> AdapterResult {
 }
 
 // The unit tests live in a sibling file to keep this adapter under the
-// 800-line file-size budget (`tests/file_size_budget.rs`); the same `#[path]`
+// 800-line file-size budget (`scripts/lint.sh text`); the same `#[path]`
 // split is used by `javascript.rs` → `javascript_tests.rs`.
 #[cfg(test)]
 #[path = "typescript_tests.rs"]

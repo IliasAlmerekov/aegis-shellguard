@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Added: `scripts/lint.sh text` runs grep-and-find checks clippy cannot make, starting with the 800-line `.rs` limit, in `lint.sh all` and the quality gate; it replaces the `file_size_budget` Rust test (#635).
 - Added: Evaluation golden test pins the verdicts of a fixed command corpus in Protect and Strict (#610).
 
 ## [0.9.0] (2026-11-18)

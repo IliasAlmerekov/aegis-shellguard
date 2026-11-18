@@ -3,7 +3,7 @@
 //! pipes the consumer's own stdout, and whether the marker sits in a context
 //! [`heredoc_target_is_data_consumer`] trusts (ADR-042). Split out of
 //! [`super::embedded_scripts`] to keep that file under the 800-line budget
-//! in `tests/file_size_budget.rs`; `embedded_scripts` is this predicate's
+//! in `scripts/lint.sh text`; `embedded_scripts` is this predicate's
 //! only caller. The [`message_flags`] submodule holds the `git`/`gh`
 //! message-flag gates for the same budget reason.
 
