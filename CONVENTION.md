@@ -273,6 +273,9 @@ Minimum expectations:
 - Hot-path behavior must be checked for performance regressions when parser/scanner logic changes.
 - A test of a shell script runs the script, or the block under test, against a fixture.
   An assert on the script's source text proves nothing about what it does.
+- `tests/evaluation_golden.rs` pins the verdict of a fixed command corpus in `tests/fixtures/evaluation_golden.jsonl`.
+  After a change that alters a verdict, regenerate it with `AEGIS_UPDATE_EVALUATION_GOLDEN=1 cargo test --test evaluation_golden` on an otherwise idle machine.
+  A behaviour-changing PR commits the new golden in the same PR; a cleanup PR never edits it.
 
 Quality gates, all run by CI and required to merge:
 

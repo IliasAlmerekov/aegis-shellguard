@@ -11,6 +11,8 @@
 #   Python test files  an added pytest.mark.skip, xfail, pytest.skip(,
 #                      unittest.skip
 #   Any test code      a file that loses more assertion lines than it gains
+#   Evaluation golden  any added or removed line in
+#                      tests/fixtures/evaluation_golden.jsonl
 #
 # Test code is a file under a tests/ directory, a file named like a test
 # (*_test.*, *_tests.rs, *.test.*, *.spec.*, test_*.py), or a Rust file that
@@ -139,6 +141,7 @@ function start(p) {
     test_code = is_test_path(p) || (p in inline)
 }
 function removed_line(text) {
+    if (path == golden_path) report(old_line, "edits the Evaluation golden")
     if (test_code && text ~ assertion) {
         removed_asserts++
         if (first_removed_assert == 0) first_removed_assert = old_line
@@ -146,6 +149,7 @@ function removed_line(text) {
     old_line++
 }
 function added_line(text) {
+    if (path == golden_path) report(new_line, "edits the Evaluation golden")
     if (test_code && text ~ assertion) added_asserts++
     if (kind == "rust") {
         if (text ~ /#\[ignore/) report(new_line, "adds #[ignore]")
@@ -173,6 +177,7 @@ function added_line(text) {
     new_line++
 }
 BEGIN {
+    golden_path = "tests/fixtures/evaluation_golden.jsonl"
     while ((getline l < inline_file) > 0) inline[l] = 1
     sp = "[[:space:]]"
     # Rust assert macros, expect(, and a bare assert: Python `assert x` and

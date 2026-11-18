@@ -155,6 +155,30 @@ git -C "$repo" commit -q -am "test: drop the duplicate case" \
 expect "allow escape in the commit body" "$repo" 0 \
     "skipped, HEAD commit allows it: double_of_three duplicates double_of_two, approved by the maintainer"
 
+# Case: a line of the Evaluation golden changed, then the same edit with the escape.
+golden=tests/fixtures/evaluation_golden.jsonl
+repo=$(new_repo golden-edit)
+mkdir -p "$repo/tests/fixtures"
+printf '%s\n' '{"id":"a","risk":"safe"}' '{"id":"b","risk":"warn"}' >"$repo/$golden"
+git -C "$repo" add -A
+git -C "$repo" commit -q -m "test: add the golden"
+git -C "$repo" update-ref refs/remotes/origin/main HEAD
+sed -i 's/"warn"/"safe"/' "$repo/$golden"
+git -C "$repo" commit -q -am "fix: change a verdict"
+expect "edited Evaluation golden line" "$repo" 1 "$golden:2: edits the Evaluation golden"
+
+repo=$(new_repo golden-edit-allowed)
+mkdir -p "$repo/tests/fixtures"
+printf '%s\n' '{"id":"a","risk":"safe"}' '{"id":"b","risk":"warn"}' >"$repo/$golden"
+git -C "$repo" add -A
+git -C "$repo" commit -q -m "test: add the golden"
+git -C "$repo" update-ref refs/remotes/origin/main HEAD
+sed -i 's/"warn"/"safe"/' "$repo/$golden"
+git -C "$repo" commit -q -am "fix: change a verdict" \
+    -m "tamper-check: allow verdict of b changes on purpose"
+expect "Evaluation golden edit with the allow escape" "$repo" 0 \
+    "skipped, HEAD commit allows it: verdict of b changes on purpose"
+
 # Case: --base picks the diff base explicitly.
 repo=$(new_repo explicit-base)
 sed -i '/double(3), 6/d' "$repo/tests/double.rs"
