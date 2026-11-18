@@ -591,7 +591,7 @@ fn span_for(node: Node) -> ByteSpan {
 }
 
 // The unit tests live in a sibling file to keep this adapter under the
-// 800-line file-size budget (`tests/file_size_budget.rs`); the same `#[path]`
+// 800-line file-size budget (`scripts/lint.sh text`); the same `#[path]`
 // split is used by `typescript.rs` → `typescript_tests.rs`.
 #[cfg(test)]
 #[path = "bash_tests.rs"]

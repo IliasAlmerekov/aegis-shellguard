@@ -2,7 +2,7 @@
 //!
 //! Lives in a sibling file via `#[path = "javascript_tests.rs"]` to keep the
 //! adapter source under the workspace 800-line file-size budget
-//! (`tests/file_size_budget.rs`); the same `#[path]` split is used by
+//! (`scripts/lint.sh text`); the same `#[path]` split is used by
 //! `operation.rs` → `operation_tests.rs`. `use super::*` resolves to the
 //! `javascript` module, so the tests reach the adapter's items directly.
 

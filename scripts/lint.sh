@@ -1,19 +1,24 @@
 #!/bin/sh
-# Run rustfmt and clippy exactly as CI does.
+# Run rustfmt, clippy and the text checks exactly as CI does.
 #
-# This script is the only place these two commands are written (#276). CI, the
-# pre-push hook and `just lint` all call it, and `tests/lint_gate_ci.rs` fails
-# if any of them grows its own copy again.
+# This script is the only place the rustfmt and clippy commands are written
+# (#276). CI, the pre-push hook and `just lint` all call it, and
+# `tests/lint_gate_ci.rs` fails if any of them grows its own copy again.
 #
-# Usage: scripts/lint.sh [fmt|clippy]
+# Usage: scripts/lint.sh [fmt|clippy|text|all]
 #   fmt     check formatting
 #   clippy  lint every target and feature, warnings are errors
-#   (none)  both, fmt first
+#   text    checks clippy cannot make, from grep and find only: no `.rs` file
+#           under src/, crates/, tests/, fuzz/ or benches/ exceeds 800 lines
+#   all     fmt, clippy, then text (also the default with no argument)
 #
-# Both run on the toolchain pinned by RUST_TOOLCHAIN in .github/versions.env,
-# not on the local default. rustfmt output and clippy lints change between
-# releases, so a newer local toolchain would fail on code CI accepts, or pass
-# code CI rejects.
+# LINT_TEXT_ROOT points the text checks at another directory than the
+# checkout. The fixture tests use it. It changes nothing else.
+#
+# fmt and clippy run on the toolchain pinned by RUST_TOOLCHAIN in
+# .github/versions.env, not on the local default. rustfmt output and clippy
+# lints change between releases, so a newer local toolchain would fail on code
+# CI accepts, or pass code CI rejects.
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -47,15 +52,65 @@ run_clippy() {
     cargo "+$toolchain" clippy --workspace --all-targets --all-features --locked -- -D warnings
 }
 
+# One shared exit status: run_text sets it, so a later check can join the others.
+text_failed=0
+
+# Prints one line per offender or read error, nothing when the tree is clean.
+check_rust_file_length() {
+    max=800
+    set --
+    for dir in src crates tests fuzz benches; do
+        if [ -d "$dir" ]; then
+            set -- "$@" "$dir"
+        fi
+    done
+    [ "$#" -gt 0 ] || return 0
+    # Capture find first: in a pipeline its exit status would be lost.
+    find_status=0
+    files=$(find "$@" \( -name target -o -name .git -o -name .worktrees \
+        -o -name .cargo -o -name .claude -o -name node_modules \) -prune \
+        -o -type f -name '*.rs' -print) || find_status=$?
+    if [ "$find_status" -ne 0 ]; then
+        echo "find could not read every path under: $* (exit $find_status)"
+    fi
+    [ -n "$files" ] || return 0
+    while IFS= read -r file; do
+        # `grep -c ''` counts a last line without a trailing newline, `wc -l`
+        # does not. It exits 1 on an empty file and 2 on a read error.
+        grep_status=0
+        lines=$(grep -c '' "$file") || grep_status=$?
+        if [ "$grep_status" -gt 1 ]; then
+            echo "$file: cannot read the file"
+        elif [ "$lines" -gt "$max" ]; then
+            echo "$file: $lines lines, the limit is $max"
+        fi
+    done <<EOF
+$files
+EOF
+}
+
+run_text() {
+    echo "lint: text checks"
+    root=${LINT_TEXT_ROOT:-.}
+    out=$(cd "$root" && check_rust_file_length)
+    if [ -n "$out" ]; then
+        echo "$out" >&2
+        text_failed=1
+    fi
+    return "$text_failed"
+}
+
 case "${1:-all}" in
     fmt) run_fmt ;;
     clippy) run_clippy ;;
+    text) run_text ;;
     all)
         run_fmt
         run_clippy
+        run_text
         ;;
     *)
-        echo "usage: scripts/lint.sh [fmt|clippy]" >&2
+        echo "usage: scripts/lint.sh [fmt|clippy|text|all]" >&2
         exit 2
         ;;
 esac

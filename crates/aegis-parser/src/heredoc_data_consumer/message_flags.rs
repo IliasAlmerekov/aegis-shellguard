@@ -2,7 +2,7 @@
 //! [`super::is_trusted_message_value`] (issue #396): which flag, under which
 //! subcommand, stores its value as a commit, tag, issue or PR message and
 //! nothing else. Split out of [`super`] to keep it under the 800-line budget
-//! in `tests/file_size_budget.rs`.
+//! in `scripts/lint.sh text`.
 
 #[cfg(test)]
 mod tests;

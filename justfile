@@ -13,7 +13,7 @@ write-config-schema:
 test:
     cargo test
 
-# Run rustfmt and clippy exactly as CI does
+# Run rustfmt, clippy and the text checks exactly as CI does
 lint:
     scripts/lint.sh
 
