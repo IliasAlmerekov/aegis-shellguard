@@ -15,10 +15,10 @@
 # LINT_TEXT_ROOT points the text checks at another directory than the
 # checkout. The fixture tests use it. It changes nothing else.
 #
-# fmt and clippy run on the toolchain pinned by RUST_TOOLCHAIN in .github/versions.env,
-# not on the local default. rustfmt output and clippy lints change between
-# releases, so a newer local toolchain would fail on code CI accepts, or pass
-# code CI rejects.
+# fmt and clippy run on the toolchain pinned by RUST_TOOLCHAIN in
+# .github/versions.env, not on the local default. rustfmt output and clippy
+# lints change between releases, so a newer local toolchain would fail on code
+# CI accepts, or pass code CI rejects.
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -52,30 +52,41 @@ run_clippy() {
     cargo "+$toolchain" clippy --workspace --all-targets --all-features --locked -- -D warnings
 }
 
-# Every text check appends to `text_failed` instead of exiting, so one run
-# reports all findings and a later check can join without touching the others.
+# One shared exit status: run_text sets it, so a later check can join the others.
 text_failed=0
 
+# Prints one line per offender or read error, nothing when the tree is clean.
 check_rust_file_length() {
     max=800
-    scope=""
+    set --
     for dir in src crates tests fuzz benches; do
         if [ -d "$dir" ]; then
-            scope="$scope $dir"
+            set -- "$@" "$dir"
         fi
     done
-    [ -n "$scope" ] || return 0
-    # `grep -c ''` counts a last line without a trailing newline, `wc -l` does not.
-    # shellcheck disable=SC2086
-    find $scope \( -name target -o -name .git -o -name .worktrees -o -name .cargo \
-        -o -name .claude -o -name node_modules \) -prune \
-        -o -type f -name '*.rs' -print |
-        while IFS= read -r file; do
-            lines=$(grep -c '' "$file" || true)
-            if [ "$lines" -gt "$max" ]; then
-                echo "$file: $lines lines, the limit is $max"
-            fi
-        done
+    [ "$#" -gt 0 ] || return 0
+    # Capture find first: in a pipeline its exit status would be lost.
+    find_status=0
+    files=$(find "$@" \( -name target -o -name .git -o -name .worktrees \
+        -o -name .cargo -o -name .claude -o -name node_modules \) -prune \
+        -o -type f -name '*.rs' -print) || find_status=$?
+    if [ "$find_status" -ne 0 ]; then
+        echo "find could not read every path under: $* (exit $find_status)"
+    fi
+    [ -n "$files" ] || return 0
+    while IFS= read -r file; do
+        # `grep -c ''` counts a last line without a trailing newline, `wc -l`
+        # does not. It exits 1 on an empty file and 2 on a read error.
+        grep_status=0
+        lines=$(grep -c '' "$file") || grep_status=$?
+        if [ "$grep_status" -gt 1 ]; then
+            echo "$file: cannot read the file"
+        elif [ "$lines" -gt "$max" ]; then
+            echo "$file: $lines lines, the limit is $max"
+        fi
+    done <<EOF
+$files
+EOF
 }
 
 run_text() {
