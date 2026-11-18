@@ -2,9 +2,9 @@
 
 This directory contains the Architecture Decision Records (ADRs) for Aegis.
 
-- [`ARCHITECTURE.md`](../../ARCHITECTURE.md) defines the current structural
-  contracts — what exists, how modules fit together, and which invariants are
-  expected to hold now.
+- [`CONVENTION.md` §3](../../CONVENTION.md#3-architecture-rules) defines the
+  current structural contracts — what exists, how modules fit together, and
+  which invariants are expected to hold now.
 - The ADRs in this directory explain **why** those contracts exist, which
   trade-offs the project accepted, and which non-goals are intentional.
 

@@ -1,6 +1,6 @@
 //! Architecture source-rule tests.
 //!
-//! Source-grep checks for the rules in `ARCHITECTURE.md` §2 and §4 that a
+//! Source-grep checks for the rules in `CONVENTION.md` §2 and §3 that a
 //! `Cargo.toml` dependency check cannot see: edges between modules of one
 //! crate, and forbidden patterns inside a crate's production code. Crate-level
 //! edges live in `tests/architecture_boundaries.rs`.
@@ -37,7 +37,7 @@ fn assert_absent(source: &str, needle: &str, file: &str, rule: &str) {
     );
 }
 
-// ── §2 Diagnostic stream — no raw command or env value in a tracing field ────
+// ── Diagnostic stream — no raw command or env value in a tracing field ────
 
 /// CONVENTION.md §2: a `tracing` field must never carry a raw command string
 /// or an environment variable value. Source-grep floor, not a proof
@@ -62,9 +62,9 @@ fn tracing_fields_never_carry_raw_command_or_env_value() {
     }
 }
 
-// ── §4 Forbidden edges — Policy engine is pure ────────────────────────────────
+// ── Forbidden edges — Policy engine is pure ────────────────────────────────
 
-/// I1 + §4: the policy engine is a pure function. No I/O, no process spawning,
+/// `CONVENTION.md` §3: the policy engine is a pure function. No I/O, no process spawning,
 /// no tokio, no filesystem, no logging. The engine lives in `aegis-policy`;
 /// `src/decision` only re-exports it.
 #[test]
@@ -84,15 +84,15 @@ fn decision_engine_is_pure_no_io() {
                 &src,
                 forbidden,
                 &rel,
-                "I1: policy engine must be a pure function — no I/O",
+                "CONVENTION.md §3: policy engine must be a pure function — no I/O",
             );
         }
     }
 }
 
-// ── §4 Forbidden edges — UI is rendering only ─────────────────────────────────
+// ── Forbidden edges — UI is rendering only ─────────────────────────────────
 
-/// §4: `ui/**` may not write audit entries, run snapshot business logic, or
+/// `aegis-tui`: may not write audit entries, run snapshot business logic, or
 /// depend on runtime/planning. The documented allow-leak: importing the
 /// `SnapshotRecord` display type from `snapshot`. Calling
 /// `SnapshotRegistry::*`, `.snapshot_all(`, or `.rollback(` is forbidden.
@@ -104,19 +104,19 @@ fn ui_does_not_call_audit_or_snapshot_business_logic() {
             &src,
             "use crate::audit",
             &rel,
-            "§4: UI must not depend on audit",
+            "CONVENTION.md §3: UI must not depend on audit",
         );
         assert_absent(
             &src,
             "use aegis_audit",
             &rel,
-            "§4: UI must not depend on audit",
+            "CONVENTION.md §3: UI must not depend on audit",
         );
         assert_absent(
             &src,
             "AuditLogger",
             &rel,
-            "§4: UI must not reference AuditLogger",
+            "CONVENTION.md §3: UI must not reference AuditLogger",
         );
 
         // No runtime/planning orchestration leaks.
@@ -124,13 +124,13 @@ fn ui_does_not_call_audit_or_snapshot_business_logic() {
             &src,
             "use crate::runtime",
             &rel,
-            "§4: UI must not depend on runtime",
+            "CONVENTION.md §3: UI must not depend on runtime",
         );
         assert_absent(
             &src,
             "use crate::planning",
             &rel,
-            "§4: UI must not depend on planning",
+            "CONVENTION.md §3: UI must not depend on planning",
         );
 
         // Snapshot business logic is forbidden; only SnapshotRecord
@@ -145,13 +145,13 @@ fn ui_does_not_call_audit_or_snapshot_business_logic() {
                 &src,
                 forbidden,
                 &rel,
-                "§4: UI may import SnapshotRecord but must not invoke snapshot business logic",
+                "CONVENTION.md §3: UI may import SnapshotRecord but must not invoke snapshot business logic",
             );
         }
     }
 }
 
-// ── §4 Forbidden edges — Transports go through planning ───────────────────────
+// ── Forbidden edges — Transports go through planning ───────────────────────
 
 /// Production paths allowed to name `evaluate_policy`, each with the reason.
 const EVALUATE_POLICY_ALLOWED: &[(&str, &str)] = &[(
@@ -159,7 +159,7 @@ const EVALUATE_POLICY_ALLOWED: &[(&str, &str)] = &[(
     "the sanctioned consumer: planning is the one caller of the policy engine",
 )];
 
-/// I4 + §4: no module of the root crate outside `planning` may call
+/// `CONVENTION.md` §3: no module of the root crate outside `planning` may call
 /// `evaluate_policy`; transports (`shell_flow`, `watch`, `install`) must go
 /// through `planning::*`.
 #[test]
@@ -173,7 +173,7 @@ fn transports_route_policy_through_planning_module() {
         }
         assert!(
             !contains_ident(&src, "evaluate_policy"),
-            "{rel}: I4: only src/planning may call evaluate_policy — route through planning::*"
+            "{rel}: CONVENTION.md §3: only src/planning may call evaluate_policy — route through planning::*"
         );
     }
 }
