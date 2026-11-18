@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Fixed: `CONVENTION.md` §3 lists `update` among the `aegis` crate's public modules, matching `public_api_surface_is_stable` (#640).
 - Removed: `ARCHITECTURE.md`, whose `src/` layout no longer exists; `CONVENTION.md` §3 and the ADRs hold the architecture rules (#298).
 - Added: `scripts/lint.sh text` runs grep-and-find checks clippy cannot make, starting with the 800-line `.rs` limit, in `lint.sh all` and the quality gate; it replaces the Rust file-size test (#635).
 - Added: Evaluation golden test pins the verdicts of a fixed command corpus in Protect and Strict (#610).
