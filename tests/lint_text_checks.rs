@@ -99,6 +99,7 @@ fn text_passes_an_empty_rust_file() {
     assert!(output.status.success(), "{}", stdout(&output));
 }
 
+// shortcut: root ignores mode bits, so these fail when run as root; add a skip if CI ever runs tests as root.
 #[cfg(unix)]
 mod unreadable {
     use super::*;
@@ -108,25 +109,12 @@ mod unreadable {
         fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
     }
 
-    /// Root ignores mode bits, so the fixtures cannot be made unreadable.
-    fn mode_bits_are_ignored(path: &Path) -> bool {
-        let ignored = fs::read_dir(path).is_ok() || fs::read(path).is_ok();
-        if ignored {
-            eprintln!("skipped: mode bits are ignored (running as root)");
-        }
-        ignored
-    }
-
     #[test]
     fn text_fails_on_an_unreadable_rust_file_and_names_it() {
         let tree = TempDir::new().unwrap();
         write_lines(tree.path(), "src/locked.rs", 801, true);
         let locked = tree.path().join("src/locked.rs");
         chmod(&locked, 0o000);
-        if mode_bits_are_ignored(&locked) {
-            chmod(&locked, 0o644);
-            return;
-        }
         let output = run_text(tree.path());
         chmod(&locked, 0o644);
         let text = stdout(&output);
@@ -140,10 +128,6 @@ mod unreadable {
         write_lines(tree.path(), "src/sealed/a.rs", 1, true);
         let sealed = tree.path().join("src/sealed");
         chmod(&sealed, 0o000);
-        if mode_bits_are_ignored(&sealed) {
-            chmod(&sealed, 0o755);
-            return;
-        }
         let output = run_text(tree.path());
         chmod(&sealed, 0o755);
         let text = stdout(&output);
