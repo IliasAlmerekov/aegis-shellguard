@@ -19,10 +19,10 @@ fn read_file(relative: &str) -> String {
         .unwrap_or_else(|err| panic!("failed to read {relative}: {err}"))
 }
 
-// ── Public API surface ─────────────────────────────────────────────────────
+// ── Public API surface ───────────────────────────────────────────────────────
 
-/// `CONVENTION.md` §3: `src/lib.rs` exports a fixed set of modules. Adding or removing a
-/// top-level module is a public-API change and requires updating
+/// `CONVENTION.md` §3: `src/lib.rs` exports a fixed set of modules. Adding or
+/// removing a top-level module is a public-API change and requires updating
 /// `CONVENTION.md` §3 and this test together.
 #[test]
 fn public_api_surface_is_stable() {

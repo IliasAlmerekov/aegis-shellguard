@@ -37,7 +37,7 @@ fn assert_absent(source: &str, needle: &str, file: &str, rule: &str) {
     );
 }
 
-// ── Diagnostic stream — no raw command or env value in a tracing field ────
+// ── Diagnostic stream — no raw command or env value in a tracing field ────────
 
 /// CONVENTION.md §2: a `tracing` field must never carry a raw command string
 /// or an environment variable value. Source-grep floor, not a proof
@@ -62,11 +62,11 @@ fn tracing_fields_never_carry_raw_command_or_env_value() {
     }
 }
 
-// ── Forbidden edges — Policy engine is pure ────────────────────────────────
+// ── Forbidden edges — Policy engine is pure ───────────────────────────────────
 
-/// `CONVENTION.md` §3: the policy engine is a pure function. No I/O, no process spawning,
-/// no tokio, no filesystem, no logging. The engine lives in `aegis-policy`;
-/// `src/decision` only re-exports it.
+/// `CONVENTION.md` §3: the policy engine is a pure function. No I/O, no process
+/// spawning, no tokio, no filesystem, no logging. The engine lives in
+/// `aegis-policy`; `src/decision` only re-exports it.
 #[test]
 fn decision_engine_is_pure_no_io() {
     for (rel, src) in production_rs_files("crates/aegis-policy/src") {
@@ -90,12 +90,12 @@ fn decision_engine_is_pure_no_io() {
     }
 }
 
-// ── Forbidden edges — UI is rendering only ─────────────────────────────────
+// ── Forbidden edges — UI is rendering only ────────────────────────────────────
 
-/// `aegis-tui`: may not write audit entries, run snapshot business logic, or
-/// depend on runtime/planning. The documented allow-leak: importing the
-/// `SnapshotRecord` display type from `snapshot`. Calling
-/// `SnapshotRegistry::*`, `.snapshot_all(`, or `.rollback(` is forbidden.
+/// `aegis-tui` may not write audit entries, run snapshot business logic, or
+/// depend on runtime or planning. The one allowed leak is the `SnapshotRecord`
+/// display type. Calling `SnapshotRegistry::*`, `.snapshot_all(`, or
+/// `.rollback(` is forbidden.
 #[test]
 fn ui_does_not_call_audit_or_snapshot_business_logic() {
     for (rel, src) in production_rs_files("crates/aegis-tui/src") {
@@ -151,7 +151,7 @@ fn ui_does_not_call_audit_or_snapshot_business_logic() {
     }
 }
 
-// ── Forbidden edges — Transports go through planning ───────────────────────
+// ── Forbidden edges — Transports go through planning ──────────────────────────
 
 /// Production paths allowed to name `evaluate_policy`, each with the reason.
 const EVALUATE_POLICY_ALLOWED: &[(&str, &str)] = &[(
