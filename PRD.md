@@ -7,7 +7,6 @@
 This PRD is the single normative source of the Aegis 1.0 product promise.
 The `1.0` milestone is the live release gate under
 [ADR-027](docs/adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md).
-`docs/history/roadmap.md` records the historical path taken,
 `docs/release-readiness.md` holds release evidence, and the historical registry
 of security findings lives at the
 [TASKS.md permalink](https://github.com/IliasAlmerekov/aegis-shellguard/blob/500aaf5a808b5083ec8b9bdb85f76c398c646302/TASKS.md).
