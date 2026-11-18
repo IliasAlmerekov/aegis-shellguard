@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "aegis"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "aegis-audit",
  "aegis-config",
@@ -46,7 +46,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-audit"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "aegis-config",
  "aegis-explanation",
@@ -65,7 +65,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-config"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "aegis-parser",
  "aegis-scanner",
@@ -84,7 +84,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-explanation"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "aegis-config",
  "aegis-policy",
@@ -94,7 +94,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-language"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "criterion",
  "thiserror",
@@ -107,14 +107,14 @@ dependencies = [
 
 [[package]]
 name = "aegis-parser"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "aegis-types",
 ]
 
 [[package]]
 name = "aegis-policy"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "aegis-parser",
  "aegis-scanner",
@@ -124,7 +124,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-sandbox"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "aegis-types",
  "cc",
@@ -136,7 +136,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-scanner"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "aegis-parser",
  "aegis-types",
@@ -149,7 +149,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-snapshot"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "aegis-config",
  "aegis-types",
@@ -166,7 +166,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-tui"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "aegis-config",
  "aegis-explanation",
@@ -178,7 +178,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-types"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "schemars",
  "serde",
