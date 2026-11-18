@@ -170,6 +170,8 @@ fn no_snapshot_prompt_choices_and_red_disclosure() {
         ("y\n", PromptDecision::Deny),
         ("a\n", PromptDecision::Deny),
         ("always\n", PromptDecision::Deny),
+        ("denyalways\n", PromptDecision::Deny),
+        ("deny-always\n", PromptDecision::Deny),
         ("\n", PromptDecision::Deny),
         ("d\n", PromptDecision::DenyAlways),
     ] {
