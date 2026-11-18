@@ -112,7 +112,7 @@ intermediate `pub use`. The `aegis` binary crate's own public module list
 (`src/lib.rs`, pinned by `public_api_surface_is_stable` in
 `tests/architecture_boundaries.rs`) carries only the modules external
 consumers use — `analysis`, `error`, `explanation`, `planning`, `runtime`,
-`runtime_gate`, `toggle`, `watch` — not a mirror of every library crate.
+`runtime_gate`, `toggle`, `update`, `watch` — not a mirror of every library crate.
 
 Architectural constraints:
 
@@ -126,9 +126,15 @@ Architectural constraints:
 - Library crates under `crates/` never write to stdout; they emit `tracing` events or write to stderr. Only the root `aegis` crate writes to stdout, for example the watch-mode NDJSON frames in `src/watch/protocol.rs`.
 - Quick scan must remain Aho-Corasick based.
 - Full regex evaluation must remain on the slower second pass only.
-- `RiskLevel` ordering is semantic and must not be changed.
+- Quick scan never under-matches the full regex set: a pattern with no extractable keyword forces the quick scan to report a match, so the full scan still runs.
+- `RiskLevel` ordering is semantic and must not be changed. `RiskLevel` is `#[non_exhaustive]`, so external matches carry a wildcard arm and a new level is not a breaking change.
 - `Pattern` continues to use `Cow<'static, str>` to support both built-in and user-defined patterns.
 - The project must preserve the current exit-code contract.
+- `aegis-policy` stays a pure function: no `std::fs`, `std::io`, `std::env`, `std::process`, `tokio`, `tracing`, or printing (`decision_engine_is_pure_no_io`).
+- `aegis-tui` only renders: it never depends on `aegis-audit`, `runtime`, or `planning`, and never calls Snapshot logic. The `SnapshotRecord` display type is the one allowed import.
+- Only `src/planning` calls `evaluate_policy`. Shell wrapper, Watch, and evaluation-only JSON all take their decision from `planning::*`, so no transport loosens policy. The Hook only rewrites a Bash command back into the shell-wrapper path. These source rules live in `tests/architecture_source_rules.rs`.
+- `RuntimeContext` builds the `SnapshotRegistry` lazily: Safe and Warn commands never materialize it.
+- Watch NDJSON frames are a public protocol: adding an optional field is allowed; removing or renaming a field or a `type` value is a breaking change.
 - An installer decides whether to write a settings file only from the scopes that file
   covers. The full precedence chain is for reporting, as in `aegis status` (#500).
 
