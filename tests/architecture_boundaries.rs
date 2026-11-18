@@ -1,7 +1,7 @@
 //! Architecture boundary tests.
 //!
-//! These tests enforce the workspace crate dependency DAG (`ARCHITECTURE.md`
-//! §4) and the public API surface (§8). A PR that breaks one of these fails CI.
+//! These tests enforce the workspace crate dependency DAG (`CONVENTION.md`
+//! §3) and the public API surface. A PR that breaks one of these fails CI.
 //!
 //! Crate-to-crate edges are checked against each crate's `Cargo.toml`: a crate
 //! cannot `use` another crate that is missing from its manifest. Source-grep
@@ -19,11 +19,11 @@ fn read_file(relative: &str) -> String {
         .unwrap_or_else(|err| panic!("failed to read {relative}: {err}"))
 }
 
-// ── §8 Public API surface ─────────────────────────────────────────────────────
+// ── Public API surface ───────────────────────────────────────────────────────
 
-/// §8: `src/lib.rs` exports a fixed set of modules. Adding or removing a
-/// top-level module is a public-API change and requires updating
-/// ARCHITECTURE.md §8 and this test together.
+/// `CONVENTION.md` §3: `src/lib.rs` exports a fixed set of modules. Adding or
+/// removing a top-level module is a public-API change and requires updating
+/// `CONVENTION.md` §3 and this test together.
 #[test]
 fn public_api_surface_is_stable() {
     let src = read_file("src/lib.rs");
@@ -59,7 +59,7 @@ fn public_api_surface_is_stable() {
 
     assert!(
         added.is_empty() && removed.is_empty(),
-        "public API surface changed — update ARCHITECTURE.md §8 and this test.\n\
+        "public API surface changed — update CONVENTION.md §3 and this test.\n\
          added modules: {added:?}\nremoved modules: {removed:?}"
     );
 }

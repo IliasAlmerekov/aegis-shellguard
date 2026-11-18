@@ -126,9 +126,13 @@ Architectural constraints:
 - Library crates under `crates/` never write to stdout; they emit `tracing` events or write to stderr. Only the root `aegis` crate writes to stdout, for example the watch-mode NDJSON frames in `src/watch/protocol.rs`.
 - Quick scan must remain Aho-Corasick based.
 - Full regex evaluation must remain on the slower second pass only.
-- `RiskLevel` ordering is semantic and must not be changed.
+- Quick scan never under-matches the full regex set: a pattern with no extractable keyword forces the quick scan to report a match, so the full scan still runs.
+- `RiskLevel` ordering is semantic and must not be changed. `RiskLevel` is `#[non_exhaustive]`, so matches outside its crate need a wildcard arm.
 - `Pattern` continues to use `Cow<'static, str>` to support both built-in and user-defined patterns.
 - The project must preserve the current exit-code contract.
+- `aegis-policy` stays a pure function: its production code never names `std::fs`, `std::process`, `tokio::`, `std::io`, `std::env`, `tracing::`, `eprintln!`, or `println!` (`decision_engine_is_pure_no_io`).
+- `aegis-tui` only renders: it never depends on `aegis-audit`, `runtime`, or `planning`, and never calls Snapshot logic. The `SnapshotRecord` display type is the one allowed import.
+- In production code only `src/planning` calls `evaluate_policy`; transports go through `planning::*` (`tests/architecture_source_rules.rs`).
 - An installer decides whether to write a settings file only from the scopes that file
   covers. The full precedence chain is for reporting, as in `aegis status` (#500).
 

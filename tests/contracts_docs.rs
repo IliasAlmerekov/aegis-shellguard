@@ -181,15 +181,11 @@ fn prd_defines_the_mandatory_sandbox_contract() {
     assert_no_confidentiality_overclaims(&prd, "PRD.md");
 }
 
-/// The four documents derived from `PRD.md` §5.5. Each one describes the Sandbox
+/// The three documents derived from `PRD.md` §5.5. Each one describes the Sandbox
 /// to a different audience, and each must agree with the PRD about what 1.0
 /// promises.
-const DERIVED_SANDBOX_DOCS: [&str; 4] = [
-    "README.md",
-    "docs/config-schema.md",
-    "docs/threat-model.md",
-    "ARCHITECTURE.md",
-];
+const DERIVED_SANDBOX_DOCS: [&str; 3] =
+    ["README.md", "docs/config-schema.md", "docs/threat-model.md"];
 
 /// The marker a document must carry before it may describe the pre-ADR-029
 /// optional Sandbox. Matched case-insensitively so a sentence may open with it.
@@ -312,19 +308,15 @@ fn derived_docs_label_the_optional_sandbox_as_current_behaviour() {
 }
 
 /// Platform reality and the execution seams, which no scope decision changes:
-/// what each OS mechanism does and does not confine, and the two preparation
-/// entry points the flow documents describe.
+/// what each OS mechanism does and does not confine, and the audited status for an
+/// unestablished layer.
 #[test]
 fn sandbox_platform_seams_stay_documented() {
     let config_schema = fs::read_to_string(repo_path("docs/config-schema.md")).unwrap();
     assert!(config_schema.contains("macOS permits `file-read*`"));
     assert!(config_schema.contains("read-only system mounts"));
 
-    let architecture = fs::read_to_string(repo_path("ARCHITECTURE.md")).unwrap();
-    assert!(architecture.contains("prepare_for_spawn"));
-    assert!(architecture.contains("prepare_for_exec"));
-
-    for doc in ["README.md", "docs/config-schema.md", "ARCHITECTURE.md"] {
+    for doc in ["README.md", "docs/config-schema.md"] {
         let contents = fs::read_to_string(repo_path(doc)).unwrap();
         assert!(
             contents.contains("sandbox_status = \"unavailable\""),
@@ -498,13 +490,6 @@ fn adr_index_split_is_present_and_active_docs_reference_it() {
             "ADR index must include `{needle}`"
         );
     }
-
-    let architecture =
-        fs::read_to_string(repo_path("ARCHITECTURE.md")).expect("ARCHITECTURE.md must exist");
-    assert!(
-        architecture.contains("docs/adr/README.md"),
-        "ARCHITECTURE.md must point readers at the ADR index"
-    );
 
     let contributing =
         fs::read_to_string(repo_path("CONTRIBUTING.md")).expect("CONTRIBUTING.md must exist");
