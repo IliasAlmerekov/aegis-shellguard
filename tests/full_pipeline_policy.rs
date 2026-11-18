@@ -49,7 +49,7 @@ fn dangerous_command_denied_preserves_directory() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("AEGIS INTERCEPTED A DANGEROUS COMMAND"));
-    assert!(stderr.contains("Command cancelled."));
+    assert!(stderr.contains("Type the full word yes to run a command that cannot be rolled back."));
 
     let entries = read_audit_entries(home.path());
     assert_eq!(entries.len(), 1);
