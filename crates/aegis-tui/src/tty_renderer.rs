@@ -35,6 +35,9 @@ pub fn show_confirmation_via_tty_with_decision(
     explanation: &CommandExplanation,
     snapshots: &[SnapshotRecord],
 ) -> PromptDecision {
+    if let Some(disclosure) = &explanation.context.no_rollback_disclosure {
+        eprintln!("{disclosure}");
+    }
     if std::env::var_os("AEGIS_FORCE_NO_TTY")
         .map(|value| value == "1")
         .unwrap_or(false)

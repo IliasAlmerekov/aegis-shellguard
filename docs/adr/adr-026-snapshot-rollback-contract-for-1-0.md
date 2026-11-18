@@ -121,6 +121,17 @@ copied without being read, adding friction without adding attention.
 A `snapshot.required` hard block is **not** 1.0 — it would make every non-Git
 directory unusable.
 
+*Note, 2026-11-17 (issue #251):* the rule applies to a `Danger` command only,
+and only when the set of applicable Snapshot plugins is empty. A `Recovery
+opt-out` keeps the ADR-031 §4 prompt and accepts `y`. A non-empty set with an
+unresolved Git target keeps the #471 disclosure and accepts `y`. The prompt
+offers no persistent approval (`a`) in this case. Any answer other than `yes`
+denies the command and says that the full word is required. The text is
+`No Snapshot provider applies: this command cannot be rolled back.` It goes to
+stderr whenever such a plan reaches approval, including a non-interactive
+denial, and into the `CommandExplanation` of the audit entry. Watch writes it to
+the stderr of the Aegis process and adds no frame field.
+
 ### 5. Wording: `Snapshot` captures, `Rollback` restores that capture
 
 `README.md`'s "Undo them when they don't" is replaced by wording that promises

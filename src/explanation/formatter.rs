@@ -67,6 +67,7 @@ pub fn build_explanation_from_plan(
                 .collect(),
             git_targets: Vec::new(),
             recovery_opt_out: false,
+            no_rollback_disclosure: None,
         },
         outcome: None,
     }
@@ -201,6 +202,7 @@ mod tests {
                 applicable_snapshot_plugins: vec!["git".to_string()],
                 git_targets: Vec::new(),
                 recovery_opt_out: false,
+                no_rollback_disclosure: None,
             },
             outcome: None,
         }
@@ -399,6 +401,7 @@ mod tests {
                 applicable_snapshot_plugins: vec!["git".to_string()],
                 git_targets: Vec::new(),
                 recovery_opt_out: false,
+                no_rollback_disclosure: None,
             },
             outcome: None,
         };

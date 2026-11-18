@@ -168,6 +168,15 @@ pub(super) fn render_dialog<W: Write>(
         }
     }
 
+    if let Some(disclosure) = &explanation.context.no_rollback_disclosure {
+        let _ = queue!(
+            out,
+            SetForegroundColor(Color::Red),
+            Print(format!("\n  {disclosure}\n")),
+            ResetColor
+        );
+    }
+
     // Snapshots
     if !snapshots.is_empty() {
         let _ = queue!(out, Print("\n  Snapshots created:\n"));
@@ -190,8 +199,11 @@ pub(super) fn prompt_danger_with_always<R: BufRead, W: Write>(
     input: &mut R,
     out: &mut W,
     always: bool,
+    no_snapshot: bool,
 ) -> PromptDecision {
-    let choices = if always {
+    let choices = if no_snapshot {
+        "[yes/N/d]"
+    } else if always {
         "[y/N/a/d]"
     } else {
         let _ = queue!(
@@ -222,14 +234,20 @@ pub(super) fn prompt_danger_with_always<R: BufRead, W: Write>(
     }
 
     match line.trim().to_ascii_lowercase().as_str() {
-        "y" | "yes" => PromptDecision::Approve,
-        "a" | "always" if always => PromptDecision::ApproveAlways,
-        "d" | "denyalways" | "deny-always" => PromptDecision::DenyAlways,
+        "yes" => PromptDecision::Approve,
+        "y" if !no_snapshot => PromptDecision::Approve,
+        "a" | "always" if always && !no_snapshot => PromptDecision::ApproveAlways,
+        "d" => PromptDecision::DenyAlways,
+        "denyalways" | "deny-always" if !no_snapshot => PromptDecision::DenyAlways,
         _ => {
             let _ = queue!(
                 out,
                 SetForegroundColor(Color::Yellow),
-                Print("  Command cancelled.\n"),
+                Print(if no_snapshot {
+                    "  Type the full word yes to run a command that cannot be rolled back.\n"
+                } else {
+                    "  Command cancelled.\n"
+                }),
                 ResetColor,
             );
             let _ = out.flush();

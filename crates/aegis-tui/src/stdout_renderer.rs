@@ -147,6 +147,11 @@ pub fn show_confirmation_with_decision<R: BufRead, W: Write>(
         return super::confirm_screen::prompt_analysis_override(input, output);
     }
 
+    let no_snapshot = explanation.context.no_rollback_disclosure.is_some();
+    if let Some(disclosure) = &explanation.context.no_rollback_disclosure {
+        let _ = writeln!(output, "{disclosure}");
+    }
+
     match assessment.risk {
         RiskLevel::Block => {
             render_block(assessment, explanation, output);
@@ -166,6 +171,7 @@ pub fn show_confirmation_with_decision<R: BufRead, W: Write>(
                 input,
                 output,
                 !explanation.context.recovery_opt_out,
+                no_snapshot,
             )
         }
         RiskLevel::Warn => {

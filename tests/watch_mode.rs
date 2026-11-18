@@ -677,3 +677,30 @@ fn watch_without_tty_denies_allowlisted_danger_without_a_snapshot_provider() {
 #[cfg(unix)]
 #[path = "watch_mode/unavailable_cwd.rs"]
 mod unavailable_cwd;
+
+#[test]
+fn danger_without_provider_discloses_on_stderr_without_changing_frames() {
+    let home = TempDir::new().unwrap();
+    let cwd = TempDir::new().unwrap();
+    let output = aegis_watch_in_env(
+        home.path(),
+        cwd.path(),
+        b"{\"cmd\":\"rm -rf ./missing\",\"id\":\"no-snapshot\"}\n",
+        &[("NO_COLOR", "1")],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("No Snapshot provider applies: this command cannot be rolled back."),
+        "{stderr}"
+    );
+    let frames = parse_frames(&output.stdout);
+    let result = frames.iter().find(|f| f["type"] == "result").unwrap();
+    assert_eq!(result["decision"], "denied");
+    assert!(result.get("no_rollback_disclosure").is_none());
+    let contents = fs::read_to_string(home.path().join(".aegis/audit.jsonl")).unwrap();
+    let entry: serde_json::Value = serde_json::from_str(contents.lines().last().unwrap()).unwrap();
+    assert_eq!(
+        entry["explanation"]["context"]["no_rollback_disclosure"],
+        "No Snapshot provider applies: this command cannot be rolled back."
+    );
+}

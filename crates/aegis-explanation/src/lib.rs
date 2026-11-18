@@ -96,6 +96,10 @@ impl PolicyExplanation {
     }
 }
 
+/// Disclosure when no Snapshot provider applies to a confirmation.
+pub const NO_ROLLBACK_DISCLOSURE: &str =
+    "No Snapshot provider applies: this command cannot be rolled back.";
+
 /// Execution-context facts already known during planning.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExecutionContextExplanation {
@@ -118,6 +122,9 @@ pub struct ExecutionContextExplanation {
     /// Omitted when false, so legacy audit lines and their hashes are unchanged.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub recovery_opt_out: bool,
+    /// Why this command cannot be rolled back, when disclosed at confirmation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub no_rollback_disclosure: Option<String>,
 }
 
 /// One Git target as disclosed to the operator and the audit log.

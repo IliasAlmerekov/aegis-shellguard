@@ -510,6 +510,7 @@ fn append_audit_entry_enriches_explanation_with_runtime_outcome() {
             applicable_snapshot_plugins: vec!["git".to_string()],
             git_targets: Vec::new(),
             recovery_opt_out: false,
+            no_rollback_disclosure: None,
         },
         outcome: None,
     };
@@ -589,6 +590,7 @@ fn append_audit_entry_preserves_allowlist_context_fields() {
             applicable_snapshot_plugins: Vec::new(),
             git_targets: Vec::new(),
             recovery_opt_out: false,
+            no_rollback_disclosure: None,
         },
         outcome: None,
     };
@@ -653,6 +655,7 @@ fn build_audit_entry_records_effect_opaque_and_backstop_state_from_runtime_facts
             applicable_snapshot_plugins: vec!["git".to_string()],
             git_targets: Vec::new(),
             recovery_opt_out: false,
+            no_rollback_disclosure: None,
         },
         outcome: None,
     };
@@ -728,6 +731,7 @@ fn build_audit_entry_records_plain_safe_command_without_backstops() {
             applicable_snapshot_plugins: Vec::new(),
             git_targets: Vec::new(),
             recovery_opt_out: false,
+            no_rollback_disclosure: None,
         },
         outcome: None,
     };

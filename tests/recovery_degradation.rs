@@ -488,9 +488,9 @@ fn confirmed_danger_without_a_snapshot_provider_runs_without_a_recovery_prompt()
         home.path(),
         &cwd,
         TERRAFORM_DESTROY,
-        b"[y/N/a/d]",
+        b"[yes/N/d]",
         &[("PATH", &path), ("AEGIS_TEST_MARKER", &marker_env)],
-        b"y\n",
+        b"yes\n",
     );
 
     let transcript = String::from_utf8_lossy(&output.stdout);
@@ -499,6 +499,10 @@ fn confirmed_danger_without_a_snapshot_provider_runs_without_a_recovery_prompt()
     assert!(!transcript.contains("Type \"yes\""), "{transcript}");
     let entry = read_single_audit_entry(home.path());
     assert_eq!(entry["decision"], "Approved");
+    assert_eq!(
+        entry["explanation"]["context"]["no_rollback_disclosure"],
+        "No Snapshot provider applies: this command cannot be rolled back."
+    );
     assert!(entry.get("recovery_degradation").is_none());
 }
 
@@ -560,6 +564,10 @@ fn approve_always_on_danger_with_a_degraded_snapshot_writes_no_rule_then_shows_t
     let workspace = TempDir::new().unwrap();
     let cwd = workspace.path().canonicalize().unwrap();
     let (marker, path, config) = confirming_danger_workspace(home.path(), &cwd);
+    fs::write(cwd.join("state.txt"), "before\n").unwrap();
+    init_git_repo(&cwd);
+    fs::write(cwd.join("state.txt"), "dirty\n").unwrap();
+    fs::write(cwd.join(".git/index.lock"), "locked").unwrap();
 
     let output =
         approve_always_on_danger(home.path(), &cwd, &marker, &path, b"[y/N/a/d]", b"a\nn\n");
@@ -585,6 +593,10 @@ fn approve_always_on_danger_run_once_without_recovery_executes_but_writes_no_rul
     let workspace = TempDir::new().unwrap();
     let cwd = workspace.path().canonicalize().unwrap();
     let (marker, path, config) = confirming_danger_workspace(home.path(), &cwd);
+    fs::write(cwd.join("state.txt"), "before\n").unwrap();
+    init_git_repo(&cwd);
+    fs::write(cwd.join("state.txt"), "dirty\n").unwrap();
+    fs::write(cwd.join(".git/index.lock"), "locked").unwrap();
 
     let output =
         approve_always_on_danger(home.path(), &cwd, &marker, &path, b"[y/N/a/d]", b"a\nyes\n");
@@ -696,5 +708,49 @@ fn snapshot_policy_none_rejects_a_typed_always() {
         !fs::read_to_string(config)
             .unwrap()
             .contains("terraform destroy")
+    );
+}
+
+#[test]
+fn no_snapshot_noninteractive_shell_discloses_and_audits_denial() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let cwd = workspace.path().canonicalize().unwrap();
+    let (marker, path, _) = confirming_danger_workspace(home.path(), &cwd);
+    let output = shell_command(home.path(), &cwd)
+        .env("PATH", path)
+        .env("NO_COLOR", "1")
+        .stdin(Stdio::null())
+        .args(["-c", TERRAFORM_DESTROY])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(!marker.exists());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("No Snapshot provider applies: this command cannot be rolled back."),
+        "{stderr}"
+    );
+    let entry = read_single_audit_entry(home.path());
+    assert_eq!(entry["decision"], "Denied");
+    assert_eq!(
+        entry["explanation"]["context"]["no_rollback_disclosure"],
+        "No Snapshot provider applies: this command cannot be rolled back."
+    );
+}
+
+#[test]
+fn no_snapshot_d_persists_block_rule() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+    let cwd = workspace.path().canonicalize().unwrap();
+    let (marker, path, config) = confirming_danger_workspace(home.path(), &cwd);
+    let output = approve_always_on_danger(home.path(), &cwd, &marker, &path, b"[yes/N/d]", b"d\n");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(!marker.exists());
+    let contents = fs::read_to_string(config).unwrap();
+    assert!(
+        contents.contains("[[block]]") && contents.contains("terraform destroy"),
+        "{contents}"
     );
 }
