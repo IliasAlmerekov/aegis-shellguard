@@ -123,7 +123,7 @@ fn prepare(
 /// Binds only the canonical roots that pass `resolve_allow_write`; a root that
 /// does not exist or escapes the trusted roots is left out, not an error.
 pub(crate) fn build_bwrap_args(config: &SandboxConfig) -> Result<Vec<OsString>, SandboxError> {
-    // A read-only view of the whole filesystem (docs/history/roadmap.md §6.1), with
+    // A read-only view of the whole filesystem, with
     // `allow_write` paths bound writable on top. Binding `/` (rather than a
     // minimal set of system dirs) keeps any `allow_write` path — wherever its
     // parent lives — visible inside the namespace.

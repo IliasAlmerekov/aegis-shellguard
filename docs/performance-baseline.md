@@ -534,8 +534,7 @@ Do **not** update the baseline just to silence an unexplained regression.
 
 ## Iteration 0 — language-aware analysis (ADR-022)
 
-Iteration 0 of the language-aware analysis plan
-(`docs/plans/2026-07-16-language-aware-analysis.md`) GREEN list requires six
+Iteration 0 of the language-aware analysis plan (ADR-022) requires six
 measurements: clean-build requirements, release binary growth, parse latency,
 peak worker RSS, startup cost, and all-target build parity. This section records
 each one — measured where it is meaningful in Iteration 0, explicitly deferred
@@ -623,7 +622,7 @@ the quality job.)
 
 The plan requires Iteration 0 to *replace the hypothesis budget table with chosen
 final defaults within ADR-022 ceilings*. The provisional table in the plan
-(`docs/plans/2026-07-16-language-aware-analysis.md`) is now superseded by the
+(ADR-022) is now superseded by the
 accepted defaults below. Each row states its evidence class:
 
 - **measured** — backed by a bench in this document;

@@ -3,8 +3,8 @@
 
 //! Core data types shared across the Aegis crates.
 //!
-//! This crate is the foundation of the dependency DAG (Phase 4 of the
-//! roadmap): it carries the pure data vocabulary — risk levels, the unified
+//! This crate is the foundation of the dependency DAG (the crate
+//! extraction): it carries the pure data vocabulary — risk levels, the unified
 //! pattern representation, and the human decision outcome — with no
 //! dependencies on any other Aegis crate. Logic that *produces* these types
 //! (the scanner, parser, policy engine, audit logger) lives in the crates that
