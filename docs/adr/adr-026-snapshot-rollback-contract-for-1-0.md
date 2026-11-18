@@ -125,8 +125,9 @@ directory unusable.
 and only when the set of applicable Snapshot plugins is empty. A `Recovery
 opt-out` keeps the ADR-031 §4 prompt and accepts `y`. A non-empty set with an
 unresolved Git target keeps the #471 disclosure and accepts `y`. The prompt
-offers no persistent approval (`a`) in this case. Any answer other than `yes`
-denies the command and says that the full word is required. The text is
+offers no persistent approval (`a`) in this case. `d` denies the command and
+persists a block rule. Any answer other than `yes` or `d` denies the command
+and says that the full word is required. The text is
 `No Snapshot provider applies: this command cannot be rolled back.` It goes to
 stderr whenever such a plan reaches approval, including a non-interactive
 denial, and into the `CommandExplanation` of the audit entry. Watch writes it to

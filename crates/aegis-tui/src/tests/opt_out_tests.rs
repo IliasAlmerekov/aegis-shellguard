@@ -254,3 +254,25 @@ fn applicable_provider_with_unresolved_git_target_still_accepts_y() {
     assert!(text.contains("Git target unresolved"));
     assert!(!text.contains("No Snapshot provider applies"));
 }
+
+#[test]
+fn applicable_provider_without_unresolved_target_still_accepts_y() {
+    let (assessment, mut explanation) = opted_out_danger();
+    explanation.context.recovery_opt_out = false;
+    explanation
+        .context
+        .applicable_snapshot_plugins
+        .push("git".into());
+    let mut output = Vec::new();
+    let decision = crate::stdout_renderer::show_confirmation_with_decision(
+        &assessment,
+        &explanation,
+        &[],
+        true,
+        &mut b"y\n".as_ref(),
+        &mut output,
+    );
+    assert_eq!(decision, PromptDecision::Approve);
+    let text = strip_ansi(&String::from_utf8_lossy(&output));
+    assert!(!text.contains("No Snapshot provider applies"));
+}

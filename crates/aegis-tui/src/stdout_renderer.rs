@@ -88,7 +88,8 @@ pub fn show_policy_block(assessment: &Assessment, explanation: &CommandExplanati
 ///
 /// Interactive behavior:
 /// - `Block`  → prints the reason and returns `false` immediately; no prompt shown.
-/// - `Danger` → shows the dialog; user must type `y`/`yes`/`a` to proceed.
+/// - `Danger` → shows the dialog; user must type `y`/`yes`/`a` to proceed,
+///   except that a no-rollback disclosure requires `yes` and does not offer `a`.
 /// - `Warn`   → shows the dialog; user must type `y`/`yes`/`a` to proceed.
 /// - `Safe`   → auto-approves without rendering anything (should not normally reach here).
 pub fn show_confirmation_with_input<R: BufRead, W: Write>(
