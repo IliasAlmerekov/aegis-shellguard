@@ -64,16 +64,17 @@ fn embedded_bwrap_confines_when_no_system_bwrap_on_path() {
         return;
     }
 
-    // A command that writes to a read-only path must be confined: the write
-    // fails inside the namespace, proving the embedded bwrap applied. Spawn
-    // through `prepare_for_spawn`: on Linux `prepare_for_exec` defers Landlock
-    // to `exec()`, which is a different path.
+    // The probe dir is writable on the host, so only the sandbox's read-only
+    // root mount can make this write fail, proving the embedded bwrap applied.
+    let probe = no_bwrap.join("aegis_embedded_bwrap_probe.txt");
     let args = [
         OsString::from("-c"),
-        OsString::from("echo x > /root/aegis_embedded_bwrap_probe.txt"),
+        OsString::from(format!("echo x > '{}'", probe.display())),
     ];
+    // `prepare_for_exec` defers Landlock to `exec()`, so spawning needs this.
     let prepared = aegis_sandbox::prepare_for_spawn(&config, OsStr::new("sh"), &args);
     let status = prepared.map(|mut p| p.command.status());
+    let probe_written = probe.exists();
 
     // SAFETY: single-threaded test; restores the caller's PATH.
     unsafe { std::env::set_var("PATH", old_path.unwrap_or_default()) };
@@ -84,7 +85,7 @@ fn embedded_bwrap_confines_when_no_system_bwrap_on_path() {
         .unwrap_or_else(|e| panic!("prepare_for_spawn failed after the probe passed: {e}"))
         .expect("the confined command must spawn");
     assert!(
-        !status.success(),
-        "write to /root must fail inside the sandbox; got {status}"
+        !status.success() && !probe_written,
+        "write to a host-writable path must fail inside the sandbox; got {status}"
     );
 }
