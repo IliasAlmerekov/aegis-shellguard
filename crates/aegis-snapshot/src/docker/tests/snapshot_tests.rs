@@ -63,6 +63,16 @@ esac"#,
 // ── snapshot ───────────────────────────────────────────────────────────────
 
 #[tokio::test]
+async fn snapshot_reports_docker_launch_failure() {
+    let dir = TempDir::new().unwrap();
+    let p = plugin(&dir.path().join("missing-docker"));
+    let result = p.snapshot(Path::new("/"), "test").await;
+    assert!(
+        matches!(result, Err(SnapshotError::CommandLaunchFailed { context, .. }) if context == "failed to run docker ps")
+    );
+}
+
+#[tokio::test]
 async fn snapshot_returns_sentinel_when_no_containers() {
     let dir = TempDir::new().unwrap();
     write_mock_docker(

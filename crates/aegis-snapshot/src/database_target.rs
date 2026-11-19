@@ -40,6 +40,7 @@ impl DatabaseTarget {
 
     pub(crate) fn reserve_dump_path(&self, timestamp: u64) -> Result<PathBuf> {
         let mut suffix = None;
+        let mut suffixes = 1..;
 
         loop {
             let dump_path = contain_artifact(
@@ -52,9 +53,12 @@ impl DatabaseTarget {
                     drop(file);
                     return Ok(dump_path);
                 }
-                Err(SnapshotError::Io(err)) if err.kind() == std::io::ErrorKind::AlreadyExists => {
-                    suffix = Some(suffix.map_or(1, |current| current + 1));
-                }
+                Err(SnapshotError::Io(err)) => match err.kind() {
+                    std::io::ErrorKind::AlreadyExists => {
+                        suffix = suffixes.next();
+                    }
+                    _ => return Err(SnapshotError::Io(err)),
+                },
                 Err(err) => return Err(err),
             }
         }

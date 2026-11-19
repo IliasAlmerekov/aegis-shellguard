@@ -18,12 +18,10 @@ where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = std::io::Result<T>>,
 {
-    let mut attempt = 0;
-    loop {
-        match launch().await {
-            Ok(value) => return Ok(value),
-            Err(error) if is_executable_busy(&error) && attempt < attempts => {
-                attempt += 1;
+    let mut result = launch().await;
+    for attempt in 1..=attempts {
+        match result {
+            Err(ref error) if is_executable_busy(error) => {
                 tracing::warn!(
                     bin,
                     context,
@@ -32,15 +30,15 @@ where
                     family
                 );
                 tokio::time::sleep(Duration::from_millis(25)).await;
+                result = launch().await;
             }
-            Err(error) => {
-                return Err(SnapshotError::CommandLaunchFailed {
-                    context: context.to_string(),
-                    detail: error.to_string(),
-                });
-            }
+            _ => break,
         }
     }
+    result.map_err(|error| SnapshotError::CommandLaunchFailed {
+        context: context.to_string(),
+        detail: error.to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -66,5 +64,23 @@ mod tests {
         assert!(
             matches!(result, Err(crate::SnapshotError::CommandLaunchFailed { context, detail }) if context == "test context" && detail == std::io::Error::from_raw_os_error(26).to_string())
         );
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn non_busy_error_returns_without_yielding() {
+        let task = tokio::spawn(async {});
+        let result: Result<(), _> = super::retry(
+            || async { Err(std::io::Error::from(std::io::ErrorKind::NotFound)) },
+            1,
+            "missing",
+            "test",
+            "launch",
+        )
+        .await;
+        assert!(!task.is_finished());
+        assert!(
+            matches!(result, Err(crate::SnapshotError::CommandLaunchFailed { context, detail })
+            if context == "launch" && detail == std::io::Error::from(std::io::ErrorKind::NotFound).to_string())
+        );
+        task.await.unwrap();
     }
 }

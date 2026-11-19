@@ -146,6 +146,17 @@ fn build_common_args_omits_user_when_empty() {
     );
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn is_applicable_with_available_dump_binary() {
+    let temp_dir = TempDir::new().unwrap();
+    let mut plugin = plugin_with_user(&temp_dir, "root");
+    plugin.mysqldump_bin = stub_bin(temp_dir.path(), "dump", "exit 0")
+        .to_string_lossy()
+        .into_owned();
+    assert!(plugin.is_applicable(temp_dir.path()).await);
+}
+
 #[test]
 fn reserve_dump_path_creates_unique_files_atomically() {
     let temp_dir = TempDir::new().unwrap();
@@ -155,7 +166,12 @@ fn reserve_dump_path_creates_unique_files_atomically() {
 
     let first = plugin.target.reserve_dump_path(1_234).unwrap();
     let second = plugin.target.reserve_dump_path(1_234).unwrap();
+    let third = plugin.target.reserve_dump_path(1_234).unwrap();
 
+    assert_eq!(
+        third.file_name().unwrap().to_string_lossy(),
+        "mysql-app-1234-2.sql"
+    );
     assert_ne!(first, second);
     assert!(first.exists());
     assert!(second.exists());
