@@ -91,7 +91,7 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, InstallError> {
     let mut settings = Vec::new();
     for relative in [".claude/settings.json", ".codex/hooks.json"] {
         let path = home.join(relative);
-        if path.try_exists()? {
+        if path.try_exists().map_err(InstallError::Os)? {
             let mut value = super::load_settings(&path)?;
             if prune_registrations(&mut value)? {
                 reject_symlinks(
@@ -345,9 +345,11 @@ fn write_existing_file(path: &Path, content: &str) -> Result<(), InstallError> {
         .map_err(InstallError::io("cannot create", &temporary))?;
     let result = (|| -> Result<(), InstallError> {
         use std::io::Write;
-        file.set_permissions(fs::metadata(path)?.permissions())?;
-        file.write_all(content.as_bytes())?;
-        file.sync_all()?;
+        file.set_permissions(fs::metadata(path).map_err(InstallError::Os)?.permissions())
+            .map_err(InstallError::Os)?;
+        file.write_all(content.as_bytes())
+            .map_err(InstallError::Os)?;
+        file.sync_all().map_err(InstallError::Os)?;
         fs::rename(&temporary, path).map_err(InstallError::io("cannot replace", path))
     })();
     let Err(original) = result else {

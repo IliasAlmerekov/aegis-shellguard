@@ -23,7 +23,7 @@ pub(crate) enum InstallError {
 
     /// An I/O error reported without a path.
     #[error("{0}")]
-    Os(#[from] std::io::Error),
+    Os(std::io::Error),
 
     /// A process-level lookup failed, such as the current directory or the
     /// running binary.
