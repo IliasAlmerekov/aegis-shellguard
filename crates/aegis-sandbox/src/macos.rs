@@ -447,22 +447,21 @@ mod tests {
             trusted_roots: vec![crate::WriteRoot::new(dir.clone())],
             ..Default::default()
         };
-        if !super::sandbox_available_for(&cfg) {
-            return;
+        if super::sandbox_available_for(&cfg) {
+            let test_file = dir.join("aegis_sandbox_test_write_allowed.tmp");
+            let args = vec![
+                OsString::from("-c"),
+                OsString::from(format!("touch {}", test_file.display())),
+            ];
+            let mut cmd = super::prepare_for_spawn(&cfg, OsStr::new("/bin/sh"), &args)
+                .expect("prepare_for_spawn must succeed");
+            let status = cmd.command.status().expect("spawned command must run");
+            let _ = std::fs::remove_file(&test_file);
+            assert!(
+                status.success(),
+                "write under an allow_write root must succeed"
+            );
         }
-        let test_file = dir.join("aegis_sandbox_test_write_allowed.tmp");
-        let args = vec![
-            OsString::from("-c"),
-            OsString::from(format!("touch {}", test_file.display())),
-        ];
-        let mut cmd = super::prepare_for_spawn(&cfg, OsStr::new("/bin/sh"), &args)
-            .expect("prepare_for_spawn must succeed");
-        let status = cmd.command.status().expect("spawned command must run");
-        let _ = std::fs::remove_file(&test_file);
-        assert!(
-            status.success(),
-            "write under an allow_write root must succeed"
-        );
     }
 
     #[cfg(target_os = "macos")]
@@ -473,21 +472,20 @@ mod tests {
             allow_network: false,
             ..Default::default()
         };
-        if !super::sandbox_available_for(&cfg) {
-            return;
+        if super::sandbox_available_for(&cfg) {
+            // ping needs a network socket; the blocked sandbox makes it exit non-zero.
+            let args = vec![
+                OsString::from("-c"),
+                OsString::from("ping -c 1 -t 1 127.0.0.1 2>/dev/null"),
+            ];
+            let mut cmd = super::prepare_for_spawn(&cfg, OsStr::new("/bin/sh"), &args)
+                .expect("prepare_for_spawn must succeed");
+            let status = cmd.command.status().expect("spawned command must run");
+            assert!(
+                !status.success(),
+                "network operation must fail when allow_network=false"
+            );
         }
-        // ping needs a network socket; the blocked sandbox makes it exit non-zero.
-        let args = vec![
-            OsString::from("-c"),
-            OsString::from("ping -c 1 -t 1 127.0.0.1 2>/dev/null"),
-        ];
-        let mut cmd = super::prepare_for_spawn(&cfg, OsStr::new("/bin/sh"), &args)
-            .expect("prepare_for_spawn must succeed");
-        let status = cmd.command.status().expect("spawned command must run");
-        assert!(
-            !status.success(),
-            "network operation must fail when allow_network=false"
-        );
     }
 
     // ── macOS: prepare_for_exec production-path tests ────────────────────────
