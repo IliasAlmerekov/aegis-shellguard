@@ -112,7 +112,7 @@ intermediate `pub use`. The `aegis` binary crate's own public module list
 (`src/lib.rs`, pinned by `public_api_surface_is_stable` in
 `tests/architecture_boundaries.rs`) carries only the modules external
 consumers use — `analysis`, `error`, `explanation`, `planning`, `runtime`,
-`runtime_gate`, `toggle`, `watch` — not a mirror of every library crate.
+`runtime_gate`, `toggle`, `update`, `watch` — not a mirror of every library crate.
 
 Architectural constraints:
 
