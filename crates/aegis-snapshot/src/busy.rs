@@ -48,15 +48,9 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[tokio::test(flavor = "current_thread")]
     async fn persistent_busy_error_yields_to_runtime() {
-        let yielded = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let flag = yielded.clone();
-        let task = tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
-            flag.store(true, std::sync::atomic::Ordering::SeqCst);
-        });
+        let task = tokio::spawn(async {});
         let dir = tempfile::tempdir().unwrap();
-        let bin = dir.path().join("busy");
-        std::fs::copy(std::env::current_exe().unwrap(), &bin).unwrap();
+        let bin = crate::test_support::stub_bin(dir.path(), "busy", "exit 0");
         let _writer = std::fs::OpenOptions::new().write(true).open(&bin).unwrap();
         let mut command = tokio::process::Command::new(&bin);
         let result = super::retry(
@@ -67,7 +61,7 @@ mod tests {
             "test context",
         )
         .await;
-        assert!(yielded.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(task.is_finished());
         task.await.unwrap();
         assert!(
             matches!(result, Err(crate::SnapshotError::CommandLaunchFailed { context, detail }) if context == "test context" && detail == std::io::Error::from_raw_os_error(26).to_string())

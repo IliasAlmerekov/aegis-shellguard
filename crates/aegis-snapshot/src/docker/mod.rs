@@ -80,7 +80,6 @@ impl DockerPlugin {
 
         busy::retry(
             || {
-                // A liveness timeout drops this future and must not orphan the child.
                 let mut command = Command::new(&self.docker_bin);
                 command.args(&args).kill_on_drop(true);
                 async move { command.output().await }
