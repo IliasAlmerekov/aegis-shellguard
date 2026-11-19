@@ -2,58 +2,12 @@
 
 use std::ffi::{OsStr, OsString};
 
-use crate::support::run_unavailable_result;
-use crate::{PreparedSandboxCommand, SandboxConfig, SandboxError, SandboxResult};
+use crate::{PreparedSandboxCommand, SandboxConfig, SandboxError};
 
 // ── Public-to-crate entry points ──────────────────────────────────────────────
 
 pub(crate) fn sandbox_available_for(config: &SandboxConfig) -> bool {
     crate::bwrap::available_bwrap_program(config).is_some()
-}
-
-pub(crate) fn run(config: &SandboxConfig, cmd: &str) -> Result<SandboxResult, SandboxError> {
-    let Some(program) = crate::bwrap::available_bwrap_program(config) else {
-        return run_unavailable_result();
-    };
-
-    // NOTE: Landlock is NOT applied here. This legacy subprocess path stays
-    // bwrap-only; bwrap namespace isolation provides the confinement. The
-    // Shell exec path applies Landlock in the innermost re-exec'd wrapper
-    // inside bwrap's mount namespace (see crate::landlock).
-
-    let bwrap_args = build_bwrap_args(config)?;
-    let mut all_args = bwrap_args;
-    all_args.extend([
-        OsString::from("sh"),
-        OsString::from("-c"),
-        OsString::from(cmd),
-    ]);
-
-    let output = std::process::Command::new(program)
-        .args(&all_args)
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|source| SandboxError::Spawn {
-            operation: "spawn",
-            source,
-        })?
-        .wait_with_output()
-        .map_err(|source| SandboxError::Spawn {
-            operation: "wait for",
-            source,
-        })?;
-
-    let exit_code = output.status.code().unwrap_or(-1);
-
-    // bwrap prefixes its own error messages with "bwrap: " on stderr.
-    if !output.stderr.is_empty() {
-        let stderr_str = String::from_utf8_lossy(&output.stderr);
-        if stderr_str.starts_with("bwrap:") {
-            return Err(SandboxError::SetupFailed(stderr_str.trim().to_string()));
-        }
-    }
-
-    Ok(SandboxResult::Success(exit_code))
 }
 
 pub(crate) fn prepare_for_exec(
@@ -156,41 +110,12 @@ pub(crate) fn build_bwrap_args(config: &SandboxConfig) -> Result<Vec<OsString>, 
 #[cfg(test)]
 mod tests {
 
+    use crate::support::set_force_sandbox_unavailable;
     use crate::support::test_helpers::ForceUnavailableGuard;
-    use crate::support::{is_forced_sandbox_unavailable, set_force_sandbox_unavailable};
-    use crate::{
-        SandboxConfig, SandboxError, SandboxExecutor, SandboxProfile, SandboxResult,
-        sandbox_available_for,
-    };
+    use crate::{SandboxConfig, SandboxError, sandbox_available_for};
 
     use super::{build_bwrap_args, prepare_for_exec};
     use crate::bwrap::sysctl_userns_available;
-
-    // ── Linux: forced-unavailable via thread-local ────────────────────────────
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn forced_unavailable_returns_required_error() {
-        set_force_sandbox_unavailable(true);
-        let _guard = ForceUnavailableGuard;
-
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig::default()));
-        assert!(matches!(executor.run("true"), Err(SandboxError::Required)));
-    }
-
-    // ── Linux: run() never returns Ok(Unavailable) ───────────────────────────
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn run_never_returns_unavailable_ok() {
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig::default()));
-        match executor.run("true") {
-            Ok(SandboxResult::Unavailable) => {
-                panic!("Ok(Unavailable) must never be returned")
-            }
-            Ok(SandboxResult::Success(_)) | Err(_) => {}
-        }
-    }
 
     // ── Linux: sandbox_available_for reflects forced-unavailable ─────────────
 
@@ -284,42 +209,6 @@ mod tests {
                 sysctl_userns_available(),
                 "must return true when sysctl file is absent"
             );
-        }
-    }
-
-    // ── Legacy test names (kept for backwards compatibility) ─────────────────
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn test_sandbox_unavailable_is_error() {
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig::default()));
-        match executor.run("true") {
-            Err(SandboxError::Required) => {}
-            Ok(SandboxResult::Success(_)) => {}
-            Ok(SandboxResult::Unavailable) => {
-                panic!("expected Err(SandboxError::Required) or Ok(Success)")
-            }
-            Err(other) => {
-                panic!("expected Err(SandboxError::Required) or Ok(Success), got Err({other})")
-            }
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn test_forced_unavailable_returns_error() {
-        set_force_sandbox_unavailable(true);
-        let _guard = ForceUnavailableGuard;
-
-        assert!(is_forced_sandbox_unavailable());
-
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig::default()));
-        match executor.run("true") {
-            Err(SandboxError::Required) => {}
-            Ok(_) => panic!("expected Err(SandboxError::Required) when forced-unavailable"),
-            Err(other) => panic!(
-                "expected Err(SandboxError::Required) when forced-unavailable, got Err({other})"
-            ),
         }
     }
 

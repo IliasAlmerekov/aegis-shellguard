@@ -1,12 +1,12 @@
 //! Shared sandbox support and test-injection hook.
 //!
 //! Platform modules (`linux`, `macos`, `windows`, `unsupported`) route their
-//! "sandbox unavailable" code paths through [`run_unavailable_result`] and
-//! [`run_unavailable_result`] so typed behavior stays consistent across targets.
+//! "sandbox unavailable" code paths through [`crate::SandboxError::Required`] so typed
+//! behavior stays consistent across targets.
 
 use std::path::PathBuf;
 
-use crate::{SandboxConfig, SandboxError, SandboxResult, WriteRoot};
+use crate::{SandboxConfig, WriteRoot};
 
 // ── Test injection ────────────────────────────────────────────────────────────
 //
@@ -32,12 +32,6 @@ pub(crate) fn is_forced_sandbox_unavailable() -> bool {
     return FORCE_SANDBOX_UNAVAILABLE.with(|c| c.get());
     #[cfg(not(test))]
     return false;
-}
-
-// ── Shared unavailable/bypass helpers ─────────────────────────────────────────
-
-pub(crate) fn run_unavailable_result() -> Result<SandboxResult, SandboxError> {
-    Err(SandboxError::Required)
 }
 
 /// Why a root was left out at enforcement.
@@ -134,8 +128,7 @@ pub(crate) mod test_helpers {
 
 #[cfg(test)]
 mod tests {
-    use crate::support::run_unavailable_result;
-    use crate::{SandboxConfig, SandboxError, SandboxExecutor, SandboxProfile, WriteRoot};
+    use crate::{SandboxConfig, SandboxError, WriteRoot};
     use aegis_types::CeilingLayer;
 
     #[test]
@@ -160,29 +153,6 @@ mod tests {
         assert!(!SandboxConfig::default().allow_network);
     }
 
-    // ── SandboxProfile / SandboxExecutor construction ─────────────────────────
-
-    #[test]
-    fn sandbox_profile_builds_from_config() {
-        let _profile = SandboxProfile::from_config(&SandboxConfig::default());
-    }
-
-    #[test]
-    fn sandbox_executor_new_accepts_profile() {
-        let profile = SandboxProfile::from_config(&SandboxConfig::default());
-        let _executor = SandboxExecutor::new(profile);
-    }
-
-    // ── run_unavailable_result behavior ───────────────────────────────────────
-
-    #[test]
-    fn run_unavailable_result_always_returns_required_error() {
-        assert!(matches!(
-            run_unavailable_result(),
-            Err(SandboxError::Required)
-        ));
-    }
-
     // ── SandboxError::Display ─────────────────────────────────────────────────
 
     #[test]
@@ -204,32 +174,11 @@ mod tests {
     }
 
     #[test]
-    fn test_sandbox_profile_builds_from_config() {
-        let _profile = SandboxProfile::from_config(&SandboxConfig::default());
-    }
-
-    #[test]
-    fn test_sandbox_executor_new_returns_executor() {
-        let profile = SandboxProfile::from_config(&SandboxConfig::default());
-        let _executor = SandboxExecutor::new(profile);
-    }
-
-    #[test]
     fn test_sandbox_error_implements_display() {
         let msg = SandboxError::Required.to_string();
         assert!(!msg.is_empty());
         let lower = msg.to_lowercase();
         assert!(lower.contains("required") || lower.contains("unavailable"));
-    }
-
-    #[test]
-    fn test_run_non_linux_unavailable_logic() {
-        match run_unavailable_result() {
-            Err(SandboxError::Required) => {}
-            other => {
-                panic!("run_unavailable_result() must return Err(Required), got {other:?}")
-            }
-        }
     }
 
     // ── resolve_allow_write ───────────────────────────────────────────────────

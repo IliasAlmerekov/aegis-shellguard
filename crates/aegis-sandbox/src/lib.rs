@@ -1,8 +1,7 @@
 //! Sandboxing layer for Aegis.
 //!
 //! Provides typed, presentation-free preparation through
-//! [`PreparedSandboxCommand`] plus the legacy [`SandboxExecutor`] interface on
-//! supported platforms:
+//! [`PreparedSandboxCommand`] on supported platforms:
 //! - **Linux**: bwrap + Landlock
 //! - **macOS**: Seatbelt (`sandbox-exec`)
 //!
@@ -134,26 +133,6 @@ pub struct SandboxConfig {
     pub trusted_roots: Vec<WriteRoot>,
     /// Whether the sandboxed process is allowed to access the network.
     pub allow_network: bool,
-}
-
-/// A compiled sandbox profile derived from a [`SandboxConfig`].
-#[derive(Debug, Clone)]
-pub struct SandboxProfile {
-    config: SandboxConfig,
-}
-
-/// Executes a command inside the sandbox described by a [`SandboxProfile`].
-pub struct SandboxExecutor {
-    profile: SandboxProfile,
-}
-
-/// Outcome of a sandboxed command execution.
-#[derive(Debug)]
-pub enum SandboxResult {
-    /// The command ran successfully; the inner value is its exit code.
-    Success(i32),
-    /// The sandbox was unavailable and was skipped because `required` was `false`.
-    Unavailable,
 }
 
 /// A command prepared for the selected confinement path.
@@ -409,24 +388,6 @@ pub fn apparmor_userns_restricted() -> bool {
 
 // ── Implementation ────────────────────────────────────────────────────────────
 
-impl SandboxProfile {
-    pub fn from_config(config: &SandboxConfig) -> Self {
-        Self {
-            config: config.clone(),
-        }
-    }
-}
-
-impl SandboxExecutor {
-    pub fn new(profile: SandboxProfile) -> Self {
-        Self { profile }
-    }
-
-    pub fn run(&self, cmd: &str) -> Result<SandboxResult, SandboxError> {
-        platform::run(&self.profile.config, cmd)
-    }
-}
-
 /// Prepare a [`std::process::Command`] suitable for POSIX `exec()` that wraps
 /// `program` and `args` inside the sandbox described by `config`.
 ///
@@ -538,13 +499,6 @@ mod tests {
     fn public_api_surface_survives_refactor() {
         // SandboxConfig
         let config = SandboxConfig::default();
-        // SandboxProfile
-        let profile = SandboxProfile::from_config(&config);
-        // SandboxExecutor (construct only — do not call run() to avoid forking)
-        let _executor = SandboxExecutor::new(profile);
-        // SandboxResult
-        let result: SandboxResult = SandboxResult::Unavailable;
-        assert!(matches!(result, SandboxResult::Unavailable));
         // SandboxError
         let err_display = SandboxError::Required.to_string();
         assert!(

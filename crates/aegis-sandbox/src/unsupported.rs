@@ -5,18 +5,13 @@
 //! the Linux sandbox implementation. On native Windows and any other target
 //! that is not Linux or macOS, the sandbox is always unavailable.
 
-use crate::support::run_unavailable_result;
 use std::ffi::{OsStr, OsString};
 
-use crate::{PreparedSandboxCommand, SandboxConfig, SandboxError, SandboxResult};
+use crate::{PreparedSandboxCommand, SandboxConfig, SandboxError};
 
 pub(crate) fn sandbox_available_for(config: &SandboxConfig) -> bool {
     let _ = config;
     false
-}
-
-pub(crate) fn run(_config: &SandboxConfig, _cmd: &str) -> Result<SandboxResult, SandboxError> {
-    run_unavailable_result()
 }
 
 pub(crate) fn prepare_for_exec(
