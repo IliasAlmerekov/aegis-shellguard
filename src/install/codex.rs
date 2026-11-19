@@ -6,8 +6,9 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::{
-    AgentInstallResult, InstallOutcome, agent_dir_exists, combine_outcomes, resolved_aegis_bin,
-    shell_quote, temporary_settings_path, write_executable, write_settings_atomically,
+    AgentInstallResult, InstallError, InstallOutcome, agent_dir_exists, combine_outcomes,
+    resolved_aegis_bin, shell_quote, temporary_settings_path, write_executable,
+    write_settings_atomically,
 };
 
 const CODEX_PRE_TOOL_USE_HOOK_SH: &str = include_str!("../../scripts/hooks/codex-pre-tool-use.sh");
@@ -18,12 +19,12 @@ pub(crate) fn run_codex_install() -> AgentInstallResult {
     AgentInstallResult::from_result(run_codex_install_inner())
 }
 
-fn run_codex_install_inner() -> Result<InstallOutcome, String> {
-    let home = super::home_dir().ok_or_else(|| "HOME is not set".to_string())?;
+fn run_codex_install_inner() -> Result<InstallOutcome, InstallError> {
+    let home = super::home_dir().ok_or(InstallError::HomeNotSet)?;
     run_codex_install_at_dir(&home.join(".codex"))
 }
 
-fn run_codex_install_at_dir(codex_dir: &Path) -> Result<InstallOutcome, String> {
+fn run_codex_install_at_dir(codex_dir: &Path) -> Result<InstallOutcome, InstallError> {
     if !agent_dir_exists(codex_dir)? {
         return Ok(InstallOutcome::Skipped);
     }
@@ -43,10 +44,9 @@ fn run_codex_install_at_dir(codex_dir: &Path) -> Result<InstallOutcome, String> 
     ))
 }
 
-fn materialize_codex_hooks(codex_dir: &Path) -> Result<InstallOutcome, String> {
+fn materialize_codex_hooks(codex_dir: &Path) -> Result<InstallOutcome, InstallError> {
     let hooks_dir = codex_dir.join("hooks");
-    fs::create_dir_all(&hooks_dir)
-        .map_err(|e| format!("failed to create {}: {e}", hooks_dir.display()))?;
+    fs::create_dir_all(&hooks_dir).map_err(InstallError::io("failed to create", &hooks_dir))?;
 
     let ptu_outcome = write_executable(
         &hooks_dir.join("aegis-pre-tool-use.sh"),
@@ -72,32 +72,40 @@ fn apply_codex_hooks_json(
     hooks_json: &Path,
     ptu_dest: &Path,
     session_dest: &Path,
-) -> Result<InstallOutcome, String> {
+) -> Result<InstallOutcome, InstallError> {
     let ptu_cmd = ptu_dest
         .to_str()
-        .ok_or_else(|| "pre-tool-use hook path is not valid UTF-8".to_string())?
+        .ok_or(InstallError::NotUtf8(
+            "pre-tool-use hook path is not valid UTF-8",
+        ))?
         .to_owned();
     let session_cmd = session_dest
         .to_str()
-        .ok_or_else(|| "session-start hook path is not valid UTF-8".to_string())?
+        .ok_or(InstallError::NotUtf8(
+            "session-start hook path is not valid UTF-8",
+        ))?
         .to_owned();
 
     let mut root = super::load_settings(hooks_json)?;
     let obj = root
         .as_object_mut()
-        .ok_or_else(|| "hooks.json must be a JSON object".to_string())?;
+        .ok_or_else(|| InstallError::InvalidStructure("hooks.json must be a JSON object".into()))?;
 
     let hooks = obj
         .entry("hooks".to_string())
         .or_insert_with(|| Value::Object(serde_json::Map::new()))
         .as_object_mut()
-        .ok_or_else(|| "hooks.hooks must be a JSON object".to_string())?;
+        .ok_or_else(|| {
+            InstallError::InvalidStructure("hooks.hooks must be a JSON object".into())
+        })?;
 
     let session_entries = hooks
         .entry("SessionStart".to_string())
         .or_insert_with(|| Value::Array(Vec::new()))
         .as_array_mut()
-        .ok_or_else(|| "hooks.hooks.SessionStart must be an array".to_string())?;
+        .ok_or_else(|| {
+            InstallError::InvalidStructure("hooks.hooks.SessionStart must be an array".into())
+        })?;
     // Prune-then-add: drop every aegis-managed SessionStart registration that
     // is not the canonical `startup|resume` one, including a stale entry under
     // another matcher, while preserving unrelated user hooks.
@@ -119,7 +127,9 @@ fn apply_codex_hooks_json(
         .entry("PreToolUse".to_string())
         .or_insert_with(|| Value::Array(Vec::new()))
         .as_array_mut()
-        .ok_or_else(|| "hooks.hooks.PreToolUse must be an array".to_string())?;
+        .ok_or_else(|| {
+            InstallError::InvalidStructure("hooks.hooks.PreToolUse must be an array".into())
+        })?;
     let (ptu_pruned, ptu_present) = super::prune_aegis_managed_hooks(
         ptu_entries,
         "hooks.hooks.PreToolUse",
@@ -144,17 +154,19 @@ fn apply_codex_hooks_json(
     Ok(InstallOutcome::Installed)
 }
 
-fn apply_codex_config_toml(config_path: &Path) -> Result<InstallOutcome, String> {
+fn apply_codex_config_toml(config_path: &Path) -> Result<InstallOutcome, InstallError> {
     let mut config = load_codex_config_toml(config_path)?;
-    let root = config
-        .as_table_mut()
-        .ok_or_else(|| "config.toml must contain a top-level TOML table".to_string())?;
+    let root = config.as_table_mut().ok_or_else(|| {
+        InstallError::InvalidStructure("config.toml must contain a top-level TOML table".into())
+    })?;
 
     let features = root
         .entry("features".to_string())
         .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
         .as_table_mut()
-        .ok_or_else(|| "config.toml features must be a TOML table".to_string())?;
+        .ok_or_else(|| {
+            InstallError::InvalidStructure("config.toml features must be a TOML table".into())
+        })?;
 
     let removed_legacy_hooks_flag = features.remove("codex_hooks").is_some();
     let hooks_was_enabled = features
@@ -172,42 +184,51 @@ fn apply_codex_config_toml(config_path: &Path) -> Result<InstallOutcome, String>
     Ok(InstallOutcome::Installed)
 }
 
-fn load_codex_config_toml(path: &Path) -> Result<toml::Value, String> {
+fn load_codex_config_toml(path: &Path) -> Result<toml::Value, InstallError> {
     let raw = match fs::read_to_string(path) {
         Ok(raw) => raw,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             return Ok(toml::Value::Table(toml::map::Map::new()));
         }
-        Err(err) => return Err(format!("failed to read {}: {err}", path.display())),
+        Err(source) => {
+            return Err(InstallError::Io {
+                action: "failed to read",
+                path: path.to_path_buf(),
+                source,
+            });
+        }
     };
 
     if raw.trim().is_empty() {
         return Ok(toml::Value::Table(toml::map::Map::new()));
     }
 
-    let value: toml::Value = toml::from_str(&raw)
-        .map_err(|err| format!("failed to parse {} as TOML: {err}", path.display()))?;
+    let value: toml::Value = toml::from_str(&raw).map_err(|source| InstallError::ParseToml {
+        path: path.to_path_buf(),
+        source,
+    })?;
 
     if value.is_table() {
         Ok(value)
     } else {
-        Err(format!(
-            "{} must contain a top-level TOML table",
-            path.display()
-        ))
+        Err(InstallError::NotTomlTable {
+            path: path.to_path_buf(),
+        })
     }
 }
 
-fn write_toml_atomically(path: &Path, value: &toml::Value) -> Result<(), String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| format!("{} does not have a parent directory", path.display()))?;
+fn write_toml_atomically(path: &Path, value: &toml::Value) -> Result<(), InstallError> {
+    let parent = path.parent().ok_or_else(|| InstallError::InvalidPath {
+        path: path.to_path_buf(),
+        reason: "does not have a parent directory",
+    })?;
 
-    fs::create_dir_all(parent)
-        .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+    fs::create_dir_all(parent).map_err(InstallError::io("failed to create", parent))?;
 
-    let rendered = toml::to_string_pretty(value)
-        .map_err(|err| format!("failed to serialize TOML for {}: {err}", path.display()))?;
+    let rendered = toml::to_string_pretty(value).map_err(|source| InstallError::SerializeToml {
+        path: path.to_path_buf(),
+        source,
+    })?;
 
     let temp_path = temporary_settings_path(parent);
     {
@@ -215,21 +236,18 @@ fn write_toml_atomically(path: &Path, value: &toml::Value) -> Result<(), String>
             .write(true)
             .create_new(true)
             .open(&temp_path)
-            .map_err(|err| {
-                format!(
-                    "failed to create temporary file {}: {err}",
-                    temp_path.display()
-                )
-            })?;
+            .map_err(InstallError::io(
+                "failed to create temporary file",
+                &temp_path,
+            ))?;
 
         temp.write_all(rendered.as_bytes())
-            .map_err(|err| format!("failed to write {}: {err}", temp_path.display()))?;
+            .map_err(InstallError::io("failed to write", &temp_path))?;
         temp.sync_all()
-            .map_err(|err| format!("failed to flush {}: {err}", temp_path.display()))?;
+            .map_err(InstallError::io("failed to flush", &temp_path))?;
     }
 
-    fs::rename(&temp_path, path)
-        .map_err(|err| format!("failed to replace {}: {err}", path.display()))?;
+    fs::rename(&temp_path, path).map_err(InstallError::io("failed to replace", path))?;
 
     Ok(())
 }
@@ -251,7 +269,7 @@ mod tests {
         let err =
             run_codex_install_at_dir(&codex_dir).expect_err("malformed hooks.json should error");
 
-        assert!(err.contains("hooks.json"));
+        assert!(err.to_string().contains("hooks.json"));
     }
 
     /// Reads the commands registered under `section`, so a case can assert both
@@ -342,7 +360,7 @@ mod tests {
             .expect_err("a malformed entry under the canonical matcher must fail closed");
 
         assert!(
-            err.contains("hooks.hooks.SessionStart"),
+            err.to_string().contains("hooks.hooks.SessionStart"),
             "error must name the canonical section, got: {err}"
         );
     }

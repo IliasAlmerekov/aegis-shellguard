@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use super::shell_quote;
+use super::{InstallError, shell_quote};
 
 /// Start of a shell block owned by Aegis.
 pub(super) const BEGIN_MARKER: &str = "# >>> aegis shell setup >>>";
@@ -20,12 +20,14 @@ pub(crate) fn run_setup_shell(args: &crate::SetupShellArgs) -> i32 {
     }
 }
 
-fn run_setup_shell_inner(args: &crate::SetupShellArgs) -> Result<String, String> {
-    let home = crate::install::home_dir().ok_or_else(|| "HOME is not set".to_string())?;
+fn run_setup_shell_inner(args: &crate::SetupShellArgs) -> Result<String, InstallError> {
+    let home = crate::install::home_dir().ok_or(InstallError::HomeNotSet)?;
     let aegis_bin = match &args.aegis_bin {
         Some(path) => path.clone(),
-        None => std::env::current_exe()
-            .map_err(|err| format!("failed to resolve current Aegis binary: {err}"))?,
+        None => std::env::current_exe().map_err(|source| InstallError::Resolve {
+            what: "failed to resolve current Aegis binary",
+            source,
+        })?,
     };
 
     let real_shell = match &args.shell {
@@ -43,12 +45,7 @@ fn run_setup_shell_inner(args: &crate::SetupShellArgs) -> Result<String, String>
     // bypass it. Applied before --remove too: a self-referential real shell is
     // never a sane state to proceed from.
     if crate::shell_compat::same_file(&real_shell, Some(&aegis_bin)) {
-        return Err(
-            "the resolved real shell is the Aegis binary itself, which would \
-             cause infinite recursion; pass --shell /bin/zsh or set \
-             AEGIS_REAL_SHELL to your real shell"
-                .to_string(),
-        );
+        return Err(InstallError::RealShellIsAegis);
     }
 
     validate_real_shell_path(&real_shell)?;
@@ -89,7 +86,7 @@ fn run_setup_shell_inner(args: &crate::SetupShellArgs) -> Result<String, String>
 // symlink (or other lexically-different path) to the Aegis binary is still
 // caught — a purely lexical compare would let it through and write Aegis as the
 // real shell. Fails closed with an actionable message when neither is usable.
-fn detect_real_shell(aegis_bin: &Path) -> Result<PathBuf, String> {
+fn detect_real_shell(aegis_bin: &Path) -> Result<PathBuf, InstallError> {
     if let Some(value) = std::env::var_os("AEGIS_REAL_SHELL")
         && !value.is_empty()
     {
@@ -105,10 +102,7 @@ fn detect_real_shell(aegis_bin: &Path) -> Result<PathBuf, String> {
         }
     }
 
-    Err(
-        "cannot determine the real shell; pass --shell /bin/zsh or set AEGIS_REAL_SHELL"
-            .to_string(),
-    )
+    Err(InstallError::RealShellUnknown)
 }
 
 fn managed_block(real_shell: &Path, aegis_bin: &Path) -> String {
@@ -148,22 +142,22 @@ fn remove_managed_block(input: &str) -> String {
 /// the single-quote escaping. Everything else is made injection-safe by
 /// `shell_quote`, so legitimate package-manager paths (spaces, `@` for scoped
 /// npm packages, `+`, …) are accepted rather than rejected.
-fn validate_path_chars(path: &Path, label: &str) -> Result<(), String> {
+fn validate_path_chars(path: &Path, label: &'static str) -> Result<(), InstallError> {
     let value = path.to_string_lossy();
     if value.is_empty() {
-        return Err(format!("{label} cannot be empty"));
+        return Err(InstallError::EmptyShellPath { label });
     }
     if value.chars().any(char::is_control) {
-        return Err(format!("{label} contains unsafe control characters"));
+        return Err(InstallError::ControlCharsInPath { label });
     }
     Ok(())
 }
 
-fn validate_real_shell_path(path: &Path) -> Result<(), String> {
+fn validate_real_shell_path(path: &Path) -> Result<(), InstallError> {
     validate_path_chars(path, "real shell path")
 }
 
-fn validate_aegis_binary_path(path: &Path) -> Result<(), String> {
+fn validate_aegis_binary_path(path: &Path) -> Result<(), InstallError> {
     validate_path_chars(path, "aegis binary path")
 }
 
@@ -171,7 +165,7 @@ fn resolve_rc_file(
     home: &Path,
     real_shell: &Path,
     override_path: Option<&Path>,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, InstallError> {
     if let Some(path) = override_path {
         return Ok(path.to_path_buf());
     }
@@ -179,14 +173,16 @@ fn resolve_rc_file(
     let shell_name = real_shell
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| format!("cannot determine shell name from {}", real_shell.display()))?;
+        .ok_or_else(|| InstallError::UnnamedShell {
+            path: real_shell.to_path_buf(),
+        })?;
 
     match shell_name {
         "bash" => Ok(home.join(".bashrc")),
         "zsh" => Ok(home.join(".zshrc")),
-        other => Err(format!(
-            "automatic shell setup supports bash and zsh; pass --rc-file for {other}"
-        )),
+        other => Err(InstallError::UnsupportedShell {
+            name: other.to_string(),
+        }),
     }
 }
 
@@ -203,20 +199,24 @@ fn remove_block_from_content(existing: &str) -> String {
     remove_managed_block(existing)
 }
 
-fn read_text_if_exists(path: &Path) -> Result<String, String> {
+fn read_text_if_exists(path: &Path) -> Result<String, InstallError> {
     match std::fs::read_to_string(path) {
         Ok(value) => Ok(value),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
-        Err(err) => Err(format!("failed to read {}: {err}", path.display())),
+        Err(source) => Err(InstallError::Io {
+            action: "failed to read",
+            path: path.to_path_buf(),
+            source,
+        }),
     }
 }
 
-fn write_text_atomically(path: &Path, content: &str) -> Result<(), String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| format!("{} does not have a parent directory", path.display()))?;
-    std::fs::create_dir_all(parent)
-        .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+fn write_text_atomically(path: &Path, content: &str) -> Result<(), InstallError> {
+    let parent = path.parent().ok_or_else(|| InstallError::InvalidPath {
+        path: path.to_path_buf(),
+        reason: "does not have a parent directory",
+    })?;
+    std::fs::create_dir_all(parent).map_err(InstallError::io("failed to create", parent))?;
 
     let temp_path = parent.join(format!(
         ".{}.aegis-{}.tmp",
@@ -226,10 +226,8 @@ fn write_text_atomically(path: &Path, content: &str) -> Result<(), String> {
         std::process::id()
     ));
 
-    std::fs::write(&temp_path, content)
-        .map_err(|err| format!("failed to write {}: {err}", temp_path.display()))?;
-    std::fs::rename(&temp_path, path)
-        .map_err(|err| format!("failed to replace {}: {err}", path.display()))?;
+    std::fs::write(&temp_path, content).map_err(InstallError::io("failed to write", &temp_path))?;
+    std::fs::rename(&temp_path, path).map_err(InstallError::io("failed to replace", path))?;
     Ok(())
 }
 
@@ -237,13 +235,13 @@ fn install_shell_setup_file(
     rc_file: &Path,
     real_shell: &Path,
     aegis_bin: &Path,
-) -> Result<(), String> {
+) -> Result<(), InstallError> {
     let existing = read_text_if_exists(rc_file)?;
     let updated = install_block_in_content(&existing, real_shell, aegis_bin);
     write_text_atomically(rc_file, &updated)
 }
 
-fn remove_shell_setup_file(rc_file: &Path) -> Result<(), String> {
+fn remove_shell_setup_file(rc_file: &Path) -> Result<(), InstallError> {
     let existing = read_text_if_exists(rc_file)?;
     let updated = remove_block_from_content(&existing);
     write_text_atomically(rc_file, &updated)
@@ -321,8 +319,8 @@ mod tests {
     fn validate_real_shell_path_rejects_newline_injection() {
         let err = validate_real_shell_path(Path::new("/bin/zsh\nexport EVIL=1")).unwrap_err();
 
-        assert!(err.contains("control characters"));
-        assert!(err.contains("real shell path"));
+        assert!(err.to_string().contains("control characters"));
+        assert!(err.to_string().contains("real shell path"));
     }
 
     // A scoped npm binary path (`@`) is legitimate and must be accepted; the
@@ -340,8 +338,8 @@ mod tests {
     fn validate_aegis_binary_path_names_aegis_binary_on_control_char() {
         let err = validate_aegis_binary_path(Path::new("/tmp/aegis\nexport EVIL=1")).unwrap_err();
 
-        assert!(err.contains("aegis binary path"));
-        assert!(!err.contains("real shell path"));
+        assert!(err.to_string().contains("aegis binary path"));
+        assert!(!err.to_string().contains("real shell path"));
     }
 
     #[test]
@@ -379,7 +377,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(err.contains("supports bash and zsh"));
+        assert!(err.to_string().contains("supports bash and zsh"));
     }
 
     #[test]

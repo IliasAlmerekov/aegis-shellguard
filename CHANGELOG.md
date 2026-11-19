@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Changed: the install module's errors are a typed `InstallError` instead of `String`; CLI messages and exit codes are unchanged (#621).
+
 - Removed: the caller-less legacy sandbox path in `aegis-sandbox` (`SandboxExecutor`, `SandboxProfile`, `SandboxResult` and the per-platform `run()`); its tests that covered live confinement now go through `prepare_for_spawn` (#619).
 
 - Removed: the unused `aegis-scanner` dependency of `aegis-audit` and `aegis-policy`, the unused `tracing` dependency of `aegis-config`, the caller-less `PushOutcome::is_accepted` and `TestRenderer::set_recovery_decision`, and the never-read `Unratcheted::reason` field (#617).

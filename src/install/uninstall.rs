@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use clap::ValueEnum;
 use serde_json::Value;
 
-use super::{is_aegis_managed_bash_command, is_aegis_managed_session_start_command};
+use super::{InstallError, is_aegis_managed_bash_command, is_aegis_managed_session_start_command};
 
 /// Removal channel: which package channel's binary-removal command to print. Not update consent.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -38,15 +38,16 @@ pub(crate) fn run(args: &crate::UninstallArgs) -> i32 {
     }
 }
 
-fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
-    let home = super::home_dir().ok_or("HOME is not set")?;
-    let home = fs::canonicalize(&home)
-        .map_err(|error| format!("cannot resolve HOME {}: {error}", home.display()))?;
+fn uninstall(args: &crate::UninstallArgs) -> Result<String, InstallError> {
+    let home = super::home_dir().ok_or(InstallError::HomeNotSet)?;
+    let home = fs::canonicalize(&home).map_err(InstallError::io("cannot resolve HOME", &home))?;
     if !home.is_dir() || home.parent().is_none() {
-        return Err("HOME must be a directory other than the filesystem root".into());
+        return Err(InstallError::HomeInvalid);
     }
-    let invoked = std::env::current_exe()
-        .map_err(|error| format!("cannot resolve the running binary: {error}"))?;
+    let invoked = std::env::current_exe().map_err(|source| InstallError::Resolve {
+        what: "cannot resolve the running binary",
+        source,
+    })?;
     let (binary, detected) = removal_target(&invoked, &home);
     let channel = args.channel.or(detected);
     let data = home.join(".aegis");
@@ -62,7 +63,7 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
     let mut rc_paths = vec![home.join(".bashrc"), home.join(".zshrc")];
     if let Some(path) = &args.rc_file {
         if !path.is_absolute() {
-            return Err("--rc-file must be an absolute path".into());
+            return Err(InstallError::RcFileNotAbsolute);
         }
         let path = resolve_rc_parent(path)?;
         if !rc_paths.contains(&path) {
@@ -90,7 +91,7 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
     let mut settings = Vec::new();
     for relative in [".claude/settings.json", ".codex/hooks.json"] {
         let path = home.join(relative);
-        if path.try_exists().map_err(|error| error.to_string())? {
+        if path.try_exists()? {
             let mut value = super::load_settings(&path)?;
             if prune_registrations(&mut value)? {
                 reject_symlinks(
@@ -117,8 +118,12 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
         }
     }
     for (path, value) in settings {
-        let content = serde_json::to_string_pretty(&value)
-            .map_err(|error| format!("cannot serialize {}: {error}", path.display()))?;
+        let content =
+            serde_json::to_string_pretty(&value).map_err(|source| InstallError::SerializeJson {
+                action: "cannot serialize",
+                path: path.clone(),
+                source,
+            })?;
         write_existing_file(&path, &format!("{content}\n"))?;
     }
     let shell_message = if shell_files.is_empty() {
@@ -139,7 +144,7 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
         match fs::remove_file(&path) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(format!("cannot remove {}: {error}", path.display())),
+            Err(error) => return Err(InstallError::io("cannot remove", &path)(error)),
         }
     }
     let data_message = if args.purge_data {
@@ -148,7 +153,7 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 format!("No data directory at {}.", data.display())
             }
-            Err(error) => return Err(format!("cannot purge {}: {error}", data.display())),
+            Err(error) => return Err(InstallError::io("cannot purge", &data)(error)),
         }
     } else {
         format!(
@@ -187,6 +192,7 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, String> {
 }
 
 fn codex_hooks_feature_enabled(config: &Path) -> bool {
+    // Dropped on purpose: returning this error changes the output and exit code of `aegis uninstall`; tracked in #BUG-4.
     fs::read_to_string(config)
         .ok()
         .and_then(|raw| raw.parse::<toml::Table>().ok())
@@ -205,47 +211,49 @@ fn display_paths<'a>(paths: impl Iterator<Item = &'a PathBuf>) -> String {
 /// path through a linked directory (macOS `/var`, `/tmp`) names the real
 /// file. The file itself stays unresolved: a symlinked startup file is still
 /// refused before it is rewritten.
-fn resolve_rc_parent(path: &Path) -> Result<PathBuf, String> {
+fn resolve_rc_parent(path: &Path) -> Result<PathBuf, InstallError> {
     let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
-        return Err(format!("--rc-file {} must name a file", path.display()));
+        return Err(InstallError::RcFileUnnamed {
+            path: path.to_path_buf(),
+        });
     };
     match fs::canonicalize(parent) {
         Ok(parent) => Ok(parent.join(name)),
         // A missing directory holds no startup file to clean.
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(path.to_path_buf()),
-        Err(error) => Err(format!("cannot resolve {}: {error}", parent.display())),
+        Err(error) => Err(InstallError::io("cannot resolve", parent)(error)),
     }
 }
 
 /// Refuses `path` when it or a directory above it is a symlink. `hint` tells
 /// the operator how to finish that cleanup by hand.
-fn reject_symlinks(path: &Path, hint: &str) -> Result<(), String> {
+fn reject_symlinks(path: &Path, hint: &str) -> Result<(), InstallError> {
     for ancestor in path.ancestors() {
         match fs::symlink_metadata(ancestor) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Err(format!(
-                    "refusing to change {} through symlink {}. {hint}",
-                    path.display(),
-                    ancestor.display()
-                ));
+                return Err(InstallError::SymlinkRefused {
+                    path: path.to_path_buf(),
+                    link: ancestor.to_path_buf(),
+                    hint: hint.to_string(),
+                });
             }
             Ok(_) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(format!("cannot inspect {}: {error}", ancestor.display())),
+            Err(error) => return Err(InstallError::io("cannot inspect", ancestor)(error)),
         }
     }
     Ok(())
 }
 
-fn read_optional(path: &Path) -> Result<Option<String>, String> {
+fn read_optional(path: &Path) -> Result<Option<String>, InstallError> {
     match fs::read_to_string(path) {
         Ok(content) => Ok(Some(content)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(format!("cannot read {}: {error}", path.display())),
+        Err(error) => Err(InstallError::io("cannot read", path)(error)),
     }
 }
 
-fn has_managed_block(content: &str) -> Result<bool, String> {
+fn has_managed_block(content: &str) -> Result<bool, InstallError> {
     let mut inside = false;
     let mut found = false;
     for line in content.lines() {
@@ -256,13 +264,13 @@ fn has_managed_block(content: &str) -> Result<bool, String> {
             }
             super::shell::END_MARKER if inside => inside = false,
             super::shell::BEGIN_MARKER | super::shell::END_MARKER => {
-                return Err("malformed managed shell block; repair it before uninstalling".into());
+                return Err(InstallError::MalformedShellBlock);
             }
             _ => {}
         }
     }
     if inside {
-        return Err("unterminated managed shell block; repair it before uninstalling".into());
+        return Err(InstallError::UnterminatedShellBlock);
     }
     Ok(found)
 }
@@ -285,19 +293,21 @@ fn strip_managed_blocks(content: &str) -> String {
     output
 }
 
-fn prune_registrations(settings: &mut Value) -> Result<bool, String> {
+fn prune_registrations(settings: &mut Value) -> Result<bool, InstallError> {
     let Some(hooks) = settings.get_mut("hooks") else {
         return Ok(false);
     };
-    let hooks = hooks.as_object_mut().ok_or("hooks must be a JSON object")?;
+    let hooks = hooks
+        .as_object_mut()
+        .ok_or_else(|| InstallError::InvalidStructure("hooks must be a JSON object".into()))?;
     let mut changed = false;
     for section in ["PreToolUse", "SessionStart"] {
         let Some(entries) = hooks.get_mut(section) else {
             continue;
         };
-        let entries = entries
-            .as_array_mut()
-            .ok_or_else(|| format!("hooks.{section} must be an array"))?;
+        let entries = entries.as_array_mut().ok_or_else(|| {
+            InstallError::InvalidStructure(format!("hooks.{section} must be an array"))
+        })?;
         entries.retain_mut(|entry| {
             let Some(commands) = entry.get_mut("hooks").and_then(Value::as_array_mut) else {
                 return true;
@@ -321,44 +331,37 @@ fn prune_registrations(settings: &mut Value) -> Result<bool, String> {
     Ok(changed)
 }
 
-fn write_existing_file(path: &Path, content: &str) -> Result<(), String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
+fn write_existing_file(path: &Path, content: &str) -> Result<(), InstallError> {
+    let parent = path.parent().ok_or_else(|| InstallError::InvalidPath {
+        path: path.to_path_buf(),
+        reason: "has no parent directory",
+    })?;
     let temporary = super::temporary_settings_path(parent);
     // Only clean up a temporary file that this invocation actually created.
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&temporary)
-        .map_err(|error| format!("cannot create {}: {error}", temporary.display()))?;
-    let result = (|| {
+        .map_err(InstallError::io("cannot create", &temporary))?;
+    let result = (|| -> Result<(), InstallError> {
         use std::io::Write;
-        file.set_permissions(
-            fs::metadata(path)
-                .map_err(|error| error.to_string())?
-                .permissions(),
-        )
-        .map_err(|error| error.to_string())?;
-        file.write_all(content.as_bytes())
-            .map_err(|error| error.to_string())?;
-        file.sync_all().map_err(|error| error.to_string())?;
-        fs::rename(&temporary, path)
-            .map_err(|error| format!("cannot replace {}: {error}", path.display()))
+        file.set_permissions(fs::metadata(path)?.permissions())?;
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+        fs::rename(&temporary, path).map_err(InstallError::io("cannot replace", path))
     })();
-    if let Err(original) = &result {
-        match fs::remove_file(&temporary) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => {
-                return Err(format!(
-                    "{original}; cannot clean up {}: {error}",
-                    temporary.display()
-                ));
-            }
-        }
+    let Err(original) = result else {
+        return Ok(());
+    };
+    match fs::remove_file(&temporary) {
+        Ok(()) => Err(original),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Err(original),
+        Err(source) => Err(InstallError::CleanupFailed {
+            original: Box::new(original),
+            path: temporary,
+            source,
+        }),
     }
-    result
 }
 
 /// Returns the canonical binary path and the Removal channel inferred from it.
