@@ -192,7 +192,7 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, InstallError> {
 }
 
 fn codex_hooks_feature_enabled(config: &Path) -> bool {
-    // Dropped on purpose: returning this error changes the output and exit code of `aegis uninstall`; tracked in #BUG-4.
+    // Dropped on purpose: returning this error changes the output and exit code of `aegis uninstall`; tracked in #655.
     fs::read_to_string(config)
         .ok()
         .and_then(|raw| raw.parse::<toml::Table>().ok())
