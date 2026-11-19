@@ -493,26 +493,30 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn run_write_to_allowed_path_succeeds() {
-        if !super::is_sandbox_exec_available() {
-            return;
-        }
+    fn prepare_for_spawn_allows_write_under_allow_write_root() {
+        use std::ffi::{OsStr, OsString};
         let dir = std::env::temp_dir();
         let cfg = SandboxConfig {
             allow_write: vec![crate::WriteRoot::new(dir.clone())],
             trusted_roots: vec![crate::WriteRoot::new(dir.clone())],
             ..Default::default()
         };
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&cfg));
-        let test_file = dir.join("aegis_sandbox_test_write_allowed.tmp");
-        let cmd = format!("touch {}", test_file.display());
-        match executor.run(&cmd) {
-            Ok(SandboxResult::Success(0)) => {
-                let _ = std::fs::remove_file(&test_file);
-            }
-            Ok(SandboxResult::Unavailable) => {}
-            other => panic!("expected Success(0) for write to allowed path, got {other:?}"),
+        if !super::sandbox_available_for(&cfg) {
+            return;
         }
+        let test_file = dir.join("aegis_sandbox_test_write_allowed.tmp");
+        let args = vec![
+            OsString::from("-c"),
+            OsString::from(format!("touch {}", test_file.display())),
+        ];
+        let mut cmd = super::prepare_for_spawn(&cfg, OsStr::new("/bin/sh"), &args)
+            .expect("prepare_for_spawn must succeed");
+        let status = cmd.command.status().expect("spawned command must run");
+        let _ = std::fs::remove_file(&test_file);
+        assert!(
+            status.success(),
+            "write under an allow_write root must succeed"
+        );
     }
 
     #[cfg(target_os = "macos")]
@@ -533,22 +537,27 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn run_network_is_blocked_when_allow_network_is_false() {
-        if !super::is_sandbox_exec_available() {
-            return;
-        }
+    fn prepare_for_spawn_blocks_network_when_allow_network_is_false() {
+        use std::ffi::{OsStr, OsString};
         let cfg = SandboxConfig {
             allow_network: false,
             ..Default::default()
         };
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&cfg));
-        // ping requires a network socket; blocked sandbox returns non-zero.
-        match executor.run("ping -c 1 -t 1 127.0.0.1 2>/dev/null") {
-            Ok(SandboxResult::Success(0)) => {
-                panic!("network operation must fail when allow_network=false")
-            }
-            Ok(SandboxResult::Success(_)) | Ok(SandboxResult::Unavailable) | Err(_) => {}
+        if !super::sandbox_available_for(&cfg) {
+            return;
         }
+        // ping needs a network socket; the blocked sandbox makes it exit non-zero.
+        let args = vec![
+            OsString::from("-c"),
+            OsString::from("ping -c 1 -t 1 127.0.0.1 2>/dev/null"),
+        ];
+        let mut cmd = super::prepare_for_spawn(&cfg, OsStr::new("/bin/sh"), &args)
+            .expect("prepare_for_spawn must succeed");
+        let status = cmd.command.status().expect("spawned command must run");
+        assert!(
+            !status.success(),
+            "network operation must fail when allow_network=false"
+        );
     }
 
     // ── macOS: prepare_for_exec production-path tests ────────────────────────
