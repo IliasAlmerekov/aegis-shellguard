@@ -324,7 +324,6 @@ impl AegisConfig {
             &mut sink,
         );
 
-        // Schema version, not a security posture.
         let config_version = ratchet::Unratcheted::new().merge(
             "config_version",
             base_config_version,
