@@ -51,7 +51,6 @@ dependencies = [
  "aegis-config",
  "aegis-explanation",
  "aegis-policy",
- "aegis-scanner",
  "aegis-types",
  "flate2",
  "libc",
@@ -79,7 +78,6 @@ dependencies = [
  "thiserror",
  "time",
  "toml",
- "tracing",
 ]
 
 [[package]]
@@ -117,7 +115,6 @@ name = "aegis-policy"
 version = "0.9.0"
 dependencies = [
  "aegis-parser",
- "aegis-scanner",
  "aegis-types",
  "serde",
 ]

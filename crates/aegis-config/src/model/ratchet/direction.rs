@@ -147,17 +147,12 @@ impl<T: Clone> Ratchet<T> for GlobalOnly<T> {
 /// `audit.compress_rotated` (storage format, not audit coverage: rotation and
 /// retention are the ratcheted knobs that control how much history survives).
 pub(crate) struct Unratcheted<T> {
-    /// Why this field sits outside the ratchet, for readers of the merge
-    /// call site. Not read at runtime.
-    #[allow(dead_code)]
-    reason: &'static str,
     _value: std::marker::PhantomData<T>,
 }
 
 impl<T> Unratcheted<T> {
-    pub(crate) fn new(reason: &'static str) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
-            reason,
             _value: std::marker::PhantomData,
         }
     }

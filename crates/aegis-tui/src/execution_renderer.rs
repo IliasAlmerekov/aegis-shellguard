@@ -110,13 +110,6 @@ impl TestRenderer {
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = decision;
     }
 
-    pub fn set_recovery_decision(&self, decision: RecoveryPromptDecision) {
-        *self
-            .recovery
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = decision;
-    }
-
     pub fn calls(&self) -> Vec<ExecutionRendererCall> {
         self.calls
             .lock()

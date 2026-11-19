@@ -11,7 +11,6 @@ description = "Append-only JSONL audit log with optional hash-chain integrity fo
 
 [dependencies]
 aegis-types.workspace = true
-aegis-scanner.workspace = true
 aegis-config.workspace = true
 aegis-explanation.workspace = true
 serde = { version = "1", features = ["derive"] }
@@ -27,4 +26,3 @@ libc = "0.2"
 [dev-dependencies]
 tempfile = "3"
 aegis-policy.workspace = true
-aegis-scanner.workspace = true

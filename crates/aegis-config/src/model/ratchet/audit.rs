@@ -63,10 +63,8 @@ pub(crate) fn merge_audit(
             location,
             sink,
         ),
-        compress_rotated: Unratcheted::new(
-            "storage format for rotated audit files, not audit coverage — rotation and retention are the ratcheted knobs",
-        )
-        .merge(
+        // Storage format for rotated audit files, not audit coverage. Rotation and retention are the ratcheted knobs.
+        compress_rotated: Unratcheted::new().merge(
             "audit.compress_rotated",
             base_compress_rotated,
             req_compress_rotated,

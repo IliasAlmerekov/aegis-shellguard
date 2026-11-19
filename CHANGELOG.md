@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Removed: the unused `aegis-scanner` dependency of `aegis-audit` and `aegis-policy`, the unused `tracing` dependency of `aegis-config`, the caller-less `PushOutcome::is_accepted` and `TestRenderer::set_recovery_decision`, and the never-read `Unratcheted::reason` field (#617).
+
 - Changed: MySQL, PostgreSQL and Docker share executable-busy retry logic; MySQL and PostgreSQL share dump target helpers without changing snapshot IDs (#287).
 
 - Changed: `SnapshotError` derives `thiserror::Error` and carries typed variants for Aegis-owned snapshot failures instead of `Snapshot(String)`; messages are unchanged and `DeleteFailed.source` is renamed `detail` (#611).
