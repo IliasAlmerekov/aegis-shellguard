@@ -8,9 +8,10 @@
 //! contract tests. The resolver caches its program choice per process, so this
 //! test sets `PATH` to a directory without `bwrap` *before* any sandbox call.
 
+use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
-use aegis_sandbox::{SandboxConfig, SandboxExecutor, SandboxProfile, SandboxResult};
+use aegis_sandbox::SandboxConfig;
 
 /// A `PATH` directory that has `true` and `sh` (so the sandbox probe and the
 /// `sh -c` command can exec them) but no `bwrap`, forcing the resolver to fall
@@ -63,28 +64,28 @@ fn embedded_bwrap_confines_when_no_system_bwrap_on_path() {
         return;
     }
 
-    let executor = SandboxExecutor::new(SandboxProfile::from_config(&config));
-
-    // A command that writes to a read-only path must be confined: the write
-    // fails inside the namespace, proving the embedded bwrap applied.
-    let result = executor.run("echo x > /root/aegis_embedded_bwrap_probe.txt");
+    // The probe dir is writable on the host, so only the sandbox's read-only
+    // root mount can make this write fail, proving the embedded bwrap applied.
+    let probe = no_bwrap.join("aegis_embedded_bwrap_probe.txt");
+    let args = [
+        OsString::from("-c"),
+        OsString::from(format!("echo x > '{}'", probe.display())),
+    ];
+    // `prepare_for_exec` defers Landlock to `exec()`, so spawning needs this.
+    let prepared = aegis_sandbox::prepare_for_spawn(&config, OsStr::new("sh"), &args);
+    let status = prepared.map(|mut p| p.command.status());
+    let probe_written = probe.exists();
 
     // SAFETY: single-threaded test; restores the caller's PATH.
     unsafe { std::env::set_var("PATH", old_path.unwrap_or_default()) };
     std::fs::remove_dir_all(&no_bwrap).unwrap();
 
-    match result {
-        Ok(SandboxResult::Success(code)) => {
-            // The write to /root must have failed (non-zero exit), proving the
-            // command ran confined rather than unconfined on the host.
-            assert_ne!(
-                code, 0,
-                "write to /root must fail inside the sandbox; got exit {code}"
-            );
-        }
-        Ok(SandboxResult::Unavailable) => {
-            panic!("embedded bwrap must be available when required=true")
-        }
-        Err(e) => panic!("sandbox run failed: {e}"),
-    }
+    // The host passed the availability probe, so a prepare error is a defect.
+    let status = status
+        .unwrap_or_else(|e| panic!("prepare_for_spawn failed after the probe passed: {e}"))
+        .expect("the confined command must spawn");
+    assert!(
+        !status.success() && !probe_written,
+        "write to a host-writable path must fail inside the sandbox; got {status}"
+    );
 }

@@ -2,8 +2,8 @@
 
 use std::ffi::{OsStr, OsString};
 
-use crate::support::{is_forced_sandbox_unavailable, run_unavailable_result};
-use crate::{PreparedSandboxCommand, SandboxConfig, SandboxError, SandboxResult};
+use crate::support::is_forced_sandbox_unavailable;
+use crate::{PreparedSandboxCommand, SandboxConfig, SandboxError};
 
 // ── Public-to-crate entry points ──────────────────────────────────────────────
 
@@ -21,27 +21,6 @@ pub(crate) fn sandbox_available_for(config: &SandboxConfig) -> bool {
         && build_seatbelt_profile(config)
             .map(|profile| exec_true_in_profile(&profile))
             .unwrap_or(false)
-}
-
-pub(crate) fn run(config: &SandboxConfig, cmd: &str) -> Result<SandboxResult, SandboxError> {
-    if is_forced_sandbox_unavailable() || !is_sandbox_exec_available() {
-        return run_unavailable_result();
-    }
-    let profile = build_seatbelt_profile(config)?;
-    // The profile was already validated by sandbox_available_for() and by
-    // exec_true_in_profile() in the caller path. Stderr is inherited so the
-    // user sees any sandbox-exec diagnostics directly. We do not re-inspect
-    // stderr here to avoid false-positive SetupFailed for commands that
-    // happen to print "sandbox-exec:" to stderr.
-    let status = std::process::Command::new("/usr/bin/sandbox-exec")
-        .args(["-p", &profile, "sh", "-c", cmd])
-        .status()
-        .map_err(|source| SandboxError::Spawn {
-            operation: "run",
-            source,
-        })?;
-    let exit_code = status.code().unwrap_or(-1);
-    Ok(SandboxResult::Success(exit_code))
 }
 
 pub(crate) fn prepare_for_exec(
@@ -226,10 +205,7 @@ mod tests {
 
     use crate::support::set_force_sandbox_unavailable;
     use crate::support::test_helpers::ForceUnavailableGuard;
-    use crate::{
-        SandboxConfig, SandboxError, SandboxExecutor, SandboxProfile, SandboxResult, SandboxStatus,
-        sandbox_available_for,
-    };
+    use crate::{SandboxConfig, SandboxError, SandboxStatus, sandbox_available_for};
 
     // ── macOS: Seatbelt profile generation ───────────────────────────────────
 
@@ -366,23 +342,6 @@ mod tests {
         );
     }
 
-    // ── macOS: SandboxExecutor::run with forced-unavailable ───────────────────
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn test_run_macos_forced_unavailable_returns_required_error() {
-        set_force_sandbox_unavailable(true);
-        let _guard = ForceUnavailableGuard;
-
-        let _ = super::is_sandbox_exec_available();
-
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig::default()));
-        assert!(
-            matches!(executor.run("true"), Err(SandboxError::Required)),
-            "run() must return Err(SandboxError::Required) when forced-unavailable"
-        );
-    }
-
     // ── macOS: prepare_for_exec with forced-unavailable ───────────────────────
 
     #[cfg(target_os = "macos")]
@@ -480,74 +439,52 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn run_basic_command_succeeds_in_sandbox() {
-        if !super::is_sandbox_exec_available() {
-            return;
-        }
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig::default()));
-        match executor.run("true") {
-            Ok(SandboxResult::Success(0)) | Ok(SandboxResult::Unavailable) => {}
-            other => panic!("expected Success(0) or Unavailable, got {other:?}"),
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn run_write_to_allowed_path_succeeds() {
-        if !super::is_sandbox_exec_available() {
-            return;
-        }
+    fn prepare_for_spawn_allows_write_under_allow_write_root() {
+        use std::ffi::{OsStr, OsString};
         let dir = std::env::temp_dir();
         let cfg = SandboxConfig {
             allow_write: vec![crate::WriteRoot::new(dir.clone())],
             trusted_roots: vec![crate::WriteRoot::new(dir.clone())],
             ..Default::default()
         };
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&cfg));
-        let test_file = dir.join("aegis_sandbox_test_write_allowed.tmp");
-        let cmd = format!("touch {}", test_file.display());
-        match executor.run(&cmd) {
-            Ok(SandboxResult::Success(0)) => {
-                let _ = std::fs::remove_file(&test_file);
-            }
-            Ok(SandboxResult::Unavailable) => {}
-            other => panic!("expected Success(0) for write to allowed path, got {other:?}"),
+        if super::sandbox_available_for(&cfg) {
+            let test_file = dir.join("aegis_sandbox_test_write_allowed.tmp");
+            let args = vec![
+                OsString::from("-c"),
+                OsString::from(format!("touch {}", test_file.display())),
+            ];
+            let mut cmd = super::prepare_for_spawn(&cfg, OsStr::new("/bin/sh"), &args)
+                .expect("prepare_for_spawn must succeed");
+            let status = cmd.command.status().expect("spawned command must run");
+            let _ = std::fs::remove_file(&test_file);
+            assert!(
+                status.success(),
+                "write under an allow_write root must succeed"
+            );
         }
     }
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn run_write_is_blocked_when_allow_write_is_empty() {
-        if !super::is_sandbox_exec_available() {
-            return;
-        }
-        // With (deny default) and no allow_write rules, any write must be blocked.
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&SandboxConfig::default()));
-        match executor.run("touch /tmp/aegis_sandbox_blocked_test.tmp") {
-            Ok(SandboxResult::Success(0)) => {
-                panic!("write must be blocked by sandbox when allow_write is empty")
-            }
-            Ok(SandboxResult::Success(_)) | Ok(SandboxResult::Unavailable) | Err(_) => {}
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn run_network_is_blocked_when_allow_network_is_false() {
-        if !super::is_sandbox_exec_available() {
-            return;
-        }
+    fn prepare_for_spawn_blocks_network_when_allow_network_is_false() {
+        use std::ffi::{OsStr, OsString};
         let cfg = SandboxConfig {
             allow_network: false,
             ..Default::default()
         };
-        let executor = SandboxExecutor::new(SandboxProfile::from_config(&cfg));
-        // ping requires a network socket; blocked sandbox returns non-zero.
-        match executor.run("ping -c 1 -t 1 127.0.0.1 2>/dev/null") {
-            Ok(SandboxResult::Success(0)) => {
-                panic!("network operation must fail when allow_network=false")
-            }
-            Ok(SandboxResult::Success(_)) | Ok(SandboxResult::Unavailable) | Err(_) => {}
+        if super::sandbox_available_for(&cfg) {
+            // ping needs a network socket; the blocked sandbox makes it exit non-zero.
+            let args = vec![
+                OsString::from("-c"),
+                OsString::from("ping -c 1 -t 1 127.0.0.1 2>/dev/null"),
+            ];
+            let mut cmd = super::prepare_for_spawn(&cfg, OsStr::new("/bin/sh"), &args)
+                .expect("prepare_for_spawn must succeed");
+            let status = cmd.command.status().expect("spawned command must run");
+            assert!(
+                !status.success(),
+                "network operation must fail when allow_network=false"
+            );
         }
     }
 
