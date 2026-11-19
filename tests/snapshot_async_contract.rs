@@ -16,20 +16,7 @@ const SNAPSHOT_PLUGINS: &[(&str, &str)] = &[
     ),
 ];
 
-const RETRY_HELPERS: &[(&str, &str)] = &[
-    (
-        "crates/aegis-snapshot/src/docker/mod.rs",
-        "async fn sleep_docker_busy_retry_delay",
-    ),
-    (
-        "crates/aegis-snapshot/src/postgres/mod.rs",
-        "async fn output_with_busy_retry",
-    ),
-    (
-        "crates/aegis-snapshot/src/mysql/mod.rs",
-        "async fn spawn_with_busy_retry",
-    ),
-];
+const RETRY_HELPERS: &[(&str, &str)] = &[("crates/aegis-snapshot/src/busy.rs", "async fn retry")];
 
 #[test]
 fn test_snapshot_plugins_do_not_block_tokio_runtime_contract()

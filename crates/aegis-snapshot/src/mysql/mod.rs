@@ -8,34 +8,23 @@ use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::process::{ChildStderr, Command};
 use tokio::task::JoinHandle;
 
+use crate::busy;
 use crate::containment::contain_artifact;
+use crate::database_target::{DatabaseTarget, RollbackTarget};
 use crate::error::SnapshotError;
 use crate::liveness::local_file_liveness;
 use crate::readiness::file_readiness;
-use crate::secure_fs::{create_artifact_file, create_store_dir, harden_existing_artifact};
+use crate::secure_fs::{create_store_dir, harden_existing_artifact};
 use crate::snapshot_id;
 use crate::{ArtifactReadiness, Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
-const EXECUTABLE_BUSY_ERRNO: i32 = 26;
 const BUSY_RETRY_ATTEMPTS: usize = 12;
-const BUSY_RETRY_DELAY_MS: u64 = 25;
-
-struct MysqlRollbackTarget {
-    host: String,
-    port: u16,
-    user: String,
-    dump_path: PathBuf,
-}
 
 /// Snapshot plugin for MySQL databases.
 pub struct MysqlPlugin {
-    database: String,
-    host: String,
-    port: u16,
-    user: String,
-    snapshots_dir: PathBuf,
+    target: DatabaseTarget,
     mysqldump_bin: String,
     mysql_bin: String,
 }
@@ -50,18 +39,23 @@ impl MysqlPlugin {
         snapshots_dir: PathBuf,
     ) -> Self {
         Self {
-            database,
-            host,
-            port,
-            user,
-            snapshots_dir,
+            target: DatabaseTarget {
+                database,
+                host,
+                port,
+                user,
+                snapshots_dir,
+                prefix: "mysql",
+                extension: "sql",
+                plugin: "mysql",
+            },
             mysqldump_bin: "mysqldump".to_string(),
             mysql_bin: "mysql".to_string(),
         }
     }
 
     fn build_common_args(&self) -> Vec<String> {
-        Self::build_common_args_for_target(&self.host, self.port, &self.user)
+        Self::build_common_args_for_target(&self.target.host, self.target.port, &self.target.user)
     }
 
     fn build_common_args_for_target(host: &str, port: u16, user: &str) -> Vec<String> {
@@ -72,75 +66,6 @@ impl MysqlPlugin {
         }
 
         args
-    }
-
-    fn dump_path_candidate(&self, timestamp: u64, suffix: Option<usize>) -> PathBuf {
-        let base_name = format!("mysql-{}-{timestamp}", self.sanitized_database_label());
-        let file_name = match suffix {
-            Some(suffix) => format!("{base_name}-{suffix}.sql"),
-            None => format!("{base_name}.sql"),
-        };
-
-        self.snapshots_dir.join(file_name)
-    }
-
-    fn reserve_dump_path(&self, timestamp: u64) -> Result<PathBuf> {
-        let mut suffix = None;
-
-        loop {
-            let dump_path = contain_artifact(
-                "mysql",
-                &self.snapshots_dir,
-                &self.dump_path_candidate(timestamp, suffix),
-            )?;
-            match create_artifact_file("mysql", &dump_path) {
-                Ok(file) => {
-                    drop(file);
-                    return Ok(dump_path);
-                }
-                Err(SnapshotError::Io(err)) if err.kind() == std::io::ErrorKind::AlreadyExists => {
-                    suffix = Some(suffix.map_or(1, |current| current + 1));
-                }
-                Err(err) => return Err(err),
-            }
-        }
-    }
-
-    async fn spawn_with_busy_retry(
-        command: &mut Command,
-        context: &str,
-    ) -> Result<tokio::process::Child> {
-        let mut attempt = 0usize;
-        loop {
-            match command.spawn() {
-                Ok(child) => return Ok(child),
-                Err(error) if Self::is_executable_busy(&error) && attempt < BUSY_RETRY_ATTEMPTS => {
-                    attempt += 1;
-                    tracing::warn!(
-                        context,
-                        attempt,
-                        "mysql binary busy during command launch, retrying"
-                    );
-                    tokio::time::sleep(std::time::Duration::from_millis(BUSY_RETRY_DELAY_MS)).await;
-                }
-                Err(error) => {
-                    return Err(SnapshotError::CommandLaunchFailed {
-                        context: context.to_string(),
-                        detail: error.to_string(),
-                    });
-                }
-            }
-        }
-    }
-
-    fn sanitized_database_label(&self) -> String {
-        self.database
-            .chars()
-            .map(|ch| match ch {
-                'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' => ch,
-                _ => '_',
-            })
-            .collect()
     }
 
     fn validate_dump_file_name(dump_file_name: &str) -> Result<()> {
@@ -161,50 +86,14 @@ impl MysqlPlugin {
         Ok(())
     }
 
-    fn is_executable_busy(error: &std::io::Error) -> bool {
-        error.raw_os_error() == Some(EXECUTABLE_BUSY_ERRNO)
+    fn resolve_snapshot_id(&self, id: &str) -> Result<RollbackTarget> {
+        match self.target.parse_snapshot_id(id)? {
+            Some(target) => Ok(target),
+            None => self.parse_legacy_snapshot_id(id),
+        }
     }
 
-    fn build_snapshot_id(&self, dump_path: &Path) -> String {
-        snapshot_id::join_v3(&[
-            &snapshot_id::encode_bytes(self.database.as_bytes()),
-            &snapshot_id::encode_bytes(self.host.as_bytes()),
-            &self.port.to_string(),
-            &snapshot_id::encode_bytes(self.user.as_bytes()),
-            &snapshot_id::encode_path(dump_path),
-        ])
-    }
-
-    fn parse_snapshot_id(&self, id: &str) -> Result<MysqlRollbackTarget> {
-        let parts = if snapshot_id::is_v3(id) {
-            snapshot_id::split_v3(id, 5)?
-        } else if snapshot_id::is_v2(id) {
-            snapshot_id::split_v2(id, 5)?
-        } else {
-            return self.parse_legacy_snapshot_id(id);
-        };
-
-        let _database = snapshot_id::decode_string(parts[0], "database")?;
-        let host = snapshot_id::decode_string(parts[1], "host")?;
-        let port =
-            parts[2]
-                .parse::<u16>()
-                .map_err(|_| SnapshotError::InvalidSnapshotIdComponent {
-                    component: "port".to_string(),
-                    value: parts[2].to_string(),
-                })?;
-        let user = snapshot_id::decode_string(parts[3], "user")?;
-        let dump_path = snapshot_id::decode_path(parts[4], "dump path")?;
-
-        Ok(MysqlRollbackTarget {
-            host,
-            port,
-            user,
-            dump_path,
-        })
-    }
-
-    fn parse_legacy_snapshot_id(&self, snapshot_id: &str) -> Result<MysqlRollbackTarget> {
+    fn parse_legacy_snapshot_id(&self, snapshot_id: &str) -> Result<RollbackTarget> {
         let (database_encoded, dump_ref_encoded) = snapshot_id
             .split_once(snapshot_id::LEGACY_SEP)
             .ok_or_else(|| SnapshotError::MalformedSnapshotId {
@@ -214,11 +103,11 @@ impl MysqlPlugin {
         let dump_file_name = snapshot_id::decode_string(dump_ref_encoded, "dump reference")?;
         Self::validate_dump_file_name(&dump_file_name)?;
 
-        Ok(MysqlRollbackTarget {
-            host: self.host.clone(),
-            port: self.port,
-            user: self.user.clone(),
-            dump_path: self.snapshots_dir.join(dump_file_name),
+        Ok(RollbackTarget {
+            host: self.target.host.clone(),
+            port: self.target.port,
+            user: self.target.user.clone(),
+            dump_path: self.target.snapshots_dir.join(dump_file_name),
         })
     }
 
@@ -260,7 +149,7 @@ impl SnapshotPlugin for MysqlPlugin {
     }
 
     async fn is_applicable(&self, _cwd: &Path) -> bool {
-        if self.database.is_empty() {
+        if self.target.database.is_empty() {
             return false;
         }
 
@@ -275,18 +164,18 @@ impl SnapshotPlugin for MysqlPlugin {
     }
 
     async fn snapshot(&self, _cwd: &Path, _cmd: &str) -> Result<String> {
-        create_store_dir("mysql", &self.snapshots_dir)?;
+        create_store_dir("mysql", &self.target.snapshots_dir)?;
 
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let dump_path = self.reserve_dump_path(timestamp)?;
+        let dump_path = self.target.reserve_dump_path(timestamp)?;
 
         let mut args = self.build_common_args();
         args.extend([
             "--databases".to_string(),
-            self.database.clone(),
+            self.target.database.clone(),
             "--add-drop-database".to_string(),
         ]);
 
@@ -295,14 +184,21 @@ impl SnapshotPlugin for MysqlPlugin {
             .args(&args)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
-        let mut child =
-            match Self::spawn_with_busy_retry(&mut command, "failed to run mysqldump").await {
-                Ok(child) => child,
-                Err(err) => {
-                    let _ = std::fs::remove_file(&dump_path);
-                    return Err(err);
-                }
-            };
+        let mut child = match busy::retry(
+            || std::future::ready(command.spawn()),
+            BUSY_RETRY_ATTEMPTS,
+            &self.mysqldump_bin,
+            "mysql",
+            "failed to run mysqldump",
+        )
+        .await
+        {
+            Ok(child) => child,
+            Err(err) => {
+                let _ = std::fs::remove_file(&dump_path);
+                return Err(err);
+            }
+        };
 
         let mut stdout = child.stdout.take().ok_or_else(|| {
             let _ = std::fs::remove_file(&dump_path);
@@ -359,14 +255,15 @@ impl SnapshotPlugin for MysqlPlugin {
         }
 
         let dump_path = dump_path.canonicalize()?;
-        let snapshot_id = self.build_snapshot_id(&dump_path);
+        let snapshot_id = self.target.build_snapshot_id(&dump_path);
         tracing::info!(%snapshot_id, "mysql snapshot created");
         Ok(snapshot_id)
     }
 
     async fn rollback(&self, snapshot_id: &str) -> Result<()> {
-        let mut target = self.parse_snapshot_id(snapshot_id)?;
-        target.dump_path = contain_artifact("mysql", &self.snapshots_dir, &target.dump_path)?;
+        let mut target = self.resolve_snapshot_id(snapshot_id)?;
+        target.dump_path =
+            contain_artifact("mysql", &self.target.snapshots_dir, &target.dump_path)?;
         if !target.dump_path.exists() {
             return Err(SnapshotError::RollbackDumpNotFound {
                 path: target.dump_path.to_string_lossy().to_string(),
@@ -380,7 +277,14 @@ impl SnapshotPlugin for MysqlPlugin {
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::piped());
-        let mut child = Self::spawn_with_busy_retry(&mut command, "failed to run mysql").await?;
+        let mut child = busy::retry(
+            || std::future::ready(command.spawn()),
+            BUSY_RETRY_ATTEMPTS,
+            &self.mysql_bin,
+            "mysql",
+            "failed to run mysql",
+        )
+        .await?;
 
         let mut dump_file = tokio::fs::File::open(&target.dump_path).await?;
         let stderr = child
@@ -426,16 +330,17 @@ impl SnapshotPlugin for MysqlPlugin {
     }
 
     async fn liveness(&self, snapshot_id: &str) -> Result<Liveness> {
-        let target = self.parse_snapshot_id(snapshot_id)?;
-        let dump_path = contain_artifact("mysql", &self.snapshots_dir, &target.dump_path)?;
+        let target = self.resolve_snapshot_id(snapshot_id)?;
+        let dump_path = contain_artifact("mysql", &self.target.snapshots_dir, &target.dump_path)?;
         Ok(local_file_liveness(&dump_path).await)
     }
 
     async fn readiness(&self, snapshot_id: &str) -> ArtifactReadiness {
-        let Ok(target) = self.parse_snapshot_id(snapshot_id) else {
+        let Ok(target) = self.resolve_snapshot_id(snapshot_id) else {
             return ArtifactReadiness::UNAVAILABLE;
         };
-        let Ok(dump_path) = contain_artifact("mysql", &self.snapshots_dir, &target.dump_path)
+        let Ok(dump_path) =
+            contain_artifact("mysql", &self.target.snapshots_dir, &target.dump_path)
         else {
             return ArtifactReadiness::UNAVAILABLE;
         };
@@ -443,8 +348,9 @@ impl SnapshotPlugin for MysqlPlugin {
     }
 
     async fn delete(&self, snapshot_id: &str) -> Result<()> {
-        let mut target = self.parse_snapshot_id(snapshot_id)?;
-        target.dump_path = contain_artifact("mysql", &self.snapshots_dir, &target.dump_path)?;
+        let mut target = self.resolve_snapshot_id(snapshot_id)?;
+        target.dump_path =
+            contain_artifact("mysql", &self.target.snapshots_dir, &target.dump_path)?;
         match std::fs::remove_file(&target.dump_path) {
             Ok(()) => {
                 tracing::info!(path = %target.dump_path.display(), "mysql dump deleted");

@@ -63,6 +63,16 @@ esac"#,
 // ── snapshot ───────────────────────────────────────────────────────────────
 
 #[tokio::test]
+async fn snapshot_reports_docker_launch_failure() {
+    let dir = TempDir::new().unwrap();
+    let p = plugin(&dir.path().join("missing-docker"));
+    let result = p.snapshot(Path::new("/"), "test").await;
+    assert!(
+        matches!(result, Err(SnapshotError::CommandLaunchFailed { context, .. }) if context == "failed to run docker ps")
+    );
+}
+
+#[tokio::test]
 async fn snapshot_returns_sentinel_when_no_containers() {
     let dir = TempDir::new().unwrap();
     write_mock_docker(
@@ -378,46 +388,5 @@ esac"#
         "is_applicable blocked the Tokio thread while docker ps ran \
          (counter={counter_after}, expected 1). Fix: make is_applicable async and use \
          tokio::process::Command."
-    );
-}
-
-/// Verifies that `sleep_docker_busy_retry_delay` yields the current-thread runtime
-/// so that other tasks can make progress during the delay.
-///
-/// The retry delay must use `tokio::time::sleep`, which is cheaper than
-/// dispatching a blocking sleep to a helper thread and still yields the
-/// runtime while the delay is pending.
-///
-/// This is a behavioral contract test: it asserts the function MUST yield the runtime
-/// and will catch any regression that changes it to a blocking call (e.g., replacing
-/// the body with a bare `thread::sleep` call).
-#[tokio::test(flavor = "current_thread")]
-async fn sleep_docker_busy_retry_delay_yields_to_runtime() {
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    let flag = Arc::new(AtomicBool::new(false));
-    let flag_bg = Arc::clone(&flag);
-
-    // Background task sets the flag after 5ms.
-    let bg = tokio::task::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(5)).await;
-        flag_bg.store(true, Ordering::SeqCst);
-    });
-
-    // sleep_docker_busy_retry_delay sleeps for DOCKER_BUSY_RETRY_DELAY_MS (25ms).
-    // A properly yielding implementation allows the bg task (5ms) to
-    // complete before this returns.
-    sleep_docker_busy_retry_delay().await;
-
-    let flag_value = flag.load(Ordering::SeqCst);
-
-    bg.await.unwrap();
-
-    assert!(
-        flag_value,
-        "sleep_docker_busy_retry_delay did not yield to the runtime — \
-         background task flag was not set (expected true, got false). \
-         This would be a regression; the function must not block the Tokio thread."
     );
 }

@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::path::Path;
 use std::process::Output;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -12,6 +11,7 @@ use tokio::process::Command;
 
 use aegis_config::{DockerScope, DockerScopeMode};
 
+use crate::busy;
 use crate::error::SnapshotError;
 use crate::{ArtifactReadiness, Liveness, SnapshotPlugin};
 
@@ -19,9 +19,7 @@ type Result<T> = std::result::Result<T, SnapshotError>;
 
 /// Sentinel returned when there were no running containers at snapshot time.
 const NO_CONTAINERS: &str = "none";
-const EXECUTABLE_BUSY_ERRNO: i32 = 26;
 const DOCKER_BUSY_RETRY_ATTEMPTS: usize = 40;
-const DOCKER_BUSY_RETRY_DELAY_MS: u64 = 25;
 
 /// Snapshot plugin that commits and saves Docker container state.
 pub struct DockerPlugin {
@@ -80,45 +78,19 @@ impl DockerPlugin {
             .map(|arg| arg.as_ref().to_os_string())
             .collect();
 
-        let mut attempt = 0usize;
-        loop {
-            // kill_on_drop: a liveness timeout drops this future and must not orphan the child.
-            match Command::new(&self.docker_bin)
-                .args(&args)
-                .kill_on_drop(true)
-                .output()
-                .await
-            {
-                Ok(output) => return Ok(output),
-                Err(error)
-                    if is_executable_busy(&error) && attempt < DOCKER_BUSY_RETRY_ATTEMPTS =>
-                {
-                    attempt += 1;
-                    tracing::warn!(
-                        docker_bin = %self.docker_bin,
-                        context,
-                        attempt,
-                        "docker binary busy during command launch, retrying"
-                    );
-                    sleep_docker_busy_retry_delay().await;
-                }
-                Err(error) => {
-                    return Err(SnapshotError::CommandLaunchFailed {
-                        context: context.to_string(),
-                        detail: error.to_string(),
-                    });
-                }
-            }
-        }
+        busy::retry(
+            || {
+                let mut command = Command::new(&self.docker_bin);
+                command.args(&args).kill_on_drop(true);
+                async move { command.output().await }
+            },
+            DOCKER_BUSY_RETRY_ATTEMPTS,
+            &self.docker_bin,
+            "docker",
+            context,
+        )
+        .await
     }
-}
-
-fn is_executable_busy(error: &std::io::Error) -> bool {
-    error.raw_os_error() == Some(EXECUTABLE_BUSY_ERRNO)
-}
-
-pub(crate) async fn sleep_docker_busy_retry_delay() {
-    tokio::time::sleep(Duration::from_millis(DOCKER_BUSY_RETRY_DELAY_MS)).await;
 }
 
 /// Host-level configuration captured from a running container before snapshot.
