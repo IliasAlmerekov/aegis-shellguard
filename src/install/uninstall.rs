@@ -460,4 +460,20 @@ mod tests {
         assert_eq!(binary, fs::canonicalize(&cellar_binary).unwrap());
         assert_eq!(channel, Some(RemovalChannel::Homebrew));
     }
+
+    #[test]
+    fn cleanup_failed_display_names_the_write_failure_and_the_leftover_file() {
+        let original = InstallError::io("cannot replace", Path::new("/h/settings.json"))(
+            std::io::Error::other("disk full"),
+        );
+        let error = InstallError::CleanupFailed {
+            original: Box::new(original),
+            path: PathBuf::from("/h/.aegis-1.tmp"),
+            source: std::io::Error::other("permission denied"),
+        };
+        assert_eq!(
+            error.to_string(),
+            "cannot replace /h/settings.json: disk full; cannot clean up /h/.aegis-1.tmp: permission denied"
+        );
+    }
 }
