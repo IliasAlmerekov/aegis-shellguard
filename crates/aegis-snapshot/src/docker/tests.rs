@@ -1,7 +1,9 @@
 use super::*;
+use crate::busy::is_executable_busy;
 use std::fs;
 use std::io;
 use std::process::Command as StdCommand;
+use std::time::Duration;
 use tempfile::TempDir;
 
 /// Write a shell script to `dir/docker` and make it executable.

@@ -86,8 +86,8 @@ async fn delete_rejects_artifact_outside_snapshot_store() {
 async fn delete_rejects_parent_traversal_artifact_path() {
     let temp_dir = TempDir::new().unwrap();
     let plugin = plugin_with_user(&temp_dir, "root");
-    fs::create_dir_all(&plugin.snapshots_dir).unwrap();
-    let traversal_path = plugin.snapshots_dir.join("..").join("outside.sql");
+    fs::create_dir_all(&plugin.target.snapshots_dir).unwrap();
+    let traversal_path = plugin.target.snapshots_dir.join("..").join("outside.sql");
     let snapshot_id = snapshot_id_for("app", "localhost", 3306, "root", &traversal_path);
 
     let err = plugin.delete(&snapshot_id).await.unwrap_err();
@@ -153,8 +153,8 @@ fn reserve_dump_path_creates_unique_files_atomically() {
     fs::create_dir_all(&snapshots_dir).unwrap();
     let plugin = plugin_with_user(&temp_dir, "root");
 
-    let first = plugin.reserve_dump_path(1_234).unwrap();
-    let second = plugin.reserve_dump_path(1_234).unwrap();
+    let first = plugin.target.reserve_dump_path(1_234).unwrap();
+    let second = plugin.target.reserve_dump_path(1_234).unwrap();
 
     assert_ne!(first, second);
     assert!(first.exists());
@@ -182,7 +182,7 @@ fn reserve_dump_path_sanitizes_database_name_for_filenames() {
         snapshots_dir,
     );
 
-    let dump_path = plugin.reserve_dump_path(1_234).unwrap();
+    let dump_path = plugin.target.reserve_dump_path(1_234).unwrap();
 
     assert_eq!(
         dump_path.file_name().unwrap().to_string_lossy(),
@@ -243,8 +243,8 @@ async fn rollback_errors_on_malformed_dump_path_encoding() {
 async fn rollback_errors_when_dump_file_missing() {
     let temp_dir = TempDir::new().unwrap();
     let plugin = plugin_with_user(&temp_dir, "root");
-    fs::create_dir_all(&plugin.snapshots_dir).unwrap();
-    let missing_dump = plugin.snapshots_dir.join("missing.sql");
+    fs::create_dir_all(&plugin.target.snapshots_dir).unwrap();
+    let missing_dump = plugin.target.snapshots_dir.join("missing.sql");
     let snapshot_id = snapshot_id_for("app", "localhost", 3_306, "root", &missing_dump);
 
     let err = plugin.rollback(&snapshot_id).await.unwrap_err();
@@ -635,67 +635,6 @@ async fn rollback_drains_large_stderr_without_deadlocking() {
     plugin.rollback(&snapshot_id).await.unwrap();
 }
 
-#[cfg(target_os = "linux")]
-#[tokio::test(flavor = "current_thread")]
-async fn spawn_with_busy_retry_yields_to_tokio_runtime_during_sleep() {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicU32, Ordering},
-    };
-
-    let temp_dir = TempDir::new().unwrap();
-    // A stub binary that we will hold open for writing for the entire test,
-    // so every call to spawn() returns ETXTBSY and the retry loop fires.
-    let mysqldump = stub_bin(temp_dir.path(), "mysqldump", "exit 0");
-
-    // Keep the file open for writing from this process.  The kernel returns
-    // ETXTBSY from execve() as long as any process holds the file open for
-    // writing, so this forces spawn_with_busy_retry to exhaust all retries.
-    let _keep_open = std::fs::OpenOptions::new()
-        .append(true)
-        .open(&mysqldump)
-        .unwrap();
-
-    // Spawn a concurrent task that counts how many scheduling opportunities
-    // it receives.  In a current_thread runtime:
-    //   - std::thread::sleep blocks the only worker thread, so this task
-    //     cannot run at all during each 25 ms retry delay.
-    //   - tokio::time::sleep(...).await yields to the runtime, letting this
-    //     task run between retries.
-    let counter = Arc::new(AtomicU32::new(0));
-    let counter_clone = Arc::clone(&counter);
-    tokio::spawn(async move {
-        loop {
-            tokio::task::yield_now().await;
-            counter_clone.fetch_add(1, Ordering::Relaxed);
-        }
-    });
-
-    // Call the retry function directly so we reach the sleep on every
-    // attempt.  The binary is permanently busy, so all BUSY_RETRY_ATTEMPTS
-    // (12) are exhausted and the call returns Err — no subsequent async I/O
-    // happens, so the only yield opportunities are inside the retry sleep.
-    let mut command = tokio::process::Command::new(&mysqldump);
-    let result = MysqlPlugin::spawn_with_busy_retry(&mut command, "test context").await;
-
-    // The binary was always busy, so we expect an error after exhausting retries.
-    assert!(
-        result.is_err(),
-        "expected error after exhausting busy retries, got success"
-    );
-
-    // If std::thread::sleep was used, the counter is 0: the retry delays
-    // blocked the single Tokio thread, giving the spawned task no chance to
-    // run.  When fixed with tokio::time::sleep(...).await, the counter is
-    // > 0 because each sleep yields to the executor.
-    assert!(
-        counter.load(Ordering::Relaxed) > 0,
-        "counter stayed at 0: std::thread::sleep is blocking the Tokio \
-         runtime during retry delays; replace with \
-         tokio::time::sleep(...).await"
-    );
-}
-
 #[cfg(unix)]
 #[tokio::test]
 async fn snapshot_generates_distinct_ids_for_back_to_back_calls() {
@@ -734,7 +673,7 @@ fn build_snapshot_id_writes_v3_layout() {
     let plugin = plugin_with_user(&temp_dir, "root");
 
     assert_eq!(
-        plugin.build_snapshot_id(Path::new("/tmp/d.sql")),
+        plugin.target.build_snapshot_id(Path::new("/tmp/d.sql")),
         "v3:617070:6c6f63616c686f7374:3306:726f6f74:2f746d702f642e73716c"
     );
 }
@@ -748,7 +687,7 @@ fn parse_snapshot_id_reads_v3_and_v2_to_the_same_target() {
         "v3:617070:6c6f63616c686f7374:3306:726f6f74:2f746d702f642e73716c",
         "v2\t617070\t6c6f63616c686f7374\t3306\t726f6f74\t2f746d702f642e73716c",
     ] {
-        let target = plugin.parse_snapshot_id(id).unwrap();
+        let target = plugin.target.parse_snapshot_id(id).unwrap().unwrap();
         assert_eq!(target.host, "localhost", "{id}");
         assert_eq!(target.port, 3306, "{id}");
         assert_eq!(target.user, "root", "{id}");
@@ -763,6 +702,7 @@ fn parse_snapshot_id_rejects_v3_with_wrong_component_count() {
 
     assert!(
         plugin
+            .target
             .parse_snapshot_id("v3:617070:6c6f63616c686f7374")
             .is_err()
     );
@@ -774,7 +714,7 @@ fn parse_snapshot_id_reads_unversioned_legacy_id_against_the_snapshot_store() {
     let plugin = plugin_with_user(&temp_dir, "root");
 
     let target = plugin
-        .parse_snapshot_id("617070\t6c65676163792e73716c")
+        .parse_legacy_snapshot_id("617070\t6c65676163792e73716c")
         .unwrap();
 
     assert_eq!(
