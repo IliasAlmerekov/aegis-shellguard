@@ -457,7 +457,7 @@ impl SnapshotPlugin for MysqlPlugin {
             Err(error) => Err(SnapshotError::DeleteFailed {
                 plugin: "mysql".to_string(),
                 snapshot_id: snapshot_id.to_string(),
-                source: error.to_string(),
+                detail: error.to_string(),
             }),
         }
     }

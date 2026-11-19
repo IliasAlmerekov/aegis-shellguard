@@ -551,13 +551,13 @@ impl SnapshotPlugin for GitPlugin {
                 Err(SnapshotError::DeleteFailed {
                     plugin: "git".to_string(),
                     snapshot_id: snapshot_id.to_string(),
-                    source: format!("git stash drop failed: {stderr}"),
+                    detail: format!("git stash drop failed: {stderr}"),
                 })
             }
             Err(error) => Err(SnapshotError::DeleteFailed {
                 plugin: "git".to_string(),
                 snapshot_id: snapshot_id.to_string(),
-                source: format!("git stash drop failed: {error}"),
+                detail: format!("git stash drop failed: {error}"),
             }),
         }
     }

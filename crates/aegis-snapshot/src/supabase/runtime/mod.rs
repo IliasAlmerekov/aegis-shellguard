@@ -250,7 +250,7 @@ impl SnapshotPlugin for SupabasePlugin {
                 return Err(SnapshotError::DeleteFailed {
                     plugin: "supabase".to_string(),
                     snapshot_id: snapshot_id.to_string(),
-                    source: error.to_string(),
+                    detail: error.to_string(),
                 });
             }
             Ok(_) => {}
@@ -266,7 +266,7 @@ impl SnapshotPlugin for SupabasePlugin {
                 return Err(SnapshotError::DeleteFailed {
                     plugin: "supabase".to_string(),
                     snapshot_id: snapshot_id.to_string(),
-                    source: error.to_string(),
+                    detail: error.to_string(),
                 });
             }
         };
@@ -277,7 +277,7 @@ impl SnapshotPlugin for SupabasePlugin {
                 return Err(SnapshotError::DeleteFailed {
                     plugin: "supabase".to_string(),
                     snapshot_id: snapshot_id.to_string(),
-                    source: format!("failed to parse manifest: {error}"),
+                    detail: format!("failed to parse manifest: {error}"),
                 });
             }
         };
@@ -288,7 +288,7 @@ impl SnapshotPlugin for SupabasePlugin {
                     return Err(SnapshotError::DeleteFailed {
                         plugin: "supabase".to_string(),
                         snapshot_id: snapshot_id.to_string(),
-                        source: format!("failed to remove dump {}: {error}", dump_path.display()),
+                        detail: format!("failed to remove dump {}: {error}", dump_path.display()),
                     });
                 }
                 _ => {}
@@ -300,7 +300,7 @@ impl SnapshotPlugin for SupabasePlugin {
                 return Err(SnapshotError::DeleteFailed {
                     plugin: "supabase".to_string(),
                     snapshot_id: snapshot_id.to_string(),
-                    source: format!(
+                    detail: format!(
                         "failed to remove manifest {}: {error}",
                         manifest_path.display()
                     ),
@@ -318,7 +318,7 @@ impl SnapshotPlugin for SupabasePlugin {
                     return Err(SnapshotError::DeleteFailed {
                         plugin: "supabase".to_string(),
                         snapshot_id: snapshot_id.to_string(),
-                        source: format!(
+                        detail: format!(
                             "failed to remove bundle {}: {error}",
                             bundle_dir.display()
                         ),

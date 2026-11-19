@@ -4,20 +4,23 @@
 ///
 /// Aegis-owned failures carry typed variants. [`SnapshotError::Snapshot`] is
 /// left for text supplied by a [`crate::SnapshotPlugin`] outside this crate.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum SnapshotError {
     /// Snapshot creation or rollback operation failed, as reported by a plugin
     /// outside this crate.
+    #[error("snapshot error: {0}")]
     Snapshot(String),
 
     /// Snapshot identifier has an invalid structure.
+    #[error("snapshot error: malformed snapshot_id: {id:?}")]
     MalformedSnapshotId {
         /// Identifier supplied for the operation.
         id: String,
     },
 
     /// A Snapshot ID component is invalid (encoding, port, dump reference).
+    #[error("snapshot error: malformed snapshot_id: invalid {component} {value:?}")]
     InvalidSnapshotIdComponent {
         /// Component description, for example `port` or `dump path encoding`.
         component: String,
@@ -26,6 +29,7 @@ pub enum SnapshotError {
     },
 
     /// A Snapshot ID path component is not an acceptable path.
+    #[error("snapshot error: malformed snapshot_id: invalid {label} {path:?}")]
     InvalidSnapshotIdPath {
         /// Component name.
         label: String,
@@ -34,42 +38,55 @@ pub enum SnapshotError {
     },
 
     /// Snapshot ID version is not supported by the parser.
+    #[error("snapshot error: unsupported snapshot_id version {version:?}")]
     UnsupportedSnapshotIdVersion {
         /// Version found in the identifier.
         version: String,
     },
 
     /// Git stash entry for the snapshot no longer exists.
+    #[error("snapshot error: stash entry not found for hash {hash}")]
     GitStashNotFound {
         /// Commit hash recorded in the snapshot ID.
         hash: String,
     },
 
     /// The stash entry vanished while the current work was being parked.
+    #[error(
+        "snapshot error: stash entry disappeared while parking current work; parked work was retained and rollback stopped for hash {hash}"
+    )]
     ParkedStashDisappeared {
         /// Commit hash recorded in the snapshot ID.
         hash: String,
     },
 
     /// `git stash push` failed while parking the current work before rollback.
+    #[error("snapshot error: could not park the current working tree before rollback: {stderr}")]
     ParkWorkingTreeFailed {
         /// Git's standard error output.
         stderr: String,
     },
 
     /// Current database target differs from the target recorded in the manifest.
+    #[error(
+        "snapshot error: rollback target mismatch: current config differs from manifest target: {details}"
+    )]
     RollbackTargetMismatch {
         /// Differences between the manifest and the current configuration.
         details: String,
     },
 
     /// Recomputed manifest eligibility does not allow rollback.
+    #[error(
+        "snapshot error: rollback denied: recomputed manifest eligibility is not allowed (status: {status})"
+    )]
     RollbackDenied {
         /// Debug rendering of the recomputed overall status.
         status: String,
     },
 
     /// No registered plugin can perform the operation.
+    #[error("snapshot error: snapshot plugin {plugin:?} is not available for {operation}")]
     PluginUnavailable {
         /// Requested plugin name.
         plugin: String,
@@ -78,12 +95,14 @@ pub enum SnapshotError {
     },
 
     /// Docker snapshot record is not valid JSON or lacks required fields.
+    #[error("snapshot error: malformed docker snapshot record: {detail}")]
     MalformedDockerRecord {
         /// JSON parser error details.
         detail: String,
     },
 
     /// An external command ran and reported a failure.
+    #[error("snapshot error: {command} failed: {detail}")]
     CommandFailed {
         /// Command that failed, for example `pg_dump` or `docker run <image>`.
         command: String,
@@ -92,12 +111,14 @@ pub enum SnapshotError {
     },
 
     /// An external command exited unsuccessfully and gave no detail.
+    #[error("snapshot error: {command} failed")]
     CommandExitFailed {
         /// Command that failed.
         command: &'static str,
     },
 
     /// An external command could not be started.
+    #[error("snapshot error: {context}: {detail}")]
     CommandLaunchFailed {
         /// What was being launched, already phrased by the caller.
         context: String,
@@ -106,6 +127,7 @@ pub enum SnapshotError {
     },
 
     /// An I/O, parse or serialization step failed.
+    #[error("snapshot error: failed to {action}: {detail}")]
     OperationFailed {
         /// What was being attempted, for example `read supabase manifest <path>`.
         action: String,
@@ -114,18 +136,21 @@ pub enum SnapshotError {
     },
 
     /// A child process pipe was not available.
+    #[error("snapshot error: failed to {action}")]
     StreamUnavailable {
         /// What was being attempted, for example `capture mysqldump stdout`.
         action: &'static str,
     },
 
     /// A required value or tool is missing.
+    #[error("snapshot error: {subject} is required")]
     Required {
         /// The missing value or tool.
         subject: &'static str,
     },
 
     /// A value or tool is required under a condition.
+    #[error("snapshot error: {subject} is required {condition}")]
     RequiredWhen {
         /// The missing value or tool.
         subject: &'static str,
@@ -134,12 +159,14 @@ pub enum SnapshotError {
     },
 
     /// An input was rejected with a fixed reason.
+    #[error("snapshot error: {reason}")]
     Rejected {
         /// Why the input was rejected.
         reason: &'static str,
     },
 
     /// The manifest's artifact path is not acceptable.
+    #[error("snapshot error: manifest artifacts.db.path {reason}: {path}")]
     ManifestArtifactPathRejected {
         /// Why the path was rejected.
         reason: &'static str,
@@ -148,18 +175,21 @@ pub enum SnapshotError {
     },
 
     /// The manifest summary disagrees with the recomputed invariants.
+    #[error("snapshot error: manifest summary does not match recomputed rollback invariants: {}", .mismatches.join(", "))]
     ManifestSummaryMismatch {
         /// Names of the mismatching invariants.
         mismatches: Vec<String>,
     },
 
     /// Removing a failed snapshot bundle left artifacts behind.
+    #[error("snapshot error: {}", .failures.join("; "))]
     CleanupIncomplete {
         /// One entry per artifact that could not be removed.
         failures: Vec<String>,
     },
 
     /// A snapshot failed and cleaning up its leftovers failed too.
+    #[error("snapshot error: {original}; cleanup failed: {cleanup}")]
     CleanupFailed {
         /// The failure that triggered cleanup.
         original: Box<SnapshotError>,
@@ -168,6 +198,7 @@ pub enum SnapshotError {
     },
 
     /// Configuration error that prevents a snapshot registry from being built.
+    #[error("snapshot config error: {0}")]
     Config(String),
 
     /// `git stash pop` conflicted during rollback.
@@ -175,6 +206,14 @@ pub enum SnapshotError {
     /// The stash entry is preserved — git does not drop it on a conflicted pop.
     /// The error message includes exact recovery commands so the user can finish
     /// the restore manually without losing any work.
+    #[error(
+        "rollback conflict: git stash pop failed for {stash_ref}.\n\
+         Your changes are still saved in the stash. To recover manually:\n  \
+           1. Resolve conflicts:  git diff\n  \
+           2. Stage resolutions:  git add <files>\n  \
+           3. Drop the stash:     git stash drop {stash_ref}\n\
+         Details: {details}"
+    )]
     RollbackConflict {
         /// The stash reference that failed to pop.
         stash_ref: String,
@@ -189,6 +228,12 @@ pub enum SnapshotError {
     ///
     /// The captured work is intact in the stash entry; the message carries the
     /// command that puts it back.
+    #[error(
+        "snapshot taken, but the working tree could not be restored afterwards.\n\
+         Your uncommitted work is safe in stash entry {stash_hash}. To put it back:\n  \
+           git stash apply --index {stash_hash}\n\
+         Details: {details}"
+    )]
     SnapshotNotRestored {
         /// Commit hash of the stash entry holding the captured work.
         stash_hash: String,
@@ -200,6 +245,9 @@ pub enum SnapshotError {
 
     /// The git snapshot stash was written, but Git did not return its hash
     /// before the working tree could be restored.
+    #[error(
+        "snapshot taken, but the working tree could not be restored afterwards. Run `git stash list`, then restore the captured work with `git stash apply --index <ref>`. Details: {details}"
+    )]
     SnapshotNotRestoredUnknown {
         /// Working directory where the snapshot was taken.
         cwd: String,
@@ -208,12 +256,16 @@ pub enum SnapshotError {
     },
 
     /// The dump file that was recorded at snapshot time no longer exists.
+    #[error(
+        "rollback failed: dump file not found at '{path}'. The file may have been deleted manually."
+    )]
     RollbackDumpNotFound {
         /// Expected path of the missing dump file.
         path: String,
     },
 
     /// A snapshot artifact is not provably contained by its trusted snapshot store.
+    #[error("{plugin} snapshot artifact '{candidate}' escapes snapshot store '{store}'")]
     PathEscapesSnapshotStore {
         /// Plugin that attempted to use the artifact.
         plugin: &'static str,
@@ -224,6 +276,7 @@ pub enum SnapshotError {
     },
 
     /// A snapshot store or artifact could not be made owner-only before a sensitive write.
+    #[error("{plugin} snapshot path '{path}' does not meet owner-only permissions: {detail}")]
     InsecureSnapshotPermissions {
         /// Plugin creating the snapshot artifact.
         plugin: String,
@@ -234,6 +287,9 @@ pub enum SnapshotError {
     },
 
     /// The persisted rollback artifact no longer matches the manifest checksum.
+    #[error(
+        "rollback failed: artifact integrity verification failed for '{path}' (expected SHA-256 {expected_sha256}, got {actual_sha256})"
+    )]
     RollbackIntegrityCheckFailed {
         /// Path to the artifact that failed verification.
         path: String,
@@ -244,177 +300,19 @@ pub enum SnapshotError {
     },
 
     /// Deleting a snapshot artifact failed.
+    #[error("delete failed for {plugin} snapshot {snapshot_id}: {detail}")]
     DeleteFailed {
         /// Provider that failed the deletion.
         plugin: String,
         /// Snapshot identifier that could not be deleted.
         snapshot_id: String,
-        /// Underlying error description.
-        source: String,
+        /// Underlying error description. Named `detail`, not `source`, because it is text and not an error value.
+        detail: String,
     },
 
     /// Wrapped I/O error from the standard library.
-    Io(std::io::Error),
-}
-
-impl std::fmt::Display for SnapshotError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Snapshot(message) => write!(f, "snapshot error: {message}"),
-            Self::MalformedSnapshotId { id } => {
-                write!(f, "snapshot error: malformed snapshot_id: {id:?}")
-            }
-            Self::InvalidSnapshotIdComponent { component, value } => write!(
-                f,
-                "snapshot error: malformed snapshot_id: invalid {component} {value:?}"
-            ),
-            Self::InvalidSnapshotIdPath { label, path } => write!(
-                f,
-                "snapshot error: malformed snapshot_id: invalid {label} {path:?}"
-            ),
-            Self::UnsupportedSnapshotIdVersion { version } => write!(
-                f,
-                "snapshot error: unsupported snapshot_id version {version:?}"
-            ),
-            Self::GitStashNotFound { hash } => {
-                write!(f, "snapshot error: stash entry not found for hash {hash}")
-            }
-            Self::ParkedStashDisappeared { hash } => write!(
-                f,
-                "snapshot error: stash entry disappeared while parking current work; parked work was retained and rollback stopped for hash {hash}"
-            ),
-            Self::ParkWorkingTreeFailed { stderr } => write!(
-                f,
-                "snapshot error: could not park the current working tree before rollback: {stderr}"
-            ),
-            Self::RollbackTargetMismatch { details } => write!(
-                f,
-                "snapshot error: rollback target mismatch: current config differs from manifest target: {details}"
-            ),
-            Self::RollbackDenied { status } => write!(
-                f,
-                "snapshot error: rollback denied: recomputed manifest eligibility is not allowed (status: {status})"
-            ),
-            Self::PluginUnavailable { plugin, operation } => write!(
-                f,
-                "snapshot error: snapshot plugin {plugin:?} is not available for {operation}"
-            ),
-            Self::MalformedDockerRecord { detail } => write!(
-                f,
-                "snapshot error: malformed docker snapshot record: {detail}"
-            ),
-            Self::CommandFailed { command, detail } => {
-                write!(f, "snapshot error: {command} failed: {detail}")
-            }
-            Self::CommandExitFailed { command } => write!(f, "snapshot error: {command} failed"),
-            Self::CommandLaunchFailed { context, detail } => {
-                write!(f, "snapshot error: {context}: {detail}")
-            }
-            Self::OperationFailed { action, detail } => {
-                write!(f, "snapshot error: failed to {action}: {detail}")
-            }
-            Self::StreamUnavailable { action } => write!(f, "snapshot error: failed to {action}"),
-            Self::Required { subject } => write!(f, "snapshot error: {subject} is required"),
-            Self::RequiredWhen { subject, condition } => {
-                write!(f, "snapshot error: {subject} is required {condition}")
-            }
-            Self::Rejected { reason } => write!(f, "snapshot error: {reason}"),
-            Self::ManifestArtifactPathRejected { reason, path } => write!(
-                f,
-                "snapshot error: manifest artifacts.db.path {reason}: {path}"
-            ),
-            Self::ManifestSummaryMismatch { mismatches } => write!(
-                f,
-                "snapshot error: manifest summary does not match recomputed rollback invariants: {}",
-                mismatches.join(", ")
-            ),
-            Self::CleanupIncomplete { failures } => {
-                write!(f, "snapshot error: {}", failures.join("; "))
-            }
-            Self::CleanupFailed { original, cleanup } => {
-                write!(f, "snapshot error: {original}; cleanup failed: {cleanup}")
-            }
-            Self::Config(message) => write!(f, "snapshot config error: {message}"),
-            Self::RollbackConflict {
-                stash_ref, details, ..
-            } => write!(
-                f,
-                "rollback conflict: git stash pop failed for {stash_ref}.\n\
-                 Your changes are still saved in the stash. To recover manually:\n  \
-                   1. Resolve conflicts:  git diff\n  \
-                   2. Stage resolutions:  git add <files>\n  \
-                   3. Drop the stash:     git stash drop {stash_ref}\n\
-                 Details: {details}"
-            ),
-            Self::SnapshotNotRestored {
-                stash_hash,
-                details,
-                ..
-            } => write!(
-                f,
-                "snapshot taken, but the working tree could not be restored afterwards.\n\
-                 Your uncommitted work is safe in stash entry {stash_hash}. To put it back:\n  \
-                   git stash apply --index {stash_hash}\n\
-                 Details: {details}"
-            ),
-            Self::SnapshotNotRestoredUnknown { details, .. } => write!(
-                f,
-                "snapshot taken, but the working tree could not be restored afterwards. Run `git stash list`, then restore the captured work with `git stash apply --index <ref>`. Details: {details}"
-            ),
-            Self::RollbackDumpNotFound { path } => write!(
-                f,
-                "rollback failed: dump file not found at '{path}'. The file may have been deleted manually."
-            ),
-            Self::PathEscapesSnapshotStore {
-                plugin,
-                store,
-                candidate,
-            } => write!(
-                f,
-                "{plugin} snapshot artifact '{candidate}' escapes snapshot store '{store}'"
-            ),
-            Self::InsecureSnapshotPermissions {
-                plugin,
-                path,
-                detail,
-            } => write!(
-                f,
-                "{plugin} snapshot path '{path}' does not meet owner-only permissions: {detail}"
-            ),
-            Self::RollbackIntegrityCheckFailed {
-                path,
-                expected_sha256,
-                actual_sha256,
-            } => write!(
-                f,
-                "rollback failed: artifact integrity verification failed for '{path}' (expected SHA-256 {expected_sha256}, got {actual_sha256})"
-            ),
-            Self::DeleteFailed {
-                plugin,
-                snapshot_id,
-                source,
-            } => write!(
-                f,
-                "delete failed for {plugin} snapshot {snapshot_id}: {source}"
-            ),
-            Self::Io(error) => write!(f, "io error: {error}"),
-        }
-    }
-}
-
-impl std::error::Error for SnapshotError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Io(error) => Some(error),
-            _ => None,
-        }
-    }
-}
-
-impl From<std::io::Error> for SnapshotError {
-    fn from(error: std::io::Error) -> Self {
-        Self::Io(error)
-    }
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 #[cfg(test)]
@@ -577,9 +475,19 @@ mod tests {
         let error = SnapshotError::DeleteFailed {
             plugin: "git".to_string(),
             snapshot_id: "id".to_string(),
-            source: "why".to_string(),
+            detail: "why".to_string(),
         };
         assert_eq!(error.to_string(), "delete failed for git snapshot id: why");
+        assert!(error.source().is_none());
+    }
+
+    #[test]
+    fn cleanup_failed_has_no_error_source() {
+        use std::error::Error;
+        let error = SnapshotError::CleanupFailed {
+            original: Box::new(SnapshotError::Rejected { reason: "x" }),
+            cleanup: Box::new(SnapshotError::Io(std::io::Error::other("disk"))),
+        };
         assert!(error.source().is_none());
     }
 
@@ -588,7 +496,7 @@ mod tests {
         let err = SnapshotError::DeleteFailed {
             plugin: "git".to_string(),
             snapshot_id: "snap-abc123".to_string(),
-            source: "git stash drop failed".to_string(),
+            detail: "git stash drop failed".to_string(),
         };
         let message = err.to_string();
         assert!(
@@ -601,7 +509,7 @@ mod tests {
         );
         assert!(
             message.contains("git stash drop failed"),
-            "DeleteFailed message must include the source error: {message}"
+            "DeleteFailed message must include the detail: {message}"
         );
     }
 }

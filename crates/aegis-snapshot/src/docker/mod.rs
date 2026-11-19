@@ -513,7 +513,7 @@ impl SnapshotPlugin for DockerPlugin {
             return Err(SnapshotError::DeleteFailed {
                 plugin: "docker".to_string(),
                 snapshot_id: snapshot_id.to_string(),
-                source: format!("docker rmi failed: {stderr}"),
+                detail: format!("docker rmi failed: {stderr}"),
             });
         }
 

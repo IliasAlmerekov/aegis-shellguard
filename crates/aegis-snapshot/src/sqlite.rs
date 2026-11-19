@@ -226,7 +226,7 @@ impl SnapshotPlugin for SqlitePlugin {
             Err(error) => Err(SnapshotError::DeleteFailed {
                 plugin: "sqlite".to_string(),
                 snapshot_id: snapshot_id.to_string(),
-                source: error.to_string(),
+                detail: error.to_string(),
             }),
         }
     }
