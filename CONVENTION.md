@@ -310,8 +310,6 @@ Local development rules:
 - Keep CI, docs, and local contributor instructions aligned.
 - A script that release CI runs and that edits a tracked file reaches users only if the
   workflow commits the file. Docs must not claim such an edit ships.
-- `.semgrep/` holds Semgrep rules that the agent pipeline gate runs
-  (`uvx semgrep scan --config .semgrep --error`). CI does not run them yet.
 
 ## 11. Documentation Rules
 

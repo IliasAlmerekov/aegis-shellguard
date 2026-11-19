@@ -39,7 +39,32 @@ targets for 100,000 iterations each with their checked-in seed corpora.
 
 ## Remaining release decision
 
-This record documents qualification evidence only. Before changing the L1
-release-readiness checkboxes or treating any adapter as default-on, repeat the
-required CI matrix on the release candidate and complete the Iteration 10
-review and re-review gates.
+This record documents qualification evidence only. Before treating any adapter
+as default-on, repeat the required CI matrix on the release candidate, complete
+the Iteration 10 review and re-review gates, and satisfy every condition below.
+
+Language-aware analysis is an opt-in 1.x feature, not a 1.0 launch blocker.
+These items remain unchecked until runtime implementation and qualification are
+verified; the ADR and implementation plan alone do not satisfy the conditions
+for enabling it by default in a later release.
+
+- [ ] The additive analysis foundation preserves existing Scanner results,
+      starts no worker on the no-source safe path, and keeps that path under
+      2 ms.
+- [ ] The ephemeral parsing worker, source reader, recursive queue, typed
+      degradation, Policy/TUI/Watch/Hook/CI behavior, and Audit v1/v2
+      compatibility pass their production qualification matrix.
+- [ ] Python is production-qualified and included in every official release
+      target.
+- [ ] JavaScript is production-qualified and included in every official release
+      target.
+- [ ] TypeScript is production-qualified and included in every official release
+      target.
+- [ ] Shell/Bash is production-qualified and included in every official release
+      target.
+- [ ] The pinned Tree-sitter runtime and grammar manifest pass license,
+      supply-chain, ABI, corpus, fuzz, binary-size, memory, latency, and all-four-
+      target release gates.
+- [ ] Documentation states the residual dynamic-code, dependency, encoding,
+      TOCTOU, privacy, and unsupported-language limits without implying program
+      verification or sandbox guarantees.

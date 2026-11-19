@@ -123,12 +123,8 @@ as-is so historical references do not drift.
 
 ## Verification guidance
 
-Current fuzz targets live under:
-
-- `fuzz/fuzz_targets/parser.rs`
-- `fuzz/fuzz_targets/scanner.rs`
-
-They are the preferred stress path for parser / scanner edge cases, alongside:
+The fuzz targets, listed in [Run fuzzing](../../CONTRIBUTING.md#run-fuzzing),
+are the preferred stress path for parser / scanner edge cases, alongside:
 
 - focused regression tests in `tests/`
 - `cargo bench --bench scanner_bench` for hot-path changes
