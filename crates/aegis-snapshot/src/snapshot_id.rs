@@ -220,11 +220,7 @@ mod tests {
         for id in ["v3:ab", "v3:ab:cd:ef", "v3"] {
             let error = split_v3(id, 2).unwrap_err();
             assert!(
-                matches!(
-                    error,
-                    SnapshotError::MalformedSnapshotId { .. }
-                        | SnapshotError::UnsupportedSnapshotIdVersion { .. }
-                ),
+                matches!(error, SnapshotError::MalformedSnapshotId { .. }),
                 "{id}: {error}"
             );
         }
