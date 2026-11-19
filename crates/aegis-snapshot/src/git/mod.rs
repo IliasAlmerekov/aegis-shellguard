@@ -95,12 +95,15 @@ async fn working_tree_is_dirty(cwd: impl AsRef<Path>) -> Result<bool> {
         .args(["status", "--porcelain"])
         .output()
         .await
-        .map_err(|e| SnapshotError::Snapshot(format!("failed to run git status: {e}")))?;
+        .map_err(|e| SnapshotError::CommandLaunchFailed {
+            context: "failed to run git status".to_string(),
+            detail: e.to_string(),
+        })?;
 
     if !status_out.status.success() {
-        return Err(SnapshotError::Snapshot(
-            "git status --porcelain failed".to_string(),
-        ));
+        return Err(SnapshotError::CommandExitFailed {
+            command: "git status --porcelain",
+        });
     }
 
     Ok(!status_out.stdout.iter().all(|b| b.is_ascii_whitespace()))
@@ -119,7 +122,7 @@ fn parse_snapshot_id(id: &str) -> Result<(PathBuf, &str)> {
     }
     let (cwd, hash) = id
         .split_once(snapshot_id::LEGACY_SEP)
-        .ok_or_else(|| SnapshotError::Snapshot(format!("malformed snapshot_id: {id:?}")))?;
+        .ok_or_else(|| SnapshotError::MalformedSnapshotId { id: id.to_string() })?;
     Ok((PathBuf::from(cwd), hash))
 }
 
@@ -132,10 +135,15 @@ async fn find_stash_ref(cwd: impl AsRef<Path>, hash: &str) -> Result<Option<Stri
         .kill_on_drop(true)
         .output()
         .await
-        .map_err(|e| SnapshotError::Snapshot(format!("git stash list failed: {e}")))?;
+        .map_err(|e| SnapshotError::CommandFailed {
+            command: "git stash list".to_string(),
+            detail: e.to_string(),
+        })?;
 
     if !list_out.status.success() {
-        return Err(SnapshotError::Snapshot("git stash list failed".to_string()));
+        return Err(SnapshotError::CommandExitFailed {
+            command: "git stash list",
+        });
     }
 
     let list_stdout = String::from_utf8_lossy(&list_out.stdout);
@@ -153,7 +161,10 @@ async fn apply_stash(cwd: impl AsRef<Path>, hash: &str) -> Result<Option<String>
         .args(["stash", "apply", "--index", hash])
         .output()
         .await
-        .map_err(|e| SnapshotError::Snapshot(format!("git stash apply failed: {e}")))?;
+        .map_err(|e| SnapshotError::CommandFailed {
+            command: "git stash apply".to_string(),
+            detail: e.to_string(),
+        })?;
 
     if apply_out.status.success() {
         return Ok(None);
@@ -182,13 +193,16 @@ async fn park_current_work(cwd: &Path) -> Result<Option<String>> {
         .args(["stash", "push", "--include-untracked", "-m", &message])
         .output()
         .await
-        .map_err(|e| SnapshotError::Snapshot(format!("failed to run git stash push: {e}")))?;
+        .map_err(|e| SnapshotError::CommandLaunchFailed {
+            context: "failed to run git stash push".to_string(),
+            detail: e.to_string(),
+        })?;
 
     if !push_out.status.success() {
         let stderr = String::from_utf8_lossy(&push_out.stderr);
-        return Err(SnapshotError::Snapshot(format!(
-            "could not park the current working tree before rollback: {stderr}"
-        )));
+        return Err(SnapshotError::ParkWorkingTreeFailed {
+            stderr: stderr.into_owned(),
+        });
     }
 
     let rev_out = git_command(cwd)
@@ -278,13 +292,17 @@ impl SnapshotPlugin for GitPlugin {
             .args(["stash", "push", "--include-untracked", "-m", &message])
             .output()
             .await
-            .map_err(|e| SnapshotError::Snapshot(format!("failed to run git stash: {e}")))?;
+            .map_err(|e| SnapshotError::CommandLaunchFailed {
+                context: "failed to run git stash".to_string(),
+                detail: e.to_string(),
+            })?;
 
         if !stash_out.status.success() {
             let stderr = String::from_utf8_lossy(&stash_out.stderr);
-            return Err(SnapshotError::Snapshot(format!(
-                "git stash push failed: {stderr}"
-            )));
+            return Err(SnapshotError::CommandFailed {
+                command: "git stash push".to_string(),
+                detail: stderr.into_owned(),
+            });
         }
 
         let rev_out = git_command(cwd)
@@ -363,9 +381,11 @@ impl SnapshotPlugin for GitPlugin {
 
         // Resolve the entry before anything is written: a rollback that cannot
         // find its snapshot must fail without touching the working tree.
-        find_stash_ref(&cwd, hash).await?.ok_or_else(|| {
-            SnapshotError::Snapshot(format!("stash entry not found for hash {hash}"))
-        })?;
+        find_stash_ref(&cwd, hash)
+            .await?
+            .ok_or_else(|| SnapshotError::GitStashNotFound {
+                hash: hash.to_string(),
+            })?;
 
         // The snapshot left the working tree as it found it, so whatever is on
         // disk now would make `git stash apply` refuse to overwrite it. Park
@@ -375,9 +395,9 @@ impl SnapshotPlugin for GitPlugin {
 
         // Parking shifts every `stash@{N}`, so resolve the positional ref again.
         let stash_ref = find_stash_ref(&cwd, hash).await?.ok_or_else(|| {
-            SnapshotError::Snapshot(format!(
-                "stash entry disappeared while parking current work; parked work was retained and rollback stopped for hash {hash}"
-            ))
+            SnapshotError::ParkedStashDisappeared {
+                hash: hash.to_string(),
+            }
         })?;
 
         if let Some(details) = apply_stash(&cwd, hash).await? {
@@ -481,7 +501,10 @@ impl SnapshotPlugin for GitPlugin {
             .args(["stash", "list", "--format=%H %gd"])
             .output()
             .await
-            .map_err(|e| SnapshotError::Snapshot(format!("git stash list failed: {e}")))?;
+            .map_err(|e| SnapshotError::CommandFailed {
+                command: "git stash list".to_string(),
+                detail: e.to_string(),
+            })?;
 
         if !list_out.status.success() {
             let stderr = String::from_utf8_lossy(&list_out.stderr);
@@ -489,9 +512,10 @@ impl SnapshotPlugin for GitPlugin {
                 tracing::info!(%snapshot_id, "git repository no longer exists, nothing to delete");
                 return Ok(());
             }
-            return Err(SnapshotError::Snapshot(format!(
-                "git stash list failed: {stderr}"
-            )));
+            return Err(SnapshotError::CommandFailed {
+                command: "git stash list".to_string(),
+                detail: stderr.into_owned(),
+            });
         }
 
         let list_stdout = String::from_utf8_lossy(&list_out.stdout);

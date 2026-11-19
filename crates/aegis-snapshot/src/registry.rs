@@ -383,10 +383,9 @@ impl SnapshotRegistry {
             .plugins
             .iter()
             .find(|plugin| plugin.name() == plugin_name)
-            .ok_or_else(|| {
-                SnapshotError::Snapshot(format!(
-                    "snapshot plugin {plugin_name:?} is not available for rollback"
-                ))
+            .ok_or_else(|| SnapshotError::PluginUnavailable {
+                plugin: plugin_name.to_string(),
+                operation: "rollback",
             })?;
 
         plugin.rollback(snapshot_id).await
@@ -402,10 +401,9 @@ impl SnapshotRegistry {
             .plugins
             .iter()
             .find(|plugin| plugin.name() == plugin_name)
-            .ok_or_else(|| {
-                SnapshotError::Snapshot(format!(
-                    "snapshot plugin {plugin_name:?} is not available for delete"
-                ))
+            .ok_or_else(|| SnapshotError::PluginUnavailable {
+                plugin: plugin_name.to_string(),
+                operation: "delete",
             })?;
 
         plugin.delete(snapshot_id).await
@@ -425,10 +423,9 @@ impl SnapshotRegistry {
             .iter()
             .find(|plugin| plugin.name() == plugin_name)
             // Liveness checks what Rollback needs, so an unknown plugin reads as Rollback would report it.
-            .ok_or_else(|| {
-                SnapshotError::Snapshot(format!(
-                    "snapshot plugin {plugin_name:?} is not available for rollback"
-                ))
+            .ok_or_else(|| SnapshotError::PluginUnavailable {
+                plugin: plugin_name.to_string(),
+                operation: "rollback",
             })?;
 
         liveness_within(LIVENESS_TIMEOUT, plugin.as_ref(), snapshot_id).await
@@ -455,6 +452,40 @@ mod tests {
     use tracing::span;
 
     use super::*;
+
+    #[tokio::test]
+    async fn rollback_reports_unavailable_plugin_as_typed_error() {
+        let registry = SnapshotRegistry::new_with_plugins(vec![]);
+        let error = registry.rollback("missing", "id").await.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "snapshot error: snapshot plugin \"missing\" is not available for rollback"
+        );
+        assert!(matches!(
+            error,
+            SnapshotError::PluginUnavailable {
+                operation: "rollback",
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn delete_reports_unavailable_plugin_as_typed_error() {
+        let registry = SnapshotRegistry::new_with_plugins(vec![]);
+        let error = registry.delete("missing", "id").await.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "snapshot error: snapshot plugin \"missing\" is not available for delete"
+        );
+        assert!(matches!(
+            error,
+            SnapshotError::PluginUnavailable {
+                operation: "delete",
+                ..
+            }
+        ));
+    }
 
     /// A plugin that is always applicable and always fails to snapshot, so
     /// `snapshot_all` reaches its warn arm deterministically.

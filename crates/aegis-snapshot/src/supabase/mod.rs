@@ -208,9 +208,10 @@ impl SupabasePlugin {
                 )
             })
         {
-            return Err(SnapshotError::Snapshot(format!(
-                "malformed snapshot_id: invalid {label} {path:?}"
-            )));
+            return Err(SnapshotError::InvalidSnapshotIdPath {
+                label: label.to_string(),
+                path: path.to_path_buf(),
+            });
         }
 
         Ok(())
@@ -226,11 +227,11 @@ impl SupabasePlugin {
         } else {
             let (version, encoded_path) = id
                 .split_once(snapshot_id::LEGACY_SEP)
-                .ok_or_else(|| SnapshotError::Snapshot(format!("malformed snapshot_id: {id:?}")))?;
+                .ok_or_else(|| SnapshotError::MalformedSnapshotId { id: id.to_string() })?;
             if version != LEGACY_SNAPSHOT_ID_VERSION {
-                return Err(SnapshotError::Snapshot(format!(
-                    "unsupported snapshot_id version {version:?}"
-                )));
+                return Err(SnapshotError::UnsupportedSnapshotIdVersion {
+                    version: version.to_string(),
+                });
             }
             encoded_path
         };
@@ -243,19 +244,21 @@ impl SupabasePlugin {
 
     async fn validate_preflight(&self) -> Result<()> {
         if self.config.db.database.trim().is_empty() {
-            return Err(SnapshotError::Snapshot(
-                "supabase_snapshot.db.database is required".to_string(),
-            ));
+            return Err(SnapshotError::Required {
+                subject: "supabase_snapshot.db.database",
+            });
         }
         if !Self::binary_available(&self.pg_dump_bin).await {
-            return Err(SnapshotError::Snapshot(
-                "pg_dump is required for supabase snapshots".to_string(),
-            ));
+            return Err(SnapshotError::RequiredWhen {
+                subject: "pg_dump",
+                condition: "for supabase snapshots",
+            });
         }
         if !Self::binary_available(&self.pg_restore_bin).await {
-            return Err(SnapshotError::Snapshot(
-                "pg_restore is required for strict supabase rollback".to_string(),
-            ));
+            return Err(SnapshotError::RequiredWhen {
+                subject: "pg_restore",
+                condition: "for strict supabase rollback",
+            });
         }
         Ok(())
     }
@@ -318,7 +321,7 @@ impl SupabasePlugin {
         if failures.is_empty() {
             Ok(())
         } else {
-            Err(SnapshotError::Snapshot(failures.join("; ")))
+            Err(SnapshotError::CleanupIncomplete { failures })
         }
     }
 
@@ -330,15 +333,16 @@ impl SupabasePlugin {
     ) -> SnapshotError {
         match self.cleanup_failed_bundle(bundle_dir, dump_path) {
             Ok(()) => original_error,
-            Err(cleanup_error) => SnapshotError::Snapshot(format!(
-                "{original_error}; cleanup failed: {cleanup_error}"
-            )),
+            Err(cleanup_error) => SnapshotError::CleanupFailed {
+                original: Box::new(original_error),
+                cleanup: Box::new(cleanup_error),
+            },
         }
     }
 
     async fn run_pg_dump(&self, dump_path: &Path) -> Result<()> {
-        let artifacts_dir = dump_path.parent().ok_or_else(|| {
-            SnapshotError::Snapshot("supabase dump path requires an artifact directory".to_string())
+        let artifacts_dir = dump_path.parent().ok_or(SnapshotError::Rejected {
+            reason: "supabase dump path requires an artifact directory",
         })?;
         let dump_path = contain_artifact("supabase", artifacts_dir, dump_path)?;
         let file = create_artifact_file("supabase", &dump_path)?;
@@ -356,11 +360,17 @@ impl SupabasePlugin {
             .arg(&self.config.db.database)
             .output()
             .await
-            .map_err(|error| SnapshotError::Snapshot(format!("failed to run pg_dump: {error}")))?;
+            .map_err(|error| SnapshotError::CommandLaunchFailed {
+                context: "failed to run pg_dump".to_string(),
+                detail: error.to_string(),
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(SnapshotError::Snapshot(format!("pg_dump failed: {stderr}")));
+            return Err(SnapshotError::CommandFailed {
+                command: "pg_dump".to_string(),
+                detail: stderr,
+            });
         }
 
         harden_existing_artifact("supabase", &dump_path)?;
@@ -384,15 +394,17 @@ impl SupabasePlugin {
             .arg(dump_path)
             .output()
             .await
-            .map_err(|error| {
-                SnapshotError::Snapshot(format!("failed to run pg_restore: {error}"))
+            .map_err(|error| SnapshotError::CommandLaunchFailed {
+                context: "failed to run pg_restore".to_string(),
+                detail: error.to_string(),
             })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(SnapshotError::Snapshot(format!(
-                "pg_restore failed: {stderr}"
-            )));
+            return Err(SnapshotError::CommandFailed {
+                command: "pg_restore".to_string(),
+                detail: stderr,
+            });
         }
 
         Ok(())

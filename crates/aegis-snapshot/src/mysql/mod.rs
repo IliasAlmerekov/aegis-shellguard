@@ -124,7 +124,10 @@ impl MysqlPlugin {
                     tokio::time::sleep(std::time::Duration::from_millis(BUSY_RETRY_DELAY_MS)).await;
                 }
                 Err(error) => {
-                    return Err(SnapshotError::Snapshot(format!("{context}: {error}")));
+                    return Err(SnapshotError::CommandLaunchFailed {
+                        context: context.to_string(),
+                        detail: error.to_string(),
+                    });
                 }
             }
         }
@@ -149,9 +152,10 @@ impl MysqlPlugin {
                 if name.to_str() == Some(dump_file_name)
         );
         if !is_plain_file_name {
-            return Err(SnapshotError::Snapshot(format!(
-                "malformed snapshot_id: invalid dump reference {dump_file_name:?}"
-            )));
+            return Err(SnapshotError::InvalidSnapshotIdComponent {
+                component: "dump reference".to_string(),
+                value: dump_file_name.to_string(),
+            });
         }
 
         Ok(())
@@ -182,12 +186,13 @@ impl MysqlPlugin {
 
         let _database = snapshot_id::decode_string(parts[0], "database")?;
         let host = snapshot_id::decode_string(parts[1], "host")?;
-        let port = parts[2].parse::<u16>().map_err(|_| {
-            SnapshotError::Snapshot(format!(
-                "malformed snapshot_id: invalid port {:?}",
-                parts[2]
-            ))
-        })?;
+        let port =
+            parts[2]
+                .parse::<u16>()
+                .map_err(|_| SnapshotError::InvalidSnapshotIdComponent {
+                    component: "port".to_string(),
+                    value: parts[2].to_string(),
+                })?;
         let user = snapshot_id::decode_string(parts[3], "user")?;
         let dump_path = snapshot_id::decode_path(parts[4], "dump path")?;
 
@@ -202,8 +207,8 @@ impl MysqlPlugin {
     fn parse_legacy_snapshot_id(&self, snapshot_id: &str) -> Result<MysqlRollbackTarget> {
         let (database_encoded, dump_ref_encoded) = snapshot_id
             .split_once(snapshot_id::LEGACY_SEP)
-            .ok_or_else(|| {
-                SnapshotError::Snapshot(format!("malformed snapshot_id: {snapshot_id:?}"))
+            .ok_or_else(|| SnapshotError::MalformedSnapshotId {
+                id: snapshot_id.to_string(),
             })?;
         let _database = snapshot_id::decode_string(database_encoded, "database")?;
         let dump_file_name = snapshot_id::decode_string(dump_ref_encoded, "dump reference")?;
@@ -237,11 +242,13 @@ impl MysqlPlugin {
     ) -> Result<Vec<u8>> {
         stderr_task
             .await
-            .map_err(|err| {
-                SnapshotError::Snapshot(format!("failed to join {command_name} stderr task: {err}"))
+            .map_err(|err| SnapshotError::OperationFailed {
+                action: format!("join {command_name} stderr task"),
+                detail: err.to_string(),
             })?
-            .map_err(|err| {
-                SnapshotError::Snapshot(format!("failed to read {command_name} stderr: {err}"))
+            .map_err(|err| SnapshotError::OperationFailed {
+                action: format!("read {command_name} stderr"),
+                detail: err.to_string(),
             })
     }
 }
@@ -299,11 +306,15 @@ impl SnapshotPlugin for MysqlPlugin {
 
         let mut stdout = child.stdout.take().ok_or_else(|| {
             let _ = std::fs::remove_file(&dump_path);
-            SnapshotError::Snapshot("failed to capture mysqldump stdout".to_string())
+            SnapshotError::StreamUnavailable {
+                action: "capture mysqldump stdout",
+            }
         })?;
         let stderr = child.stderr.take().ok_or_else(|| {
             let _ = std::fs::remove_file(&dump_path);
-            SnapshotError::Snapshot("failed to capture mysqldump stderr".to_string())
+            SnapshotError::StreamUnavailable {
+                action: "capture mysqldump stderr",
+            }
         })?;
         let stderr_task = Self::spawn_stderr_drain(stderr);
         let mut dump_file = tokio::fs::OpenOptions::new()
@@ -315,9 +326,10 @@ impl SnapshotPlugin for MysqlPlugin {
             Self::kill_and_reap_child(&mut child).await;
             let _ = Self::collect_stderr(stderr_task, "mysqldump").await;
             let _ = std::fs::remove_file(&dump_path);
-            return Err(SnapshotError::Snapshot(format!(
-                "failed to stream mysqldump output: {err}"
-            )));
+            return Err(SnapshotError::OperationFailed {
+                action: "stream mysqldump output".to_string(),
+                detail: err.to_string(),
+            });
         }
         drop(stdout);
         dump_file.flush().await?;
@@ -326,15 +338,19 @@ impl SnapshotPlugin for MysqlPlugin {
         let status = child
             .wait()
             .await
-            .map_err(|e| SnapshotError::Snapshot(format!("failed to wait for mysqldump: {e}")))?;
+            .map_err(|e| SnapshotError::OperationFailed {
+                action: "wait for mysqldump".to_string(),
+                detail: e.to_string(),
+            })?;
         let stderr = Self::collect_stderr(stderr_task, "mysqldump").await?;
 
         if !status.success() {
             let _ = std::fs::remove_file(&dump_path);
             let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
-            return Err(SnapshotError::Snapshot(format!(
-                "mysqldump failed: {stderr}"
-            )));
+            return Err(SnapshotError::CommandFailed {
+                command: "mysqldump".to_string(),
+                detail: stderr,
+            });
         }
 
         if let Err(error) = harden_existing_artifact("mysql", &dump_path) {
@@ -370,31 +386,39 @@ impl SnapshotPlugin for MysqlPlugin {
         let stderr = child
             .stderr
             .take()
-            .ok_or_else(|| SnapshotError::Snapshot("failed to capture mysql stderr".to_string()))?;
+            .ok_or(SnapshotError::StreamUnavailable {
+                action: "capture mysql stderr",
+            })?;
         let stderr_task = Self::spawn_stderr_drain(stderr);
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| SnapshotError::Snapshot("failed to open mysql stdin".to_string()))?;
+        let mut stdin = child.stdin.take().ok_or(SnapshotError::StreamUnavailable {
+            action: "open mysql stdin",
+        })?;
         if let Err(err) = io::copy(&mut dump_file, &mut stdin).await {
             drop(stdin);
             Self::kill_and_reap_child(&mut child).await;
             let _ = Self::collect_stderr(stderr_task, "mysql").await;
-            return Err(SnapshotError::Snapshot(format!(
-                "failed to write mysql stdin: {err}"
-            )));
+            return Err(SnapshotError::OperationFailed {
+                action: "write mysql stdin".to_string(),
+                detail: err.to_string(),
+            });
         }
         drop(stdin);
 
         let status = child
             .wait()
             .await
-            .map_err(|e| SnapshotError::Snapshot(format!("failed to wait for mysql: {e}")))?;
+            .map_err(|e| SnapshotError::OperationFailed {
+                action: "wait for mysql".to_string(),
+                detail: e.to_string(),
+            })?;
         let stderr = Self::collect_stderr(stderr_task, "mysql").await?;
 
         if !status.success() {
             let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
-            return Err(SnapshotError::Snapshot(format!("mysql failed: {stderr}")));
+            return Err(SnapshotError::CommandFailed {
+                command: "mysql".to_string(),
+                detail: stderr,
+            });
         }
 
         tracing::info!(snapshot_id = snapshot_id, "mysql snapshot rolled back");

@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Changed: Aegis-owned snapshot failures carry typed `SnapshotError` variants instead of `Snapshot(String)`, with unchanged messages; `Snapshot(String)` remains only for text a `SnapshotPlugin` outside the crate supplies (#611).
 - Fixed: `CONVENTION.md` §3 lists `update` among the `aegis` crate's public modules, matching `public_api_surface_is_stable` (#640).
 - Removed: `docs/releases/current-line.md`, the finished Iteration 0 section of `docs/performance-baseline.md`, the GitHub Discussions pointers in `CONTRIBUTING.md` and the issue templates, and the unused Semgrep rule `.semgrep/review-finding-ids.yml` with `.semgrepignore` and its agent pipeline gate command. The language-aware re-entry conditions moved from `docs/release-readiness.md` to `docs/language-qualification.md` (#615).
 - Removed: the finished plans under `docs/plans/` and `docs/superpowers/plans/` and `docs/history/roadmap.md`; their open items are tracked in #218, #643 and #644, and Roadmap milestone IDs stay as frozen identifiers (#614).

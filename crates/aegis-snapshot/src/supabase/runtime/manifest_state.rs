@@ -26,8 +26,9 @@ pub(super) fn phase1_complete(
 ) -> Result<SupabaseManifest> {
     let created_at = OffsetDateTime::now_utc()
         .format(&Rfc3339)
-        .map_err(|error| {
-            SnapshotError::Snapshot(format!("failed to format manifest time: {error}"))
+        .map_err(|error| SnapshotError::OperationFailed {
+            action: "format manifest time".to_string(),
+            detail: error.to_string(),
         })?;
 
     let mut manifest = SupabaseManifest {
@@ -144,29 +145,32 @@ impl SupabaseManifest {
 
     pub(super) fn validate_schema_v1(&self) -> Result<()> {
         if self.provider != "supabase" {
-            return Err(SnapshotError::Snapshot(
-                "manifest provider must be supabase".to_string(),
-            ));
+            return Err(SnapshotError::Rejected {
+                reason: "manifest provider must be supabase",
+            });
         }
         if self.manifest_version != 1 {
-            return Err(SnapshotError::Snapshot(
-                "unsupported supabase manifest version".to_string(),
-            ));
+            return Err(SnapshotError::Rejected {
+                reason: "unsupported supabase manifest version",
+            });
         }
         if self.target.db.is_none() {
-            return Err(SnapshotError::Snapshot(
-                "manifest target.db is required for v1".to_string(),
-            ));
+            return Err(SnapshotError::RequiredWhen {
+                subject: "manifest target.db",
+                condition: "for v1",
+            });
         }
         if self.artifacts.db.present && self.artifacts.db.path.is_none() {
-            return Err(SnapshotError::Snapshot(
-                "manifest artifacts.db.path is required when db is present".to_string(),
-            ));
+            return Err(SnapshotError::RequiredWhen {
+                subject: "manifest artifacts.db.path",
+                condition: "when db is present",
+            });
         }
         if self.artifacts.db.present && self.artifacts.db.checksum_sha256.is_none() {
-            return Err(SnapshotError::Snapshot(
-                "manifest artifacts.db.checksum_sha256 is required when db is present".to_string(),
-            ));
+            return Err(SnapshotError::RequiredWhen {
+                subject: "manifest artifacts.db.checksum_sha256",
+                condition: "when db is present",
+            });
         }
         Ok(())
     }
@@ -231,10 +235,7 @@ impl SupabaseManifest {
         if mismatches.is_empty() {
             Ok(())
         } else {
-            Err(SnapshotError::Snapshot(format!(
-                "manifest summary does not match recomputed rollback invariants: {}",
-                mismatches.join(", ")
-            )))
+            Err(SnapshotError::ManifestSummaryMismatch { mismatches })
         }
     }
 }

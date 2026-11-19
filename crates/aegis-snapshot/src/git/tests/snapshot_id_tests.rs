@@ -47,8 +47,15 @@ fn parse_snapshot_id_rejects_malformed_v3_without_falling_back_to_legacy() {
         "v3:zz:abc",
         "v3:abc:abc",
     ] {
-        let error = parse_snapshot_id(id).unwrap_err().to_string();
-        assert!(error.contains("malformed snapshot_id"), "{id}: {error}");
+        let error = parse_snapshot_id(id).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                SnapshotError::MalformedSnapshotId { .. }
+                    | SnapshotError::InvalidSnapshotIdComponent { .. }
+            ),
+            "{id}: {error}"
+        );
     }
 }
 

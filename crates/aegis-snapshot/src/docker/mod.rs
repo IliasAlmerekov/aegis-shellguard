@@ -103,7 +103,10 @@ impl DockerPlugin {
                     sleep_docker_busy_retry_delay().await;
                 }
                 Err(error) => {
-                    return Err(SnapshotError::Snapshot(format!("{context}: {error}")));
+                    return Err(SnapshotError::CommandLaunchFailed {
+                        context: context.to_string(),
+                        detail: error.to_string(),
+                    });
                 }
             }
         }
@@ -145,13 +148,17 @@ impl DockerPlugin {
 
         if !out.status.success() {
             let stderr = String::from_utf8_lossy(&out.stderr);
-            return Err(SnapshotError::Snapshot(format!(
-                "docker inspect {container_id} failed: {stderr}"
-            )));
+            return Err(SnapshotError::CommandFailed {
+                command: format!("docker inspect {container_id}"),
+                detail: stderr.to_string(),
+            });
         }
 
-        let json: serde_json::Value = serde_json::from_slice(&out.stdout)
-            .map_err(|e| SnapshotError::Snapshot(format!("failed to parse docker inspect: {e}")))?;
+        let json: serde_json::Value =
+            serde_json::from_slice(&out.stdout).map_err(|e| SnapshotError::OperationFailed {
+                action: "parse docker inspect".to_string(),
+                detail: e.to_string(),
+            })?;
 
         let c = &json[0];
 
@@ -286,9 +293,10 @@ impl SnapshotPlugin for DockerPlugin {
 
         if !ps_out.status.success() {
             let stderr = String::from_utf8_lossy(&ps_out.stderr);
-            return Err(SnapshotError::Snapshot(format!(
-                "docker ps failed: {stderr}"
-            )));
+            return Err(SnapshotError::CommandFailed {
+                command: "docker ps".to_string(),
+                detail: stderr.to_string(),
+            });
         }
 
         let stdout = String::from_utf8_lossy(&ps_out.stdout);
@@ -319,9 +327,10 @@ impl SnapshotPlugin for DockerPlugin {
 
             if !commit_out.status.success() {
                 let stderr = String::from_utf8_lossy(&commit_out.stderr);
-                return Err(SnapshotError::Snapshot(format!(
-                    "docker commit {container_id} failed: {stderr}"
-                )));
+                return Err(SnapshotError::CommandFailed {
+                    command: format!("docker commit {container_id}"),
+                    detail: stderr.to_string(),
+                });
             }
 
             tracing::info!(container_id, %image, "docker snapshot created");
@@ -331,7 +340,10 @@ impl SnapshotPlugin for DockerPlugin {
                 config,
             };
             records.push(serde_json::to_string(&record).map_err(|e| {
-                SnapshotError::Snapshot(format!("failed to serialize snapshot record: {e}"))
+                SnapshotError::OperationFailed {
+                    action: "serialize snapshot record".to_string(),
+                    detail: e.to_string(),
+                }
             })?);
         }
 
@@ -345,9 +357,10 @@ impl SnapshotPlugin for DockerPlugin {
         }
 
         for line in snapshot_id.lines() {
-            let record: ContainerRecord = serde_json::from_str(line).map_err(|e| {
-                SnapshotError::Snapshot(format!("malformed docker snapshot record: {e}"))
-            })?;
+            let record: ContainerRecord =
+                serde_json::from_str(line).map_err(|e| SnapshotError::MalformedDockerRecord {
+                    detail: e.to_string(),
+                })?;
 
             let stop_out = self
                 .run_docker_output(["stop", &record.container_id], "docker stop failed")
@@ -380,10 +393,10 @@ impl SnapshotPlugin for DockerPlugin {
 
             if !run_out.status.success() {
                 let stderr = String::from_utf8_lossy(&run_out.stderr);
-                return Err(SnapshotError::Snapshot(format!(
-                    "docker run {} failed: {stderr}",
-                    record.image
-                )));
+                return Err(SnapshotError::CommandFailed {
+                    command: format!("docker run {}", record.image),
+                    detail: stderr.into_owned(),
+                });
             }
 
             tracing::info!(
@@ -428,9 +441,10 @@ impl SnapshotPlugin for DockerPlugin {
 
         let mut records = Vec::new();
         for line in snapshot_id.lines() {
-            let record: ContainerRecord = serde_json::from_str(line).map_err(|e| {
-                SnapshotError::Snapshot(format!("malformed docker snapshot record: {e}"))
-            })?;
+            let record: ContainerRecord =
+                serde_json::from_str(line).map_err(|e| SnapshotError::MalformedDockerRecord {
+                    detail: e.to_string(),
+                })?;
             records.push(record);
         }
 
@@ -473,9 +487,10 @@ impl SnapshotPlugin for DockerPlugin {
         }
 
         for line in snapshot_id.lines() {
-            let record: ContainerRecord = serde_json::from_str(line).map_err(|e| {
-                SnapshotError::Snapshot(format!("malformed docker snapshot record: {e}"))
-            })?;
+            let record: ContainerRecord =
+                serde_json::from_str(line).map_err(|e| SnapshotError::MalformedDockerRecord {
+                    detail: e.to_string(),
+                })?;
 
             let rmi_out = self
                 .run_docker_output(["rmi", &record.image], "docker rmi failed")

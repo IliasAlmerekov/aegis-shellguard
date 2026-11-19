@@ -232,7 +232,9 @@ async fn rollback_errors_on_malformed_dump_path_encoding() {
         .unwrap_err();
 
     match err {
-        SnapshotError::Snapshot(msg) => assert!(msg.contains("invalid dump path encoding")),
+        SnapshotError::InvalidSnapshotIdComponent { component, .. } => {
+            assert_eq!(component, "dump path encoding")
+        }
         other => panic!("expected malformed snapshot error, got {other:?}"),
     }
 }
@@ -265,10 +267,7 @@ async fn rollback_errors_on_malformed_id() {
         .await
         .unwrap_err();
 
-    match err {
-        SnapshotError::Snapshot(msg) => assert!(msg.contains("malformed snapshot_id")),
-        other => panic!("expected malformed snapshot error, got {other:?}"),
-    }
+    assert!(matches!(err, SnapshotError::MalformedSnapshotId { .. }));
 }
 
 #[tokio::test]
@@ -282,7 +281,9 @@ async fn rollback_errors_on_malformed_database_encoding() {
         .unwrap_err();
 
     match err {
-        SnapshotError::Snapshot(msg) => assert!(msg.contains("invalid database encoding")),
+        SnapshotError::InvalidSnapshotIdComponent { component, .. } => {
+            assert_eq!(component, "database encoding")
+        }
         other => panic!("expected malformed snapshot error, got {other:?}"),
     }
 }
@@ -378,9 +379,9 @@ async fn snapshot_returns_stderr_when_mysqldump_fails() {
         .unwrap_err();
 
     match err {
-        SnapshotError::Snapshot(msg) => {
-            assert!(msg.contains("mysqldump failed"));
-            assert!(msg.contains("mysqldump exploded"));
+        SnapshotError::CommandFailed { command, detail } => {
+            assert_eq!(command, "mysqldump");
+            assert_eq!(detail, "mysqldump exploded");
         }
         other => panic!("expected snapshot error, got {other:?}"),
     }
@@ -403,7 +404,9 @@ async fn snapshot_removes_reserved_dump_when_mysqldump_spawn_fails() {
         .unwrap_err();
 
     match err {
-        SnapshotError::Snapshot(msg) => assert!(msg.contains("failed to run mysqldump")),
+        SnapshotError::CommandLaunchFailed { context, .. } => {
+            assert_eq!(context, "failed to run mysqldump")
+        }
         other => panic!("expected snapshot error, got {other:?}"),
     }
     assert!(snapshots_dir.exists());
@@ -585,9 +588,9 @@ async fn rollback_returns_stderr_when_mysql_fails() {
     let err = plugin.rollback(&snapshot_id).await.unwrap_err();
 
     match err {
-        SnapshotError::Snapshot(msg) => {
-            assert!(msg.contains("mysql failed"));
-            assert!(msg.contains("mysql exploded"));
+        SnapshotError::CommandFailed { command, detail } => {
+            assert_eq!(command, "mysql");
+            assert_eq!(detail, "mysql exploded");
         }
         other => panic!("expected snapshot error, got {other:?}"),
     }
@@ -608,7 +611,7 @@ async fn rollback_errors_when_mysql_stdin_streaming_fails() {
     let err = plugin.rollback(&snapshot_id).await.unwrap_err();
 
     match err {
-        SnapshotError::Snapshot(msg) => assert!(msg.contains("failed to write mysql stdin")),
+        SnapshotError::OperationFailed { action, .. } => assert_eq!(action, "write mysql stdin"),
         other => panic!("expected snapshot error, got {other:?}"),
     }
 }

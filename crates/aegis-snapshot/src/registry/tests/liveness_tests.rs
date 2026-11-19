@@ -111,8 +111,11 @@ async fn liveness_for_an_unknown_plugin_is_an_error() {
 
     let error = registry.liveness("nope", "id").await.unwrap_err();
 
-    assert!(
-        error.to_string().contains("not available for rollback"),
-        "{error}"
-    );
+    assert!(matches!(
+        error,
+        SnapshotError::PluginUnavailable {
+            operation: "rollback",
+            ..
+        }
+    ));
 }
