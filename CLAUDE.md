@@ -17,3 +17,7 @@ The five default triage roles, each label named after its role. See `docs/agents
 ### Domain docs
 
 Single-context: glossary in `CONTEXT.md`, decisions in `docs/adr/`. See `docs/agents/domain.md`.
+
+### Verification
+
+Tests, the `cli` and `tmux` drive, and the manual checks before merge. See `docs/agents/verification.md`.
