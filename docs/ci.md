@@ -133,9 +133,10 @@ required status checks.
 - `Diff coverage (changed packages)`: `cargo llvm-cov` for the changed packages,
   then the share of added Rust lines that ran. Below 80% it writes a warning;
   it never fails. `lcov.info` and `diff-coverage.md` are uploaded as artifacts
-- `Mutants (changed code)`: `cargo mutants --in-diff` on the changed packages,
-  only for TRUNK and BRANCH tier PRs. It cannot fail the run; `mutants.out` is
-  uploaded as an artifact
+- `Mutants (changed code, shard k/4)`: `cargo mutants --in-diff` on the changed
+  packages, split round-robin over 4 shards, only for TRUNK and BRANCH tier PRs.
+  It cannot fail the run; each shard uploads its `mutants.out` as the
+  `mutants-out-<k>` artifact
 
 ## Homebrew tap validation
 
