@@ -73,8 +73,8 @@ These rules are non-negotiable.
 ## 3. Architecture Rules
 
 The repository is a Cargo workspace. The `aegis` binary crate lives at the
-root and depends on focused library crates under `crates/` (Phase 4 of
-`docs/history/roadmap.md`). Extraction is complete — all 12 library crates are live:
+root and depends on focused library crates under `crates/`.
+Extraction is complete — all 12 library crates are live:
 `aegis-types` (zero-dep foundation), `aegis-parser` (shell tokenizer +
 `PrefixPattern` matcher), `aegis-scanner` (`Scanner`, `PatternSet`, built-in
 patterns), `aegis-policy` (pure `PolicyEngine`), `aegis-config` (config model,
@@ -310,8 +310,6 @@ Local development rules:
 - Keep CI, docs, and local contributor instructions aligned.
 - A script that release CI runs and that edits a tracked file reaches users only if the
   workflow commits the file. Docs must not claim such an edit ships.
-- `.semgrep/` holds Semgrep rules that the agent pipeline gate runs
-  (`uvx semgrep scan --config .semgrep --error`). CI does not run them yet.
 
 ## 11. Documentation Rules
 
@@ -322,11 +320,11 @@ Local development rules:
 - Changes to public behavior require corresponding doc updates.
 - **Tracker ID namespaces are disjoint, frozen, and never reused.** `C<n>`, `H<n>`,
   `M<n>`, and `P3-<n>` are defined in `CONTEXT.md` — the letter is severity.
-  `Phase <n>` and `L<n>` refer to `docs/history/roadmap.md`. Both namespaces are
-  frozen: neither mints new identifiers, and new work cites its GitHub issue number
-  instead. No identifier may carry a second meaning in another document, a test name,
-  an assert message, or a source file name. Milestones without a
-  `docs/history/roadmap.md` entry are referred to by name, not by an invented ID.
+  `Phase <n>` and `L<n>` are Roadmap milestone IDs, found in old commits and issues.
+  Both namespaces are frozen: neither mints new identifiers, and new work cites its
+  GitHub issue number instead. No identifier may carry a second meaning in another
+  document, a test name, an assert message, or a source file name. Other milestones
+  are referred to by name, not by an invented ID.
 - Release gating lives in the `1.0` milestone
   ([ADR-027](docs/adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)); the
   open supply-chain items (SBOM, signing, `cargo publish --dry-run`) are tracked in
@@ -366,7 +364,7 @@ High-risk changes must be reviewed for:
 The project can be described as production-ready only when all of the following are true:
 
 - all current security invariants in this document are implemented and tested
-- all release-blocking items tracked in the roadmap are complete or explicitly retired
+- every issue in the `1.0` milestone ([ADR-027](docs/adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)) is closed or explicitly retired
 - supported platforms and environment assumptions are documented
 - config, audit log, and exit-code compatibility policy is documented
 - release workflow is reproducible and verified

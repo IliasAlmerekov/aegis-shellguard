@@ -10,8 +10,7 @@
 //! [`aegis_language::worker::analyze`] returns [`Outcome::NotStarted`] and
 //! [`aegis_language::router::source_targets`] returns an empty vector.
 //!
-//! See ADR-022 and `docs/plans/2026-07-16-language-aware-analysis.md`
-//! Iteration 0 RED #3.
+//! See ADR-022.
 
 use aegis_language::router::source_targets;
 use aegis_language::worker::{Outcome, analyze};

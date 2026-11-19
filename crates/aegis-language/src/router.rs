@@ -9,8 +9,7 @@
 //! Contract: a no-source command yields no targets, so the worker experiment
 //! must not start and must perform zero filesystem metadata calls. This module
 //! takes only `&str` and produces [`SourceTarget`]s by slicing the input; it
-//! has no `std::fs` code path. See ADR-022 and
-//! `docs/plans/2026-07-16-language-aware-analysis.md` Iteration 0 RED #3.
+//! has no `std::fs` code path. See ADR-022.
 
 use crate::language::SourceLanguage;
 

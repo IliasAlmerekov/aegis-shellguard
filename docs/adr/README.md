@@ -20,7 +20,7 @@ These records are companions to:
 
 Aegis is a Cargo workspace: the `aegis` binary crate at the repository root
 acts as a shell-proxy guardrail and depends on focused library crates under
-`crates/` (Phase 4 of `docs/history/roadmap.md` — complete). All 9 crates are extracted:
+`crates/`. All 9 crates are extracted:
 `aegis-types` (shared data vocabulary), `aegis-parser` (shell tokenizer +
 `PrefixPattern` matcher), `aegis-scanner` (`Scanner`, `PatternSet`, built-in
 `patterns.toml`), `aegis-policy` (the pure `PolicyEngine`), `aegis-config`
@@ -123,12 +123,8 @@ as-is so historical references do not drift.
 
 ## Verification guidance
 
-Current fuzz targets live under:
-
-- `fuzz/fuzz_targets/parser.rs`
-- `fuzz/fuzz_targets/scanner.rs`
-
-They are the preferred stress path for parser / scanner edge cases, alongside:
+The fuzz targets, listed in [Run fuzzing](../../CONTRIBUTING.md#run-fuzzing),
+are the preferred stress path for parser / scanner edge cases, alongside:
 
 - focused regression tests in `tests/`
 - `cargo bench --bench scanner_bench` for hot-path changes

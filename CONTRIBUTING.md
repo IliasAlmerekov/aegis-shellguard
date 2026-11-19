@@ -131,8 +131,6 @@ cargo +nightly-2026-06-15 fuzz list
 cargo +nightly-2026-06-15 fuzz run parser fuzz/corpus/parser
 ```
 
-Fuzzing guidance and current status are documented in [`docs/adr/README.md#verification-guidance`](docs/adr/README.md#verification-guidance).
-
 ## What CI checks
 
 CI runs every gate on each pull request, and all of them must pass to merge:
@@ -173,4 +171,3 @@ Please make sure your PR:
 
 - Bugs and actionable work items: GitHub Issues
 - Security reports: follow [`SECURITY.md`](SECURITY.md), not public issues
-- Roadmap / idea discussion: GitHub Discussions, once enabled in repository settings

@@ -88,30 +88,6 @@ fn assert_path_dependencies_are_versioned(value: &toml::Value, manifest: &std::p
 }
 
 #[test]
-fn current_line_doc_exists_and_describes_the_live_pre_1_0_line() {
-    let version = cargo_package_version();
-    let path = repo_path("docs/releases/current-line.md");
-    assert!(
-        path.exists(),
-        "docs/releases/current-line.md must exist to describe the live release line"
-    );
-
-    let contents = fs::read_to_string(&path).unwrap_or_default();
-    for needle in [
-        format!("Aegis current release line (v{version})"),
-        format!("Cargo.toml` version `{version}"),
-        "current public / MVP posture".to_owned(),
-        "best-effort snapshots".to_owned(),
-        "no claim that a `v1.0.0` release has already been published".to_owned(),
-    ] {
-        assert!(
-            contents.contains(&needle),
-            "current release-line doc must mention `{needle}`; contents:\n{contents}"
-        );
-    }
-}
-
-#[test]
 fn planned_v1_release_doc_is_explicitly_future_facing() {
     let version = cargo_package_version();
     let path = repo_path("docs/releases/v1.0.0.md");

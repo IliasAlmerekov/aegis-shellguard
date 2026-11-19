@@ -907,7 +907,7 @@ https://github.com/IliasAlmerekov/aegis-shellguard/blob/500aaf5a808b5083ec8b9bdb
 _Avoid_: task ID, audit ID
 
 **Roadmap milestone ID**:
-The `Phase <n>` and `L<n>` identifiers naming a stage in `docs/history/roadmap.md`,
+The `Phase <n>` and `L<n>` identifiers found in old commits and issues,
 a namespace disjoint from `Finding ID` — neither ever reuses the other's letter
 or number (`CONVENTION.md` §11). Also frozen: no new phase or `L<n>` is minted,
 and new work cites its GitHub issue number instead.

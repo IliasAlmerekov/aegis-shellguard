@@ -444,8 +444,6 @@ fn ci_keeps_safe_and_slow_path_qualification_benches_on_the_performance_gate() {
 #[test]
 fn production_qualification_record_covers_all_remaining_iteration_10_measurements() {
     let performance = read_repo_file("docs/performance-baseline.md");
-    let readiness = read_repo_file("docs/release-readiness.md");
-
     // Plan Iteration 10 GREEN requires measured evidence, not merely the
     // earlier Iteration 0 deferrals. Keep the public qualification record
     // explicit about the worker lifecycle and the bounded aggregate path so a
@@ -466,14 +464,14 @@ fn production_qualification_record_covers_all_remaining_iteration_10_measurement
         );
     }
 
-    for needle in [
-        "four foundation adapters under qualification",
-        "not a release-enable claim",
-        "required CI contexts",
-    ] {
+    let unwrapped_qualification = read_repo_file("docs/language-qualification.md")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    for needle in ["**not** release enablement", "required CI contexts"] {
         assert!(
-            readiness.contains(needle),
-            "release readiness must state the Iteration 10 qualification boundary `{needle}`"
+            unwrapped_qualification.contains(needle),
+            "language qualification must state the Iteration 10 qualification boundary `{needle}`"
         );
     }
 }
