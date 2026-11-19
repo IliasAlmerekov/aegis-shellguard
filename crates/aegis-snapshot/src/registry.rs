@@ -453,40 +453,6 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
-    async fn rollback_reports_unavailable_plugin_as_typed_error() {
-        let registry = SnapshotRegistry::new_with_plugins(vec![]);
-        let error = registry.rollback("missing", "id").await.unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "snapshot error: snapshot plugin \"missing\" is not available for rollback"
-        );
-        assert!(matches!(
-            error,
-            SnapshotError::PluginUnavailable {
-                operation: "rollback",
-                ..
-            }
-        ));
-    }
-
-    #[tokio::test]
-    async fn delete_reports_unavailable_plugin_as_typed_error() {
-        let registry = SnapshotRegistry::new_with_plugins(vec![]);
-        let error = registry.delete("missing", "id").await.unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "snapshot error: snapshot plugin \"missing\" is not available for delete"
-        );
-        assert!(matches!(
-            error,
-            SnapshotError::PluginUnavailable {
-                operation: "delete",
-                ..
-            }
-        ));
-    }
-
     /// A plugin that is always applicable and always fails to snapshot, so
     /// `snapshot_all` reaches its warn arm deterministically.
     struct AlwaysFailingPlugin;
@@ -673,6 +639,7 @@ mod tests {
     }
 
     mod liveness_tests;
+    mod plugin_lookup_tests;
     mod readiness_tests;
     mod targeted_tests;
 
