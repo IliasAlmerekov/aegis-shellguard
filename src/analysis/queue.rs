@@ -144,12 +144,6 @@ pub enum PushOutcome {
 }
 
 impl PushOutcome {
-    /// Whether this outcome accepted the target.
-    #[must_use]
-    pub fn is_accepted(self) -> bool {
-        matches!(self, PushOutcome::Accepted)
-    }
-
     /// The typed degradation reason this outcome records, if any.
     ///
     /// Every budget cap maps to [`DegradationReason::LimitExceeded`]

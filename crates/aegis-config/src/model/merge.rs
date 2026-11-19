@@ -324,15 +324,14 @@ impl AegisConfig {
             &mut sink,
         );
 
-        let config_version = ratchet::Unratcheted::new("schema version, not a security posture")
-            .merge(
-                "config_version",
-                base_config_version,
-                req_config_version,
-                layer,
-                location,
-                &mut sink,
-            );
+        let config_version = ratchet::Unratcheted::new().merge(
+            "config_version",
+            base_config_version,
+            req_config_version,
+            layer,
+            location,
+            &mut sink,
+        );
 
         let config = Self {
             config_version,
