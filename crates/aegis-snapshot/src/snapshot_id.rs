@@ -22,9 +22,10 @@ pub(crate) const LEGACY_SEP: char = '\t';
 const V2_VERSION: &str = "v2";
 
 fn malformed_encoding(label: &str, encoded: &str) -> SnapshotError {
-    SnapshotError::Snapshot(format!(
-        "malformed snapshot_id: invalid {label} encoding {encoded:?}"
-    ))
+    SnapshotError::InvalidSnapshotIdComponent {
+        component: format!("{label} encoding"),
+        value: encoded.to_string(),
+    }
 }
 
 /// Lowercase hex of `bytes`.
@@ -116,15 +117,15 @@ fn split_versioned<'a>(
     let mut parts = snapshot_id.split(sep);
     let found = parts.next().unwrap_or_default();
     if found != version {
-        return Err(SnapshotError::Snapshot(format!(
-            "unsupported snapshot_id version {found:?}"
-        )));
+        return Err(SnapshotError::UnsupportedSnapshotIdVersion {
+            version: found.to_string(),
+        });
     }
     let parts: Vec<_> = parts.collect();
     if parts.len() != components {
-        return Err(SnapshotError::Snapshot(format!(
-            "malformed snapshot_id: {snapshot_id:?}"
-        )));
+        return Err(SnapshotError::MalformedSnapshotId {
+            id: snapshot_id.to_string(),
+        });
     }
     Ok(parts)
 }
@@ -190,8 +191,11 @@ mod tests {
     #[test]
     fn decode_rejects_odd_length_and_non_hex() {
         for bad in ["abc", "zz", "+f", "0g", "é1"] {
-            let error = decode_path(bad, "dump path").unwrap_err().to_string();
-            assert!(error.contains("malformed snapshot_id"), "{bad}: {error}");
+            let error = decode_path(bad, "dump path").unwrap_err();
+            assert!(
+                matches!(error, SnapshotError::InvalidSnapshotIdComponent { .. }),
+                "{bad}: {error}"
+            );
             assert!(decode_string(bad, "host").is_err(), "{bad}");
         }
     }
@@ -214,15 +218,35 @@ mod tests {
     #[test]
     fn split_v3_rejects_wrong_count() {
         for id in ["v3:ab", "v3:ab:cd:ef", "v3"] {
-            let error = split_v3(id, 2).unwrap_err().to_string();
-            assert!(error.contains("malformed snapshot_id"), "{id}: {error}");
+            let error = split_v3(id, 2).unwrap_err();
+            assert!(
+                matches!(error, SnapshotError::MalformedSnapshotId { .. }),
+                "{id}: {error}"
+            );
         }
     }
 
     #[test]
+    fn wrong_component_count_has_typed_cause() {
+        let error = split_v3("v3:ab", 2).unwrap_err();
+        assert!(matches!(error, SnapshotError::MalformedSnapshotId { .. }));
+        assert_eq!(
+            error.to_string(),
+            "snapshot error: malformed snapshot_id: \"v3:ab\""
+        );
+    }
+
+    #[test]
     fn split_v3_rejects_wrong_version() {
-        let error = split_v3("v4:ab:cd", 2).unwrap_err().to_string();
-        assert!(error.contains("unsupported snapshot_id version"), "{error}");
+        let error = split_v3("v4:ab:cd", 2).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "snapshot error: unsupported snapshot_id version \"v4\""
+        );
+        assert!(matches!(
+            error,
+            SnapshotError::UnsupportedSnapshotIdVersion { .. }
+        ));
     }
 
     #[test]

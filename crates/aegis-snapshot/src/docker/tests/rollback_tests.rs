@@ -110,10 +110,10 @@ esac"#
 #[tokio::test]
 async fn rollback_fails_on_malformed_snapshot_id() {
     let result = DockerPlugin::default().rollback("not-valid-json").await;
-    assert!(
-        result.is_err(),
-        "malformed snapshot_id must return an error"
-    );
+    assert!(matches!(
+        result,
+        Err(SnapshotError::MalformedDockerRecord { .. })
+    ));
 }
 
 #[tokio::test]
@@ -135,9 +135,9 @@ esac"#,
     assert!(result.is_err(), "rollback should fail on missing image");
     if let Err(err) = result {
         match err {
-            SnapshotError::Snapshot(msg) => {
-                assert!(msg.contains("docker run missing-image failed"));
-                assert!(msg.contains("No such image"));
+            SnapshotError::CommandFailed { command, detail } => {
+                assert_eq!(command, "docker run missing-image");
+                assert_eq!(detail, "Error: No such image\n");
             }
             other => panic!("expected snapshot error, got: {other:?}"),
         }

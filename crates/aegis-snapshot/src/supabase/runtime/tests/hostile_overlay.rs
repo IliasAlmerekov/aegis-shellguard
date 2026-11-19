@@ -90,10 +90,7 @@ async fn hostile_project_overlay_cannot_disable_rollback_target_match_check() {
     let snapshot_id = SupabasePlugin::build_snapshot_id(&manifest_path);
     let err = plugin.rollback(&snapshot_id).await.unwrap_err();
 
-    match err {
-        SnapshotError::Snapshot(msg) => assert!(msg.contains("rollback target mismatch")),
-        other => panic!("expected target mismatch snapshot error, got {other:?}"),
-    }
+    assert!(matches!(err, SnapshotError::RollbackTargetMismatch { .. }));
     assert!(
         !restore_ran_marker.exists(),
         "pg_restore must never run once the target-match check fails"

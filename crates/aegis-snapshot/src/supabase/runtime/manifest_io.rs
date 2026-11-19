@@ -19,12 +19,14 @@ pub(super) fn write_manifest_atomically(
     manifest_path: &Path,
     manifest: &SupabaseManifest,
 ) -> Result<()> {
-    let parent = manifest_path.parent().ok_or_else(|| {
-        SnapshotError::Snapshot("manifest parent directory is required".to_string())
+    let parent = manifest_path.parent().ok_or(SnapshotError::Required {
+        subject: "manifest parent directory",
     })?;
-    let bytes = serde_json::to_vec_pretty(manifest).map_err(|error| {
-        SnapshotError::Snapshot(format!("failed to serialize supabase manifest: {error}"))
-    })?;
+    let bytes =
+        serde_json::to_vec_pretty(manifest).map_err(|error| SnapshotError::OperationFailed {
+            action: "serialize supabase manifest".to_string(),
+            detail: error.to_string(),
+        })?;
 
     {
         use std::io::Write as _;
@@ -52,9 +54,9 @@ pub(super) fn write_manifest_atomically(
 
         #[cfg(test)]
         if INJECT_MANIFEST_WRITE_FAILURE_FOR_TESTS.with(|flag| flag.replace(false)) {
-            return Err(SnapshotError::Snapshot(
-                "manifest commit injected failure".to_string(),
-            ));
+            return Err(SnapshotError::Rejected {
+                reason: "manifest commit injected failure",
+            });
         }
 
         drop(file);

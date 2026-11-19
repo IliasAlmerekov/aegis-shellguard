@@ -134,7 +134,7 @@ mod tests {
         let err = AegisError::Snapshot(SnapshotError::DeleteFailed {
             plugin: "git".to_string(),
             snapshot_id: "snap-001".to_string(),
-            source: "git stash drop failed".to_string(),
+            detail: "git stash drop failed".to_string(),
         });
         assert_eq!(
             err.to_string(),

@@ -144,10 +144,13 @@ fn manifest_requires_target_db_for_v1() {
 
     let err = manifest.validate_schema_v1().unwrap_err();
 
-    match err {
-        SnapshotError::Snapshot(msg) => assert!(msg.contains("target.db")),
-        other => panic!("expected snapshot error, got {other:?}"),
-    }
+    assert!(matches!(
+        err,
+        SnapshotError::RequiredWhen {
+            subject: "manifest target.db",
+            condition: "for v1"
+        }
+    ));
 }
 
 #[test]
@@ -326,7 +329,12 @@ async fn snapshot_fails_when_manifest_commit_fails_and_removes_dump() {
         .unwrap_err();
 
     assert!(
-        err.to_string().contains("manifest"),
+        matches!(
+            err,
+            SnapshotError::Rejected {
+                reason: "manifest commit injected failure"
+            }
+        ),
         "expected manifest failure, got: {err}"
     );
 
@@ -387,8 +395,11 @@ async fn rollback_denies_when_config_target_mismatch_is_required() {
     let err = plugin.rollback(&snapshot_id).await.unwrap_err();
 
     match err {
-        SnapshotError::Snapshot(msg) => assert!(msg.contains("rollback target mismatch")),
-        other => panic!("expected target mismatch snapshot error, got {other:?}"),
+        SnapshotError::RollbackTargetMismatch { details } => {
+            assert!(details.starts_with("host manifest="));
+            assert!(details.ends_with("current=drifted.supabase.co"));
+        }
+        other => panic!("expected RollbackTargetMismatch, got {other:?}"),
     }
 }
 
@@ -449,10 +460,7 @@ async fn rollback_rejects_malformed_snapshot_id() {
         .await
         .expect_err("malformed snapshot id should fail");
 
-    match err {
-        SnapshotError::Snapshot(msg) => assert!(msg.contains("malformed snapshot_id")),
-        other => panic!("expected snapshot error, got {other:?}"),
-    }
+    assert!(matches!(err, SnapshotError::MalformedSnapshotId { .. }));
 }
 
 #[tokio::test]
@@ -552,9 +560,11 @@ async fn rollback_denies_when_recomputed_fields_disagree_with_manifest_summary()
     let err = plugin.rollback(&snapshot_id).await.unwrap_err();
 
     match err {
-        SnapshotError::Snapshot(msg) => {
-            assert!(msg.contains("summary"));
-            assert!(msg.contains("recomputed"));
+        SnapshotError::ManifestSummaryMismatch { mismatches } => {
+            assert_eq!(
+                mismatches,
+                vec!["rollback.allowed persisted=false recomputed=true"]
+            );
         }
         other => panic!("expected snapshot error, got {other:?}"),
     }
@@ -588,9 +598,11 @@ async fn rollback_denies_when_persisted_db_supported_disagrees_with_recomputed_s
     let err = plugin.rollback(&snapshot_id).await.unwrap_err();
 
     match err {
-        SnapshotError::Snapshot(msg) => {
-            assert!(msg.contains("db_supported"));
-            assert!(msg.contains("recomputed"));
+        SnapshotError::ManifestSummaryMismatch { mismatches } => {
+            assert_eq!(
+                mismatches,
+                vec!["rollback.db_supported persisted=false recomputed=true"]
+            );
         }
         other => panic!("expected snapshot error, got {other:?}"),
     }
@@ -609,7 +621,10 @@ fn resolve_db_artifact_path_denies_absolute_artifact_path() {
         .resolve_db_artifact_path(&manifest_path)
         .unwrap_err();
     match err {
-        SnapshotError::Snapshot(msg) => assert!(msg.contains("bundle root")),
+        SnapshotError::ManifestArtifactPathRejected { reason, path } => {
+            assert_eq!(reason, "must stay within bundle root");
+            assert_eq!(path, "/tmp/evil.dump");
+        }
         other => panic!("expected snapshot error, got {other:?}"),
     }
 }
@@ -627,7 +642,10 @@ fn resolve_db_artifact_path_denies_parent_traversal() {
         .resolve_db_artifact_path(&manifest_path)
         .unwrap_err();
     match err {
-        SnapshotError::Snapshot(msg) => assert!(msg.contains("bundle root")),
+        SnapshotError::ManifestArtifactPathRejected { reason, path } => {
+            assert_eq!(reason, "must stay within bundle root");
+            assert_eq!(path, "../outside.dump");
+        }
         other => panic!("expected snapshot error, got {other:?}"),
     }
 }
@@ -655,7 +673,10 @@ fn resolve_db_artifact_path_denies_symlink_escape_outside_bundle_root() {
         .resolve_db_artifact_path(&manifest_path)
         .unwrap_err();
     match err {
-        SnapshotError::Snapshot(msg) => assert!(msg.contains("bundle root")),
+        SnapshotError::ManifestArtifactPathRejected { reason, path } => {
+            assert_eq!(reason, "escapes bundle root");
+            assert_eq!(path, "linked/escaped.dump");
+        }
         other => panic!("expected snapshot error, got {other:?}"),
     }
 }
@@ -747,4 +768,5 @@ async fn rollback_uses_manifest_target_as_source_of_truth() {
 }
 
 mod liveness_tests;
+mod preflight_tests;
 mod readiness_tests;

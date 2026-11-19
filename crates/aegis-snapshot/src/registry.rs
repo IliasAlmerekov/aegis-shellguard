@@ -383,10 +383,9 @@ impl SnapshotRegistry {
             .plugins
             .iter()
             .find(|plugin| plugin.name() == plugin_name)
-            .ok_or_else(|| {
-                SnapshotError::Snapshot(format!(
-                    "snapshot plugin {plugin_name:?} is not available for rollback"
-                ))
+            .ok_or_else(|| SnapshotError::PluginUnavailable {
+                plugin: plugin_name.to_string(),
+                operation: "rollback",
             })?;
 
         plugin.rollback(snapshot_id).await
@@ -402,10 +401,9 @@ impl SnapshotRegistry {
             .plugins
             .iter()
             .find(|plugin| plugin.name() == plugin_name)
-            .ok_or_else(|| {
-                SnapshotError::Snapshot(format!(
-                    "snapshot plugin {plugin_name:?} is not available for delete"
-                ))
+            .ok_or_else(|| SnapshotError::PluginUnavailable {
+                plugin: plugin_name.to_string(),
+                operation: "delete",
             })?;
 
         plugin.delete(snapshot_id).await
@@ -425,10 +423,9 @@ impl SnapshotRegistry {
             .iter()
             .find(|plugin| plugin.name() == plugin_name)
             // Liveness checks what Rollback needs, so an unknown plugin reads as Rollback would report it.
-            .ok_or_else(|| {
-                SnapshotError::Snapshot(format!(
-                    "snapshot plugin {plugin_name:?} is not available for rollback"
-                ))
+            .ok_or_else(|| SnapshotError::PluginUnavailable {
+                plugin: plugin_name.to_string(),
+                operation: "rollback",
             })?;
 
         liveness_within(LIVENESS_TIMEOUT, plugin.as_ref(), snapshot_id).await
@@ -642,6 +639,7 @@ mod tests {
     }
 
     mod liveness_tests;
+    mod plugin_lookup_tests;
     mod readiness_tests;
     mod targeted_tests;
 

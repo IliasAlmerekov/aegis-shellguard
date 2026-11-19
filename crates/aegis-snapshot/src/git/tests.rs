@@ -481,10 +481,11 @@ async fn rollback_rejects_malformed_snapshot_id() {
         .await
         .expect_err("malformed snapshot id should fail");
 
-    match err {
-        SnapshotError::Snapshot(msg) => assert!(msg.contains("malformed snapshot_id")),
-        other => panic!("expected snapshot error, got {other:?}"),
-    }
+    assert_eq!(
+        err.to_string(),
+        "snapshot error: malformed snapshot_id: \"not-a-valid-snapshot-id\""
+    );
+    assert!(matches!(err, SnapshotError::MalformedSnapshotId { .. }));
 }
 
 // ── environment isolation (issue #317) ───────────────────────────────────
@@ -661,10 +662,7 @@ async fn rollback_errors_when_stash_entry_not_found() {
         .await
         .expect_err("missing stash hash should fail");
 
-    match err {
-        SnapshotError::Snapshot(msg) => assert!(msg.contains("stash entry not found")),
-        other => panic!("expected snapshot error, got {other:?}"),
-    }
+    assert!(matches!(err, SnapshotError::GitStashNotFound { .. }));
 }
 
 // ── the snapshot is not observable in the working tree (issue #356) ───────

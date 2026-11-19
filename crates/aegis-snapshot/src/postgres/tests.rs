@@ -252,10 +252,22 @@ async fn rollback_errors_on_malformed_snapshot_id() {
         .await
         .unwrap_err();
 
-    match err {
-        SnapshotError::Snapshot(msg) => assert!(msg.contains("malformed snapshot_id")),
-        other => panic!("expected malformed snapshot snapshot error, got {other:?}"),
-    }
+    assert!(matches!(err, SnapshotError::MalformedSnapshotId { .. }));
+}
+
+#[tokio::test]
+async fn rollback_rejects_invalid_port_with_typed_cause() {
+    let temp_dir = TempDir::new().unwrap();
+    let plugin = plugin_with_user(&temp_dir, "postgres");
+    let error = plugin.rollback("v3:61:62:no:63:64").await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "snapshot error: malformed snapshot_id: invalid port \"no\""
+    );
+    assert!(matches!(
+        error,
+        SnapshotError::InvalidSnapshotIdComponent { .. }
+    ));
 }
 
 #[tokio::test]
@@ -268,10 +280,9 @@ async fn rollback_errors_on_malformed_database_encoding() {
         .await
         .unwrap_err();
 
-    match err {
-        SnapshotError::Snapshot(msg) => assert!(msg.contains("invalid database encoding")),
-        other => panic!("expected malformed snapshot snapshot error, got {other:?}"),
-    }
+    assert!(
+        matches!(err, SnapshotError::InvalidSnapshotIdComponent { component, .. } if component == "database encoding")
+    );
 }
 
 #[cfg(unix)]
@@ -379,9 +390,9 @@ async fn snapshot_returns_stderr_when_pg_dump_fails() {
         .unwrap_err();
 
     match err {
-        SnapshotError::Snapshot(msg) => {
-            assert!(msg.contains("pg_dump failed"));
-            assert!(msg.contains("pg_dump exploded"));
+        SnapshotError::CommandFailed { command, detail } => {
+            assert_eq!(command, "pg_dump");
+            assert_eq!(detail, "pg_dump exploded");
         }
         other => panic!("expected snapshot error, got {other:?}"),
     }
@@ -527,7 +538,9 @@ async fn rollback_rejects_malformed_dump_path_encoding() {
         .unwrap_err();
 
     match err {
-        SnapshotError::Snapshot(msg) => assert!(msg.contains("invalid dump path encoding")),
+        SnapshotError::InvalidSnapshotIdComponent { component, .. } => {
+            assert_eq!(component, "dump path encoding")
+        }
         other => panic!("expected malformed snapshot snapshot error, got {other:?}"),
     }
 }
@@ -551,9 +564,9 @@ async fn rollback_returns_stderr_when_pg_restore_fails() {
     let err = plugin.rollback(&snapshot_id).await.unwrap_err();
 
     match err {
-        SnapshotError::Snapshot(msg) => {
-            assert!(msg.contains("pg_restore failed"));
-            assert!(msg.contains("pg_restore exploded"));
+        SnapshotError::CommandFailed { command, detail } => {
+            assert_eq!(command, "pg_restore");
+            assert_eq!(detail, "pg_restore exploded");
         }
         other => panic!("expected snapshot error, got {other:?}"),
     }

@@ -37,10 +37,9 @@ fn eligible_dump_path(manifest: &SupabaseManifest, manifest_path: &Path) -> Resu
 
     let strict = manifest.recompute_strict_eligibility()?;
     if !strict.allowed {
-        return Err(SnapshotError::Snapshot(format!(
-            "rollback denied: recomputed manifest eligibility is not allowed (status: {:?})",
-            strict.overall_status
-        )));
+        return Err(SnapshotError::RollbackDenied {
+            status: format!("{:?}", strict.overall_status),
+        });
     }
     manifest.ensure_summary_matches_recomputed(&strict)?;
     manifest.resolve_db_artifact_path(manifest_path)
@@ -148,10 +147,10 @@ impl SnapshotPlugin for SupabasePlugin {
         };
         let manifest: SupabaseManifest =
             serde_json::from_slice(&manifest_bytes).map_err(|error| {
-                SnapshotError::Snapshot(format!(
-                    "failed to deserialize supabase manifest {}: {error}",
-                    manifest_path.display()
-                ))
+                SnapshotError::OperationFailed {
+                    action: format!("deserialize supabase manifest {}", manifest_path.display()),
+                    detail: error.to_string(),
+                }
             })?;
 
         let dump_path = eligible_dump_path(&manifest, &manifest_path)?;
@@ -164,8 +163,13 @@ impl SnapshotPlugin for SupabasePlugin {
         let dump_path = async {
             let manifest_path = Self::parse_snapshot_id(snapshot_id)?;
             let manifest_bytes = tokio::fs::read(&manifest_path).await?;
-            let manifest: SupabaseManifest = serde_json::from_slice(&manifest_bytes)
-                .map_err(|error| SnapshotError::Snapshot(error.to_string()))?;
+            let manifest: SupabaseManifest =
+                serde_json::from_slice(&manifest_bytes).map_err(|error| {
+                    SnapshotError::OperationFailed {
+                        action: "deserialize supabase manifest".to_string(),
+                        detail: error.to_string(),
+                    }
+                })?;
             eligible_dump_path(&manifest, &manifest_path)
         }
         .await;
@@ -177,18 +181,17 @@ impl SnapshotPlugin for SupabasePlugin {
 
     async fn rollback(&self, snapshot_id: &str) -> Result<()> {
         let manifest_path = Self::parse_snapshot_id(snapshot_id)?;
-        let manifest_bytes = fs::read(&manifest_path).map_err(|error| {
-            SnapshotError::Snapshot(format!(
-                "failed to read supabase manifest {}: {error}",
-                manifest_path.display()
-            ))
-        })?;
+        let manifest_bytes =
+            fs::read(&manifest_path).map_err(|error| SnapshotError::OperationFailed {
+                action: format!("read supabase manifest {}", manifest_path.display()),
+                detail: error.to_string(),
+            })?;
         let manifest: SupabaseManifest =
             serde_json::from_slice(&manifest_bytes).map_err(|error| {
-                SnapshotError::Snapshot(format!(
-                    "failed to deserialize supabase manifest {}: {error}",
-                    manifest_path.display()
-                ))
+                SnapshotError::OperationFailed {
+                    action: format!("deserialize supabase manifest {}", manifest_path.display()),
+                    detail: error.to_string(),
+                }
             })?;
 
         let dump_path = eligible_dump_path(&manifest, &manifest_path)?;
@@ -203,10 +206,9 @@ impl SnapshotPlugin for SupabasePlugin {
             .db
             .checksum_sha256
             .as_ref()
-            .ok_or_else(|| {
-                SnapshotError::Snapshot(
-                    "manifest artifacts.db.checksum_sha256 is required for rollback".to_string(),
-                )
+            .ok_or(SnapshotError::RequiredWhen {
+                subject: "manifest artifacts.db.checksum_sha256",
+                condition: "for rollback",
             })?
             .clone();
         let actual_sha256 = sha256_hex(&dump_path)?;
@@ -222,9 +224,14 @@ impl SnapshotPlugin for SupabasePlugin {
             manifest.ensure_config_target_matches(&self.config)?;
         }
 
-        let target = manifest.target.db.as_ref().ok_or_else(|| {
-            SnapshotError::Snapshot("manifest target.db is required for rollback".to_string())
-        })?;
+        let target = manifest
+            .target
+            .db
+            .as_ref()
+            .ok_or(SnapshotError::RequiredWhen {
+                subject: "manifest target.db",
+                condition: "for rollback",
+            })?;
         self.run_pg_restore(target, &dump_path).await?;
 
         tracing::info!(snapshot_id = snapshot_id, "supabase snapshot rolled back");
@@ -243,7 +250,7 @@ impl SnapshotPlugin for SupabasePlugin {
                 return Err(SnapshotError::DeleteFailed {
                     plugin: "supabase".to_string(),
                     snapshot_id: snapshot_id.to_string(),
-                    source: error.to_string(),
+                    detail: error.to_string(),
                 });
             }
             Ok(_) => {}
@@ -259,7 +266,7 @@ impl SnapshotPlugin for SupabasePlugin {
                 return Err(SnapshotError::DeleteFailed {
                     plugin: "supabase".to_string(),
                     snapshot_id: snapshot_id.to_string(),
-                    source: error.to_string(),
+                    detail: error.to_string(),
                 });
             }
         };
@@ -270,7 +277,7 @@ impl SnapshotPlugin for SupabasePlugin {
                 return Err(SnapshotError::DeleteFailed {
                     plugin: "supabase".to_string(),
                     snapshot_id: snapshot_id.to_string(),
-                    source: format!("failed to parse manifest: {error}"),
+                    detail: format!("failed to parse manifest: {error}"),
                 });
             }
         };
@@ -281,7 +288,7 @@ impl SnapshotPlugin for SupabasePlugin {
                     return Err(SnapshotError::DeleteFailed {
                         plugin: "supabase".to_string(),
                         snapshot_id: snapshot_id.to_string(),
-                        source: format!("failed to remove dump {}: {error}", dump_path.display()),
+                        detail: format!("failed to remove dump {}: {error}", dump_path.display()),
                     });
                 }
                 _ => {}
@@ -293,7 +300,7 @@ impl SnapshotPlugin for SupabasePlugin {
                 return Err(SnapshotError::DeleteFailed {
                     plugin: "supabase".to_string(),
                     snapshot_id: snapshot_id.to_string(),
-                    source: format!(
+                    detail: format!(
                         "failed to remove manifest {}: {error}",
                         manifest_path.display()
                     ),
@@ -311,7 +318,7 @@ impl SnapshotPlugin for SupabasePlugin {
                     return Err(SnapshotError::DeleteFailed {
                         plugin: "supabase".to_string(),
                         snapshot_id: snapshot_id.to_string(),
-                        source: format!(
+                        detail: format!(
                             "failed to remove bundle {}: {error}",
                             bundle_dir.display()
                         ),

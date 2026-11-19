@@ -120,8 +120,8 @@ impl SqlitePlugin {
         let (original_str, dump_str) =
             snapshot_id
                 .split_once(snapshot_id::LEGACY_SEP)
-                .ok_or_else(|| {
-                    SnapshotError::Snapshot(format!("malformed snapshot_id: {snapshot_id:?}"))
+                .ok_or_else(|| SnapshotError::MalformedSnapshotId {
+                    id: snapshot_id.to_string(),
                 })?;
         Ok((PathBuf::from(original_str), PathBuf::from(dump_str)))
     }
@@ -226,7 +226,7 @@ impl SnapshotPlugin for SqlitePlugin {
             Err(error) => Err(SnapshotError::DeleteFailed {
                 plugin: "sqlite".to_string(),
                 snapshot_id: snapshot_id.to_string(),
-                source: error.to_string(),
+                detail: error.to_string(),
             }),
         }
     }
@@ -706,10 +706,7 @@ mod tests {
             .await
             .unwrap_err();
 
-        match err {
-            SnapshotError::Snapshot(msg) => assert!(msg.contains("malformed snapshot_id")),
-            other => panic!("expected malformed snapshot snapshot error, got {other:?}"),
-        }
+        assert!(matches!(err, SnapshotError::MalformedSnapshotId { .. }));
     }
 
     #[tokio::test]
@@ -726,7 +723,9 @@ mod tests {
             .unwrap_err();
 
         match err {
-            SnapshotError::Snapshot(msg) => assert!(msg.contains("invalid original path encoding")),
+            SnapshotError::InvalidSnapshotIdComponent { component, .. } => {
+                assert_eq!(component, "original path encoding")
+            }
             other => panic!("expected malformed snapshot snapshot error, got {other:?}"),
         }
     }
