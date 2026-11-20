@@ -158,6 +158,10 @@ impl PatternSet {
         #[cfg(debug_assertions)]
         for rule in &prefix_rules {
             if let Err(e) = rule.validate_examples() {
+                #[expect(
+                    clippy::panic,
+                    reason = "debug-only self-check: a built-in rule that fails its own examples must not ship"
+                )]
                 panic!(
                     "built-in prefix rule {} failed example validation: {e}",
                     rule.id
@@ -235,13 +239,6 @@ impl PatternSet {
             });
         }
 
-        if rule.pattern.is_empty() {
-            return Err(ScannerError::InvalidPattern {
-                id: rule.id.to_string(),
-                reason: "empty prefix rule pattern".to_string(),
-            });
-        }
-
         // The first token must name a program (Single or Alts). A rule whose
         // first token is a wildcard or a flag cannot be indexed by an Effective
         // program (ADR-014) and would never fire at runtime — reject it instead
@@ -256,7 +253,12 @@ impl PatternSet {
                     ),
                 });
             }
-            None => unreachable!("empty prefix rule pattern rejected above"),
+            None => {
+                return Err(ScannerError::InvalidPattern {
+                    id: rule.id.to_string(),
+                    reason: "empty prefix rule pattern".to_string(),
+                });
+            }
         }
 
         if rule.description.trim().is_empty() {
@@ -352,6 +354,20 @@ mod tests {
         // is not there.
         rule.suppressed_by = &["--dry-run", "  "];
         assert!(PatternSet::validate_prefix_rule(&rule, &ids).is_err());
+    }
+
+    #[test]
+    fn prefix_rule_rejects_an_empty_pattern() {
+        let mut rule = rule_with_first(PatternToken::Single(Cow::Borrowed("npm")));
+        rule.pattern.clear();
+
+        match PatternSet::validate_prefix_rule(&rule, &HashSet::new()) {
+            Err(ScannerError::InvalidPattern { id, reason }) => {
+                assert_eq!(id, "T-001");
+                assert_eq!(reason, "empty prefix rule pattern");
+            }
+            other => panic!("expected InvalidPattern, got {other:?}"),
+        }
     }
 
     fn rule_with_first(first: PatternToken) -> PrefixRule {
