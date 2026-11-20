@@ -91,3 +91,41 @@ pub(super) const BUILTIN_SNAPSHOT_PROVIDER_NAMES: [&str; BuiltinProvider::ALL.le
     }
     names
 };
+
+#[cfg(test)]
+mod tests {
+    use aegis_config::AegisConfig;
+    use aegis_types::SnapshotPolicy;
+
+    use super::super::{SnapshotRegistry, registry_config_from_parts};
+    use super::BuiltinProvider;
+
+    #[test]
+    fn selective_policy_materializes_exactly_the_enabled_provider() {
+        for provider in BuiltinProvider::ALL {
+            let mut config = AegisConfig::default();
+            config.snapshot_policy = SnapshotPolicy::Selective;
+            config.auto_snapshot_git = false;
+            config.auto_snapshot_docker = false;
+            config.auto_snapshot_postgres = false;
+            config.auto_snapshot_mysql = false;
+            config.auto_snapshot_sqlite = false;
+            config.auto_snapshot_supabase = false;
+            match provider {
+                BuiltinProvider::Git => config.auto_snapshot_git = true,
+                BuiltinProvider::Docker => config.auto_snapshot_docker = true,
+                BuiltinProvider::Postgres => config.auto_snapshot_postgres = true,
+                BuiltinProvider::Mysql => config.auto_snapshot_mysql = true,
+                BuiltinProvider::Sqlite => config.auto_snapshot_sqlite = true,
+                BuiltinProvider::Supabase => config.auto_snapshot_supabase = true,
+            }
+
+            let registry = SnapshotRegistry::from_runtime_config(&registry_config_from_parts(
+                &config,
+                std::env::temp_dir(),
+            ));
+
+            assert_eq!(registry.configured_provider_names(), [provider.name()]);
+        }
+    }
+}
