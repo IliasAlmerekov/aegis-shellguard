@@ -508,8 +508,10 @@ mod tests {
     #[test]
     fn reject_symlinks_accepts_a_missing_path() {
         let temp = tempfile::TempDir::new().unwrap();
+        // macOS puts the temp dir under the `/var` symlink.
+        let root = fs::canonicalize(temp.path()).unwrap();
 
-        assert!(reject_symlinks(&temp.path().join("missing"), "hint").is_ok());
+        assert!(reject_symlinks(&root.join("missing"), "hint").is_ok());
     }
 
     #[test]
