@@ -54,9 +54,9 @@ async fn unavailable_cwd_denies_watch_and_audits_recovery_degradation() {
     context.set_snapshot_registry_for_tests(SnapshotRegistry::new_with_plugins(vec![Box::new(
         ForbiddenPlugin,
     )]));
-    let prepared = context;
+    let context = context;
     let PlanningOutcome::Planned(shell_plan) = plan_with_context_async(
-        &prepared,
+        &context,
         PlanningRequest {
             command: "rm -rf target",
             cwd_state: CwdState::Unavailable,
@@ -75,7 +75,7 @@ async fn unavailable_cwd_denies_watch_and_audits_recovery_degradation() {
             .is_empty()
     );
     let PlanningOutcome::Planned(plan) = plan_with_context_async(
-        &prepared,
+        &context,
         PlanningRequest {
             command: "rm -rf target",
             cwd_state: CwdState::Unavailable,
@@ -96,7 +96,7 @@ async fn unavailable_cwd_denies_watch_and_audits_recovery_degradation() {
             source: None,
             id: None,
         },
-        &prepared,
+        &context,
         plan,
         false,
         |_, _| PromptDecision::Approve,

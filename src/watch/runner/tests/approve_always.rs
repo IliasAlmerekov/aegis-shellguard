@@ -38,11 +38,11 @@ async fn watch_approve_always_writes_the_active_config() {
     } else {
         let workspace = TempDir::new().unwrap();
         let audit = workspace.path().join("audit.jsonl");
-        let prepared = prepared_with_snapshot_policy(audit, SnapshotPolicy::Selective, vec![]);
-        let (frame, plan) = plan_for_command(&prepared, &workspace, WARN).await;
+        let context = context_with_snapshot_policy(audit, SnapshotPolicy::Selective, vec![]);
+        let (frame, plan) = plan_for_command(&context, &workspace, WARN).await;
         run_watch_plan_with_prompts(
             frame,
-            &prepared,
+            &context,
             plan,
             false,
             |_, _| PromptDecision::ApproveAlways,
@@ -61,7 +61,7 @@ async fn watch_approve_always_writes_the_active_config() {
     }
 }
 
-fn prepared_with_snapshot_policy(
+fn context_with_snapshot_policy(
     audit_path: PathBuf,
     policy: SnapshotPolicy,
     plugins: Vec<Box<dyn aegis_snapshot::SnapshotPlugin>>,
@@ -78,16 +78,16 @@ fn prepared_with_snapshot_policy(
 /// Run `command` with a human who always answers `ApproveAlways`; returns the
 /// ordered `override:` and `persist:` events.
 async fn run_approve_always(
-    prepared: &RuntimeContext,
+    context: &RuntimeContext,
     workspace: &TempDir,
     command: &str,
     recovery: RecoveryPromptDecision,
 ) -> Vec<String> {
-    let (frame, plan) = plan_for_command(prepared, workspace, command).await;
+    let (frame, plan) = plan_for_command(context, workspace, command).await;
     let events = RefCell::new(Vec::new());
     run_watch_plan_with_persistence(
         frame,
-        prepared,
+        context,
         plan,
         false,
         |_, _| PromptDecision::ApproveAlways,
@@ -107,14 +107,14 @@ async fn run_approve_always(
 async fn watch_approve_always_on_danger_with_a_ready_snapshot_writes_the_rule() {
     let workspace = TempDir::new().unwrap();
     let audit = TempDir::new().unwrap().keep().join("audit.jsonl");
-    let prepared = prepared_with_snapshot_policy(
+    let context = context_with_snapshot_policy(
         audit.clone(),
         SnapshotPolicy::Selective,
         vec![Box::new(SucceedingPlugin)],
     );
 
     let events =
-        run_approve_always(&prepared, &workspace, DANGER, RecoveryPromptDecision::Deny).await;
+        run_approve_always(&context, &workspace, DANGER, RecoveryPromptDecision::Deny).await;
 
     assert_eq!(events, [format!("persist:{DANGER}")]);
     let entry = read_audit_entry(&audit);
@@ -131,14 +131,14 @@ async fn watch_approve_always_on_danger_with_a_degraded_snapshot_writes_no_rule_
  {
     let workspace = TempDir::new().unwrap();
     let audit = TempDir::new().unwrap().keep().join("audit.jsonl");
-    let prepared = prepared_with_snapshot_policy(
+    let context = context_with_snapshot_policy(
         audit.clone(),
         SnapshotPolicy::Selective,
         vec![Box::new(FailingPlugin)],
     );
 
     let events =
-        run_approve_always(&prepared, &workspace, DANGER, RecoveryPromptDecision::Deny).await;
+        run_approve_always(&context, &workspace, DANGER, RecoveryPromptDecision::Deny).await;
 
     assert_eq!(events, ["override:NoSnapshotAvailable"]);
     let entry = read_audit_entry(&audit);
@@ -150,14 +150,14 @@ async fn watch_approve_always_on_danger_with_a_degraded_snapshot_writes_no_rule_
 async fn watch_approve_always_on_danger_run_once_without_recovery_still_writes_no_rule() {
     let workspace = TempDir::new().unwrap();
     let audit = TempDir::new().unwrap().keep().join("audit.jsonl");
-    let prepared = prepared_with_snapshot_policy(
+    let context = context_with_snapshot_policy(
         audit.clone(),
         SnapshotPolicy::Selective,
         vec![Box::new(FailingPlugin)],
     );
 
     let events = run_approve_always(
-        &prepared,
+        &context,
         &workspace,
         DANGER,
         RecoveryPromptDecision::RunOnceWithoutRecovery,
@@ -172,10 +172,9 @@ async fn watch_approve_always_on_danger_run_once_without_recovery_still_writes_n
 async fn watch_approve_always_on_warn_writes_the_rule_with_no_snapshot() {
     let workspace = TempDir::new().unwrap();
     let audit = TempDir::new().unwrap().keep().join("audit.jsonl");
-    let prepared = prepared_with_snapshot_policy(audit.clone(), SnapshotPolicy::Selective, vec![]);
+    let context = context_with_snapshot_policy(audit.clone(), SnapshotPolicy::Selective, vec![]);
 
-    let events =
-        run_approve_always(&prepared, &workspace, WARN, RecoveryPromptDecision::Deny).await;
+    let events = run_approve_always(&context, &workspace, WARN, RecoveryPromptDecision::Deny).await;
 
     assert_eq!(events, [format!("persist:{WARN}")]);
     assert_eq!(read_audit_entry(&audit)["snapshots"], serde_json::json!([]));
@@ -185,14 +184,14 @@ async fn watch_approve_always_on_warn_writes_the_rule_with_no_snapshot() {
 async fn watch_snapshot_policy_none_marks_the_danger_dialog_and_audit_and_writes_no_rule() {
     let workspace = TempDir::new().unwrap();
     let audit = TempDir::new().unwrap().keep().join("audit.jsonl");
-    let prepared = prepared_with_snapshot_policy(audit.clone(), SnapshotPolicy::None, vec![]);
-    let (frame, plan) = plan_for_command(&prepared, &workspace, DANGER).await;
+    let context = context_with_snapshot_policy(audit.clone(), SnapshotPolicy::None, vec![]);
+    let (frame, plan) = plan_for_command(&context, &workspace, DANGER).await;
     let offered = Cell::new(None);
     let persisted = Cell::new(false);
 
     run_watch_plan_with_persistence(
         frame,
-        &prepared,
+        &context,
         plan,
         false,
         |_, explanation| {
@@ -215,14 +214,14 @@ async fn watch_snapshot_policy_none_marks_the_danger_dialog_and_audit_and_writes
 async fn watch_snapshot_policy_none_still_persists_an_ordinary_warn_approval() {
     let workspace = TempDir::new().unwrap();
     let audit = TempDir::new().unwrap().keep().join("audit.jsonl");
-    let prepared = prepared_with_snapshot_policy(audit.clone(), SnapshotPolicy::None, vec![]);
-    let (frame, plan) = plan_for_command(&prepared, &workspace, WARN).await;
+    let context = context_with_snapshot_policy(audit.clone(), SnapshotPolicy::None, vec![]);
+    let (frame, plan) = plan_for_command(&context, &workspace, WARN).await;
     let opted_out = Cell::new(None);
     let persisted = Cell::new(false);
 
     run_watch_plan_with_persistence(
         frame,
-        &prepared,
+        &context,
         plan,
         false,
         |_, explanation| {
@@ -242,12 +241,12 @@ async fn watch_snapshot_policy_none_still_persists_an_ordinary_warn_approval() {
 async fn watch_snapshot_policy_none_marks_a_denied_danger_audit_entry() {
     let workspace = TempDir::new().unwrap();
     let audit = TempDir::new().unwrap().keep().join("audit.jsonl");
-    let prepared = prepared_with_snapshot_policy(audit.clone(), SnapshotPolicy::None, vec![]);
-    let (frame, plan) = plan_for_command(&prepared, &workspace, DANGER).await;
+    let context = context_with_snapshot_policy(audit.clone(), SnapshotPolicy::None, vec![]);
+    let (frame, plan) = plan_for_command(&context, &workspace, DANGER).await;
 
     run_watch_plan_with_persistence(
         frame,
-        &prepared,
+        &context,
         plan,
         false,
         |_, _| PromptDecision::Deny,
@@ -322,13 +321,13 @@ async fn unavailable_cwd_never_persists_watch_rules() {
         fs::write(&config, "").unwrap();
         std::env::set_current_dir(temp.path()).unwrap();
         let audit = temp.path().join("audit.jsonl");
-        let prepared = prepared_with_snapshot_policy(audit, SnapshotPolicy::Selective, vec![]);
+        let context = context_with_snapshot_policy(audit, SnapshotPolicy::Selective, vec![]);
         for decision in [PromptDecision::ApproveAlways, PromptDecision::DenyAlways] {
             if decision == PromptDecision::DenyAlways {
                 eprintln!("deny-always begins");
             }
             let PlanningOutcome::Planned(plan) = plan_with_context_async(
-                &prepared,
+                &context,
                 PlanningRequest {
                     command: WARN,
                     cwd_state: CwdState::Unavailable,
@@ -348,7 +347,7 @@ async fn unavailable_cwd_never_persists_watch_rules() {
                     source: None,
                     id: None,
                 },
-                &prepared,
+                &context,
                 plan,
                 false,
                 |_, _| decision,
