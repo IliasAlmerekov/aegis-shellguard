@@ -127,6 +127,25 @@ pub fn write_executable(path: &Path, body: &str) {
     fs::write(path, body).unwrap();
 }
 
+/// Copy the executable at `from` to `to`, keeping its mode, without this
+/// process ever holding an open write handle on `to`. `fs::copy` has the same
+/// `ETXTBSY` race as `fs::write` in `write_executable` (#659).
+pub fn copy_executable(from: &Path, to: &Path) {
+    #[cfg(unix)]
+    {
+        let status = Command::new("/bin/cp")
+            .arg("-p")
+            .arg(from)
+            .arg(to)
+            .status()
+            .expect("failed to spawn cp to copy executable");
+        assert!(status.success(), "failed to copy {from:?} to {to:?}");
+    }
+
+    #[cfg(not(unix))]
+    fs::copy(from, to).unwrap();
+}
+
 pub fn write_disabled_toggle(home: &Path) {
     let aegis_dir = home.join(".aegis");
     fs::create_dir_all(&aegis_dir).unwrap();

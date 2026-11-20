@@ -485,7 +485,7 @@ fn copy_plugin_hooks(root: &Path) {
     fs::create_dir_all(root.join("hooks")).unwrap();
     for entry in fs::read_dir(source).unwrap() {
         let entry = entry.unwrap();
-        fs::copy(entry.path(), root.join("hooks").join(entry.file_name())).unwrap();
+        support::copy_executable(&entry.path(), &root.join("hooks").join(entry.file_name()));
     }
 }
 
