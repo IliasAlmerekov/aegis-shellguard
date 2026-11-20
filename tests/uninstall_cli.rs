@@ -385,7 +385,7 @@ fn uninstall_detects_homebrew_through_a_symlink_that_matches_the_curl_bindir() {
     fs::create_dir_all(&home).unwrap();
     let cellar_binary = temp.path().join("Cellar/aegis/1.0/bin/aegis");
     fs::create_dir_all(cellar_binary.parent().unwrap()).unwrap();
-    fs::copy(support::aegis_bin(), &cellar_binary).unwrap();
+    support::copy_executable(&support::aegis_bin(), &cellar_binary);
     let bindir = temp.path().join("bin");
     fs::create_dir_all(&bindir).unwrap();
     let link = bindir.join("aegis");
