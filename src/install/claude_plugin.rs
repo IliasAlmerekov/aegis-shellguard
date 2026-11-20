@@ -121,6 +121,7 @@ enum InstalledPlugins {
 const INSTALLED_PLUGINS_FORMAT_VERSION: u64 = 2;
 
 fn read_installed_plugins(home: &Path) -> InstalledPlugins {
+    // Dropped on purpose: returning this error changes the plugin state, so `install-hooks` and `aegis status` would print something else; tracked in #652.
     let Some(installed) = fs::read_to_string(home.join(".claude/plugins/installed_plugins.json"))
         .ok()
         .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
@@ -164,6 +165,7 @@ fn settings_scopes(home: Option<&Path>, cwd: &Path) -> Vec<PathBuf> {
 }
 
 fn read_enabled_plugins(path: &Path) -> Option<serde_json::Map<String, Value>> {
+    // Dropped on purpose: returning this error changes the plugin state, so `install-hooks` and `aegis status` would print something else; tracked in #653.
     let raw = fs::read_to_string(path).ok()?;
     let settings: Value = serde_json::from_str(&raw).ok()?;
     settings.get("enabledPlugins")?.as_object().cloned()
@@ -213,6 +215,7 @@ pub(crate) fn claude_hook_registration(home: Option<&Path>, cwd: &Path) -> Claud
 }
 
 fn has_aegis_managed_pre_tool_use(path: &Path) -> bool {
+    // Dropped on purpose: returning this error changes the `claude code hooks:` line of `aegis status`; tracked in #654.
     let Some(settings) = fs::read_to_string(path)
         .ok()
         .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())

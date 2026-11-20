@@ -165,7 +165,7 @@ fn global_claude_install_errors_on_malformed_settings_json() {
     let err = run_global_claude_install_at_home(Some(home.path()))
         .expect_err("malformed settings should error");
 
-    assert!(err.contains(".claude/settings.json"));
+    assert!(err.to_string().contains(".claude/settings.json"));
 }
 
 #[test]
@@ -192,7 +192,7 @@ fn global_claude_install_errors_on_malformed_nested_bash_hook_entry() {
     let err = run_global_claude_install_at_home(Some(home.path()))
         .expect_err("malformed nested bash hook should error");
 
-    assert!(err.contains("settings.hooks.PreToolUse"));
+    assert!(err.to_string().contains("settings.hooks.PreToolUse"));
 }
 
 // Neither shape below is one Aegis wrote or manages, so neither may block the

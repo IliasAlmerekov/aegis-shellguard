@@ -112,6 +112,19 @@ fn uninstall_refuses_symlinked_data_before_changing_integrations() {
 }
 
 #[test]
+fn uninstall_refuses_a_home_that_is_a_regular_file() {
+    let temp = TempDir::new().unwrap();
+    let home = temp.path().join("home");
+    fs::write(&home, "").unwrap();
+    let output = uninstall(&home, &[]);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("HOME must be a directory other than the filesystem root")
+    );
+}
+
+#[test]
 fn uninstall_rejects_invalid_settings_without_deleting_hook_payloads() {
     let home = TempDir::new().unwrap();
     fs::create_dir_all(home.path().join(".codex/hooks")).unwrap();

@@ -23,6 +23,10 @@ exclude_re = [
     # a working Sandbox; the lifecycle tests in src/watch/sandbox.rs pin which
     # event is emitted.
     "replace emit_watch_sandbox_event with \\(\\)",
+    # The NotFound arm runs only when another process deletes the file between
+    # uninstall's existence check and the removal; the error arm stays in scope.
+    "replace match guard .* with false in remove_if_present",
+    "replace == with != in remove_if_present",
 ]
 
 # Compiled out on the Linux runner, so every mutant there is a false MISSED.

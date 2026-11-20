@@ -1,6 +1,7 @@
 mod claude;
 pub(crate) mod claude_plugin;
 mod codex;
+mod error;
 mod hook;
 mod shell;
 pub(crate) mod uninstall;
@@ -16,6 +17,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value};
 
+pub(crate) use error::InstallError;
 pub(crate) use hook::run_hook;
 pub(crate) use shell::run_setup_shell;
 
@@ -48,29 +50,35 @@ fn executable_content_is_current(existing: &str, mode: u32, expected_content: &s
 /// the existing file already matches byte-for-byte and has the right mode, so
 /// reinstalls are idempotent and never touch a correct file. Shared by the
 /// Codex and Claude installers for their hook shims.
-pub(crate) fn write_executable(path: &Path, content: &str) -> Result<InstallOutcome, String> {
+pub(crate) fn write_executable(path: &Path, content: &str) -> Result<InstallOutcome, InstallError> {
     use std::os::unix::fs::PermissionsExt;
 
     match fs::read_to_string(path) {
         Ok(existing) => {
-            let metadata = fs::metadata(path)
-                .map_err(|err| format!("failed to stat {}: {err}", path.display()))?;
+            let metadata = fs::metadata(path).map_err(InstallError::io("failed to stat", path))?;
             if executable_content_is_current(&existing, metadata.permissions().mode(), content) {
                 return Ok(InstallOutcome::AlreadyPresent);
             }
         }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-        Err(err) => return Err(format!("failed to read {}: {err}", path.display())),
+        Err(source) => {
+            return Err(InstallError::Io {
+                action: "failed to read",
+                path: path.to_path_buf(),
+                source,
+            });
+        }
     }
 
-    let parent = path
-        .parent()
-        .ok_or_else(|| format!("{} has no parent", path.display()))?;
+    let parent = path.parent().ok_or_else(|| InstallError::InvalidPath {
+        path: path.to_path_buf(),
+        reason: "has no parent",
+    })?;
     let tmp = temporary_settings_path(parent);
-    fs::write(&tmp, content).map_err(|e| format!("failed to write {}: {e}", tmp.display()))?;
+    fs::write(&tmp, content).map_err(InstallError::io("failed to write", &tmp))?;
     fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755))
-        .map_err(|e| format!("failed to chmod {}: {e}", tmp.display()))?;
-    fs::rename(&tmp, path).map_err(|e| format!("failed to install {}: {e}", path.display()))?;
+        .map_err(InstallError::io("failed to chmod", &tmp))?;
+    fs::rename(&tmp, path).map_err(InstallError::io("failed to install", path))?;
     Ok(InstallOutcome::Installed)
 }
 
@@ -180,17 +188,17 @@ pub(crate) enum InstallOutcome {
     Skipped,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub(crate) enum AgentInstallResult {
     Installed,
     AlreadyPresent,
     Skipped,
-    Error(String),
+    Error(InstallError),
 }
 
 /// Result of `aegis install-hooks --claude-code`, which first asks whether the
 /// Aegis Claude Code plugin registers the `Hook`s (ADR-047).
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub(crate) enum ClaudeInstallResult {
     /// The plugin is enabled and installed, so the settings install is
     /// skipped.
@@ -206,7 +214,7 @@ pub(crate) enum ClaudeInstallResult {
 }
 
 impl AgentInstallResult {
-    fn from_result(result: Result<InstallOutcome, String>) -> Self {
+    fn from_result(result: Result<InstallOutcome, InstallError>) -> Self {
         match result {
             Ok(InstallOutcome::Installed) => Self::Installed,
             Ok(InstallOutcome::AlreadyPresent) => Self::AlreadyPresent,
@@ -216,7 +224,7 @@ impl AgentInstallResult {
     }
 }
 
-pub(crate) fn agent_dir_exists(agent_dir: &Path) -> Result<bool, String> {
+pub(crate) fn agent_dir_exists(agent_dir: &Path) -> Result<bool, InstallError> {
     if !agent_dir.exists() {
         return Ok(false);
     }
@@ -225,10 +233,9 @@ pub(crate) fn agent_dir_exists(agent_dir: &Path) -> Result<bool, String> {
         return Ok(true);
     }
 
-    Err(format!(
-        "{} exists but is not a directory",
-        agent_dir.display()
-    ))
+    Err(InstallError::NotADirectory {
+        path: agent_dir.to_path_buf(),
+    })
 }
 
 /// Combine two install outcomes into one: `Installed` wins over `Skipped`/`
@@ -292,7 +299,7 @@ pub(crate) fn prune_aegis_managed_hooks(
     canonical_matcher: &str,
     canonical_command: &str,
     is_managed: impl Fn(&str) -> bool,
-) -> Result<(bool, bool), String> {
+) -> Result<(bool, bool), InstallError> {
     let mut pruned_any = false;
     let mut canonical_present = false;
     let mut drop_indices: Vec<usize> = Vec::new();
@@ -318,9 +325,9 @@ pub(crate) fn prune_aegis_managed_hooks(
             // the namespace and fails closed; elsewhere it is a foreign shape
             // left untouched.
             if matcher_is_canonical {
-                return Err(format!(
+                return Err(InstallError::InvalidStructure(format!(
                     "{section_label} matching {canonical_matcher} must contain a hooks array"
-                ));
+                )));
             }
             continue;
         };
@@ -331,25 +338,25 @@ pub(crate) fn prune_aegis_managed_hooks(
             // into this namespace and must be able to safely prune and add.
             for hook in hooks.iter() {
                 let hook_obj = hook.as_object().ok_or_else(|| {
-                    format!(
+                    InstallError::InvalidStructure(format!(
                         "{section_label} matching {canonical_matcher} hooks must contain objects"
-                    )
+                    ))
                 })?;
                 hook_obj
                     .get("type")
                     .and_then(Value::as_str)
                     .ok_or_else(|| {
-                        format!(
+                        InstallError::InvalidStructure(format!(
                             "{section_label} matching {canonical_matcher} hook must contain a string type"
-                        )
+                        ))
                     })?;
                 hook_obj
                     .get("command")
                     .and_then(Value::as_str)
                     .ok_or_else(|| {
-                        format!(
+                        InstallError::InvalidStructure(format!(
                             "{section_label} matching {canonical_matcher} hook must contain a string command"
-                        )
+                        ))
                     })?;
             }
         }
@@ -395,39 +402,46 @@ pub(crate) fn prune_aegis_managed_hooks(
     Ok((pruned_any, canonical_present))
 }
 
-pub(crate) fn load_settings(path: &Path) -> Result<Value, String> {
+pub(crate) fn load_settings(path: &Path) -> Result<Value, InstallError> {
     let raw = match fs::read_to_string(path) {
         Ok(raw) => raw,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             return Ok(Value::Object(Map::new()));
         }
-        Err(err) => return Err(format!("failed to read {}: {err}", path.display())),
+        Err(source) => {
+            return Err(InstallError::Io {
+                action: "failed to read",
+                path: path.to_path_buf(),
+                source,
+            });
+        }
     };
 
     if raw.trim().is_empty() {
         return Ok(Value::Object(Map::new()));
     }
 
-    let value: Value = serde_json::from_str(&raw)
-        .map_err(|err| format!("failed to parse {} as JSON: {err}", path.display()))?;
+    let value: Value = serde_json::from_str(&raw).map_err(|source| InstallError::ParseJson {
+        path: path.to_path_buf(),
+        source,
+    })?;
 
     if value.is_object() {
         Ok(value)
     } else {
-        Err(format!(
-            "{} must contain a top-level JSON object",
-            path.display()
-        ))
+        Err(InstallError::NotJsonObject {
+            path: path.to_path_buf(),
+        })
     }
 }
 
-pub(crate) fn write_settings_atomically(path: &Path, settings: &Value) -> Result<(), String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| format!("{} does not have a parent directory", path.display()))?;
+pub(crate) fn write_settings_atomically(path: &Path, settings: &Value) -> Result<(), InstallError> {
+    let parent = path.parent().ok_or_else(|| InstallError::InvalidPath {
+        path: path.to_path_buf(),
+        reason: "does not have a parent directory",
+    })?;
 
-    fs::create_dir_all(parent)
-        .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
+    fs::create_dir_all(parent).map_err(InstallError::io("failed to create", parent))?;
 
     let temp_path = temporary_settings_path(parent);
     {
@@ -435,23 +449,25 @@ pub(crate) fn write_settings_atomically(path: &Path, settings: &Value) -> Result
             .write(true)
             .create_new(true)
             .open(&temp_path)
-            .map_err(|err| {
-                format!(
-                    "failed to create temporary file {}: {err}",
-                    temp_path.display()
-                )
-            })?;
+            .map_err(InstallError::io(
+                "failed to create temporary file",
+                &temp_path,
+            ))?;
 
-        serde_json::to_writer_pretty(&mut temp, settings)
-            .map_err(|err| format!("failed to serialize JSON for {}: {err}", path.display()))?;
+        serde_json::to_writer_pretty(&mut temp, settings).map_err(|source| {
+            InstallError::SerializeJson {
+                action: "failed to serialize JSON for",
+                path: path.to_path_buf(),
+                source,
+            }
+        })?;
         temp.write_all(b"\n")
-            .map_err(|err| format!("failed to finish writing {}: {err}", path.display()))?;
+            .map_err(InstallError::io("failed to finish writing", path))?;
         temp.sync_all()
-            .map_err(|err| format!("failed to flush {}: {err}", temp_path.display()))?;
+            .map_err(InstallError::io("failed to flush", &temp_path))?;
     }
 
-    fs::rename(&temp_path, path)
-        .map_err(|err| format!("failed to replace {}: {err}", path.display()))?;
+    fs::rename(&temp_path, path).map_err(InstallError::io("failed to replace", path))?;
 
     Ok(())
 }
@@ -488,8 +504,8 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
         })
 }
 
-pub(crate) fn settings_path_global(home_dir: Option<&Path>) -> Result<PathBuf, String> {
-    let home_dir = home_dir.ok_or_else(|| "HOME is not set".to_string())?;
+pub(crate) fn settings_path_global(home_dir: Option<&Path>) -> Result<PathBuf, InstallError> {
+    let home_dir = home_dir.ok_or(InstallError::HomeNotSet)?;
     Ok(home_dir.join(".claude/settings.json"))
 }
 
@@ -506,12 +522,42 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    fn write_executable_reports_a_path_it_cannot_read() {
+        let temp = TempDir::new().unwrap();
+
+        let error = write_executable(temp.path(), "#!/bin/sh\n").unwrap_err();
+
+        assert!(matches!(
+            error,
+            InstallError::Io {
+                action: "failed to read",
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn resolved_aegis_bin_is_non_empty() {
         // The resolved binary path must always yield a non-empty command string
         // (falling back to the bare `aegis` name when current_exe is unavailable)
         // so the rendered hook template always substitutes a real value.
         let bin = resolved_aegis_bin();
         assert!(!bin.is_empty(), "resolved aegis bin must never be empty");
+    }
+
+    #[test]
+    fn agent_dir_exists_reports_not_a_directory_for_a_regular_file() {
+        let dir = TempDir::new().expect("temp dir");
+        let file = dir.path().join(".claude");
+        fs::write(&file, "x").expect("write file");
+
+        let err = agent_dir_exists(&file).expect_err("a file is not an agent directory");
+
+        assert!(matches!(&err, InstallError::NotADirectory { path } if *path == file));
+        assert_eq!(
+            err.to_string(),
+            format!("{} exists but is not a directory", file.display())
+        );
     }
 
     #[test]
@@ -578,7 +624,7 @@ mod tests {
 
         let err = load_settings(&path).unwrap_err();
         assert!(
-            err.contains("failed to parse"),
+            err.to_string().contains("failed to parse"),
             "invalid JSON must produce a parse error, got: {err}"
         );
     }

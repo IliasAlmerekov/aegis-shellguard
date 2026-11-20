@@ -5,8 +5,8 @@ use serde_json::Value;
 
 use super::claude_plugin::{self, ClaudePluginState};
 use super::{
-    AgentInstallResult, ClaudeInstallResult, InstallOutcome, combine_outcomes, load_settings,
-    resolved_aegis_bin, shell_quote, write_executable, write_settings_atomically,
+    AgentInstallResult, ClaudeInstallResult, InstallError, InstallOutcome, combine_outcomes,
+    load_settings, resolved_aegis_bin, shell_quote, write_executable, write_settings_atomically,
 };
 
 const CLAUDE_PRE_TOOL_USE_HOOK_SH: &str = include_str!("../../scripts/hooks/claude-code.sh");
@@ -49,26 +49,30 @@ fn claude_code_plugin_state_for_install(global: bool) -> ClaudePluginState {
     })
 }
 
-fn run_install_inner(global: bool) -> Result<InstallOutcome, String> {
+fn run_install_inner(global: bool) -> Result<InstallOutcome, InstallError> {
     if global {
         let home = super::home_dir();
         return run_global_claude_install_at_home(home.as_deref());
     }
 
-    let cwd = std::env::current_dir()
-        .map_err(|err| format!("failed to resolve current directory: {err}"))?;
+    let cwd = std::env::current_dir().map_err(|source| InstallError::Resolve {
+        what: "failed to resolve current directory",
+        source,
+    })?;
     let settings_path = super::settings_path_local(&cwd);
     run_install_at_path(&settings_path)
 }
 
-fn run_global_claude_install_at_home(home_dir: Option<&Path>) -> Result<InstallOutcome, String> {
+fn run_global_claude_install_at_home(
+    home_dir: Option<&Path>,
+) -> Result<InstallOutcome, InstallError> {
     let settings_path = super::settings_path_global(home_dir)?;
-    let claude_dir = settings_path.parent().ok_or_else(|| {
-        format!(
-            "{} does not have a parent directory",
-            settings_path.display()
-        )
-    })?;
+    let claude_dir = settings_path
+        .parent()
+        .ok_or_else(|| InstallError::InvalidPath {
+            path: settings_path.clone(),
+            reason: "does not have a parent directory",
+        })?;
 
     if !super::agent_dir_exists(claude_dir)? {
         return Ok(InstallOutcome::Skipped);
@@ -77,21 +81,20 @@ fn run_global_claude_install_at_home(home_dir: Option<&Path>) -> Result<InstallO
     run_install_at_path(&settings_path)
 }
 
-fn run_install_at_path(settings_path: &Path) -> Result<InstallOutcome, String> {
+fn run_install_at_path(settings_path: &Path) -> Result<InstallOutcome, InstallError> {
     let mut settings = load_settings(settings_path)?;
 
     // The shim lives next to the settings file in `<settings_dir>/hooks/`.
     // Deriving the dir from the settings path keeps global and `--local`
     // installs on a single code path.
-    let settings_dir = settings_path.parent().ok_or_else(|| {
-        format!(
-            "{} does not have a parent directory",
-            settings_path.display()
-        )
-    })?;
+    let settings_dir = settings_path
+        .parent()
+        .ok_or_else(|| InstallError::InvalidPath {
+            path: settings_path.to_path_buf(),
+            reason: "does not have a parent directory",
+        })?;
     let hooks_dir = settings_dir.join("hooks");
-    fs::create_dir_all(&hooks_dir)
-        .map_err(|err| format!("failed to create {}: {err}", hooks_dir.display()))?;
+    fs::create_dir_all(&hooks_dir).map_err(InstallError::io("failed to create", &hooks_dir))?;
 
     let shim_path = hooks_dir.join("aegis-pre-tool-use.sh");
     let shim_outcome = write_executable(&shim_path, &render_claude_pre_tool_use_hook())?;
@@ -102,15 +105,23 @@ fn run_install_at_path(settings_path: &Path) -> Result<InstallOutcome, String> {
     // Resolve to an absolute path so the registered command is PATH-independent
     // even when install ran from a relative cwd (e.g. a project-local install).
     let hook_command = std::path::absolute(&shim_path)
-        .map_err(|err| format!("failed to resolve absolute hook path: {err}"))?
+        .map_err(|source| InstallError::Resolve {
+            what: "failed to resolve absolute hook path",
+            source,
+        })?
         .to_str()
-        .ok_or_else(|| "hook path is not valid UTF-8".to_string())?
+        .ok_or(InstallError::NotUtf8("hook path is not valid UTF-8"))?
         .to_owned();
 
     let session_hook_command = std::path::absolute(&session_shim_path)
-        .map_err(|err| format!("failed to resolve absolute hook path: {err}"))?
+        .map_err(|source| InstallError::Resolve {
+            what: "failed to resolve absolute hook path",
+            source,
+        })?
         .to_str()
-        .ok_or_else(|| "session-start hook path is not valid UTF-8".to_string())?
+        .ok_or(InstallError::NotUtf8(
+            "session-start hook path is not valid UTF-8",
+        ))?
         .to_owned();
 
     let pre_tool_use_outcome = apply_installation(&mut settings, &hook_command)?;
@@ -130,20 +141,26 @@ fn run_install_at_path(settings_path: &Path) -> Result<InstallOutcome, String> {
 fn apply_session_start_installation(
     settings: &mut Value,
     hook_command: &str,
-) -> Result<InstallOutcome, String> {
-    let root = settings
-        .as_object_mut()
-        .ok_or_else(|| "settings.json must contain a top-level JSON object".to_string())?;
+) -> Result<InstallOutcome, InstallError> {
+    let root = settings.as_object_mut().ok_or_else(|| {
+        InstallError::InvalidStructure("settings.json must contain a top-level JSON object".into())
+    })?;
     let hooks = root
         .entry("hooks".to_string())
         .or_insert_with(|| Value::Object(serde_json::Map::new()))
         .as_object_mut()
-        .ok_or_else(|| "settings.hooks must be a JSON object".to_string())?;
+        .ok_or_else(|| {
+            InstallError::InvalidStructure("settings.hooks must be a JSON object".into())
+        })?;
     let session_start = hooks
         .entry("SessionStart".to_string())
         .or_insert_with(|| Value::Array(Vec::new()))
         .as_array_mut()
-        .ok_or_else(|| "settings.hooks.SessionStart must be a JSON array".to_string())?;
+        .ok_or_else(|| {
+            InstallError::InvalidStructure(
+                "settings.hooks.SessionStart must be a JSON array".into(),
+            )
+        })?;
 
     // Prune-then-add: drop every aegis-managed SessionStart registration that
     // is not the canonical `startup|resume` one (including a stale entry under
@@ -187,24 +204,27 @@ fn render_claude_session_start_hook() -> String {
     CLAUDE_SESSION_START_HOOK_SH.replace("__AEGIS_BIN__", &shell_quote(&resolved_aegis_bin()))
 }
 
-fn apply_installation(settings: &mut Value, hook_command: &str) -> Result<InstallOutcome, String> {
-    let root = settings
-        .as_object_mut()
-        .ok_or_else(|| "settings.json must contain a top-level JSON object".to_string())?;
+fn apply_installation(
+    settings: &mut Value,
+    hook_command: &str,
+) -> Result<InstallOutcome, InstallError> {
+    let root = settings.as_object_mut().ok_or_else(|| {
+        InstallError::InvalidStructure("settings.json must contain a top-level JSON object".into())
+    })?;
 
     let hooks = root
         .entry("hooks".to_string())
         .or_insert_with(|| Value::Object(serde_json::Map::new()));
-    let hooks = hooks
-        .as_object_mut()
-        .ok_or_else(|| "settings.hooks must be a JSON object".to_string())?;
+    let hooks = hooks.as_object_mut().ok_or_else(|| {
+        InstallError::InvalidStructure("settings.hooks must be a JSON object".into())
+    })?;
 
     let pre_tool_use = hooks
         .entry("PreToolUse".to_string())
         .or_insert_with(|| Value::Array(Vec::new()));
-    let pre_tool_use = pre_tool_use
-        .as_array_mut()
-        .ok_or_else(|| "settings.hooks.PreToolUse must be a JSON array".to_string())?;
+    let pre_tool_use = pre_tool_use.as_array_mut().ok_or_else(|| {
+        InstallError::InvalidStructure("settings.hooks.PreToolUse must be a JSON array".into())
+    })?;
 
     // Prune-then-add: remove every aegis-managed legacy Bash registration (the
     // bare `aegis hook`, the legacy `aegis-rewrite.sh` file, and any stale
