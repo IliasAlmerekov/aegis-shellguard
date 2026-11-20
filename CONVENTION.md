@@ -160,13 +160,16 @@ Architectural constraints:
 
 - Library code uses typed errors via `thiserror` and `AegisError`.
 - `anyhow` is allowed only in CLI glue or top-level application wiring when it simplifies propagation.
-- `unwrap()` and `expect()` are forbidden in non-test production paths except for explicit,
-  documented startup-time panics where panic is the intended contract. Every library and
-  binary crate root enforces this with
-  `#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]`, and
-  `tests/panic_lint_guard.rs` fails when a crate root lacks the attribute. A sanctioned startup
-  panic carries `#[expect(clippy::expect_used, reason = "...")]` on the smallest item or
-  statement. Use `expect`, not `allow`, so a stale marker fails the build.
+- Production code returns an error or makes the failing case unrepresentable (an enum with an
+  exhaustive `match`, a value matched once and passed on) instead of calling `unwrap()`,
+  `expect()`, `panic!` or `unreachable!`. Every library and binary crate root enforces this with
+  `#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable))]`,
+  and `tests/panic_lint_guard.rs` fails when a crate root lacks the attribute. An exception is an
+  explicit, documented startup-time panic where panic is the intended contract, or a
+  `cfg(debug_assertions)` check. It carries `#[expect(clippy::expect_used, reason = "...")]` or
+  `#[expect(clippy::panic, reason = "...")]` on the smallest item or statement. Use `expect`, not
+  `allow`, so a stale marker fails the build. Build scripts are not crate roots and stay outside
+  the lint.
 - Errors must not be silently discarded in production logic.
 - Do not convert actionable errors into `None` or a silent fallback unless that behavior is
   intentional, documented, and tested.

@@ -1,12 +1,15 @@
-//! Every library and binary crate root must deny `unwrap` and `expect` outside
-//! tests. A new crate or `[[bin]]` without the attribute fails here.
+//! Every library and binary crate root must deny `unwrap`, `expect`, `panic!`
+//! and `unreachable!` outside tests. A new crate or `[[bin]]` without the attribute fails here.
 
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-const REQUIRED_ATTRIBUTE: &str =
-    "#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]";
+const REQUIRED_ATTRIBUTE: &str = "#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable))]";
+
+fn without_whitespace(text: &str) -> String {
+    text.split_whitespace().collect()
+}
 
 fn cargo_metadata() -> serde_json::Value {
     let output = Command::new(env!("CARGO"))
@@ -53,7 +56,7 @@ fn lib_and_bin_roots(metadata: &serde_json::Value) -> Vec<String> {
 }
 
 #[test]
-fn every_lib_and_bin_root_denies_unwrap_and_expect() {
+fn every_lib_and_bin_root_denies_unwrap_expect_panic_and_unreachable() {
     let roots = lib_and_bin_roots(&cargo_metadata());
     assert!(
         !roots.is_empty(),
@@ -63,10 +66,11 @@ fn every_lib_and_bin_root_denies_unwrap_and_expect() {
     let missing: Vec<&str> = roots
         .iter()
         .filter(|root| {
-            !fs::read_to_string(Path::new(root))
-                .expect("crate root should be readable")
-                .lines()
-                .any(|line| line.trim() == REQUIRED_ATTRIBUTE)
+            // rustfmt wraps the attribute over several lines, so compare without whitespace.
+            !without_whitespace(
+                &fs::read_to_string(Path::new(root)).expect("crate root should be readable"),
+            )
+            .contains(&without_whitespace(REQUIRED_ATTRIBUTE))
         })
         .map(String::as_str)
         .collect();

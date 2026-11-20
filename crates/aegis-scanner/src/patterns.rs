@@ -157,11 +157,11 @@ impl PatternSet {
         //    A rule that fails its own examples is a bug and must be fixed before the binary ships.
         #[cfg(debug_assertions)]
         for rule in &prefix_rules {
+            #[expect(
+                clippy::panic,
+                reason = "debug-only self-check: a built-in rule that fails its own examples must not ship"
+            )]
             if let Err(e) = rule.validate_examples() {
-                #[expect(
-                    clippy::panic,
-                    reason = "debug-only self-check: a built-in rule that fails its own examples must not ship"
-                )]
                 panic!(
                     "built-in prefix rule {} failed example validation: {e}",
                     rule.id

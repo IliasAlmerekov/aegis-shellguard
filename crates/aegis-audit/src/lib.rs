@@ -4,7 +4,15 @@
 //! `~/.aegis/audit.jsonl`. Each entry is a single JSON line. Entries can be
 //! read back via [`AuditLogger::read_all`] / [`AuditLogger::query`], and the
 //! integrity chain can be verified with [`AuditLogger::verify_integrity`].
-#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
 
 pub mod error;
 pub mod ledger;

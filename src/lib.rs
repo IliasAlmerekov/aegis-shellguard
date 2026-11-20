@@ -1,5 +1,13 @@
 #![deny(missing_docs)]
-#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
 
 //! Aegis — a lightweight Rust CLI that acts as a `$SHELL` proxy,
 //! intercepting AI agent commands and requiring human confirmation before

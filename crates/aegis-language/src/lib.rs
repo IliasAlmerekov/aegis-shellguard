@@ -19,7 +19,15 @@
 //! Iteration 0 establishes only the grammar-manifest qualification contract
 //! and the crate skeleton. The worker, adapters, and runtime dependencies
 //! land in later iterations of the L1 plan.
-#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
 
 pub mod language;
 pub mod languages;
