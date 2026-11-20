@@ -7,107 +7,21 @@ use aegis_config::{
 };
 use aegis_types::{RecordedSnapshot, SnapshotPolicy, SnapshotRecord};
 
+mod builtin;
 mod coverage;
 pub use coverage::SnapshotCoverage;
 use coverage::{COMMAND_READINESS_BUDGET, attempt};
 
+use crate::SnapshotPlugin;
 use crate::error::SnapshotError;
 use crate::liveness::{LIVENESS_TIMEOUT, Liveness};
 use crate::paths::resolve_snapshots_dir;
 use crate::readiness::{ATTEMPT_TIMEOUT, ArtifactReadiness};
 use crate::retention::{PrunableRecord, prunable_records_newest_first};
-use crate::{
-    DockerPlugin, GitPlugin, MysqlPlugin, PostgresPlugin, SnapshotPlugin, SqlitePlugin,
-    SupabasePlugin,
-};
-
-/// The snapshot providers built into this binary, in registry order.
-#[derive(Clone, Copy)]
-enum BuiltinProvider {
-    Git,
-    Docker,
-    Postgres,
-    Mysql,
-    Sqlite,
-    Supabase,
-}
-
-impl BuiltinProvider {
-    const ALL: [Self; 6] = [
-        Self::Git,
-        Self::Docker,
-        Self::Postgres,
-        Self::Mysql,
-        Self::Sqlite,
-        Self::Supabase,
-    ];
-
-    const fn name(self) -> &'static str {
-        match self {
-            Self::Git => "git",
-            Self::Docker => "docker",
-            Self::Postgres => "postgres",
-            Self::Mysql => "mysql",
-            Self::Sqlite => "sqlite",
-            Self::Supabase => "supabase",
-        }
-    }
-
-    /// Whether `auto_snapshot_*` config enables this provider under the selective policy.
-    fn auto_snapshot_enabled(self, config: &SnapshotRegistryConfig) -> bool {
-        match self {
-            Self::Git => config.auto_snapshot_git,
-            Self::Docker => config.auto_snapshot_docker,
-            Self::Postgres => config.auto_snapshot_postgres,
-            Self::Mysql => config.auto_snapshot_mysql,
-            Self::Sqlite => config.auto_snapshot_sqlite,
-            Self::Supabase => config.auto_snapshot_supabase,
-        }
-    }
-
-    fn materialize(self, config: &SnapshotRegistryConfig) -> Box<dyn SnapshotPlugin> {
-        match self {
-            Self::Git => Box::new(GitPlugin),
-            Self::Docker => Box::new(DockerPlugin::new().with_scope(config.docker_scope.clone())),
-            Self::Postgres => Box::new(PostgresPlugin::new(
-                config.postgres_snapshot.database.clone(),
-                config.postgres_snapshot.host.clone(),
-                config.postgres_snapshot.port,
-                config.postgres_snapshot.user.clone(),
-                config.snapshots_dir.clone(),
-            )),
-            Self::Mysql => Box::new(MysqlPlugin::new(
-                config.mysql_snapshot.database.clone(),
-                config.mysql_snapshot.host.clone(),
-                config.mysql_snapshot.port,
-                config.mysql_snapshot.user.clone(),
-                config.snapshots_dir.clone(),
-            )),
-            Self::Sqlite => Box::new(SqlitePlugin::new(
-                PathBuf::from(&config.sqlite_snapshot_path),
-                config.snapshots_dir.clone(),
-            )),
-            Self::Supabase => Box::new(SupabasePlugin::new(
-                config.supabase_snapshot.clone(),
-                config.snapshots_dir.clone(),
-            )),
-        }
-    }
-}
-
-const BUILTIN_SNAPSHOT_PROVIDER_NAMES: [&str; BuiltinProvider::ALL.len()] = {
-    let mut names = [""; BuiltinProvider::ALL.len()];
-    let mut i = 0;
-    while i < names.len() {
-        names[i] = BuiltinProvider::ALL[i].name();
-        i += 1;
-    }
-    names
-};
 
 /// Return the names of snapshot providers built into this binary/runtime.
 pub fn available_provider_names() -> &'static [&'static str] {
-    &BUILTIN_SNAPSHOT_PROVIDER_NAMES
+    &builtin::BUILTIN_SNAPSHOT_PROVIDER_NAMES
 }
 
 /// Holds the runtime snapshot provider set used for snapshot and rollback flows.
@@ -238,14 +152,14 @@ impl SnapshotRegistry {
         match config.snapshot_policy {
             SnapshotPolicy::None => { /* no plugins */ }
             SnapshotPolicy::Selective => {
-                plugins = BuiltinProvider::ALL
+                plugins = builtin::BuiltinProvider::ALL
                     .into_iter()
                     .filter(|provider| provider.auto_snapshot_enabled(config))
                     .map(|provider| provider.materialize(config))
                     .collect();
             }
             SnapshotPolicy::Full => {
-                plugins = BuiltinProvider::ALL
+                plugins = builtin::BuiltinProvider::ALL
                     .into_iter()
                     .map(|provider| provider.materialize(config))
                     .collect();
