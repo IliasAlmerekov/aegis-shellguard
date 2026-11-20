@@ -54,7 +54,6 @@ async fn unavailable_cwd_denies_watch_and_audits_recovery_degradation() {
     context.set_snapshot_registry_for_tests(SnapshotRegistry::new_with_plugins(vec![Box::new(
         ForbiddenPlugin,
     )]));
-    let context = context;
     let PlanningOutcome::Planned(shell_plan) = plan_with_context_async(
         &context,
         PlanningRequest {

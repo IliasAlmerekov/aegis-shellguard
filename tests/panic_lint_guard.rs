@@ -11,8 +11,7 @@ fn without_whitespace(text: &str) -> String {
     text.split_whitespace().collect()
 }
 
-/// rustfmt wraps the attribute over several lines, so the match ignores whitespace.
-/// Comment lines are dropped first, so a commented-out attribute does not count.
+// rustfmt wraps the attribute, so whitespace is ignored; a commented-out attribute must not count.
 fn carries_required_attribute(source: &str) -> bool {
     let code: String = source
         .lines()

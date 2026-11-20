@@ -41,7 +41,6 @@ impl BuiltinProvider {
         }
     }
 
-    /// Whether `auto_snapshot_*` config enables this provider under the selective policy.
     pub(super) fn auto_snapshot_enabled(self, config: &SnapshotRegistryConfig) -> bool {
         match self {
             Self::Git => config.auto_snapshot_git,
