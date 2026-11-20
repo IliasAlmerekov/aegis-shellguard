@@ -266,10 +266,16 @@ jobs:
 
   # Mutation testing is slow, so it only runs where a surviving mutant matters:
   # PRs whose tier (highest over the changed files) is TRUNK or BRANCH.
+  # A root-crate mutant runs the whole crate's tests (about 80 s), so the
+  # mutants are split over shards to finish a large diff within the timeout.
   mutants:
-    name: Mutants (changed code)
+    name: Mutants (changed code, shard ${{ matrix.shard }}/4)
     runs-on: ${{ needs.config.outputs.linux_runner }}
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     needs: config
     if: >-
       needs.config.outputs.packages != '' &&
@@ -315,6 +321,7 @@ jobs:
         env:
           BASE: ${{ needs.config.outputs.base }}
           PACKAGES: ${{ needs.config.outputs.packages }}
+          SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail
           git diff --no-color "$BASE" HEAD -- '*.rs' > pr.diff
@@ -329,12 +336,13 @@ jobs:
           # cargo-mutants copies the tree without .git by default, and tests
           # that call `git ls-files` (audit_integrity_wording) then fail the
           # baseline before any mutant runs.
-          cargo mutants --in-diff pr.diff "${args[@]}" --no-shuffle --copy-vcs=true
+          cargo mutants --in-diff pr.diff "${args[@]}" --no-shuffle --copy-vcs=true \
+            --shard "$SHARD/4" --sharding round-robin
 
       - name: Upload mutants.out
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: mutants-out
+          name: mutants-out-${{ matrix.shard }}
           path: mutants.out
           if-no-files-found: ignore
