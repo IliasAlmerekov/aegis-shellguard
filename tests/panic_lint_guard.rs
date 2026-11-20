@@ -11,6 +11,16 @@ fn without_whitespace(text: &str) -> String {
     text.split_whitespace().collect()
 }
 
+/// rustfmt wraps the attribute over several lines, so the match ignores whitespace.
+/// Comment lines are dropped first, so a commented-out attribute does not count.
+fn carries_required_attribute(source: &str) -> bool {
+    let code: String = source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect();
+    without_whitespace(&code).contains(&without_whitespace(REQUIRED_ATTRIBUTE))
+}
+
 fn cargo_metadata() -> serde_json::Value {
     let output = Command::new(env!("CARGO"))
         .args([
@@ -66,11 +76,9 @@ fn every_lib_and_bin_root_denies_unwrap_expect_panic_and_unreachable() {
     let missing: Vec<&str> = roots
         .iter()
         .filter(|root| {
-            // rustfmt wraps the attribute over several lines, so compare without whitespace.
-            !without_whitespace(
+            !carries_required_attribute(
                 &fs::read_to_string(Path::new(root)).expect("crate root should be readable"),
             )
-            .contains(&without_whitespace(REQUIRED_ATTRIBUTE))
         })
         .map(String::as_str)
         .collect();
@@ -80,4 +88,17 @@ fn every_lib_and_bin_root_denies_unwrap_expect_panic_and_unreachable() {
         "crate roots missing `{REQUIRED_ATTRIBUTE}`:\n{}",
         missing.join("\n")
     );
+}
+
+#[test]
+fn an_attribute_inside_a_comment_does_not_count() {
+    assert!(carries_required_attribute(&format!(
+        "{REQUIRED_ATTRIBUTE}\n"
+    )));
+    assert!(!carries_required_attribute(&format!(
+        "// {REQUIRED_ATTRIBUTE}\n"
+    )));
+    assert!(!carries_required_attribute(&format!(
+        "//! {REQUIRED_ATTRIBUTE}\n"
+    )));
 }
