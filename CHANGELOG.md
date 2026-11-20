@@ -8,6 +8,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 ## [Unreleased]
 
 - Changed: the install module's errors are a typed `InstallError` instead of `String`; CLI messages and exit codes are unchanged (#621).
+- Fixed: the root integration tests that copy an executable and run it copy it through `cp`, so a parallel `fork()` can no longer make them fail with `ETXTBSY` (#659).
 - Changed: the `Mutants (changed code)` PR check runs as 4 round-robin shards, so a diff with about 70 root-crate mutants finishes within the 90-minute job timeout (#657).
 
 - Removed: the caller-less legacy sandbox path in `aegis-sandbox` (`SandboxExecutor`, `SandboxProfile`, `SandboxResult` and the per-platform `run()`); its tests that covered live confinement now go through `prepare_for_spawn` (#619).
