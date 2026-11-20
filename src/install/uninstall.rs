@@ -141,11 +141,7 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, InstallError> {
         write_existing_file(path, content)?;
     }
     for path in payloads {
-        match fs::remove_file(&path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(InstallError::io("cannot remove", &path)(error)),
-        }
+        remove_if_present(&path).map_err(InstallError::io("cannot remove", &path))?;
     }
     let data_message = if args.purge_data {
         match fs::remove_dir_all(&data) {
@@ -355,14 +351,21 @@ fn write_existing_file(path: &Path, content: &str) -> Result<(), InstallError> {
     let Err(original) = result else {
         return Ok(());
     };
-    match fs::remove_file(&temporary) {
+    match remove_if_present(&temporary) {
         Ok(()) => Err(original),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Err(original),
         Err(source) => Err(InstallError::CleanupFailed {
             original: Box::new(original),
             path: temporary,
             source,
         }),
+    }
+}
+
+/// Removes `path`, treating a file that is already gone as removed.
+fn remove_if_present(path: &Path) -> std::io::Result<()> {
+    match fs::remove_file(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        result => result,
     }
 }
 
@@ -475,5 +478,86 @@ mod tests {
             error.to_string(),
             "cannot replace /h/settings.json: disk full; cannot clean up /h/.aegis-1.tmp: permission denied"
         );
+    }
+
+    #[test]
+    fn resolve_rc_parent_keeps_a_path_whose_directory_is_missing() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let rc = temp.path().join("missing/.bashrc");
+
+        assert_eq!(resolve_rc_parent(&rc).unwrap(), rc);
+    }
+
+    #[test]
+    fn resolve_rc_parent_reports_a_directory_it_cannot_resolve() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let file = temp.path().join("file");
+        fs::write(&file, "").unwrap();
+
+        let error = resolve_rc_parent(&file.join("sub/.bashrc")).unwrap_err();
+
+        assert!(matches!(
+            error,
+            InstallError::Io {
+                action: "cannot resolve",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn reject_symlinks_accepts_a_missing_path() {
+        let temp = tempfile::TempDir::new().unwrap();
+
+        assert!(reject_symlinks(&temp.path().join("missing"), "hint").is_ok());
+    }
+
+    #[test]
+    fn reject_symlinks_reports_an_ancestor_it_cannot_inspect() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let file = temp.path().join("file");
+        fs::write(&file, "").unwrap();
+
+        let error = reject_symlinks(&file.join("child"), "hint").unwrap_err();
+
+        assert!(matches!(
+            error,
+            InstallError::Io {
+                action: "cannot inspect",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn read_optional_reports_a_path_it_cannot_read() {
+        let temp = tempfile::TempDir::new().unwrap();
+
+        let error = read_optional(temp.path()).unwrap_err();
+
+        assert!(matches!(
+            error,
+            InstallError::Io {
+                action: "cannot read",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn has_managed_block_rejects_an_end_marker_without_a_begin_marker() {
+        let content = format!("keep\n{}\n", super::super::shell::END_MARKER);
+
+        assert!(matches!(
+            has_managed_block(&content),
+            Err(InstallError::MalformedShellBlock)
+        ));
+    }
+
+    #[test]
+    fn remove_if_present_reports_a_path_it_cannot_remove() {
+        let temp = tempfile::TempDir::new().unwrap();
+
+        assert!(remove_if_present(temp.path()).is_err());
     }
 }

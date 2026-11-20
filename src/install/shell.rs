@@ -252,6 +252,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn read_text_if_exists_reports_a_path_it_cannot_read() {
+        let temp = tempfile::TempDir::new().unwrap();
+
+        let error = read_text_if_exists(temp.path()).unwrap_err();
+
+        assert!(matches!(
+            error,
+            InstallError::Io {
+                action: "failed to read",
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn managed_block_contains_real_shell_and_aegis_bin() {
         let block = managed_block(Path::new("/bin/zsh"), Path::new("/usr/local/bin/aegis"));
 

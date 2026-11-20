@@ -522,6 +522,21 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    fn write_executable_reports_a_path_it_cannot_read() {
+        let temp = TempDir::new().unwrap();
+
+        let error = write_executable(temp.path(), "#!/bin/sh\n").unwrap_err();
+
+        assert!(matches!(
+            error,
+            InstallError::Io {
+                action: "failed to read",
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn resolved_aegis_bin_is_non_empty() {
         // The resolved binary path must always yield a non-empty command string
         // (falling back to the bare `aegis` name when current_exe is unavailable)
