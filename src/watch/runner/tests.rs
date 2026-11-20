@@ -6,7 +6,7 @@ use serde_json::Value;
 use tempfile::TempDir;
 
 use super::{audit_cwd, run_watch_plan_with_prompts, watch_execution_cwd};
-use crate::planning::{CwdState, PlanningOutcome, PlanningRequest, PreparedPlanner};
+use crate::planning::{CwdState, PlanningOutcome, PlanningRequest, plan_with_context_async};
 use crate::runtime::RuntimeContext;
 use crate::watch::protocol::InputFrame;
 use aegis_config::AegisConfig;
@@ -29,11 +29,11 @@ fn watch_execution_cwd_is_unavailable_when_unavailable() {
     assert_eq!(watch_execution_cwd(&cwd_state), None);
 }
 
-/// Build a [`PreparedPlanner`] whose snapshot registry is pinned to `GitPlugin`
+/// Build a [`RuntimeContext`] whose snapshot registry is pinned to `GitPlugin`
 /// only, so it cannot pick up a `docker`-applicable state from whatever
 /// containers happen to be running on the host (see
 /// `set_snapshot_registry_for_tests`).
-fn prepared_with_audit_path(audit_path: PathBuf) -> PreparedPlanner {
+fn prepared_with_audit_path(audit_path: PathBuf) -> RuntimeContext {
     let context = RuntimeContext::new_with_audit_path(
         AegisConfig::default(),
         tokio::runtime::Handle::current(),
@@ -43,7 +43,7 @@ fn prepared_with_audit_path(audit_path: PathBuf) -> PreparedPlanner {
     context.set_snapshot_registry_for_tests(SnapshotRegistry::new_with_plugins(vec![Box::new(
         GitPlugin,
     )]));
-    PreparedPlanner::Ready(Box::new(context))
+    context
 }
 
 /// Pinned to an empty registry, not `GitPlugin`-only: this test asserts what
@@ -52,14 +52,14 @@ fn prepared_with_audit_path(audit_path: PathBuf) -> PreparedPlanner {
 /// ADR-039 addendum for why a `GitPlugin`-only registry was suspected (but not
 /// confirmed) to still race under process/FD pressure via
 /// `GitPlugin::is_applicable`'s fail-open branch.
-fn prepared_with_optional_sandbox(audit_path: PathBuf) -> PreparedPlanner {
+fn prepared_with_optional_sandbox(audit_path: PathBuf) -> RuntimeContext {
     let mut config = AegisConfig::default();
     config.sandbox.enabled = true;
     let context =
         RuntimeContext::new_with_audit_path(config, tokio::runtime::Handle::current(), audit_path)
             .unwrap();
     context.set_snapshot_registry_for_tests(SnapshotRegistry::new_with_plugins(vec![]));
-    PreparedPlanner::Ready(Box::new(context))
+    context
 }
 
 /// A snapshot plugin that always applies and always succeeds.
@@ -149,7 +149,7 @@ impl aegis_snapshot::SnapshotPlugin for FailingPlugin {
 /// Pin the registry to one plugin that succeeds and one that fails, so the
 /// snapshot pass produces exactly the partial coverage of issue #312: a usable
 /// snapshot record next to an applicable plugin that never produced one.
-fn prepared_with_partial_coverage(audit_path: PathBuf) -> PreparedPlanner {
+fn prepared_with_partial_coverage(audit_path: PathBuf) -> RuntimeContext {
     let context = RuntimeContext::new_with_audit_path(
         AegisConfig::default(),
         tokio::runtime::Handle::current(),
@@ -160,30 +160,32 @@ fn prepared_with_partial_coverage(audit_path: PathBuf) -> PreparedPlanner {
         Box::new(SucceedingPlugin),
         Box::new(FailingPlugin),
     ]));
-    PreparedPlanner::Ready(Box::new(context))
+    context
 }
 
 async fn effect_opaque_plan(
-    prepared: &PreparedPlanner,
+    prepared: &RuntimeContext,
     workspace: &TempDir,
 ) -> (InputFrame, crate::planning::InterceptionPlan) {
     plan_for_command(prepared, workspace, "sh ./run.sh").await
 }
 
 async fn plan_for_command(
-    prepared: &PreparedPlanner,
+    prepared: &RuntimeContext,
     workspace: &TempDir,
     command: &str,
 ) -> (InputFrame, crate::planning::InterceptionPlan) {
     let cwd = workspace.path().to_string_lossy().into_owned();
-    let outcome = prepared
-        .plan_async(PlanningRequest {
+    let outcome = plan_with_context_async(
+        prepared,
+        PlanningRequest {
             command,
             cwd_state: CwdState::Resolved(workspace.path().to_path_buf()),
             transport: ExecutionTransport::Watch,
             ci_detected: false,
-        })
-        .await;
+        },
+    )
+    .await;
     let PlanningOutcome::Planned(plan) = outcome else {
         panic!("expected an interception plan");
     };
@@ -447,7 +449,7 @@ fn prepared_with_allowlisted_danger(
     workspace: &TempDir,
     audit_path: PathBuf,
     plugins: Vec<Box<dyn aegis_snapshot::SnapshotPlugin>>,
-) -> PreparedPlanner {
+) -> RuntimeContext {
     let mut config = AegisConfig::default();
     config.allowlist_override_level = aegis_types::AllowlistOverrideLevel::Danger;
     config.allowlist.push(aegis_config::AllowlistRule {
@@ -461,7 +463,7 @@ fn prepared_with_allowlisted_danger(
         RuntimeContext::new_with_audit_path(config, tokio::runtime::Handle::current(), audit_path)
             .unwrap();
     context.set_snapshot_registry_for_tests(SnapshotRegistry::new_with_plugins(plugins));
-    PreparedPlanner::Ready(Box::new(context))
+    context
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -592,7 +594,7 @@ async fn watch_confirmed_danger_with_a_failed_snapshot_skips_the_recovery_prompt
 fn prepared_with_default_config(
     audit_path: PathBuf,
     plugins: Vec<Box<dyn aegis_snapshot::SnapshotPlugin>>,
-) -> PreparedPlanner {
+) -> RuntimeContext {
     let context = RuntimeContext::new_with_audit_path(
         AegisConfig::default(),
         tokio::runtime::Handle::current(),
@@ -600,7 +602,7 @@ fn prepared_with_default_config(
     )
     .unwrap();
     context.set_snapshot_registry_for_tests(SnapshotRegistry::new_with_plugins(plugins));
-    PreparedPlanner::Ready(Box::new(context))
+    context
 }
 
 /// The audit entry's `snapshot_attempts` as `(plugin, readiness)` pairs.

@@ -65,20 +65,20 @@ fn prepared_with_snapshot_policy(
     audit_path: PathBuf,
     policy: SnapshotPolicy,
     plugins: Vec<Box<dyn aegis_snapshot::SnapshotPlugin>>,
-) -> PreparedPlanner {
+) -> RuntimeContext {
     let mut config = AegisConfig::default();
     config.snapshot_policy = policy;
     let context =
         RuntimeContext::new_with_audit_path(config, tokio::runtime::Handle::current(), audit_path)
             .unwrap();
     context.set_snapshot_registry_for_tests(SnapshotRegistry::new_with_plugins(plugins));
-    PreparedPlanner::Ready(Box::new(context))
+    context
 }
 
 /// Run `command` with a human who always answers `ApproveAlways`; returns the
 /// ordered `override:` and `persist:` events.
 async fn run_approve_always(
-    prepared: &PreparedPlanner,
+    prepared: &RuntimeContext,
     workspace: &TempDir,
     command: &str,
     recovery: RecoveryPromptDecision,
@@ -327,14 +327,16 @@ async fn unavailable_cwd_never_persists_watch_rules() {
             if decision == PromptDecision::DenyAlways {
                 eprintln!("deny-always begins");
             }
-            let PlanningOutcome::Planned(plan) = prepared
-                .plan_async(PlanningRequest {
+            let PlanningOutcome::Planned(plan) = plan_with_context_async(
+                &prepared,
+                PlanningRequest {
                     command: WARN,
                     cwd_state: CwdState::Unavailable,
                     transport: ExecutionTransport::Watch,
                     ci_detected: false,
-                })
-                .await
+                },
+            )
+            .await
             else {
                 panic!("expected plan")
             };

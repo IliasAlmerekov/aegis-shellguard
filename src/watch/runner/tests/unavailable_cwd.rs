@@ -54,15 +54,17 @@ async fn unavailable_cwd_denies_watch_and_audits_recovery_degradation() {
     context.set_snapshot_registry_for_tests(SnapshotRegistry::new_with_plugins(vec![Box::new(
         ForbiddenPlugin,
     )]));
-    let prepared = PreparedPlanner::Ready(Box::new(context));
-    let PlanningOutcome::Planned(shell_plan) = prepared
-        .plan_async(PlanningRequest {
+    let prepared = context;
+    let PlanningOutcome::Planned(shell_plan) = plan_with_context_async(
+        &prepared,
+        PlanningRequest {
             command: "rm -rf target",
             cwd_state: CwdState::Unavailable,
             transport: ExecutionTransport::Shell,
             ci_detected: false,
-        })
-        .await
+        },
+    )
+    .await
     else {
         panic!("expected shell plan")
     };
@@ -72,14 +74,16 @@ async fn unavailable_cwd_denies_watch_and_audits_recovery_degradation() {
             .applicable_snapshot_plugins()
             .is_empty()
     );
-    let PlanningOutcome::Planned(plan) = prepared
-        .plan_async(PlanningRequest {
+    let PlanningOutcome::Planned(plan) = plan_with_context_async(
+        &prepared,
+        PlanningRequest {
             command: "rm -rf target",
             cwd_state: CwdState::Unavailable,
             transport: ExecutionTransport::Watch,
             ci_detected: false,
-        })
-        .await
+        },
+    )
+    .await
     else {
         panic!("expected plan")
     };
