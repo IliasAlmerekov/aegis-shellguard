@@ -150,6 +150,7 @@ pub fn show_confirmation_with_decision<R: BufRead, W: Write>(
 
     let no_snapshot = explanation.context.no_rollback_disclosure.is_some();
     if let Some(disclosure) = &explanation.context.no_rollback_disclosure {
+        // Dropped on purpose: terminal writes have no fallback output channel, and non-safe paths deny or fail closed on read.
         let _ = writeln!(output, "{disclosure}");
     }
 

@@ -12,6 +12,9 @@ use super::shared::{
     block_reason_text, confirmation_reason_text, pattern_source_label, print_command_line,
 };
 
+/// Print the hard-block notice for a catastrophic command. Dropped `queue!`
+/// and `flush` results are ignored because the command is already denied and
+/// terminal writes have no fallback output channel.
 pub(super) fn render_block<W: Write>(
     assessment: &Assessment,
     explanation: &CommandExplanation,
@@ -66,6 +69,8 @@ pub(super) fn render_block<W: Write>(
 ///
 /// We use Yellow (not Red) to distinguish from Block, which is truly
 /// catastrophic.  This denial is policy-driven, not a safety absolute.
+/// Dropped `queue!` and `flush` results are ignored because the command is
+/// already denied and terminal writes have no fallback output channel.
 pub(super) fn render_noninteractive_denial<W: Write>(
     assessment: &Assessment,
     explanation: &CommandExplanation,
@@ -109,6 +114,8 @@ pub(super) fn render_noninteractive_denial<W: Write>(
 ///
 /// Unlike an ordinary Warn/Danger denial, this path must not suggest an
 /// allowlist: ADR-022 §5 permits only a non-persistable one-time decision.
+/// Dropped `queue!` and `flush` results are ignored because the command is
+/// already denied and terminal writes have no fallback output channel.
 pub(super) fn render_noninteractive_analysis_denial<W: Write>(
     assessment: &Assessment,
     explanation: &CommandExplanation,
@@ -138,6 +145,9 @@ pub(super) fn render_noninteractive_analysis_denial<W: Write>(
     let _ = out.flush();
 }
 
+/// Print the policy-block notice. Dropped `queue!` and `flush` results are
+/// ignored because the command is already denied and terminal writes have no
+/// fallback output channel.
 pub(crate) fn render_policy_block<W: Write>(
     assessment: &Assessment,
     explanation: &CommandExplanation,
