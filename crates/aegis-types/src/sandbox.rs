@@ -102,8 +102,7 @@ mod tests {
             serde_json::from_str::<SandboxStatus>("\"not_configured\"").unwrap(),
             SandboxStatus::NotConfigured
         );
-        let pascal_case = format!("\"{}{}\"", "Not", "Configured");
-        assert!(serde_json::from_str::<SandboxStatus>(&pascal_case).is_err());
+        assert!(serde_json::from_str::<SandboxStatus>("\"NotConfigured\"").is_err());
     }
 }
 
