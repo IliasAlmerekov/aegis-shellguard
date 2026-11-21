@@ -8,8 +8,7 @@ use aegis_explanation::{BlockReason, PolicyRationale};
 use aegis_types::MatchResult;
 use aegis_types::{Assessment, DecisionSource, HighlightRange, PatternSource};
 
-/// Render the highlighted command line. Dropped `queue!` results are ignored
-/// because terminal writes have no fallback output channel.
+/// Drops `queue!` errors: terminal writes have no fallback channel.
 pub(super) fn print_command_line<W: Write>(assessment: &Assessment, out: &mut W) {
     let _ = queue!(out, Print("  Command:\n    "));
     let highlighted = build_highlighted_command_from_ranges(
@@ -20,8 +19,7 @@ pub(super) fn print_command_line<W: Write>(assessment: &Assessment, out: &mut W)
     let _ = queue!(out, Print("\n"));
 }
 
-/// Render the matched dangerous action fragment. Dropped `queue!` results are
-/// ignored because terminal writes have no fallback output channel.
+/// Drops `queue!` errors: terminal writes have no fallback channel.
 pub(super) fn print_dangerous_action<W: Write>(assessment: &Assessment, out: &mut W) {
     let action = dangerous_action_text(assessment);
     let _ = queue!(out, Print("  Dangerous action:\n    "));

@@ -14,10 +14,7 @@ use super::shared::{
 };
 use super::stdout_renderer::PromptDecision;
 
-/// Render the interactive confirmation dialog. Dropped `queue!` and `flush`
-/// results are ignored because terminal writes have no fallback output
-/// channel; a broken terminal fails closed when the subsequent prompt reads
-/// input.
+/// Drops `queue!`/`flush` errors: writes have no fallback channel and the prompt fails closed on read.
 pub(super) fn render_dialog<W: Write>(
     assessment: &Assessment,
     explanation: &CommandExplanation,
@@ -199,9 +196,7 @@ pub(super) fn render_dialog<W: Write>(
 
 /// Danger prompt. `always` offers "Always allow"; it is false while Recovery is
 /// opted out, when no persistent approval may exist (ADR-031 section 4).
-/// Dropped `queue!` and `flush` results are ignored because terminal writes
-/// have no fallback output channel and a broken terminal fails closed when
-/// `read_line` errors or hits EOF.
+/// Drops `queue!`/`flush` errors: writes have no fallback channel and `read_line` fails closed.
 pub(super) fn prompt_danger_with_always<R: BufRead, W: Write>(
     input: &mut R,
     out: &mut W,
@@ -264,10 +259,8 @@ pub(super) fn prompt_danger_with_always<R: BufRead, W: Write>(
 }
 
 /// Warn prompt with "Always allow" and "Always deny" options. `always` is false
-/// while Recovery is opted out, as for the Danger prompt. Dropped `queue!` and
-/// `flush` results are ignored because terminal writes have no fallback output
-/// channel and a broken terminal fails closed when `read_line` errors or hits
-/// EOF.
+/// while Recovery is opted out, as for the Danger prompt.
+/// Drops `queue!`/`flush` errors: writes have no fallback channel and `read_line` fails closed.
 pub(super) fn prompt_warn_with_always<R: BufRead, W: Write>(
     input: &mut R,
     out: &mut W,
@@ -343,10 +336,7 @@ pub(super) fn prompt_analysis_confirmation<R: BufRead, W: Write>(
     )
 }
 
-/// Prompt for a non-persistable one-time language-analysis decision. Dropped
-/// `queue!` and `flush` results are ignored because terminal writes have no
-/// fallback output channel and a broken terminal fails closed when `read_line`
-/// errors or hits EOF.
+/// Drops `queue!`/`flush` errors: writes have no fallback channel and `read_line` fails closed.
 fn prompt_one_time_analysis<R: BufRead, W: Write>(
     input: &mut R,
     out: &mut W,
