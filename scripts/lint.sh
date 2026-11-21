@@ -10,8 +10,9 @@
 #   clippy  lint every target and feature, warnings are errors
 #   text    checks clippy cannot make, from grep, find and git only: no `.rs`
 #           file under src/, crates/, tests/, fuzz/ or benches/ exceeds 800
-#           lines, and every backticked path in AGENTS.md, CONVENTION.md,
-#           CONTRIBUTING.md and CLAUDE.md exists in the tree
+#           lines, every backticked path in AGENTS.md, CONVENTION.md,
+#           CONTRIBUTING.md and CLAUDE.md exists in the tree, and
+#           scripts/test-tamper-check.test.sh passes
 #   all     fmt, clippy, then text (also the default with no argument)
 #
 # LINT_TEXT_ROOT points the text checks at another directory than the
@@ -152,6 +153,12 @@ run_text() {
     if [ -n "$out" ]; then
         echo "$out" >&2
         text_failed=1
+    fi
+    if [ -z "${LINT_TEXT_ROOT:-}" ] || [ -e "$root/scripts/test-tamper-check.test.sh" ]; then
+        if ! out=$(cd "$root" && bash scripts/test-tamper-check.test.sh 2>&1); then
+            echo "$out" >&2
+            text_failed=1
+        fi
     fi
     return "$text_failed"
 }
