@@ -223,3 +223,48 @@ fn text_skips_gitignored_backticked_paths() {
     let output = run_text(tree.path());
     assert!(output.status.success(), "{}", stdout(&output));
 }
+
+#[test]
+fn text_catches_missing_path_adjacent_to_multiword_backtick_span() {
+    let tree = TempDir::new().unwrap();
+    write_file(
+        tree.path(),
+        "AGENTS.md",
+        "Run `cargo test`,`src/missing.rs`.\n",
+    );
+    let output = run_text(tree.path());
+    let text = stdout(&output);
+    assert!(!output.status.success(), "{text}");
+    assert!(
+        text.contains("AGENTS.md") && text.contains("src/missing.rs"),
+        "{text}"
+    );
+}
+
+#[test]
+fn text_does_not_skip_unpaired_bracket_as_glob() {
+    let tree = TempDir::new().unwrap();
+    write_file(tree.path(), "CONVENTION.md", "See `docs/draft[.md`.\n");
+    let output = run_text(tree.path());
+    let text = stdout(&output);
+    assert!(!output.status.success(), "{text}");
+    assert!(
+        text.contains("CONVENTION.md") && text.contains("docs/draft[.md"),
+        "{text}"
+    );
+}
+
+#[test]
+fn text_fails_on_path_escaping_lint_text_root() {
+    let parent = TempDir::new().unwrap();
+    write_file(parent.path(), "outside.md", "# Outside\n");
+    let tree = parent.path().join("tree");
+    write_file(&tree, "AGENTS.md", "See `../outside.md`.\n");
+    let output = run_text(&tree);
+    let text = stdout(&output);
+    assert!(!output.status.success(), "{text}");
+    assert!(
+        text.contains("AGENTS.md") && text.contains("../outside.md"),
+        "{text}"
+    );
+}

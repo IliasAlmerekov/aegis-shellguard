@@ -95,7 +95,7 @@ check_doc_paths() {
     for doc in AGENTS.md CONVENTION.md CONTRIBUTING.md CLAUDE.md; do
         [ -e "$doc" ] || continue
         grep_status=0
-        tokens=$(grep -oE '`[^`[:space:]]+`' "$doc") || grep_status=$?
+        tokens=$(grep -oE '`[^`]+`' "$doc") || grep_status=$?
         if [ "$grep_status" -gt 1 ]; then
             echo "$doc: cannot read the file"
             continue
@@ -105,11 +105,12 @@ check_doc_paths() {
             token=${raw#\`}
             token=${token%\`}
             case "$token" in
+                *[[:space:]]*) continue ;;
                 */* | *.md | *.rs | *.toml | *.yml | *.sh) ;;
                 *) continue ;;
             esac
             case "$token" in
-                *'*'* | *'?'* | *'['* | *'<'*'>'* | '~'* | *NNN*) continue ;;
+                *'*'* | *'?'* | *'['*']'* | *'<'*'>'* | '~'* | *NNN*) continue ;;
                 .md | .rs | .toml | .yml | .sh) continue ;;
             esac
             case "$token" in
@@ -117,8 +118,14 @@ check_doc_paths() {
                 *) continue ;;
             esac
             case "$token" in
-                # Project-level config file created by users at runtime, never committed.
+                # #616: project-level config file created at runtime, never committed.
                 .aegis.toml) continue ;;
+            esac
+            case "$token" in
+                /* | .. | ../* | */../* | */..)
+                    echo "$doc: missing path \`$token\`"
+                    continue
+                    ;;
             esac
             if [ -e "$token" ]; then
                 continue
