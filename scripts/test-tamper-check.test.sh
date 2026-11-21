@@ -69,26 +69,35 @@ expect() {
     fi
 }
 
+# POSIX-portable in-place sed edit (BSD sed on macOS rejects GNU `sed -i`).
+edit_file() {
+    local file="$1"
+    shift
+    sed "$@" "$file" >"$file.tmp" && mv "$file.tmp" "$file"
+}
+
 # Case: #[ignore] added to an inline test, left uncommitted.
 repo=$(new_repo inline-ignore)
-sed -i 's/^    #\[test\]$/    #[test]\n    #[ignore]/' "$repo/src/lib.rs"
+edit_file "$repo/src/lib.rs" 's/^    #\[test\]$/    #[test]\
+    #[ignore]/'
 expect "inline #[ignore] in the working tree" "$repo" 1 "src/lib.rs:10: adds #[ignore]"
 
 # Case: #[should_panic] added to an integration test, committed.
 repo=$(new_repo should-panic)
-sed -i '1a #[should_panic]' "$repo/tests/double.rs"
+edit_file "$repo/tests/double.rs" '1a\
+#[should_panic]'
 git -C "$repo" commit -q -am "test: expect a panic"
 expect "committed #[should_panic]" "$repo" 1 "tests/double.rs:2: adds #[should_panic]"
 
 # Case: an assert_eq! line removed from an integration test.
 repo=$(new_repo removed-assert)
-sed -i '/double(3), 6/d' "$repo/tests/double.rs"
+edit_file "$repo/tests/double.rs" '/double(3), 6/d'
 git -C "$repo" commit -q -am "test: drop an assertion"
 expect "removed assert_eq!" "$repo" 1 "tests/double.rs:8: removes 1 assertion line(s) and adds 0"
 
 # Case: a #[test] attribute commented out.
 repo=$(new_repo commented-test)
-sed -i '6s|^#\[test\]$|// #[test]|' "$repo/tests/double.rs"
+edit_file "$repo/tests/double.rs" '6s|^#\[test\]$|// #[test]|'
 expect "commented-out #[test]" "$repo" 1 "tests/double.rs:6: comments out a #[test]"
 
 # Case: a new untracked test file that adds todo!().
@@ -103,7 +112,7 @@ expect "untracked test file with todo!()" "$repo" 1 "tests/triple.rs:3: adds tod
 
 # Case: an inline test module deleted along with its file's last #[test].
 repo=$(new_repo deleted-module)
-sed -i '/^#\[cfg(test)\]$/,$d' "$repo/src/lib.rs"
+edit_file "$repo/src/lib.rs" '/^#\[cfg(test)\]$/,$d'
 expect "deleted inline test module" "$repo" 1 "src/lib.rs:11: removes 1 assertion line(s) and adds 0"
 
 # Case: a clean change, new code and a new test with its own assertion.
@@ -115,13 +124,14 @@ fn double_of_five_is_ten() {
     assert_eq!(demo::double(5), 10);
 }
 EOF
-sed -i 's/x \* 2/x + x/' "$repo/src/lib.rs"
+edit_file "$repo/src/lib.rs" 's/x \* 2/x + x/'
 git -C "$repo" commit -q -am "refactor: add instead of multiply"
 expect "clean change passes" "$repo" 0 ""
 
 # Case: a moved assertion keeps the balance even.
 repo=$(new_repo moved-assert)
-sed -i 's/assert_eq!(demo::double(0), 0);/let got = demo::double(0);\n    assert_eq!(got, 0);/' "$repo/tests/double.rs"
+edit_file "$repo/tests/double.rs" 's/assert_eq!(demo::double(0), 0);/let got = demo::double(0);\
+    assert_eq!(got, 0);/'
 expect "rewritten assertion passes" "$repo" 0 ""
 
 # Case: node:assert and Python assert( calls removed from JS and Python tests.
@@ -141,15 +151,15 @@ EOF
 git -C "$repo" add -A
 git -C "$repo" commit -q -m "test: js and python tests"
 git -C "$repo" update-ref refs/remotes/origin/main HEAD
-sed -i '/strictEqual/d; /assert(true)/d' "$repo/tests/web.test.js"
-sed -i '/assert(1 + 1/d' "$repo/tests/test_calc.py"
+edit_file "$repo/tests/web.test.js" -e '/strictEqual/d' -e '/assert(true)/d'
+edit_file "$repo/tests/test_calc.py" '/assert(1 + 1/d'
 expect "removed assert.strictEqual( and assert( in JS" "$repo" 1 \
     "tests/web.test.js:3: removes 2 assertion line(s) and adds 0"
 expect "removed assert( in Python" "$repo" 1 "tests/test_calc.py:2: removes 1 assertion line(s) and adds 0"
 
 # Case: the escape line in the HEAD commit body lets a removal through.
 repo=$(new_repo allow)
-sed -i '/double(3), 6/d' "$repo/tests/double.rs"
+edit_file "$repo/tests/double.rs" '/double(3), 6/d'
 git -C "$repo" commit -q -am "test: drop the duplicate case" \
     -m "tamper-check: allow double_of_three duplicates double_of_two, approved by the maintainer"
 expect "allow escape in the commit body" "$repo" 0 \
@@ -163,7 +173,7 @@ printf '%s\n' '{"id":"a","risk":"safe"}' '{"id":"b","risk":"warn"}' >"$repo/$gol
 git -C "$repo" add -A
 git -C "$repo" commit -q -m "test: add the golden"
 git -C "$repo" update-ref refs/remotes/origin/main HEAD
-sed -i 's/"warn"/"safe"/' "$repo/$golden"
+edit_file "$repo/$golden" 's/"warn"/"safe"/'
 git -C "$repo" commit -q -am "fix: change a verdict"
 expect "edited Evaluation golden line" "$repo" 1 "$golden:2: edits the Evaluation golden"
 
@@ -173,7 +183,7 @@ printf '%s\n' '{"id":"a","risk":"safe"}' '{"id":"b","risk":"warn"}' >"$repo/$gol
 git -C "$repo" add -A
 git -C "$repo" commit -q -m "test: add the golden"
 git -C "$repo" update-ref refs/remotes/origin/main HEAD
-sed -i 's/"warn"/"safe"/' "$repo/$golden"
+edit_file "$repo/$golden" 's/"warn"/"safe"/'
 git -C "$repo" commit -q -am "fix: change a verdict" \
     -m "tamper-check: allow verdict of b changes on purpose"
 expect "Evaluation golden edit with the allow escape" "$repo" 0 \
@@ -181,7 +191,7 @@ expect "Evaluation golden edit with the allow escape" "$repo" 0 \
 
 # Case: --base picks the diff base explicitly.
 repo=$(new_repo explicit-base)
-sed -i '/double(3), 6/d' "$repo/tests/double.rs"
+edit_file "$repo/tests/double.rs" '/double(3), 6/d'
 git -C "$repo" commit -q -am "test: drop an assertion"
 output=$(cd "$repo" && "$script" --base HEAD 2>&1) && code=0 || code=$?
 if [ "$code" -eq 0 ]; then
