@@ -2,15 +2,22 @@
 //! Iteration 6). Real-subprocess seam: these tests spawn the actual
 //! `aegis --internal-language-worker` binary and exercise the full
 //! route → spawn → Analyze → map → merge composition through the public
-//! `aegis::analysis::run` boundary.
+//! `aegis::analysis::run_with_budget` boundary.
 
 use std::time::Duration;
 
-use aegis::analysis::{Outcome, run};
+use aegis::analysis::{OrchestrationBudget, Outcome, run_with_budget};
 use aegis_types::{AnalysisStatus, Assessment, DegradationReason, ParsedCommand, RiskLevel};
 
 #[path = "analysis_orchestrate/cli_deadline_parity.rs"]
 mod cli_deadline_parity;
+
+fn budget_with_timeout(total_timeout: Duration) -> OrchestrationBudget {
+    OrchestrationBudget {
+        total_timeout,
+        ..OrchestrationBudget::L1_DEFAULT
+    }
+}
 
 fn safe_baseline() -> Assessment {
     Assessment {
@@ -32,12 +39,12 @@ fn safe_baseline() -> Assessment {
 #[tokio::test]
 async fn run_returns_baseline_unchanged_when_route_yields_no_inline_target() {
     let baseline = safe_baseline();
-    let outcome = run(
+    let outcome = run_with_budget(
         "ls -la",
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(2),
+        budget_with_timeout(Duration::from_secs(2)),
     )
     .await;
     match outcome {
@@ -52,12 +59,12 @@ async fn run_returns_baseline_unchanged_when_route_yields_no_inline_target() {
 #[tokio::test]
 async fn run_analyzes_inline_python_and_merges_a_recursive_delete_match() {
     let baseline = safe_baseline();
-    let outcome = run(
+    let outcome = run_with_budget(
         "python3 -c \"shutil.rmtree('x')\"",
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(5),
+        budget_with_timeout(Duration::from_secs(5)),
     )
     .await;
     let assessment = match outcome {
@@ -104,12 +111,12 @@ async fn run_analyzes_inline_python_after_a_semicolon_the_same_as_leading() {
     // one) already caught the LANG-FS-DEL-R match, only the placement
     // changed.
     let baseline = safe_baseline();
-    let outcome = run(
+    let outcome = run_with_budget(
         "true; python3 -c \"shutil.rmtree('x')\"",
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(5),
+        budget_with_timeout(Duration::from_secs(5)),
     )
     .await;
     let assessment = match outcome {
@@ -147,12 +154,12 @@ async fn run_analyzes_a_safe_inline_bash_body_without_degradation() {
     // adapter into the worker (issue #383), so a body with no destructive
     // command analyzes cleanly instead of degrading as GrammarUnavailable.
     let baseline = safe_baseline();
-    let outcome = run(
+    let outcome = run_with_budget(
         "bash -c \"echo 1\"",
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(5),
+        budget_with_timeout(Duration::from_secs(5)),
     )
     .await;
     let assessment = match outcome {
@@ -176,12 +183,12 @@ async fn run_analyzes_inline_javascript_and_merges_a_filesystem_delete_match() {
     // LANG-FS-DEL at Warn. The real worker subprocess analyzes the inline body
     // and the merged Assessment must carry that match and lift to at least Warn.
     let baseline = safe_baseline();
-    let outcome = run(
+    let outcome = run_with_budget(
         "node -e \"fs.unlinkSync('data.txt')\"",
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(5),
+        budget_with_timeout(Duration::from_secs(5)),
     )
     .await;
     let assessment = match outcome {
@@ -230,12 +237,12 @@ async fn run_analyzes_a_javascript_exec_payload_and_its_recursive_bash_target() 
     // the top-level AND the recursive target (>= 2), and no GrammarUnavailable
     // degradation is recorded.
     let baseline = safe_baseline();
-    let outcome = run(
+    let outcome = run_with_budget(
         "node -e \"child_process.exec('rm -rf /tmp/x')\"",
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(5),
+        budget_with_timeout(Duration::from_secs(5)),
     )
     .await;
     let assessment = match outcome {
@@ -293,12 +300,12 @@ async fn run_analyzes_a_recursive_exec_payload_and_surfaces_the_nested_match() {
     // must cover the top-level AND the recursive target (>= 2). Under Slice B the
     // recursive target was discarded, so only LANG-EXEC surfaced with count 1.
     let baseline = safe_baseline();
-    let outcome = run(
+    let outcome = run_with_budget(
         "python3 -c \"exec('shutil.rmtree(x)')\"",
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(5),
+        budget_with_timeout(Duration::from_secs(5)),
     )
     .await;
     let assessment = match outcome {
@@ -340,12 +347,12 @@ async fn run_analyzes_inline_chmod_and_lifts_to_danger() {
     // adapter emits PermissionOrOwnershipChange, which classifies as
     // LANG-FS-CHMOD at Danger. No execution sink → no recursive target.
     let baseline = safe_baseline();
-    let outcome = run(
+    let outcome = run_with_budget(
         "python3 -c \"os.chmod('x', 0o777)\"",
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(5),
+        budget_with_timeout(Duration::from_secs(5)),
     )
     .await;
     let assessment = match outcome {
@@ -390,12 +397,12 @@ async fn run_analyzes_inline_open_write_and_lifts_to_warn() {
     // LANG-FS-OVR-W at Warn (the highest risk an overwrite carries). No
     // execution sink → no recursive target.
     let baseline = safe_baseline();
-    let outcome = run(
+    let outcome = run_with_budget(
         "python3 -c \"open('x','w')\"",
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(5),
+        budget_with_timeout(Duration::from_secs(5)),
     )
     .await;
     let assessment = match outcome {
@@ -443,12 +450,12 @@ async fn run_scans_a_cross_language_shell_payload_like_a_typed_command() {
     // inside analyzed shell source gets the Match it gets when typed. The
     // baseline is empty, so the outer command scan cannot supply it.
     let baseline = safe_baseline();
-    let outcome = run(
+    let outcome = run_with_budget(
         "python3 -c \"os.system('git push --force origin main')\"",
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(5),
+        budget_with_timeout(Duration::from_secs(5)),
     )
     .await;
     let assessment = match outcome {
@@ -495,12 +502,12 @@ async fn run_analyzes_inline_javascript_chmod_and_lifts_to_danger() {
     // covers `os.chmod`; this pins the same contract at the JS orchestration
     // seam, which Slice 2 did not cover.)
     let baseline = safe_baseline();
-    let outcome = run(
+    let outcome = run_with_budget(
         "node -e \"fs.chmodSync('x', 0o777)\"",
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(5),
+        budget_with_timeout(Duration::from_secs(5)),
     )
     .await;
     let assessment = match outcome {
@@ -547,12 +554,12 @@ async fn run_analyzes_inline_javascript_writefilesync_and_lifts_to_warn() {
     // the same contract at the JS orchestration seam, which Slice 2 did not
     // cover.)
     let baseline = safe_baseline();
-    let outcome = run(
+    let outcome = run_with_budget(
         "node -e \"fs.writeFileSync('x', 'y')\"",
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(5),
+        budget_with_timeout(Duration::from_secs(5)),
     )
     .await;
     let assessment = match outcome {
@@ -608,12 +615,12 @@ async fn run_analyzes_javascript_exec_and_surfaces_the_recursive_javascript_targ
     // dynamic operand emits its match without degradation (Python C3 fix), so
     // the recursive LANG-FS-DEL surfaces cleanly and the status stays Complete.
     let baseline = safe_baseline();
-    let outcome = run(
+    let outcome = run_with_budget(
         "node -e \"eval('fs.unlinkSync(x)')\"",
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(5),
+        budget_with_timeout(Duration::from_secs(5)),
     )
     .await;
     let assessment = match outcome {
@@ -667,12 +674,12 @@ async fn run_analyzes_javascript_exec_and_surfaces_the_recursive_javascript_targ
 
 async fn assert_recursive_delete_found(command: &str) {
     let baseline = safe_baseline();
-    let outcome = run(
+    let outcome = run_with_budget(
         command,
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(5),
+        budget_with_timeout(Duration::from_secs(5)),
     )
     .await;
     let assessment = match outcome {
@@ -720,12 +727,12 @@ async fn run_finds_an_open_write_inside_a_subshell_with_a_trailing_redirect() {
     // adapter and match LANG-FS-OVR-W — the same as the unwrapped command in
     // `run_analyzes_inline_open_write_and_lifts_to_warn` above.
     let baseline = safe_baseline();
-    let outcome = run(
+    let outcome = run_with_budget(
         "(python3 -c \"open('x','w')\") > out.txt",
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(5),
+        budget_with_timeout(Duration::from_secs(5)),
     )
     .await;
     let assessment = match outcome {

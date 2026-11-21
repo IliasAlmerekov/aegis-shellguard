@@ -13,7 +13,7 @@ use aegis_types::{
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-const LEGACY_LINE: &str = r#"{"timestamp":"2023-11-14T22:13:19Z","sequence":1,"command":"printf one","risk":"Safe","matched_patterns":[],"pattern_ids":[],"decision":"AutoApproved","snapshots":[],"sandbox_status":"NotConfigured"}"#;
+const LEGACY_LINE: &str = r#"{"timestamp":"2023-11-14T22:13:19Z","sequence":1,"command":"printf one","risk":"Safe","matched_patterns":[],"pattern_ids":[],"decision":"AutoApproved","snapshots":[],"sandbox_status":"not_configured"}"#;
 
 /// Exact line the base code wrote for `LEGACY_LINE` before `snapshot_attempts` existed.
 const LEGACY_WRITTEN: &str = r#"{"timestamp":"2023-11-14T22:13:19Z","sequence":1,"command":"printf one","risk":"Safe","matched_patterns":[],"pattern_ids":[],"decision":"AutoApproved","snapshots":[],"allowlist_matched":false,"allowlist_effective":false,"chain_alg":"sha256","entry_hash":"bc322500ad8eb9775e4bbfe9b7a53296bdbb2afad3f9c66ca451a657ebb2d34c","sandbox_status":"not_configured"}"#;

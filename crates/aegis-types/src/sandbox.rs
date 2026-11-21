@@ -19,7 +19,6 @@ pub enum SandboxStatus {
     NotAttempted,
     /// No sandbox was configured for this invocation.
     #[default]
-    #[serde(alias = "NotConfigured")]
     NotConfigured,
 }
 
@@ -95,6 +94,16 @@ mod tests {
             serde_json::to_string(&SandboxStatus::Unavailable).unwrap(),
             "\"unavailable\""
         );
+    }
+
+    #[test]
+    fn deserializes_only_snake_case_not_configured() {
+        assert_eq!(
+            serde_json::from_str::<SandboxStatus>("\"not_configured\"").unwrap(),
+            SandboxStatus::NotConfigured
+        );
+        let pascal_case = format!("\"{}{}\"", "Not", "Configured");
+        assert!(serde_json::from_str::<SandboxStatus>(&pascal_case).is_err());
     }
 }
 

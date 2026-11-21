@@ -72,7 +72,7 @@ fn v2_line() -> String {
         "snapshots": [],
         "basis": {"kind": "decisive", "match_ids": ["PY-FS-DEL"]},
         "analysis": {"status": "complete", "degradation_reasons": []},
-        "sandbox_status": "NotConfigured",
+        "sandbox_status": "not_configured",
     });
     serde_json::to_string(&value).unwrap()
 }
@@ -81,7 +81,7 @@ fn v2_line() -> String {
 /// shape of every line written before Audit v2, and it must keep deserializing
 /// unchanged.
 fn v1_line() -> &'static str {
-    r#"{"timestamp":"2023-11-14T22:13:19Z","sequence":1,"command":"printf one","risk":"Safe","matched_patterns":[],"pattern_ids":[],"decision":"AutoApproved","snapshots":[],"sandbox_status":"NotConfigured"}"#
+    r#"{"timestamp":"2023-11-14T22:13:19Z","sequence":1,"command":"printf one","risk":"Safe","matched_patterns":[],"pattern_ids":[],"decision":"AutoApproved","snapshots":[],"sandbox_status":"not_configured"}"#
 }
 
 #[test]
@@ -337,7 +337,7 @@ fn privacy_v2_line() -> String {
         "snapshots": [],
         "basis": {"kind": "decisive", "match_ids": ["PY-FS-DEL"]},
         "analysis": {"status": "degraded", "degradation_reasons": ["dynamic_source"]},
-        "sandbox_status": "NotConfigured",
+        "sandbox_status": "not_configured",
     }))
     .unwrap()
 }

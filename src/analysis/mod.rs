@@ -40,7 +40,7 @@ pub mod shell_scan;
 pub mod source_reader;
 pub mod worker_client;
 
-pub use orchestrate::{OrchestrationBudget, Outcome, run, run_with_budget, run_with_budget_in_cwd};
+pub use orchestrate::{OrchestrationBudget, Outcome, run_with_budget, run_with_budget_in_cwd};
 pub use worker_client::{
     INTERNAL_LANGUAGE_WORKER_FLAG, RequestKind, TargetRequest, TargetResult, Worker, WorkerError,
     analyze,

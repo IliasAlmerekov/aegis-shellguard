@@ -87,7 +87,7 @@ fn append_raw_pruned_entry(home: &Path, snapshot_id: &str) {
     let command = format!("aegis prune {}", snapshot_id);
     let escaped_command = serde_json::to_string(&command).unwrap();
     let line = format!(
-        "{{\"timestamp\":\"2026-01-02T00:00:00Z\",\"sequence\":2,\"command\":{},\"risk\":\"Safe\",\"matched_patterns\":[],\"pattern_ids\":[],\"decision\":\"Pruned\",\"snapshots\":[],\"sandbox_status\":\"NotConfigured\"}}\n",
+        "{{\"timestamp\":\"2026-01-02T00:00:00Z\",\"sequence\":2,\"command\":{},\"risk\":\"Safe\",\"matched_patterns\":[],\"pattern_ids\":[],\"decision\":\"Pruned\",\"snapshots\":[],\"sandbox_status\":\"not_configured\"}}\n",
         escaped_command
     );
     let mut file = OpenOptions::new()

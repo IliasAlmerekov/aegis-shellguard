@@ -91,42 +91,6 @@ impl OrchestrationBudget {
     };
 }
 
-/// Route a command's source targets, resolve bounded file sources, spawn the worker, and
-/// drain the recursive analysis queue: each popped target is analyzed by a
-/// fresh worker, mapped through [`map_adapter_result`], and any literal
-/// execution-sink payloads it discovers are pushed back onto the queue for
-/// recursive analysis. Per-target results are folded into `baseline`.
-///
-/// ADR-022 §0 contract: when [`route`] yields no target,
-/// targets, NO subprocess is spawned and `baseline` is returned unchanged via
-/// [`Outcome::NotStarted`]. ADR-022 §7 contract: depth, target-count, and
-/// aggregate-byte caps record [`DegradationReason::LimitExceeded`] while
-/// preserving the Matches already produced.
-///
-/// `aegis_path` overrides the worker binary (tests pass
-/// `Some(env!("CARGO_BIN_EXE_aegis"))`); `None` re-execs `current_exe` (the
-/// production path). `trusted_aliases` is forwarded to [`route`]. `deadline`
-/// is the total session budget for this compatibility entrypoint.
-pub async fn run(
-    command: &str,
-    baseline: &Assessment,
-    aegis_path: Option<&str>,
-    trusted_aliases: &[(&str, &str)],
-    deadline: Duration,
-) -> Outcome {
-    run_with_budget(
-        command,
-        baseline,
-        aegis_path,
-        trusted_aliases,
-        OrchestrationBudget {
-            total_timeout: deadline,
-            ..OrchestrationBudget::L1_DEFAULT
-        },
-    )
-    .await
-}
-
 /// Run language analysis with the effective configuration budgets.
 ///
 /// Resolves relative targets against the Aegis process working directory — a

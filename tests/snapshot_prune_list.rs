@@ -32,7 +32,7 @@ fn append_line(home: &Path, line: &str) {
 fn snapshot_line(snapshot_id: &str) -> String {
     let escaped = serde_json::to_string(snapshot_id).unwrap();
     format!(
-        "{{\"timestamp\":\"2026-01-01T00:00:00Z\",\"sequence\":1,\"command\":\"rm -rf src\",\"risk\":\"Danger\",\"matched_patterns\":[],\"pattern_ids\":[],\"decision\":\"Approved\",\"snapshots\":[{{\"plugin\":\"git\",\"snapshot_id\":{}}}],\"sandbox_status\":\"NotConfigured\"}}",
+        "{{\"timestamp\":\"2026-01-01T00:00:00Z\",\"sequence\":1,\"command\":\"rm -rf src\",\"risk\":\"Danger\",\"matched_patterns\":[],\"pattern_ids\":[],\"decision\":\"Approved\",\"snapshots\":[{{\"plugin\":\"git\",\"snapshot_id\":{}}}],\"sandbox_status\":\"not_configured\"}}",
         escaped
     )
 }
@@ -41,7 +41,7 @@ fn prune_line(snapshot_id: &str) -> String {
     let command = format!("aegis prune {}", snapshot_id);
     let escaped_command = serde_json::to_string(&command).unwrap();
     format!(
-        "{{\"timestamp\":\"2026-01-02T00:00:00Z\",\"sequence\":2,\"command\":{},\"risk\":\"Safe\",\"matched_patterns\":[],\"pattern_ids\":[],\"decision\":\"Pruned\",\"snapshots\":[],\"sandbox_status\":\"NotConfigured\"}}",
+        "{{\"timestamp\":\"2026-01-02T00:00:00Z\",\"sequence\":2,\"command\":{},\"risk\":\"Safe\",\"matched_patterns\":[],\"pattern_ids\":[],\"decision\":\"Pruned\",\"snapshots\":[],\"sandbox_status\":\"not_configured\"}}",
         escaped_command
     )
 }
