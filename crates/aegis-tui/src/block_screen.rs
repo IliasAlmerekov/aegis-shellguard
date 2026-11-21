@@ -12,6 +12,7 @@ use super::shared::{
     block_reason_text, confirmation_reason_text, pattern_source_label, print_command_line,
 };
 
+/// Drops `queue!`/`flush` errors: command is already denied and writes have no fallback channel.
 pub(super) fn render_block<W: Write>(
     assessment: &Assessment,
     explanation: &CommandExplanation,
@@ -66,6 +67,8 @@ pub(super) fn render_block<W: Write>(
 ///
 /// We use Yellow (not Red) to distinguish from Block, which is truly
 /// catastrophic.  This denial is policy-driven, not a safety absolute.
+///
+/// Drops `queue!`/`flush` errors: command is already denied and writes have no fallback channel.
 pub(super) fn render_noninteractive_denial<W: Write>(
     assessment: &Assessment,
     explanation: &CommandExplanation,
@@ -109,6 +112,8 @@ pub(super) fn render_noninteractive_denial<W: Write>(
 ///
 /// Unlike an ordinary Warn/Danger denial, this path must not suggest an
 /// allowlist: ADR-022 §5 permits only a non-persistable one-time decision.
+///
+/// Drops `queue!`/`flush` errors: command is already denied and writes have no fallback channel.
 pub(super) fn render_noninteractive_analysis_denial<W: Write>(
     assessment: &Assessment,
     explanation: &CommandExplanation,
@@ -138,6 +143,7 @@ pub(super) fn render_noninteractive_analysis_denial<W: Write>(
     let _ = out.flush();
 }
 
+/// Drops `queue!`/`flush` errors: command is already denied and writes have no fallback channel.
 pub(crate) fn render_policy_block<W: Write>(
     assessment: &Assessment,
     explanation: &CommandExplanation,
