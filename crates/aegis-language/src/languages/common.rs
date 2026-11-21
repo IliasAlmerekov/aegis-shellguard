@@ -1,11 +1,7 @@
-//! Shared helpers whose bodies are identical across language adapters (#289).
-
 use tree_sitter::Node;
 
 use crate::operation::ByteSpan;
 
-/// Build a [`ByteSpan`] for `node` (1-based line/column, byte offsets into the
-/// source).
 pub(crate) fn span_for(node: Node) -> ByteSpan {
     let start = node.start_position();
     ByteSpan {
