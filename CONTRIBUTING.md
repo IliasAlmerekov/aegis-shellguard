@@ -32,7 +32,7 @@ Usually not a good fit without prior discussion:
 
 Minimum local setup:
 
-- Rust 1.89 or newer, the minimum supported Rust version (MSRV) in `Cargo.toml`
+- Rust at or above the minimum supported Rust version (MSRV) declared as `rust-version` in `Cargo.toml`
 - Rust 1.94.0 to run `scripts/lint.sh`, the toolchain CI pins in `.github/versions.env`
 - Git
 - a Unix-like environment supported by the project (Linux or macOS)
@@ -74,8 +74,8 @@ cargo build --release
 
 ## Run tests
 
-The repository is a Cargo workspace with a root package and twelve member
-crates under `crates/`. A bare `cargo test` runs only the root package. CI
+The repository is a Cargo workspace with a root package and library crates under
+`crates/` (see `Cargo.toml`). A bare `cargo test` runs only the root package. CI
 runs the full suite with `cargo test --workspace`. Locally, run only the test
 for the area you changed:
 

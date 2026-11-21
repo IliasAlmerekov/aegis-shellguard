@@ -72,39 +72,31 @@ These rules are non-negotiable.
 
 ## 3. Architecture Rules
 
-The repository is a Cargo workspace. The `aegis` binary crate lives at the
-root and depends on focused library crates under `crates/`.
-Extraction is complete — all 12 library crates are live:
-`aegis-types` (zero-dep foundation), `aegis-parser` (shell tokenizer +
-`PrefixPattern` matcher), `aegis-scanner` (`Scanner`, `PatternSet`, built-in
-patterns), `aegis-policy` (pure `PolicyEngine`), `aegis-config` (config model,
-loader, validation, schema, `amend`), `aegis-explanation` (`CommandExplanation`
-and related types), `aegis-tui` (crossterm confirmation dialog), `aegis-snapshot`
-(six snapshot backends), `aegis-audit` (`AuditLogger`, append-only JSONL with
-optional hash-chain integrity), `aegis-sandbox` (bwrap + Landlock on Linux,
-sandbox-exec on macOS; opt-in execution confinement in 0.x, mandatory in 1.0
-per ADR-029 and #229), and `aegis-language`
-(the focused Tree-sitter boundary for language-aware analysis — an additive
-slow path that owns the grammar manifest and parsing; ADR-022). Dependency
-arrows flow inward toward `aegis-types`; no library crate may depend on the
-root binary crate. DAG boundaries for the first nine core crates plus the
-`aegis-language` leaf are enforced by `tests/architecture_boundaries.rs`
-(`aegis-language` must not be depended on by any other workspace member, and
-must not itself depend on any other workspace member — ADR-022 §4);
-`aegis-sandbox` is covered by `tests/platform_scope.rs`.
+The repository is a Cargo workspace; `[workspace].members` in `Cargo.toml` is
+the authoritative list of library crates under `crates/`. The `aegis` binary
+crate lives at the root and depends on those library crates. Dependency arrows
+flow inward toward `aegis-types`; no library crate may depend on the root
+binary crate. DAG boundaries for the core crates and the `aegis-language` leaf
+are enforced by `tests/architecture_boundaries.rs` (`aegis-language` must not
+be depended on by any other workspace member, and must not itself depend on any
+other workspace member — ADR-022 §4); `aegis-sandbox` is covered by
+`tests/platform_scope.rs`.
 
 Current module responsibilities:
 
 - `src/main.rs`: CLI parsing and orchestration only
 - `src/error.rs`: shared typed errors (maps `aegis_scanner::ScannerError` inward)
+- `crates/aegis-types/`: zero-dep shared data vocabulary
 - `crates/aegis-parser/`: shell tokenizer, segmentation, and `PrefixPattern` matching
 - `crates/aegis-scanner/`: command classification, `PatternSet`, built-in patterns, `assess()`
 - `crates/aegis-policy/`: pure policy evaluation (`Assessment` + context → decision)
 - `crates/aegis-config/`: config model, layered loader, validation, schema, `amend`
-- `crates/aegis-snapshot/`: snapshot plugin trait and six backends (git, docker, pg, mysql, sqlite, supabase)
-- `crates/aegis-sandbox/`: execution confinement (bwrap + Landlock / sandbox-exec); opt-in in 0.x, mandatory in 1.0 (#229)
+- `crates/aegis-explanation/`: `CommandExplanation` and related explanation types
 - `crates/aegis-tui/`: interactive confirmation flow (crossterm)
 - `crates/aegis-audit/`: `AuditLogger`, append-only JSONL, rotation, optional hash-chain
+- `crates/aegis-snapshot/`: snapshot plugin trait and six backends (git, docker, pg, mysql, sqlite, supabase)
+- `crates/aegis-sandbox/`: execution confinement (bwrap + Landlock on Linux, sandbox-exec on macOS; mandatory in 1.0 per ADR-029 and #229)
+- `crates/aegis-language/`: isolated Tree-sitter boundary for additive language-aware analysis; owns the grammar manifest and parsing (ADR-022)
 
 There are no `src/` re-export shims over these crates (issue #281): every
 call site imports a type from the crate that defines it, never through an
@@ -139,8 +131,7 @@ Architectural constraints:
 ## 4. Rust and Code Style
 
 - Rust edition: `2024`
-- Current MSRV policy: track latest stable during active development
-- Production requirement: declare an explicit MSRV and enforce it in CI before claiming production readiness
+- MSRV: `rust-version` in `Cargo.toml` (1.89 today), raised only on purpose with a `CHANGELOG.md` entry
 - Follow standard Rust naming:
   - types / traits / enums: `PascalCase`
   - functions / methods / variables / modules: `snake_case`
@@ -176,33 +167,33 @@ Architectural constraints:
 
 ## 6. Dependency Rules
 
-Approved dependency categories currently include:
+Approved dependency categories (exact versions live in `Cargo.toml` and each
+member crate's `Cargo.toml`):
 
-- `clap` (4.5, derive API) — CLI parsing.
-- `crossterm` (0.29) — terminal UI, confirmation dialog.
-- `aho-corasick` (1.1) — fast multi-pattern quick scan.
-- `regex` (1.11) — full pattern scan, second pass only.
-- `serde` + `toml` (1.1) — config model and parsing.
+- `clap` (derive API) — CLI parsing.
+- `crossterm` — terminal UI, confirmation dialog.
+- `aho-corasick` — fast multi-pattern quick scan.
+- `regex` — full pattern scan, second pass only.
+- `serde` + `toml` — config model and parsing.
 - `thiserror` — typed errors in library crates.
 - `anyhow` — error propagation in CLI glue.
-- `tokio` (features: process, fs, rt, rt-multi-thread, io-util, io-std, sync, time) — async subprocess and snapshot work.
-- `async-trait` (0.1) — async methods on `dyn Trait` (e.g. `SnapshotPlugin`).
+- `tokio` — async subprocess and snapshot work.
+- `async-trait` — async methods on `dyn Trait` (e.g. `SnapshotPlugin`).
 - `tracing` + `tracing-subscriber` — structured logging.
-- `criterion` (0.5) — benchmarks.
+- `criterion` — benchmarks.
 - `semver` — strict SemVer parsing and comparison for the opt-in update
   notice (ADR-038); pure Rust, no dependencies of its own.
 - `cc` (build-dependency) — the C compiler driver for the vendored bubblewrap
   build; **only** `aegis-sandbox` may depend on it (ADR-029 §3–§4).
 - `pkg-config` (build-dependency) — locates `libcap` for the vendored bubblewrap
   build; **only** `aegis-sandbox` may depend on it (ADR-029 §3–§4).
-- `tree-sitter` (0.26.13) — Tree-sitter runtime; **only** `aegis-language` may
+- `tree-sitter` — Tree-sitter runtime; **only** `aegis-language` may
   depend on it (ADR-022 §8). It is the first sanctioned native-C build input.
-- `tree-sitter-python` (0.25.0), `tree-sitter-javascript` (0.25.0),
-  `tree-sitter-typescript` (0.23.2), `tree-sitter-bash` (0.25.1) — the four
-  L1-foundation production-qualified grammars; **only** `aegis-language` may
-  depend on them. A grammar is added here only after independent qualification
-  (license, maintainer, transitive deps, upstream corpus, fuzzing, all-target
-  release builds — ADR-022 §5).
+- `tree-sitter-python`, `tree-sitter-javascript`, `tree-sitter-typescript`,
+  `tree-sitter-bash` — the L1-foundation production-qualified grammars; **only**
+  `aegis-language` may depend on them. A grammar is added here only after
+  independent qualification (license, maintainer, transitive deps, upstream
+  corpus, fuzzing, all-target release builds — ADR-022 §5).
 - bubblewrap — the second sanctioned native-C build input, vendored under
   `crates/aegis-sandbox/vendor/bubblewrap/` at a pinned version and compiled
   into the embedded `bwrap` fallback; **only** `aegis-sandbox` may build it
