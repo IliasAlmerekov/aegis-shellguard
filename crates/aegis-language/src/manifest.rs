@@ -24,12 +24,8 @@ pub const RELEASE_GRAMMARS: &[&str] = &["python", "javascript", "typescript", "b
 /// [`MIN_SUPPORTED_LANGUAGE_ABI`] is accepted as backwards-compatible.
 pub const SUPPORTED_LANGUAGE_ABI: u32 = tree_sitter::LANGUAGE_VERSION as u32;
 
-/// The oldest Tree-sitter ABI the pinned runtime still accepts
-/// (`tree_sitter::MIN_COMPATIBLE_LANGUAGE_VERSION`, 13 for the 0.26 runtime).
-///
-/// A grammar below this ABI is rejected by [`validate_entry`] as incompatible,
-/// matching the runtime's own `set_language` contract rather than requiring
-/// every grammar to be regenerated for the exact current ABI.
+/// The oldest Tree-sitter ABI the pinned runtime accepts
+/// (`tree_sitter::MIN_COMPATIBLE_LANGUAGE_VERSION`).
 pub const MIN_SUPPORTED_LANGUAGE_ABI: u32 = tree_sitter::MIN_COMPATIBLE_LANGUAGE_VERSION as u32;
 
 /// The official release targets across which the qualified grammar set must be
@@ -93,10 +89,6 @@ pub fn validate_entry(
     entry: &GrammarEntry,
     release_grammars: &[&str],
 ) -> Result<(), ManifestError> {
-    // A grammar is only eligible once it carries a concrete pinned version,
-    // license evidence, and a Tree-sitter ABI the pinned runtime speaks — and
-    // only for a language in the qualified release set (ADR-022 §8/§9). The
-    // checks are ordered cheapest-first and short-circuit on the first failure.
     if entry.version.is_empty() || entry.version == "*" {
         return Err(ManifestError::Unpinned {
             language: entry.language,
@@ -177,11 +169,7 @@ pub const BUILTIN_MANIFEST: &[GrammarEntry] = &[
         version: "0.23.2",
         upstream: "https://github.com/tree-sitter/tree-sitter-typescript",
         license_spdx: "MIT",
-        // tree-sitter-typescript 0.23.2 was generated for ABI 14; the pinned
-        // 0.26 runtime (ABI 15) accepts it as backwards-compatible
-        // (MIN_SUPPORTED_LANGUAGE_ABI..=SUPPORTED_LANGUAGE_ABI). The
-        // `builtin_manifest_abi_matches_the_live_tree_sitter_runtime` test
-        // guards this value against drift.
+        // tree-sitter-typescript 0.23.2 targets ABI 14; runtime 0.26 accepts 13..=15.
         abi: 14,
     },
     GrammarEntry {

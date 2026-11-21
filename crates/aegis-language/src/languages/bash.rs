@@ -1,36 +1,9 @@
-//! Bash language adapter (plan Iteration 8, Slice 1).
+//! Bash language adapter (ADR-022 §3, §7).
 //!
-//! Structural capture via the bundled Tree-sitter query
-//! (`queries/bash/calls.scm`); semantic interpretation in typed Rust. The
-//! adapter emits language-neutral [`crate::operation::DetectedOperation`]s and,
-//! for execution sinks with a statically recovered literal payload, a
-//! [`crate::operation::NestedTarget`] for bounded recursive analysis (ADR-022
-//! §3, §7). It never assigns a final `RiskLevel` — the root crate maps these
-//! operations through the shared classifier (Iteration 5 REVIEW GATE).
-//!
-//! Unlike the Python / JavaScript / TypeScript adapters, Bash is the *outer*
-//! shell language Aegis already classifies with the shell Scanner. The Bash
-//! adapter analyzes command-visible *nested* shell source (the body of
-//! `bash -c "…"`, `sh -c "…"`, `eval "…"`, `source`, heredoc bodies fed back by
-//! the router) and emits operations for what it finds. Deduplication of
-//! semantically identical evidence with the outer Scanner Matches is a
-//! merge-layer concern (plan Iteration 8: "outer Scanner Matches remain even
-//! when the Bash adapter reports a richer duplicate operation" + "deduplicate
-//! semantically identical evidence while retaining mechanism provenance"), not
-//! the adapter's job.
-//!
-//! Slice 1 scope: fully-qualified destructive commands (`rm`, `rmdir`,
-//! `unlink`, `chmod`, `chown`, `chgrp`), truncating/append file redirects
-//! (`>`, `>>`, `&>`, `&>>`, `>|`), the `tee` write command, and execution sinks
-//! (`eval`, `source`/`.`, `bash`/`sh`/… `-c`, `python* -c`, `node -e`, and any
-//! program named by path, such as `./other.sh`) with literal or dynamic operand
-//! certainty. Bounded symbol resolution, the
-//! `exec`/`command` builtins, multi-argument `eval` joining, `--` option
-//! termination, command prefixes (`sudo`/`nohup`/`nice`/`time`/`command` —
-//! already stripped by `router::source_targets` for the outer command but not
-//! yet for nested command names inside a payload, so `sudo rm` inside `bash -c`
-//! is not yet recognized), and unsupported interpreters (`perl`/`ruby`/`php`/…)
-//! are later slices.
+//! Analyzes nested shell source via `queries/bash/calls.scm` and emits
+//! language-neutral [`DetectedOperation`]s and [`NestedTarget`] payloads; never
+//! assigns `RiskLevel` directly (ADR-022 §3). Deduplication against outer
+//! shell `Scanner` matches is handled by the merge layer.
 
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -44,10 +17,6 @@ use crate::operation::{
     OperationKind, OperationModifiers,
 };
 
-/// The bundled Bash call-capture query. Compiled once on first use; a failure
-/// here is a build-time query-authoring bug, so panicking on first use is the
-/// correct startup behavior (CONVENTION.md: `.expect()` is acceptable in startup
-/// initialization).
 #[expect(
     clippy::expect_used,
     reason = "a bundled query that fails to compile is a build-time bug; panicking at startup is intended"
@@ -60,16 +29,6 @@ static CALLS_QUERY: LazyLock<Query> = LazyLock::new(|| {
     .expect("bundled bash/calls.scm must compile against the pinned grammar")
 });
 
-// A per-thread reusable Bash parser.
-//
-// `set_language` runs once per thread on first use (one-time initialization,
-// not on every `analyze` call) — a failure here is a build-time grammar-pin
-// bug, not user input, so panicking on init is the correct startup behavior
-// (CONVENTION.md: `.expect()` is acceptable in startup initialization). Keeping the
-// parser out of `analyze`'s body avoids re-running `set_language` on each call
-// and avoids `.expect()` on a per-invocation path. `thread_local!` gives each
-// thread its own parser with no locking; `analyze` is non-reentrant, so the
-// `borrow_mut` cannot clash.
 thread_local! {
     #[expect(
         clippy::expect_used,
@@ -176,9 +135,9 @@ fn collect_operations(root: Node, bytes: &[u8], query: &Query) -> Vec<DetectedOp
     operations
 }
 
-/// How a recognized command is classified, before operand certainty is
-/// attached. Routes a command name to the shared operation vocabulary without
-/// assigning `RiskLevel` (Iteration 5 REVIEW GATE).
+/// How a recognized command is classified before operand certainty is
+/// attached; maps command names to operations without assigning `RiskLevel`
+/// (ADR-022 §3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CommandClass {
     /// `rm` — filesystem deletion; recursive/forced modifiers come from flags.
@@ -228,15 +187,7 @@ fn classify_command(name: &str) -> Option<CommandClass> {
     })
 }
 
-/// Whether `name` is a Python interpreter (`python`, `python2`, `python3`, and
-/// versioned `python3.11` / `python2.7`). Bash-local: `aegis-language` may not
-/// depend on the root crate's router, so this duplicates the router's
-/// interpreter-name recognition rather than reusing it — the same
-/// boundary-forced duplication shape as the operation vocabulary (ADR-022 §4).
-/// The router (`router::INTERPRETERS`) recognizes only the exact `python` /
-/// `python3` basenames; this registry is intentionally *broader* (it also
-/// accepts `python2` and `N.M`-versioned forms), so the two are not kept in
-/// lockstep — a future change to one must be mirrored by hand in the other.
+// Kept local: aegis-language cannot depend on the root router (ADR-022 §4).
 fn is_python(name: &str) -> bool {
     if name == "python" {
         return true;
@@ -250,9 +201,6 @@ fn is_python(name: &str) -> bool {
     !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit() || c == '.')
 }
 
-/// Whether `name` is a Node interpreter (`node`, `nodejs`, and versioned
-/// `node20`). See [`is_python`] for the boundary-forced local-registry note
-/// and the not-in-lockstep caveat versus the router.
 fn is_node(name: &str) -> bool {
     name == "node"
         || name == "nodejs"
@@ -307,14 +255,8 @@ fn interpret_command(name_node: Node, cmd_node: Node, bytes: &[u8]) -> Option<De
             payload: None,
         }),
         CommandClass::Eval => {
-            // `eval` joins *all* its arguments with spaces and evaluates the
-            // result, so a literal first argument alongside a dynamic one
-            // (`eval "rm" "$x"`) evaluates a dynamic string. Recovering a
-            // `Known` payload from only the first argument would hide the
-            // dynamic tail — the unsafe direction ADR-022 §3/§7 guards
-            // against. Multi-argument joining is a later slice; until then,
-            // only a single literal argument is safe to recover, and every
-            // other shape degrades to `Dynamic` with no nested target.
+            // `eval` joins all arguments with spaces, so only a single literal
+            // argument is safe to recover without hiding a dynamic tail (ADR-022 §3, §7).
             let payload = (args.len() == 1)
                 .then(|| args.first())
                 .flatten()
@@ -423,11 +365,6 @@ fn command_args(cmd_node: Node) -> Vec<Node> {
         .collect()
 }
 
-/// Resolve `rm` recursive/forced modifiers from flag arguments: long flags
-/// `--recursive` / `--force`, and short flags (possibly combined, e.g. `-rf`).
-/// `--` option termination is a later slice; a path argument beginning with `-`
-/// after `--` would be misread here, which is the safe over-count (a
-/// destructive delete is still flagged).
 fn rm_modifiers(args: &[Node], bytes: &[u8]) -> OperationModifiers {
     let mut mods = OperationModifiers::default();
     for arg in args {
@@ -543,10 +480,6 @@ fn literal_payload(node: Node, bytes: &[u8], lang: SourceLanguage) -> Option<Nes
     })
 }
 
-/// The inner text of a string-literal node, or `None` when the node is not a
-/// literal form the adapter recovers (`raw_string`, `string`, `ansi_c_string`,
-/// `word`). Escape decoding is deferred to a later slice; the raw inner text is
-/// returned with escapes as written (consistent with the JS-family adapters).
 fn literal_content(node: Node, bytes: &[u8]) -> Option<String> {
     let text = node.utf8_text(bytes).ok()?;
     match node.kind() {
@@ -590,9 +523,6 @@ fn span_for(node: Node) -> ByteSpan {
     }
 }
 
-// The unit tests live in a sibling file to keep this adapter under the
-// 800-line file-size budget (`scripts/lint.sh text`); the same `#[path]`
-// split is used by `typescript.rs` → `typescript_tests.rs`.
 #[cfg(test)]
 #[path = "bash_tests.rs"]
 mod tests;

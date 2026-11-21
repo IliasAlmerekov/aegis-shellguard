@@ -20,17 +20,12 @@ tree-sitter-typescript = "=0.23.2"
 [dev-dependencies]
 criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 
-# Iteration 0 RED #3: a benchmark harness that fails if a no-source command
-# starts the language worker. The bench asserts Outcome::NotStarted inside its
-# iteration body, so a regression that makes a no-source command start the
-# worker panics the bench (non-zero exit) and fails the CI perf job.
+# Fails if a no-source command starts the language worker (ADR-022 §1).
 [[bench]]
 name = "no_source_bench"
 harness = false
 
-# Iteration 0 GREEN measurement: parse latency per foundation grammar. A
-# measurement (not asserting) bench — parses one representative inline-source
-# snippet per grammar so the recorded latency reflects the slow-path cost.
+# Per-grammar parse latency benchmark (ADR-022 §8).
 [[bench]]
 name = "parse_latency_bench"
 harness = false

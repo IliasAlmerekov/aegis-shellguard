@@ -1,31 +1,12 @@
-// Shared corpus-test harness for the language adapters (ADR-022 §11).
-//
-// Used by `tests/javascript_corpus.rs`, `tests/typescript_corpus.rs`, and
-// `tests/python_corpus.rs` via `#[path = "common/corpus_harness.rs"] mod
-// corpus_harness;`. Living in a `tests/common/` subdirectory keeps Cargo from
-// compiling it as its own integration-test target, matching the
-// `tests/common/no_source_corpus.rs` precedent. Regular comments (not `//!`)
-// keep it valid both as an included module and if ever `include!`d mid-file.
-//
-// The assertion machinery operates on the shared `AdapterResult` type and a
-// caller-provided `analyze` seam, so it is adapter-agnostic: each corpus
-// supplies its own `analyze` function and the language-specific payload
-// builders it needs (`js_exec` for the JavaScript family, `python_exec` for
-// Python — those stay local to their corpus). Only `bash_exec` lives here,
-// because Bash is the shared shell-sink payload language across all three
-// adapters. `ExpectedOp` and the three `assert_*` helpers are identical across
-// corpora, so they are centralized here to keep the corpora in lockstep on
-// assertion semantics and to surface any divergence as a compile error.
+// Shared corpus-test harness for language adapters (ADR-022 §11).
+// Lives in `tests/common/` so Cargo does not compile it as a standalone test target.
 
 use aegis_language::SourceLanguage;
 use aegis_language::operation::{
     AdapterResult, OperandCertainty, OperationKind, OperationModifiers,
 };
 
-/// One expected [`aegis_language::operation::DetectedOperation`]. Spans are
-/// deliberately not pinned — they are an implementation detail that changes on
-/// refactor; the unit tests pin span coverage. The spec-level invariants are
-/// kind, modifiers, certainty, and (for execution sinks) the nested payload.
+/// One expected [`aegis_language::operation::DetectedOperation`]; spans are pinned by unit tests.
 #[derive(Debug, Clone, Copy)]
 pub struct ExpectedOp {
     pub kind: OperationKind,
@@ -100,9 +81,7 @@ pub fn assert_malformed<F: Fn(&str) -> AdapterResult>(analyze: F, source: &str) 
     );
 }
 
-/// Build a `CodeExecution` expectation carrying a Bash (shell) literal payload.
-/// Bash is the shared shell-sink payload language across all language adapters,
-/// so this builder is common to every corpus.
+/// Build a `CodeExecution` expectation carrying a Bash literal payload.
 pub fn bash_exec(payload: &'static str) -> ExpectedOp {
     ExpectedOp {
         kind: OperationKind::CodeExecution,

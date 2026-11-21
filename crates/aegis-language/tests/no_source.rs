@@ -1,16 +1,8 @@
-//! Iteration 0 RED #3 — no-source commands must not start the worker.
+//! No-source commands must not start the language worker (ADR-022 §1).
 //!
-//! Aegis's shell `Scanner` stays the hot path. Language-aware analysis is an
-//! *additive slow path*: a command that exposes no analyzable source (no inline
-//! interpreter script, no script file this prototype inspects) must not cause
-//! the parse-only worker experiment to start, and must trigger zero filesystem
-//! metadata calls. The worker experiment is parse-only and takes source by
-//! `&str`, so it has no filesystem code path at all; this test pins the
-//! observable half of that contract — for a corpus of no-source commands,
-//! [`aegis_language::worker::analyze`] returns [`Outcome::NotStarted`] and
-//! [`aegis_language::router::source_targets`] returns an empty vector.
-//!
-//! See ADR-022.
+//! Pins that [`aegis_language::router::source_targets`] returns empty and
+//! [`aegis_language::worker::analyze`] returns [`Outcome::NotStarted`] for the
+//! shared `NO_SOURCE` corpus.
 
 use aegis_language::router::source_targets;
 use aegis_language::worker::{Outcome, analyze};

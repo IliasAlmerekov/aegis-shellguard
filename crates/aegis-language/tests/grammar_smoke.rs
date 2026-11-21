@@ -1,11 +1,4 @@
-//! Grammar manifest contract tests — Iteration 0 RED #1 (ADR-022 §8/§9).
-//!
-//! These assert the qualification contract for a release grammar: it must be
-//! version-pinned, carry license evidence, declare a Tree-sitter ABI supported
-//! by the pinned runtime, and belong to the L1 release-grammar set. The
-//! expected rejections and the qualified set come from ADR-022 — an
-//! independent source of truth — not from the validator's own logic, so the
-//! tests cannot pass by construction.
+//! Grammar manifest contract and host smoke tests (ADR-022 §8, §9).
 
 use aegis_language::manifest::{
     GrammarEntry, ManifestError, RELEASE_GRAMMARS, SUPPORTED_LANGUAGE_ABI, validate_entry,
@@ -132,10 +125,7 @@ fn release_grammar_set_matches_adr022_l1_foundation() {
 
 #[test]
 fn release_target_set_matches_adr022_release_matrix() {
-    // ADR-022 §8: the qualified grammar set must be identical across these
-    // four official release targets. The CI cross-compile matrix (Iteration 0
-    // RED #2b) builds `aegis-language` for each and asserts the four grammars
-    // link; this test locks the declared target set against silent drift.
+    // ADR-022 §8: the qualified grammar set must be identical across these four targets.
     use aegis_language::manifest::RELEASE_TARGETS;
     assert_eq!(
         RELEASE_TARGETS,
@@ -147,13 +137,6 @@ fn release_target_set_matches_adr022_release_matrix() {
         ]
     );
 }
-
-// ── Iteration 0 RED #2a: host build + grammar smoke ─────────────────────────
-//
-// ADR-022 §8 requires the four foundation adapters to be statically present in
-// the release binary. These tests prove the wired grammars actually parse on
-// the host build and that the built-in manifest's metadata matches the live
-// Tree-sitter runtime rather than a hand-asserted constant.
 
 use aegis_language::{SourceLanguage, parse};
 
@@ -221,15 +204,6 @@ fn builtin_manifest_abi_matches_the_live_tree_sitter_runtime() {
         );
     }
 }
-
-// ── Iteration 0 re-review: manifest pin + provenance completeness ─────────────
-//
-// ADR-022 §8 requires each grammar to be a *pinned* version. `validate_entry`
-// only rejects empty/`*` versions — it cannot tell a caret requirement from an
-// exact pin. The authoritative pin is `Cargo.lock`, which `cargo-deny` keeps
-// duplicate-free. These two tests close that gap against the real lockfile and
-// enforce that the plan-mandated provenance inventory (ADR-022 §8 inventory
-// list) is fully populated, so the `crate_name`/`upstream` fields are not inert.
 
 use std::fs;
 use std::process::Command;

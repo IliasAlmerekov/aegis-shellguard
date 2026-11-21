@@ -1,22 +1,10 @@
-//! Iteration 0 RED #3 — benchmark harness for the no-source contract.
+//! Benchmark harness for the no-source contract (ADR-022 §1).
 //!
-//! A no-source command must not start the language worker (ADR-022; plan
-//! Iteration 0 RED #3). This criterion harness measures the no-source path of
-//! [`aegis_language::worker::analyze`] over a corpus of no-source commands and
-//! asserts each one yields [`Outcome::NotStarted`]. If a regression ever makes
-//! a no-source command start the worker, the assertion panics inside the
-//! iteration body, the bench exits non-zero, and the CI perf job fails.
-//!
-//! The contract is also pinned by a fast `#[test]` in `tests/no_source.rs`
-//! (runs in `cargo test --workspace` on every PR); this harness additionally
-//! keeps the no-source path on the performance-regression wall so a slow path
-//! that quietly grew filesystem metadata calls is caught before main.
-//!
-//! Since Iteration 10 the recorded mean is also gated by the
-//! `no_source_does_not_start_worker` row in `perf/scanner_bench_baseline.toml`.
-//! One iteration walks the *whole* corpus, so adding `NO_SOURCE` entries raises
-//! the mean with no real regression — rebaseline that row in the same change.
-//! See `docs/performance-baseline.md`.
+//! Measures [`aegis_language::worker::analyze`] over `NO_SOURCE` and asserts
+//! [`Outcome::NotStarted`] on every entry. The recorded mean is gated by the
+//! `no_source_does_not_start_worker` row in `perf/scanner_bench_baseline.toml`;
+//! adding `NO_SOURCE` entries raises the mean, so rebaseline that row in the
+//! same change. See `docs/performance-baseline.md`.
 
 use aegis_language::worker::{Outcome, analyze};
 use criterion::{Criterion, criterion_group, criterion_main};

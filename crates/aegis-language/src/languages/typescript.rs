@@ -1,29 +1,9 @@
-//! TypeScript language adapter (plan Iteration 7, Slice 1).
+//! TypeScript language adapter (ADR-022 §3, §7).
 //!
-//! Structural capture via the bundled Tree-sitter query
-//! (`queries/typescript/calls.scm`); semantic interpretation in typed Rust. The
-//! adapter emits language-neutral [`crate::operation::DetectedOperation`]s and,
-//! for execution sinks with a statically recovered literal payload, a
-//! [`crate::operation::NestedTarget`] for bounded recursive analysis (ADR-022
-//! §3, §7). It never assigns a final `RiskLevel` — the root crate maps these
-//! operations through the shared classifier (Iteration 5 REVIEW GATE).
-//!
-//! TypeScript is a syntactic superset of JavaScript and reuses the JavaScript
-//! node types for call sites and string literals, so the grammar-agnostic
-//! interpretation (API-spelling → operation, operand certainty, recursive-option
-//! resolution, nested payload recovery, the call-capture query loop) is shared
-//! via the [`super::family`] module (plan Iteration 7: "share JavaScript-family
-//! resolution where syntax permits"). This module owns only the TypeScript
-//! grammar, per-thread parser, and compiled query — the grammar and span
-//! handling stay explicit per adapter (plan Iteration 7 GREEN).
-//!
-//! Slice 1 scope: the JavaScript-family destructive / execution-sink API
-//! surface (`fs.*Sync`, `eval`, `new Function`, `child_process.*`) over
-//! TypeScript source, including calls with explicit type arguments and
-//! destructive calls inside generic class methods. Type-only syntax
-//! (interfaces, enums, type aliases, `import type`, `as`, `satisfies`,
-//! decorators) surfaces no operation. Bounded symbol resolution (imports,
-//! aliases, simple constants → `OperandCertainty::Partial`) is a later slice.
+//! Captures call sites via `queries/typescript/calls.scm` and delegates
+//! interpretation to the shared `family` module, emitting language-neutral
+//! [`crate::operation::DetectedOperation`]s without assigning `RiskLevel`
+//! directly (ADR-022 §3).
 
 use std::cell::RefCell;
 use std::sync::LazyLock;
@@ -34,10 +14,6 @@ use crate::language::SourceLanguage;
 use crate::languages::family;
 use crate::operation::AdapterResult;
 
-/// The bundled TypeScript call-capture query. Compiled once on first use; a
-/// failure here is a build-time query-authoring bug, so panicking on first use
-/// is the correct startup behavior (CONVENTION.md: `.expect()` is acceptable in
-/// startup initialization).
 #[expect(
     clippy::expect_used,
     reason = "a bundled query that fails to compile is a build-time bug; panicking at startup is intended"
@@ -50,16 +26,6 @@ static CALLS_QUERY: LazyLock<Query> = LazyLock::new(|| {
     .expect("bundled typescript/calls.scm must compile against the pinned grammar")
 });
 
-// A per-thread reusable TypeScript parser.
-//
-// `set_language` runs once per thread on first use (one-time initialization,
-// not on every `analyze` call) — a failure here is a build-time grammar-pin
-// bug, not user input, so panicking on init is the correct startup behavior
-// (CONVENTION.md: `.expect()` is acceptable in startup initialization). Keeping the
-// parser out of `analyze`'s body avoids re-running `set_language` on each call
-// and avoids `.expect()` on a per-invocation path. `thread_local!` gives each
-// thread its own parser with no locking; `analyze` is non-reentrant, so the
-// `borrow_mut` cannot clash.
 thread_local! {
     #[expect(
         clippy::expect_used,
@@ -107,9 +73,6 @@ pub fn analyze(source: &str) -> AdapterResult {
     }
 }
 
-// The unit tests live in a sibling file to keep this adapter under the
-// 800-line file-size budget (`scripts/lint.sh text`); the same `#[path]`
-// split is used by `javascript.rs` → `javascript_tests.rs`.
 #[cfg(test)]
 #[path = "typescript_tests.rs"]
 mod tests;

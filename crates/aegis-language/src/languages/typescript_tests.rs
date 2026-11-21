@@ -1,21 +1,4 @@
-//! Unit tests for the TypeScript adapter (`typescript.rs`).
-//!
-//! Lives in a sibling file via `#[path = "typescript_tests.rs"]` to keep the
-//! adapter source under the workspace 800-line file-size budget
-//! (`scripts/lint.sh text`); the same `#[path]` split is used by
-//! `javascript.rs` → `javascript_tests.rs`. `use super::*` resolves to the
-//! `typescript` module.
-//!
-//! TypeScript shares the JavaScript-family classification (`family` module) but
-//! owns its own grammar (`LANGUAGE_TYPESCRIPT`) and query. These tests prove the
-//! TS adapter routes TS source through that shared classifier (one tracer per
-//! operation category), and pin TypeScript-only syntax the JS suite does not
-//! cover: calls with type arguments, generic class methods, type annotations,
-//! interfaces / enums / type aliases / `import type` / `as` / `satisfies` /
-//! decorators as negatives, and a modern-TS parse-clean case. The genuine
-//! RED-risk is whether the pinned tree-sitter-typescript 0.23.2 grammar parses
-//! current TypeScript cleanly and whether the `calls.scm` query matches TS
-//! ASTs — including type-argument calls — unchanged.
+//! Unit tests for the TypeScript adapter, including TypeScript-only syntax.
 
 use super::*;
 use crate::operation::{DetectedOperation, OperandCertainty, OperationKind, OperationModifiers};
@@ -135,12 +118,6 @@ fn fs_unlinksync_with_template_interpolation_is_dynamic() {
     assert_eq!(op.certainty, OperandCertainty::Dynamic);
 }
 
-// --- TypeScript-only syntax: type arguments on a call (RED-risk) -----------
-// A call with explicit type arguments (`fs.unlinkSync<void>("x")`) must still
-// match the `calls.scm` query and surface its operation — the `type_arguments`
-// node is a separate child of `call_expression`, not the `function` field, so
-// the query's `function: (member_expression …)` pattern must still bind.
-
 #[test]
 fn call_with_type_arguments_still_surfaces_the_operation() {
     let op = one_op("fs.unlinkSync<void>(\"x\")");
@@ -158,12 +135,6 @@ fn exec_with_type_arguments_still_surfaces_code_execution() {
     assert_eq!(payload.source, "fs.unlinkSync('x')");
 }
 
-// `new`-expression with explicit type arguments exercises the third
-// `calls.scm` pattern (`new_expression constructor: (identifier)`) under the
-// same RED-risk as the two `call_expression` patterns: the `type_arguments`
-// child must not detach the `constructor: (identifier)` field binding. A
-// non-idiomatic construct, but it closes the type-argument triangle so all
-// three query patterns are empirically confirmed over TS type-arg syntax.
 #[test]
 fn new_expression_with_type_arguments_still_surfaces_code_execution() {
     let op = one_op("new Function<string>(\"return fs.unlinkSync('x')\")");
@@ -185,10 +156,7 @@ fn generic_class_method_calling_fs_surfaces_the_operation() {
     assert_eq!(op.certainty, OperandCertainty::Known);
 }
 
-// --- TypeScript-only syntax: type annotations on operands ------------------
-// A typed variable operand is still `Dynamic` (bounded resolution is deferred;
-// a typed variable is never evidence of safety — ADR-022 §3/§7).
-
+// Typed variables remain `Dynamic` (ADR-022 §3, §7).
 #[test]
 fn typed_variable_operand_is_dynamic() {
     let src = "function f(p: string) {\n  fs.unlinkSync(p);\n}";

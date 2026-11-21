@@ -1,22 +1,17 @@
-//! Minimal parse-only worker experiment (Iteration 0) plus the bounded
-//! ephemeral worker dispatch loop (Iteration 3).
+//! Ephemeral language-worker dispatch loop and in-process inline-source helper
+//! (ADR-022 §1, §2).
 //!
-//! The Iteration 0 [`analyze`] helper is an in-process parse-only experiment
-//! that proves the no-source contract and that the four foundation grammars
-//! parse inline source on the host build.
+//! [`run`] serves a bounded sequence of [`crate::protocol`] `Parse` and
+//! `Analyze` frames for one intercepted command and exits when input ends or
+//! the request cap is reached. There is no daemon, filesystem access,
+//! subprocess execution, or network service (ADR-022 §2). Protocol or I/O
+//! failures return a typed [`RunOutcome`] that the parent maps to
+//! `DegradationReason::WorkerFailure` while retaining prior results (ADR-022
+//! §2, §4).
 //!
-//! The Iteration 3 [`run`] dispatch loop is what the real ephemeral worker
-//! process runs: it reads length-bounded versioned request frames
-//! ([`crate::protocol`]), parses the supplied source bytes with the matching
-//! Tree-sitter grammar, and writes one response frame per request. It is
-//! **parse-only**: no filesystem access, no subprocess, no daemon, no socket
-//! (ADR-022 §2). A bounded sequence of requests is served for one intercepted
-//! command, then the loop force-exits.
-//!
-//! Worker failures (a malformed frame, a truncated trailing frame, a read or
-//! write error) stop the loop with a typed [`RunOutcome`]; the parent process
-//! converts those into `DegradationReason::WorkerFailure` while retaining
-//! baseline and prior target results (ADR-022 §2, §4).
+//! [`analyze`] checks an intercepted command for inline source and parses any
+//! targets in-process, returning [`Outcome::NotStarted`] for no-source
+//! commands (ADR-022 §1).
 
 use std::io::{Read, Write};
 
@@ -56,7 +51,7 @@ pub enum RunOutcome {
 }
 
 /// Run the worker dispatch loop over `reader` / `writer`, serving up to
-/// [`MAX_REQUESTS_PER_SESSION`] Parse requests then stopping.
+/// [`MAX_REQUESTS_PER_SESSION`] requests then stopping.
 pub fn run<R: Read, W: Write>(reader: R, writer: W) -> RunOutcome {
     run_with_limit(reader, writer, MAX_REQUESTS_PER_SESSION)
 }
@@ -131,26 +126,13 @@ fn handle_request(request: &Request) -> Response {
     };
     match language::parse(language, source_str) {
         Ok(tree) => Response::Parsed {
-            // `has_error()` reports whether the tree contains any ERROR node.
-            // A finer-grained count is a classifier concern (Iteration 5); the
-            // worker only reports whether the parse was clean.
             error_count: u32::from(tree.root_node().has_error()),
         },
         Err(_) => Response::ParseFailed,
     }
 }
 
-/// Run the language adapter for an [`Request::Analyze`] and frame its result
-/// (ADR-022 §2: adapters run in the self-spawned worker).
-///
-/// Every foundation language ships an adapter: Python (Iteration 6), JavaScript
-/// and TypeScript (Iteration 7), and Shell/Bash (Iteration 8). The parent owns
-/// the UTF-8 encoding contract (ADR-022 §7): bytes that are not valid UTF-8
-/// cannot be handed to the adapter (it takes a `&str`), so the worker reports an
-/// [`Response::Analyzed`]
-/// result with one parse error and no operations — the parent maps
-/// `parse_errors` to a degradation reason rather than treating the target as
-/// clean.
+// Parent owns UTF-8 validation (ADR-022 §7); invalid UTF-8 yields one parse error so parent degrades.
 fn analyze_source(language: &SourceLanguage, source: &[u8]) -> Response {
     let adapter = match language {
         SourceLanguage::Python => crate::languages::python::analyze,
@@ -175,28 +157,22 @@ fn analyze_source(language: &SourceLanguage, source: &[u8]) -> Response {
     }
 }
 
-/// The outcome of a parse-only worker experiment on one command.
+/// Outcome of [`analyze`] on one command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
-    /// The command exposed no analyzable source targets, so the worker did not
-    /// start and performed no work — and no filesystem metadata calls.
-    ///
-    /// This is the only outcome a no-source command may produce (ADR-022
-    /// Iteration 0 RED #3).
+    /// No analyzable source targets were found; the worker did not start and
+    /// performed no filesystem metadata calls (ADR-022 §1).
     NotStarted,
-    /// The worker started and parsed the inline source of `targets` targets.
-    ///
-    /// `targets` counts successfully parsed bodies; a body that fails to parse
-    /// is dropped rather than failing the whole experiment, because typed
-    /// degradation reasons are not introduced until Iteration 1.
+    /// Inline source targets were parsed in-process; `targets` counts bodies
+    /// for which [`crate::language::parse`] returned `Ok` (including trees with
+    /// syntax errors).
     Parsed { targets: usize },
 }
 
-/// Analyze `command` with the parse-only worker experiment.
+/// Check `command` for inline source targets and parse any found in-process.
 ///
-/// No-source commands return [`Outcome::NotStarted`] without any filesystem
-/// access. Commands with inline source are parsed in-process with the matching
-/// Tree-sitter grammar.
+/// No-source commands return [`Outcome::NotStarted`] with no filesystem access
+/// (ADR-022 §1).
 #[must_use]
 pub fn analyze(command: &str) -> Outcome {
     let targets = router::source_targets(command);
@@ -450,17 +426,8 @@ mod dispatch_tests {
         }
     }
 
-    // ── Analyze dispatch (Iteration 6 Slice A) ──────────────────────────────
-
     #[test]
     fn run_analyzes_python_source_and_returns_an_analyzed_response() {
-        // A fully-qualified destructive call with a literal operand is in the
-        // Python adapter's Slice 1 scope, so a clean `os.remove('x')` must
-        // produce an `Analyzed` response with a clean parse (zero errors) and
-        // at least one detected operation. The exact operation shape is the
-        // adapter's own contract (pinned in `languages::python`); this test
-        // pins only that the worker *dispatched* to the adapter and framed
-        // its result.
         let requests = encode_requests(&[(
             21,
             analyze_request(SourceLanguage::Python, b"os.remove('x')"),
@@ -491,14 +458,6 @@ mod dispatch_tests {
 
     #[test]
     fn run_analyzes_javascript_source_and_returns_an_analyzed_response() {
-        // Iteration 7 Slice 2 wires the JavaScript adapter into the worker, so
-        // an Analyze request for a destructive JS body must dispatch to
-        // `javascript::analyze` and return an `Analyzed` response. A clean
-        // `fs.unlinkSync("data.txt")` is a FilesystemDelete with a Known operand
-        // (pinned in `languages::javascript`), so the parse must be clean and at
-        // least one operation must surface. The exact operation shape is the
-        // adapter's own contract; this test pins only that the worker
-        // *dispatched* to the adapter and framed its result.
         let requests = encode_requests(&[(
             24,
             analyze_request(SourceLanguage::JavaScript, b"fs.unlinkSync(\"data.txt\")"),
@@ -529,17 +488,6 @@ mod dispatch_tests {
 
     #[test]
     fn run_analyzes_typescript_source_and_returns_an_analyzed_response() {
-        // Iteration 7 Slice 2 wires the TypeScript adapter into the worker, so an
-        // Analyze request for a destructive TS body must dispatch to
-        // `typescript::analyze` and return an `Analyzed` response. The call
-        // `fs.unlinkSync<void>("data.txt")` carries an explicit type argument —
-        // TypeScript-only syntax the JS adapter does not exercise — so a clean
-        // parse plus at least one operation proves the worker reached the TS
-        // adapter (the `calls.scm` query surfaces the op because
-        // `type_arguments` is a separate child, not the `function` field; pinned
-        // in `languages::typescript`). The exact operation shape is the adapter's
-        // own contract; this test pins only that the worker *dispatched* to the
-        // adapter and framed its result.
         let requests = encode_requests(&[(
             25,
             analyze_request(
@@ -573,12 +521,6 @@ mod dispatch_tests {
 
     #[test]
     fn run_analyzes_bash_source_and_returns_an_analyzed_response() {
-        // Iteration 8 wires the Shell/Bash adapter into the worker (issue #383),
-        // so an Analyze request for a destructive shell body must dispatch to
-        // `bash::analyze` and return an `Analyzed` response instead of
-        // `UnsupportedLanguage`. The exact operation shape is the adapter's own
-        // contract; this test pins only that the worker dispatched to the
-        // adapter and framed its result.
         let requests =
             encode_requests(&[(22, analyze_request(SourceLanguage::Bash, b"rm -rf build"))]);
         let reader = std::io::Cursor::new(requests);

@@ -1,42 +1,5 @@
-//! TypeScript adapter corpus (plan Iteration 7, ADR-022 §11).
-//!
-//! Checked-in `.ts` corpus files under `tests/corpora/typescript/`, embedded at
-//! compile time via `include_str!`. Each file is paired with a hand-derived
-//! expectation — derived from ADR-022 §3/§7 and the shared JavaScript-family
-//! API semantics, NOT recomputed by the adapter — declaring the operations the
-//! adapter must surface, their modifiers and [`OperandCertainty`], the
-//! parse-error count, and any nested execution-sink payload. The harness runs
-//! the public [`aegis_language::languages::typescript::analyze`] seam over every
-//! corpus file and asserts the adapter output matches the expectation.
-//!
-//! This is a characterization + regression corpus: the expected values come
-//! from an independent source of truth, so a real adapter or grammar regression
-//! fails the test. `modern_syntax` additionally proves the pinned
-//! tree-sitter-typescript 0.23.2 grammar parses current TypeScript (generics,
-//! arrow generics, `satisfies`, decorators, `import type`, mapped / conditional
-//! / `infer` types) without errors and without false operations; `malformed`
-//! proves a nonzero parse-error count is reported (the root mapping turns that
-//! into `IncompleteSyntax` degradation). The operation-category files enrich
-//! the JavaScript corpus with TypeScript-only call syntax — explicit type
-//! arguments on tracked calls (`fs.unlinkSync<void>(...)`,
-//! `child_process.exec<void>(...)`, `new Function<string>(...)`) and an `as`-
-//! cast dynamic operand — proving those calls still capture and classify at
-//! corpus scale.
-//!
-//! The `ExpectedOp` manifest, the `assert_ops` / `assert_clean_no_ops` /
-//! `assert_malformed` assertions, and the `bash_exec` payload builder are shared
-//! with the JavaScript and Python corpora via `tests/common/corpus_harness.rs`
-//! so the three corpora stay in lockstep on assertion semantics. Only
-//! `js_exec` (a JavaScript-family payload builder) is local to this corpus.
-//!
-//! Out of scope here (deferred, see plan): `fs.promises.*` and callback-form
-//! variants, import / alias / simple-constant → `OperandCertainty::Partial`
-//! cases (need bounded symbol resolution), `DatabaseDestructive` coverage (the
-//! adapter does not emit it yet), chained member calls (`a.b.c()` — the
-//! `calls.scm` query matches `object: (identifier)` only), a TypeScript inline
-//! runner in the router registry (no `node -e` analog routes to TypeScript
-//! today, so there is no real-subprocess orchestration corpus here — deferred
-//! with the TypeScript runner-routing slice), and the adapter fuzz target.
+//! TypeScript adapter corpus under `tests/corpora/typescript/` (ADR-022 §3, §7, §11).
+//! Pins detected operations, TypeScript-only syntax, operand certainty, nested payloads, and parse errors.
 
 #[path = "common/corpus_harness.rs"]
 mod corpus_harness;
@@ -168,12 +131,7 @@ fn negatives_emit_no_operations() {
 
 #[test]
 fn dynamic_operand_emits_ops_with_dynamic_certainty_and_no_payload() {
-    // ADR-022 §3/§7: a dynamic operand never lowers risk and never hides the
-    // operation, but a dynamic payload is never enqueued or evaluated. Bounded
-    // symbol resolution is deferred, so a variable holding a literal is still
-    // Dynamic at this seam. A template literal with interpolation is computed,
-    // so it is Dynamic too. The final delete's `as`-cast operand is not a
-    // string literal, so it is Dynamic as well.
+    // ADR-022 §3, §7: dynamic operands never lower risk and dynamic payloads are never evaluated.
     let expected = [
         ExpectedOp {
             kind: OperationKind::FilesystemDelete,
@@ -214,9 +172,6 @@ fn malformed_source_records_parse_errors() {
 }
 
 /// Build a `CodeExecution` expectation carrying a JavaScript literal payload.
-/// JavaScript-family specific (the shared `family` module tags `eval`/`Function`
-/// payloads as `JavaScript`), so this builder stays local to the JS-family
-/// corpora rather than in `tests/common/corpus_harness.rs`.
 fn js_exec(payload: &'static str) -> ExpectedOp {
     ExpectedOp {
         kind: OperationKind::CodeExecution,

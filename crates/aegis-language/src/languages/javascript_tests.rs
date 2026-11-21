@@ -1,10 +1,4 @@
-//! Unit tests for the JavaScript adapter (`javascript.rs`).
-//!
-//! Lives in a sibling file via `#[path = "javascript_tests.rs"]` to keep the
-//! adapter source under the workspace 800-line file-size budget
-//! (`scripts/lint.sh text`); the same `#[path]` split is used by
-//! `operation.rs` → `operation_tests.rs`. `use super::*` resolves to the
-//! `javascript` module, so the tests reach the adapter's items directly.
+//! Unit tests for the JavaScript adapter.
 
 use super::*;
 use crate::operation::{DetectedOperation, OperandCertainty, OperationKind, OperationModifiers};
@@ -274,7 +268,6 @@ fn child_process_exec_template_with_interpolation_is_dynamic() {
 
 #[test]
 fn eval_payload_with_escape_sequence_recovers_raw_text() {
-    // Escapes as-written; decoding deferred (Python Slice 1). Exercises `escape_sequence`.
     let op = one_op("eval(\"a\\tb\")");
     assert_eq!(op.kind, OperationKind::CodeExecution);
     assert_eq!(op.certainty, OperandCertainty::Known);

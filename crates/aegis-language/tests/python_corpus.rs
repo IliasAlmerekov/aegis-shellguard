@@ -1,33 +1,5 @@
-//! Python adapter corpus (plan Iteration 6, ADR-022 §11).
-//!
-//! Checked-in `.py` corpus files under `tests/corpora/python/`, embedded at
-//! compile time via `include_str!`. Each file is paired with a hand-derived
-//! expectation — derived from ADR-022 §3/§7 and Python API semantics, NOT
-//! recomputed by the adapter — declaring the operations the adapter must
-//! surface, their modifiers and [`OperandCertainty`], the parse-error count,
-//! and any nested execution-sink payload. The harness runs the public
-//! [`aegis_language::languages::python::analyze`] seam over every corpus file
-//! and asserts the adapter output matches the expectation.
-//!
-//! This is a characterization + regression corpus: the expected values come
-//! from an independent source of truth, so a real adapter or grammar regression
-//! fails the test. `modern_syntax` additionally proves the pinned
-//! tree-sitter-python 0.25.0 grammar parses current Python without errors and
-//! without false operations; `malformed` proves a nonzero parse-error count is
-//! reported (the root mapping turns that into `IncompleteSyntax` degradation).
-//!
-//! The `ExpectedOp` manifest, the `assert_ops` / `assert_clean_no_ops` /
-//! `assert_malformed` assertions, and the `bash_exec` payload builder are shared
-//! with the JavaScript and TypeScript corpora via
-//! `tests/common/corpus_harness.rs` so the three corpora stay in lockstep on
-//! assertion semantics. Only `python_exec` (a Python payload builder) is local
-//! to this corpus.
-//!
-//! Out of scope here (deferred, see plan): import / alias / simple-constant →
-//! `Partial`-certainty cases (need bounded symbol resolution), `DatabaseDestructive`
-//! coverage (the adapter does not emit it yet), stdin / heredoc-to-file /
-//! named-file full-pipeline fixtures (need `ScriptFile` fs-read wiring in
-//! `aegis::analysis::run`), and the adapter fuzz target.
+//! Python adapter corpus under `tests/corpora/python/` (ADR-022 §3, §7, §11).
+//! Pins detected operations, modifiers, operand certainty, nested payloads, and parse errors.
 
 #[path = "common/corpus_harness.rs"]
 mod corpus_harness;
@@ -157,10 +129,7 @@ fn negatives_emit_no_operations() {
 
 #[test]
 fn dynamic_operand_emits_ops_with_dynamic_certainty_and_no_payload() {
-    // ADR-022 §3/§7: a dynamic operand never lowers risk and never hides the
-    // operation, but a dynamic payload is never enqueued or evaluated. Bounded
-    // symbol resolution is deferred, so a variable holding a literal is still
-    // Dynamic at this seam.
+    // ADR-022 §3, §7: dynamic operands never lower risk and dynamic payloads are never evaluated.
     let expected = [
         ExpectedOp {
             kind: OperationKind::FilesystemDelete,
@@ -195,8 +164,6 @@ fn malformed_source_records_parse_errors() {
 }
 
 /// Build a `CodeExecution` expectation carrying a Python literal payload.
-/// Python-specific, so this builder stays local to this corpus rather than in
-/// `tests/common/corpus_harness.rs`.
 fn python_exec(payload: &'static str) -> ExpectedOp {
     ExpectedOp {
         kind: OperationKind::CodeExecution,

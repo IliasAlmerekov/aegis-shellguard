@@ -1,15 +1,5 @@
-//! Bash adapter corpus (plan Iteration 8, ADR-022 §3, §7).
-//!
-//! The checked-in Bash sources are embedded at compile time and exercised
-//! through the public `aegis_language::languages::bash::analyze` seam. The
-//! expectations are hand-derived from shell semantics and ADR-022, rather than
-//! from the adapter implementation, so this corpus characterizes the qualified
-//! Slice 1 behavior and catches grammar or interpretation regressions.
-//!
-//! This corpus intentionally stays at the adapter seam. Worker dispatch,
-//! routing of heredoc bodies, and preservation/deduplication of outer Scanner
-//! Matches are separate Iteration 8 slices; asserting them here would create a
-//! synthetic pipeline test.
+//! Bash adapter corpus under `tests/corpora/bash/` (ADR-022 §3, §7, §11).
+//! Pins detected operations, modifiers, operand certainty, nested payloads, and parse errors.
 
 #[path = "common/corpus_harness.rs"]
 mod corpus_harness;

@@ -1,23 +1,15 @@
-//! Prototype source-target router (Iteration 0).
+//! Pure inline source-target detector (ADR-022 §1).
 //!
-//! Detects analyzable *inline* source targets in an intercepted command
-//! **without touching the filesystem**: interpreter `-c`/`-e` bodies. Heredoc
-//! bodies and file-based targets (`python3 script.py`) require filesystem
-//! access and are deliberately out of scope for this prototype — they land in
-//! Iteration 4 (`src/analysis/router.rs`, `heredoc.rs`).
-//!
-//! Contract: a no-source command yields no targets, so the worker experiment
-//! must not start and must perform zero filesystem metadata calls. This module
-//! takes only `&str` and produces [`SourceTarget`]s by slicing the input; it
-//! has no `std::fs` code path. See ADR-022.
+//! Detects interpreter `-c`/`-e` inline source bodies from `&str` alone with
+//! no filesystem access. No-source commands yield no targets so the language
+//! worker does not start.
 
 use crate::language::SourceLanguage;
 
 /// An analyzable source target discovered without filesystem access.
 ///
-/// `source` is the inline body sliced out of the runtime command string (the
-/// quoted argument to an interpreter's `-c`/`-e` flag), hence owned rather than
-/// `&'static`.
+/// `source` is an owned `String` because it is extracted from the runtime
+/// command string (the quoted argument to an interpreter's `-c`/`-e` flag).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceTarget {
     /// The language the inline source declares (via its interpreter).
@@ -75,10 +67,6 @@ const COMMAND_PREFIXES: &[&str] = &["sudo", "time", "nice", "nohup", "command"];
 
 /// Detect analyzable inline source targets in `command` without any filesystem
 /// access. Returns an empty vector for no-source commands.
-///
-/// This is the Iteration 0 prototype detector; the production router (Iteration
-/// 4) will reuse the shell tokenizer and add heredoc + file targets behind a
-/// bounded, no-follow source reader.
 #[must_use]
 pub fn source_targets(command: &str) -> Vec<SourceTarget> {
     let words = shell_words(command);
@@ -146,9 +134,6 @@ fn basename(path: &str) -> &str {
 
 /// Split a command string into shell words, honoring single and double quotes
 /// and backslash escapes inside double quotes.
-///
-/// This is a minimal prototype tokenizer; the production router will reuse the
-/// `aegis-parser` tokenizer instead of maintaining a second one.
 fn shell_words(input: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut cur = String::new();
