@@ -8,11 +8,10 @@
 # Usage: scripts/lint.sh [fmt|clippy|text|all]
 #   fmt     check formatting
 #   clippy  lint every target and feature, warnings are errors
-#   text    checks clippy cannot make, from grep, find and git only: no `.rs`
-#           file under src/, crates/, tests/, fuzz/ or benches/ exceeds 800
-#           lines, every backticked path in AGENTS.md, CONVENTION.md,
-#           CONTRIBUTING.md and CLAUDE.md exists in the tree, and
-#           scripts/test-tamper-check.test.sh passes
+#   text    checks clippy cannot make: no `.rs` file under src/, crates/,
+#           tests/, fuzz/ or benches/ exceeds 800 lines, every backticked path
+#           in AGENTS.md, CONVENTION.md, CONTRIBUTING.md and CLAUDE.md exists
+#           in the tree, and scripts/test-tamper-check.test.sh passes
 #   all     fmt, clippy, then text (also the default with no argument)
 #
 # LINT_TEXT_ROOT points the text checks at another directory than the
