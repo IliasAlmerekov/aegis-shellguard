@@ -8,7 +8,7 @@ use super::AegisConfig;
 pub(super) const PROJECT_CONFIG_FILE: &str = ".aegis.toml";
 
 const INIT_TEMPLATE: &str = r#"# Aegis project configuration.
-config_version = 1 # Schema version. Omit only when loading a pre-version legacy config for migration.
+config_version = 1 # Schema version. An omitted value means the current version.
 mode = "Protect" # Protect prompts on Warn/Danger, Audit is non-blocking audit-only, Strict blocks non-safe and indirect execution forms by default.
 
 custom_patterns = [] # Extra user-defined patterns loaded for this project.

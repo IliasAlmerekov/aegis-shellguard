@@ -34,9 +34,9 @@ pub struct CommandExplanation {
 pub struct ScanExplanation {
     /// Highest risk observed in the scanner assessment.
     pub highest_risk: RiskLevel,
-    /// High-level source of the assessment — the v1 compatibility projection.
-    /// Retained so existing explanation/audit consumers keep their field; the
-    /// richer successor is `basis` (ADR-022 §4, §10).
+    /// Live one-value label for the assessment source, read by policy output,
+    /// the TUI, and audit explanations alongside the richer `basis`
+    /// (ADR-022 §4, §10).
     pub decision_source: DecisionSource,
     /// What produced the decision, expressed as the decisive `Match`es — every
     /// `Match` at the assessment's maximum `RiskLevel`, or `Fallback` when

@@ -183,8 +183,8 @@ pub enum DecisionSource {
 /// label. `Fallback` is used only when no rule matched. The built-in vs custom
 /// distinction lives per-Match (via detection evidence), not in the basis.
 ///
-/// This is the audit-persistable shape (ADR-022 §10); the singular
-/// `DecisionSource` is retained for v1 compatibility projection.
+/// This is the audit-persistable shape (ADR-022 §10); [`DecisionSource`]
+/// remains a live one-value label alongside this richer basis.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum AssessmentBasis {
@@ -261,8 +261,8 @@ impl Assessment {
     /// scanner guarantees `self.risk` is the maximum matched risk, so this never
     /// drops a max-risk Match or includes a lower-risk one). IDs preserve
     /// `self.matched` order for deterministic output. This is the basis the audit
-    /// v2 schema and the monotonic merge build on; the legacy
-    /// [`Self::decision_source`] is kept only for v1 compatibility projection.
+    /// v2 schema and the monotonic merge build on; [`Self::decision_source`]
+    /// provides the live one-value label alongside this richer basis.
     pub fn basis(&self) -> AssessmentBasis {
         if self.matched.is_empty() {
             return AssessmentBasis::Fallback;

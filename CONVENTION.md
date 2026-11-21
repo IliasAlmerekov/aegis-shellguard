@@ -246,7 +246,7 @@ Audit rules:
 - New entries use RFC 3339 / ISO 8601 timestamps with timezone.
 - Audit querying must remain compatible with rotated archives.
 - Machine-readable audit output is part of the public contract.
-- Backward compatibility for older log entries must be maintained where practical.
+- Keep readers of data Aegis persisted forever; keep input shapes that may live in a user's files or scripts (removing one requires a breaking-change decision, never cleanup); remove dead compatibility layers.
 
 ## 8. Performance Rules
 

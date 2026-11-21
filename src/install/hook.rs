@@ -230,9 +230,8 @@ fn hook_deny_output(reason: String) -> Value {
     serde_json::json!({
         // Claude reads the top-level `reason` for the deny message while Codex
         // reads `hookSpecificOutput.permissionDecisionReason`. Emit both so the
-        // deny reason is visible in either agent. The structured
-        // `permissionDecision` form is intentional — a top-level legacy
-        // `decision` field is deliberately NOT emitted.
+        // deny reason is visible in either agent. Emit only the structured
+        // `permissionDecision` form and no top-level `decision` field.
         "reason": reason.clone(),
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -643,8 +642,8 @@ mod tests {
             output["hookSpecificOutput"]["permissionDecisionReason"],
             "nope"
         );
-        // The structured permissionDecision form is intentional; do not also emit
-        // a top-level legacy `decision` field.
+        // Emit only the structured `permissionDecision` form and no top-level
+        // `decision` field.
         assert!(
             output.get("decision").is_none(),
             "top-level `decision` must not be emitted"

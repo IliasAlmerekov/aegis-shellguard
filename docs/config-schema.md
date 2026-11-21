@@ -7,7 +7,7 @@ Aegis config uses an explicit `config_version` field.
 This section is the repository's explicit `schema evolution` and `migration` reference.
 
 - `config_version = 1` is the current schema.
-- omitted `config_version` is treated as a legacy pre-version config input
+- omitted `config_version` means the current version
 - unsupported future versions are rejected explicitly
 
 This document describes the current runtime contract for schema version `1`.

@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Changed: removed dead compatibility layers (the PascalCase serde alias on `SandboxStatus::NotConfigured` and the `run` compatibility wrapper in `aegis::analysis`), fixed stale compatibility wording in the config init template, `docs/config-schema.md`, `install/hook.rs`, `install/mod.rs`, `decision_source` docs, and `CONTEXT.md`, and added the three-tier compatibility rule to `CONVENTION.md`; behaviour is unchanged (#620).
+
 - Changed: gated test-only public functions behind `#[cfg(test)]` or a `testing` Cargo feature across `aegis-parser`, `aegis-scanner`, `aegis-config`, `aegis-snapshot`, `aegis-tui`, `aegis-audit`, and `aegis-language`, and wired `scripts/test-tamper-check.test.sh` into `scripts/lint.sh text` (#618).
 - Fixed: dropped stale crate counts, dependency versions, literal MSRV, dead test/source citations, and unused `.agents/pipeline.json` keys across `CONVENTION.md`, `CONTRIBUTING.md`, `CLAUDE.md`, `docs/config-schema.md`, `docs/adr/README.md`, and `docs/threat-model.md`, and added a `scripts/lint.sh text` guard for missing backticked paths in the four top-level docs (#616).
 - Changed: `python`, `family`, and `bash` language adapters share `span_for` through crate-private `languages::common`; analysis output and public API are unchanged (#289).
