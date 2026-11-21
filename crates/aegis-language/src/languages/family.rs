@@ -9,8 +9,9 @@
 use tree_sitter::{Node, Query, QueryCursor, StreamingIterator};
 
 use crate::language::SourceLanguage;
+use crate::languages::common::span_for;
 use crate::operation::{
-    ByteSpan, DetectedOperation, NestedTarget, OperandCertainty, OperationKind, OperationModifiers,
+    DetectedOperation, NestedTarget, OperandCertainty, OperationKind, OperationModifiers,
 };
 
 /// The payload language an execution sink's literal source should be recursively
@@ -353,16 +354,4 @@ fn recursive_option(args_node: Node, bytes: &[u8]) -> bool {
         }
     }
     false
-}
-
-/// Build a [`ByteSpan`] for `node` (1-based line/column, byte offsets into the
-/// source).
-fn span_for(node: Node) -> ByteSpan {
-    let start = node.start_position();
-    ByteSpan {
-        line: start.row as u32 + 1,
-        column: start.column as u32 + 1,
-        byte_start: node.start_byte(),
-        byte_end: node.end_byte(),
-    }
 }

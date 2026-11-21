@@ -12,6 +12,7 @@ use std::sync::LazyLock;
 use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
 use crate::language::SourceLanguage;
+use crate::languages::common::span_for;
 use crate::operation::{
     AdapterDegradation, AdapterResult, ByteSpan, DetectedOperation, NestedTarget, OperandCertainty,
     OperationKind, OperationModifiers,
@@ -508,18 +509,6 @@ fn word_text<'a>(node: Node, bytes: &'a [u8]) -> Option<Cow<'a, str>> {
     match super::bash_word::shell_word(text) {
         Some(word) => Some(Cow::Owned(word)),
         None => Some(Cow::Borrowed(text)),
-    }
-}
-
-/// Build a [`ByteSpan`] for `node` (1-based line/column, byte offsets into the
-/// source).
-fn span_for(node: Node) -> ByteSpan {
-    let start = node.start_position();
-    ByteSpan {
-        line: start.row as u32 + 1,
-        column: start.column as u32 + 1,
-        byte_start: node.start_byte(),
-        byte_end: node.end_byte(),
     }
 }
 

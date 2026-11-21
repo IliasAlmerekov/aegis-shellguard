@@ -10,8 +10,9 @@ use std::sync::LazyLock;
 use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
 use crate::language::SourceLanguage;
+use crate::languages::common::span_for;
 use crate::operation::{
-    AdapterResult, ByteSpan, DetectedOperation, NestedTarget, OperandCertainty, OperationKind,
+    AdapterResult, DetectedOperation, NestedTarget, OperandCertainty, OperationKind,
     OperationModifiers,
 };
 
@@ -367,18 +368,6 @@ fn open_mode_string(args_node: Node, bytes: &[u8]) -> Option<String> {
         }
     }
     None
-}
-
-/// Build a [`ByteSpan`] for `node` (1-based line/column, byte offsets into the
-/// source).
-fn span_for(node: Node) -> ByteSpan {
-    let start = node.start_position();
-    ByteSpan {
-        line: start.row as u32 + 1,
-        column: start.column as u32 + 1,
-        byte_start: node.start_byte(),
-        byte_end: node.end_byte(),
-    }
 }
 
 #[cfg(test)]
