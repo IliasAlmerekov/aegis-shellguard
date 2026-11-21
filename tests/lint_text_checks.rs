@@ -16,14 +16,20 @@ fn run_text(root: &Path) -> Output {
         .expect("sh should run scripts/lint.sh")
 }
 
-fn write_lines(root: &Path, rel: &str, lines: usize, trailing_newline: bool) {
+fn write_file(root: &Path, rel: &str, contents: &str) {
     let path = root.join(rel);
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    fs::write(path, contents).unwrap();
+}
+
+fn write_lines(root: &Path, rel: &str, lines: usize, trailing_newline: bool) {
     let mut body = "// line\n".repeat(lines);
     if !trailing_newline {
         body.pop();
     }
-    fs::write(path, body).unwrap();
+    write_file(root, rel, &body);
 }
 
 fn stdout(output: &Output) -> String {
@@ -134,14 +140,6 @@ mod unreadable {
         assert!(!output.status.success(), "{text}");
         assert!(text.contains("src/sealed"), "{text}");
     }
-}
-
-fn write_file(root: &Path, rel: &str, contents: &str) {
-    let path = root.join(rel);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).unwrap();
-    }
-    fs::write(path, contents).unwrap();
 }
 
 #[test]

@@ -91,8 +91,6 @@ $files
 EOF
 }
 
-# Prints one line per missing backticked path or read error in the four
-# top-level docs agents and contributors read, nothing when the tree is clean.
 check_doc_paths() {
     for doc in AGENTS.md CONVENTION.md CONTRIBUTING.md CLAUDE.md; do
         [ -e "$doc" ] || continue
@@ -118,7 +116,6 @@ check_doc_paths() {
                 *[!/]*) ;;
                 *) continue ;;
             esac
-            # Runtime file names that docs describe but the tree never holds.
             case "$token" in
                 # Project-level config file created by users at runtime, never committed.
                 .aegis.toml) continue ;;
