@@ -32,6 +32,7 @@ impl SourceLanguage {
     }
 
     /// Resolve a manifest language id to a [`SourceLanguage`].
+    #[cfg(any(test, feature = "testing"))]
     #[must_use]
     pub fn from_id(id: &str) -> Option<Self> {
         match id {

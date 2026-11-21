@@ -244,6 +244,7 @@ impl AuditLogger {
     }
 
     /// Override the path on an existing logger (builder pattern).
+    #[cfg(any(test, feature = "testing"))]
     pub fn with_path(self, path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),

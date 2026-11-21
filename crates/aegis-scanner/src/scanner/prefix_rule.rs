@@ -8,19 +8,18 @@ use aegis_types::{DetectionSource, MatchEvidence, Pattern};
 
 impl PrefixRule {
     /// Check whether `tokens` matches this rule's prefix pattern.
-    ///
-    /// Delegates to [`aegis_parser::matches_prefix`], which supports
-    /// `Single`/`Alts`/`Any`/`AnyStar` tokens. The pattern must be a prefix of
-    /// `tokens` — extra trailing tokens are allowed. Empty patterns never match.
+    /// Delegates to [`aegis_parser::matches_prefix`] (`Single`/`Alts`/`Any`/`AnyStar`);
+    /// extra trailing tokens are allowed and empty patterns never match.
     ///
     /// The rule's negative condition ([`PrefixRule::suppressed_by`]) is checked
     /// first: a rule listing suppressing tokens never fires when any of them is
     /// present, at any position. A rule listing none is unaffected.
+    #[cfg(test)]
     pub fn matches_tokens(&self, tokens: &[&str]) -> bool {
         self.matches_tokens_with(tokens, EndOfOptions::Ignore)
     }
 
-    /// [`Self::matches_tokens`]; `Honor` only for quote-preserving tokens (#484).
+    /// Match `tokens` against this rule; `Honor` only for quote-preserving tokens (#484).
     pub(crate) fn matches_tokens_with(&self, tokens: &[&str], mode: EndOfOptions) -> bool {
         if aegis_parser::contains_any_token(tokens, self.suppressed_by) {
             return false;

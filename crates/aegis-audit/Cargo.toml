@@ -23,6 +23,12 @@ thiserror = "2"
 # `geteuid` and Unix no-follow flags without adding a native build dependency.
 libc = "0.2"
 
+[features]
+# Exposes audit logger test helpers to integration tests. Never enable it in a
+# release build.
+testing = []
+
 [dev-dependencies]
+aegis-audit = { workspace = true, features = ["testing"] }
 tempfile = "3"
 aegis-policy.workspace = true

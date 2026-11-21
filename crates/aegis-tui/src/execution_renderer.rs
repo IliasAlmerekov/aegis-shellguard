@@ -103,6 +103,7 @@ impl TestRenderer {
         }
     }
 
+    #[cfg(any(test, feature = "testing"))]
     pub fn set_confirmation_decision(&self, decision: PromptDecision) {
         *self
             .confirmation

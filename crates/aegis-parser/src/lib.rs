@@ -45,10 +45,9 @@ pub use git_options::{
 };
 pub use list_segments::{ListSegment, ListSeparator, list_segments};
 pub use nested_shells::extract_nested_commands;
-pub use prefix_match::{
-    EndOfOptions, contains_any_token, matches_prefix, matches_prefix_ending_options,
-    matches_prefix_with,
-};
+#[cfg(test)]
+pub use prefix_match::matches_prefix_ending_options;
+pub use prefix_match::{EndOfOptions, contains_any_token, matches_prefix, matches_prefix_with};
 use redirection::redirection_token_len;
 pub use redirection::{is_redirection_operator, starts_with_redirection_glyph};
 pub use runner::Runner;

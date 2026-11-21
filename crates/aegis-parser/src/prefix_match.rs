@@ -54,6 +54,7 @@ pub fn matches_prefix(pattern: &PrefixPattern, tokens: &[&str]) -> bool {
 /// token before a flag element for the programs in [`DOUBLE_DASH_PROGRAMS`]
 /// (ADR-046). Use it only on quote-preserving tokens, where every `--` token
 /// is a word the shell passed on its own.
+#[cfg(test)]
 pub fn matches_prefix_ending_options(pattern: &PrefixPattern, tokens: &[&str]) -> bool {
     matches_prefix_with(pattern, tokens, EndOfOptions::Honor)
 }

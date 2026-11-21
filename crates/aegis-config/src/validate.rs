@@ -53,6 +53,7 @@ pub struct ConfigSourceMap {
 
 impl ConfigSourceMap {
     /// Build a source map for the effective config.
+    #[cfg(test)]
     pub fn for_config(config: &AegisConfig) -> Self {
         Self::for_config_with_paths(config, None, None)
     }
@@ -409,6 +410,7 @@ pub fn validate_config(config: &AegisConfig, source_map: &ConfigSourceMap) -> Va
 }
 
 /// Convert a non-file validation failure into a structured report.
+#[cfg(test)]
 pub fn validation_load_error(err: &ConfigError) -> ValidationReport {
     ValidationReport {
         valid: false,

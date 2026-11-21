@@ -14,7 +14,9 @@ type Result<T> = std::result::Result<T, ConfigError>;
 mod analysis;
 mod compile;
 
-pub use analysis::{analyze_allowlist_rule, analyze_blocklist_rule};
+pub use analysis::analyze_allowlist_rule;
+#[cfg(test)]
+pub use analysis::analyze_blocklist_rule;
 use compile::{compile_block_rule, compile_rule};
 pub(crate) use compile::{validate_single_block_rule, validate_single_rule};
 
