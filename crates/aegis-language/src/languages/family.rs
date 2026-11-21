@@ -1,19 +1,10 @@
-//! Shared JavaScript-family classification logic (plan Iteration 7).
+//! Shared JavaScript-family AST interpretation (ADR-022 §3, §7).
 //!
-//! JavaScript and TypeScript share the same destructive / execution-sink API
-//! surface (`fs.*Sync`, `eval`, `new Function`, `child_process.*`) and the same
-//! Tree-sitter node-type names for call sites and string literals, so the
-//! grammar-agnostic interpretation — API-spelling → [`crate::operation::
-//! DetectedOperation`], operand certainty, recursive-option resolution, nested
-//! payload recovery — lives here once. Each adapter (`javascript`,
-//! `typescript`) owns its own pinned grammar, per-thread parser, and
-//! `calls.scm` query, then feeds the parsed root into [`collect_operations`].
-//!
-//! This is per-adapter AST interpretation, NOT the shared operation classifier:
-//! it never assigns a final `RiskLevel` (the root crate's `aegis_types::classify`
-//! does that — Iteration 5 REVIEW GATE). Bounded symbol resolution (imports,
-//! aliases, simple constants → `OperandCertainty::Partial`) is a later slice;
-//! every computed operand is `Dynamic` here (ADR-022 §3, §7).
+//! JavaScript and TypeScript share the same destructive/execution-sink API
+//! surface and Tree-sitter call/string node types; each adapter owns its own
+//! grammar, parser, and `calls.scm` query, then delegates here. Emits
+//! language-neutral [`DetectedOperation`]s and never assigns `RiskLevel`
+//! (ADR-022 §3).
 
 use tree_sitter::{Node, Query, QueryCursor, StreamingIterator};
 
@@ -42,9 +33,9 @@ pub(crate) enum ExecArg {
     Last,
 }
 
-/// How a recognized call site is classified, before operand certainty is
-/// attached. Routes a function path to the shared operation vocabulary without
-/// assigning `RiskLevel` (Iteration 5 REVIEW GATE).
+/// How a recognized call site is classified before operand certainty is
+/// attached; maps API spellings to operations without assigning `RiskLevel`
+/// (ADR-022 §3).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CallClass {
     /// A non-execution destructive operation with fixed modifiers.
@@ -291,16 +282,6 @@ fn is_string_literal(node: Node) -> bool {
     }
 }
 
-/// The text content of a pure string-literal node, or `None` when the node is
-/// not a literal (a variable, a template with interpolation, a non-string
-/// child, etc.).
-///
-/// For a `string`, the content is the raw inner source text — the concatenated
-/// text of its `string_fragment` and `escape_sequence` children (the text
-/// between the surrounding quotes, with escapes as written). Escape decoding is
-/// bounded-resolution work and is deferred to a later slice. For a
-/// `template_string` with no interpolation, the content is the concatenated
-/// `string_fragment` / `escape_sequence` text (the text between the backticks).
 fn string_literal_content(node: Node, bytes: &[u8]) -> Option<String> {
     match node.kind() {
         "string" => {
@@ -355,10 +336,8 @@ fn recursive_option(args_node: Node, bytes: &[u8]) -> bool {
             let Some(key) = pair.child_by_field_name("key") else {
                 continue;
             };
-            // Accept both identifier-keyed (`recursive: true`) and string-keyed
-            // (`"recursive": true`) literal shapes — the latter's key node is a
-            // `string` whose raw text is `"recursive"` (with quotes), so compare
-            // its decoded content rather than the raw text.
+            // String-keyed `"recursive"` includes quotes in its raw text, so
+            // compare its inner literal content.
             let key_is_recursive = key.utf8_text(bytes).ok() == Some("recursive")
                 || (key.kind() == "string"
                     && string_literal_content(key, bytes).as_deref() == Some("recursive"));

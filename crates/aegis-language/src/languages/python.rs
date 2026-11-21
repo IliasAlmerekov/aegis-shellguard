@@ -1,17 +1,8 @@
-//! Python language adapter (plan Iteration 6, Slice 1).
+//! Python language adapter (ADR-022 §3, §7).
 //!
-//! Structural capture via the bundled Tree-sitter query
-//! (`queries/python/calls.scm`); semantic interpretation in typed Rust. The
-//! adapter emits language-neutral [`DetectedOperation`]s and, for execution
-//! sinks with a statically recovered literal payload, a [`NestedTarget`] for
-//! bounded recursive analysis (ADR-022 §3, §7). It never assigns a final
-//! `RiskLevel` — the root crate maps these operations through the shared
-//! classifier (Iteration 5 REVIEW GATE).
-//!
-//! Slice 1 scope: fully-qualified destructive and execution-sink calls with
-//! literal/dynamic operand certainty. Bounded symbol resolution (imports,
-//! aliases, simple constants → `OperandCertainty::Partial`) is a later slice;
-//! the `os.exec*` family (argv, not source) is deferred with the same note.
+//! Captures call sites via `queries/python/calls.scm` and interprets them into
+//! language-neutral [`DetectedOperation`]s and [`NestedTarget`] payloads; never
+//! assigns `RiskLevel` directly (ADR-022 §3).
 
 use std::cell::RefCell;
 use std::sync::LazyLock;
@@ -24,10 +15,6 @@ use crate::operation::{
     OperationModifiers,
 };
 
-/// The bundled Python call-capture query. Compiled once on first use; a failure
-/// here is a build-time query-authoring bug, so panicking on first use is the
-/// correct startup behavior (CONVENTION.md: `.expect()` is acceptable in startup
-/// initialization).
 #[expect(
     clippy::expect_used,
     reason = "a bundled query that fails to compile is a build-time bug; panicking at startup is intended"
@@ -40,16 +27,6 @@ static CALLS_QUERY: LazyLock<Query> = LazyLock::new(|| {
     .expect("bundled python/calls.scm must compile against the pinned grammar")
 });
 
-// A per-thread reusable Python parser.
-//
-// `set_language` runs once per thread on first use (one-time initialization,
-// not on every `analyze` call) — a failure here is a build-time grammar-pin
-// bug, not user input, so panicking on init is the correct startup behavior
-// (CONVENTION.md: `.expect()` is acceptable in startup initialization). Keeping
-// the parser out of `analyze`'s body avoids re-running `set_language` on each
-// call and avoids `.expect()` on a per-invocation path. `thread_local!` gives
-// each thread its own parser with no locking; `analyze` is non-reentrant, so
-// the `borrow_mut` cannot clash.
 thread_local! {
     #[expect(
         clippy::expect_used,
@@ -74,9 +51,9 @@ enum ExecLang {
     Bash,
 }
 
-/// How a recognized call site is classified, before operand certainty is
-/// attached. Routes a function path to the shared operation vocabulary without
-/// assigning `RiskLevel` (Iteration 5 REVIEW GATE).
+/// How a recognized call site is classified before operand certainty is
+/// attached; maps API spellings to operations without assigning `RiskLevel`
+/// (ADR-022 §3).
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CallClass {
     /// A non-execution destructive operation with fixed modifiers.
@@ -359,15 +336,6 @@ struct OpenMode {
     destructive_mode: bool,
 }
 
-/// Determine whether an `open(...)` call is an overwrite/truncation, and whether
-/// it is in a truncating (`'w'`) destructive mode. Returns `None` when the call
-/// is not destructive (read-only, exclusive-create, or no mode argument).
-///
-/// Mode resolution: a `mode=` keyword argument wins; otherwise the second
-/// positional argument. Slice-1 simplification: `'w'` (truncate) and `'a'`
-/// (append) are treated as overwrite of an existing file; `'w'` additionally
-/// sets `destructive_mode`. `'x'` (exclusive create, fails if the file exists)
-/// and `'r'` (read) are not destructive. `'r+'` is read-write without truncate.
 fn open_mode(args_node: Node, bytes: &[u8]) -> Option<OpenMode> {
     let mode = open_mode_string(args_node, bytes)?;
     Some(OpenMode {

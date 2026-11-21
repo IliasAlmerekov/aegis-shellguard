@@ -1,11 +1,10 @@
-//! Versioned, length-bounded request/response framing for the language worker
-//! (ADR-022 §2, L1 Iteration 3).
+//! Versioned, length-bounded request/response framing for the ephemeral
+//! language worker (ADR-022 §2).
 //!
-//! The parent process and the ephemeral worker communicate over a pipe using
-//! this binary frame format. Source bytes travel *through* the protocol; the
-//! worker never reads the filesystem or spawns a subprocess, and the frame
-//! format encodes no way to ask for either — the only [`Request`] variant is
-//! [`Request::Parse`], which carries the source bytes directly.
+//! Source bytes travel through this binary pipe protocol; the worker never
+//! reads the filesystem or spawns a subprocess, and the protocol encodes no
+//! request for either (`Request::Parse` and `Request::Analyze` carry source
+//! bytes directly).
 //!
 //! # Wire format
 //!
@@ -26,12 +25,11 @@
 //! [`MAX_FRAME_PAYLOAD`] (1 MiB, the ADR-022 §7 hard per-file source ceiling);
 //! a frame declaring more is rejected without allocating or reading its body.
 //!
-//! Kind tags are disjoint across directions so a response tag can never be
-//! decoded as a request and vice versa: request tags live in `0x01..=0x7F`,
-//! response tags in `0x80..=0xFF`.
+//! Kind tags are disjoint across directions: request tags live in
+//! `0x01..=0x7F`, response tags in `0x80..=0xFF`.
 //!
-//! This module is pure: it operates on `&[u8]` / `Vec<u8>` and performs no I/O.
-//! The pipe reader/writer and the worker dispatch loop live in [`crate::worker`].
+//! Pure framing over `&[u8]` / `Vec<u8>` with no I/O; pipe dispatch lives in
+//! [`crate::worker`].
 
 use crate::language::SourceLanguage;
 
@@ -60,14 +58,10 @@ pub const MAX_FRAME_PAYLOAD: usize = MAX_SOURCE_BYTES + 1;
 // u32 length field, so the encoder can use a non-panicking `as u32` cast.
 const _: () = assert!(MAX_FRAME_PAYLOAD <= u32::MAX as usize);
 
-/// A worker request. The parent sends these; the worker decodes them.
+/// A worker request sent from parent to worker (ADR-022 §2).
 ///
-/// `#[non_exhaustive]` so later iterations can add request kinds (e.g. a
-/// shutdown signal) without breaking serialization consumers. Iteration 3
-/// defined [`Request::Parse`]; Iteration 6 adds [`Request::Analyze`] so the
-/// ephemeral worker can run the language adapter and return a full
-/// [`AdapterResult`](crate::operation::AdapterResult) (ADR-022 §2: adapters
-/// run in the self-spawned worker, not the parent).
+/// `#[non_exhaustive]` so new request kinds can be added without breaking
+/// downstream matches.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
@@ -103,13 +97,7 @@ impl Request {
     pub const KIND_ANALYZE: u8 = 0x02;
 }
 
-/// A worker response. The worker sends these; the parent decodes them.
-///
-/// Iteration 3 is the bounded *parser* process — the worker reports whether
-/// the supplied bytes parsed. Iteration 6 adds the analyze surface: a full
-/// [`AdapterResult`](crate::operation::AdapterResult) for a language the worker
-/// has an adapter for, or [`Response::UnsupportedLanguage`] when it does not
-/// (ADR-022 §2: adapters run in the self-spawned worker).
+/// A worker response sent from worker to parent (ADR-022 §2).
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Response {
@@ -129,9 +117,8 @@ pub enum Response {
         /// source target.
         result: crate::operation::AdapterResult,
     },
-    /// The worker was asked to [`Request::Analyze`] a language it has no
-    /// adapter for. The parent maps this to a degradation reason (e.g.
-    /// `GrammarUnavailable`) rather than treating it as a clean parse.
+    /// The worker has no adapter for the requested language; the parent maps
+    /// this to a degradation reason.
     UnsupportedLanguage,
 }
 
@@ -193,10 +180,8 @@ pub enum EncodeError {
     /// The payload exceeded [`MAX_FRAME_PAYLOAD`].
     #[error("frame payload ({actual} bytes) exceeds the {max}-byte ceiling")]
     Oversized { actual: usize, max: usize },
-    /// A `usize` field (a byte offset, a length, or an operation count) did not
-    /// fit in a `u32` wire field. Unreachable for a source bounded by the
-    /// protocol's 1 MiB ceiling (ADR-022 §7), but the codec is fallible rather
-    /// than truncating with `as u32` so the production path never panics.
+    /// A `usize` field did not fit in a `u32` wire field (unreachable under
+    /// the 1 MiB ceiling, ADR-022 §7; fallible to stay panic-free).
     #[error("wire field {field} overflows u32")]
     FieldOverflow { field: &'static str },
 }
@@ -414,9 +399,7 @@ fn decode_lang_source_payload(payload: &[u8]) -> Result<(SourceLanguage, Vec<u8>
 
 /// Map a [`SourceLanguage`] to its single-byte wire tag.
 ///
-/// `pub(crate)` so the [`crate::operation`] codec shares this single source of
-/// truth rather than duplicating the language→tag mapping (a `NestedTarget`
-/// carries a `SourceLanguage` that is serialized with the same tags).
+/// `pub(crate)` because the [`crate::operation`] codec shares these tags.
 pub(crate) fn language_to_wire(language: SourceLanguage) -> u8 {
     match language {
         SourceLanguage::Python => 0x00,

@@ -1,10 +1,8 @@
-//! Wiring between Aegis `SourceLanguage` ids and the pinned Tree-sitter grammar
-//! crates (ADR-022 §8/§9).
+//! Wiring between [`SourceLanguage`] and the pinned Tree-sitter grammar crates (ADR-022 §8, §9).
 //!
-//! This module is the only place in the workspace that names the Tree-sitter
-//! runtime and grammar crates directly. Language adapters and the worker build
-//! on top of [`SourceLanguage`]; nothing outside `aegis-language` reaches into
-//! Tree-sitter, so the native C toolchain boundary stays inside this crate.
+//! Owns the pinned grammar crates (`tree_sitter_{python,javascript,typescript,bash}`)
+//! and the [`parse`] entry point, keeping the native C toolchain boundary inside
+//! `aegis-language` (ADR-022 §8).
 
 use tree_sitter::{Language, Parser, Tree};
 
@@ -46,12 +44,6 @@ impl SourceLanguage {
     }
 
     /// The pinned Tree-sitter [`Language`] for this source language.
-    ///
-    /// Each grammar crate exposes its language as a `tree_sitter_language::
-    /// LanguageFn` (a C ABI function pointer), which the runtime converts into
-    /// a `tree_sitter::Language` via `From<LanguageFn>`. That indirection is
-    /// what lets the grammars and runtime be versioned independently while
-    /// staying ABI-compatible.
     #[must_use]
     pub fn tree_sitter_language(self) -> Language {
         match self {
@@ -63,7 +55,7 @@ impl SourceLanguage {
     }
 }
 
-/// A parse failure from the language-aware prototype (ADR-022 Iteration 0).
+/// A Tree-sitter parse failure.
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
     /// The grammar's Tree-sitter ABI is incompatible with the pinned runtime.
@@ -79,10 +71,7 @@ pub enum ParseError {
 
 /// Parse `source` as `language` using the pinned Tree-sitter runtime.
 ///
-/// Iteration 0 prototype: a parse-only, single-shot helper with no filesystem
-/// access and no worker process. The bounded ephemeral worker lands in
-/// Iteration 3; this function exists to prove the four foundation grammars are
-/// statically present and ABI-compatible on the host build.
+/// Pure and in-process: performs no filesystem access and spawns no worker.
 pub fn parse(language: SourceLanguage, source: &str) -> Result<Tree, ParseError> {
     let mut parser = Parser::new();
     parser

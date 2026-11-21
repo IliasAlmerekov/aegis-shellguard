@@ -1,28 +1,9 @@
-//! JavaScript language adapter (plan Iteration 7, Slice 1).
+//! JavaScript language adapter (ADR-022 §3, §7).
 //!
-//! Structural capture via the bundled Tree-sitter query
-//! (`queries/javascript/calls.scm`); semantic interpretation in typed Rust. The
-//! adapter emits language-neutral [`crate::operation::DetectedOperation`]s and,
-//! for execution sinks with a statically recovered literal payload, a
-//! [`crate::operation::NestedTarget`] for bounded recursive analysis (ADR-022
-//! §3, §7). It never assigns a final `RiskLevel` — the root crate maps these
-//! operations through the shared classifier (Iteration 5 REVIEW GATE).
-//!
-//! The grammar-agnostic interpretation (API-spelling → operation, operand
-//! certainty, recursive-option resolution, nested payload recovery, the
-//! call-capture query loop) is shared with the TypeScript adapter via the
-//! [`super::family`] module (plan Iteration 7: "share JavaScript-family
-//! resolution where syntax permits"). This module owns only the JavaScript
-//! grammar, per-thread parser, and compiled query.
-//!
-//! Slice 1 scope: fully-qualified `fs.*Sync` destructive calls, `eval` and the
-//! `Function` constructor (JavaScript payloads), and the `child_process` shell
-//! and argv execution-sink forms, with literal/dynamic operand certainty. Only
-//! the synchronous `fs.*Sync` spellings are covered this slice; the
-//! `fs.promises.*` and callback-form variants are a follow-up. Bounded symbol
-//! resolution (imports, aliases, simple constants → `OperandCertainty::Partial`)
-//! is a later slice; CommonJS/ESM imports are resolution input only and emit no
-//! operation themselves.
+//! Captures call sites via `queries/javascript/calls.scm` and delegates
+//! interpretation to the shared `family` module, emitting language-neutral
+//! [`crate::operation::DetectedOperation`]s without assigning `RiskLevel`
+//! directly (ADR-022 §3).
 
 use std::cell::RefCell;
 use std::sync::LazyLock;
@@ -33,10 +14,6 @@ use crate::language::SourceLanguage;
 use crate::languages::family;
 use crate::operation::AdapterResult;
 
-/// The bundled JavaScript call-capture query. Compiled once on first use; a
-/// failure here is a build-time query-authoring bug, so panicking on first use
-/// is the correct startup behavior (CONVENTION.md: `.expect()` is acceptable in
-/// startup initialization).
 #[expect(
     clippy::expect_used,
     reason = "a bundled query that fails to compile is a build-time bug; panicking at startup is intended"
@@ -49,16 +26,6 @@ static CALLS_QUERY: LazyLock<Query> = LazyLock::new(|| {
     .expect("bundled javascript/calls.scm must compile against the pinned grammar")
 });
 
-// A per-thread reusable JavaScript parser.
-//
-// `set_language` runs once per thread on first use (one-time initialization,
-// not on every `analyze` call) — a failure here is a build-time grammar-pin
-// bug, not user input, so panicking on init is the correct startup behavior
-// (CONVENTION.md: `.expect()` is acceptable in startup initialization). Keeping the
-// parser out of `analyze`'s body avoids re-running `set_language` on each call
-// and avoids `.expect()` on a per-invocation path. `thread_local!` gives each
-// thread its own parser with no locking; `analyze` is non-reentrant, so the
-// `borrow_mut` cannot clash.
 thread_local! {
     #[expect(
         clippy::expect_used,
@@ -106,9 +73,6 @@ pub fn analyze(source: &str) -> AdapterResult {
     }
 }
 
-// The unit tests live in a sibling file to keep this adapter under the
-// 800-line file-size budget (`scripts/lint.sh text`); the same `#[path]`
-// split is used by `operation.rs` → `operation_tests.rs`.
 #[cfg(test)]
 #[path = "javascript_tests.rs"]
 mod tests;

@@ -150,10 +150,6 @@ fn decode_request_rejects_a_frame_declaring_an_oversized_payload() {
 
 #[test]
 fn decode_request_rejects_a_response_kind_tag_sent_as_a_request() {
-    // A response kind tag (0x81 = Parsed) must not be accepted as a
-    // request, even with an otherwise-valid Parse payload. This pins half
-    // of the disjoint-kind-tag contract and the "no hidden request kind"
-    // property: the only request kind is Parse.
     let buf = raw_frame(
         &MAGIC,
         PROTOCOL_VERSION,
@@ -368,8 +364,6 @@ fn decode_response_accepts_only_the_known_response_kind_tags() {
     }
 }
 
-// ── L2: fallible encode (no panic on oversized input) ───────────────────
-
 #[test]
 fn encode_request_rejects_an_oversized_source_as_oversized() {
     // A source larger than MAX_SOURCE_BYTES must not panic the encoder
@@ -398,8 +392,6 @@ fn encode_request_accepts_a_small_source() {
         "an encoded small source must round-trip"
     );
 }
-
-// ── L3: the 1 MiB source ceiling is legal (budget the lang tag) ─────────
 
 #[test]
 fn encode_request_accepts_a_source_at_the_one_mebibyte_ceiling() {
@@ -438,8 +430,6 @@ fn encode_request_rejects_a_source_one_byte_above_the_ceiling() {
         "a source one byte above the ceiling must be rejected as Oversized"
     );
 }
-
-// ── Analyze / Analyzed / UnsupportedLanguage (Iteration 6 Slice A) ─────────
 
 #[test]
 fn decode_request_round_trips_an_analyze_request() {

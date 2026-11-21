@@ -1,25 +1,11 @@
-//! Self-contained detected-operation vocabulary that language adapters emit
-//! (ADR-022 §3).
+//! Language-neutral detected-operation vocabulary emitted by language adapters (ADR-022 §3).
 //!
-//! `aegis-language` is a workspace leaf and may **not** depend on `aegis-types`
-//! (ADR-022 §4, pinned by `tests/aegis_language_boundary.rs`), so the operation
-//! vocabulary an adapter *produces* lives here rather than reusing
-//! `aegis_types::analysis`. The root `aegis` crate maps these types into
-//! `aegis_types::analysis::DetectedOperation` and runs the shared classifier
-//! (`aegis_types::analysis::classifier::classify`); no adapter assigns a final
-//! `RiskLevel` directly (Iteration 5 REVIEW GATE).
-//!
-//! This is a deliberate, boundary-forced parallel of `aegis_types::analysis`:
-//! `OperationKind`, `OperationModifiers`, `OperandCertainty`, `DetectedOperation`
-//! mirror the `aegis-types` enums one-for-one. The duplication is structural —
-//! the two crates cannot share the type — and is pinned by a conversion test in
-//! the root `aegis` crate's pipeline tests, which assert every variant maps.
-//!
-//! The types carry no `serde`/`schemars` derives: this is the in-process adapter
-//! output, not an audit-persisted record. Audit persistence goes through the
-//! `aegis-types` provenance path after the root mapping. Keeping `serde` out
-//! preserves the crate's stated dependency invariant (Tree-sitter runtime + four
-//! grammars + `thiserror` only — see `tests/aegis_language_boundary.rs`).
+//! `aegis-language` is a workspace leaf and cannot depend on `aegis-types`
+//! (ADR-022 §4), so these types mirror `aegis_types::analysis` one-for-one.
+//! The root crate maps them into `aegis_types::analysis::DetectedOperation`
+//! and runs the shared classifier; adapters never assign `RiskLevel` directly
+//! (ADR-022 §3). No `serde` derives: `aegis-language` keeps minimal dependencies
+//! (ADR-022 §8).
 
 use crate::language::SourceLanguage;
 use crate::protocol::{DecodeError, EncodeError};
@@ -162,12 +148,7 @@ pub enum AdapterDegradation {
 
 // ── Wire codec (ADR-022 §2) ───────────────────────────────────────────────
 //
-// The ephemeral worker runs the language adapters and returns each
-// `AdapterResult` to the parent over the versioned pipe protocol. `aegis-language`
-// is a workspace leaf whose only dependencies are the pinned Tree-sitter runtime,
-// the four grammars, and `thiserror` (ADR-022 §8, pinned by
-// `tests/aegis_language_boundary.rs`), so the codec is hand-rolled rather than
-// serde-derived. The format is packed, little-endian, with no padding:
+// Hand-rolled packed little-endian codec (no `serde` dependency; ADR-022 §8):
 //
 //   AdapterResult:
 //     parse_errors: u32 LE
@@ -187,9 +168,8 @@ pub enum AdapterDegradation {
 //     [if 1:] NestedTarget { language u8, source_len u32 LE, source bytes,
 //                            span.line u32, column u32, byte_start u32, byte_end u32 }
 //
-// Offsets and lengths are u32 (a source target is bounded by the protocol's
-// 1 MiB ceiling, ADR-022 §7, so they always fit; the encoder is fallible only
-// to stay panic-free in production, never truncating with `as u32`).
+// Offsets and lengths are u32 (bounded by the 1 MiB ceiling, ADR-022 §7;
+// fallible encoding avoids truncating casts and panics).
 
 /// The wire discriminant for [`OperationKind::FilesystemDelete`].
 pub const KIND_FS_DELETE: u8 = 0;
@@ -237,8 +217,6 @@ pub fn kind_to_wire(kind: OperationKind) -> u8 {
         OperationKind::CloudDestructive => KIND_CLOUD_DESTRUCTIVE,
         OperationKind::ContainerDestructive => KIND_CONTAINER_DESTRUCTIVE,
         OperationKind::PackageDestructive => KIND_PACKAGE_DESTRUCTIVE,
-        // `non_exhaustive`: a future adapter kind with no wire code is a build
-        // error here rather than a silent mismatch.
     }
 }
 
@@ -271,9 +249,7 @@ pub fn certainty_to_wire(certainty: OperandCertainty) -> u8 {
 }
 
 /// Map a wire discriminant back to an [`OperandCertainty`], or `None` for an
-/// unknown code. A future `non_exhaustive` certainty decodes as `None`; the
-/// caller (the codec) rejects it rather than guessing, so an unknown certainty
-/// can never be mislabeled as a safer value.
+/// unknown code so decoders fail closed.
 #[must_use]
 pub fn certainty_from_wire(code: u8) -> Option<OperandCertainty> {
     Some(match code {
@@ -312,13 +288,10 @@ pub fn modifiers_from_wire(bits: u8) -> OperationModifiers {
     }
 }
 
-/// Encode an [`AdapterResult`] into its packed little-endian wire form (see the
-/// codec section at the top of this module).
+/// Encode an [`AdapterResult`] into its packed little-endian wire form.
 ///
-/// Fallible only so the production path never panics: a `usize` field that does
-/// not fit in a `u32` returns [`EncodeError::FieldOverflow`] rather than being
-/// truncated with `as u32`. Such a field is unreachable for a source bounded by
-/// the protocol's 1 MiB ceiling (ADR-022 §7).
+/// Returns [`EncodeError::FieldOverflow`] if a `usize` field exceeds `u32`
+/// (unreachable under the 1 MiB ceiling, ADR-022 §7).
 pub fn encode_adapter_result(result: &AdapterResult) -> Result<Vec<u8>, EncodeError> {
     let mut out = Vec::new();
     out.extend_from_slice(&result.parse_errors.to_le_bytes());
@@ -344,7 +317,6 @@ fn encode_operation(out: &mut Vec<u8>, op: &DetectedOperation) -> Result<(), Enc
     match &op.payload {
         Some(target) => {
             out.push(1);
-            // Reuse the protocol's language→tag mapping (single source of truth).
             out.push(crate::protocol::language_to_wire(target.language));
             let len =
                 u32::try_from(target.source.len()).map_err(|_| EncodeError::FieldOverflow {

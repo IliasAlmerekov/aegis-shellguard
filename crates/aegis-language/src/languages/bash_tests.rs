@@ -1,22 +1,4 @@
-//! Unit tests for the Bash adapter (`bash.rs`).
-//!
-//! Lives in a sibling file via `#[path = "bash_tests.rs"]` to keep the adapter
-//! source under the workspace 800-line file-size budget
-//! (`scripts/lint.sh text`); the same `#[path]` split is used by
-//! `typescript.rs` → `typescript_tests.rs`. `use super::*` resolves to the
-//! `bash` module.
-//!
-//! These tests pin the Bash adapter's L1 operation scope (plan Iteration 8
-//! RED): destructive commands (`rm` / `rmdir` / `unlink` / `chmod` / `chown` /
-//! `chgrp`), truncating and append file redirects (`>` / `>>` / `&>` / `&>>` /
-//! `>|`), the `tee` write command, and execution sinks (`eval`, `source` / `.`,
-//! `bash` / `sh` / … `-c`, `python* -c`, `node -e`) with literal or dynamic
-//! operand certainty, plus cross-language nested payloads (ADR-022 §7). The
-//! genuine RED-risk is whether the pinned tree-sitter-bash 0.25.1 grammar
-//! parses the modern/quirky shapes (arrays, `[[ ]]`, process substitution,
-//! heredocs, arithmetic) cleanly and whether `calls.scm` matches the bash AST
-//! (a `command` field `name: (command_name)` and a `file_redirect` node, not
-//! the call-expression shapes the Python/JS/TS adapters use).
+//! Unit tests for the Bash adapter (ADR-022 §3, §7).
 
 use super::*;
 use crate::language::SourceLanguage;
@@ -333,10 +315,8 @@ fn eval_dynamic_payload_is_code_execution_without_nested_target() {
 
 #[test]
 fn eval_with_literal_and_dynamic_args_is_dynamic_without_payload() {
-    // `eval` joins all arguments with spaces, so `eval "rm" "$x"` evaluates a
-    // dynamic string. Recovering only the literal `"rm"` would hide the
-    // dynamic tail — the unsafe direction. The multi-arg shape degrades to
-    // Dynamic with no nested target until joining lands.
+    // `eval` joins all arguments with spaces, so multi-arg `eval` degrades to
+    // Dynamic with no nested target (ADR-022 §3, §7).
     let op = one_op("eval \"rm\" \"$x\"");
     assert_eq!(op.kind, OperationKind::CodeExecution);
     assert_eq!(
@@ -628,11 +608,8 @@ fn ansi_c_string_parses_clean_with_no_ops() {
 
 #[test]
 fn heredoc_body_is_not_reparsed_into_commands() {
-    // tree-sitter-bash parses a heredoc body as one `heredoc_body` text node,
-    // not as commands, so the adapter does not surface the `rm` inside it. The
-    // orchestration layer re-feeds a quoted heredoc body as its own Bash
-    // target (plan Iteration 4), where `rm -rf /tmp/x` is a top-level command
-    // — it is not missed, just not re-parsed inside the parent's heredoc node.
+    // tree-sitter-bash parses a heredoc body as one `heredoc_body` node; the
+    // orchestration layer routes quoted heredoc bodies as separate Bash targets.
     no_ops("cat <<EOF\nrm -rf /tmp/x\nEOF");
 }
 
