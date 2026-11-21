@@ -77,6 +77,19 @@ fn config_version_below_minimum_emits_legacy_error() {
 }
 
 #[test]
+fn init_template_documents_omitted_config_version_as_current() {
+    let template = AegisConfig::init_template();
+    assert!(
+        template.contains(
+            "config_version = 1 # Schema version. An omitted value means the current version."
+        ),
+        "template must state that an omitted config_version means the current version"
+    );
+    let omitted: AegisConfig = toml::from_str("mode = \"Protect\"").unwrap();
+    assert_eq!(omitted.config_version, CURRENT_CONFIG_VERSION);
+}
+
+#[test]
 fn expired_rule_is_invalid_for_runtime() {
     let config = AegisConfig {
         allowlist: vec![AllowlistRule {

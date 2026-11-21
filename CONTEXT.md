@@ -249,8 +249,8 @@ _Avoid_: hit, finding
 **Decision source**:
 What produced an assessment (`DecisionSource`): `BuiltinPattern`, `CustomPattern`, or
 `Fallback` (nothing matched → assessed `Safe`). Distinct from the final `Decision`.
-The singular label is retained as a compatibility projection; `Assessment basis` is
-the richer successor that retains every decisive `Match` rather than one.
+It is one live label that policy output, the TUI and the audit explanation read.
+`Assessment basis` keeps every decisive `Match`, not one label.
 _Avoid_: origin, cause
 
 ## Language-aware analysis

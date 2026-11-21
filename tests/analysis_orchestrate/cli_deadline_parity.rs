@@ -10,7 +10,7 @@ use super::*;
 
 use std::path::Path;
 
-use aegis::analysis::{AnalysisCwd, OrchestrationBudget, run_with_budget_in_cwd};
+use aegis::analysis::{AnalysisCwd, run_with_budget_in_cwd};
 use aegis_scanner::{PatternSet, Scanner};
 
 async fn run_in(command: &str, cwd: &Path, scanner: Option<&Scanner>) -> Assessment {
@@ -56,12 +56,12 @@ fn builtin_scanner() -> Scanner {
 
 #[tokio::test]
 async fn inline_os_remove_completes_with_a_warn_lang_fs_del_match() {
-    let outcome = run(
+    let outcome = run_with_budget(
         "python3 -c 'import os; os.remove(\"artifact.txt\")'",
         &safe_baseline(),
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(5),
+        budget_with_timeout(Duration::from_secs(5)),
     )
     .await;
     let Outcome::Analyzed { assessment, .. } = outcome else {
@@ -75,12 +75,12 @@ async fn inline_os_remove_completes_with_a_warn_lang_fs_del_match() {
 
 #[tokio::test]
 async fn trusted_alias_reaches_routing_and_yields_lang_fs_del() {
-    let outcome = run(
+    let outcome = run_with_budget(
         "trusted-python -c 'import os; os.remove(\"artifact.txt\")'",
         &safe_baseline(),
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[("trusted-python", "python3")],
-        Duration::from_secs(5),
+        budget_with_timeout(Duration::from_secs(5)),
     )
     .await;
     let Outcome::Analyzed { assessment, .. } = outcome else {

@@ -169,8 +169,8 @@ impl InstallTargetSelection {
 }
 
 fn install_target_selection(args: &super::InstallArgs) -> InstallTargetSelection {
-    // Legacy `aegis install` behavior installs both agents, so no explicit
-    // target flag falls back to `All`.
+    // Default `aegis install` behavior installs both agents, so no explicit
+    // target flag selects `All`.
     if args.all || (!args.claude_code && !args.codex) {
         InstallTargetSelection::All
     } else if args.claude_code {

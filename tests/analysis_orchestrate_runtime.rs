@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use aegis::analysis::{
-    AnalysisCwd, OrchestrationBudget, Outcome, run, run_with_budget, run_with_budget_in_cwd,
+    AnalysisCwd, OrchestrationBudget, Outcome, run_with_budget, run_with_budget_in_cwd,
 };
 use aegis_policy::PolicyRulesResult;
 use aegis_policy::{
@@ -23,6 +23,13 @@ fn worker_fixture(dir: &Path, name: &str, body: &str) -> PathBuf {
     let path = dir.join(name);
     support::write_executable(&path, &format!("#!/bin/sh\n{body}\n"));
     path
+}
+
+fn budget_with_timeout(total_timeout: Duration) -> OrchestrationBudget {
+    OrchestrationBudget {
+        total_timeout,
+        ..OrchestrationBudget::L1_DEFAULT
+    }
 }
 
 fn safe_baseline() -> Assessment {
@@ -181,12 +188,12 @@ async fn run_degrades_relative_direct_exec_after_dynamic_cd() {
 #[tokio::test]
 async fn run_preserves_dynamic_source_as_typed_degradation() {
     let baseline = safe_baseline();
-    let outcome = run(
+    let outcome = run_with_budget(
         "unknown-producer | python3",
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(2),
+        budget_with_timeout(Duration::from_secs(2)),
     )
     .await;
     let assessment = match outcome {
@@ -295,12 +302,12 @@ async fn run_resolves_script_file_and_honors_file_limit() {
     let command = format!("python3 {}", path.display());
     let baseline = safe_baseline();
 
-    let analyzed = run(
+    let analyzed = run_with_budget(
         &command,
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(2),
+        budget_with_timeout(Duration::from_secs(2)),
     )
     .await;
     let assessment = match analyzed {
@@ -339,12 +346,12 @@ async fn run_resolves_script_file_and_honors_file_limit() {
 #[tokio::test]
 async fn run_degrades_missing_script_file_instead_of_auto_safe() {
     let baseline = safe_baseline();
-    let outcome = run(
+    let outcome = run_with_budget(
         "python3 /definitely/missing/aegis-language-test.py",
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(2),
+        budget_with_timeout(Duration::from_secs(2)),
     )
     .await;
     let assessment = match outcome {
@@ -367,12 +374,12 @@ async fn run_analyzes_direct_exec_with_verified_shebang() {
     )
     .unwrap();
     let baseline = safe_baseline();
-    let outcome = run(
+    let outcome = run_with_budget(
         &path.display().to_string(),
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(2),
+        budget_with_timeout(Duration::from_secs(2)),
     )
     .await;
     let assessment = match outcome {
@@ -461,12 +468,12 @@ async fn script_resolution_is_inside_total_deadline_and_preserves_original_byte_
             .contains(&DegradationReason::LimitExceeded)
     }));
 
-    let analyzed = run(
+    let analyzed = run_with_budget(
         &command,
         &baseline,
         Some(env!("CARGO_BIN_EXE_aegis")),
         &[],
-        Duration::from_secs(2),
+        budget_with_timeout(Duration::from_secs(2)),
     )
     .await;
     let analyzed = match analyzed {
