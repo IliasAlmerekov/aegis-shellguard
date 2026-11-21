@@ -479,7 +479,7 @@ enabled = false
 # prune.enabled = true still deletes nothing.
 ```
 
-The `aegis init` template writes different values on purpose — `enabled =
+The `aegis config init` template writes different values on purpose — `enabled =
 false` still, but `max_count_per_provider = 10` and `max_age_days = 30` — as a
 tunable starting point instead of the "keeps everything" default:
 

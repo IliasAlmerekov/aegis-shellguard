@@ -8,8 +8,10 @@
 # Usage: scripts/lint.sh [fmt|clippy|text|all]
 #   fmt     check formatting
 #   clippy  lint every target and feature, warnings are errors
-#   text    checks clippy cannot make, from grep and find only: no `.rs` file
-#           under src/, crates/, tests/, fuzz/ or benches/ exceeds 800 lines
+#   text    checks clippy cannot make, from grep, find and git only: no `.rs`
+#           file under src/, crates/, tests/, fuzz/ or benches/ exceeds 800
+#           lines, and every backticked path in AGENTS.md, CONVENTION.md,
+#           CONTRIBUTING.md and CLAUDE.md exists in the tree
 #   all     fmt, clippy, then text (also the default with no argument)
 #
 # LINT_TEXT_ROOT points the text checks at another directory than the
@@ -89,10 +91,64 @@ $files
 EOF
 }
 
+check_doc_paths() {
+    for doc in AGENTS.md CONVENTION.md CONTRIBUTING.md CLAUDE.md; do
+        [ -e "$doc" ] || continue
+        grep_status=0
+        tokens=$(grep -oE '`[^`]+`' "$doc") || grep_status=$?
+        if [ "$grep_status" -gt 1 ]; then
+            echo "$doc: cannot read the file"
+            continue
+        fi
+        [ -n "$tokens" ] || continue
+        while IFS= read -r raw; do
+            token=${raw#\`}
+            token=${token%\`}
+            case "$token" in
+                *[[:space:]]*) continue ;;
+                */* | *.md | *.rs | *.toml | *.yml | *.sh) ;;
+                *) continue ;;
+            esac
+            case "$token" in
+                *'*'* | *'?'* | *'['*']'* | *'<'*'>'* | '~'* | *NNN*) continue ;;
+                .md | .rs | .toml | .yml | .sh) continue ;;
+            esac
+            case "$token" in
+                *[!/]*) ;;
+                *) continue ;;
+            esac
+            case "$token" in
+                # #616: project-level config file created at runtime, never committed.
+                .aegis.toml) continue ;;
+            esac
+            case "$token" in
+                /* | .. | ../* | */../* | */..)
+                    echo "$doc: missing path \`$token\`"
+                    continue
+                    ;;
+            esac
+            if [ -e "$token" ]; then
+                continue
+            fi
+            if git check-ignore -q -- "$token" 2>/dev/null; then
+                continue
+            fi
+            echo "$doc: missing path \`$token\`"
+        done <<EOF
+$tokens
+EOF
+    done
+}
+
 run_text() {
     echo "lint: text checks"
     root=${LINT_TEXT_ROOT:-.}
     out=$(cd "$root" && check_rust_file_length)
+    if [ -n "$out" ]; then
+        echo "$out" >&2
+        text_failed=1
+    fi
+    out=$(cd "$root" && check_doc_paths)
     if [ -n "$out" ]; then
         echo "$out" >&2
         text_failed=1

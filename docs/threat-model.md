@@ -401,16 +401,18 @@ Use Aegis as one layer in a larger safety posture:
 
 ## Code and test references
 
-- `src/decision/`
+- `crates/aegis-policy/`
 - `src/planning/core.rs`
 - `src/runtime/`
-- `src/ui/confirm.rs`
+- `crates/aegis-tui/src/confirm_screen.rs`
 - `src/watch/`
-- `src/snapshot/mod.rs`
-- `src/snapshot/git.rs`
-- `src/snapshot/docker.rs`
-- `src/audit/logger.rs`
-- `tests/full_pipeline.rs`
+- `crates/aegis-snapshot/src/lib.rs`
+- `crates/aegis-snapshot/src/git/`
+- `crates/aegis-snapshot/src/docker/`
+- `crates/aegis-audit/src/logger.rs`
+- `tests/full_pipeline_policy.rs`
+- `tests/full_pipeline_audit.rs`
+- `tests/full_pipeline_snapshot.rs`
 - `tests/audit_integrity.rs`
 - `tests/snapshot_integration.rs`
 - `README.md`

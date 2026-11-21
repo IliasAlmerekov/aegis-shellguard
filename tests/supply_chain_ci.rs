@@ -272,11 +272,16 @@ fn contributing_documents_the_pinned_toolchains() {
 #[test]
 fn contributing_states_the_workspace_msrv() {
     let msrv = workspace_msrv();
+    let docs = contributing();
 
     assert!(
-        contributing().contains(&format!("Rust {msrv} or newer")),
-        "CONTRIBUTING.md must say \"Rust {msrv} or newer\", matching rust-version in \
-         the root Cargo.toml [workspace.package]; update CONTRIBUTING.md"
+        docs.contains("`rust-version`") && docs.contains("`Cargo.toml`"),
+        "CONTRIBUTING.md must point at `rust-version` in `Cargo.toml` for the MSRV"
+    );
+    assert!(
+        !docs.contains(&msrv),
+        "CONTRIBUTING.md must not hardcode the literal MSRV {msrv}; \
+         point at `rust-version` in `Cargo.toml` instead"
     );
 }
 
@@ -285,15 +290,14 @@ fn contributing_names_no_other_toolchain_version() {
     let allowed = [
         pinned_version("RUST_TOOLCHAIN"),
         pinned_version("FUZZ_NIGHTLY_TOOLCHAIN"),
-        workspace_msrv(),
     ];
 
     for token in toolchain_tokens(&contributing()) {
         assert!(
             allowed.contains(&token),
-            "CONTRIBUTING.md names toolchain version {token}, which matches none of \
-             RUST_TOOLCHAIN and FUZZ_NIGHTLY_TOOLCHAIN in .github/versions.env or \
-             rust-version in Cargo.toml; update CONTRIBUTING.md"
+            "CONTRIBUTING.md names toolchain version {token}, which matches neither \
+             RUST_TOOLCHAIN nor FUZZ_NIGHTLY_TOOLCHAIN in .github/versions.env; \
+             update CONTRIBUTING.md"
         );
     }
 }

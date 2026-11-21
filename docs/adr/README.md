@@ -20,31 +20,21 @@ These records are companions to:
 
 Aegis is a Cargo workspace: the `aegis` binary crate at the repository root
 acts as a shell-proxy guardrail and depends on focused library crates under
-`crates/`. All 9 crates are extracted:
-`aegis-types` (shared data vocabulary), `aegis-parser` (shell tokenizer +
-`PrefixPattern` matcher), `aegis-scanner` (`Scanner`, `PatternSet`, built-in
-`patterns.toml`), `aegis-policy` (the pure `PolicyEngine`), `aegis-config`
-(config model, loader, validation, schema, and `amend`), `aegis-explanation`
-(`CommandExplanation` and related types), `aegis-tui` (crossterm confirmation
-dialog), `aegis-snapshot` (six snapshot backends), and `aegis-audit`
-(`AuditLogger`, append-only JSONL with optional hash-chain integrity). DAG
-boundaries are enforced by `tests/architecture_boundaries.rs`.
+`crates/` (listed in `Cargo.toml` and [`CONVENTION.md` §3](../../CONVENTION.md#3-architecture-rules)).
+DAG boundaries are enforced by `tests/architecture_boundaries.rs`.
 
 The current runtime architecture is split across a small set of focused
 modules and crates:
 
 - `src/main.rs` — CLI argument parsing and top-level orchestration only
 - `crates/aegis-parser/` — shell tokenizer, segmentation, and `PrefixPattern` matching
-- `src/interceptor/parser/` — thin re-export shim over the `aegis-parser` crate
 - `crates/aegis-scanner/` — synchronous risk classification, `PatternSet`, built-in patterns
-- `src/interceptor/scanner.rs`, `src/interceptor/patterns.rs` — thin re-export shims over `aegis-scanner`
 - `crates/aegis-policy/` — pure policy evaluation (`Assessment` + context → decision)
-- `src/decision/` — thin re-export shim over the `aegis-policy` crate
 - `src/runtime_gate.rs` — Rust-side CI detection contract
 - `src/toggle.rs` — global on/off toggle state rooted at `~/.aegis/disabled`
 - `src/watch/` — NDJSON watch-mode control loop
-- `crates/aegis-snapshot/` — six snapshot backends (Git, Docker, Postgres, MySQL, SQLite, Supabase); `src/snapshot/` is a re-export shim
-- `crates/aegis-audit/` — append-only JSONL audit writer and hash-chain integrity; `src/audit/` is a re-export shim
+- `crates/aegis-snapshot/` — six snapshot backends (Git, Docker, Postgres, MySQL, SQLite, Supabase)
+- `crates/aegis-audit/` — append-only JSONL audit writer and hash-chain integrity
 - `scripts/hooks/` — Claude / Codex hook payloads and the shared shell-side
   toggle helper template
 - `scripts/install.sh` / `scripts/uninstall.sh` — convenience installer and
@@ -145,5 +135,6 @@ expected verification posture is:
 - [`docs/release-readiness.md`](../release-readiness.md)
 - `tests/toggle_cli.rs`
 - `tests/agent_hooks.rs`
-- `tests/installer_flow.rs`
-- `tests/full_pipeline.rs`
+- `tests/agent_hooks_install.rs`
+- `tests/installer_scripts_atomicity.rs`
+- `tests/full_pipeline_policy.rs`

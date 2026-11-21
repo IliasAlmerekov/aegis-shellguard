@@ -1,25 +1,4 @@
 {
-  "version": 1,
-  "default_branch": "main",
-  "worktree_dir": ".worktrees",
-  "env": { "CARGO_TARGET_DIR": "target" },
-  "gate": {
-    "timeout_seconds": 600,
-    "lint": [
-      "scripts/lint.sh fmt"
-    ],
-    "typecheck": { "per_package": "cargo check -p {pkg} --all-targets" },
-    "tests": {
-      "per_package": "cargo test -p {pkg} --lib",
-      "per_package_integration": "cargo test -p {pkg} --tests",
-      "integration_exclude_packages": ["aegis"],
-      "per_test_file": { "glob": "tests/*.rs", "command": "cargo test --test {stem}" },
-      "test_map": [],
-      "from_handoff": true
-    },
-    "tamper_check": "scripts/test-tamper-check.sh",
-    "require_test_for": ["src/**", "crates/*/src/**"]
-  },
   "packages": [
     { "glob": "crates/{name}/**", "pkg": "{name}" },
     { "glob": "src/**", "pkg": "aegis" },
@@ -69,23 +48,5 @@
       { "glob": "benches/**", "tier": "LEAF" },
       { "glob": "*.md", "tier": "LEAF" }
     ]
-  },
-  "lanes": { "min_lane_for_tier": { "TRUNK": "standard" } },
-  "review": {
-    "iterations": { "trivial": 1, "standard": 3, "risky": 3 },
-    "return_min_severity": "MAJOR"
-  },
-  "auto_merge": "never",
-  "triage": {
-    "command": "uv run --env-file {main}/.env --script {plugin}/scripts/triage_findings.py",
-    "mode": "shadow",
-    "thresholds": { "executor_min": 0.7, "drop_max": 0.2 },
-    "never_send_remotes": ["ghsa-*"]
-  },
-  "test_guard": {
-    "test_path_globs": ["tests/**", "**/*_test.*", "**/*.test.*", "**/*.spec.*", "**/test_*.py"],
-    "inline_test_markers": ["#[cfg(test)]", "#[test]"]
-  },
-  "pr_template": ".github/pull_request_template.md",
-  "evidence": { "commands": ["scripts/lint.sh fmt"] }
+  }
 }

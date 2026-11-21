@@ -8,7 +8,7 @@ AGENTS.md is the entry point for this project. CONVENTION.md holds the enforced 
 
 ### Issue tracker
 
-GitHub Issues in `IliasAlmerekov/aegis-shellguard`, through `gh`. See `docs/agents/issue-tracker.md`.
+GitHub Issues in [IliasAlmerekov/aegis-shellguard](https://github.com/IliasAlmerekov/aegis-shellguard), through `gh`. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
