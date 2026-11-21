@@ -322,6 +322,7 @@ impl Scanner {
     ///
     /// Returns one [`MatchResult`] per matching rule.  The first token is used as
     /// the lookup key; only rules whose first token matches the program are evaluated.
+    #[cfg(test)]
     pub fn prefix_scan(&self, tokens: &[&str]) -> Vec<MatchResult> {
         if tokens.is_empty() {
             return vec![];

@@ -31,6 +31,7 @@ pub struct RetentionPolicy {
 
 impl RetentionPolicy {
     /// Retention policy that only uses a maximum age rule.
+    #[cfg(test)]
     pub fn from_max_age_days(days: u32) -> Self {
         Self {
             max_age_days: Some(days),
@@ -39,6 +40,7 @@ impl RetentionPolicy {
     }
 
     /// Retention policy that only uses a per-provider count rule.
+    #[cfg(test)]
     pub fn from_max_count_per_provider(count: usize) -> Self {
         Self {
             max_count_per_provider: Some(count),

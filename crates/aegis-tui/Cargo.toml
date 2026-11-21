@@ -14,6 +14,11 @@ aegis-types.workspace = true
 aegis-explanation.workspace = true
 crossterm = "0.29"
 
+[features]
+# Exposes test renderer helpers to dependent crates' tests. Never enable it in
+# a release build.
+testing = []
+
 [dev-dependencies]
 aegis-parser.workspace = true
 aegis-config.workspace = true

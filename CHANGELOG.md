@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Changed: gated test-only public functions behind `#[cfg(test)]` or a `testing` Cargo feature across `aegis-parser`, `aegis-scanner`, `aegis-config`, `aegis-snapshot`, `aegis-tui`, `aegis-audit`, and `aegis-language`, and wired `scripts/test-tamper-check.test.sh` into `scripts/lint.sh text` (#618).
 - Fixed: dropped stale crate counts, dependency versions, literal MSRV, dead test/source citations, and unused `.agents/pipeline.json` keys across `CONVENTION.md`, `CONTRIBUTING.md`, `CLAUDE.md`, `docs/config-schema.md`, `docs/adr/README.md`, and `docs/threat-model.md`, and added a `scripts/lint.sh text` guard for missing backticked paths in the four top-level docs (#616).
 - Changed: `python`, `family`, and `bash` language adapters share `span_for` through crate-private `languages::common`; analysis output and public API are unchanged (#289).
 - Changed: trimmed stale plan-step, review-gate, and rejected-alternative comments across `aegis-language` to one-line invariants and ADR-022 links; no code or behavior changes (#613).

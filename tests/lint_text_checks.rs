@@ -268,3 +268,29 @@ fn text_fails_on_path_escaping_lint_text_root() {
         "{text}"
     );
 }
+
+#[test]
+fn text_fails_when_tamper_check_self_test_fails() {
+    let tree = TempDir::new().unwrap();
+    write_file(
+        tree.path(),
+        "scripts/test-tamper-check.test.sh",
+        "#!/usr/bin/env bash\necho \"FAIL synthetic tamper case\"\nexit 1\n",
+    );
+    let output = run_text(tree.path());
+    let text = stdout(&output);
+    assert!(!output.status.success(), "{text}");
+    assert!(text.contains("FAIL synthetic tamper case"), "{text}");
+}
+
+#[test]
+fn text_passes_when_tamper_check_self_test_passes() {
+    let tree = TempDir::new().unwrap();
+    write_file(
+        tree.path(),
+        "scripts/test-tamper-check.test.sh",
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    let output = run_text(tree.path());
+    assert!(output.status.success(), "{}", stdout(&output));
+}

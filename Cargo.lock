@@ -48,6 +48,7 @@ dependencies = [
 name = "aegis-audit"
 version = "0.9.0"
 dependencies = [
+ "aegis-audit",
  "aegis-config",
  "aegis-explanation",
  "aegis-policy",
@@ -94,6 +95,7 @@ dependencies = [
 name = "aegis-language"
 version = "0.9.0"
 dependencies = [
+ "aegis-language",
  "criterion",
  "thiserror",
  "tree-sitter",

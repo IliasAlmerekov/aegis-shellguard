@@ -17,7 +17,13 @@ tree-sitter-javascript = "=0.25.0"
 tree-sitter-python = "=0.25.0"
 tree-sitter-typescript = "=0.23.2"
 
+[features]
+# Exposes language lookup helpers to integration tests. Never enable it in a
+# release build.
+testing = []
+
 [dev-dependencies]
+aegis-language = { workspace = true, features = ["testing"] }
 criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 
 # Fails if a no-source command starts the language worker (ADR-022 §1).
