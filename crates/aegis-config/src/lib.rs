@@ -1,5 +1,13 @@
 #![deny(missing_docs)]
-#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
 
 //! Aegis configuration: data model, layered loader, validation, JSON schema,
 //! and decision-persistence (`amend`).

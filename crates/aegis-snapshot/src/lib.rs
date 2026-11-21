@@ -3,7 +3,15 @@
 //! This crate provides the [`SnapshotPlugin`] trait, [`SnapshotRegistry`],
 //! [`SnapshotRegistryConfig`], and six built-in provider backends:
 //! git, docker, postgres, mysql, sqlite, and supabase.
-#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
 #![deny(missing_docs)]
 
 use std::path::Path;

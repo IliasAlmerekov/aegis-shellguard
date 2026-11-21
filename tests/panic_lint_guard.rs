@@ -1,12 +1,24 @@
-//! Every library and binary crate root must deny `unwrap` and `expect` outside
-//! tests. A new crate or `[[bin]]` without the attribute fails here.
+//! Every library and binary crate root must deny `unwrap`, `expect`, `panic!`
+//! and `unreachable!` outside tests. A new crate or `[[bin]]` without the attribute fails here.
 
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-const REQUIRED_ATTRIBUTE: &str =
-    "#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]";
+const REQUIRED_ATTRIBUTE: &str = "#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable))]";
+
+fn without_whitespace(text: &str) -> String {
+    text.split_whitespace().collect()
+}
+
+// rustfmt wraps the attribute, so whitespace is ignored; a commented-out attribute must not count.
+fn carries_required_attribute(source: &str) -> bool {
+    let code: String = source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect();
+    without_whitespace(&code).contains(&without_whitespace(REQUIRED_ATTRIBUTE))
+}
 
 fn cargo_metadata() -> serde_json::Value {
     let output = Command::new(env!("CARGO"))
@@ -53,7 +65,7 @@ fn lib_and_bin_roots(metadata: &serde_json::Value) -> Vec<String> {
 }
 
 #[test]
-fn every_lib_and_bin_root_denies_unwrap_and_expect() {
+fn every_lib_and_bin_root_denies_unwrap_expect_panic_and_unreachable() {
     let roots = lib_and_bin_roots(&cargo_metadata());
     assert!(
         !roots.is_empty(),
@@ -63,10 +75,9 @@ fn every_lib_and_bin_root_denies_unwrap_and_expect() {
     let missing: Vec<&str> = roots
         .iter()
         .filter(|root| {
-            !fs::read_to_string(Path::new(root))
-                .expect("crate root should be readable")
-                .lines()
-                .any(|line| line.trim() == REQUIRED_ATTRIBUTE)
+            !carries_required_attribute(
+                &fs::read_to_string(Path::new(root)).expect("crate root should be readable"),
+            )
         })
         .map(String::as_str)
         .collect();
@@ -76,4 +87,17 @@ fn every_lib_and_bin_root_denies_unwrap_and_expect() {
         "crate roots missing `{REQUIRED_ATTRIBUTE}`:\n{}",
         missing.join("\n")
     );
+}
+
+#[test]
+fn an_attribute_inside_a_comment_does_not_count() {
+    assert!(carries_required_attribute(&format!(
+        "{REQUIRED_ATTRIBUTE}\n"
+    )));
+    assert!(!carries_required_attribute(&format!(
+        "// {REQUIRED_ATTRIBUTE}\n"
+    )));
+    assert!(!carries_required_attribute(&format!(
+        "//! {REQUIRED_ATTRIBUTE}\n"
+    )));
 }

@@ -38,6 +38,10 @@ pub(crate) fn run_hook() -> i32 {
         // environment (M4). The closure captures no mutable borrows, so no
         // `AssertUnwindSafe` is required.
         #[cfg(debug_assertions)]
+        #[expect(
+            clippy::panic,
+            reason = "debug-only test hook that exercises the contained-panic path"
+        )]
         if std::env::var_os("AEGIS_TEST_PANIC_HOOK").is_some() {
             panic!("injected hook panic for test");
         }

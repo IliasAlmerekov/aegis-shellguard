@@ -69,14 +69,17 @@ pub async fn run(prepared: &PreparedPlanner, ci_detected: bool) -> i32 {
         }
     }
 
-    if let PreparedPlanner::SetupFailure(plan) = prepared {
-        report_watch_setup_failure(plan);
-        return 4;
-    }
+    let context = match prepared {
+        PreparedPlanner::Ready(context) => context,
+        PreparedPlanner::SetupFailure(plan) => {
+            report_watch_setup_failure(plan);
+            return 4;
+        }
+    };
 
     // ADR-029 §3: one startup warning before the first frame when a
     // configured Sandbox cannot confine on this host (the WSL1 case).
-    warn_if_sandbox_unavailable_at_startup(runtime_context(prepared)).await;
+    warn_if_sandbox_unavailable_at_startup(context).await;
 
     let mut reader = TokioBufReader::new(tokio::io::stdin());
 
@@ -95,7 +98,7 @@ pub async fn run(prepared: &PreparedPlanner, ci_detected: bool) -> i32 {
                 if line.trim().is_empty() {
                     continue; // skip blank separator lines
                 }
-                process_frame(line, prepared, ci_detected).await;
+                process_frame(line, context, ci_detected).await;
             }
         }
     }
@@ -130,7 +133,7 @@ pub async fn run_disabled() -> i32 {
 }
 
 /// Process a single input line as a watch-mode frame.
-async fn process_frame(line: String, prepared: &PreparedPlanner, ci_detected: bool) {
+async fn process_frame(line: String, context: &RuntimeContext, ci_detected: bool) {
     // ── 1. Parse JSON ─────────────────────────────────────────────────────────
     let frame: InputFrame = match serde_json::from_str(&line) {
         Ok(f) => f,
@@ -163,21 +166,23 @@ async fn process_frame(line: String, prepared: &PreparedPlanner, ci_detected: bo
             Err(_) => CwdState::Unavailable,
         }
     };
-    let outcome = prepared
-        .plan_async(crate::planning::PlanningRequest {
+    let outcome = crate::planning::plan_with_context_async(
+        context,
+        crate::planning::PlanningRequest {
             command: &frame.cmd,
             cwd_state,
             transport: ExecutionTransport::Watch,
             ci_detected,
-        })
-        .await;
+        },
+    )
+    .await;
 
     match outcome {
         PlanningOutcome::SetupFailure(plan) => {
             report_watch_setup_failure(&plan);
             std::process::exit(4);
         }
-        PlanningOutcome::Planned(plan) => run_watch_plan(frame, prepared, plan, ci_detected).await,
+        PlanningOutcome::Planned(plan) => run_watch_plan(frame, context, plan, ci_detected).await,
     }
 }
 
@@ -208,13 +213,13 @@ async fn process_disabled_frame(line: String) {
 
 async fn run_watch_plan(
     frame: InputFrame,
-    prepared: &PreparedPlanner,
+    context: &RuntimeContext,
     plan: InterceptionPlan,
     ci_detected: bool,
 ) {
     run_watch_plan_with_prompts(
         frame,
-        prepared,
+        context,
         plan,
         ci_detected,
         |assessment, explanation| {
@@ -229,7 +234,7 @@ async fn run_watch_plan(
 
 async fn run_watch_plan_with_prompts<C, R>(
     frame: InputFrame,
-    prepared: &PreparedPlanner,
+    context: &RuntimeContext,
     plan: InterceptionPlan,
     ci_detected: bool,
     confirmation_prompt: C,
@@ -240,7 +245,7 @@ async fn run_watch_plan_with_prompts<C, R>(
 {
     run_watch_plan_with_persistence(
         frame,
-        prepared,
+        context,
         plan,
         ci_detected,
         confirmation_prompt,
@@ -280,7 +285,7 @@ fn persist_allow_rule(cmd: &str, cwd: &std::path::Path) {
 /// can observe it without touching the process-global config path.
 async fn run_watch_plan_with_persistence<C, R, P>(
     frame: InputFrame,
-    prepared: &PreparedPlanner,
+    context: &RuntimeContext,
     plan: InterceptionPlan,
     ci_detected: bool,
     confirmation_prompt: C,
@@ -292,7 +297,6 @@ async fn run_watch_plan_with_persistence<C, R, P>(
     P: FnOnce(&str, &std::path::Path),
 {
     let id = frame.id.clone();
-    let context = runtime_context(prepared);
     let cwd = watch_execution_cwd(plan.decision_context().cwd_state());
 
     let mut approve_always = false;
@@ -548,13 +552,6 @@ fn append_watch_audit_with_empty_snapshots(
         return false;
     }
     true
-}
-
-fn runtime_context(prepared: &PreparedPlanner) -> &RuntimeContext {
-    match prepared {
-        PreparedPlanner::Ready(context) => context,
-        PreparedPlanner::SetupFailure(_) => unreachable!("watch run handles setup failure first"),
-    }
 }
 
 fn resolve_frame_cwd(frame: &InputFrame, id: &Option<String>) -> Result<PathBuf, ()> {
