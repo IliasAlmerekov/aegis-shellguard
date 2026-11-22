@@ -4,10 +4,13 @@
 //! route → spawn → Analyze → map → merge composition through the public
 //! `aegis::analysis::run_with_budget` boundary.
 
+mod support;
+
 use std::time::Duration;
 
 use aegis::analysis::{OrchestrationBudget, Outcome, run_with_budget};
-use aegis_types::{AnalysisStatus, Assessment, DegradationReason, ParsedCommand, RiskLevel};
+use aegis_types::{AnalysisStatus, Assessment, DegradationReason, RiskLevel};
+use support::{safe_baseline, write_executable};
 
 #[path = "analysis_orchestrate/cli_deadline_parity.rs"]
 mod cli_deadline_parity;
@@ -16,23 +19,6 @@ fn budget_with_timeout(total_timeout: Duration) -> OrchestrationBudget {
     OrchestrationBudget {
         total_timeout,
         ..OrchestrationBudget::L1_DEFAULT
-    }
-}
-
-fn safe_baseline() -> Assessment {
-    Assessment {
-        risk: RiskLevel::Safe,
-        effect_opaque: false,
-        matched: Vec::new(),
-        highlight_ranges: Vec::new(),
-        command: ParsedCommand {
-            program: None,
-            argv: Vec::new(),
-            normalized: String::new(),
-            inline_scripts: Vec::new(),
-            raw: String::new(),
-        },
-        analysis: None,
     }
 }
 

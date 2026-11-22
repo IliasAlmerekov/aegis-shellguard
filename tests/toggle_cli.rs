@@ -1,11 +1,10 @@
+mod support;
+
 use std::fs;
 use std::process::Command;
 
+use support::aegis_bin;
 use tempfile::TempDir;
-
-fn aegis_bin() -> &'static str {
-    env!("CARGO_BIN_EXE_aegis")
-}
 
 fn run_aegis_in(home: &TempDir, cwd: &TempDir, args: &[&str]) -> std::process::Output {
     Command::new(aegis_bin())

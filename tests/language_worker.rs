@@ -16,16 +16,14 @@
 //! Crash/hang/timeout handling and prior-result retention are parent-client
 //! concerns and are covered by the slice-4 client tests, not here.
 
+mod support;
+
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 
 use aegis_language::SourceLanguage;
 use aegis_language::protocol::{self, DecodedFrame, Request, Response};
-
-/// Path to the built `aegis` binary under test.
-fn aegis_bin() -> String {
-    env!("CARGO_BIN_EXE_aegis").to_owned()
-}
+use support::aegis_bin;
 
 /// Spawn the worker subprocess with piped stdin/stdout, with any
 /// `leading_args` placed before `--internal-language-worker`.

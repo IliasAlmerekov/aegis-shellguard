@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Changed: deduplicated the remaining root integration test helpers (`aegis_bin`, `base_command`, `read_audit_entries`, `write_executable`, `repo_path`, `safe_baseline`, `run_snapshot_list`, `seed_snapshot`, `run_prune`, `version_matches`, `git`, `stash_hashes`, `repo_with_stash`) into `tests/support/mod.rs`, removed `aegis_test_binary`, and renamed distinct local stash/git helpers; no production code or test assertions changed (#625).
 - Changed: every test `git` spawn goes through one `git_command` in `src/test_git.rs` that strips inherited `GIT_` variables, so a test run from a linked-worktree hook no longer writes into the developer's repository; `tests/common` merged into `tests/support`, `init_git_repo` and `run_git` exist once, and `scripts/lint.sh text` fails on any other `Command::new("git")` (#291).
 - Changed: Centralize Aegis exit-code constants in `aegis-types` (#624).
 - Changed: added `// SAFETY:` comments naming true invariants to every `unsafe` block across the workspace, moved env-mutating unit tests in `aegis-config` and `aegis` into isolated integration-test binaries, denied `clippy::undocumented_unsafe_blocks` via `[workspace.lints]` in all 12 workspace manifests, and added the safety-comment rule to `CONVENTION.md` section 4; behavior is unchanged (#623).

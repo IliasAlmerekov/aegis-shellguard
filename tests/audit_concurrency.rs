@@ -1,25 +1,16 @@
+mod support;
+
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::path::Path;
+use std::process::{Output, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 use serde_json::Value;
+use support::base_command;
 use tempfile::TempDir;
-
-fn aegis_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
-}
-
-fn base_command(home: &Path) -> Command {
-    let mut command = Command::new(aegis_bin());
-    command.env("AEGIS_REAL_SHELL", "/bin/sh");
-    command.env("AEGIS_CI", "0");
-    command.env("HOME", home);
-    command
-}
 
 fn write_rotation_config(home: &Path, max_file_size_bytes: u64) {
     let config_dir = home.join(".config/aegis");

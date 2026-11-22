@@ -4,8 +4,11 @@
 //! their own copies of the command, the copies drifted apart, and CI stopped
 //! linting tests without anyone noticing.
 
+mod support;
+
 use std::fs;
-use std::path::{Path, PathBuf};
+
+use support::repo_path;
 
 const LINT_SCRIPT: &str = "scripts/lint.sh";
 
@@ -24,10 +27,6 @@ const DOCS: &[&str] = &[
     ".github/pull_request_template.md",
     "docs/ci.md",
 ];
-
-fn repo_path(path: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(path)
-}
 
 fn read(path: &str) -> String {
     fs::read_to_string(repo_path(path)).unwrap_or_else(|err| panic!("{path} unreadable: {err}"))

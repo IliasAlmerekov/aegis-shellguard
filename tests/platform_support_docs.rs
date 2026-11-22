@@ -1,10 +1,9 @@
+mod support;
+
 use std::fs;
-use std::path::PathBuf;
 use std::process::{Command, Output};
 
-fn repo_path(relative: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative)
-}
+use support::repo_path;
 
 fn run_install_with_windows_override() -> Output {
     Command::new("/bin/sh")

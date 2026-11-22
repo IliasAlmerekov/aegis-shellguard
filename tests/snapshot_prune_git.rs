@@ -1,29 +1,14 @@
 mod support;
 
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::path::Path;
 
 use aegis_audit::AuditLogger;
 use aegis_types::Decision;
-use support::{init_git_repo, run_git};
+use support::{init_git_repo, run_git, run_prune};
 use tempfile::TempDir;
 
-fn aegis_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
-}
-
-fn run_prune(home: &Path, extra_args: &[&str]) -> Output {
-    let mut cmd = Command::new(aegis_bin());
-    cmd.env("HOME", home)
-        .env("AEGIS_CI", "0")
-        .current_dir(home)
-        .args(["snapshot", "prune"])
-        .args(extra_args);
-    cmd.output().unwrap()
-}
-
-fn create_stash(repo: &Path, name: &str) -> String {
+fn create_tracked_stash_snapshot_id(repo: &Path, name: &str) -> String {
     fs::write(repo.join(name), format!("{name}\n")).unwrap();
     run_git(repo, &["add", name]);
     let message = format!("aegis-snap-{name}");
@@ -63,7 +48,7 @@ fn seed_snapshot_record(home: &Path, snapshot_id: &str, timestamp: &str) {
     file.write_all(line.as_bytes()).unwrap();
 }
 
-fn stash_list(repo: &Path) -> Vec<String> {
+fn stash_reflog_entries(repo: &Path) -> Vec<String> {
     let out = run_git(repo, &["stash", "list", "--format=%gd %s"]);
     String::from_utf8_lossy(&out.stdout)
         .lines()
@@ -86,8 +71,8 @@ fn test_git_prune_retention_deletes_outside_window() {
     fs::create_dir(&repo).unwrap();
     init_git_repo(&repo);
 
-    let old_snapshot_id = create_stash(&repo, "old-file");
-    let new_snapshot_id = create_stash(&repo, "new-file");
+    let old_snapshot_id = create_tracked_stash_snapshot_id(&repo, "old-file");
+    let new_snapshot_id = create_tracked_stash_snapshot_id(&repo, "new-file");
 
     // Seed audit records so prune can resolve the real snapshot ids.
     seed_snapshot_record(home.path(), &old_snapshot_id, "2024-01-01T00:00:00Z");
@@ -109,7 +94,7 @@ fn test_git_prune_retention_deletes_outside_window() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let remaining = stash_list(&repo);
+    let remaining = stash_reflog_entries(&repo);
     assert!(
         !remaining
             .iter()

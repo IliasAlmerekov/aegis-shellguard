@@ -9,12 +9,8 @@ use std::process::{Command, Output, Stdio};
 
 use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
 use aegis_types::{Decision, RiskLevel};
-use support::run_git;
+use support::{aegis_bin, git, repo_with_stash};
 use tempfile::TempDir;
-
-fn aegis_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
-}
 
 struct Env {
     home: TempDir,
@@ -92,33 +88,7 @@ fn code(output: &Output) -> i32 {
     output.status.code().unwrap()
 }
 
-fn git(repo: &Path, args: &[&str]) -> String {
-    String::from_utf8_lossy(&run_git(repo, args).stdout)
-        .trim()
-        .to_string()
-}
-
-/// A git repository with one stash; returns the repository and the git Snapshot id.
-fn repo_with_stash(env: &Env) -> (PathBuf, String) {
-    let repo = env.home.path().join("repo");
-    fs::create_dir(&repo).unwrap();
-    let repo = repo.canonicalize().unwrap();
-    git(&repo, &["init", "-q"]);
-    git(&repo, &["config", "user.email", "test@aegis.dev"]);
-    git(&repo, &["config", "user.name", "Aegis Test"]);
-    git(&repo, &["config", "core.autocrlf", "false"]);
-    git(&repo, &["commit", "-q", "--allow-empty", "-m", "init"]);
-    fs::write(repo.join("stashed.txt"), "stashed\n").unwrap();
-    git(
-        &repo,
-        &["stash", "push", "-q", "--include-untracked", "-m", "snap"],
-    );
-    let hash = git(&repo, &["rev-parse", "stash@{0}"]);
-    let id = format!("{}\t{hash}", repo.display());
-    (repo, id)
-}
-
-fn stash_list(repo: &Path) -> String {
+fn stash_hashes_raw(repo: &Path) -> String {
     git(repo, &["stash", "list", "--format=%H"])
 }
 
@@ -152,7 +122,8 @@ const DOCKER_RECORD: &str = r#"{"container_id":"c1","image":"img:1","config":{"n
 #[test]
 fn verify_exits_0_when_every_snapshot_is_present_or_nothing_captured() {
     let env = Env::new();
-    let (_repo, id) = repo_with_stash(&env);
+    let (repo, hash) = repo_with_stash(env.home.path());
+    let id = format!("{}\t{hash}", repo.display());
     env.record("git", &id);
     env.record("docker", "none");
 
@@ -166,7 +137,8 @@ fn verify_exits_0_when_every_snapshot_is_present_or_nothing_captured() {
 #[test]
 fn verify_exits_1_when_a_stash_entry_was_dropped() {
     let env = Env::new();
-    let (repo, id) = repo_with_stash(&env);
+    let (repo, hash) = repo_with_stash(env.home.path());
+    let id = format!("{}\t{hash}", repo.display());
     env.record("git", &id);
     git(&repo, &["stash", "drop", "-q"]);
 
@@ -234,7 +206,8 @@ fn verify_exits_4_and_shows_the_reason_for_a_malformed_record() {
 #[test]
 fn verify_with_an_id_checks_only_that_snapshot() {
     let env = Env::new();
-    let (repo, id) = repo_with_stash(&env);
+    let (repo, hash) = repo_with_stash(env.home.path());
+    let id = format!("{}\t{hash}", repo.display());
     env.record("git", &id);
     env.record("docker", "none");
     git(&repo, &["stash", "drop", "-q"]);
@@ -248,7 +221,8 @@ fn verify_with_an_id_checks_only_that_snapshot() {
 #[test]
 fn verify_json_carries_the_same_outcomes_as_text() {
     let env = Env::new();
-    let (repo, id) = repo_with_stash(&env);
+    let (repo, hash) = repo_with_stash(env.home.path());
+    let id = format!("{}\t{hash}", repo.display());
     env.record("git", &id);
     env.record("docker", "none");
     git(&repo, &["stash", "drop", "-q"]);
@@ -286,7 +260,8 @@ fn verify_json_carries_the_same_outcomes_as_text() {
 #[test]
 fn rollback_refuses_an_absent_snapshot_with_exit_1_and_changes_nothing() {
     let env = Env::new();
-    let (repo, id) = repo_with_stash(&env);
+    let (repo, hash) = repo_with_stash(env.home.path());
+    let id = format!("{}\t{hash}", repo.display());
     env.record("git", &id);
     git(&repo, &["stash", "drop", "-q"]);
     fs::write(repo.join("work.txt"), "work\n").unwrap();
@@ -305,7 +280,7 @@ fn rollback_refuses_an_absent_snapshot_with_exit_1_and_changes_nothing() {
         );
     }
 
-    assert_eq!(stash_list(&repo), "");
+    assert_eq!(stash_hashes_raw(&repo), "");
     assert_eq!(fs::read_to_string(repo.join("work.txt")).unwrap(), "work\n");
     assert!(!repo.join("stashed.txt").exists());
     assert_eq!(env.audit_len(), audit_before);
@@ -366,7 +341,8 @@ fn rollback_yes_attempts_the_restore_of_an_inconclusive_snapshot() {
 #[test]
 fn rollback_restores_a_present_snapshot_without_a_terminal_or_prompt() {
     let env = Env::new();
-    let (repo, id) = repo_with_stash(&env);
+    let (repo, hash) = repo_with_stash(env.home.path());
+    let id = format!("{}\t{hash}", repo.display());
     env.record("git", &id);
 
     let output = env.run(&["rollback", &id]);

@@ -10,7 +10,7 @@ use std::process::{Command, Output, Stdio};
 
 use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
 use aegis_types::{Decision, RiskLevel};
-use support::run_git;
+use support::git;
 use tempfile::TempDir;
 
 const DOCKER_RECORD: &str = r#"{"container_id":"c1","image":"img:1","config":{"name":"web","binds":[],"port_bindings":[],"labels":{},"network_mode":"default","restart_policy":"no"}}"#;
@@ -143,12 +143,6 @@ impl Env {
             .filter(|command| command.starts_with("aegis rollback "))
             .collect()
     }
-}
-
-fn git(repo: &Path, args: &[&str]) -> String {
-    String::from_utf8_lossy(&run_git(repo, args).stdout)
-        .trim()
-        .to_string()
 }
 
 fn stdout(output: &Output) -> String {

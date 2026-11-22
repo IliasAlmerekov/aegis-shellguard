@@ -4,43 +4,21 @@ mod support;
 
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output, Stdio};
 
-use serde_json::Value;
-use support::{init_git_repo, run_git};
+use support::{aegis_bin, init_git_repo, read_audit_entries, run_git, stash_hashes};
 use tempfile::TempDir;
 
 const TEST_COMMAND: &str = "rm -rf /tmp/aegis-automatic-prune-target";
 
-fn aegis_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
-}
-
-fn create_stash(repo: &Path, name: &str) -> String {
+fn create_untracked_stash_hash(repo: &Path, name: &str) -> String {
     fs::write(repo.join(name), format!("{name}\n")).unwrap();
     run_git(repo, &["add", name]);
     run_git(repo, &["stash", "push", "--include-untracked", "-m", name]);
 
     let output = run_git(repo, &["rev-parse", "stash@{0}"]);
     String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
-fn stash_hashes(repo: &Path) -> Vec<String> {
-    let output = run_git(repo, &["stash", "list", "--format=%H"]);
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(str::to_owned)
-        .collect()
-}
-
-fn read_audit_entries(home: &Path) -> Vec<Value> {
-    fs::read_to_string(home.join(".aegis/audit.jsonl"))
-        .unwrap()
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect()
 }
 
 fn seed_old_snapshot(home: &Path, repo: &Path, hash: &str) -> String {
@@ -158,7 +136,7 @@ fn disabled_prune_keeps_previous_git_snapshots() {
     init_git_repo(&repo);
     let repo = repo.canonicalize().unwrap();
 
-    let old_hash = create_stash(&repo, "aegis-snap-old");
+    let old_hash = create_untracked_stash_hash(&repo, "aegis-snap-old");
     seed_old_snapshot(home.path(), &repo, &old_hash);
     fs::write(repo.join("current-work.txt"), "current\n").unwrap();
     write_config(home.path(), &repo, false, false);
@@ -193,7 +171,7 @@ fn audit_entries_without_a_snapshot_do_not_trigger_automatic_prune() {
     init_git_repo(&repo);
     let repo = repo.canonicalize().unwrap();
 
-    let old_hash = create_stash(&repo, "aegis-snap-old");
+    let old_hash = create_untracked_stash_hash(&repo, "aegis-snap-old");
     seed_old_snapshot(home.path(), &repo, &old_hash);
     write_config(home.path(), &repo, true, false);
 
@@ -221,7 +199,7 @@ fn shell_automatic_prune_retains_the_configured_git_snapshot_count() {
     init_git_repo(&repo);
     let repo = repo.canonicalize().unwrap();
 
-    let old_hash = create_stash(&repo, "aegis-snap-old");
+    let old_hash = create_untracked_stash_hash(&repo, "aegis-snap-old");
     let old_id = seed_old_snapshot(home.path(), &repo, &old_hash);
     fs::write(repo.join("current-work.txt"), "current\n").unwrap();
     write_config(home.path(), &repo, true, false);
@@ -244,7 +222,7 @@ fn watch_automatic_prune_uses_the_same_git_retention_policy() {
     init_git_repo(&repo);
     let repo = repo.canonicalize().unwrap();
 
-    let old_hash = create_stash(&repo, "aegis-snap-old");
+    let old_hash = create_untracked_stash_hash(&repo, "aegis-snap-old");
     let old_id = seed_old_snapshot(home.path(), &repo, &old_hash);
     fs::write(repo.join("current-work.txt"), "current\n").unwrap();
     write_config(home.path(), &repo, true, false);
@@ -272,7 +250,7 @@ fn sandboxed_shell_automatic_prune_uses_the_same_git_retention_policy() {
     init_git_repo(&repo);
     let repo = repo.canonicalize().unwrap();
 
-    let old_hash = create_stash(&repo, "aegis-snap-old");
+    let old_hash = create_untracked_stash_hash(&repo, "aegis-snap-old");
     let old_id = seed_old_snapshot(home.path(), &repo, &old_hash);
     fs::write(repo.join("current-work.txt"), "current\n").unwrap();
     write_config(home.path(), &repo, true, true);

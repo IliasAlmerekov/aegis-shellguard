@@ -1,9 +1,8 @@
-use std::fs;
-use std::path::PathBuf;
+mod support;
 
-fn repo_path(relative: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative)
-}
+use std::fs;
+
+use support::repo_path;
 
 fn cargo_package_version() -> String {
     let contents = fs::read_to_string(repo_path("Cargo.toml"))

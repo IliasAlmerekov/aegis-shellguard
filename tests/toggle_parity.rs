@@ -26,7 +26,8 @@ use tempfile::TempDir;
 // shared rather than restated: if the two lists drifted apart, the two surfaces
 // would stop running under identical environments — the exact property these
 // cases exist to compare.
-use support::agent_hooks::{CI_MARKER_VARS, aegis_test_binary, run_script_with_env};
+use support::aegis_bin;
+use support::agent_hooks::{CI_MARKER_VARS, run_script_with_env};
 
 /// The session-start hooks under this contract, by script path.
 const SESSION_START_HOOKS: [&str; 2] = [
@@ -54,7 +55,7 @@ fn write_disabled_flag(home: &Path) {
 
 /// Parse the `effective mode:` line `aegis status` prints.
 fn status_effective_state(home: &Path, cwd: &Path, envs: &[(&str, &str)]) -> EffectiveState {
-    let mut command = Command::new(aegis_test_binary());
+    let mut command = Command::new(aegis_bin());
     command.arg("status").env("HOME", home).current_dir(cwd);
     for key in CI_MARKER_VARS {
         command.env_remove(key);

@@ -12,16 +12,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use serde_json::Value;
-use support::{init_git_repo, run_git};
+use support::{aegis_bin, base_command, init_git_repo, read_audit_entries, run_git};
 use tempfile::TempDir;
-
-fn aegis_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
-}
-
-fn base_command(home: &Path) -> Command {
-    base_command_with_shell(home, Path::new("/bin/sh"))
-}
 
 fn base_command_with_shell(home: &Path, shell: &Path) -> Command {
     let mut command = Command::new(aegis_bin());
@@ -29,17 +21,6 @@ fn base_command_with_shell(home: &Path, shell: &Path) -> Command {
     command.env("AEGIS_CI", "0");
     command.env("HOME", home);
     command
-}
-
-fn read_audit_entries(home: &Path) -> Vec<Value> {
-    let path = home.join(".aegis").join("audit.jsonl");
-    let contents = fs::read_to_string(path).unwrap();
-
-    contents
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect()
 }
 
 fn canonical_test_path(path: &Path) -> PathBuf {

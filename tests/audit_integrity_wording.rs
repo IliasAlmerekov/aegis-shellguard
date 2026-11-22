@@ -1,8 +1,8 @@
 mod support;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
-use support::git_command;
+use support::{git_command, repo_path};
 
 const BANNED_PHRASES: [&str; 4] = [
     concat!("tamper", "-evident"),
@@ -38,10 +38,6 @@ const ALLOWED_CONTEXTS: [(&str, &str); 4] = [
         ),
     ),
 ];
-
-fn repo_path(relative: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative)
-}
 
 fn tracked_files() -> Vec<String> {
     let output = git_command(Path::new(env!("CARGO_MANIFEST_DIR")))

@@ -26,7 +26,7 @@ fn outside_tmp() -> Option<TempDir> {
 }
 
 /// `git` with every inherited repository variable and config removed.
-fn git(home: &Path, dir: &Path, args: &[&str]) {
+fn git_isolated(home: &Path, dir: &Path, args: &[&str]) {
     let output = support::git_command(dir)
         .env("HOME", home)
         .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -47,8 +47,8 @@ fn git(home: &Path, dir: &Path, args: &[&str]) {
 
 fn init_repo(home: &Path, dir: &Path) {
     fs::create_dir_all(dir).unwrap();
-    git(home, dir, &["init", "-q", "-b", "main"]);
-    git(home, dir, &["commit", "-q", "--allow-empty", "-m", "init"]);
+    git_isolated(home, dir, &["init", "-q", "-b", "main"]);
+    git_isolated(home, dir, &["commit", "-q", "--allow-empty", "-m", "init"]);
 }
 
 fn run_in(home: &Path, cwd: &Path, command: &str) -> Output {
@@ -154,7 +154,7 @@ fn git_commit_succeeds_from_a_linked_worktree_under_the_default_ceiling() {
     let main = base.path().join("main");
     let linked = base.path().join("linked");
     init_repo(home.path(), &main);
-    git(
+    git_isolated(
         home.path(),
         &main,
         &["worktree", "add", "-q", linked.to_str().unwrap()],
@@ -184,7 +184,7 @@ fn git_commit_succeeds_from_a_submodule_under_the_default_ceiling() {
     let sup = base.path().join("super");
     init_repo(home.path(), &lib);
     init_repo(home.path(), &sup);
-    git(
+    git_isolated(
         home.path(),
         &sup,
         &["submodule", "add", "-q", lib.to_str().unwrap(), "sub"],

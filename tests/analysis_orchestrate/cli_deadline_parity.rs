@@ -40,15 +40,6 @@ fn has_match(assessment: &Assessment, id: &str) -> bool {
         .any(|item| item.pattern.id.as_ref() == id)
 }
 
-#[cfg(unix)]
-fn write_executable(path: &Path, body: &str) {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::write(path, body).expect("write fixture script");
-    let mut permissions = std::fs::metadata(path).unwrap().permissions();
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(path, permissions).unwrap();
-}
-
 fn builtin_scanner() -> Scanner {
     Scanner::try_new(PatternSet::load().expect("built-in patterns load"))
         .expect("built-in scanner compiles")

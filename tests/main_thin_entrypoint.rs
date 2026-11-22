@@ -1,9 +1,8 @@
-use std::fs;
-use std::path::PathBuf;
+mod support;
 
-fn repo_path(relative: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative)
-}
+use std::fs;
+
+use support::repo_path;
 
 #[test]
 fn main_entrypoint_does_not_embed_shell_policy_orchestration_helpers() {

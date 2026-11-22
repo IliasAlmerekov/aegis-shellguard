@@ -1,22 +1,11 @@
+mod support;
+
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::Path;
 
+use support::run_snapshot_list;
 use tempfile::TempDir;
-
-fn aegis_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
-}
-
-fn run_snapshot_list(home: &Path) -> std::process::Output {
-    Command::new(aegis_bin())
-        .env("HOME", home)
-        .env("AEGIS_CI", "0")
-        .args(["snapshot", "list"])
-        .output()
-        .unwrap()
-}
 
 fn append_line(home: &Path, line: &str) {
     let log = home.join(".aegis").join("audit.jsonl");

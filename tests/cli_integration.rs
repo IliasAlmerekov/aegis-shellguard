@@ -1,32 +1,11 @@
+mod support;
+
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use serde_json::Value;
+use support::{base_command, read_audit_entries};
 use tempfile::TempDir;
-
-fn aegis_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
-}
-
-fn base_command(home: &Path) -> Command {
-    let mut command = Command::new(aegis_bin());
-    command.env("AEGIS_REAL_SHELL", "/bin/sh");
-    command.env("AEGIS_CI", "0");
-    command.env("HOME", home);
-    command
-}
-
-fn read_audit_entries(home: &Path) -> Vec<Value> {
-    let path = home.join(".aegis").join("audit.jsonl");
-    let contents = fs::read_to_string(path).unwrap();
-
-    contents
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect()
-}
 
 #[test]
 fn shell_compat_missing_command_is_usage_error() {

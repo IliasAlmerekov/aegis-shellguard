@@ -9,12 +9,8 @@ use std::thread;
 use std::time::Duration;
 
 use serde_json::Value;
-use support::init_git_repo;
+use support::{aegis_bin, init_git_repo};
 use tempfile::TempDir;
-
-fn aegis_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
-}
 
 fn shell_command(home: &Path, cwd: &Path) -> Command {
     let mut command = Command::new(aegis_bin());

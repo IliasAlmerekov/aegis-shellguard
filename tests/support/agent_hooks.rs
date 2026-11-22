@@ -38,12 +38,6 @@ pub fn script_path(name: &str) -> PathBuf {
         .join(name)
 }
 
-pub fn aegis_test_binary() -> PathBuf {
-    std::env::var_os("CARGO_BIN_EXE_aegis")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| panic!("CARGO_BIN_EXE_aegis is not set for agent hook tests"))
-}
-
 pub fn prepare_agent_dirs(home: &Path, claude: bool, codex: bool) {
     if claude {
         fs::create_dir_all(home.join(".claude")).unwrap();
@@ -69,7 +63,7 @@ pub fn run_script_with_env(
     command.arg(script_path(script_name));
     command.args(args);
     command.env("HOME", home);
-    command.env("AEGIS_BIN", aegis_test_binary());
+    command.env("AEGIS_BIN", super::aegis_bin());
     for key in CI_MARKER_VARS {
         command.env_remove(key);
     }
