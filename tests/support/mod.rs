@@ -282,12 +282,18 @@ pub fn read_stub_invocations(log_path: &Path) -> Vec<String> {
     }
 }
 
-pub fn append_audit_entry(home: &Path, plugin: &str, snapshot_id: &str) {
+fn append_snapshot_audit_entry(
+    home: &Path,
+    command: &str,
+    risk: RiskLevel,
+    plugin: &str,
+    snapshot_id: &str,
+) {
     let logger = AuditLogger::new(home.join(".aegis").join("audit.jsonl"));
     logger
         .append(AuditEntry::new(
-            "manual test command",
-            RiskLevel::Safe,
+            command,
+            risk,
             Vec::new(),
             Decision::Approved,
             vec![AuditSnapshot {
@@ -301,24 +307,19 @@ pub fn append_audit_entry(home: &Path, plugin: &str, snapshot_id: &str) {
         .unwrap();
 }
 
+pub fn append_audit_entry(home: &Path, plugin: &str, snapshot_id: &str) {
+    append_snapshot_audit_entry(
+        home,
+        "manual test command",
+        RiskLevel::Safe,
+        plugin,
+        snapshot_id,
+    );
+}
+
 /// Append an approved `Danger` audit entry recording a snapshot for `plugin`.
 pub fn seed_snapshot(home: &Path, plugin: &str, snapshot_id: &str) {
-    let logger = AuditLogger::new(home.join(".aegis").join("audit.jsonl"));
-    logger
-        .append(AuditEntry::new(
-            "rm -rf src",
-            RiskLevel::Danger,
-            Vec::new(),
-            Decision::Approved,
-            vec![AuditSnapshot {
-                plugin: plugin.to_string(),
-                snapshot_id: snapshot_id.to_string(),
-                git_target: None,
-            }],
-            None,
-            None,
-        ))
-        .unwrap();
+    append_snapshot_audit_entry(home, "rm -rf src", RiskLevel::Danger, plugin, snapshot_id);
 }
 
 /// Build an `aegis snapshot list` command configured for `home` with CI mode off.
