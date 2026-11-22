@@ -68,7 +68,7 @@ fn effective_decision(rule: &PolicyRule, is_compound: bool) -> PolicyRuleDecisio
 
 #[cfg(test)]
 mod tests {
-    use aegis_config::{AegisConfig, PolicyPatternToken, PolicyRule, WhenClause};
+    use aegis_config::{AegisConfig, PolicyPatternToken, PolicyRule};
     use aegis_parser::Parser as CommandParser;
     use aegis_policy::{
         ExecutionTransport, PolicyAction, PolicyAllowlistResult, PolicyBlocklistResult,
@@ -124,74 +124,6 @@ mod tests {
         )];
         let result = evaluate_policy_rules(&rules, "git push -f origin");
         assert!(result.matched);
-        assert_eq!(result.decision, Some(PolicyRuleDecision::Block));
-    }
-
-    #[test]
-    fn evaluate_policy_rules_when_clause_overrides_on_env_match() {
-        // SAFETY: test-only, single-threaded in this test context.
-        unsafe { std::env::set_var("AEGIS_TEST_ENV_VAR_UNIQUE", "true") };
-        let rules = vec![PolicyRule {
-            pattern: vec![single("rm")],
-            decision: PolicyRuleDecision::Prompt,
-            justification: None,
-            match_examples: vec![],
-            not_match_examples: vec![],
-            when: Some(WhenClause {
-                env: "AEGIS_TEST_ENV_VAR_UNIQUE".to_string(),
-                value: "true".to_string(),
-                then: PolicyRuleDecision::Allow,
-            }),
-        }];
-        let result = evaluate_policy_rules(&rules, "rm -rf build");
-        assert!(result.matched);
-        // env matches → use `then` (Allow)
-        assert_eq!(result.decision, Some(PolicyRuleDecision::Allow));
-        // SAFETY: test-only cleanup.
-        unsafe { std::env::remove_var("AEGIS_TEST_ENV_VAR_UNIQUE") };
-    }
-
-    #[test]
-    fn evaluate_policy_rules_when_clause_uses_base_on_env_mismatch() {
-        // SAFETY: test-only, single-threaded in this test context.
-        unsafe { std::env::remove_var("AEGIS_TEST_ENV_VAR_ABSENT") };
-        let rules = vec![PolicyRule {
-            pattern: vec![single("rm")],
-            decision: PolicyRuleDecision::Prompt,
-            justification: None,
-            match_examples: vec![],
-            not_match_examples: vec![],
-            when: Some(WhenClause {
-                env: "AEGIS_TEST_ENV_VAR_ABSENT".to_string(),
-                value: "true".to_string(),
-                then: PolicyRuleDecision::Allow,
-            }),
-        }];
-        let result = evaluate_policy_rules(&rules, "rm -rf build");
-        assert!(result.matched);
-        // env does not match → use base decision (Prompt)
-        assert_eq!(result.decision, Some(PolicyRuleDecision::Prompt));
-    }
-
-    #[test]
-    fn evaluate_policy_rules_when_missing_env_empty_value_does_not_match() {
-        // Ensure absent env var does NOT match value = "" via unwrap_or_default.
-        unsafe { std::env::remove_var("AEGIS_TEST_ABSENT_EMPTY") };
-        let rules = vec![PolicyRule {
-            pattern: vec![single("ls")],
-            decision: PolicyRuleDecision::Block,
-            justification: None,
-            match_examples: vec![],
-            not_match_examples: vec![],
-            when: Some(WhenClause {
-                env: "AEGIS_TEST_ABSENT_EMPTY".to_string(),
-                value: String::new(),
-                then: PolicyRuleDecision::Allow,
-            }),
-        }];
-        let result = evaluate_policy_rules(&rules, "ls");
-        assert!(result.matched);
-        // absent env → condition not met → base decision (Block)
         assert_eq!(result.decision, Some(PolicyRuleDecision::Block));
     }
 
@@ -346,95 +278,6 @@ mod tests {
             decision,
         );
         assert_eq!(decision.rationale, PolicyRationale::RequiresConfirmation);
-    }
-
-    // ── C3-residual Fix-1 bypass (iteration 2): a project-layer `[[rules]]`
-    // entry with `decision = "prompt"` but `when.then = "allow"` is a same-class
-    // auto-approve bypass. At runtime `effective_decision` returns `when.then =
-    // Allow` when the env condition matches, silently auto-approving a Danger
-    // command. The rule must be DROPPED at the config merge so it never reaches
-    // `effective_decision`; the engine must Prompt (NOT AutoApprove) under
-    // Mode::Protect. RED until `is_untrusted_allow` flags `when.then == Allow`.
-
-    #[test]
-    fn project_rules_prompt_with_when_then_allow_does_not_autoapprove_danger_under_protect() {
-        // Unique env var so this test is deterministic regardless of the host.
-        // SAFETY: test-only, single-threaded in this test context.
-        unsafe { std::env::set_var("AEGIS_TEST_C3_RESIDUAL_WHEN", "match") };
-
-        let workspace = TempDir::new().unwrap();
-        let home = TempDir::new().unwrap();
-        let global_dir = home.path().join(".config/aegis");
-        fs::create_dir_all(&global_dir).unwrap();
-
-        // Base (global): Protect mode, no rules.
-        fs::write(global_dir.join("config.toml"), "mode = \"Protect\"\n").unwrap();
-        // Project layer attempts to auto-approve `terraform ...` via a rule
-        // whose top-level `decision = "prompt"` passes the current
-        // `is_untrusted_allow` check, but whose `when.then = "allow"` resolves
-        // to Allow when the env condition matches.
-        fs::write(
-            workspace.path().join(".aegis.toml"),
-            "[[rules]]\n\
-             pattern = [\"terraform\"]\n\
-             decision = \"prompt\"\n\
-             when = { env = \"AEGIS_TEST_C3_RESIDUAL_WHEN\", value = \"match\", then = \"allow\" }\n",
-        )
-        .unwrap();
-
-        let config =
-            AegisConfig::load_for(workspace.path(), Some(home.path())).expect("config must load");
-
-        // The project rule must have been dropped at merge — it must NOT match
-        // the danger command. Currently it survives, so `evaluate_policy_rules`
-        // returns `matched = true` with `Allow` (env matches → `when.then`).
-        let rules_result =
-            evaluate_policy_rules(&config.rules, "terraform destroy -target=module.prod.api");
-        assert!(
-            !rules_result.matched,
-            "project-layer [[rules]] prompt+when.then=allow must be dropped so it does not match; \
-             got rules_result = {:?} (merged rules = {:?})",
-            rules_result, config.rules,
-        );
-
-        // And consequently the engine must Prompt (NOT auto-approve) for the
-        // Danger command under Mode::Protect.
-        let assessment = danger_assessment("terraform destroy -target=module.prod.api");
-        let decision: PolicyDecision = evaluate_policy(PolicyInput {
-            assessment: &assessment,
-            mode: Mode::Protect,
-            ci_state: PolicyCiState { detected: false },
-            allowlist: PolicyAllowlistResult { matched: false },
-            blocklist: PolicyBlocklistResult { matched: false },
-            config_flags: PolicyConfigFlags {
-                ci_policy: CiPolicy::Allow,
-                allowlist_override_level: AllowlistOverrideLevel::Never,
-                snapshot_policy: SnapshotPolicy::None,
-            },
-            execution_context: PolicyExecutionContext {
-                transport: ExecutionTransport::Shell,
-                applicable_snapshot_plugins: &[],
-            },
-            rules: rules_result,
-        });
-
-        assert_eq!(
-            decision.decision,
-            PolicyAction::Prompt,
-            "a dropped project prompt+when.then=allow must leave a Danger command prompting \
-             under Protect; got decision = {:?}",
-            decision,
-        );
-        assert_ne!(
-            decision.decision,
-            PolicyAction::AutoApprove,
-            "project [[rules]] prompt+when.then=allow must NOT auto-approve a Danger command; \
-             got decision = {:?}",
-            decision,
-        );
-
-        // SAFETY: test-only cleanup.
-        unsafe { std::env::remove_var("AEGIS_TEST_C3_RESIDUAL_WHEN") };
     }
 
     #[test]

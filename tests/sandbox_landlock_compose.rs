@@ -58,6 +58,7 @@ fn inner_landlock_wrapper_reports_active_status() {
 
     let mut fds = [0; 2];
     assert_eq!(
+        // SAFETY: `fds` is a valid 2-element `i32` array writable by `pipe`.
         unsafe { libc::pipe(fds.as_mut_ptr()) },
         0,
         "pipe must succeed"
@@ -76,13 +77,16 @@ fn inner_landlock_wrapper_reports_active_status() {
 
     // Close the parent's copy of the write end so the read returns EOF once the
     // inner wrapper closes it.
+    // SAFETY: `write_fd` is an open pipe descriptor owned by this test and is not used after close.
     unsafe {
         libc::close(write_fd);
     }
 
     // Read the status byte.
     let mut buf = [0u8; 1];
+    // SAFETY: `buf` is valid for 1 writable byte and `read_fd` is an open pipe descriptor.
     let n = unsafe { libc::read(read_fd, buf.as_mut_ptr() as *mut libc::c_void, 1) };
+    // SAFETY: `read_fd` is an open pipe descriptor owned by this test and is not used after close.
     unsafe {
         libc::close(read_fd);
     }
