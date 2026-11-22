@@ -61,7 +61,6 @@ fn evaluate_policy_rules_when_clause_overrides_on_env_match() {
     // while reading or mutating the environment.
     unsafe { std::env::remove_var("AEGIS_TEST_ENV_VAR_UNIQUE") };
     assert!(result.matched);
-    // env matches → use `then` (Allow)
     assert_eq!(result.decision, Some(PolicyRuleDecision::Allow));
 }
 
@@ -85,14 +84,12 @@ fn evaluate_policy_rules_when_clause_uses_base_on_env_mismatch() {
     }];
     let result = evaluate_policy_rules(&rules, "rm -rf build");
     assert!(result.matched);
-    // env does not match → use base decision (Prompt)
     assert_eq!(result.decision, Some(PolicyRuleDecision::Prompt));
 }
 
 #[test]
 fn evaluate_policy_rules_when_missing_env_empty_value_does_not_match() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    // Ensure absent env var does NOT match value = "" via unwrap_or_default.
     // SAFETY: guarded by `ENV_LOCK`; every test in this binary holds `ENV_LOCK`
     // while reading or mutating the environment.
     unsafe { std::env::remove_var("AEGIS_TEST_ABSENT_EMPTY") };
@@ -110,22 +107,12 @@ fn evaluate_policy_rules_when_missing_env_empty_value_does_not_match() {
     }];
     let result = evaluate_policy_rules(&rules, "ls");
     assert!(result.matched);
-    // absent env → condition not met → base decision (Block)
     assert_eq!(result.decision, Some(PolicyRuleDecision::Block));
 }
-
-// ── C3-residual Fix-1 bypass (iteration 2): a project-layer `[[rules]]`
-// entry with `decision = "prompt"` but `when.then = "allow"` is a same-class
-// auto-approve bypass. At runtime `effective_decision` returns `when.then =
-// Allow` when the env condition matches, silently auto-approving a Danger
-// command. The rule must be DROPPED at the config merge so it never reaches
-// `effective_decision`; the engine must Prompt (NOT AutoApprove) under
-// Mode::Protect. RED until `is_untrusted_allow` flags `when.then == Allow`.
 
 #[test]
 fn project_rules_prompt_with_when_then_allow_does_not_autoapprove_danger_under_protect() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    // Unique env var so this test is deterministic regardless of the host.
     // SAFETY: guarded by `ENV_LOCK`; every test in this binary holds `ENV_LOCK`
     // while reading or mutating the environment.
     unsafe { std::env::set_var("AEGIS_TEST_C3_RESIDUAL_WHEN", "match") };
@@ -135,12 +122,7 @@ fn project_rules_prompt_with_when_then_allow_does_not_autoapprove_danger_under_p
     let global_dir = home.path().join(".config/aegis");
     fs::create_dir_all(&global_dir).unwrap();
 
-    // Base (global): Protect mode, no rules.
     fs::write(global_dir.join("config.toml"), "mode = \"Protect\"\n").unwrap();
-    // Project layer attempts to auto-approve `terraform ...` via a rule
-    // whose top-level `decision = "prompt"` passes the current
-    // `is_untrusted_allow` check, but whose `when.then = "allow"` resolves
-    // to Allow when the env condition matches.
     fs::write(
         workspace.path().join(".aegis.toml"),
         "[[rules]]\n\
@@ -153,9 +135,6 @@ fn project_rules_prompt_with_when_then_allow_does_not_autoapprove_danger_under_p
     let config =
         AegisConfig::load_for(workspace.path(), Some(home.path())).expect("config must load");
 
-    // The project rule must have been dropped at merge — it must NOT match
-    // the danger command. Currently it survives, so `evaluate_policy_rules`
-    // returns `matched = true` with `Allow` (env matches → `when.then`).
     let rules_result =
         evaluate_policy_rules(&config.rules, "terraform destroy -target=module.prod.api");
     // SAFETY: guarded by `ENV_LOCK`; every test in this binary holds `ENV_LOCK`
@@ -169,8 +148,6 @@ fn project_rules_prompt_with_when_then_allow_does_not_autoapprove_danger_under_p
         rules_result, config.rules,
     );
 
-    // And consequently the engine must Prompt (NOT auto-approve) for the
-    // Danger command under Mode::Protect.
     let assessment = danger_assessment("terraform destroy -target=module.prod.api");
     let decision: PolicyDecision = evaluate_policy(PolicyInput {
         assessment: &assessment,

@@ -45,7 +45,6 @@ fn git_and_tmp_environment_variables_do_not_change_the_ceiling() {
         }
     }
     assert_eq!(after, before);
-    // The OS temp dirs: `/tmp`, plus the per-user one from `confstr` on macOS.
     let mut expected = vec![repo];
     expected.extend(ResolverInputs::system().temp_dirs);
     assert_eq!(paths(&after), expected);
