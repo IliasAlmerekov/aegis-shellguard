@@ -249,6 +249,7 @@ pub fn maybe_spawn_background_check() {
         return;
     };
 
+    // Background check spawn is best-effort; failure skips this check without affecting the command.
     let _spawned = std::process::Command::new(exe)
         .arg(INTERNAL_UPDATE_CHECK_FLAG)
         .arg(channel.as_arg())

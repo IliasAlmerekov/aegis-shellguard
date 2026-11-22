@@ -290,6 +290,7 @@ fn frame_sandbox(
                 let canonical_root = std::fs::canonicalize(&root.path).ok();
                 temporary.allow_write.iter().filter_map(move |temp| {
                     let path = canonical_root.as_ref()?;
+                    // Uncanonicalizable temp roots are skipped rather than widening writes.
                     let temp = std::fs::canonicalize(&temp.path).ok()?;
                     let intersection = if path.starts_with(&temp) {
                         path

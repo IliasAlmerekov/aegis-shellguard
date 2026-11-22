@@ -114,9 +114,10 @@ fn find_worktree_root(cwd: &Path, inputs: &ResolverInputs) -> Option<PathBuf> {
     if !cwd.is_absolute() {
         return None;
     }
-    // Unreadable cwd or ancestor aborts worktree discovery, granting no workspace.
+    // Unreadable cwd aborts worktree discovery, granting no workspace.
     let start_dev = (inputs.device)(cwd, &fs::metadata(cwd).ok()?);
     for dir in cwd.ancestors() {
+        // Unreadable ancestor aborts worktree discovery, granting no workspace.
         let md = fs::metadata(dir).ok()?;
         if (inputs.device)(dir, &md) != start_dev {
             return None;
