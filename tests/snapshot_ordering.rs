@@ -12,7 +12,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use serde_json::Value;
-use support::{aegis_bin, base_command, init_git_repo, read_audit_entries, run_git};
+use support::{
+    aegis_bin, base_command, init_git_repo, read_audit_entries, run_git, write_global_config,
+};
 use tempfile::TempDir;
 
 fn base_command_with_shell(home: &Path, shell: &Path) -> Command {
@@ -26,18 +28,6 @@ fn base_command_with_shell(home: &Path, shell: &Path) -> Command {
 fn canonical_test_path(path: &Path) -> PathBuf {
     path.canonicalize()
         .unwrap_or_else(|err| panic!("failed to canonicalize test path {}: {err}", path.display()))
-}
-
-/// Write a global user config (`~/.config/aegis/config.toml`) with the given
-/// contents.
-///
-/// The project layer can no longer weaken `allowlist_override_level` (C3
-/// security ratchet). Tests needing a permissive override must set it in the
-/// trusted global config.
-fn write_global_config(home: &Path, contents: &str) {
-    let global_dir = home.join(".config/aegis");
-    fs::create_dir_all(&global_dir).unwrap();
-    fs::write(global_dir.join("config.toml"), contents).unwrap();
 }
 
 fn aegis_watch_in(home: &Path, cwd: &Path, input: &[u8]) -> std::process::Output {

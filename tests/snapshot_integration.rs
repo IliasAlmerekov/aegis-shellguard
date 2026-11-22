@@ -5,20 +5,9 @@ use std::path::Path;
 
 use support::{
     base_command, git_command, init_git_repo, read_audit_entries, run_git, write_executable,
+    write_global_config,
 };
 use tempfile::TempDir;
-
-/// Write a global user config (`~/.config/aegis/config.toml`) with the given
-/// contents.
-///
-/// The project layer can no longer weaken `allowlist_override_level` (C3
-/// security ratchet). Tests needing a permissive override must set it in the
-/// trusted global config.
-fn write_global_config(home: &Path, contents: &str) {
-    let global_dir = home.join(".config/aegis");
-    fs::create_dir_all(&global_dir).unwrap();
-    fs::write(global_dir.join("config.toml"), contents).unwrap();
-}
 
 fn commit_file(path: &Path, name: &str, contents: &str) {
     fs::write(path.join(name), contents).unwrap();

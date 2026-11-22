@@ -322,12 +322,16 @@ pub fn seed_snapshot(home: &Path, plugin: &str, snapshot_id: &str) {
     append_snapshot_audit_entry(home, "rm -rf src", RiskLevel::Danger, plugin, snapshot_id);
 }
 
+fn aegis_subcommand(home: &Path) -> Command {
+    let mut cmd = Command::new(aegis_bin());
+    cmd.env("HOME", home).env("AEGIS_CI", "0");
+    cmd
+}
+
 /// Build an `aegis snapshot list` command configured for `home` with CI mode off.
 pub fn snapshot_list_command(home: &Path) -> Command {
-    let mut cmd = Command::new(aegis_bin());
-    cmd.env("HOME", home)
-        .env("AEGIS_CI", "0")
-        .args(["snapshot", "list"]);
+    let mut cmd = aegis_subcommand(home);
+    cmd.args(["snapshot", "list"]);
     cmd
 }
 
@@ -338,10 +342,8 @@ pub fn run_snapshot_list(home: &Path) -> Output {
 
 /// Run `aegis snapshot prune` with `extra_args` inside `home`.
 pub fn run_prune(home: &Path, extra_args: &[&str]) -> Output {
-    let mut cmd = Command::new(aegis_bin());
-    cmd.env("HOME", home)
-        .env("AEGIS_CI", "0")
-        .current_dir(home)
+    let mut cmd = aegis_subcommand(home);
+    cmd.current_dir(home)
         .args(["snapshot", "prune"])
         .args(extra_args);
     cmd.output().unwrap()

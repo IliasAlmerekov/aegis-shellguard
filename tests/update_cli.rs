@@ -7,11 +7,10 @@
 mod support;
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 
-use support::aegis_bin;
+use support::{aegis_bin, write_executable};
 use tempfile::TempDir;
 
 /// A `curl` stand-in on `PATH` so these tests never touch the real network.
@@ -25,9 +24,7 @@ case \"$AEGIS_TEST_STUB_MODE\" in\n\
   missing-field) echo '{\"name\":\"x\"}'; exit 0 ;;\n\
   *) echo \"{\\\"version\\\":\\\"${AEGIS_TEST_STUB_VERSION:-9.9.9}\\\"}\"; exit 0 ;;\n\
 esac\n";
-    let path = dir.join("curl");
-    fs::write(&path, script).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    write_executable(&dir.join("curl"), script);
 }
 
 fn stubbed_path(stub_dir: &Path) -> String {

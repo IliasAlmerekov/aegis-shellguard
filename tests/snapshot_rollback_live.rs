@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use support::{base_command, read_audit_entries, write_executable};
+use support::{base_command, read_audit_entries, write_executable, write_global_config};
 use tempfile::TempDir;
 
 fn sqlite_live_tests_enabled() -> bool {
@@ -62,18 +62,6 @@ fn query_scalar(db_path: &Path, sql: &str) -> String {
     );
 
     String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
-/// Write a global user config (`~/.config/aegis/config.toml`) with the given
-/// contents.
-///
-/// The project layer can no longer weaken `allowlist_override_level` (C3
-/// security ratchet). Tests needing a permissive override must set it in the
-/// trusted global config.
-fn write_global_config(home: &Path, contents: &str) {
-    let global_dir = home.join(".config/aegis");
-    fs::create_dir_all(&global_dir).unwrap();
-    fs::write(global_dir.join("config.toml"), contents).unwrap();
 }
 
 #[test]

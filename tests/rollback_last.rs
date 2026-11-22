@@ -4,13 +4,12 @@
 mod support;
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
 use aegis_types::{Decision, RiskLevel};
-use support::git;
+use support::{git, write_executable};
 use tempfile::TempDir;
 
 const DOCKER_RECORD: &str = r#"{"container_id":"c1","image":"img:1","config":{"name":"web","binds":[],"port_bindings":[],"labels":{},"network_mode":"default","restart_policy":"no"}}"#;
@@ -125,12 +124,10 @@ impl Env {
         fs::create_dir(&bin_dir).unwrap();
         let log = self.home.path().join("docker.log");
         let script = bin_dir.join("docker");
-        fs::write(
+        write_executable(
             &script,
-            format!("#!/bin/sh\necho \"$@\" >> '{}'\nexit 0\n", log.display()),
-        )
-        .unwrap();
-        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+            &format!("#!/bin/sh\necho \"$@\" >> '{}'\nexit 0\n", log.display()),
+        );
         (bin_dir, log)
     }
 

@@ -3,13 +3,12 @@
 mod support;
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
 use aegis_types::{Decision, RiskLevel};
-use support::{aegis_bin, git, repo_with_stash};
+use support::{aegis_bin, git, repo_with_stash, stash_hashes, write_executable};
 use tempfile::TempDir;
 
 struct Env {
@@ -88,10 +87,6 @@ fn code(output: &Output) -> i32 {
     output.status.code().unwrap()
 }
 
-fn stash_hashes_raw(repo: &Path) -> String {
-    git(repo, &["stash", "list", "--format=%H"])
-}
-
 /// A fake `docker` whose `image inspect` fails the way a dead daemon does.
 /// Every call is appended to the returned log.
 fn fake_dead_docker(env: &Env) -> (PathBuf, PathBuf) {
@@ -104,16 +99,14 @@ fn fake_docker_failing_inspect(env: &Env, message: &str) -> (PathBuf, PathBuf) {
     fs::create_dir(&bin_dir).unwrap();
     let log = env.home.path().join("docker.log");
     let script = bin_dir.join("docker");
-    fs::write(
+    write_executable(
         &script,
-        format!(
+        &format!(
             "#!/bin/sh\necho \"$@\" >> '{}'\nif [ \"$1\" = image ]; then\n  echo '{}' >&2\n  exit 1\nfi\nexit 0\n",
             log.display(),
             message
         ),
-    )
-    .unwrap();
-    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    );
     (bin_dir, log)
 }
 
@@ -280,7 +273,7 @@ fn rollback_refuses_an_absent_snapshot_with_exit_1_and_changes_nothing() {
         );
     }
 
-    assert_eq!(stash_hashes_raw(&repo), "");
+    assert!(stash_hashes(&repo).is_empty());
     assert_eq!(fs::read_to_string(repo.join("work.txt")).unwrap(), "work\n");
     assert!(!repo.join("stashed.txt").exists());
     assert_eq!(env.audit_len(), audit_before);

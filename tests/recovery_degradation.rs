@@ -9,7 +9,7 @@ use std::thread;
 use std::time::Duration;
 
 use serde_json::Value;
-use support::{aegis_bin, init_git_repo};
+use support::{aegis_bin, init_git_repo, write_executable};
 use tempfile::TempDir;
 
 fn shell_command(home: &Path, cwd: &Path) -> Command {
@@ -369,12 +369,7 @@ fn allowlisted_danger_workspace(home: &Path, workspace: &Path) -> (PathBuf, Stri
     let bin = workspace.join("bin");
     fs::create_dir_all(&bin).unwrap();
     let stub = bin.join("terraform");
-    fs::write(&stub, "#!/bin/sh\nprintf ran > \"$AEGIS_TEST_MARKER\"\n").unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    write_executable(&stub, "#!/bin/sh\nprintf ran > \"$AEGIS_TEST_MARKER\"\n");
     let config_dir = home.join(".config").join("aegis");
     fs::create_dir_all(&config_dir).unwrap();
     fs::write(
@@ -591,12 +586,7 @@ fn approve_always_on_warn_writes_the_rule_with_no_snapshot() {
     let cwd = workspace.path().canonicalize().unwrap();
     let (_, path, config) = confirming_danger_workspace(home.path(), &cwd);
     let stub = cwd.join("bin").join("git");
-    fs::write(&stub, "#!/bin/sh\nexit 0\n").unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    write_executable(&stub, "#!/bin/sh\nexit 0\n");
 
     let output = interactive_shell_command_output(
         home.path(),
