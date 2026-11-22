@@ -73,6 +73,7 @@ pub async fn git_toplevel(dir: &Path) -> Option<std::path::PathBuf> {
     if top.is_empty() {
         return None;
     }
+    // Uncanonicalizable top-level path cannot be bound to a location, so treat as None.
     std::path::PathBuf::from(top).canonicalize().ok()
 }
 
@@ -366,6 +367,7 @@ impl SnapshotPlugin for GitPlugin {
     async fn snapshot_target(&self, cwd: &Path) -> Option<String> {
         let top = match git_toplevel(cwd).await {
             Some(top) => top,
+            // Omit target metadata when cwd cannot be canonicalized.
             None => cwd.canonicalize().ok()?,
         };
         Some(top.to_string_lossy().into_owned())

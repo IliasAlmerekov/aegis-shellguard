@@ -191,6 +191,7 @@ impl PreparedPlanner {
         match self {
             PreparedPlanner::Ready(context) => plan_with_context(context, request),
             PreparedPlanner::SetupFailure(plan) => {
+                // SetupFailure fails closed regardless of the incoming request.
                 let _ = request;
                 PlanningOutcome::SetupFailure(plan.clone())
             }
@@ -202,6 +203,7 @@ impl PreparedPlanner {
         match self {
             PreparedPlanner::Ready(context) => plan_with_context_async(context, request).await,
             PreparedPlanner::SetupFailure(plan) => {
+                // SetupFailure fails closed regardless of the incoming request.
                 let _ = request;
                 PlanningOutcome::SetupFailure(plan.clone())
             }

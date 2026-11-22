@@ -430,6 +430,7 @@ fn sha256_hex(path: &Path) -> Result<String> {
     let mut checksum = String::with_capacity(digest.len() * 2);
     for byte in digest {
         use std::fmt::Write as _;
+        // Writing to a String is infallible.
         let _ = write!(checksum, "{byte:02x}");
     }
     Ok(checksum)

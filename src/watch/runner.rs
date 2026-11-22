@@ -726,6 +726,7 @@ pub(super) async fn execute_prepared_and_emit(
             },
         };
         if emit_frame(&frame).is_err() {
+            // Best-effort cleanup before exiting on a broken frame stream.
             let _ = child.kill().await;
             std::process::exit(4);
         }

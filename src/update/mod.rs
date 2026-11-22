@@ -173,6 +173,7 @@ fn maybe_render_notice_at(path: &Path, installed_version: &str) -> Result<()> {
         state::save(path, &current)?;
 
         let mut stderr = std::io::stderr();
+        // Advisory notice write is best-effort; closed stderr has no fallback channel.
         let _ = writeln!(
             stderr,
             "Aegis {newer} is available (installed: {installed_version}). Update: npm i -g @iliasalmerekov/aegis@latest"
@@ -237,16 +238,18 @@ pub fn maybe_spawn_background_check() {
         state::save(&state_path, &current)?;
         Ok(Some(channel))
     })();
+    // Background check is best-effort; corrupt state or lock release failure skips spawning.
     let Some(channel) = scheduled.ok().flatten() else {
         let _ = release_lock();
         return;
     };
     let Ok(exe) = std::env::current_exe() else {
+        // Best-effort lock release; stale locks expire after LOCK_STALE_AFTER.
         let _ = release_lock();
         return;
     };
 
-    let spawned = std::process::Command::new(exe)
+    let _spawned = std::process::Command::new(exe)
         .arg(INTERNAL_UPDATE_CHECK_FLAG)
         .arg(channel.as_arg())
         .stdin(std::process::Stdio::null())
@@ -254,8 +257,8 @@ pub fn maybe_spawn_background_check() {
         .stderr(std::process::Stdio::null())
         .spawn();
 
+    // Best-effort lock release; stale locks expire after LOCK_STALE_AFTER.
     let _ = release_lock();
-    let _ = spawned;
 }
 
 fn with_state_lock_at<T>(path: &Path, operation: impl FnOnce() -> Result<T>) -> Result<T> {
@@ -296,6 +299,7 @@ fn acquire_lock_at(path: &Path) -> Result<bool> {
                     file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
                 }
                 let mut file = file;
+                // Lock ownership comes from O_EXCL creation; PID text is diagnostic only.
                 let _ = writeln!(file, "pid={}", std::process::id());
                 return Ok(true);
             }
@@ -303,6 +307,7 @@ fn acquire_lock_at(path: &Path) -> Result<bool> {
                 if !lock_is_stale(path) {
                     return Ok(false);
                 }
+                // Best-effort stale lock removal; a racing process may remove it first.
                 let _ = std::fs::remove_file(path);
             }
             Err(err) => return Err(err.into()),

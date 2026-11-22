@@ -30,11 +30,9 @@ pub fn prepare_planner(verbose: bool, handle: Handle) -> PreparedPlanner {
 /// Map a runtime setup failure into a typed fail-closed setup plan.
 pub fn setup_failure_from_runtime_error(
     err: &AegisError,
-    command: &str,
-    transport: ExecutionTransport,
+    _command: &str,
+    _transport: ExecutionTransport,
 ) -> SetupFailurePlan {
-    let _ = (command, transport);
-
     let is_config_fault = err.is_config_fault();
 
     let user_message = if is_config_fault {

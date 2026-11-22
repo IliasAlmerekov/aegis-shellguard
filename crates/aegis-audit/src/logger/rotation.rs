@@ -207,6 +207,7 @@ impl AuditLogger {
         })();
 
         if result.is_err() {
+            // Best-effort staging cleanup; preserve the primary rotation error.
             let _ = fs::remove_file(&staging);
         }
         result

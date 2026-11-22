@@ -399,6 +399,7 @@ impl Worker {
                 .child
                 .wait()
                 .await
+                // A wait error becomes code=None, which still fails closed via NonZeroExit below.
                 .ok()
                 .and_then(|status| status.code());
             self.reaped = true;

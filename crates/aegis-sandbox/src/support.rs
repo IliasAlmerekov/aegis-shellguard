@@ -79,6 +79,7 @@ pub fn resolve_allow_write(config: &SandboxConfig) -> ResolvedAllowWrite {
     let trusted: Vec<PathBuf> = config
         .trusted_roots
         .iter()
+        // Uncanonicalizable trusted roots are omitted, narrowing rather than widening writes.
         .filter_map(|root| root.path.canonicalize().ok())
         .collect();
     let mut out = ResolvedAllowWrite::default();

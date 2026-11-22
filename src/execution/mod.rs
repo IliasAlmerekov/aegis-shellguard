@@ -459,6 +459,7 @@ where
                             report_error(&format!("failed to write audit log: {err}"));
                             return EXIT_INTERNAL;
                         }
+                        // Reap the failed wrapper child; its exit status is superseded by EXIT_INTERNAL.
                         let _ = wait(child);
                         report_error(
                             "Sandbox setup failed; command not executed: inner sandbox wrapper did not report status",

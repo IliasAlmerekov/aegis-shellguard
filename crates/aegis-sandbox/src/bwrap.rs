@@ -47,6 +47,7 @@ pub(crate) fn available_bwrap_program(config: &SandboxConfig) -> Option<&'static
 fn bwrap_program() -> Option<&'static PathBuf> {
     static CACHE: OnceLock<Option<PathBuf>> = OnceLock::new();
     CACHE
+        // Extraction failure yields None so confinement fails closed as unavailable.
         .get_or_init(|| find_system_bwrap().or_else(|| extract_embedded_bwrap().ok()))
         .as_ref()
 }
@@ -55,6 +56,7 @@ fn bwrap_program() -> Option<&'static PathBuf> {
 /// the capability smoke check.
 fn find_system_bwrap() -> Option<PathBuf> {
     let search_path = std::env::var_os("PATH")?;
+    // Without a canonical cwd we cannot reject project-local shims, so skip PATH bwrap.
     let cwd = std::fs::canonicalize(std::env::current_dir().ok()?).ok()?;
     find_system_bwrap_in_paths(std::env::split_paths(&search_path), &cwd)
 }
@@ -291,6 +293,7 @@ pub(crate) fn apparmor_userns_restricted() -> bool {
     let path = APPARMOR_SYSCTL_PATH
         .with(|value| value.borrow().clone())
         .unwrap_or_else(|| path.to_path_buf());
+    // Sysctl file is absent on non-AppArmor kernels; missing or unreadable means unrestricted.
     let content = std::fs::read_to_string(path).ok();
     apparmor_sysctl_restricted(content.as_deref())
 }

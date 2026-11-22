@@ -45,6 +45,7 @@ pub enum AppendOutcome {
 /// Checks for a project-level `.aegis.toml` in the current directory first.
 /// Falls back to the global config at `~/.config/aegis/config.toml`.
 pub fn active_config_path_for_append() -> Option<std::path::PathBuf> {
+    // Unavailable cwd returns None so approve-always does not target an unknown config.
     let current_dir = std::env::current_dir().ok()?;
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))

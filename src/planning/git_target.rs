@@ -229,6 +229,7 @@ impl GitTargetPlan {
         let mut opportunistic_dirs: Vec<PathBuf> = Vec::new();
         let mut process_cwd = report.needs_process_cwd;
         let canonical_cwd = match cwd {
+            // Deduplication against process cwd is skipped when cwd cannot be canonicalized.
             CwdState::Resolved(path) => path.canonicalize().ok(),
             CwdState::Unavailable => None,
         };
