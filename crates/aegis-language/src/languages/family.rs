@@ -291,7 +291,7 @@ fn string_literal_content(node: Node, bytes: &[u8]) -> Option<String> {
             for child in node.named_children(&mut cursor) {
                 match child.kind() {
                     "string_fragment" | "escape_sequence" => {
-                        // Source is valid UTF-8; a malformed node span falls back to None (Dynamic).
+                        // Source is valid UTF-8 (&str input); non-UTF-8 falls back to None (Dynamic).
                         content.push_str(child.utf8_text(bytes).ok()?);
                     }
                     _ => return None,
@@ -305,7 +305,7 @@ fn string_literal_content(node: Node, bytes: &[u8]) -> Option<String> {
             for child in node.named_children(&mut cursor) {
                 match child.kind() {
                     "string_fragment" | "escape_sequence" => {
-                        // Source is valid UTF-8; a malformed node span falls back to None (Dynamic).
+                        // Source is valid UTF-8 (&str input); non-UTF-8 falls back to None (Dynamic).
                         content.push_str(child.utf8_text(bytes).ok()?);
                     }
                     "template_substitution" => return None,
@@ -341,7 +341,8 @@ fn recursive_option(args_node: Node, bytes: &[u8]) -> bool {
             };
             // String-keyed `"recursive"` includes quotes in its raw text, so
             // compare its inner literal content.
-            // Source is valid UTF-8; non-UTF-8 cannot match "recursive" and leaves the delete non-recursive.
+
+            // Source is valid UTF-8 (&str input); non-UTF-8 cannot match "recursive".
             let key_is_recursive = key.utf8_text(bytes).ok() == Some("recursive")
                 || (key.kind() == "string"
                     && string_literal_content(key, bytes).as_deref() == Some("recursive"));

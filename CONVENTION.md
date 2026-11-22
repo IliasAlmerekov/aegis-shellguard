@@ -164,7 +164,10 @@ Architectural constraints:
 - Errors must not be silently discarded in production logic.
 - Do not convert actionable errors into `None` or a silent fallback unless that behavior is
   intentional, documented, and tested.
-- Every deliberate `let _ =` or `.ok()` in production code carries a one-line why comment (or a function doc comment naming the drop), and every unused binding is named `_x` at its introduction instead of `let _ = x;`.
+- Every deliberate `let _ =` or `.ok()` (including `.ok()?` and chains) in production code carries a
+  one-line why comment directly above the drop (or in the enclosing function's doc comment naming
+  the drop); name unused bindings `_x` at introduction, keeping `let _ = x;` with a why comment only
+  when `#[cfg]` makes the binding used on another target.
 
 ## 6. Dependency Rules
 

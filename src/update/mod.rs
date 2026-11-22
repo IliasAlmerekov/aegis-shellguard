@@ -238,8 +238,9 @@ pub fn maybe_spawn_background_check() {
         state::save(&state_path, &current)?;
         Ok(Some(channel))
     })();
-    // Background check is best-effort; corrupt state or lock release failure skips spawning.
+    // Background check is best-effort; state load/save or clock errors skip spawning.
     let Some(channel) = scheduled.ok().flatten() else {
+        // Best-effort lock release; stale locks expire after LOCK_STALE_AFTER.
         let _ = release_lock();
         return;
     };

@@ -305,7 +305,7 @@ fn string_literal_content(node: Node, bytes: &[u8]) -> Option<String> {
             for child in node.named_children(&mut cursor) {
                 match child.kind() {
                     "string_content" => {
-                        // Source is valid UTF-8 from &str; a non-UTF-8 slice cannot occur on codepoint-aligned nodes.
+                        // Source is valid UTF-8 (&str input); non-UTF-8 falls back to None.
                         content = Some(child.utf8_text(bytes).ok()?.to_string());
                     }
                     "interpolation" => return None,
@@ -356,7 +356,7 @@ fn open_mode_string(args_node: Node, bytes: &[u8]) -> Option<String> {
             // `mode=...`: the value is the second named child of the
             // keyword_argument (after the `name` identifier).
             let name = child.child_by_field_name("name")?;
-            // Source is valid UTF-8 from &str; a non-UTF-8 slice cannot match "mode".
+            // Source is valid UTF-8 (&str input); non-UTF-8 cannot match "mode".
             if name.utf8_text(bytes).ok()? == "mode" {
                 let value = child.child_by_field_name("value")?;
                 return string_literal_content(value, bytes);

@@ -216,7 +216,7 @@ pub(crate) fn apply_landlock_restrictions(config: &SandboxConfig) -> Result<(), 
         } else {
             0
         };
-    // Missing /dev/null on the host is non-fatal; ruleset still restricts everything else.
+    // Any add_rule failure for /dev/null (open or syscall) is non-fatal; ruleset still restricts everything else.
     let _ = add_rule(std::path::Path::new("/dev/null"), null_access);
 
     syscalls::restrict_self(ruleset.as_fd())
@@ -318,7 +318,7 @@ pub(crate) fn parse_allow_write(encoded: &[u8]) -> Result<Vec<PathBuf>, SandboxE
             .iter()
             .position(|&b| b == b':')
             .ok_or_else(|| SandboxError::Execution("malformed allow_write encoding".into()))?;
-        // Both UTF-8 and integer parse errors collapse into the malformed-length error below.
+        // Inner wrapper fails closed on any malformed length; UTF-8 and parse errors need no distinct handling.
         let len: usize = std::str::from_utf8(&rest[..colon])
             .ok()
             .and_then(|s| s.parse().ok())

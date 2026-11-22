@@ -59,6 +59,7 @@ fn git_command(cwd: impl AsRef<Path>) -> Command {
 /// when `dir` is not inside a git working tree (a bare repository included) or
 /// git cannot run. Isolated from ambient git-location variables.
 pub async fn git_toplevel(dir: &Path) -> Option<std::path::PathBuf> {
+    // git spawn/wait failure returns None; callers treat the directory as not a git worktree.
     let output = git_command(dir)
         .args(["rev-parse", "--show-toplevel"])
         .stderr(std::process::Stdio::null())
