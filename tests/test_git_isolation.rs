@@ -15,10 +15,13 @@ const TEST_NAME: &str = "init_git_repo_ignores_an_inherited_git_dir";
 fn init_git_repo_ignores_an_inherited_git_dir() {
     // The test re-runs itself with a hostile environment, since setting
     // GIT_DIR in this process would race every other test in the binary.
-    if let Some(repo) = std::env::var_os(CHILD_REPO) {
-        support::init_git_repo(Path::new(&repo));
-        return;
+    match std::env::var_os(CHILD_REPO) {
+        Some(repo) => support::init_git_repo(Path::new(&repo)),
+        None => rerun_with_a_decoy_git_dir(),
     }
+}
+
+fn rerun_with_a_decoy_git_dir() {
     let repo = TempDir::new().unwrap();
     let decoy = TempDir::new().unwrap();
     let decoy_git_dir = decoy.path().join("decoy.git");
