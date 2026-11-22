@@ -105,7 +105,9 @@ mod syscalls {
         attr: &PathBeneathAttr,
     ) -> std::io::Result<()> {
         use std::os::unix::io::AsRawFd;
-        // SAFETY: valid file descriptors and well-formed attr struct.
+        // SAFETY: `ruleset_fd` is a borrowed open Landlock ruleset fd, `attr` is a valid
+        // `#[repr(C, packed)]` `PathBeneathAttr` reference that outlives the syscall, and
+        // `SYS_landlock_add_rule` only reads `attr` for the duration of the call.
         let ret = unsafe {
             libc::syscall(
                 libc::SYS_landlock_add_rule,
@@ -167,7 +169,8 @@ pub(crate) fn apply_landlock_restrictions(config: &SandboxConfig) -> Result<(), 
 
     // The kernel requires no_new_privs before landlock_restrict_self for an
     // unprivileged process. Set it first (one-way flag).
-    // SAFETY: PR_SET_NO_NEW_PRIVS is a benign, documented prctl.
+    // SAFETY: `PR_SET_NO_NEW_PRIVS` takes only scalar integer arguments (no pointers) and sets a
+    // one-way kernel thread flag that cannot invalidate Rust memory.
     let nnp = unsafe { libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) };
     if nnp != 0 {
         return Err(SandboxError::Execution(format!(
@@ -257,12 +260,14 @@ fn report_status(status: SandboxStatus) -> Result<(), SandboxError> {
         SandboxStatus::NotAttempted => b'n',
         SandboxStatus::NotConfigured => b'c',
     };
-    // SAFETY: fd is a valid open descriptor; writing one byte is benign.
+    // SAFETY: `&byte` is valid for 1 readable byte; `fd` is dedicated by the parent wrapper
+    // protocol (`AEGIS_LANDLOCK_STATUS_FD`), and `write` returns `EBADF` rather than UB if invalid.
     let n = unsafe { libc::write(fd, &byte as *const u8 as *const libc::c_void, 1) };
     if n != 1 {
         return Err(SandboxError::Io(std::io::Error::last_os_error()));
     }
-    // SAFETY: fd is a valid open descriptor.
+    // SAFETY: `fd` was dedicated to this wrapper via `AEGIS_LANDLOCK_STATUS_FD`, is owned by this
+    // process alone, and is not used after close.
     unsafe {
         libc::close(fd);
     }
@@ -278,9 +283,11 @@ fn wait_for_release() -> Result<(), SandboxError> {
         Err(_) => return Ok(()),
     };
     let mut byte = [0_u8; 1];
-    // SAFETY: `byte` is valid for 1 writable byte and `fd` is the release-gate descriptor passed by the parent.
+    // SAFETY: `byte` is valid for 1 writable byte; `fd` is dedicated by the parent wrapper
+    // protocol (`AEGIS_LANDLOCK_RELEASE_FD`), and `read` returns `EBADF` rather than UB if invalid.
     let n = unsafe { libc::read(fd, byte.as_mut_ptr() as *mut libc::c_void, 1) };
-    // SAFETY: `fd` is the release-gate descriptor owned by this wrapper and is not used after close.
+    // SAFETY: `fd` was dedicated to this wrapper via `AEGIS_LANDLOCK_RELEASE_FD`, is owned by this
+    // process alone, and is not used after close.
     unsafe { libc::close(fd) };
     if n != 1 {
         return Err(SandboxError::Execution(

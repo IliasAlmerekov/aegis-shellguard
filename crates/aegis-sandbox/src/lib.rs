@@ -192,7 +192,7 @@ impl ReportedSandboxChild {
         #[cfg(target_os = "linux")]
         if let Some(fd) = self.release_fd.take() {
             let byte = b'1';
-            // SAFETY: `fd` is the open release pipe write end owned by `self` and `&byte` is valid for 1 readable byte.
+            // SAFETY: `fd` was taken from `self.release_fd` (open release pipe write end owned here) and `&byte` is valid for 1 readable byte.
             let n = unsafe { libc::write(fd, &byte as *const u8 as *const libc::c_void, 1) };
             // SAFETY: `fd` was taken from `self.release_fd`, so this is the sole close.
             unsafe { libc::close(fd) };
