@@ -140,8 +140,7 @@ EOF
     done
 }
 
-# A test git spawn inherits GIT_DIR from a worktree hook unless it goes
-# through git_command in src/test_git.rs (#291). aegis-snapshot keeps its own.
+# A git spawn outside these two files inherits a worktree hook's GIT_DIR (#291).
 check_git_spawns() {
     set --
     for dir in src tests crates; do
@@ -161,7 +160,7 @@ check_git_spawns() {
         case "$file" in
             src/test_git.rs | crates/aegis-snapshot/src/git/mod.rs) continue ;;
         esac
-        echo "$file: spawns git directly, use git_command from src/test_git.rs"
+        echo "$file: spawns git without clearing GIT_ variables, see CONVENTION.md section 9"
     done <<EOF
 $files
 EOF
