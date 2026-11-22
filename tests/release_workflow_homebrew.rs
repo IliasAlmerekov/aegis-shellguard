@@ -4,6 +4,8 @@
 //! file-size budget. The publication tests run the workflow's real
 //! "Commit and push the formula" step against a local bare tap.
 
+mod support;
+
 use std::path::Path;
 use std::process::{Command, Output};
 
@@ -126,8 +128,7 @@ fn homebrew_publish_step() -> String {
 }
 
 fn tap_git(directory: &Path, arguments: &[&str]) -> String {
-    let output = Command::new("git")
-        .current_dir(directory)
+    let output = support::git_command(directory)
         .args(arguments)
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")

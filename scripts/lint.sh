@@ -140,6 +140,32 @@ EOF
     done
 }
 
+# A git spawn outside these two files inherits a worktree hook's GIT_DIR (#291).
+check_git_spawns() {
+    set --
+    for dir in src tests crates; do
+        if [ -d "$dir" ]; then
+            set -- "$@" "$dir"
+        fi
+    done
+    [ "$#" -gt 0 ] || return 0
+    grep_status=0
+    files=$(grep -rlF --include='*.rs' --exclude-dir=target \
+        'Command::new("git")' "$@") || grep_status=$?
+    if [ "$grep_status" -gt 1 ]; then
+        echo "grep could not read every path under: $* (exit $grep_status)"
+    fi
+    [ -n "$files" ] || return 0
+    while IFS= read -r file; do
+        case "$file" in
+            src/test_git.rs | crates/aegis-snapshot/src/git/mod.rs) continue ;;
+        esac
+        echo "$file: spawns git without clearing GIT_ variables, see CONVENTION.md section 9"
+    done <<EOF
+$files
+EOF
+}
+
 run_text() {
     echo "lint: text checks"
     root=${LINT_TEXT_ROOT:-.}
@@ -149,6 +175,11 @@ run_text() {
         text_failed=1
     fi
     out=$(cd "$root" && check_doc_paths)
+    if [ -n "$out" ]; then
+        echo "$out" >&2
+        text_failed=1
+    fi
+    out=$(cd "$root" && check_git_spawns)
     if [ -n "$out" ]; then
         echo "$out" >&2
         text_failed=1

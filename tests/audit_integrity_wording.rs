@@ -1,5 +1,8 @@
-use std::path::PathBuf;
+mod support;
+
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use support::git_command;
 
 const BANNED_PHRASES: [&str; 4] = [
     concat!("tamper", "-evident"),
@@ -41,9 +44,8 @@ fn repo_path(relative: &str) -> PathBuf {
 }
 
 fn tracked_files() -> Vec<String> {
-    let output = Command::new("git")
+    let output = git_command(Path::new(env!("CARGO_MANIFEST_DIR")))
         .args(["ls-files", "-z"])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output()
         .expect("audit-integrity wording guard requires git to be installed");
 

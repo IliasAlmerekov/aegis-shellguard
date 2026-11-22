@@ -444,5 +444,8 @@ fn parse_decision(value: &str) -> Result<Decision, String> {
 mod tests;
 
 #[cfg(test)]
+mod test_git;
+
+#[cfg(test)]
 #[path = "setup_shell_parse_tests.rs"]
 mod setup_shell_parse_tests;

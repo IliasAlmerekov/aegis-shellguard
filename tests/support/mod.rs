@@ -1,10 +1,6 @@
-//! Shared helpers for the `full_pipeline_*` integration test crates.
-//!
-//! These helpers were extracted verbatim from the original
-//! `tests/full_pipeline.rs` so the split test files can share the same
-//! environment setup, binary resolution, and audit-reading utilities without
-//! duplicating logic. They are test-only and intentionally panic on internal
-//! errors (`.unwrap()` is acceptable here).
+//! Shared helpers for the integration test crates: the `aegis` binary and its
+//! environment, audit reading, workspace manifests and git repositories. They
+//! are test-only and panic on internal errors (`.unwrap()` is acceptable here).
 //
 // Each integration test file is compiled as its own crate and includes
 // `mod support;`, so only a subset of these helpers is referenced by any
@@ -14,14 +10,78 @@
 
 pub mod agent_hooks;
 pub mod installer;
+#[path = "../../src/test_git.rs"]
+mod test_git;
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
 
 use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
 use aegis_types::Decision;
 use aegis_types::RiskLevel;
+
+pub(crate) use test_git::git_command;
+
+/// Runs `git args` in `repo` and returns its output; panics unless git succeeds.
+pub fn run_git(repo: &Path, args: &[&str]) -> Output {
+    let output = git_command(repo)
+        .args(args)
+        .output()
+        .unwrap_or_else(|error| panic!("run git {args:?}: {error}"));
+    assert!(
+        output.status.success(),
+        "git {args:?} failed:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output
+}
+
+/// Makes `repo` a git repository with a test identity and commits whatever it
+/// holds, so the repository always has a first commit.
+pub fn init_git_repo(repo: &Path) {
+    run_git(repo, &["init", "-q"]);
+    run_git(repo, &["config", "user.email", "test@aegis.dev"]);
+    run_git(repo, &["config", "user.name", "Aegis Test"]);
+    run_git(repo, &["config", "core.autocrlf", "false"]);
+    run_git(repo, &["add", "-A"]);
+    run_git(repo, &["commit", "-q", "--allow-empty", "-m", "init"]);
+}
+
+/// Resolve a path relative to the repository root via the test crate's
+/// `CARGO_MANIFEST_DIR` (the workspace root for the `aegis` test harness).
+#[must_use]
+pub fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// Read a workspace member's `Cargo.toml` and return its `[dependencies]`
+/// section onward as a single lowercased string for substring checks. Extracting
+/// from `[dependencies]` onward avoids matching the `[package]` description.
+#[must_use]
+pub fn crate_deps_section(crate_name: &str) -> String {
+    let path = repo_root()
+        .join("crates")
+        .join(crate_name)
+        .join("Cargo.toml");
+    let content = fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
+    let lower = content.to_lowercase();
+    lower
+        .find("[dependencies]")
+        .map_or(String::new(), |start| lower[start..].to_string())
+}
+
+/// Assert that a workspace crate does NOT list a forbidden dependency.
+pub fn assert_no_dep(crate_name: &str, forbidden: &str) {
+    let deps = crate_deps_section(crate_name);
+    assert!(
+        !deps.contains(&forbidden.to_lowercase()),
+        "architecture boundary violated: `{crate_name}` must not depend on `{forbidden}` \
+         (dependency DAG enforced by tests/architecture_boundaries.rs and \
+         tests/aegis_language_boundary.rs)"
+    );
+}
 
 pub fn aegis_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_aegis"))

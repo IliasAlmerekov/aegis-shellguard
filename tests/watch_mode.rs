@@ -7,6 +7,7 @@ use std::io::{ErrorKind, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+use support::init_git_repo;
 use tempfile::TempDir;
 
 fn aegis_watch(input: &[u8]) -> std::process::Output {
@@ -95,35 +96,6 @@ fn safe_command_emits_result_approved() {
     assert_eq!(result["decision"], "approved");
     assert_eq!(result["exit_code"], 0);
     assert_eq!(result["id"], "1");
-}
-
-fn init_git_repo(path: &Path) {
-    let init = Command::new("git")
-        .arg("init")
-        .current_dir(path)
-        .output()
-        .unwrap();
-    assert!(init.status.success());
-    let add = Command::new("git")
-        .args(["add", "."])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    assert!(add.status.success());
-    let commit = Command::new("git")
-        .args([
-            "-c",
-            "user.email=test@aegis.dev",
-            "-c",
-            "user.name=Aegis Test",
-            "commit",
-            "-m",
-            "init",
-        ])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    assert!(commit.status.success());
 }
 
 #[test]
