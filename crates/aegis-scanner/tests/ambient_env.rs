@@ -33,6 +33,7 @@ fn git_stage_report_reads_cdpath_and_git_env_from_the_process() {
         vec![(chain.clone(), DangerStageTarget::Plain)]
     );
 
+    // SAFETY: this binary runs only this test, so no other thread reads or mutates the environment.
     unsafe { std::env::set_var("CDPATH", "/somewhere") };
     assert_eq!(
         stages(cd_rm),
@@ -41,20 +42,24 @@ fn git_stage_report_reads_cdpath_and_git_env_from_the_process() {
             DangerStageTarget::Plain
         )]
     );
+    // SAFETY: this binary runs only this test, so no other thread reads or mutates the environment.
     unsafe { std::env::remove_var("CDPATH") };
 
     assert_eq!(
         stages(cd_git),
         vec![(chain.clone(), DangerStageTarget::Plain)]
     );
+    // SAFETY: this binary runs only this test, so no other thread reads or mutates the environment.
     unsafe { std::env::set_var("GIT_DIR", "/elsewhere/.git") };
     assert_eq!(
         stages(cd_git),
         vec![(chain.clone(), DangerStageTarget::EnvironmentRedirect)]
     );
+    // SAFETY: this binary runs only this test, so no other thread reads or mutates the environment.
     unsafe { std::env::remove_var("GIT_DIR") };
 
     // Bash reads these from its own environment at startup.
+    // SAFETY: this binary runs only this test, so no other thread reads or mutates the environment.
     unsafe { std::env::set_var("SHELLOPTS", "braceexpand:physical") };
     assert_eq!(
         stages("cd x && cd .. && rm -rf y"),
@@ -63,8 +68,10 @@ fn git_stage_report_reads_cdpath_and_git_env_from_the_process() {
             DangerStageTarget::Plain
         )]
     );
+    // SAFETY: this binary runs only this test, so no other thread reads or mutates the environment.
     unsafe { std::env::remove_var("SHELLOPTS") };
 
+    // SAFETY: this binary runs only this test, so no other thread reads or mutates the environment.
     unsafe { std::env::set_var("BASH_FUNC_cd%%", "() { :; }") };
     assert_eq!(
         stages(cd_rm),
@@ -73,12 +80,15 @@ fn git_stage_report_reads_cdpath_and_git_env_from_the_process() {
             DangerStageTarget::Plain
         )]
     );
+    // SAFETY: this binary runs only this test, so no other thread reads or mutates the environment.
     unsafe { std::env::remove_var("BASH_FUNC_cd%%") };
 
+    // SAFETY: this binary runs only this test, so no other thread reads or mutates the environment.
     unsafe { std::env::set_var("BASHOPTS", "cmdhist:lastpipe") };
     assert_eq!(
         stages("true | cd x && rm -rf y"),
         vec![(chain.clone(), DangerStageTarget::Plain)]
     );
+    // SAFETY: this binary runs only this test, so no other thread reads or mutates the environment.
     unsafe { std::env::remove_var("BASHOPTS") };
 }

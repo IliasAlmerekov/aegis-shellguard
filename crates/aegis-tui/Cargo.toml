@@ -23,3 +23,6 @@ testing = []
 aegis-parser.workspace = true
 aegis-config.workspace = true
 regex = "1.11"
+
+[lints]
+workspace = true

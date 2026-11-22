@@ -192,7 +192,9 @@ impl ReportedSandboxChild {
         #[cfg(target_os = "linux")]
         if let Some(fd) = self.release_fd.take() {
             let byte = b'1';
+            // SAFETY: `fd` was taken from `self.release_fd` (open release pipe write end owned here) and `&byte` is valid for 1 readable byte.
             let n = unsafe { libc::write(fd, &byte as *const u8 as *const libc::c_void, 1) };
+            // SAFETY: `fd` was taken from `self.release_fd`, so this is the sole close.
             unsafe { libc::close(fd) };
             if n != 1 {
                 return Err(SandboxError::Io(std::io::Error::last_os_error()));
@@ -208,6 +210,7 @@ impl Drop for ReportedSandboxChild {
     fn drop(&mut self) {
         #[cfg(target_os = "linux")]
         if let Some(fd) = self.release_fd.take() {
+            // SAFETY: `fd` was taken from `self.release_fd`, so this is the sole close.
             unsafe { libc::close(fd) };
         }
     }
@@ -266,13 +269,17 @@ impl PreparedSandboxCommand {
         // ReportedSandboxChild without calling release() would deadlock
         // wait_for_release() waiting for EOF on gate_read_fd).
         let mut fds = [0; 2];
+        // SAFETY: `fds` is a valid 2-element `i32` array writable by `pipe2`.
         if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
             return Err(SandboxError::Io(std::io::Error::last_os_error()));
         }
         let (read_fd, write_fd) = (fds[0], fds[1]);
         let mut gate_fds = [0; 2];
+        // SAFETY: `gate_fds` is a valid 2-element `i32` array writable by `pipe2`.
         if unsafe { libc::pipe2(gate_fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
+            // SAFETY: `read_fd` is an open pipe descriptor owned here and is not used after close.
             unsafe { libc::close(read_fd) };
+            // SAFETY: `write_fd` is an open pipe descriptor owned here and is not used after close.
             unsafe { libc::close(write_fd) };
             return Err(SandboxError::Io(std::io::Error::last_os_error()));
         }
@@ -283,6 +290,7 @@ impl PreparedSandboxCommand {
         self.command.env(landlock::AEGIS_LANDLOCK_STATUS_FD, "3");
         self.command.env(landlock::AEGIS_LANDLOCK_RELEASE_FD, "4");
         use std::os::unix::process::CommandExt;
+        // SAFETY: the closure calls only async-signal-safe `dup2` and `close` on the open pipe fds created above.
         unsafe {
             self.command.pre_exec(move || {
                 if libc::dup2(write_fd, 3) == -1 || libc::dup2(gate_read_fd, 4) == -1 {
@@ -303,6 +311,7 @@ impl PreparedSandboxCommand {
 
         // Close the parent's copy of the write end so the read returns EOF once
         // the inner wrapper closes it.
+        // SAFETY: `write_fd` and `gate_read_fd` are open pipe descriptors owned by the parent and are not used after close.
         unsafe {
             libc::close(write_fd);
             libc::close(gate_read_fd);
@@ -310,6 +319,7 @@ impl PreparedSandboxCommand {
 
         // Read the actual status.
         let status = read_status_from_fd(read_fd)?;
+        // SAFETY: `read_fd` is an open pipe descriptor owned by the parent and is not used after close.
         unsafe {
             libc::close(read_fd);
         }
@@ -336,6 +346,7 @@ impl PreparedSandboxCommand {
 #[cfg(target_os = "linux")]
 fn read_status_from_fd(fd: i32) -> Result<SandboxStatus, SandboxError> {
     let mut buf = [0u8; 1];
+    // SAFETY: `buf` is valid for 1 writable byte and `fd` is the open status pipe read end.
     let n = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, 1) };
     if n < 0 {
         return Err(SandboxError::Io(std::io::Error::last_os_error()));
@@ -543,5 +554,46 @@ mod tests {
             .expect("source must be the original io::Error, not a stringified message");
         assert_eq!(io_source.kind(), std::io::ErrorKind::PermissionDenied);
         assert_eq!(err.to_string(), "failed to spawn sandboxed command: denied");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn read_status_from_fd_decodes_active_byte() {
+        use std::io::Write;
+        use std::os::unix::io::AsRawFd;
+
+        let (reader, mut writer) = std::io::pipe().expect("pipe must succeed");
+        writer.write_all(b"a").expect("write must succeed");
+        drop(writer);
+        assert_eq!(
+            read_status_from_fd(reader.as_raw_fd()).expect("read must succeed"),
+            SandboxStatus::Active
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn dropping_reported_sandbox_child_closes_release_fd() {
+        use std::os::unix::io::IntoRawFd;
+
+        let (_reader, writer) = std::io::pipe().expect("pipe must succeed");
+        let raw_fd = writer.into_raw_fd();
+        let child = std::process::Command::new("/bin/true")
+            .spawn()
+            .or_else(|_| std::process::Command::new("/usr/bin/true").spawn())
+            .expect("true must spawn");
+        let mut reported = ReportedSandboxChild {
+            child: Some(child),
+            status: SandboxStatus::Active,
+            release_fd: Some(raw_fd),
+        };
+        if let Some(mut c) = reported.child.take() {
+            c.wait().expect("true must exit");
+        }
+        drop(reported);
+
+        // SAFETY: `fcntl(F_GETFD)` takes no pointers and returns `-1` (`EBADF`) once `raw_fd` is closed.
+        let rc = unsafe { libc::fcntl(raw_fd, libc::F_GETFD) };
+        assert_eq!(rc, -1, "Drop must close release_fd");
     }
 }

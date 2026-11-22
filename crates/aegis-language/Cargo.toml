@@ -35,3 +35,6 @@ harness = false
 [[bench]]
 name = "parse_latency_bench"
 harness = false
+
+[lints]
+workspace = true

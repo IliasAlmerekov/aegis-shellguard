@@ -38,7 +38,8 @@ fn embedded_bwrap_confines_when_no_system_bwrap_on_path() {
     // build. Restore it afterwards so other tests are unaffected.
     let no_bwrap = no_bwrap_path_dir();
     let old_path = std::env::var_os("PATH");
-    // SAFETY: single-threaded test; PATH is restored before the test returns.
+    // SAFETY: this integration-test binary runs only this test, so no other
+    // thread reads or mutates `PATH`.
     unsafe { std::env::set_var("PATH", &no_bwrap) };
 
     let config = SandboxConfig::default();
@@ -58,7 +59,8 @@ fn embedded_bwrap_confines_when_no_system_bwrap_on_path() {
             "skipped: this host cannot create the user namespaces the sandbox \
              needs, so the embedded-build confinement contract is untestable here"
         );
-        // SAFETY: single-threaded test; restores the caller's PATH.
+        // SAFETY: this integration-test binary runs only this test, so no other
+        // thread reads or mutates `PATH`; restores the caller's `PATH`.
         unsafe { std::env::set_var("PATH", old_path.unwrap_or_default()) };
         std::fs::remove_dir_all(&no_bwrap).unwrap();
         return;
@@ -76,7 +78,8 @@ fn embedded_bwrap_confines_when_no_system_bwrap_on_path() {
     let status = prepared.map(|mut p| p.command.status());
     let probe_written = probe.exists();
 
-    // SAFETY: single-threaded test; restores the caller's PATH.
+    // SAFETY: this integration-test binary runs only this test, so no other
+    // thread reads or mutates `PATH`; restores the caller's `PATH`.
     unsafe { std::env::set_var("PATH", old_path.unwrap_or_default()) };
     std::fs::remove_dir_all(&no_bwrap).unwrap();
 

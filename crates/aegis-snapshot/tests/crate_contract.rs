@@ -65,6 +65,7 @@ fn test_snapshot_registry_config_try_new_succeeds_with_home_set() {
     let _guard = HOME_ENV.lock().unwrap();
     // Ensure HOME is set — on any standard Linux/macOS environment this is
     // already true; we set it explicitly for robustness in constrained CI.
+    // SAFETY: guarded by `HOME_ENV`; every test in this binary that reads or mutates the environment holds `HOME_ENV`.
     unsafe { std::env::set_var("HOME", std::env::temp_dir()) };
 
     let config = AegisConfig::default();
@@ -78,6 +79,7 @@ fn test_snapshot_registry_config_try_new_succeeds_with_home_set() {
 #[test]
 fn test_snapshot_registry_config_try_new_errors_without_home() {
     let _guard = HOME_ENV.lock().unwrap();
+    // SAFETY: guarded by `HOME_ENV`; every test in this binary that reads or mutates the environment holds `HOME_ENV`.
     unsafe {
         std::env::remove_var("HOME");
         std::env::remove_var("USERPROFILE");
@@ -89,6 +91,7 @@ fn test_snapshot_registry_config_try_new_errors_without_home() {
     assert!(result.is_err(), "expected Err when HOME is unset, got Ok");
 
     // Restore HOME so subsequent tests are not affected.
+    // SAFETY: guarded by `HOME_ENV`; every test in this binary that reads or mutates the environment holds `HOME_ENV`.
     unsafe { std::env::set_var("HOME", std::env::temp_dir()) };
 }
 
@@ -123,6 +126,7 @@ fn test_available_provider_names_contains_all_six_builtins() {
 #[test]
 fn test_snapshot_registry_full_policy_contains_all_six_providers() {
     let _guard = HOME_ENV.lock().unwrap();
+    // SAFETY: guarded by `HOME_ENV`; every test in this binary that reads or mutates the environment holds `HOME_ENV`.
     unsafe { std::env::set_var("HOME", std::env::temp_dir()) };
 
     let mut config = AegisConfig::default();

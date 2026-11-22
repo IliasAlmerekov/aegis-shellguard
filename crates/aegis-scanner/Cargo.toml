@@ -17,3 +17,6 @@ aho-corasick = "1.1"
 toml = "1.1"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
+
+[lints]
+workspace = true
