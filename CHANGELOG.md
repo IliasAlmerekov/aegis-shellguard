@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Changed: justified deliberately dropped results with why comments, renamed unused bindings to `_x` across the remaining production crates, and added the dropped-result rule to `CONVENTION.md` section 5; behavior is unchanged (#622).
 - Changed: documented deliberately dropped terminal write and flush results in `aegis-tui` block and non-interactive denial screens; behavior is unchanged (#622).
 - Changed: removed dead compatibility layers (the PascalCase serde alias on `SandboxStatus::NotConfigured` and the `run` compatibility wrapper in `aegis::analysis`), fixed stale compatibility wording in the config init template, `docs/config-schema.md`, `install/hook.rs`, `install/mod.rs`, `decision_source` docs, and `CONTEXT.md`, and added the three-tier compatibility rule to `CONVENTION.md`; behaviour is unchanged (#620).
 - Changed: gated test-only public functions behind `#[cfg(test)]` or a `testing` Cargo feature across `aegis-parser`, `aegis-scanner`, `aegis-config`, `aegis-snapshot`, `aegis-tui`, `aegis-audit`, and `aegis-language`, and wired `scripts/test-tamper-check.test.sh` into `scripts/lint.sh text` (#618).
