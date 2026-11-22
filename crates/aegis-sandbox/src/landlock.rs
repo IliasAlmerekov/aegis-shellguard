@@ -95,6 +95,7 @@ mod syscalls {
         if fd < 0 {
             Err(std::io::Error::last_os_error())
         } else {
+            // SAFETY: `create_ruleset` returned a non-negative fd newly owned by this process.
             Ok(unsafe { std::os::unix::io::OwnedFd::from_raw_fd(fd as std::os::unix::io::RawFd) })
         }
     }
@@ -277,7 +278,9 @@ fn wait_for_release() -> Result<(), SandboxError> {
         Err(_) => return Ok(()),
     };
     let mut byte = [0_u8; 1];
+    // SAFETY: `byte` is valid for 1 writable byte and `fd` is the release-gate descriptor passed by the parent.
     let n = unsafe { libc::read(fd, byte.as_mut_ptr() as *mut libc::c_void, 1) };
+    // SAFETY: `fd` is the release-gate descriptor owned by this wrapper and is not used after close.
     unsafe { libc::close(fd) };
     if n != 1 {
         return Err(SandboxError::Execution(

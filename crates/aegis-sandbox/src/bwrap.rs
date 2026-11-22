@@ -160,6 +160,7 @@ fn extract_embedded_bwrap() -> Result<PathBuf, SandboxError> {
     {
         let name = CString::new("aegis-bwrap")
             .map_err(|_| SandboxError::Execution("invalid memfd name".into()))?;
+        // SAFETY: `name` is a valid NUL-terminated C string that outlives the call.
         let fd = unsafe { libc::memfd_create(name.as_ptr(), 0) };
         if fd < 0 {
             return Err(SandboxError::Execution(format!(
@@ -171,6 +172,7 @@ fn extract_embedded_bwrap() -> Result<PathBuf, SandboxError> {
         let bytes = EMBEDDED_BWRAP;
         let mut written = 0usize;
         while written < bytes.len() {
+            // SAFETY: `fd` is an open memfd and `bytes[written..]` is valid for `bytes.len() - written` readable bytes.
             let n = unsafe {
                 libc::write(
                     fd,
@@ -180,6 +182,7 @@ fn extract_embedded_bwrap() -> Result<PathBuf, SandboxError> {
             };
             if n < 0 {
                 let err = std::io::Error::last_os_error();
+                // SAFETY: `fd` is an open memfd owned here and is not used after close.
                 unsafe { libc::close(fd) };
                 return Err(SandboxError::Execution(format!(
                     "write to memfd failed: {err}"
@@ -188,8 +191,10 @@ fn extract_embedded_bwrap() -> Result<PathBuf, SandboxError> {
             written += n as usize;
         }
 
+        // SAFETY: `fd` is an open memfd owned here.
         if unsafe { libc::fchmod(fd, 0o755) } < 0 {
             let err = std::io::Error::last_os_error();
+            // SAFETY: `fd` is an open memfd owned here and is not used after close.
             unsafe { libc::close(fd) };
             return Err(SandboxError::Execution(format!(
                 "fchmod on memfd failed: {err}"

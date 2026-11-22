@@ -264,10 +264,11 @@ pub(super) fn system_home(passwd: Option<PathBuf>, env: Option<PathBuf>) -> Opti
 pub(super) fn passwd_home() -> Option<PathBuf> {
     let mut buf = vec![0u8; 1024];
     loop {
-        // SAFETY: `pwd` and `buf` outlive the call; `getpwuid_r` writes only
-        // within `buf.len()` bytes and sets `out` to null or to `&mut pwd`.
+        // SAFETY: `libc::passwd` is a C POD struct whose all-zero bit pattern is valid.
         let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
         let mut out: *mut libc::passwd = std::ptr::null_mut();
+        // SAFETY: `pwd`, `buf`, and `out` outlive the call; `getpwuid_r` writes
+        // at most `buf.len()` bytes into `buf` and sets `out` to null or `&mut pwd`.
         let rc = unsafe {
             libc::getpwuid_r(
                 libc::getuid(),
