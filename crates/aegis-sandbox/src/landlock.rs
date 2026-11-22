@@ -551,4 +551,19 @@ mod tests {
         // A non-numeric length must fail closed.
         assert!(parse_allow_write(b"xx:/tmp").is_err());
     }
+
+    #[test]
+    fn add_path_beneath_rejects_non_ruleset_fd() {
+        use std::os::unix::io::{AsFd, AsRawFd};
+
+        let file = std::fs::File::open("/dev/null").expect("/dev/null must open");
+        let attr = super::syscalls::PathBeneathAttr {
+            allowed_access: super::syscalls::ACCESS_FS_WRITE_FILE,
+            parent_fd: file.as_raw_fd(),
+        };
+        assert!(
+            super::syscalls::add_path_beneath(file.as_fd(), &attr).is_err(),
+            "add_path_beneath on a non-ruleset fd must fail"
+        );
+    }
 }

@@ -555,4 +555,45 @@ mod tests {
         assert_eq!(io_source.kind(), std::io::ErrorKind::PermissionDenied);
         assert_eq!(err.to_string(), "failed to spawn sandboxed command: denied");
     }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn read_status_from_fd_decodes_active_byte() {
+        use std::io::Write;
+        use std::os::unix::io::AsRawFd;
+
+        let (reader, mut writer) = std::io::pipe().expect("pipe must succeed");
+        writer.write_all(b"a").expect("write must succeed");
+        drop(writer);
+        assert_eq!(
+            read_status_from_fd(reader.as_raw_fd()).expect("read must succeed"),
+            SandboxStatus::Active
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn dropping_reported_sandbox_child_closes_release_fd() {
+        use std::os::unix::io::IntoRawFd;
+
+        let (_reader, writer) = std::io::pipe().expect("pipe must succeed");
+        let raw_fd = writer.into_raw_fd();
+        let child = std::process::Command::new("/bin/true")
+            .spawn()
+            .or_else(|_| std::process::Command::new("/usr/bin/true").spawn())
+            .expect("true must spawn");
+        let mut reported = ReportedSandboxChild {
+            child: Some(child),
+            status: SandboxStatus::Active,
+            release_fd: Some(raw_fd),
+        };
+        if let Some(mut c) = reported.child.take() {
+            c.wait().expect("true must exit");
+        }
+        drop(reported);
+
+        // SAFETY: `fcntl(F_GETFD)` takes no pointers and returns `-1` (`EBADF`) once `raw_fd` is closed.
+        let rc = unsafe { libc::fcntl(raw_fd, libc::F_GETFD) };
+        assert_eq!(rc, -1, "Drop must close release_fd");
+    }
 }
