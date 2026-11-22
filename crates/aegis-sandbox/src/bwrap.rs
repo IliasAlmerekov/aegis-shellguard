@@ -53,10 +53,10 @@ fn bwrap_program() -> Option<&'static PathBuf> {
 }
 
 /// Find a `bwrap` on `PATH` outside the current working directory that passes
-/// the capability smoke check.
+/// the capability smoke check. Drops `current_dir`/`canonicalize` errors so
+/// project-local shims are never accepted without a canonical cwd.
 fn find_system_bwrap() -> Option<PathBuf> {
     let search_path = std::env::var_os("PATH")?;
-    // Without a canonical cwd we cannot reject project-local shims, so skip PATH bwrap.
     let cwd = std::fs::canonicalize(std::env::current_dir().ok()?).ok()?;
     find_system_bwrap_in_paths(std::env::split_paths(&search_path), &cwd)
 }
@@ -501,6 +501,20 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[cfg(bwrap_available)]
+    #[test]
+    fn bwrap_program_resolves_to_executable_binary() {
+        let path = super::bwrap_program().expect("bwrap must resolve");
+        let ok = std::process::Command::new(path)
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(ok, "resolved bwrap program must run --version");
     }
 
     #[cfg(bwrap_available)]

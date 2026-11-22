@@ -316,3 +316,42 @@ fn notice_prints_on_a_real_tty_only_for_a_strictly_newer_version() {
     );
     assert_eq!(notice_lines, 1, "the update notice must use one line");
 }
+
+#[test]
+fn interactive_shell_run_records_background_check_attempt_when_stale() {
+    let Some(script) = script_bin() else {
+        eprintln!("skipping: `script`(1) not found on PATH");
+        return;
+    };
+    let home = TempDir::new().unwrap();
+    let stub = TempDir::new().unwrap();
+    write_curl_stub(stub.path());
+    let path = stubbed_path(stub.path());
+
+    run(
+        home.path(),
+        &path,
+        &[],
+        &["update", "enable", "--channel", "npm"],
+    );
+
+    let shell_cmd = format!("{} -c true", aegis_bin());
+    let mut command = Command::new(&script);
+    #[cfg(target_os = "macos")]
+    command.args(["-q", "/dev/null", "/bin/sh", "-c", &shell_cmd]);
+    #[cfg(not(target_os = "macos"))]
+    command.args(["-qec", &shell_cmd, "/dev/null"]);
+    command
+        .env("HOME", home.path())
+        .env("PATH", &path)
+        .env("AEGIS_CI", "0")
+        .output()
+        .unwrap();
+
+    let raw = fs::read_to_string(home.path().join(".aegis/update.json")).unwrap();
+    assert!(
+        raw.contains("\"last_check_attempt_at\": \"")
+            || raw.contains("\"last_check_attempt_at\":\""),
+        "interactive shell run must record a background check attempt in update.json, got: {raw}"
+    );
+}

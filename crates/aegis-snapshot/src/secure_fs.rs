@@ -274,6 +274,32 @@ mod tests {
         assert!(!artifact.exists());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn harden_existing_artifact_tightens_mode_and_rejects_missing_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let store = temp_dir.path().join("snapshots");
+        let artifact = store.join("artifact.dump");
+        create_store_dir("test", &store).unwrap();
+        fs::write(&artifact, b"dump").unwrap();
+        fs::set_permissions(&artifact, fs::Permissions::from_mode(0o644)).unwrap();
+
+        harden_existing_artifact("test", &artifact).unwrap();
+        assert_eq!(
+            fs::metadata(&artifact).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+
+        let missing = store.join("missing.dump");
+        let error = harden_existing_artifact("test", &missing).unwrap_err();
+        assert!(matches!(
+            error,
+            SnapshotError::InsecureSnapshotPermissions { plugin, .. } if plugin == "test"
+        ));
+    }
+
     #[cfg(not(unix))]
     #[test]
     fn non_unix_fallback_creates_artifacts_without_unix_mode_guarantees() {
