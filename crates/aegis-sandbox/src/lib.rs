@@ -55,12 +55,6 @@ mod platform;
 /// crate cannot drift.
 pub const INNER_LANDLOCK_FLAG: &str = "--aegis-inner-landlock";
 
-/// Exit code for internal Aegis errors (CONVENTION.md §3): codes 1–N are the
-/// executed command's exit code; internal errors are 4. The inner landlock
-/// wrapper returns this when it cannot set up Landlock, so a failure is
-/// distinguishable from a command that ran and exited 1.
-pub const EXIT_INTERNAL: i32 = 4;
-
 /// Typed error for sandbox operations.
 #[derive(Debug, thiserror::Error)]
 pub enum SandboxError {

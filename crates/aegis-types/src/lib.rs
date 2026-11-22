@@ -21,6 +21,7 @@ mod analysis;
 mod assessment;
 mod command;
 mod decision;
+mod exits;
 mod pattern;
 mod policy;
 mod recovery;
@@ -38,6 +39,9 @@ pub use analysis::{
 pub use assessment::{Assessment, AssessmentBasis, DecisionSource, HighlightRange, MatchResult};
 pub use command::{InlineScript, ParsedCommand};
 pub use decision::Decision;
+pub use exits::{
+    EXIT_ABSENT, EXIT_BLOCKED, EXIT_DENIED, EXIT_INCONCLUSIVE, EXIT_INTERNAL, EXIT_USAGE,
+};
 pub use pattern::{Category, Pattern, PatternSource, PatternToken, PrefixPattern};
 pub use policy::{AllowlistOverrideLevel, CiPolicy, Mode, PolicyRuleDecision, SnapshotPolicy};
 pub use recovery::{

@@ -572,7 +572,7 @@ release compatibility decision.
 Current mapping:
 
 - `0` — command approved/executed successfully or `aegis` command completed successfully
-- `2` — user denied in a prompt path (`prompt` decision)
+- `2` — user denied in a prompt path (`prompt` decision), or shell-compat `-c` lacks a command
 - `3` — hard block (`block` decision)
 - `4` — internal/config error (`aegis` error state, validation failure, runtime/setup failure)
 - `5` — `aegis snapshot verify` only: a Snapshot liveness check was inconclusive and none was absent

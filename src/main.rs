@@ -13,6 +13,9 @@ use std::process;
 use aegis_audit::AuditTimestamp;
 use aegis_types::Decision;
 use aegis_types::RiskLevel;
+use aegis_types::{
+    EXIT_ABSENT, EXIT_BLOCKED, EXIT_DENIED, EXIT_INCONCLUSIVE, EXIT_INTERNAL, EXIT_USAGE,
+};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 mod cli_commands;
@@ -346,42 +349,6 @@ enum ConfigValidateOutput {
     Json,
 }
 
-// ── Exit-code contract ────────────────────────────────────────────────────────
-//
-// Aegis uses a small set of reserved exit codes so that callers (AI agents,
-// CI pipelines, shell scripts) can distinguish *why* a command did not run
-// from a normal command failure.
-//
-// | Code | Meaning                                                          |
-// |------|------------------------------------------------------------------|
-// |  0   | Success — command was approved and exited 0.                     |
-// | 1-N  | Pass-through — the underlying command ran and returned this code.|
-// |  2   | Denied — user pressed 'n' at the confirmation dialog.           |
-// |  3   | Blocked — command matched a Block-level pattern; no dialog shown.|
-// |  4   | Aegis/config error — internal failure or config validation failed |
-// |      |   (e.g. `aegis config validate` found hard errors).              |
-// |  5   | `aegis snapshot verify` only: a liveness check was inconclusive  |
-// |      |   and none was absent.                                           |
-//
-// `aegis snapshot verify` also returns 1 when any Snapshot is absent, and
-// `aegis rollback` returns 1 when its Snapshot is absent (ADR-052); there 1 is
-// not a pass-through code. `aegis rollback` returns 2 when an inconclusive
-// check is refused, or cannot be asked about without a terminal and `--yes`.
-//
-// Codes 2, 3, 4, and 5 are only returned when Aegis prevents execution; they
-// are never returned by a successfully launched child process.
-
-/// The user explicitly denied the command at the confirmation dialog.
-pub(crate) const EXIT_DENIED: i32 = 2;
-/// The command matched a `Block`-level pattern and was hard-stopped.
-const EXIT_BLOCKED: i32 = 3;
-/// Aegis/config failure prevented execution or validation from succeeding.
-pub(crate) const EXIT_INTERNAL: i32 = 4;
-/// A Snapshot liveness check found the artifact confirmed gone (`aegis snapshot verify`, `aegis rollback`).
-pub(crate) const EXIT_ABSENT: i32 = 1;
-/// A Snapshot liveness check could not complete and none was absent (`aegis snapshot verify`).
-pub(crate) const EXIT_INCONCLUSIVE: i32 = 5;
-
 fn main() {
     // The internal language-worker mode short-circuits before clap parsing
     // and Tokio runtime construction: the worker is a minimal, synchronous,
@@ -418,7 +385,7 @@ fn main() {
         Ok(invocation) => invocation,
         Err(message) => {
             eprintln!("error: {message}");
-            process::exit(2);
+            process::exit(EXIT_USAGE);
         }
     };
 
