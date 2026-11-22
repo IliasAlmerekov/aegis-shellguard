@@ -190,10 +190,7 @@ impl PreparedPlanner {
     pub fn plan(&self, request: PlanningRequest<'_>) -> PlanningOutcome {
         match self {
             PreparedPlanner::Ready(context) => plan_with_context(context, request),
-            PreparedPlanner::SetupFailure(plan) => {
-                let _ = request;
-                PlanningOutcome::SetupFailure(plan.clone())
-            }
+            PreparedPlanner::SetupFailure(plan) => PlanningOutcome::SetupFailure(plan.clone()),
         }
     }
 
@@ -201,10 +198,7 @@ impl PreparedPlanner {
     pub async fn plan_async(&self, request: PlanningRequest<'_>) -> PlanningOutcome {
         match self {
             PreparedPlanner::Ready(context) => plan_with_context_async(context, request).await,
-            PreparedPlanner::SetupFailure(plan) => {
-                let _ = request;
-                PlanningOutcome::SetupFailure(plan.clone())
-            }
+            PreparedPlanner::SetupFailure(plan) => PlanningOutcome::SetupFailure(plan.clone()),
         }
     }
 }

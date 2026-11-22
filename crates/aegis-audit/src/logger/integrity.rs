@@ -146,6 +146,7 @@ fn hex_encode(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
         use std::fmt::Write as _;
+        // Writing to a String is infallible.
         let _ = write!(&mut out, "{byte:02x}");
     }
     out

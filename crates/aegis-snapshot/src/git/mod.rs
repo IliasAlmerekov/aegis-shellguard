@@ -59,6 +59,7 @@ fn git_command(cwd: impl AsRef<Path>) -> Command {
 /// when `dir` is not inside a git working tree (a bare repository included) or
 /// git cannot run. Isolated from ambient git-location variables.
 pub async fn git_toplevel(dir: &Path) -> Option<std::path::PathBuf> {
+    // git spawn/wait failure returns None; callers treat the directory as not a git worktree.
     let output = git_command(dir)
         .args(["rev-parse", "--show-toplevel"])
         .stderr(std::process::Stdio::null())
@@ -73,6 +74,7 @@ pub async fn git_toplevel(dir: &Path) -> Option<std::path::PathBuf> {
     if top.is_empty() {
         return None;
     }
+    // Uncanonicalizable top-level path cannot be bound to a location, so treat as None.
     std::path::PathBuf::from(top).canonicalize().ok()
 }
 
@@ -366,6 +368,7 @@ impl SnapshotPlugin for GitPlugin {
     async fn snapshot_target(&self, cwd: &Path) -> Option<String> {
         let top = match git_toplevel(cwd).await {
             Some(top) => top,
+            // Omit target metadata when cwd cannot be canonicalized.
             None => cwd.canonicalize().ok()?,
         };
         Some(top.to_string_lossy().into_owned())

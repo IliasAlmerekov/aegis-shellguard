@@ -37,6 +37,7 @@ fn find_id_in_path() -> Option<PathBuf> {
 
 #[cfg(not(windows))]
 fn run_id_command(id_path: &Path) -> Option<String> {
+    // User detection is best-effort; None disables user-scoped allowlist matches.
     let output = Command::new(id_path).arg("-un").output().ok()?;
     if !output.status.success() {
         return None;

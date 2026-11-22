@@ -146,12 +146,14 @@ impl SnapshotPlugin for PostgresPlugin {
         {
             Ok(output) => output,
             Err(error) => {
+                // Best-effort cleanup of the reserved dump file; preserve the primary error.
                 let _ = std::fs::remove_file(&dump_path);
                 return Err(error);
             }
         };
 
         if !output.status.success() {
+            // Best-effort cleanup of the reserved dump file; preserve the primary error.
             let _ = std::fs::remove_file(&dump_path);
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             return Err(SnapshotError::CommandFailed {
@@ -161,6 +163,7 @@ impl SnapshotPlugin for PostgresPlugin {
         }
 
         if let Err(error) = harden_existing_artifact("postgres", &dump_path) {
+            // Best-effort cleanup of the reserved dump file; preserve the primary error.
             let _ = std::fs::remove_file(&dump_path);
             return Err(error);
         }

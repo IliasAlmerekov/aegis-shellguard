@@ -47,12 +47,14 @@ pub(crate) fn available_bwrap_program(config: &SandboxConfig) -> Option<&'static
 fn bwrap_program() -> Option<&'static PathBuf> {
     static CACHE: OnceLock<Option<PathBuf>> = OnceLock::new();
     CACHE
+        // Extraction failure yields None so confinement fails closed as unavailable.
         .get_or_init(|| find_system_bwrap().or_else(|| extract_embedded_bwrap().ok()))
         .as_ref()
 }
 
 /// Find a `bwrap` on `PATH` outside the current working directory that passes
-/// the capability smoke check.
+/// the capability smoke check. Drops `current_dir`/`canonicalize` errors so
+/// project-local shims are never accepted without a canonical cwd.
 fn find_system_bwrap() -> Option<PathBuf> {
     let search_path = std::env::var_os("PATH")?;
     let cwd = std::fs::canonicalize(std::env::current_dir().ok()?).ok()?;
@@ -291,6 +293,7 @@ pub(crate) fn apparmor_userns_restricted() -> bool {
     let path = APPARMOR_SYSCTL_PATH
         .with(|value| value.borrow().clone())
         .unwrap_or_else(|| path.to_path_buf());
+    // Sysctl file is absent on non-AppArmor kernels; missing or unreadable means unrestricted.
     let content = std::fs::read_to_string(path).ok();
     apparmor_sysctl_restricted(content.as_deref())
 }
@@ -498,6 +501,20 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[cfg(bwrap_available)]
+    #[test]
+    fn bwrap_program_resolves_to_executable_binary() {
+        let path = super::bwrap_program().expect("bwrap must resolve");
+        let ok = std::process::Command::new(path)
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(ok, "resolved bwrap program must run --version");
     }
 
     #[cfg(bwrap_available)]

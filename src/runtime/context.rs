@@ -53,6 +53,7 @@ impl From<&AegisConfig> for RuntimeConfig {
         let cwd = config
             .source_current_dir()
             .map(Path::to_path_buf)
+            // Unavailable cwd falls back to an empty path so workspace detection grants no workspace root.
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_default();
         let sandbox = super::sandbox_ceiling(config, &cwd).map(|ceiling| ceiling.config);
@@ -217,6 +218,7 @@ impl RuntimeContext {
             let current_dir = config
                 .source_current_dir()
                 .map(std::path::Path::to_path_buf)
+                // Error attribution degrades to unattributed when current_dir is unavailable.
                 .or_else(|| std::env::current_dir().ok());
             let home_dir = config
                 .source_home_dir()
@@ -674,6 +676,7 @@ impl RuntimeContext {
         // frame's cwd in `with_watch_context`.
         .with_cwd(
             std::env::current_dir()
+                // Unavailable working directory records None in the audit entry instead of ".".
                 .ok()
                 .map(|dir| dir.to_string_lossy().into_owned()),
         );

@@ -208,6 +208,7 @@ impl SnapshotPlugin for SqlitePlugin {
     async fn readiness(&self, snapshot_id: &str) -> ArtifactReadiness {
         let dump = Self::parse_snapshot_id(snapshot_id)
             .and_then(|(_, dump)| contain_artifact("sqlite", &self.snapshots_dir, &dump));
+        // Malformed or uncontained dump path maps to None, which sqlite_readiness reports as Unavailable.
         sqlite_readiness(dump.ok().as_deref()).await
     }
 

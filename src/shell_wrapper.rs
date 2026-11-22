@@ -127,6 +127,7 @@ fn maybe_offer_update_notice() {
     if is_ci_environment() || !std::io::stdout().is_terminal() {
         return;
     }
+    // Update notice is best-effort and must not affect the wrapped command's exit code.
     let _ = aegis::update::maybe_render_notice(env!("CARGO_PKG_VERSION"));
     aegis::update::maybe_spawn_background_check();
 }

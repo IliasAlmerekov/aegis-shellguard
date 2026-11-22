@@ -143,6 +143,7 @@ pub fn save(path: &Path, state: &UpdateState) -> Result<()> {
     }
 
     fs::rename(&tmp_path, path).inspect_err(|_| {
+        // Best-effort temp cleanup; preserve the primary rename error.
         let _ = fs::remove_file(&tmp_path);
     })?;
     Ok(())

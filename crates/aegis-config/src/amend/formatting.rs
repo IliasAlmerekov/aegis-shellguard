@@ -73,6 +73,7 @@ pub(super) fn append_config_table_entry(
         tmp.sync_all()?;
     }
     fs::rename(&tmp_path, config_path).inspect_err(|_| {
+        // Best-effort temp cleanup; preserve the primary rename error.
         let _ = fs::remove_file(&tmp_path);
     })?;
 

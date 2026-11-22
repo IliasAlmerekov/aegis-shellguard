@@ -482,6 +482,7 @@ fn literal_payload(node: Node, bytes: &[u8], lang: SourceLanguage) -> Option<Nes
 }
 
 fn literal_content(node: Node, bytes: &[u8]) -> Option<String> {
+    // Source is valid UTF-8 (ASCII-checked at entry); non-UTF-8 cannot occur.
     let text = node.utf8_text(bytes).ok()?;
     match node.kind() {
         "raw_string" | "string" => {
@@ -502,6 +503,7 @@ fn literal_content(node: Node, bytes: &[u8]) -> Option<String> {
 /// decoded (`r\m`, `"rm"` and `$'\162m'` all read as `rm`). Text that does
 /// not read as exactly one word is returned as written.
 fn word_text<'a>(node: Node, bytes: &'a [u8]) -> Option<Cow<'a, str>> {
+    // Source is valid UTF-8 (ASCII-checked at entry); non-UTF-8 cannot occur.
     let text = node.utf8_text(bytes).ok()?;
     if !text.contains(['\\', '\'', '"', '$']) {
         return Some(Cow::Borrowed(text));

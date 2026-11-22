@@ -114,8 +114,10 @@ fn find_worktree_root(cwd: &Path, inputs: &ResolverInputs) -> Option<PathBuf> {
     if !cwd.is_absolute() {
         return None;
     }
+    // Unreadable cwd aborts worktree discovery, granting no workspace.
     let start_dev = (inputs.device)(cwd, &fs::metadata(cwd).ok()?);
     for dir in cwd.ancestors() {
+        // Unreadable ancestor aborts worktree discovery, granting no workspace.
         let md = fs::metadata(dir).ok()?;
         if (inputs.device)(dir, &md) != start_dev {
             return None;
@@ -164,6 +166,7 @@ fn workspace_for(root: PathBuf) -> Workspace {
     match verified_gitdir(&ws.root, &dot_git, &claimed) {
         Some(gitdir) => {
             let common = read_small(&gitdir.join("commondir"))
+                // Uncanonicalizable commondir is omitted rather than added to writable gitdirs.
                 .and_then(|text| fs::canonicalize(gitdir.join(text.trim())).ok());
             // A forged gitdir can name any commondir: accept it only in git's
             // real layout, `<commondir>/worktrees/<name>`.
@@ -190,6 +193,7 @@ fn workspace_for(root: PathBuf) -> Workspace {
 /// file of a linked worktree names `dot_git`, or `core.worktree` of a
 /// submodule resolves to `root`.
 fn verified_gitdir(root: &Path, dot_git: &Path, claimed: &Path) -> Option<PathBuf> {
+    // Uncanonicalizable claimed gitdir stays unverified and is not granted write access.
     let gitdir = fs::canonicalize(claimed).ok()?;
     let same = |named: &str, expected: &Path| {
         let (Ok(a), Ok(b)) = (
@@ -232,6 +236,7 @@ fn core_worktree(config: &str) -> Option<String> {
 pub(super) fn read_small(path: &Path) -> Option<String> {
     const LIMIT: u64 = 256 * 1024;
     let mut text = String::new();
+    // Unreadable or non-UTF-8 git metadata returns None so callers reject the gitdir.
     fs::File::open(path)
         .ok()?
         .take(LIMIT)

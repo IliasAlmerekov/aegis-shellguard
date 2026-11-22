@@ -16,6 +16,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 
     let mut encoded = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
+        // Writing to a String is infallible.
         let _ = write!(encoded, "{byte:02x}");
     }
     encoded

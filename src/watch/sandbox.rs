@@ -271,6 +271,7 @@ fn frame_sandbox(
     if config.mode == aegis_types::Mode::Audit {
         return None;
     }
+    // Uncanonicalizable cwd stays None so confinement narrows to temp-only below.
     let canonical = cwd.and_then(|path| std::fs::canonicalize(path).ok());
     let mut sandbox = crate::runtime::sandbox_ceiling(
         config,
@@ -285,9 +286,11 @@ fn frame_sandbox(
             .allow_write
             .into_iter()
             .flat_map(|root| {
+                // Uncanonicalizable roots are dropped rather than widened during temp intersection.
                 let canonical_root = std::fs::canonicalize(&root.path).ok();
                 temporary.allow_write.iter().filter_map(move |temp| {
                     let path = canonical_root.as_ref()?;
+                    // Uncanonicalizable temp roots are skipped rather than widening writes.
                     let temp = std::fs::canonicalize(&temp.path).ok()?;
                     let intersection = if path.starts_with(&temp) {
                         path

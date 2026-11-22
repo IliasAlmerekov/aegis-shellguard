@@ -9,8 +9,7 @@ use std::ffi::{OsStr, OsString};
 
 use crate::{PreparedSandboxCommand, SandboxConfig, SandboxError};
 
-pub(crate) fn sandbox_available_for(config: &SandboxConfig) -> bool {
-    let _ = config;
+pub(crate) fn sandbox_available_for(_config: &SandboxConfig) -> bool {
     false
 }
 

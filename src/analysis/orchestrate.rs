@@ -110,6 +110,7 @@ pub async fn run_with_budget(
         .inspect_err(|error| {
             tracing::warn!(%error, "built-in Scanner unavailable; Bash targets degrade");
         })
+        // None degrades Bash targets to GrammarUnavailable instead of trusting the narrower adapter.
         .ok();
     run_with_budget_in_cwd(
         command,

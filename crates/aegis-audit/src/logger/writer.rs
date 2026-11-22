@@ -229,6 +229,7 @@ impl AuditLock {
 
 impl Drop for AuditLock {
     fn drop(&mut self) {
+        // Drop cannot propagate errors; closing the file descriptor also releases the lock.
         let _ = self.file.unlock();
     }
 }

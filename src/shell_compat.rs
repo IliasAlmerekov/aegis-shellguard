@@ -282,6 +282,7 @@ pub(crate) fn exec_prepared_command(
         // on a platform with no confinement backend.
         #[cfg(windows)]
         {
+            // Parameter is used on non-Windows cfg branches.
             let _ = prepared;
             return Err(aegis_sandbox::SandboxError::Execution(
                 "native Windows is unsupported; run Aegis inside WSL2/Linux instead".to_string(),
@@ -353,6 +354,7 @@ pub(crate) fn shell_supports_login_flag(shell: &Path) -> bool {
 pub(crate) fn resolve_shell() -> PathBuf {
     let aegis_real_shell = env::var_os("AEGIS_REAL_SHELL");
     let shell_env = env::var_os("SHELL");
+    // Best-effort self-recursion guard; fall back to None when current_exe is unavailable.
     let current_exe = env::current_exe().ok();
     resolve_shell_inner(
         aegis_real_shell.as_deref(),
