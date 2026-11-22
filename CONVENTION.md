@@ -140,6 +140,7 @@ Architectural constraints:
   - pattern IDs in data: uppercase strings like `"FS-001"`
 - Prefer ASCII unless there is a strong reason not to.
 - Keep comments concise and explanatory, not redundant.
+- Every `unsafe` block carries a `// SAFETY:` comment directly above it naming the invariant that makes the call sound, enforced by `clippy::undocumented_unsafe_blocks` through `[workspace.lints]`.
 - All new public items must have `///` doc comments.
 - Avoid broad re-export layers unless they materially improve the public API.
 - Commits use the short conventional form (`feat:`, `fix:`, `perf:`, ...), subject line under 72 characters, body explaining why rather than what.

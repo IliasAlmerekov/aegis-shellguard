@@ -32,3 +32,6 @@ testing = []
 aegis-audit = { workspace = true, features = ["testing"] }
 tempfile = "3"
 aegis-policy.workspace = true
+
+[lints]
+workspace = true

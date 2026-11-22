@@ -11,3 +11,6 @@ description = "Shell command tokenizer and PrefixPattern matching for Aegis. Dep
 
 [dependencies]
 aegis-types.workspace = true
+
+[lints]
+workspace = true

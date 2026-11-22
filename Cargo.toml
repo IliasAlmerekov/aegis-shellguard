@@ -43,6 +43,12 @@ license = "MIT"
 repository = "https://github.com/IliasAlmerekov/aegis-shellguard"
 homepage = "https://github.com/IliasAlmerekov/aegis-shellguard"
 
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "deny"
+
+[lints]
+workspace = true
+
 # Single source of truth for every internal crate's version + path, so a
 # release bump is one edit instead of one per crate per dependent.
 [workspace.dependencies]

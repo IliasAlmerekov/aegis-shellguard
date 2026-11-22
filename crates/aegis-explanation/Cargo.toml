@@ -14,3 +14,6 @@ aegis-types.workspace = true
 aegis-policy.workspace = true
 aegis-config.workspace = true
 serde = { version = "1", features = ["derive"] }
+
+[lints]
+workspace = true
