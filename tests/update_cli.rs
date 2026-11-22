@@ -319,10 +319,7 @@ fn notice_prints_on_a_real_tty_only_for_a_strictly_newer_version() {
 
 #[test]
 fn interactive_shell_run_records_background_check_attempt_when_stale() {
-    let Some(script) = script_bin() else {
-        eprintln!("skipping: `script`(1) not found on PATH");
-        return;
-    };
+    let script = script_bin().expect("`script`(1) must be on PATH");
     let home = TempDir::new().unwrap();
     let stub = TempDir::new().unwrap();
     write_curl_stub(stub.path());
