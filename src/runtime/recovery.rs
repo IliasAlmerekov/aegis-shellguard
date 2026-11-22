@@ -454,11 +454,7 @@ mod tests {
     #[test]
     fn resolved_git_target_does_not_halt_an_unattended_run() {
         let dir = tempfile::TempDir::new().unwrap();
-        let init = crate::test_git::git_command(dir.path())
-            .args(["init", "-q"])
-            .status()
-            .unwrap();
-        assert!(init.success());
+        crate::test_git::git_init(dir.path());
         let command = format!(
             "git -C {} filter-branch --index-filter true",
             dir.path().display()

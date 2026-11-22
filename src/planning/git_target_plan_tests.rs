@@ -13,13 +13,7 @@ use crate::planning::git_target::{GitTarget, GitTargetUnresolved};
 use crate::planning::types::{CwdState, PlanningOutcome, SnapshotPlan};
 use crate::planning::{PlanningRequest, plan_with_context};
 use crate::runtime::RuntimeContext;
-use crate::test_git::git_command;
-
-pub(super) fn git_init(path: &Path) {
-    std::fs::create_dir_all(path).unwrap();
-    let status = git_command(path).args(["init", "-q"]).status().unwrap();
-    assert!(status.success());
-}
+use crate::test_git::git_init;
 
 pub(super) struct Fixture {
     _root: TempDir,

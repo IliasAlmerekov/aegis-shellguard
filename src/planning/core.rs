@@ -273,7 +273,7 @@ mod tests {
     use super::*;
     use crate::planning::types::{ExecutionDisposition, PlanningOutcome, SnapshotPlan};
     use crate::runtime::RuntimeContext;
-    use crate::test_git::git_command;
+    use crate::test_git::git_init;
     use aegis_config::AegisConfig;
     use aegis_policy::ExecutionTransport;
     use aegis_types::{Mode, SnapshotPolicy};
@@ -423,13 +423,7 @@ mod tests {
         let _guard = CURRENT_DIR_TEST_MUTEX.lock().unwrap();
         let original_cwd = std::env::current_dir().unwrap();
         let workspace = TempDir::new().unwrap();
-        assert!(
-            git_command(workspace.path())
-                .args(["init", "-q"])
-                .status()
-                .unwrap()
-                .success()
-        );
+        git_init(workspace.path());
         std::env::set_current_dir(workspace.path()).unwrap();
 
         let mut config = AegisConfig::default();
@@ -471,13 +465,7 @@ mod tests {
         let _guard = CURRENT_DIR_TEST_MUTEX.lock().unwrap();
         let original_cwd = std::env::current_dir().unwrap();
         let workspace = TempDir::new().unwrap();
-        assert!(
-            git_command(workspace.path())
-                .args(["init", "-q"])
-                .status()
-                .unwrap()
-                .success()
-        );
+        git_init(workspace.path());
         std::env::set_current_dir(workspace.path()).unwrap();
 
         let mut config = AegisConfig::default();
@@ -519,13 +507,7 @@ mod tests {
         let _guard = CURRENT_DIR_TEST_MUTEX.lock().unwrap();
         let original_cwd = std::env::current_dir().unwrap();
         let workspace = TempDir::new().unwrap();
-        assert!(
-            git_command(workspace.path())
-                .args(["init", "-q"])
-                .status()
-                .unwrap()
-                .success()
-        );
+        git_init(workspace.path());
         std::fs::write(workspace.path().join("cleanup.sh"), "echo ok\n").unwrap();
         std::env::set_current_dir(workspace.path()).unwrap();
 

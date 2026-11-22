@@ -17,3 +17,15 @@ pub(crate) fn git_command(dir: &Path) -> Command {
     }
     command
 }
+
+/// Creates `path` if needed and runs `git init -q` in it.
+pub(crate) fn git_init(path: &Path) {
+    std::fs::create_dir_all(path).unwrap();
+    assert!(
+        git_command(path)
+            .args(["init", "-q"])
+            .status()
+            .unwrap()
+            .success()
+    );
+}
