@@ -2,7 +2,7 @@
 
 use std::future::Future;
 
-use aegis_types::{RecoveryDegradation, SandboxStatus};
+use aegis_types::{EXIT_BLOCKED, EXIT_INTERNAL, RecoveryDegradation, SandboxStatus};
 
 use crate::planning::InterceptionPlan;
 use crate::runtime::{RuntimeContext, WatchAuditContext};
@@ -175,7 +175,7 @@ pub(super) async fn warn_if_sandbox_unavailable_at_startup(context: &RuntimeCont
     })
     .is_err()
     {
-        std::process::exit(4);
+        std::process::exit(EXIT_INTERNAL);
     }
 }
 
@@ -184,7 +184,7 @@ fn emit_watch_sandbox_event(event: WatchSandboxEvent, id: &Option<String>) {
         WatchSandboxEvent::RequiredBlocked => emit_frame(&OutputFrame::SandboxResult {
             id: id.clone(),
             decision: OutputDecision::Blocked,
-            exit_code: 3,
+            exit_code: EXIT_BLOCKED,
             code: crate::runtime::SANDBOX_REQUIRED_UNAVAILABLE_CODE,
             sandbox_status: SandboxStatus::Unavailable,
             message: crate::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
@@ -192,19 +192,19 @@ fn emit_watch_sandbox_event(event: WatchSandboxEvent, id: &Option<String>) {
         WatchSandboxEvent::RequiredBlockedNested => emit_frame(&OutputFrame::SandboxResult {
             id: id.clone(),
             decision: OutputDecision::Blocked,
-            exit_code: 3,
+            exit_code: EXIT_BLOCKED,
             code: crate::runtime::SANDBOX_REQUIRED_NESTED_UNAVAILABLE_CODE,
             sandbox_status: SandboxStatus::Unavailable,
             message: crate::runtime::SANDBOX_REQUIRED_NESTED_UNAVAILABLE_MESSAGE,
         }),
         WatchSandboxEvent::SetupFailed(err) => emit_frame(&OutputFrame::Error {
             id: id.clone(),
-            exit_code: 4,
+            exit_code: EXIT_INTERNAL,
             message: format!("Sandbox setup failed; command not executed: {err}"),
         }),
     };
     if result.is_err() {
-        std::process::exit(4);
+        std::process::exit(EXIT_INTERNAL);
     }
 }
 
@@ -247,12 +247,12 @@ pub(super) fn append_watch_execution_audit(
 pub(super) fn emit_watch_audit_error(id: &Option<String>, err: &crate::error::AegisError) {
     if emit_frame(&OutputFrame::Error {
         id: id.clone(),
-        exit_code: 4,
+        exit_code: EXIT_INTERNAL,
         message: format!("audit log write failed: {err}"),
     })
     .is_err()
     {
-        std::process::exit(4);
+        std::process::exit(EXIT_INTERNAL);
     }
 }
 

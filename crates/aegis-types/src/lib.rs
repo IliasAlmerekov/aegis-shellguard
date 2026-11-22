@@ -16,6 +16,34 @@
 //! human decision outcome — with no dependencies on any other Aegis crate.
 //! Logic that *produces* these types (the scanner, parser, policy engine, audit
 //! logger) lives in the crates that depend on this one.
+//!
+//! Exit-code contract for Aegis-generated outcomes:
+//!
+//! | Code | Meaning |
+//! |------|---------|
+//! | 0 | Success. |
+//! | 1 | Snapshot absent for `snapshot verify` or `rollback` (ADR-052). |
+//! | 2 | Denied or invalid invocation; rollback may refuse an inconclusive check. |
+//! | 3 | Blocked. |
+//! | 4 | Aegis or configuration error. |
+//! | 5 | Snapshot verification was inconclusive and none was absent. |
+//!
+//! A launched command's exit code is passed through, including these values.
+
+mod exits {
+    /// The user denied the command at the confirmation dialog.
+    pub const EXIT_DENIED: i32 = 2;
+    /// The command matched a `Block`-level pattern and was hard-stopped.
+    pub const EXIT_BLOCKED: i32 = 3;
+    /// Aegis or configuration failure prevented execution or validation.
+    pub const EXIT_INTERNAL: i32 = 4;
+    /// A Snapshot liveness check found the artifact absent.
+    pub const EXIT_ABSENT: i32 = 1;
+    /// Snapshot verification was inconclusive and none was absent.
+    pub const EXIT_INCONCLUSIVE: i32 = 5;
+    /// The invocation is invalid.
+    pub const EXIT_USAGE: i32 = 2;
+}
 
 mod analysis;
 mod assessment;
@@ -38,6 +66,9 @@ pub use analysis::{
 pub use assessment::{Assessment, AssessmentBasis, DecisionSource, HighlightRange, MatchResult};
 pub use command::{InlineScript, ParsedCommand};
 pub use decision::Decision;
+pub use exits::{
+    EXIT_ABSENT, EXIT_BLOCKED, EXIT_DENIED, EXIT_INCONCLUSIVE, EXIT_INTERNAL, EXIT_USAGE,
+};
 pub use pattern::{Category, Pattern, PatternSource, PatternToken, PrefixPattern};
 pub use policy::{AllowlistOverrideLevel, CiPolicy, Mode, PolicyRuleDecision, SnapshotPolicy};
 pub use recovery::{

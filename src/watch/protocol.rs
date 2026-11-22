@@ -219,7 +219,7 @@ where
 /// Write one NDJSON frame to process stdout.
 ///
 /// Returns `Err` if the write fails — the caller must treat this as terminal
-/// (broken control channel) and call `std::process::exit(4)`.
+/// (broken control channel) and call `std::process::exit(aegis_types::EXIT_INTERNAL)`.
 pub fn emit_frame(frame: &OutputFrame) -> std::io::Result<()> {
     let line = serde_json::to_string(frame).map_err(std::io::Error::other)?;
     let stdout = std::io::stdout();

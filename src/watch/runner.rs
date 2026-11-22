@@ -23,7 +23,7 @@ use aegis_tui::{
     show_confirmation_via_tty_with_decision, show_policy_block_via_tty,
     show_recovery_override_via_tty,
 };
-use aegis_types::Decision;
+use aegis_types::{Decision, EXIT_BLOCKED, EXIT_DENIED, EXIT_INTERNAL};
 
 use super::protocol::{
     InputFrame, MAX_FRAME_BYTES, OutputDecision, OutputFrame, ReadLineResult, emit_frame,
@@ -64,7 +64,7 @@ pub async fn run(prepared: &PreparedPlanner, ci_detected: bool) -> i32 {
             Ok(crate::toggle::ToggleState::Enabled) => {}
             Err(err) => {
                 eprintln!("error: failed to read toggle state: {err}");
-                return 4;
+                return EXIT_INTERNAL;
             }
         }
     }
@@ -73,7 +73,7 @@ pub async fn run(prepared: &PreparedPlanner, ci_detected: bool) -> i32 {
         PreparedPlanner::Ready(context) => context,
         PreparedPlanner::SetupFailure(plan) => {
             report_watch_setup_failure(plan);
-            return 4;
+            return EXIT_INTERNAL;
         }
     };
 
@@ -87,7 +87,7 @@ pub async fn run(prepared: &PreparedPlanner, ci_detected: bool) -> i32 {
         match read_bounded_line(&mut reader, MAX_FRAME_BYTES).await {
             Err(e) => {
                 eprintln!("aegis: stdin read error: {e}");
-                return 4;
+                return EXIT_INTERNAL;
             }
             Ok(ReadLineResult::Eof) => return 0,
             Ok(ReadLineResult::Oversized) => {
@@ -116,7 +116,7 @@ pub async fn run_disabled() -> i32 {
         match read_bounded_line(&mut reader, MAX_FRAME_BYTES).await {
             Err(e) => {
                 eprintln!("aegis: stdin read error: {e}");
-                return 4;
+                return EXIT_INTERNAL;
             }
             Ok(ReadLineResult::Eof) => return 0,
             Ok(ReadLineResult::Oversized) => {
@@ -180,7 +180,7 @@ async fn process_frame(line: String, context: &RuntimeContext, ci_detected: bool
     match outcome {
         PlanningOutcome::SetupFailure(plan) => {
             report_watch_setup_failure(&plan);
-            std::process::exit(4);
+            std::process::exit(EXIT_INTERNAL);
         }
         PlanningOutcome::Planned(plan) => run_watch_plan(frame, context, plan, ci_detected).await,
     }
@@ -449,11 +449,11 @@ async fn run_watch_plan_with_persistence<C, R, P>(
                         if emit_frame(&OutputFrame::Result {
                             id,
                             decision: OutputDecision::Denied,
-                            exit_code: 2,
+                            exit_code: EXIT_DENIED,
                         })
                         .is_err()
                         {
-                            std::process::exit(4);
+                            std::process::exit(EXIT_INTERNAL);
                         }
                         return;
                     }
@@ -489,11 +489,11 @@ async fn run_watch_plan_with_persistence<C, R, P>(
             if emit_frame(&OutputFrame::Result {
                 id,
                 decision: OutputDecision::Denied,
-                exit_code: 2,
+                exit_code: EXIT_DENIED,
             })
             .is_err()
             {
-                std::process::exit(4);
+                std::process::exit(EXIT_INTERNAL);
             }
         }
         _ => {
@@ -513,11 +513,11 @@ async fn run_watch_plan_with_persistence<C, R, P>(
             if emit_frame(&OutputFrame::Result {
                 id,
                 decision: OutputDecision::Blocked,
-                exit_code: 3,
+                exit_code: EXIT_BLOCKED,
             })
             .is_err()
             {
-                std::process::exit(4);
+                std::process::exit(EXIT_INTERNAL);
             }
         }
     }
@@ -623,12 +623,12 @@ async fn execute_and_emit(cmd: &str, cwd: &std::path::Path, id: Option<String>) 
 fn emit_error_or_exit(id: Option<String>, message: String) {
     if emit_frame(&OutputFrame::Error {
         id,
-        exit_code: 4,
+        exit_code: EXIT_INTERNAL,
         message,
     })
     .is_err()
     {
-        std::process::exit(4);
+        std::process::exit(EXIT_INTERNAL);
     }
 }
 
@@ -728,7 +728,7 @@ pub(super) async fn execute_prepared_and_emit(
         if emit_frame(&frame).is_err() {
             // Best-effort cleanup before exiting on a broken frame stream.
             let _ = child.kill().await;
-            std::process::exit(4);
+            std::process::exit(EXIT_INTERNAL);
         }
     }
 
@@ -744,7 +744,7 @@ pub(super) async fn execute_prepared_and_emit(
                 128
             }
         }),
-        Err(_) => 4,
+        Err(_) => EXIT_INTERNAL,
     };
 
     if emit_frame(&OutputFrame::Result {
@@ -754,7 +754,7 @@ pub(super) async fn execute_prepared_and_emit(
     })
     .is_err()
     {
-        std::process::exit(4);
+        std::process::exit(EXIT_INTERNAL);
     }
 }
 

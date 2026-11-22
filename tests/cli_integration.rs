@@ -29,6 +29,20 @@ fn read_audit_entries(home: &Path) -> Vec<Value> {
 }
 
 #[test]
+fn shell_compat_missing_command_is_usage_error() {
+    let home = TempDir::new().unwrap();
+    let output = base_command(home.path())
+        .current_dir(home.path())
+        .arg("-c")
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("error:"));
+}
+
+#[test]
 fn shell_wrapper_command_flag_executes_command_with_stdio_and_exit_code() {
     let home = TempDir::new().unwrap();
 

@@ -9,7 +9,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
-use aegis_types::SandboxStatus;
+use aegis_types::{EXIT_INTERNAL, SandboxStatus};
 
 use crate::{SandboxConfig, SandboxError};
 
@@ -397,41 +397,41 @@ pub(crate) fn run_inner_landlock_wrapper() -> i32 {
         Some(v) => v.into_vec(),
         None => {
             eprintln!("aegis: inner landlock wrapper: missing {AEGIS_LANDLOCK_ALLOW_WRITE}");
-            return crate::EXIT_INTERNAL;
+            return EXIT_INTERNAL;
         }
     };
     let allow_write = match parse_allow_write(&encoded) {
         Ok(paths) => paths,
         Err(e) => {
             eprintln!("aegis: inner landlock wrapper: {e}");
-            return crate::EXIT_INTERNAL;
+            return EXIT_INTERNAL;
         }
     };
     let config = inner_config(allow_write);
     if let Err(e) = apply_landlock_restrictions(&config) {
         eprintln!("aegis: failed to apply landlock: {e}");
-        return crate::EXIT_INTERNAL;
+        return EXIT_INTERNAL;
     }
     if let Err(e) = report_status(SandboxStatus::Active) {
         eprintln!("aegis: failed to report status: {e}");
-        return crate::EXIT_INTERNAL;
+        return EXIT_INTERNAL;
     }
     if let Err(e) = wait_for_release() {
         eprintln!("aegis: inner landlock wrapper: {e}");
-        return crate::EXIT_INTERNAL;
+        return EXIT_INTERNAL;
     }
 
     // argv after the flag: [program, args...].
     let argv: Vec<OsString> = std::env::args_os().skip(2).collect();
     let Some(program) = argv.first() else {
         eprintln!("aegis: inner landlock wrapper: no program to exec");
-        return crate::EXIT_INTERNAL;
+        return EXIT_INTERNAL;
     };
 
     use std::os::unix::process::CommandExt;
     let err = std::process::Command::new(program).args(&argv[1..]).exec();
     eprintln!("aegis: failed to exec {program:?}: {err}");
-    crate::EXIT_INTERNAL
+    EXIT_INTERNAL
 }
 
 /// Return the Landlock ABI version supported by this kernel (0 if unavailable).
