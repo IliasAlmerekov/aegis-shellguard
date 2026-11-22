@@ -4,8 +4,9 @@
 //! the plan asks for, destroys the target, and restores it through the rollback
 //! registry.
 
+mod support;
+
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use aegis::planning::{
     CwdState, PlanningOutcome, PlanningRequest, SnapshotPlan, plan_with_context,
@@ -15,23 +16,11 @@ use aegis_config::AegisConfig;
 use aegis_policy::ExecutionTransport;
 use aegis_snapshot::SnapshotRegistry;
 use aegis_types::{Mode, SnapshotPolicy};
+use support::run_git;
 use tempfile::TempDir;
 
-fn git(dir: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).into_owned()
+fn git(repo: &Path, args: &[&str]) -> String {
+    String::from_utf8_lossy(&run_git(repo, args).stdout).into_owned()
 }
 
 /// A repository with one commit holding `tracked.txt`.

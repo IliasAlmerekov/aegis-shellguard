@@ -1,3 +1,5 @@
+mod support;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -7,6 +9,7 @@ use tempfile::TempDir;
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+use support::init_git_repo;
 
 fn aegis_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
@@ -40,28 +43,6 @@ fn write_executable(path: &Path, body: &str) {
         permissions.set_mode(0o755);
         fs::set_permissions(path, permissions).unwrap();
     }
-}
-
-fn init_git_repo(path: &Path) {
-    Command::new("git")
-        .arg("init")
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args([
-            "-c",
-            "user.email=test@aegis.dev",
-            "-c",
-            "user.name=Aegis Test",
-            "commit",
-            "--allow-empty",
-            "-m",
-            "init",
-        ])
-        .current_dir(path)
-        .output()
-        .unwrap();
 }
 
 #[test]

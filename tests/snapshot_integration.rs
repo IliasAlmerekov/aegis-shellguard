@@ -1,3 +1,5 @@
+mod support;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -7,6 +9,7 @@ use tempfile::TempDir;
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+use support::{git_command, init_git_repo, run_git};
 
 fn aegis_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
@@ -42,28 +45,6 @@ fn write_executable(path: &Path, body: &str) {
     }
 }
 
-fn init_git_repo(path: &Path) {
-    Command::new("git")
-        .arg("init")
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args([
-            "-c",
-            "user.email=test@aegis.dev",
-            "-c",
-            "user.name=Aegis Test",
-            "commit",
-            "--allow-empty",
-            "-m",
-            "init",
-        ])
-        .current_dir(path)
-        .output()
-        .unwrap();
-}
-
 /// Write a global user config (`~/.config/aegis/config.toml`) with the given
 /// contents.
 ///
@@ -78,28 +59,12 @@ fn write_global_config(home: &Path, contents: &str) {
 
 fn commit_file(path: &Path, name: &str, contents: &str) {
     fs::write(path.join(name), contents).unwrap();
-    Command::new("git")
-        .args(["add", name])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args([
-            "-c",
-            "user.email=test@aegis.dev",
-            "-c",
-            "user.name=Aegis Test",
-            "commit",
-            "-m",
-            &format!("add {name}"),
-        ])
-        .current_dir(path)
-        .output()
-        .unwrap();
+    run_git(path, &["add", name]);
+    run_git(path, &["commit", "-m", &format!("add {name}")]);
 }
 
 fn add_worktree(repo: &Path, worktree: &Path) -> bool {
-    Command::new("git")
+    git_command(repo)
         .args([
             "worktree",
             "add",
@@ -107,7 +72,6 @@ fn add_worktree(repo: &Path, worktree: &Path) -> bool {
             "HEAD",
             "--detach",
         ])
-        .current_dir(repo)
         .output()
         .unwrap()
         .status
@@ -364,12 +328,7 @@ reason = "rollback conflict test"
     assert!(stderr.contains("git diff"));
     assert!(stderr.contains("git stash drop"));
 
-    let stash_list = Command::new("git")
-        .args(["stash", "list"])
-        .current_dir(workspace.path())
-        .output()
-        .unwrap();
-    assert!(stash_list.status.success());
+    let stash_list = run_git(workspace.path(), &["stash", "list"]);
     assert!(
         !String::from_utf8_lossy(&stash_list.stdout)
             .trim()

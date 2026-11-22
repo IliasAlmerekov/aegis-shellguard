@@ -12,7 +12,7 @@ mod support;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Output, Stdio};
 
 use tempfile::TempDir;
 
@@ -27,11 +27,7 @@ fn outside_tmp() -> Option<TempDir> {
 
 /// `git` with every inherited repository variable and config removed.
 fn git(home: &Path, dir: &Path, args: &[&str]) {
-    let output = Command::new("git")
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_COMMON_DIR")
-        .env_remove("GIT_INDEX_FILE")
+    let output = support::git_command(dir)
         .env("HOME", home)
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_AUTHOR_NAME", "t")
@@ -40,7 +36,6 @@ fn git(home: &Path, dir: &Path, args: &[&str]) {
         .env("GIT_COMMITTER_EMAIL", "t@example.com")
         .args(["-c", "protocol.file.allow=always"])
         .args(args)
-        .current_dir(dir)
         .output()
         .expect("git must be installed");
     assert!(

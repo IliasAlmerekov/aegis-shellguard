@@ -8,7 +8,7 @@ mod support;
 
 use std::fs;
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use tempfile::TempDir;
 
@@ -296,11 +296,7 @@ fn snapshot_failure_reaches_diagnostic_stream_and_denies_on_recovery_degradation
     let marker = workspace.path().join("executed");
     fs::write(workspace.path().join("run.sh"), "printf ran > executed\n").unwrap();
 
-    Command::new("git")
-        .arg("init")
-        .current_dir(workspace.path())
-        .output()
-        .unwrap();
+    run_git(workspace.path(), &["init"]);
     // No initial commit: `git stash push` on this repo fails with "You do not
     // have the initial commit yet", which is the failure this test drives.
 
@@ -376,13 +372,10 @@ reason = "strict override allowlist"
     )
     .unwrap();
 
-    Command::new("git")
-        .arg("init")
-        .current_dir(workspace.path())
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args([
+    run_git(workspace.path(), &["init"]);
+    run_git(
+        workspace.path(),
+        &[
             "-c",
             "user.email=test@aegis.dev",
             "-c",
@@ -391,10 +384,8 @@ reason = "strict override allowlist"
             "--allow-empty",
             "-m",
             "init",
-        ])
-        .current_dir(workspace.path())
-        .output()
-        .unwrap();
+        ],
+    );
     fs::write(workspace.path().join("dirty.txt"), "needs snapshot\n").unwrap();
 
     let path = format!(
@@ -465,13 +456,10 @@ reason = "rollback test allowlist"
     )
     .unwrap();
 
-    Command::new("git")
-        .arg("init")
-        .current_dir(workspace.path())
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args([
+    run_git(workspace.path(), &["init"]);
+    run_git(
+        workspace.path(),
+        &[
             "-c",
             "user.email=test@aegis.dev",
             "-c",
@@ -480,18 +468,13 @@ reason = "rollback test allowlist"
             "--allow-empty",
             "-m",
             "init",
-        ])
-        .current_dir(workspace.path())
-        .output()
-        .unwrap();
+        ],
+    );
     fs::write(workspace.path().join("tracked.txt"), "original\n").unwrap();
-    Command::new("git")
-        .args(["add", "tracked.txt"])
-        .current_dir(workspace.path())
-        .output()
-        .unwrap();
-    Command::new("git")
-        .args([
+    run_git(workspace.path(), &["add", "tracked.txt"]);
+    run_git(
+        workspace.path(),
+        &[
             "-c",
             "user.email=test@aegis.dev",
             "-c",
@@ -499,10 +482,8 @@ reason = "rollback test allowlist"
             "commit",
             "-m",
             "add tracked file",
-        ])
-        .current_dir(workspace.path())
-        .output()
-        .unwrap();
+        ],
+    );
 
     fs::write(workspace.path().join("tracked.txt"), "needs rollback\n").unwrap();
 

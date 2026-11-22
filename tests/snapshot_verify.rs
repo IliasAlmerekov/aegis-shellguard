@@ -1,5 +1,7 @@
 //! `aegis snapshot verify` and the `aegis rollback` liveness preflight (#215, ADR-052).
 
+mod support;
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -7,6 +9,7 @@ use std::process::{Command, Output, Stdio};
 
 use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
 use aegis_types::{Decision, RiskLevel};
+use support::run_git;
 use tempfile::TempDir;
 
 fn aegis_bin() -> PathBuf {
@@ -90,16 +93,9 @@ fn code(output: &Output) -> i32 {
 }
 
 fn git(repo: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(repo)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "git {args:?}: {}", stderr(&output));
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
+    String::from_utf8_lossy(&run_git(repo, args).stdout)
+        .trim()
+        .to_string()
 }
 
 /// A git repository with one stash; returns the repository and the git Snapshot id.

@@ -2,7 +2,6 @@
 //! real scanner and the real Snapshot registry applicability checks.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use aegis_config::AegisConfig;
 use aegis_policy::ExecutionTransport;
@@ -14,18 +13,11 @@ use crate::planning::git_target::{GitTarget, GitTargetUnresolved};
 use crate::planning::types::{CwdState, PlanningOutcome, SnapshotPlan};
 use crate::planning::{PlanningRequest, plan_with_context};
 use crate::runtime::RuntimeContext;
+use crate::test_git::git_command;
 
 pub(super) fn git_init(path: &Path) {
     std::fs::create_dir_all(path).unwrap();
-    let status = Command::new("git")
-        .arg("init")
-        .arg("-q")
-        .current_dir(path)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .status()
-        .unwrap();
+    let status = git_command(path).args(["init", "-q"]).status().unwrap();
     assert!(status.success());
 }
 

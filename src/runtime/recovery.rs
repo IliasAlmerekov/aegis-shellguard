@@ -454,12 +454,8 @@ mod tests {
     #[test]
     fn resolved_git_target_does_not_halt_an_unattended_run() {
         let dir = tempfile::TempDir::new().unwrap();
-        let init = std::process::Command::new("git")
+        let init = crate::test_git::git_command(dir.path())
             .args(["init", "-q"])
-            .current_dir(dir.path())
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE")
-            .env_remove("GIT_INDEX_FILE")
             .status()
             .unwrap();
         assert!(init.success());

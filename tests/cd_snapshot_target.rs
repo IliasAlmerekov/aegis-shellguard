@@ -2,11 +2,14 @@
 //! command line leaves the Snapshot location unknown, and does not halt when
 //! the directory is a plain one a non-git stage can run in.
 
+mod support;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 use serde_json::Value;
+use support::run_git;
 use tempfile::TempDir;
 
 fn toml_string(value: &str) -> String {
@@ -41,14 +44,7 @@ fn commit_repo(dir: &Path) {
             "init",
         ],
     ] {
-        let out = Command::new("git")
-            .args(&args)
-            .current_dir(dir)
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE")
-            .output()
-            .unwrap();
-        assert!(out.status.success());
+        run_git(dir, &args);
     }
 }
 

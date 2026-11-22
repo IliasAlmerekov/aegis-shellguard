@@ -1,3 +1,5 @@
+mod support;
+
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -7,6 +9,7 @@ use std::thread;
 use std::time::Duration;
 
 use serde_json::Value;
+use support::init_git_repo;
 use tempfile::TempDir;
 
 fn aegis_bin() -> PathBuf {
@@ -148,35 +151,6 @@ where
 fn read_single_audit_entry(home: &Path) -> Value {
     let contents = fs::read_to_string(home.join(".aegis").join("audit.jsonl")).unwrap();
     serde_json::from_str(contents.trim()).unwrap()
-}
-
-fn init_git_repo(path: &Path) {
-    let init = Command::new("git")
-        .arg("init")
-        .current_dir(path)
-        .output()
-        .unwrap();
-    assert!(init.status.success());
-    let add = Command::new("git")
-        .args(["add", "."])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    assert!(add.status.success());
-    let commit = Command::new("git")
-        .args([
-            "-c",
-            "user.email=test@aegis.dev",
-            "-c",
-            "user.name=Aegis Test",
-            "commit",
-            "-m",
-            "init",
-        ])
-        .current_dir(path)
-        .output()
-        .unwrap();
-    assert!(commit.status.success());
 }
 
 #[test]

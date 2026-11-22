@@ -276,6 +276,8 @@ Minimum expectations:
 - Hot-path behavior must be checked for performance regressions when parser/scanner logic changes.
 - A test of a shell script runs the script, or the block under test, against a fixture.
   An assert on the script's source text proves nothing about what it does.
+- A test spawns `git` through `git_command` in `src/test_git.rs`, which strips the inherited `GIT_` variables, such as the `GIT_DIR` a worktree hook exports.
+  Integration tests take it, `run_git` and `init_git_repo` from `tests/support`. `scripts/lint.sh text` fails on any other `Command::new("git")`.
 - `tests/evaluation_golden.rs` pins the verdict of a fixed command corpus in `tests/fixtures/evaluation_golden.jsonl`.
   After a change that alters a verdict, regenerate it with `AEGIS_UPDATE_EVALUATION_GOLDEN=1 cargo test --test evaluation_golden` on an otherwise idle machine.
   A behaviour-changing PR commits the new golden in the same PR; a cleanup PR never edits it.

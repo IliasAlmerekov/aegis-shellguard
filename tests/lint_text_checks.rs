@@ -1,9 +1,12 @@
 //! `scripts/lint.sh text` run against fixture trees, never the checkout.
 
+mod support;
+
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
 
+use support::run_git;
 use tempfile::TempDir;
 
 fn run_text(root: &Path) -> Output {
@@ -202,13 +205,7 @@ fn text_skips_globs_placeholders_home_templates_bare_ext_slashes_and_allowlist()
 #[test]
 fn text_skips_gitignored_backticked_paths() {
     let tree = TempDir::new().unwrap();
-    let init = Command::new("git")
-        .arg("init")
-        .arg("-q")
-        .current_dir(tree.path())
-        .status()
-        .expect("git init should run");
-    assert!(init.success());
+    run_git(tree.path(), &["init", "-q"]);
 
     write_file(
         tree.path(),
@@ -290,6 +287,43 @@ fn text_passes_when_tamper_check_self_test_passes() {
         tree.path(),
         "scripts/test-tamper-check.test.sh",
         "#!/usr/bin/env bash\nexit 0\n",
+    );
+    let output = run_text(tree.path());
+    assert!(output.status.success(), "{}", stdout(&output));
+}
+
+/// A git spawn, assembled so this file does not trip the check it tests.
+const GIT_SPAWN: &str = concat!("let _ = std::process::Command::new(", "\"git\");\n");
+
+#[test]
+fn text_fails_on_git_spawn_outside_the_shared_helpers_and_names_each() {
+    let tree = TempDir::new().unwrap();
+    let offenders = [
+        "tests/plain.rs",
+        "tests/support/extra.rs",
+        "crates/aegis-x/tests/it.rs",
+        "src/lib_tests.rs",
+        "crates/aegis-x/src/lib.rs",
+    ];
+    for rel in offenders {
+        write_file(tree.path(), rel, GIT_SPAWN);
+    }
+    let output = run_text(tree.path());
+    assert!(!output.status.success());
+    let report = stdout(&output);
+    for rel in offenders {
+        assert!(report.contains(rel), "{rel} missing from:\n{report}");
+    }
+}
+
+#[test]
+fn text_passes_git_spawn_in_the_shared_helpers() {
+    let tree = TempDir::new().unwrap();
+    write_file(tree.path(), "src/test_git.rs", GIT_SPAWN);
+    write_file(
+        tree.path(),
+        "crates/aegis-snapshot/src/git/mod.rs",
+        GIT_SPAWN,
     );
     let output = run_text(tree.path());
     assert!(output.status.success(), "{}", stdout(&output));

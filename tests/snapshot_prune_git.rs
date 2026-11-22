@@ -1,9 +1,12 @@
+mod support;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use aegis_audit::AuditLogger;
 use aegis_types::Decision;
+use support::{init_git_repo, run_git};
 use tempfile::TempDir;
 
 fn aegis_bin() -> PathBuf {
@@ -20,25 +23,12 @@ fn run_prune(home: &Path, extra_args: &[&str]) -> Output {
     cmd.output().unwrap()
 }
 
-fn run_git(args: &[&str], cwd: &Path) -> Output {
-    let mut cmd = Command::new("git");
-    cmd.args(args).current_dir(cwd);
-    cmd.output().unwrap()
-}
-
-fn init_git_repo(repo: &Path) {
-    run_git(&["init"], repo);
-    run_git(&["config", "user.email", "test@aegis.dev"], repo);
-    run_git(&["config", "user.name", "Aegis Test"], repo);
-    run_git(&["commit", "--allow-empty", "-m", "init"], repo);
-}
-
 fn create_stash(repo: &Path, name: &str) -> String {
     fs::write(repo.join(name), format!("{name}\n")).unwrap();
-    run_git(&["add", name], repo);
+    run_git(repo, &["add", name]);
     let message = format!("aegis-snap-{name}");
-    run_git(&["stash", "push", "-m", &message], repo);
-    let out = run_git(&["rev-parse", "stash@{0}"], repo);
+    run_git(repo, &["stash", "push", "-m", &message]);
+    let out = run_git(repo, &["rev-parse", "stash@{0}"]);
     let hash = String::from_utf8_lossy(&out.stdout).trim().to_string();
     format!("{}{}{}", repo.display(), '\t', hash)
 }
@@ -74,7 +64,7 @@ fn seed_snapshot_record(home: &Path, snapshot_id: &str, timestamp: &str) {
 }
 
 fn stash_list(repo: &Path) -> Vec<String> {
-    let out = run_git(&["stash", "list", "--format=%gd %s"], repo);
+    let out = run_git(repo, &["stash", "list", "--format=%gd %s"]);
     String::from_utf8_lossy(&out.stdout)
         .lines()
         .map(str::to_string)

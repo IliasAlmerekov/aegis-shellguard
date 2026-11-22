@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Changed: every test `git` spawn goes through one `git_command` in `src/test_git.rs` that strips inherited `GIT_` variables, so a test run from a linked-worktree hook no longer writes into the developer's repository; `tests/common` merged into `tests/support`, `init_git_repo` and `run_git` exist once, and `scripts/lint.sh text` fails on any other `Command::new("git")` (#291).
 - Changed: Centralize Aegis exit-code constants in `aegis-types` (#624).
 - Changed: added `// SAFETY:` comments naming true invariants to every `unsafe` block across the workspace, moved env-mutating unit tests in `aegis-config` and `aegis` into isolated integration-test binaries, denied `clippy::undocumented_unsafe_blocks` via `[workspace.lints]` in all 12 workspace manifests, and added the safety-comment rule to `CONVENTION.md` section 4; behavior is unchanged (#623).
 - Changed: justified deliberately dropped results with why comments, renamed unused bindings to `_x` across the remaining production crates, and added the dropped-result rule to `CONVENTION.md` section 5; behavior is unchanged (#622).

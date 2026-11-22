@@ -11,8 +11,8 @@
 use std::collections::BTreeSet;
 use std::fs;
 
-mod common;
-use common::{assert_no_dep, repo_root};
+mod support;
+use support::{assert_no_dep, repo_root};
 
 fn read_file(relative: &str) -> String {
     fs::read_to_string(repo_root().join(relative))
@@ -66,7 +66,7 @@ fn public_api_surface_is_stable() {
 
 // ── Workspace crate dependency DAG ───────────────────────────────────────────
 //
-// `assert_no_dep` / `crate_deps_section` / `repo_root` live in `tests/common`
+// `assert_no_dep` / `crate_deps_section` / `repo_root` live in `tests/support`
 // and are shared with `tests/aegis_language_boundary.rs`.
 
 #[test]

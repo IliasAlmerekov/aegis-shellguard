@@ -31,3 +31,6 @@ pub mod toggle;
 pub mod update;
 /// Watch-mode NDJSON protocol and runner.
 pub mod watch;
+
+#[cfg(test)]
+mod test_git;

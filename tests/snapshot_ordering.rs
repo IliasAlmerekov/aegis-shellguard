@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use serde_json::Value;
+use support::{init_git_repo, run_git};
 use tempfile::TempDir;
 
 fn aegis_bin() -> PathBuf {
@@ -39,31 +40,6 @@ fn read_audit_entries(home: &Path) -> Vec<Value> {
         .filter(|line| !line.trim().is_empty())
         .map(|line| serde_json::from_str::<Value>(line).unwrap())
         .collect()
-}
-
-fn init_git_repo(path: &Path) {
-    let init = Command::new("git")
-        .arg("init")
-        .current_dir(path)
-        .output()
-        .expect("git init");
-    assert!(init.status.success(), "git init failed: {init:?}");
-
-    let commit = Command::new("git")
-        .args([
-            "-c",
-            "user.email=test@aegis.dev",
-            "-c",
-            "user.name=Aegis Test",
-            "commit",
-            "--allow-empty",
-            "-m",
-            "init",
-        ])
-        .current_dir(path)
-        .output()
-        .expect("git commit");
-    assert!(commit.status.success(), "git commit failed: {commit:?}");
 }
 
 fn canonical_test_path(path: &Path) -> PathBuf {
@@ -378,26 +354,8 @@ fn test_watch_mode_approved_danger_command_child_observes_snapshot_before_exec()
     // Commit a baseline file so the repo is valid for stashing.
     let baseline = cwd_path.join("baseline.txt");
     fs::write(&baseline, "baseline\n").unwrap();
-    let add = Command::new("git")
-        .args(["add", "baseline.txt"])
-        .current_dir(&cwd_path)
-        .output()
-        .expect("git add baseline");
-    assert!(add.status.success(), "git add failed: {add:?}");
-    let commit = Command::new("git")
-        .args([
-            "-c",
-            "user.email=test@aegis.dev",
-            "-c",
-            "user.name=Aegis Test",
-            "commit",
-            "-m",
-            "baseline",
-        ])
-        .current_dir(&cwd_path)
-        .output()
-        .expect("git commit baseline");
-    assert!(commit.status.success(), "git commit failed: {commit:?}");
+    run_git(&cwd_path, &["add", "baseline.txt"]);
+    run_git(&cwd_path, &["commit", "-m", "baseline"]);
 
     // Create an untracked marker file. The git snapshot must capture it before
     // the child runs, and must leave it on disk while doing so (issue #356).
@@ -483,26 +441,8 @@ fn test_shell_approved_danger_command_child_observes_snapshot_before_exec() {
     // Commit a baseline file so the repo is valid for stashing.
     let baseline = cwd_path.join("baseline.txt");
     fs::write(&baseline, "baseline\n").unwrap();
-    let add = Command::new("git")
-        .args(["add", "baseline.txt"])
-        .current_dir(&cwd_path)
-        .output()
-        .expect("git add baseline");
-    assert!(add.status.success(), "git add failed: {add:?}");
-    let commit = Command::new("git")
-        .args([
-            "-c",
-            "user.email=test@aegis.dev",
-            "-c",
-            "user.name=Aegis Test",
-            "commit",
-            "-m",
-            "baseline",
-        ])
-        .current_dir(&cwd_path)
-        .output()
-        .expect("git commit baseline");
-    assert!(commit.status.success(), "git commit failed: {commit:?}");
+    run_git(&cwd_path, &["add", "baseline.txt"]);
+    run_git(&cwd_path, &["commit", "-m", "baseline"]);
 
     // Create an untracked marker file. The git snapshot must capture it before
     // the child runs, and must leave it on disk while doing so (issue #356).
@@ -578,26 +518,8 @@ fn test_sandboxed_approved_danger_command_records_snapshots_before_exec() {
     // Commit a baseline file so the repo is valid for stashing.
     let baseline = cwd_path.join("baseline.txt");
     fs::write(&baseline, "baseline\n").unwrap();
-    let add = Command::new("git")
-        .args(["add", "baseline.txt"])
-        .current_dir(&cwd_path)
-        .output()
-        .expect("git add baseline");
-    assert!(add.status.success(), "git add failed: {add:?}");
-    let commit = Command::new("git")
-        .args([
-            "-c",
-            "user.email=test@aegis.dev",
-            "-c",
-            "user.name=Aegis Test",
-            "commit",
-            "-m",
-            "baseline",
-        ])
-        .current_dir(&cwd_path)
-        .output()
-        .expect("git commit baseline");
-    assert!(commit.status.success(), "git commit failed: {commit:?}");
+    run_git(&cwd_path, &["add", "baseline.txt"]);
+    run_git(&cwd_path, &["commit", "-m", "baseline"]);
 
     // Create an untracked marker file. The git snapshot must capture it before
     // the child runs, and must leave it on disk while doing so (issue #356).

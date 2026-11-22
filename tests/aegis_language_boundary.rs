@@ -13,11 +13,11 @@
 //!    runtime, the four qualified grammars, and `thiserror` (ADR-022 §8).
 //!
 //! The `assert_no_dep` helper is shared with `tests/architecture_boundaries.rs`
-//! via `tests/common`; this boundary lives in its own file because
+//! via `tests/support`; this boundary lives in its own file because
 //! `tests/architecture_boundaries.rs` sits at its 800-line budget.
 
-mod common;
-use common::assert_no_dep;
+mod support;
+use support::assert_no_dep;
 
 /// Every workspace member except `aegis-language` itself. Used in both
 /// directions: none of these may depend on `aegis-language`, and

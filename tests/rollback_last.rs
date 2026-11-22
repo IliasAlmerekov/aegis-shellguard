@@ -1,6 +1,8 @@
 //! `aegis rollback --last` (#499, ADR-053): the latest command whose Snapshots
 //! are bound to the current location, restored through the #215 preflight.
 
+mod support;
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -8,6 +10,7 @@ use std::process::{Command, Output, Stdio};
 
 use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
 use aegis_types::{Decision, RiskLevel};
+use support::run_git;
 use tempfile::TempDir;
 
 const DOCKER_RECORD: &str = r#"{"container_id":"c1","image":"img:1","config":{"name":"web","binds":[],"port_bindings":[],"labels":{},"network_mode":"default","restart_policy":"no"}}"#;
@@ -143,20 +146,9 @@ impl Env {
 }
 
 fn git(repo: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(repo)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
+    String::from_utf8_lossy(&run_git(repo, args).stdout)
+        .trim()
+        .to_string()
 }
 
 fn stdout(output: &Output) -> String {

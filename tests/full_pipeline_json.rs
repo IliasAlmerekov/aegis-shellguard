@@ -6,7 +6,6 @@
 mod support;
 
 use std::fs;
-use std::process::Command;
 
 use serde_json::Value;
 use tempfile::TempDir;
@@ -334,11 +333,7 @@ reason = "strict override allowlist"
     )
     .unwrap();
 
-    Command::new("git")
-        .arg("init")
-        .current_dir(workspace.path())
-        .output()
-        .unwrap();
+    run_git(workspace.path(), &["init"]);
 
     let output = base_command(home.path())
         .current_dir(workspace.path())

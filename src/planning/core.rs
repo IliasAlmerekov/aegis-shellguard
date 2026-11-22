@@ -268,12 +268,12 @@ fn build_planning_outcome(
 
 #[cfg(test)]
 mod tests {
-    use std::process::Command;
     use std::sync::Mutex;
 
     use super::*;
     use crate::planning::types::{ExecutionDisposition, PlanningOutcome, SnapshotPlan};
     use crate::runtime::RuntimeContext;
+    use crate::test_git::git_command;
     use aegis_config::AegisConfig;
     use aegis_policy::ExecutionTransport;
     use aegis_types::{Mode, SnapshotPolicy};
@@ -423,11 +423,13 @@ mod tests {
         let _guard = CURRENT_DIR_TEST_MUTEX.lock().unwrap();
         let original_cwd = std::env::current_dir().unwrap();
         let workspace = TempDir::new().unwrap();
-        Command::new("git")
-            .arg("init")
-            .current_dir(workspace.path())
-            .output()
-            .unwrap();
+        assert!(
+            git_command(workspace.path())
+                .args(["init", "-q"])
+                .status()
+                .unwrap()
+                .success()
+        );
         std::env::set_current_dir(workspace.path()).unwrap();
 
         let mut config = AegisConfig::default();
@@ -469,11 +471,13 @@ mod tests {
         let _guard = CURRENT_DIR_TEST_MUTEX.lock().unwrap();
         let original_cwd = std::env::current_dir().unwrap();
         let workspace = TempDir::new().unwrap();
-        Command::new("git")
-            .arg("init")
-            .current_dir(workspace.path())
-            .output()
-            .unwrap();
+        assert!(
+            git_command(workspace.path())
+                .args(["init", "-q"])
+                .status()
+                .unwrap()
+                .success()
+        );
         std::env::set_current_dir(workspace.path()).unwrap();
 
         let mut config = AegisConfig::default();
@@ -515,11 +519,13 @@ mod tests {
         let _guard = CURRENT_DIR_TEST_MUTEX.lock().unwrap();
         let original_cwd = std::env::current_dir().unwrap();
         let workspace = TempDir::new().unwrap();
-        Command::new("git")
-            .arg("init")
-            .current_dir(workspace.path())
-            .output()
-            .unwrap();
+        assert!(
+            git_command(workspace.path())
+                .args(["init", "-q"])
+                .status()
+                .unwrap()
+                .success()
+        );
         std::fs::write(workspace.path().join("cleanup.sh"), "echo ok\n").unwrap();
         std::env::set_current_dir(workspace.path()).unwrap();
 

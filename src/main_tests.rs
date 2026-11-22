@@ -1,7 +1,6 @@
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use aegis::planning::{CwdState, PlanningOutcome, PreparedPlanner};
 use aegis::runtime::RuntimeContext;
@@ -19,6 +18,7 @@ use crate::shell_compat::{
     same_file,
 };
 use crate::shell_flow::decide_command;
+use crate::test_git::git_command;
 use aegis::error::AegisError;
 use aegis_config::{AllowlistMatch, ConfigSourceLayer};
 use aegis_types::{AllowlistOverrideLevel, CiPolicy, Mode, SnapshotPolicy};
@@ -459,11 +459,13 @@ allowlist_override_level = "Danger"
 fn unavailable_cwd_shell_plan_requires_recovery_without_plugins() {
     let original_cwd = env::current_dir().unwrap();
     let workspace = TempDir::new().unwrap();
-    Command::new("git")
-        .arg("init")
-        .current_dir(workspace.path())
-        .output()
-        .unwrap();
+    assert!(
+        git_command(workspace.path())
+            .args(["init", "-q"])
+            .status()
+            .unwrap()
+            .success()
+    );
     env::set_current_dir(workspace.path()).unwrap();
 
     let config = config_from_toml(

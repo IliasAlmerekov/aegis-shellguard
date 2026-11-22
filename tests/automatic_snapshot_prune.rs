@@ -8,34 +8,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 use serde_json::Value;
+use support::{init_git_repo, run_git};
 use tempfile::TempDir;
 
 const TEST_COMMAND: &str = "rm -rf /tmp/aegis-automatic-prune-target";
 
 fn aegis_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
-}
-
-fn init_git_repo(repo: &Path) {
-    run_git(repo, &["init"]);
-    run_git(repo, &["config", "user.email", "test@aegis.dev"]);
-    run_git(repo, &["config", "user.name", "Aegis Test"]);
-    run_git(repo, &["config", "core.autocrlf", "false"]);
-    run_git(repo, &["commit", "--allow-empty", "-m", "init"]);
-}
-
-fn run_git(repo: &Path, args: &[&str]) -> Output {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(repo)
-        .output()
-        .unwrap_or_else(|error| panic!("run git {args:?}: {error}"));
-    assert!(
-        output.status.success(),
-        "git {args:?} failed:\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    output
 }
 
 fn create_stash(repo: &Path, name: &str) -> String {

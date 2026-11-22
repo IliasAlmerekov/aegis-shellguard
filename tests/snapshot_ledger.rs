@@ -1,12 +1,15 @@
 //! The Snapshot ledger: `snapshot list`, `snapshot prune`, `rollback` and
 //! automatic prune all read the Audit log the same way.
 
+mod support;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
 use aegis_types::{Decision, RiskLevel};
+use support::run_git;
 use tempfile::TempDir;
 
 fn aegis_bin() -> PathBuf {
@@ -216,17 +219,9 @@ fn archived_prune_entry_hides_snapshot_under_custom_audit_path() {
 }
 
 fn git(repo: &Path, args: &[&str]) -> String {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(repo)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?} failed: {}",
-        stderr(&output)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
+    String::from_utf8_lossy(&run_git(repo, args).stdout)
+        .trim()
+        .to_string()
 }
 
 /// A git repository with one stash; returns the repository and the stash hash.
