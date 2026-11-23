@@ -16,8 +16,7 @@
 //! `Worker::analyze` closes stdin and reaps the child every session, so worker
 //! reuse across pops remains a deferred performance optimization.
 
-use std::env;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use aegis_language::SourceLanguage;
@@ -143,7 +142,7 @@ pub async fn run_with_budget_in_cwd(
     shell_scanner: Option<&Scanner>,
 ) -> Outcome {
     let session_deadline = Instant::now() + budget.total_timeout;
-    let home = home_dir_optional();
+    let home = aegis_config::home_dir();
     let routed = route_with_home(command, trusted_aliases, home.as_deref());
     if routed.is_empty() {
         return Outcome::NotStarted {
@@ -325,13 +324,6 @@ pub async fn run_with_budget_in_cwd(
         assessment,
         target_count: per_target.len(),
     }
-}
-
-fn home_dir_optional() -> Option<PathBuf> {
-    env::var_os("HOME")
-        .or_else(|| env::var_os("USERPROFILE"))
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
 }
 
 fn degraded(reason: DegradationReason) -> LanguageAnalysisResult {

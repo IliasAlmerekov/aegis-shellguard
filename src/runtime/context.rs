@@ -223,7 +223,7 @@ impl RuntimeContext {
             let home_dir = config
                 .source_home_dir()
                 .map(std::path::Path::to_path_buf)
-                .or_else(home_dir_for_error_attribution);
+                .or_else(aegis_config::home_dir);
             aegis_config::locate_invalid_custom_pattern(
                 &config,
                 current_dir.as_deref(),
@@ -746,16 +746,6 @@ async fn automatic_prune(config: AegisConfig) -> Result<(), AegisError> {
 
 fn build_audit_logger(config: &AegisConfig) -> AuditLogger {
     AuditLogger::from_audit_config(&config.audit)
-}
-
-/// Resolve the home directory the same way `AegisConfig::load` does (`HOME`,
-/// falling back to `USERPROFILE`), so the two path-attribution formats agree
-/// on Windows hosts without `HOME` set.
-fn home_dir_for_error_attribution() -> Option<std::path::PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .filter(|value| !value.is_empty())
-        .map(std::path::PathBuf::from)
 }
 
 /// Resolve `~/.aegis/policy.star`, returning `None` when `HOME` is unset.

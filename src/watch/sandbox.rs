@@ -256,14 +256,6 @@ pub(super) fn emit_watch_audit_error(id: &Option<String>, err: &crate::error::Ae
     }
 }
 
-pub(super) fn sandbox_status_before_preparation(context: &RuntimeContext) -> SandboxStatus {
-    if context.config().sandbox.is_some() {
-        SandboxStatus::NotAttempted
-    } else {
-        SandboxStatus::NotConfigured
-    }
-}
-
 fn frame_sandbox(
     config: &aegis_config::AegisConfig,
     cwd: Option<&std::path::Path>,

@@ -21,6 +21,7 @@ pub mod amend;
 pub mod ceiling;
 /// Typed configuration errors.
 pub mod error;
+mod home;
 /// Config data model — [`AegisConfig`] and related types.
 pub mod model;
 pub mod pattern_match;
@@ -28,6 +29,7 @@ pub mod snapshot;
 pub mod validate;
 
 pub use error::ConfigError;
+pub use home::home_dir;
 
 #[cfg(test)]
 pub use allowlist::analyze_blocklist_rule;

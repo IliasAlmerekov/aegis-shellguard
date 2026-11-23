@@ -94,7 +94,7 @@ fn ceiling_issues_here() -> Vec<aegis_config::validate::ValidationIssue> {
     let Ok(cwd) = env::current_dir() else {
         return Vec::new();
     };
-    let home = home_dir_optional();
+    let home = aegis_config::home_dir();
     let mut issues: Vec<_> = aegis_config::validate_config_layers(&cwd, home.as_deref())
         .warnings
         .into_iter()
@@ -126,7 +126,7 @@ fn resolve_disabled_flag_path(home_dir: PathBuf) -> PathBuf {
 }
 
 fn home_dir() -> Result<PathBuf> {
-    home_dir_or_internal_error(home_dir_optional())
+    home_dir_or_internal_error(aegis_config::home_dir())
 }
 
 /// Split from [`home_dir`] so the missing-`HOME` arm is reachable from a test
@@ -135,13 +135,6 @@ fn home_dir_or_internal_error(resolved: Option<PathBuf>) -> Result<PathBuf> {
     resolved.ok_or_else(|| AegisError::Internal {
         detail: "HOME is not set; cannot resolve ~/.aegis/disabled".to_string(),
     })
-}
-
-fn home_dir_optional() -> Option<PathBuf> {
-    env::var_os("HOME")
-        .or_else(|| env::var_os("USERPROFILE"))
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
 }
 
 fn is_disabled_at(path: &Path) -> Result<bool> {
@@ -166,7 +159,8 @@ fn is_disabled_at(path: &Path) -> Result<bool> {
 /// it falls back to a defaults-only message.
 pub fn config_status() -> Result<String> {
     let current_dir = env::current_dir()?;
-    let layer_paths = AegisConfig::layer_paths_for(&current_dir, home_dir_optional().as_deref());
+    let layer_paths =
+        AegisConfig::layer_paths_for(&current_dir, aegis_config::home_dir().as_deref());
 
     Ok(config_status_for_layers(&layer_paths))
 }

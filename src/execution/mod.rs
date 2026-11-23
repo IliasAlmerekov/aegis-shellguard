@@ -145,7 +145,7 @@ fn run_planned_shell_command_with_sandbox<R: ExecutionRenderer>(
                     Decision::Denied,
                     &[],
                     &[],
-                    sandbox_status_before_preparation(sandbox_config),
+                    aegis::runtime::sandbox_status_before_preparation(sandbox_config),
                 ) {
                     eprintln!("error: failed to write audit log: {err}");
                     return EXIT_INTERNAL;
@@ -161,7 +161,7 @@ fn run_planned_shell_command_with_sandbox<R: ExecutionRenderer>(
                 Decision::Blocked,
                 &[],
                 &[],
-                sandbox_status_before_preparation(sandbox_config),
+                aegis::runtime::sandbox_status_before_preparation(sandbox_config),
             ) {
                 eprintln!("error: failed to write audit log: {err}");
                 return EXIT_INTERNAL;
@@ -243,7 +243,7 @@ fn execute_with_snapshots<R: ExecutionRenderer>(
                     Decision::Denied,
                     snapshots,
                     attempts,
-                    sandbox_status_before_preparation(sandbox_config),
+                    aegis::runtime::sandbox_status_before_preparation(sandbox_config),
                     degradation,
                 ) {
                     eprintln!("error: failed to write audit log: {err}");
@@ -402,17 +402,6 @@ fn append_shell_audit(
         );
     }
     Ok(())
-}
-
-/// Report an enabled Sandbox as `NotAttempted` before command preparation.
-fn sandbox_status_before_preparation(
-    sandbox_config: Option<&aegis_sandbox::SandboxConfig>,
-) -> SandboxStatus {
-    if sandbox_config.is_some() {
-        SandboxStatus::NotAttempted
-    } else {
-        SandboxStatus::NotConfigured
-    }
 }
 
 fn complete_shell_execution<C, X, AuditError>(

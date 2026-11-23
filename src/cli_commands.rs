@@ -1,5 +1,4 @@
 use std::env;
-use std::path::PathBuf;
 
 use aegis::error::AegisError;
 use aegis::toggle;
@@ -520,10 +519,7 @@ pub(crate) fn handle_config_validate_command(args: ConfigValidateArgs) -> i32 {
             return EXIT_INTERNAL;
         }
     };
-    let home_dir = env::var_os("HOME")
-        .or_else(|| env::var_os("USERPROFILE"))
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from);
+    let home_dir = aegis_config::home_dir();
     let mut report = validate_config_layers(&current_dir, home_dir.as_deref());
     // Roots that only enforcement can reject (a symlink resolving outside the
     // trusted roots) are not visible to the config-level check.
