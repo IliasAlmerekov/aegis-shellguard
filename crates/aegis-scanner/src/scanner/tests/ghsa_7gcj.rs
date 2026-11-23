@@ -1,14 +1,9 @@
 use super::*;
 
-// GHSA-7gcj-4f7x-7fxj / #415: FS-001 and PS-006's regexes only fire when the
-// recursive/force flag is the very first token after `rm`. Any other flag
-// order — the flag trailing the operand, split across two tokens, preceded
-// by an unrelated flag, delivered through a launcher or an absolute path, or
-// reached through `;`/`&&` — was silently `Safe` (or `Danger` instead of
-// `Block` for the root case). FS-020 and PS-008 are token-prefix rules that
-// find the recursive flag anywhere in the invocation.
+// GHSA-7gcj-4f7x-7fxj / #415: FS-020 and PS-008 detect recursive `rm` regardless
+// of flag order, bundling, launcher prefix, or command chaining.
 
-// ── Public issue #415: forms with no force flag, previously Safe ─────────
+// Forms with no force flag (#415).
 
 #[test]
 fn assess_rm_dash_r_is_danger_via_fs020() {

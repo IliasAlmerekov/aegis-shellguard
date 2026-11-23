@@ -24,7 +24,7 @@ fn str_eq_maybe_case(a: &str, b: &str) -> bool {
 ///
 /// Token comparison follows the same rule as prefix matching: flags are
 /// compared case-sensitively, everything else case-insensitively. Position is
-/// irrelevant — a candidate anywhere in the token list counts.
+/// irrelevant; a candidate anywhere in the token list counts.
 ///
 /// Used for a prefix rule's negative condition: a token whose presence
 /// suppresses the rule (e.g. `--dry-run`) can appear at any position, so a
@@ -41,8 +41,8 @@ pub fn contains_any_token(tokens: &[&str], candidates: &[&str]) -> bool {
 ///
 /// Supports [`PatternToken::Single`], [`PatternToken::Alts`],
 /// [`PatternToken::Any`], [`PatternToken::AnyStar`] and
-/// [`PatternToken::ShortFlag`]. The pattern must be a prefix of `tokens` —
-/// extra trailing tokens are allowed. Empty patterns never match.
+/// [`PatternToken::ShortFlag`]. The pattern must be a prefix of `tokens`
+/// (extra trailing tokens are allowed). Empty patterns never match.
 ///
 /// A `--` token is an ordinary token here: use this on tokens whose quote
 /// boundaries are lost, where a `--` may come from a quoted argument.
@@ -312,8 +312,6 @@ mod tests {
         let pattern = vec![single("chmod"), short_flag('R', &["--recursive"])];
         assert!(!matches_prefix(&pattern, &["chmod", "file"]));
     }
-
-    // ── contains_any_token ────────────────────────────────────────────────
 
     #[test]
     fn contains_any_token_finds_candidate_at_any_position() {

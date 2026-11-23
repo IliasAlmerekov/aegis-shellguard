@@ -57,15 +57,10 @@ pub struct Scanner {
     /// `true` when ≥ 1 pattern yielded no extractable keyword.
     /// In that case `quick_scan` always returns `true` so we never miss a match.
     has_uncovered: bool,
-    /// Every regex-bearing pattern, flat, in construction order. `by_program`
-    /// and `universal` reference positions into this `Vec` (and the parallel
-    /// `regexes`) rather than cloning `Arc<Pattern>` into each routing bucket.
+    /// Every regex-bearing pattern, flat, in construction order; `by_program`
+    /// and `universal` index into this `Vec` and `regexes`.
     ///
-    /// Compilation itself stays eager for every pattern regardless of source
-    /// (see the "Lazy compilation" note on `try_new` for why deferring
-    /// built-in compilation to scan time was tried and reverted for issue
-    /// #319): a malformed regex — built-in or custom — is a typed
-    /// construction-time error, never a scan-time surprise.
+    /// Compilation stays eager so a malformed regex fails at construction (#319).
     patterns: Vec<Arc<Pattern>>,
     /// Regex compiled for `patterns[i]`, same index, same order.
     regexes: Vec<Regex>,
@@ -153,15 +148,7 @@ impl Scanner {
             let idx = flat_patterns.len();
             flat_patterns.push(Arc::clone(p));
 
-            // Compile each regex once, eagerly, for every pattern regardless of
-            // source. A one-off measurement (docs/performance-baseline.md,
-            // "Lazy built-in regex compilation reverted") showed that deferring
-            // built-in compilation to first scan can push a single realistic
-            // `assess()` call — a compound command touching several pattern
-            // categories at once — past the 2 ms Assessment budget on a cold
-            // scanner, since a `$SHELL` proxy is a fresh process per command
-            // and therefore always cold. Compilation stays part of the
-            // (30 ms-budgeted) Startup cost instead.
+            // Compile eagerly at startup so a cold proxy `assess()` stays within the 2 ms budget (#319).
             let rx = Self::compile_regex(p)?;
             regexes.push(rx);
 

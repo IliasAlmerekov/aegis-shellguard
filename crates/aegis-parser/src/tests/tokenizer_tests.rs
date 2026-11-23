@@ -1,18 +1,15 @@
 use super::super::*;
 
-// 1. Simple command — space-separated words
 #[test]
 fn simple_command() {
     assert_eq!(split_tokens("echo hello"), vec!["echo", "hello"]);
 }
 
-// 2. Multiple arguments
 #[test]
 fn multiple_args() {
     assert_eq!(split_tokens("ls -la /tmp"), vec!["ls", "-la", "/tmp"]);
 }
 
-// 3. Single-quoted string becomes one token
 #[test]
 fn single_quoted_token() {
     assert_eq!(
@@ -21,13 +18,11 @@ fn single_quoted_token() {
     );
 }
 
-// 4. Dangerous path in single quotes is one token
 #[test]
 fn single_quoted_dangerous_path() {
     assert_eq!(split_tokens("'rm -rf /'"), vec!["rm -rf /"]);
 }
 
-// 5. Double-quoted string becomes one token
 #[test]
 fn double_quoted_token() {
     assert_eq!(
@@ -36,25 +31,21 @@ fn double_quoted_token() {
     );
 }
 
-// 6. && is a separator token
 #[test]
 fn double_ampersand_separator() {
     assert_eq!(split_tokens("cmd1 && cmd2"), vec!["cmd1", "&&", "cmd2"]);
 }
 
-// 7. Semicolon is a separator token
 #[test]
 fn semicolon_separator() {
     assert_eq!(split_tokens("cmd1; cmd2"), vec!["cmd1", ";", "cmd2"]);
 }
 
-// 8. Semicolon without surrounding spaces
 #[test]
 fn semicolon_no_spaces() {
     assert_eq!(split_tokens("cmd1;cmd2"), vec!["cmd1", ";", "cmd2"]);
 }
 
-// 9. Pipe is a separator token
 #[test]
 fn pipe_separator() {
     assert_eq!(
@@ -63,19 +54,16 @@ fn pipe_separator() {
     );
 }
 
-// 10. || is a separator token
 #[test]
 fn double_pipe_separator() {
     assert_eq!(split_tokens("cmd1 || cmd2"), vec!["cmd1", "||", "cmd2"]);
 }
 
-// 11. Backslash escapes a space (keeps words together)
 #[test]
 fn backslash_escaped_space() {
     assert_eq!(split_tokens(r"rm\ -rf\ /"), vec!["rm -rf /"]);
 }
 
-// 12. && inside double quotes is NOT a separator
 #[test]
 fn ampersand_inside_double_quotes() {
     assert_eq!(
@@ -84,27 +72,21 @@ fn ampersand_inside_double_quotes() {
     );
 }
 
-// 13. Single quote inside double quotes is literal
 #[test]
 fn single_quote_inside_double_quotes() {
     assert_eq!(split_tokens(r#""it's fine""#), vec!["it's fine"]);
 }
 
-// 14. Double quote inside single quotes is literal
 #[test]
 fn double_quote_inside_single_quotes() {
     assert_eq!(split_tokens(r#"'say "hi"'"#), vec![r#"say "hi""#]);
 }
 
-// 15. Empty string produces no tokens
 #[test]
 fn empty_input() {
     assert_eq!(split_tokens(""), Vec::<String>::new());
 }
 
-// --- T2.2: extract_nested_commands ---
-
-// 16. bash -c 'cmd' — single-quoted inner command
 #[test]
 fn nested_bash_single_quote() {
     assert_eq!(
@@ -113,7 +95,6 @@ fn nested_bash_single_quote() {
     );
 }
 
-// 17. sh -c 'cmd' — sh variant is recognized
 #[test]
 fn nested_sh_single_quote() {
     assert_eq!(
@@ -122,7 +103,6 @@ fn nested_sh_single_quote() {
     );
 }
 
-// 18. bash -c "cmd1 && cmd2" — && splits into two commands
 #[test]
 fn nested_double_quote_and_separator() {
     assert_eq!(
@@ -131,7 +111,6 @@ fn nested_double_quote_and_separator() {
     );
 }
 
-// 19. bash -c "cmd1; cmd2; cmd3" — semicolons produce three commands
 #[test]
 fn nested_semicolons_three_cmds() {
     assert_eq!(
@@ -140,18 +119,14 @@ fn nested_semicolons_three_cmds() {
     );
 }
 
-// 20. bash -c $'cmd1\ncmd2' — ANSI-C $'...' quoting: \n becomes a newline separator
 #[test]
 fn nested_ansi_c_newline() {
-    // In the Rust string literal "\\n" is a literal backslash-n, mirroring what the
-    // shell passes when $'...' quoting embeds a \n escape.
     assert_eq!(
         extract_nested_commands("bash -c $'cmd1\\ncmd2'"),
         vec!["cmd1", "cmd2"]
     );
 }
 
-// 21. env VAR=val bash -c '...' — env prefix with one assignment
 #[test]
 fn nested_env_prefix_single_var() {
     assert_eq!(
@@ -160,7 +135,6 @@ fn nested_env_prefix_single_var() {
     );
 }
 
-// 22. env A=1 B=2 bash -c '...' — env prefix with multiple assignments
 #[test]
 fn nested_env_prefix_multi_var() {
     assert_eq!(
@@ -169,7 +143,6 @@ fn nested_env_prefix_multi_var() {
     );
 }
 
-// 23. bash -c 'bash -c "inner cmd"' — recursive unwrap preserves argument grouping
 #[test]
 fn nested_recursive_unwrap() {
     assert_eq!(
@@ -178,7 +151,6 @@ fn nested_recursive_unwrap() {
     );
 }
 
-// 24. python -c '...' — non-shell interpreter returns empty vec
 #[test]
 fn nested_non_shell_returns_empty() {
     assert_eq!(
@@ -187,7 +159,6 @@ fn nested_non_shell_returns_empty() {
     );
 }
 
-// 25. bash -c "cmd1 || cmd2" — || splits into two commands
 #[test]
 fn nested_double_pipe_separator() {
     assert_eq!(
@@ -247,9 +218,6 @@ fn extract_process_substitution_bodies_preserves_nested_command() {
     );
 }
 
-// ── T2.3: heredoc and inline script tests ────────────────────────────────
-
-// 26. Basic heredoc — body between <<EOF and EOF is extracted
 #[test]
 fn heredoc_basic_body() {
     let cmd = "cat <<EOF\nrm -rf /\nEOF";
@@ -260,7 +228,6 @@ fn heredoc_basic_body() {
     assert!(!bodies[0].is_nowdoc);
 }
 
-// 27. Nowdoc — <<'EOF' is flagged as nowdoc, body is still extracted
 #[test]
 fn heredoc_nowdoc_flag() {
     let cmd = "cat <<'EOF'\nsome secret\nEOF";
@@ -270,7 +237,6 @@ fn heredoc_nowdoc_flag() {
     assert!(bodies[0].is_nowdoc);
 }
 
-// 28. Multi-line heredoc body — all lines joined with newline
 #[test]
 fn heredoc_multiline_body() {
     let cmd = "bash <<SCRIPT\necho hello\nrm -rf /tmp/foo\nSCRIPT";
@@ -300,26 +266,21 @@ fn heredoc_delimiter_prefix_does_not_hide_later_list_segment() {
     assert_eq!(segments.len(), 2);
 }
 
-// 29. Heredoc with tab-stripping (<<-) — leading tabs removed from delimiter line
 #[test]
 fn heredoc_strip_tabs_delimiter() {
-    // The closing delimiter has a leading tab that should be stripped.
     let cmd = "cat <<-EOF\n\trm -rf /\n\tEOF";
     let bodies = extract_heredoc_bodies(cmd);
     assert_eq!(bodies.len(), 1);
     assert_eq!(bodies[0].delimiter, "EOF");
-    // Body line is kept as-is (only the delimiter line is stripped for matching).
     assert_eq!(bodies[0].body, "\trm -rf /");
 }
 
-// 30. No heredoc — empty vec returned
 #[test]
 fn heredoc_no_match_returns_empty() {
     let bodies = extract_heredoc_bodies("echo hello world");
     assert!(bodies.is_empty());
 }
 
-// 31. Double-quoted delimiter (`<<"EOF"`) is nowdoc, same as single-quoted.
 #[test]
 fn heredoc_double_quoted_delimiter_is_nowdoc() {
     let cmd = "cat <<\"EOF\"\nsome secret\nEOF";
@@ -330,7 +291,6 @@ fn heredoc_double_quoted_delimiter_is_nowdoc() {
     assert!(bodies[0].is_nowdoc);
 }
 
-// 32. Backslash-escaped delimiter (`<<\EOF`) is nowdoc.
 #[test]
 fn heredoc_backslash_escaped_delimiter_is_nowdoc() {
     let cmd = "cat <<\\EOF\nsome secret\nEOF";
@@ -340,7 +300,6 @@ fn heredoc_backslash_escaped_delimiter_is_nowdoc() {
     assert!(bodies[0].is_nowdoc);
 }
 
-// 33. Nowdoc handed to a passive consumer (`cat`) is not interpreter-executed.
 #[test]
 fn heredoc_nowdoc_to_cat_is_not_interpreter_target() {
     let cmd = "cat <<'EOF'\nsome text\nEOF";
@@ -348,8 +307,6 @@ fn heredoc_nowdoc_to_cat_is_not_interpreter_target() {
     assert!(!bodies[0].target_is_interpreter);
 }
 
-// 34. Nowdoc handed to a shell interpreter is still interpreter-executed —
-// the interpreter runs the raw text as code regardless of quoting.
 #[test]
 fn heredoc_nowdoc_to_bash_is_interpreter_target() {
     let cmd = "bash <<'EOF'\necho hi\nEOF";
@@ -357,7 +314,6 @@ fn heredoc_nowdoc_to_bash_is_interpreter_target() {
     assert!(bodies[0].target_is_interpreter);
 }
 
-// 35. Nowdoc handed to python3 is also an interpreter target.
 #[test]
 fn heredoc_nowdoc_to_python3_is_interpreter_target() {
     let cmd = "python3 <<'EOF'\nprint(1)\nEOF";
@@ -365,9 +321,6 @@ fn heredoc_nowdoc_to_python3_is_interpreter_target() {
     assert!(bodies[0].target_is_interpreter);
 }
 
-// 35b. Interpreter-target detection is case-insensitive, matching the rest
-// of this codebase's launcher/program matching (e.g. `eq_ignore_ascii_case`
-// in `effective_token_slices`'s launcher checks).
 #[test]
 fn heredoc_nowdoc_to_uppercase_interpreter_is_interpreter_target() {
     let cmd = "Bash <<'EOF'\necho hi\nEOF";
@@ -375,8 +328,6 @@ fn heredoc_nowdoc_to_uppercase_interpreter_is_interpreter_target() {
     assert!(bodies[0].target_is_interpreter);
 }
 
-// 36. Masking neutralizes backticks inside a nowdoc body sent to a passive
-// consumer (`cat`) — issue #344's exact repro shape.
 #[test]
 fn mask_inert_heredoc_neutralizes_backticks_for_cat() {
     let cmd = "cat <<'EOF'\nmentions `python3 -c` as inert markdown code text\nEOF";
@@ -384,8 +335,6 @@ fn mask_inert_heredoc_neutralizes_backticks_for_cat() {
     assert!(!masked.contains('`'));
 }
 
-// 37. Masking leaves a nowdoc body untouched when the target is an
-// interpreter — it will execute the raw text regardless of quoting.
 #[test]
 fn mask_inert_heredoc_leaves_interpreter_target_untouched() {
     let cmd = "bash <<'EOF'\necho `date`\nEOF";
@@ -393,8 +342,6 @@ fn mask_inert_heredoc_leaves_interpreter_target_untouched() {
     assert_eq!(masked, cmd);
 }
 
-// 38. Masking leaves a regular (non-nowdoc) heredoc untouched — bash does
-// expand backticks there, so it's a live scan target.
 #[test]
 fn mask_inert_heredoc_leaves_non_nowdoc_untouched() {
     let cmd = "cat <<EOF\n`rm -rf /`\nEOF";
@@ -402,15 +349,12 @@ fn mask_inert_heredoc_leaves_non_nowdoc_untouched() {
     assert_eq!(masked, cmd);
 }
 
-// 39. Masking is a no-op on commands with no heredoc at all.
 #[test]
 fn mask_inert_heredoc_no_heredoc_is_noop() {
     let cmd = "echo `date`";
     assert_eq!(mask_inert_heredoc_substitution_markers(cmd), cmd);
 }
 
-// A file can run implicitly on a later command, so writing one never earns
-// Data consumer trust even when cat itself only copies bytes.
 #[test]
 fn heredoc_cat_redirected_to_file_is_not_trusted() {
     let cmd = "cat >> notes.txt <<'EOF'\nsome text\nEOF";
@@ -418,9 +362,6 @@ fn heredoc_cat_redirected_to_file_is_not_trusted() {
     assert!(!bodies[0].is_data_consumer_target);
 }
 
-// 41. Issue #396: `cat` prints to the terminal either way — the destination
-// never changes what `cat` does with its stdin, so a bare `cat <<'EOF'` with
-// no redirection is `Data consumer` territory too.
 #[test]
 fn heredoc_cat_without_redirection_is_flagged_as_data_consumer() {
     let cmd = "cat <<'EOF'\nsome text\nEOF";
@@ -428,7 +369,6 @@ fn heredoc_cat_without_redirection_is_flagged_as_data_consumer() {
     assert!(bodies[0].is_data_consumer_target);
 }
 
-// `tee` writes its file argument without shell redirection.
 #[test]
 fn heredoc_tee_with_file_argument_is_not_trusted() {
     let cmd = "tee out.txt <<'EOF'\nsome text\nEOF";
@@ -436,8 +376,6 @@ fn heredoc_tee_with_file_argument_is_not_trusted() {
     assert!(!bodies[0].is_data_consumer_target);
 }
 
-// 43. An interpreter executes its stdin as code regardless of where its own
-// stdout goes — never a `Data consumer`.
 #[test]
 fn heredoc_interpreter_redirected_to_file_is_not_flagged_as_data_consumer() {
     let cmd = "bash > log.txt <<'EOF'\necho hi\nEOF";
@@ -445,9 +383,6 @@ fn heredoc_interpreter_redirected_to_file_is_not_flagged_as_data_consumer() {
     assert!(!bodies[0].is_data_consumer_target);
 }
 
-// 43b. Descriptor duplication (`2>&1`, `>&2`) still leaves `cat` printing to
-// the terminal — a `Data consumer` exactly like the bare case above (issue
-// #396).
 #[test]
 fn heredoc_cat_with_fd_duplication_is_flagged_as_data_consumer() {
     let cases = [
@@ -463,19 +398,14 @@ fn heredoc_cat_with_fd_duplication_is_flagged_as_data_consumer() {
     }
 }
 
-// A file write keeps its dangerous-looking body visible to the scanner.
 #[test]
 fn mask_inert_heredoc_keeps_file_write_body_visible() {
     let cmd = "cat >> notes.txt <<'EOF'\nrm -rf /\nEOF";
     let masked = mask_inert_heredoc_substitution_markers(cmd);
     assert!(masked.contains("rm -rf"));
-    // Line structure (line count) is preserved so unrelated line-oriented
-    // logic downstream isn't affected.
     assert_eq!(masked.lines().count(), cmd.lines().count());
 }
 
-// 45. Issue #396: a bare `cat <<'EOF'` (no redirection) is now also blanked
-// in full, matching its `Data consumer` classification above.
 #[test]
 fn mask_inert_heredoc_blanks_full_body_for_cat_without_redirection() {
     let cmd = "cat <<'EOF'\nrm -rf /\nEOF";
@@ -483,8 +413,6 @@ fn mask_inert_heredoc_blanks_full_body_for_cat_without_redirection() {
     assert!(!masked.contains("rm -rf"));
 }
 
-// 46. Issue #396: `jq` parses its stdin as JSON, never as commands — a
-// nowdoc body handed to it is `Data consumer` territory too.
 #[test]
 fn heredoc_jq_is_flagged_as_data_consumer() {
     let cmd = "jq -c . <<'JSON'\n{\"cmd\": \"python3 ./x\"}\nJSON";
@@ -492,7 +420,6 @@ fn heredoc_jq_is_flagged_as_data_consumer() {
     assert!(bodies[0].is_data_consumer_target);
 }
 
-// Chaining before the write does not make its output file inert.
 #[test]
 fn heredoc_file_write_after_semicolon_is_not_trusted() {
     let cmd = "true; cat > /tmp/x.sh <<'EOF'\nsome text\nEOF";
@@ -507,7 +434,6 @@ fn heredoc_file_write_after_and_and_is_not_trusted() {
     assert!(!bodies[0].is_data_consumer_target);
 }
 
-// PR #463 review: a file write is never trusted, whatever follows it.
 #[test]
 fn heredoc_file_write_followed_by_another_command_is_not_flagged() {
     let cmd = "cat > /tmp/x.sh <<'EOF'\nsome text\nEOF\ntrue";
@@ -515,9 +441,7 @@ fn heredoc_file_write_followed_by_another_command_is_not_flagged() {
     assert!(!bodies[0].is_data_consumer_target);
 }
 
-// PR #463 review: a quote or substitution left open on the marker line keeps
-// the marker's command running past the newline, so bash starts the body
-// later than this line walk does and runs the lines in between.
+// An open quote or substitution on the marker line delays the body in bash.
 #[test]
 fn heredoc_open_construct_on_marker_line_is_not_flagged() {
     for cmd in [
@@ -534,7 +458,6 @@ fn heredoc_open_construct_on_marker_line_is_not_flagged() {
     }
 }
 
-// 31. python -c "..." — inline Python script extracted
 #[test]
 fn inline_script_python() {
     let scripts = extract_inline_scripts(r#"python3 -c "import os; os.system('cmd')""#);
@@ -543,7 +466,6 @@ fn inline_script_python() {
     assert_eq!(scripts[0].body, "import os; os.system('cmd')");
 }
 
-// 32. node -e "..." — inline Node.js script extracted
 #[test]
 fn inline_script_node() {
     let scripts = extract_inline_scripts(r#"node -e "process.exit(1)""#);
@@ -552,7 +474,6 @@ fn inline_script_node() {
     assert_eq!(scripts[0].body, "process.exit(1)");
 }
 
-// 33. ruby -e "..." — inline Ruby script extracted
 #[test]
 fn inline_script_ruby() {
     let scripts = extract_inline_scripts(r#"ruby -e "system('rm -rf /')""#);
@@ -613,11 +534,8 @@ fn eval_payload_with_env_prefix() {
     assert_eq!(payloads, vec![r#"$DEPLOY_CMD"#]);
 }
 
-// ── C2: literal `$IFS` / `${IFS}` obfuscation ─────────────────────────────
-//
-// Unquoted literal `$IFS` and `${IFS}` expand to shell word-separators, so a
-// destructive command split by them must tokenize like the whitespace form.
-// Quoted, escaped, and non-IFS variable forms must remain untouched.
+// Unquoted literal `$IFS` and `${IFS}` act as shell word-separators; quoted,
+// escaped, and non-IFS variables stay untouched.
 mod ifs_obfuscation {
     use super::*;
 

@@ -1,19 +1,5 @@
-//! Language-aware analysis Iteration 1 — compatibility fixtures.
-//!
-//! These tests lock the *current* scanner `Assessment` contract for a
-//! hand-verified representative corpus *before* the Pattern-backed `Match`
-//! evidence is refactored onto the common Detection rule model (plan Iteration 1,
-//! RED #4 / ADR-022 §4). They are characterization tests: the expected values are
-//! derived from the built-in pattern definitions in `patterns.toml` and
-//! `patterns/builtins_a.rs` — an independent source of truth — not from running
-//! the scanner, so a later refactor that silently drifts classification fails
-//! here rather than in a downstream consumer.
-//!
-//! The contract pinned per command is the public, mechanism-stable part of
-//! `Assessment`: `risk`, the presence of the key matched pattern ID, the
-//! `DecisionSource`, and `effect_opaque`. These are exactly the fields the
-//! common Detection rule + `Assessment` basis migration (Slices D/F) must
-//! preserve byte-for-byte or semantically.
+//! Compatibility fixtures pinning `Assessment` (`risk`, matched pattern ID,
+//! `DecisionSource`, and `effect_opaque`) for a representative command corpus (ADR-022 §4).
 
 use super::*;
 

@@ -341,8 +341,6 @@ fn quotes_inside_other_quotes_do_not_change_what_is_literal() {
     }
 }
 
-// Codex review of PR #529.
-
 #[test]
 fn a_quoted_or_escaped_cd_spelling_still_moves_the_directory() {
     for cmd in [
@@ -524,8 +522,6 @@ fn a_launcher_that_keeps_the_directory_leaves_a_moved_non_git_stage_plain() {
 
     assert_eq!(report.redirected[0].target, DangerStageTarget::Plain);
 }
-
-// Codex review of PR #529.
 
 #[test]
 fn a_destructive_substitution_in_a_cd_operand_runs_in_the_directory_before_that_cd() {

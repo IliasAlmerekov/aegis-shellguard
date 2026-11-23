@@ -7,10 +7,10 @@ use super::split_tokens;
 ///
 /// Handles:
 /// - `bash -c 'cmd'` and `sh -c 'cmd'`
-/// - `bash -c "cmd1 && cmd2"` → `["cmd1", "cmd2"]`
+/// - `bash -c "cmd1 && cmd2"` -> `["cmd1", "cmd2"]`
 /// - `bash -c $'escaped\nnewline'` (ANSI-C `$'...'` quoting)
 /// - `env VAR=val bash -c '...'` (env prefix with variable assignments)
-/// - Recursive nesting: `bash -c 'bash -c "inner cmd"'` → `["inner cmd"]`
+/// - Recursive nesting: `bash -c 'bash -c "inner cmd"'` -> `["inner cmd"]`
 ///
 /// Returns an empty `Vec` if `cmd` does not start with a recognized shell invocation.
 pub fn extract_nested_commands(cmd: &str) -> Vec<String> {

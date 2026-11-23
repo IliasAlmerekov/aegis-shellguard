@@ -1,9 +1,7 @@
 use super::*;
 use crate::scanner::{AmbientEnv, CdUnresolved, DangerStageTarget, GitStageReport, StageDir};
 
-// #525, third Codex review of PR #529: the walk must never name a directory
-// Bash would not enter. Each case here is one way the walk used to be wrong
-// under Bash, the shell Aegis launches.
+// Directory walk under Bash must never name a directory Bash would not enter (#525).
 
 fn report_in(cmd: &str, ambient: AmbientEnv) -> GitStageReport {
     let scanner = scanner();

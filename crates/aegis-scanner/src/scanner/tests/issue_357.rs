@@ -52,10 +52,7 @@ fn assess_redirected_heredoc_does_not_mask_a_trailing_dangerous_command() {
     );
 }
 
-// No output redirection at all: `cat <<'EOF' ... EOF` prints the body to the
-// terminal. Issue #396 widens #357's reasoning: `cat` never executes its
-// stdin, and the terminal is not a shell, so this is now a safe case rather
-// than the #344 guardrail it used to be.
+// Unredirected `cat <<'EOF'` prints to the terminal and is a trusted data consumer (#396).
 #[test]
 fn assess_nowdoc_to_cat_without_redirection_is_now_safe() {
     let s = scanner();
@@ -74,9 +71,7 @@ fn assess_nowdoc_to_cat_without_redirection_is_now_safe() {
     );
 }
 
-// A nowdoc handed to an interpreter, even with its own stdout redirected to
-// a file, still gets executed as code by that interpreter before anything
-// reaches the file — it must keep being scanned.
+// Interpreters execute stdin even when stdout is redirected to a file.
 #[test]
 fn assess_nowdoc_to_interpreter_with_redirection_still_fires() {
     assert_assessment_matches_pattern(
@@ -86,10 +81,7 @@ fn assess_nowdoc_to_interpreter_with_redirection_still_fires() {
     );
 }
 
-// `2>&1` duplicates stderr onto stdout — stdout still prints to the
-// terminal, same destination as the bare case above, so this is safe for
-// the same reason `assess_nowdoc_to_cat_without_redirection_is_now_safe` is
-// (issue #396).
+// `2>&1` still prints to the terminal, so `cat` stays a trusted data consumer (#396).
 #[test]
 fn assess_nowdoc_to_cat_with_fd_duplication_is_now_safe() {
     let s = scanner();

@@ -46,16 +46,10 @@ const EQ_OR_NEXT_TOKEN_OPTIONS: &[&str] = &[
     "--attr-source",
 ];
 
-/// Cap on distinct subcommand-start candidates one git slice may produce.
+/// Cap on distinct subcommand-start candidates one git slice may produce (GHSA-7564).
 ///
-/// Each candidate costs the scanner a full token-prefix and regex rescan
-/// (`crates/aegis-scanner/src/scanner/assessment.rs`), so a chain of `n`
-/// unlisted options that each yield a candidate makes that per-slice cost
-/// grow with `n`, and the total scan cost with `n^2`. A review measured 2000
-/// unlisted options at 180ms against 100 at 0.83ms. Past this cap,
-/// [`git_option_subcommand_starts`] reports [`GitSubcommandStarts::TooMany`]
-/// instead of returning any candidate, so the scanner never pays that cost;
-/// the caller reports a Warn of its own instead (GHSA-7564).
+/// Bounds per-slice scanner rescan cost (2000 unlisted options at 180 ms against 100 at 0.83 ms);
+/// past this cap [`git_option_subcommand_starts`] returns [`GitSubcommandStarts::TooMany`].
 pub const MAX_GIT_OPTION_CANDIDATES: usize = 16;
 
 /// Outcome of resolving where a git slice's subcommand could start.
@@ -85,13 +79,10 @@ enum OptionArity {
     Unlisted,
 }
 
-/// Classify `token`, a candidate git global-option token already known to
-/// start with `-`.
+/// Classify a candidate git global-option token (known to start with `-`).
 ///
-/// Glued short forms git rejects as unknown options (`-C/tmp`, `-cfoo=bar`)
-/// are deliberately left unclassified here. Matching `-C`/`-c` demands an
-/// exact token, so a glued spelling falls through to [`OptionArity::Unlisted`]
-/// rather than being special-cased, per the settled option table.
+/// Glued short forms (`-C/tmp`, `-cfoo=bar`) are rejected by git and fall
+/// through to [`OptionArity::Unlisted`].
 fn classify(token: &str) -> OptionArity {
     if token == "-C" || token == "-c" {
         return OptionArity::NextToken;
@@ -151,23 +142,12 @@ fn successors(tokens: &[&str], pos: usize) -> [Option<usize>; 2] {
     }
 }
 
-/// Resolve every position `tokens` could start its subcommand at, once git
-/// global options between `git` and the subcommand are skipped.
+/// Resolve every position `tokens` could start its subcommand at after git
+/// global options (GHSA-7564).
 ///
-/// `tokens` is an already effective-program-resolved slice (`tokens[0]` is
-/// `"git"`). Returns `GitSubcommandStarts::Starts(vec![])` when `tokens` has
-/// fewer than two tokens or `tokens[1]` does not start with `-`, so a plain
-/// `git reset --hard` never enters this path; the ordinary prefix match
-/// already covers it.
-///
-/// Reachable positions are found by walking the option chain as a small
-/// state graph. Each position is visited at most once, rather than building
-/// every combination of readings: `n` unlisted options in a chain yield at
-/// most `n` extra candidate positions, never `2^n` (GHSA-7564). The walk
-/// still stops as soon as it has found more than [`MAX_GIT_OPTION_CANDIDATES`]
-/// candidates, returning [`GitSubcommandStarts::TooMany`] at that point
-/// rather than draining the rest of the queue, so cost past the cap stays
-/// bounded by the cap itself, not by `tokens.len()`.
+/// Returns `Starts(vec![])` when `tokens[1]` is absent or does not start with
+/// `-`. Each position is visited at most once (O(n) in unlisted options), and
+/// the walk stops immediately past [`MAX_GIT_OPTION_CANDIDATES`].
 pub fn git_option_subcommand_starts(tokens: &[&str]) -> GitSubcommandStarts {
     if tokens.len() < 2 || !tokens[1].starts_with('-') {
         return GitSubcommandStarts::Starts(Vec::new());
@@ -411,8 +391,7 @@ mod tests {
 
     #[test]
     fn bare_list_cmds_falls_to_the_unlisted_rule() {
-        // Git rejects a bare `--list-cmds`, so it gets the two-reading
-        // unlisted treatment rather than a dedicated arity.
+        // Git rejects a bare `--list-cmds`, so it gets the two-reading unlisted treatment.
         let tokens = ["git", "--list-cmds", "reset", "--hard"];
         assert_eq!(starts(&tokens), vec![2]);
     }
@@ -442,8 +421,6 @@ mod tests {
 
     #[test]
     fn dangling_option_with_no_following_token_produces_nothing() {
-        // `-C` and `--work-tree` demand a value; with none left, the
-        // candidate produces nothing rather than guessing.
         assert_eq!(starts(&["git", "-C"]), Vec::<usize>::new());
         assert_eq!(starts(&["git", "--work-tree"]), Vec::<usize>::new());
     }
@@ -455,9 +432,7 @@ mod tests {
 
     #[test]
     fn glued_dash_capital_c_short_form_is_treated_as_unlisted_and_still_finds_reset() {
-        // Git rejects `-C/tmp` as an unknown option (`-C` demands an exact
-        // token); it falls to the unlisted-option rule rather than being
-        // read as `-C /tmp`, and `reset` is still found.
+        // Git rejects `-C/tmp` as an unknown option; the unlisted rule still finds `reset`.
         assert_eq!(starts(&["git", "-C/tmp", "reset", "--hard"]), vec![2]);
     }
 
@@ -477,10 +452,7 @@ mod tests {
 
     #[test]
     fn unlisted_option_chain_yields_linear_not_exponential_candidates() {
-        // A 2^n implementation of this walk would not finish within any
-        // reasonable test timeout for 2000 unlisted options in a row; this
-        // test passing at all is part of what pins the O(n) bound, not just
-        // the length assertion below (GHSA-7564).
+        // Pins the O(n) walk bound on 2000 unlisted options (GHSA-7564).
         let mut tokens: Vec<String> = vec!["git".to_string()];
         for i in 0..2000 {
             tokens.push(format!("--unknown-{i}"));
@@ -538,10 +510,7 @@ mod tests {
 
     #[test]
     fn two_thousand_unlisted_option_value_pairs_report_too_many_fast() {
-        // Each pair adds one candidate immediately, so the walk crosses the
-        // cap within the first few pairs and must not touch the other
-        // ~1990: this pins the O(cap) bound past the limit, not just the
-        // TooMany outcome (GHSA-7564).
+        // Pins early exit at the candidate cap (GHSA-7564).
         let tokens = alternating_unlisted_option_value_tokens(2000);
         let token_refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
 

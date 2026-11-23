@@ -1,13 +1,5 @@
 use super::*;
 
-// M5.6 — PKG-006 / PKG-007: outbound irreversible npm actions (issue #194).
-//
-// `npm publish` is Warn (a normal intended act that must not happen
-// unattended); `npm unpublish` is Danger (it breaks every consumer depending on
-// the version). Both are outbound irreversible actions rather than destruction
-// of local state. PKG-006 carries the negative condition `--dry-run` — the
-// rehearsal an agent runs first must stay Safe, in any flag position.
-
 #[test]
 fn assess_m5_pkg006_npm_publish_fires_warn() {
     let cases: &[(&str, RiskLevel, &str)] = &[

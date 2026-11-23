@@ -13,15 +13,10 @@ pub struct HeredocBody {
     /// The lines of text between the opening marker and the closing delimiter.
     pub body: String,
     /// `true` when the delimiter was quoted (`<<'EOF'`, `<<"EOF"`, `<<\EOF`),
-    /// indicating nowdoc semantics: bash performs zero expansion (including
-    /// backtick/`$()` command substitution) on the body text.
+    /// so bash performs no expansion on the body text.
     pub is_nowdoc: bool,
-    /// `true` when the command directly ahead of the heredoc operator is a
-    /// shell or scripting interpreter that will itself execute the body as
-    /// code once it reads it from stdin (e.g. `bash <<'EOF'`, `python3
-    /// <<'EOF'`). Nowdoc semantics only suppress bash's own expansion during
-    /// heredoc construction — they say nothing about what the recipient
-    /// program does with the literal text afterward.
+    /// `true` when the command directly ahead of the heredoc operator is an
+    /// interpreter that executes stdin as code (e.g. `bash <<'EOF'`).
     pub target_is_interpreter: bool,
     /// `true` when a quoted heredoc is read by a trusted data consumer and
     /// neither its output nor a written file can reach a shell (ADR-042).
@@ -207,41 +202,26 @@ pub fn extract_eval_payloads(cmd: &str) -> Vec<String> {
     payloads
 }
 
-// Private helper — result of scanning a single line for a heredoc operator.
 struct HeredocMarker {
     delimiter: String,
     is_nowdoc: bool,
     strip_tabs: bool,
-    /// Byte offset of `<<` within the line that produced this marker, so
-    /// callers can locate the target-command token ahead of it without
-    /// re-searching the line.
     operator_start: usize,
-    /// Byte offset immediately after the delimiter spec (past the closing
-    /// quote, or past the bare/escaped word) — the start of whatever else
-    /// shares this physical line with the marker (e.g. a `&&`-chained exec).
     delimiter_end: usize,
 }
 
-/// One nested command-substitution or backtick body still open, so a
-/// heredoc marker inside it is found. `$(`/backtick each start a fresh quote
-/// scope — even inside an outer double-quoted string — and `saved_quotes`
-/// restores the enclosing scope once the frame closes.
+/// Open command-substitution or backtick frame; each opens a fresh quote scope
+/// even inside outer double quotes and restores `saved_quotes` on close.
 struct SubstitutionFrame {
-    /// `Some(depth)` for `$( ... )`: counts unmatched `(` since opening
-    /// (starts at 1), so `$((` arithmetic just nests deeper. `None` for a
-    /// backtick frame, which closes on the next unescaped backtick.
+    /// `Some(depth)` for `$(...)` (starts at 1); `None` for a backtick frame.
     command_sub_depth: Option<usize>,
     saved_quotes: (bool, bool),
 }
 
-/// Byte index of the first `<<` in `line` outside a single- or
-/// double-quoted span, tracking quote state like
-/// [`split_top_level_segments`] — plus one refinement: `$(` and a backtick
-/// each open a fresh quote scope even inside an outer double-quoted string,
-/// since bash parses their contents as an independent command line. So
-/// `echo '<<EOF'` still has no heredoc operator, but the `<<` in `"$(cat
-/// <<'EOF'` — the shape behind `gh pr create --body "$(cat <<'EOF' ...)"` —
-/// is a real one.
+/// Byte index of the first unquoted `<<` in `line`.
+///
+/// `$(` and backticks open a fresh quote scope even inside double quotes so
+/// `"$(cat <<'EOF'"` still yields a heredoc marker.
 fn find_unquoted_double_lt(line: &str) -> Option<usize> {
     let mut single_quote = false;
     let mut double_quote = false;
@@ -309,12 +289,12 @@ fn find_unquoted_double_lt(line: &str) -> Option<usize> {
 /// Scan one line for a heredoc operator (`<<`) and return the parsed marker.
 ///
 /// Recognises:
-/// - `<<WORD`          — regular heredoc
-/// - `<<'WORD'`        — nowdoc (single-quoted delimiter)
-/// - `<<"WORD"`        — nowdoc (double-quoted delimiter)
-/// - `<<\WORD`         — nowdoc (backslash-escaped delimiter)
-/// - `<<-WORD`         — heredoc with leading-tab stripping
-/// - `<<-'WORD'`       — nowdoc with leading-tab stripping
+/// - `<<WORD` - regular heredoc
+/// - `<<'WORD'` - nowdoc (single-quoted delimiter)
+/// - `<<"WORD"` - nowdoc (double-quoted delimiter)
+/// - `<<\WORD` - nowdoc (backslash-escaped delimiter)
+/// - `<<-WORD` - heredoc with leading-tab stripping
+/// - `<<-'WORD'` - nowdoc with leading-tab stripping
 fn find_heredoc_marker(line: &str) -> Option<HeredocMarker> {
     let operator_start = find_unquoted_double_lt(line)?;
     let after_op = &line[operator_start + 2..];
@@ -366,11 +346,8 @@ fn find_heredoc_marker(line: &str) -> Option<HeredocMarker> {
     (!word.is_empty()).then(|| mk(word, false, spec_start + word_len))
 }
 
-/// Split `line` at its first heredoc marker (`<<WORD`, `<<'WORD'`, or the
-/// `<<-` tab-stripping variants), returning the text before the marker and
-/// the text immediately after the delimiter spec (which, per shell grammar,
-/// is still part of the same command line — e.g. a `&&`-chained command).
-/// `None` when `line` carries no recognizable marker.
+/// Split `line` at its first heredoc marker, returning the text before `<<`
+/// and the text after the delimiter spec. Returns `None` if no marker is found.
 pub fn split_at_heredoc_marker(line: &str) -> Option<(&str, &str)> {
     let marker = find_heredoc_marker(line)?;
     Some((
@@ -379,13 +356,10 @@ pub fn split_at_heredoc_marker(line: &str) -> Option<(&str, &str)> {
     ))
 }
 
-/// Byte ranges in `cmd`, each spanning from a heredoc marker's `<<` operator
-/// through the end of its terminator line (or through the end of `cmd`, for
-/// a heredoc that never terminates) — the span list-segment splitting must
-/// treat as one opaque unit rather than further command text. This keeps a
-/// same-line `&&`-chained exec glued to the segment that owns the marker
-/// (mirroring how the body itself is data, not further segments), and never
-/// misreads a quoted delimiter's own quote characters as string quoting.
+/// Byte ranges in `cmd` from each heredoc marker's `<<` through the end of its
+/// terminator line (or end of `cmd` if unterminated), treated as opaque by
+/// list-segment splitting so same-line chains stay attached and delimiter quotes
+/// do not toggle outer quote state.
 pub(crate) fn heredoc_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
     if !cmd.contains("<<") {
         return Vec::new();
@@ -420,15 +394,6 @@ pub(crate) fn heredoc_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
     ranges
 }
 
-/// `cmd` split the same way [`str::lines`] does — on `\n`, with one optional
-/// trailing `\r` stripped from each line and no phantom empty final line when
-/// `cmd` itself ends in `\n` — paired with each line's own byte offset into
-/// `cmd`. The byte-offset companion [`str::lines`] does not provide, computed
-/// by walking `cmd` once instead of recovering it from a line's pointer
-/// address (issue #384): pointer-offset recovery risks reading
-/// uninitialized/foreign memory if a caller ever passes a `lines` value that
-/// did not originate from this exact `cmd`, and no `unsafe` marks that risk
-/// at the call site the way it would for a raw pointer read.
 fn indexed_lines(cmd: &str) -> Vec<(&str, usize)> {
     let mut lines = Vec::new();
     let mut start = 0;
@@ -446,16 +411,10 @@ fn indexed_lines(cmd: &str) -> Vec<(&str, usize)> {
     lines
 }
 
-/// Walk `lines` for heredoc/nowdoc markers, invoking `on_heredoc` once per
-/// occurrence with the parsed marker, whether its target reads stdin as
-/// executable code, and the `[start, end)` line-index range of its body.
-/// The final callback argument is the first line not safe to suspend or mask:
-/// a delimiter-prefixed non-exact line may end a heredoc during bash recovery.
-///
-/// Centralizes the line-walking (marker detection, tab-stripped delimiter
-/// matching, target-program resolution) shared by every heredoc-body
-/// consumer below, so each of them only has to decide what to do with a
-/// given body's line range.
+/// Walk `lines` for heredoc/nowdoc markers, invoking `on_heredoc` with the
+/// parsed marker, whether its target executes stdin, whether it is a data
+/// consumer, the body `[start, end)` line range, and the first line not safe
+/// to suspend or mask.
 fn walk_heredocs(
     lines: &[&str],
     mut on_heredoc: impl FnMut(&HeredocMarker, bool, bool, Range<usize>, usize),
@@ -549,7 +508,7 @@ fn walk_heredocs(
 /// rm -rf /
 /// EOF
 /// ```
-/// → `[HeredocBody { delimiter: "EOF", body: "rm -rf /", is_nowdoc: false }]`
+/// -> `[HeredocBody { delimiter: "EOF", body: "rm -rf /", is_nowdoc: false }]`
 pub fn extract_heredoc_bodies(cmd: &str) -> Vec<HeredocBody> {
     let mut bodies = Vec::new();
     let lines: Vec<&str> = cmd.lines().collect();
@@ -570,27 +529,11 @@ pub fn extract_heredoc_bodies(cmd: &str) -> Vec<HeredocBody> {
     bodies
 }
 
-/// Neutralize the inert parts of a nowdoc heredoc body handed to a
-/// non-interpreter command (e.g. `cat <<'EOF'`).
+/// Neutralize inert substitution markers (or blank the full body for trusted
+/// data consumers, ADR-042) in nowdoc bodies sent to non-interpreter commands.
 ///
-/// Bash performs zero expansion on a nowdoc body, so backtick/`$(...)`
-/// markers in it are inert text — a markdown code span in prose, not live
-/// command substitution. Downstream segmentation (`logical_segments`) has no
-/// heredoc awareness: it walks `cmd` line by line and would otherwise pull
-/// the backtick/`$(...)` contents of these lines out as independent scan
-/// targets, so a literal-text match (e.g. a dangerous-looking substring
-/// quoted in a commit message) gets scanned as if it were about to execute.
-/// Nowdoc bodies routed to an interpreter (`bash <<'EOF'`, `python3
-/// <<'EOF'`) are left untouched — the interpreter will execute that text
-/// verbatim once it reads it from stdin, marker quoting or not.
-///
-/// When the same nowdoc body is `Data consumer` territory —
-/// [`heredoc_target_is_data_consumer`]: read by `cat` or `jq` without a
-/// pipe, file write, or other route to a shell — the whole body is blanked.
-/// File writes stay scanned because the file may run implicitly later.
-///
-/// Only the returned copy is affected; the original command text used for
-/// audit logging and highlighting is untouched.
+/// Nowdoc bodies routed to an interpreter (`bash <<'EOF'`, `python3 <<'EOF'`)
+/// and file writes stay untouched. Returns a modified copy for scanning only.
 pub fn mask_inert_heredoc_substitution_markers(cmd: &str) -> String {
     if !cmd.contains("<<") {
         return cmd.to_string();
@@ -617,10 +560,7 @@ pub fn mask_inert_heredoc_substitution_markers(cmd: &str) -> String {
     output_lines.join("\n")
 }
 
-/// Replace backtick and `$(` command-substitution openers with characters
-/// that carry no shell meaning, so line-oriented segmentation downstream
-/// stops recognizing them as command-substitution boundaries. Line length is
-/// preserved so unrelated column-sensitive logic isn't affected.
+/// Preserves line length so downstream column offsets stay aligned.
 fn mask_substitution_markers(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut chars = line.chars().peekable();
@@ -658,7 +598,7 @@ fn mask_substitution_markers(line: &str) -> String {
 /// ```text
 /// python3 -c "import os; os.system('rm -rf /')"
 /// ```
-/// → `[InlineScript { interpreter: "python3", body: "import os; os.system('rm -rf /')" }]`
+/// -> `[InlineScript { interpreter: "python3", body: "import os; os.system('rm -rf /')" }]`
 pub fn extract_inline_scripts(cmd: &str) -> Vec<InlineScript> {
     const INTERPRETERS: &[(&str, &str)] = &[
         ("python", "-c"),
@@ -702,10 +642,6 @@ pub fn extract_inline_scripts(cmd: &str) -> Vec<InlineScript> {
 mod tests {
     use super::{find_heredoc_marker, heredoc_suspend_ranges};
 
-    // Issue #437 review: `$(`/backtick open a fresh quote scope even inside
-    // an outer double-quoted string, so `gh pr create --body "$(cat <<'EOF'
-    // ...)"` still holds a real heredoc marker.
-
     #[test]
     fn a_double_lt_inside_dollar_paren_within_double_quotes_is_a_marker() {
         let line = "\"$(cat <<'EOF'";
@@ -730,20 +666,12 @@ mod tests {
         assert!(find_heredoc_marker(line).is_some());
     }
 
-    // `$((` arithmetic isn't special-cased: pre-f0a74e0 code did a raw
-    // `line.find("<<")`, so `<<` inside `$((1 << 2))` already (wrongly) read
-    // as a marker. This stays exactly that loose, not looser.
+    // `$((` arithmetic is not special-cased; `<<` inside it still reads as a marker.
     #[test]
     fn a_double_lt_inside_dollar_paren_paren_arithmetic_matches_pre_fix_looseness() {
         let line = "echo $((1 << 2))";
         assert!(find_heredoc_marker(line).is_some());
     }
-
-    // Boundaries `heredoc_suspend_ranges`' byte-offset tracking must hold at
-    // (issue #384): a heredoc with nothing between its marker and
-    // terminator, one that never terminates because `cmd` ends on the marker
-    // line itself, a CRLF-terminated command, and a terminated heredoc whose
-    // last line carries no trailing newline at all.
 
     #[test]
     fn a_heredoc_with_no_body_lines_suspends_marker_through_terminator() {

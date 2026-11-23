@@ -1,36 +1,13 @@
 //! Bounded v1 shape detection for `Effect-opaque execution` (ADR-016).
 //!
-//! A command shape is effect-opaque when its text reveals that another
-//! execution layer will decide the eventual filesystem/database/network
-//! effect, but does not reveal that effect directly. v1 detects three
-//! bounded shapes:
+//! Detects three shapes without filesystem `stat()`: pipe-to-shell (`... | sh`),
+//! interpreter or `source`/`.` script-file execution (`python3 ./x.py`), and
+//! shell stdin execution (`sh -s`). Inline bodies (`-c`/`-e`) are scanned
+//! recursively and are not effect-opaque.
 //!
-//! 1. **Pipe-to-shell** — a pipeline whose right-hand segment is a shell
-//!    interpreter (`… | sh`), reusing the existing PIPE-001 shell-sink shape.
-//! 2. **Script-file execution** — an interpreter (or `source`/`.`) invoked
-//!    with a script-file-looking argv token (`sh ./x.sh`, `python3 ./x.py`).
-//! 3. **Interpreter stdin form** — a shell invoked with `-s` (`sh -s`).
-//!
-//! Non-goals (v1): no filesystem `stat()`; no package-runner detection
-//! (`npm run`, `make`, `cargo xtask`); inline bodies (`-c` / `-e`) are already
-//! extracted and scanned recursively, so they are explicitly *not* effect-opaque.
-//!
-//! The inline-vs-script-file resolution (Standards #2) is a bounded heuristic,
-//! not exhaustive: it carries a per-interpreter table of value-consuming options
-//! so an option's *argument* (`--require ./preload.js`) is not mistaken for the
-//! executed script. Real flags outside that table (`node --conditions
-//! ./preload.js -e "code"`) can still spoof the script-file slot and read as
-//! effect-opaque. This is accepted as a v1 limitation (ADR-016) because the
-//! error direction is fail-safe — a misclassified benign command only earns an
-//! extra pre-exec recovery snapshot, and recovery never blocks. Inverting the
-//! heuristic to treat every unknown option as value-consuming would skip a real
-//! script file (`node --inspect ./script.js`) and drop its recovery snapshot,
-//! which is fail-open and is rejected. A general resolver needs per-flag arity
-//! knowledge no text-only heuristic can supply.
-//!
-//! Detection is shape-only and cheap: it reuses parsed tokens and, only when a
-//! potential interpreter token is present, the existing `logical_segments`
-//! split. It never raises `RiskLevel` — that axis stays orthogonal.
+//! Unlisted value-consuming interpreter options may spoof the script-file slot;
+//! this fail-safe v1 limit (ADR-016) only adds a recovery snapshot and never
+//! blocks or raises `RiskLevel`.
 
 use aegis_parser::{PipelineChain, effective_program, logical_segments, split_tokens};
 use aegis_types::ParsedCommand;
@@ -58,20 +35,10 @@ const INLINE_FLAGS: &[(&str, &str)] = &[
 const SCRIPT_EXTENSIONS: &[&str] = &[
     ".sh", ".bash", ".zsh", ".py", ".js", ".mjs", ".cjs", ".rb", ".pl",
 ];
-/// Interpreter options that consume the NEXT argv token as their value (the
-/// separate-argument form, not `--opt=value`). Their value is not a positional
-/// and must be skipped when locating the first positional — otherwise a
-/// path-like value (`--require ./preload.js`) spoofs the script-file slot and a
-/// real inline body is misclassified as effect-opaque (ADR-016, Standards#2).
+/// Interpreter options that consume the next argv token as their value (ADR-016).
 ///
-/// **Bounded v1 table, not exhaustive** (ADR-016): real flags outside this set
-/// (`node --conditions`, `--openssl-config`, `--redirect-warnings`,
-/// `--diagnostic-dir`) can still spoof the slot. Accepted because the error is
-/// fail-safe — a benign command only earns an extra recovery snapshot, and
-/// recovery never blocks. The opposite heuristic (skip after *any* unknown
-/// option) would drop a real script file's recovery snapshot (`node --inspect
-/// ./script.js`), which is fail-open and rejected. `=`-form options
-/// (`-Mlib=./x`) are single tokens and never match, so they need no entry.
+/// Bounded v1 table; unlisted options fail safe (extra recovery snapshot).
+/// `=`-form options are single tokens and need no entry.
 const VALUE_CONSUMING_OPTIONS: &[(&str, &[&str])] = &[
     (
         "node",

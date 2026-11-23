@@ -504,13 +504,7 @@ fn assess_safe_returns_empty_matched() {
     assert!(a.matched.is_empty());
 }
 
-// ── H3: pattern-database gaps — filesystem token-prefix rules ──────────────
-//
-// `wipefs` and `unlink` previously had no keyword and no prefix program, so
-// `quick_scan` returned false and they assessed as Safe. FS-011/FS-012 close
-// that gap as the first Filesystem-category token-prefix rules (ADR-014): the
-// dangerous verb *is* the effective program token, with no match-anywhere
-// delivery variety.
+// Filesystem token-prefix rules: FS-011 (`wipefs`) and FS-012 (`unlink`) (ADR-014).
 #[test]
 fn assess_h3_wipefs_unlink_prefix_rules() {
     let cases: &[(&str, RiskLevel, &str)] = &[
@@ -520,7 +514,6 @@ fn assess_h3_wipefs_unlink_prefix_rules() {
         ("wipefs -fa /dev/sda", RiskLevel::Danger, "FS-011"),
         ("wipefs -fav /dev/sda", RiskLevel::Danger, "FS-011"),
         ("wipefs -av /dev/sda", RiskLevel::Danger, "FS-011"),
-        // launcher strip (ADR-014): sudo is removed before the prefix scan.
         ("sudo wipefs -a /dev/nvme0n1", RiskLevel::Danger, "FS-011"),
         ("sudo wipefs -fa /dev/nvme0n1", RiskLevel::Danger, "FS-011"),
         ("unlink important.txt", RiskLevel::Warn, "FS-012"),
@@ -530,44 +523,29 @@ fn assess_h3_wipefs_unlink_prefix_rules() {
     }
 }
 
-// ── H3: match-anywhere redirect regexes (FS-013 / FS-014) ──────────────────
-//
-// The danger here is a *redirect operator + target path* that can appear
-// anywhere in the command (`echo k >> ~/.ssh/authorized_keys`), never as the
-// leading program token — the FS-009 / ADR-015 match-anywhere shape. FS-013
-// (authorized_keys) catches both append (backdoor) and truncate (lockout);
-// FS-014 catches a single-`>` clobber of a shell-rc file.
+// Match-anywhere redirect regexes: FS-013 (`authorized_keys`) and FS-014 (shell rc clobber) (ADR-015).
 #[test]
 fn assess_h3_authorized_keys_and_rc_clobber_regexes() {
     let cases: &[(&str, RiskLevel, &str)] = &[
-        // FS-013: append a key (backdoor) — Danger.
         (
             "echo \"ssh-ed25519 AAAA\" >> ~/.ssh/authorized_keys",
             RiskLevel::Danger,
             "FS-013",
         ),
-        // FS-013: truncate authorized_keys (lockout) — Danger.
         ("> ~/.ssh/authorized_keys", RiskLevel::Danger, "FS-013"),
-        // FS-013: `tee -a` is the canonical no-redirect backdoor idiom (often
-        // `| sudo tee -a`) — Danger.
         (
             "echo \"ssh-ed25519 AAAA\" | tee -a ~/.ssh/authorized_keys",
             RiskLevel::Danger,
             "FS-013",
         ),
-        // FS-013: `tee` without -a (truncate via tee) — Danger.
         (
             "echo key | sudo tee ~/.ssh/authorized_keys",
             RiskLevel::Danger,
             "FS-013",
         ),
-        // FS-014: clobber a shell-rc file — Warn.
         ("> ~/.bashrc", RiskLevel::Warn, "FS-014"),
         ("echo unset PATH > ~/.zshrc", RiskLevel::Warn, "FS-014"),
-        // bugs-04 (lead review of H3): every FS-014 alternation branch must
-        // gate and fire, not just .bashrc/.zshrc. A typo in any branch (or its
-        // derived keyword) would silently uncover that rc file, so each remaining
-        // file gets a must-fire case.
+        // Exercise every FS-014 rc-file alternation branch.
         ("> ~/.bash_profile", RiskLevel::Warn, "FS-014"),
         ("> ~/.zprofile", RiskLevel::Warn, "FS-014"),
         ("> ~/.profile", RiskLevel::Warn, "FS-014"),
@@ -579,13 +557,7 @@ fn assess_h3_authorized_keys_and_rc_clobber_regexes() {
     }
 }
 
-// ── H3: cloud token-prefix rules (CL-011 / CL-012 / CL-013) ────────────────
-//
-// `aws s3 rb --force` and `aws s3 sync --delete` pass quick_scan (`aws` is an
-// indexed prefix program) but matched no rule — the only `aws s3` rule was
-// CL-005 (`rm … --recursive`). `gsutil` had no keyword and no prefix program,
-// so it was Safe. These extend the CL-* prefix family (ADR-014); the gsutil
-// leading AnyStar catches the idiomatic `gsutil -m rm -r`.
+// Cloud token-prefix rules: CL-011, CL-012, CL-013 (ADR-014).
 #[test]
 fn assess_h3_cloud_prefix_rules() {
     let cases: &[(&str, RiskLevel, &str)] = &[
@@ -620,12 +592,7 @@ fn assess_h3_cloud_prefix_rules() {
     }
 }
 
-// bugs-01 (lead review of H3): global flags before the service token
-// (`aws --profile prod s3 …`, `aws --region us-east-1 s3 …`) are ubiquitous and
-// previously broke the `aws s3 <verb>` prefix rules, which required `s3` at
-// tokens[1]. A leading AnyStar after `aws` admits the global flags. Pulled
-// forward from H3-followups — a one-token, strictly fail-safe fix for a common
-// bypass of Danger/Warn rules.
+// Global flags before `s3` (`aws --profile prod s3 ...`) must still match `aws s3` rules.
 #[test]
 fn assess_h3_aws_global_flags_before_service_still_fire() {
     let cases: &[(&str, RiskLevel, &str)] = &[

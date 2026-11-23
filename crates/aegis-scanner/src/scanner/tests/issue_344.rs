@@ -1,11 +1,7 @@
 use super::*;
 
-// Issue #344: a quoted-delimiter heredoc (`<<'EOF'`) disables all shell
-// expansion in its body, including backtick command substitution. A
-// dangerous-looking substring inside that body — a markdown code span in
-// prose, say — is inert text, not a command about to run, as long as the
-// heredoc target itself is a passive consumer of stdin rather than an
-// interpreter. Scanning must not treat it as live command substitution.
+// Quoted-delimiter heredoc (`<<'EOF'`) to a passive consumer disables shell
+// expansion, so prose backticks inside the body stay Safe (#344).
 #[test]
 fn assess_quoted_delimiter_heredoc_prose_backticks_stay_safe() {
     let s = scanner();
@@ -67,25 +63,19 @@ fn assess_double_quoted_and_backslash_delimiter_heredocs_stay_safe() {
     }
 }
 
-// An unquoted heredoc still expands backticks/`$(...)` at construction time —
-// this must keep firing exactly as before the fix.
+// Unquoted heredocs expand backticks/`$(...)`, so they must fire.
 #[test]
 fn assess_unquoted_heredoc_backtick_command_substitution_still_fires() {
     assert_assessment_matches_pattern("cat <<EOF\n`rm -rf /`\nEOF", RiskLevel::Block, "FS-001");
 }
 
-// A nowdoc handed to an interpreter (not a passive consumer) still executes
-// its raw body as code once the interpreter reads it from stdin — nowdoc
-// quoting only suppresses bash's own expansion, not the interpreter's.
+// Interpreters execute stdin regardless of nowdoc quoting.
 #[test]
 fn assess_nowdoc_to_interpreter_still_scans_body() {
     assert_assessment_matches_pattern("bash <<'EOF'\nrm -rf /\nEOF", RiskLevel::Block, "FS-001");
 }
 
-// A nowdoc body handed to `cat` is `Data consumer` territory regardless of
-// whether its text happens to look like a dangerous command (issue #396
-// widens this beyond #344's backtick-only masking): `cat` never executes its
-// stdin, and with no pipe out of it no shell reads the body either.
+// Unpiped `cat` is a trusted data consumer (ADR-042, #396).
 #[test]
 fn assess_nowdoc_to_cat_direct_dangerous_text_stays_safe() {
     let s = scanner();

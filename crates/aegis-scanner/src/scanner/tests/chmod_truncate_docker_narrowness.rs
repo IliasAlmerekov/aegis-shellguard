@@ -1,8 +1,6 @@
 use super::*;
 
-// FS-019 deliberately covers literal system-root targets only. A glob has no
-// resolved target at scan time, and a prior `cd` is not shell evaluation; both
-// are explicit non-coverage rather than a reason to broaden the rule.
+// FS-019 covers literal system-root targets only; globs and prior `cd` are out of scope.
 #[test]
 fn m5_fs019_non_recursive_and_non_literal_root_targets_do_not_fire() {
     let s = scanner();
@@ -29,15 +27,7 @@ fn m5_fs019_non_recursive_and_non_literal_root_targets_do_not_fire() {
     }
 }
 
-// M5.4 — DB-009 narrowness guards. The positive (must-fire) cases live in
-// `chmod_truncate_and_docker_volume.rs`; these guard the opposite direction — the near-miss
-// invocations that must NOT raise DB-009 — so the rule stays narrow and
-// fail-closed rather than fail-open. Bare `TRUNCATE <ident>` and a bare comma
-// list without a strong clause are declared uncovered forms: the word collides
-// with the coreutils command already covered by FS-006 and with ordinary prose,
-// and neither carries a SQL-only anchor (ADR-015's tolerance for false
-// positives rests on `drop` + `table` being a two-word anchor, which the bare
-// form lacks).
+// Bare `TRUNCATE <ident>` without a SQL-only anchor is intentionally uncovered (ADR-015).
 #[test]
 fn m5_db009_bare_truncate_ident_does_not_fire() {
     let s = scanner();
@@ -61,8 +51,6 @@ fn m5_db009_bare_truncate_ident_does_not_fire() {
     );
 }
 
-// FS-006 covers the coreutils `truncate` command; DB-009 must not fire on a
-// size-flag invocation, which is a file operation, not SQL.
 #[test]
 fn m5_db009_coreutils_truncate_stays_safe() {
     let s = scanner();
@@ -88,10 +76,6 @@ fn m5_db009_coreutils_truncate_stays_safe() {
     }
 }
 
-// Ordinary prose must not raise DB-009. The comma and the word "only" are not
-// SQL-specific anchors — `truncate logs, rebuild index` and `truncate only the
-// last line` are the exact class of false positive that led to rejecting bare
-// `TRUNCATE users` as a detection form.
 #[test]
 fn m5_db009_prose_does_not_fire() {
     let s = scanner();
@@ -117,9 +101,6 @@ fn m5_db009_prose_does_not_fire() {
     }
 }
 
-// A bare comma-separated list without a strong clause is a declared uncovered
-// form — no SQL-only anchor — the same category as bare `TRUNCATE users`. The
-// comma alone is ordinary punctuation, not SQL syntax.
 #[test]
 fn m5_db009_bare_comma_list_does_not_fire() {
     let s = scanner();
@@ -143,10 +124,7 @@ fn m5_db009_bare_comma_list_does_not_fire() {
     );
 }
 
-// Identifiers containing spaces inside quotes are a stated limit: the regex
-// identifier class `[^\s,]+` cannot span a space, so a quoted identifier with
-// an embedded space is not detected. Pinned here as a must-not-fire example so
-// the limit is written down rather than left to be discovered.
+// Known limit: DB-009's `[^\s,]+` identifier class does not span embedded spaces.
 #[test]
 fn m5_db009_spaced_quoted_identifier_does_not_fire() {
     let s = scanner();
@@ -165,12 +143,6 @@ fn m5_db009_spaced_quoted_identifier_does_not_fire() {
     );
 }
 
-// ── Docker volume rm narrowness (DK-007) ───────────────────────────────────
-//
-// DK-007 keys on the exact `docker volume rm` prefix. `ls` and `inspect` are
-// read-only and must stay clear; `docker rm -v <container>` removes anonymous
-// volumes alongside a container — a different argument model and
-// false-positive profile, deliberately not folded into DK-007.
 #[test]
 fn m5_docker_volume_ls_and_inspect_do_not_fire_dk007() {
     let s = scanner();
@@ -198,9 +170,7 @@ fn m5_docker_volume_ls_and_inspect_do_not_fire_dk007() {
 
 #[test]
 fn m5_docker_rm_v_is_not_detected_as_dk007() {
-    // Deliberate scope: `docker rm -v <container>` removes anonymous volumes
-    // alongside a container — a different argument model and false-positive
-    // profile. It is not folded into DK-007.
+    // `docker rm -v` removes anonymous volumes alongside a container and is outside DK-007.
     let s = scanner();
     let assessment = s.assess("docker rm -v my-container");
     assert!(

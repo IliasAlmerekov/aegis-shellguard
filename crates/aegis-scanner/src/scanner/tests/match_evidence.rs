@@ -1,15 +1,4 @@
-//! Language-aware analysis Iteration 1 — Slice D.
-//!
-//! Every `Match` now carries typed `MatchEvidence` identifying its detection
-//! mechanism (ADR-022 §4). These tests pin the mechanism + source the scanner
-//! records for each scan path — regex `Pattern` vs `Token-prefix rule` —
-//! through the public `Scanner::assess` / `MatchResult.evidence` seam, without
-//! asserting on classification (the Slice A compatibility fixtures already
-//! guard that classifications are unchanged).
-//!
-//! Expected mechanisms are derived from how the scanner produces each match
-//! (regex `full_scan` vs `Token-prefix rule` `prefix_scan`), an independent
-//! source of truth — not from the evidence field itself.
+//! Tests pinning `MatchResult.evidence` (`Pattern` vs `Token-prefix rule`) per scan path (ADR-022 §4).
 
 use super::*;
 
