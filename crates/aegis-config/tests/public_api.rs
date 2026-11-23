@@ -39,16 +39,15 @@ fn current_environment_loads_project_config() {
         assert_eq!(aegis_config::active_config_path_for_append(), Some(project));
         assert_eq!(AegisConfig::load().unwrap().mode, Mode::Strict);
         assert_eq!(AegisConfig::load_inspection().unwrap().mode, Mode::Strict);
-        return;
+    } else {
+        let home = TempDir::new().unwrap();
+        let project = TempDir::new().unwrap();
+        fs::write(project.path().join(".aegis.toml"), "mode = \"Strict\"\n").unwrap();
+        isolated_test::run(
+            isolated_test::command()
+                .env(CHILD, "1")
+                .env("HOME", home.path())
+                .current_dir(project.path()),
+        );
     }
-
-    let home = TempDir::new().unwrap();
-    let project = TempDir::new().unwrap();
-    fs::write(project.path().join(".aegis.toml"), "mode = \"Strict\"\n").unwrap();
-    isolated_test::run(
-        isolated_test::command()
-            .env(CHILD, "1")
-            .env("HOME", home.path())
-            .current_dir(project.path()),
-    );
 }
