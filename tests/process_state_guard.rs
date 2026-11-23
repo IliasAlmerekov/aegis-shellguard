@@ -16,6 +16,17 @@ fn run() {
         let mut guard = process_state::ProcessStateGuard::lock();
         // SAFETY: this executable starts no threads or foreign environment readers.
         unsafe {
+            guard.set_env(
+                OsStr::new("AEGIS_GUARD_PRESENT"),
+                Some(OsStr::new("changed")),
+            );
+        }
+        assert_eq!(
+            std::env::var_os("AEGIS_GUARD_PRESENT").as_deref(),
+            Some(OsStr::new("changed"))
+        );
+        // SAFETY: this executable starts no threads or foreign environment readers.
+        unsafe {
             guard.set_env(OsStr::new("AEGIS_GUARD_PRESENT"), None);
             guard.set_env(
                 OsStr::new("AEGIS_GUARD_ABSENT"),

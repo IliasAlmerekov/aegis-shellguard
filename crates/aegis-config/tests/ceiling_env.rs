@@ -1,6 +1,9 @@
 //! `compute_trusted_ceiling` ignores `GIT_*` and `TMPDIR` environment variables.
 
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "this test uses only environment changes; the dedicated probe tests cwd"
+)]
 #[path = "../../../tests/support/process_state.rs"]
 mod process_state;
 
