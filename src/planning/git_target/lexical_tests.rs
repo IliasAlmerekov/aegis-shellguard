@@ -1,5 +1,4 @@
-//! Lexical folding and the shell's logical starting directory (#525, third
-//! Codex review of PR #529).
+//! Lexical folding and the shell's logical starting directory (#525).
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};

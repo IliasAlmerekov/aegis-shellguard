@@ -97,10 +97,7 @@ fn invalid_custom_scanner_aborts_runtime_context_construction() {
 /// other custom-pattern tests in this file would make the delta flaky.
 static SCANNER_BUILD_COUNT_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// A config with custom patterns contributed by both the global and project
-/// layers must build the scanner exactly once on the success path — the
-/// layered file-load path used to build it once per layer plus once more in
-/// `RuntimeContext` (issue #399).
+/// Layered global + project custom patterns must build the scanner once (#399).
 #[test]
 fn layered_custom_patterns_build_the_scanner_exactly_once() {
     let _guard = SCANNER_BUILD_COUNT_MUTEX.lock().unwrap();

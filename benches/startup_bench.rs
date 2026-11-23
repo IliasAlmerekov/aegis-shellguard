@@ -11,17 +11,8 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
-// Group 1: sub-benches that each cost a few milliseconds, so the defaults are
-// fine — the 8s `measurement_time` in `scanner_bench` exists there only
-// because that bench times 1,000 `assess` calls per iteration.
-
 fn bench_scanner_construction(c: &mut Criterion) {
-    // Production reaches the scanner through `aegis_scanner::scanner_for` →
-    // `builtin_scanner()`, which returns `Arc::clone` of the process-wide
-    // `BUILTIN_SCANNER` static (`crates/aegis-scanner/src/lib.rs:33-38`).
-    // That static cannot be re-initialised in a loop, so this bench models
-    // the one-per-process cost rather than repeating the production call.
-    // For a `$SHELL` proxy, one per process is one per command.
+    // Models the one-per-process `BUILTIN_SCANNER` build cost (static cannot re-init in a loop).
     c.bench_function("scanner_construction", |b| {
         b.iter(|| {
             let patterns = PatternSet::load().expect("patterns.toml must load");
@@ -34,10 +25,7 @@ fn bench_runtime_context_construction(c: &mut Criterion) {
     let runtime = Runtime::new().expect("tokio runtime must start");
     let handle = runtime.handle().clone();
 
-    // A default config has no `custom_patterns`, so this path gets a cloned
-    // `Arc` from the already-warm `BUILTIN_SCANNER` static instead of
-    // building a scanner. This row and `scanner_construction` therefore
-    // measure disjoint work and can be added together.
+    // Default config clones the warm `BUILTIN_SCANNER` Arc, disjoint from `scanner_construction`.
     c.bench_function("runtime_context_construction", |b| {
         b.iter(|| {
             black_box(
@@ -52,15 +40,7 @@ fn bench_runtime_context_custom_pattern_construction(c: &mut Criterion) {
     let runtime = Runtime::new().expect("tokio runtime must start");
     let handle = runtime.handle().clone();
 
-    // A non-empty `custom_patterns` list sends this config through
-    // `aegis_scanner::scanner_for`'s non-empty branch
-    // (`crates/aegis-scanner/src/lib.rs:47-53`), which builds a fresh
-    // `Scanner` merging the 41 built-ins with the custom set instead of
-    // cloning the warm `BUILTIN_SCANNER` static. One pattern is enough to
-    // take that branch: `PatternSet::from_sources` appends every custom
-    // pattern onto the built-in set before compiling any regex
-    // (`crates/aegis-scanner/src/patterns.rs:132-151`), so built-in compile
-    // dominates regardless of how many custom patterns are added.
+    // One custom pattern triggers a full scanner rebuild merging built-ins and custom patterns.
     let mut config = AegisConfig::default();
     config.custom_patterns = vec![UserPattern {
         id: "USR-BENCH-001".to_string(),
@@ -103,9 +83,7 @@ criterion_group! {
     targets = bench_scanner_construction, bench_runtime_context_construction, bench_runtime_context_custom_pattern_construction, bench_sandbox_ceiling_nested_worktree
 }
 
-// Group 2: one full process invocation per iteration, dominated by process
-// spawn and teardown rather than Aegis's own work — a shorter sample count
-// and measurement window keeps the bench itself fast.
+// Full process spawn per iteration; shorter sample/measurement window keeps bench fast.
 
 fn bench_startup_safe_command(c: &mut Criterion) {
     let home = TempDir::new().expect("temp HOME must be created");
@@ -116,9 +94,7 @@ fn bench_startup_safe_command(c: &mut Criterion) {
                 .args(["-c", "ls -la", "--output", "json"])
                 .env("HOME", home.path())
                 .current_dir(home.path())
-                // `is_ci_environment` (`src/runtime_gate.rs:19-27`) returns
-                // false on `AEGIS_CI=0` before every other check, so this is
-                // cheaper and more reliable than clearing seven CI variables.
+                // `AEGIS_CI=0` short-circuits `is_ci_environment` without clearing every CI variable.
                 .env("AEGIS_CI", "0")
                 .output()
                 .expect("aegis must spawn and run to completion");

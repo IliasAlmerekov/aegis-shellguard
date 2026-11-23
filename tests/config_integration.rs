@@ -120,9 +120,7 @@ reason = "cwd-scoped allowlist"
 "#,
         allowed_cwd.display()
     );
-    // The project layer can no longer weaken `allowlist_override_level` below
-    // the default `Warn` (C3 security ratchet). Set it in the trusted global
-    // config instead so the cwd-scoped Danger allowlist can auto-approve.
+    // C3 ratchet (ADR-013): the project layer cannot weaken this field.
     let global_config_dir = home.path().join(".config/aegis");
     fs::create_dir_all(&global_config_dir).unwrap();
     fs::write(
@@ -197,14 +195,7 @@ exit 0
     fs::write(enabled_workspace.path().join("dirty.txt"), "enabled\n").unwrap();
     fs::write(disabled_workspace.path().join("dirty.txt"), "disabled\n").unwrap();
 
-    // The project layer can no longer weaken `allowlist_override_level` below
-    // the default `Warn` (C3 security ratchet). Set it in the trusted global
-    // config so the cwd-scoped Danger allowlist can auto-approve in both
-    // workspaces. Likewise `auto_snapshot_git` defaults to `true` and a project
-    // can no longer disable it (C3 ratchet), so the trusted global config opts
-    // out of git snapshots; the `enabled` workspace then re-enables them via a
-    // project-layer tightening (which the ratchet keeps), while the `disabled`
-    // workspace inherits the global `false`.
+    // C3 ratchet (ADR-013): the project layer cannot weaken this field.
     let global_config_dir = home.path().join(".config/aegis");
     fs::create_dir_all(&global_config_dir).unwrap();
     fs::write(

@@ -431,14 +431,6 @@ fn danger_command_with_eof_stdin_is_denied() {
 }
 
 /// A Warn-level command with no TTY must be denied automatically (fail-closed).
-///
-/// Previously (before non-interactive mode), empty stdin was treated as
-/// "proceed" by the Warn prompt (`"" != "n"`), so EOF auto-approved.  That
-/// behaviour was unsafe for CI/agent runners: an AI agent could get a
-/// suspicious command approved without any human present.
-///
-/// The new contract: no TTY → non-interactive mode → Warn is denied.
-/// To allow a Warn command in CI, add it to the allowlist.
 #[test]
 fn warn_command_non_interactive_is_denied() {
     let home = TempDir::new().unwrap();

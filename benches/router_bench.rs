@@ -10,24 +10,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
-// This file measures the hot-path cost of `aegis::analysis::router::route`
-// (PR #437: route every segment of a compound command, not only the first)
-// plus, where the input shape allows it, the full per-command planning
-// entry point that `shell_wrapper::run_shell_wrapper` and `--output json -c`
-// both call: `PreparedPlanner::plan`. That entry point runs scanner assess,
-// routing, and policy evaluation without spawning a worker subprocess or
-// executing the command — routing to a `ScriptFile` or interpreter `Inline`
-// target is what triggers a worker spawn (`src/analysis/orchestrate.rs`,
-// ADR-022 §0: "when route yields no target, no subprocess is spawned").
-// None of the safe commands below route to anything, so `plan()` stays on
-// that no-spawn path. Group 4 does route to a target, so only `route()`
-// itself is timed there; timing `plan()` on it would mostly measure worker
-// spawn, not the router.
-//
-// Many small sub-benchmarks live in this file, so the group config below
-// trims `measurement_time` and `warm_up_time` below Criterion's defaults —
-// these functions run in low single-digit microseconds, so a shorter window
-// still gives a stable median.
+// ADR-022 §0: `plan()` spawns no worker when `route()` yields no target; Group 4 routes to targets so only `route()` is timed.
 
 // ── Group 1: safe everyday commands, single segment ───────────────────────
 
@@ -149,14 +132,7 @@ fn bench_route_interpreter_shapes(c: &mut Criterion) {
     }
 }
 
-// ── full evaluation entry point benches ────────────────────────────────────
-//
-// `PreparedPlanner::plan` is the same call `run_shell_wrapper` makes for
-// `aegis --output json -c <cmd>`. Building `RuntimeContext` directly with a
-// default config (rather than going through `prepare_planner`, which reads
-// config from disk) isolates the per-command cost from one-time process
-// setup, the same split `scanner_bench.rs` and `startup_bench.rs` already
-// make between construction and per-call cost.
+// Build `RuntimeContext` directly to time per-command planning without config disk I/O.
 
 fn make_prepared_planner() -> (Runtime, PreparedPlanner, TempDir) {
     let runtime = Runtime::new().expect("tokio runtime must start");

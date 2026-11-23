@@ -576,8 +576,6 @@ fn validate_warns_when_project_disables_globally_enabled_sandbox() {
 
 #[test]
 fn validate_warns_when_project_disables_globally_enabled_snapshot_flag() {
-    // F2: project `auto_snapshot_git = false` over global `true` disables git
-    // snapshots under Selective policy and must emit a ratchet warning.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -612,8 +610,6 @@ fn validate_warns_when_project_disables_globally_enabled_snapshot_flag() {
 
 #[test]
 fn validate_warns_when_project_enables_network_over_global_deny() {
-    // F3: project `allow_network = true` over global `false` weakens the jail
-    // (network is the weaker direction) and must emit a ratchet warning.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -649,8 +645,6 @@ fn validate_warns_when_project_enables_network_over_global_deny() {
 
 #[test]
 fn validate_warns_when_project_expands_allow_write_over_global_base() {
-    // F3: project adds `/etc` to the writable set beyond the global base
-    // `/opt/data` — more paths is weaker and must emit a ratchet warning.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);

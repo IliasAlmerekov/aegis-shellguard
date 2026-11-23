@@ -11,9 +11,11 @@
 #   text    checks clippy cannot make: no `.rs` file under src/, crates/,
 #           tests/, fuzz/ or benches/ exceeds 800 lines, no `.rs` file under
 #           src/, crates/ or tests/ carries a frozen tracker id in its name,
-#           every backticked path in AGENTS.md, CONVENTION.md, CONTRIBUTING.md
-#           and CLAUDE.md exists in the tree, no unguarded `Command::new("git")`
-#           spawns exist, and scripts/test-tamper-check.test.sh passes
+#           no comment in src/, crates/, tests/ or benches/ cites a review
+#           round or finding id, every backticked path in AGENTS.md,
+#           CONVENTION.md, CONTRIBUTING.md and CLAUDE.md exists in the tree,
+#           no unguarded `Command::new("git")` spawns exist, and
+#           scripts/test-tamper-check.test.sh passes
 #   all     fmt, clippy, then text (also the default with no argument)
 #
 # LINT_TEXT_ROOT points the text checks at another directory than the
@@ -192,6 +194,42 @@ $files
 EOF
 }
 
+# Comments do not cite review rounds or finding ids (#601, #629).
+check_review_citations() {
+    set --
+    for dir in src crates tests benches; do
+        if [ -d "$dir" ]; then
+            set -- "$@" "$dir"
+        fi
+    done
+    [ "$#" -gt 0 ] || return 0
+    find_status=0
+    files=$(find "$@" \( -name target -o -name .git -o -name .worktrees \
+        -o -name .cargo -o -name .claude -o -name node_modules \) -prune \
+        -o -type f \( -name '*.rs' -o -name '*.toml' \) -print) || find_status=$?
+    if [ "$find_status" -ne 0 ]; then
+        echo "find could not read every path under: $* (exit $find_status)"
+    fi
+    [ -n "$files" ] || return 0
+    pat='([^A-Za-z0-9_]R[0-9]+-[0-9]+|#[0-9]+ review|finding [A-Z]?[0-9]+)'
+    while IFS= read -r file; do
+        case "$file" in
+            *.rs) prefix='^[[:space:]]*//' ;;
+            *.toml) prefix='^[[:space:]]*#' ;;
+            *) continue ;;
+        esac
+        grep_status=0
+        LC_ALL=C grep -qE "${prefix}.*${pat}" "$file" || grep_status=$?
+        if [ "$grep_status" -gt 1 ]; then
+            echo "$file: cannot read the file"
+        elif [ "$grep_status" -eq 0 ]; then
+            echo "$file: comment cites a review round or finding id, see CONVENTION.md section 4"
+        fi
+    done <<EOF
+$files
+EOF
+}
+
 run_text() {
     echo "lint: text checks"
     root=${LINT_TEXT_ROOT:-.}
@@ -211,6 +249,11 @@ run_text() {
         text_failed=1
     fi
     out=$(cd "$root" && check_tracker_id_filenames)
+    if [ -n "$out" ]; then
+        echo "$out" >&2
+        text_failed=1
+    fi
+    out=$(cd "$root" && check_review_citations)
     if [ -n "$out" ]; then
         echo "$out" >&2
         text_failed=1

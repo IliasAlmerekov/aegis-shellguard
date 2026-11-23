@@ -194,13 +194,7 @@ mod tests {
         assert!(result.matched);
     }
 
-    // ── C3-residual Fix-1 regression: project [[rules]] Allow must NOT
-    // auto-approve a Danger command under Mode::Protect ───────────────────
-    // A project-layer `[[rules]] decision = "allow"` matching a Danger command
-    // must be DROPPED at the config merge, so the rule does not match and the
-    // engine falls through to `Prompt` (NOT `AutoApprove`). Currently the
-    // project Allow is concatenated into `config.rules`, so `evaluate_policy_rules`
-    // returns `matched = true` with `Allow` and the engine auto-approves — RED.
+    // Project `[[rules]]` Allow is dropped at merge so Danger commands still prompt under Protect (ADR-013).
 
     fn danger_assessment(cmd: &str) -> Assessment {
         Assessment {
@@ -282,10 +276,6 @@ mod tests {
 
     #[test]
     fn global_rules_allow_still_autoapproves_under_protect() {
-        // C3-residual Fix-1 case 4 (engine parity): a GLOBAL-layer
-        // `[[rules]] decision = "allow"` is honored and STILL auto-approves (the
-        // ratchet only drops PROJECT-layer Allow rules). This guards against an
-        // over-broad fix that would also drop global Allow rules.
         let workspace = TempDir::new().unwrap();
         let home = TempDir::new().unwrap();
         let global_dir = home.path().join(".config/aegis");

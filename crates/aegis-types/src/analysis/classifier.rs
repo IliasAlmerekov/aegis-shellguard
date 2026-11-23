@@ -3,8 +3,8 @@
 //! This is the single place that maps a [`DetectedOperation`] — emitted by any
 //! language adapter — into the existing Aegis `Category` / `RiskLevel` /
 //! `Match` vocabulary. No adapter assigns a final `RiskLevel` directly or keeps
-//! a private copy of this semantics (Iteration 5 REVIEW GATE); every adapter
-//! routes through [`classify`].
+//! a private copy of this semantics (ADR-022 §3); every adapter routes through
+//! [`classify`].
 //!
 //! Invariants pinned by `classifier_tests`:
 //! - The risk mapping is **certainty-independent**. A `Dynamic` operand never

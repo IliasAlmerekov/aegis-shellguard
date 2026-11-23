@@ -139,7 +139,7 @@ Architectural constraints:
   - enum variants: `PascalCase`
   - pattern IDs in data: uppercase strings like `"FS-001"`
 - Prefer ASCII unless there is a strong reason not to.
-- Keep comments concise and explanatory, not redundant.
+- A comment that explains why holds at most one line the code cannot show: a constraint, an invariant, a measurement, an ADR or GHSA link, an issue number. History, rejected alternatives, comparisons with other designs, review-round and finding-id citations, and restatements of the code go in the commit message or an ADR; `scripts/lint.sh text` rejects review-round and finding-id citations. API docs, format specs and `// SAFETY:` comments follow their own rules.
 - Keep each `.rs` file at or under 800 lines (`scripts/lint.sh text`); when a file reaches the cap, split it by responsibility rather than trimming code or comments to fit.
 - Every `unsafe` block carries a `// SAFETY:` comment directly above it naming the invariant that makes the call sound, enforced by `clippy::undocumented_unsafe_blocks` through `[workspace.lints]`.
 - All new public items must have `///` doc comments.

@@ -5,7 +5,7 @@
 //! and Language-aware rule — through one common contract, plus the typed
 //! evidence, status, and degradation vocabulary that language adapters emit.
 //!
-//! Constraints (plan Iteration 1 REVIEW GATE):
+//! Constraints (ADR-022):
 //! - Pure data only. No filesystem access, no subprocess, no Tree-sitter
 //!   types, and no dependency arrow from this crate to any parser crate.
 //! - These types carry no source body, full snippet, variable value, or AST.
@@ -92,8 +92,8 @@ pub enum OperandCertainty {
 /// The state of language-aware analysis for one target (ADR-022 §4).
 ///
 /// Ordered by *increasing* degradation: `NotApplicable < Complete < Degraded`,
-/// so `max` of a set of statuses is the worst (most degraded) one — the
-/// invariant the monotonic merge (plan Iteration 1 RED #3) relies on.
+/// so `max` of a set of statuses is the worst (most degraded) one, as required
+/// by monotonic merge.
 #[non_exhaustive]
 #[derive(
     Debug,
@@ -390,7 +390,7 @@ pub struct AnalysisSummary {
 }
 
 /// Merge the baseline scanner `Assessment` with a `LanguageAnalysisResult` into
-/// one `Assessment` (ADR-022 §1, plan Iteration 1 RED #3).
+/// one `Assessment` (ADR-022 §1).
 ///
 /// Monotonic invariants (this function is the single place that enforces them):
 /// - **risk never decreases**: the merged `RiskLevel` is the max of the

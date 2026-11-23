@@ -427,11 +427,7 @@ reason = "unscoped rule contributed by a layer with no custom patterns"
     assert!(message.contains("must declare cwd or user scope"));
 }
 
-/// A config layer that adds an invalid custom pattern no longer fails
-/// `AegisConfig::load_for` itself (issue #399): the layered loader stops
-/// eagerly rebuilding a `Scanner` per layer just to surface this early, so
-/// the pattern error only surfaces once `RuntimeContext` builds the real
-/// scanner from the merged config.
+/// Invalid custom patterns surface when `RuntimeContext` builds the scanner, not at `load_for` (#399).
 #[test]
 fn invalid_custom_pattern_config_no_longer_fails_at_load_for() {
     let workspace = TempDir::new().unwrap();

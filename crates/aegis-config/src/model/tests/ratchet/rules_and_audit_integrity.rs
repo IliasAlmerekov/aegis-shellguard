@@ -1,21 +1,4 @@
-// ── C3-residual: two security-critical paths left out of ADR-013 ratchet ──
-//
-// Fix 1: a project-layer `[[rules]]` entry with `decision = "Allow"` must be
-// DROPPED at merge (project may not auto-approve via rules — only tighten via
-// Prompt/Block) and surfaced as a `project_security_ratchet` warning. Global
-// `[[rules]] Allow` stays honored (global is trusted, last-wins). Project
-// Prompt/Block rules are still honored (project may tighten).
-//
-// Fix 2: `audit.integrity_mode` must be ratcheted (stricter of base/requested
-// wins under the Project layer). `ChainSha256` is stricter than `Off`. Global
-// stays last-wins. The warning fires iff `kept != requested` under the Project
-// layer, mirroring `push_ratchet_warning`.
-//
-// These tests assert on the OBSERVABLE merged config + the warnings Vec so they
-// pass under EITHER correct implementation approach (provenance-based or
-// direct-filter). They must FAIL against the current (un-ratcheted) code.
-
-// ── Fix 1: project `[[rules]] decision = "Allow"` dropped + warned ────────
+// Project `Allow` rules (top-level or `when.then`) are dropped and warned; `audit.integrity_mode` ratchets strictly (ADR-013).
 
 /// Returns the full ratchet warning list (with requested/kept) for a project
 /// layer. Inlined here so the fragment can inspect `requested`/`kept` without
@@ -33,9 +16,6 @@ fn full_project_warnings(
 
 #[test]
 fn project_rules_allow_dropped_and_warned() {
-    // C3-residual Fix-1 case 1: base has NO rules; project adds a `[[rules]]
-    // decision = "allow"`. The Allow entry must be DROPPED (not honored) and a
-    // `rules` ratchet warning must fire.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -71,9 +51,6 @@ fn project_rules_allow_dropped_and_warned() {
 
 #[test]
 fn project_rules_allow_dropped_preserves_base_allow() {
-    // C3-residual Fix-1 case 1 (parity guard): when the base (global) already
-    // has a `[[rules]] Allow`, a project-layer Allow must still be dropped while
-    // the base Allow survives — only the PROJECT Allow is dropped + warned.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -122,8 +99,6 @@ fn project_rules_allow_dropped_preserves_base_allow() {
 
 #[test]
 fn project_rules_prompt_honored_no_warning() {
-    // C3-residual Fix-1 case 2: project-layer `[[rules]] decision = "prompt"`
-    // (tightening) is STILL honored and produces NO ratchet warning.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -152,8 +127,6 @@ fn project_rules_prompt_honored_no_warning() {
 
 #[test]
 fn project_rules_block_honored_no_warning() {
-    // C3-residual Fix-1 case 3: project-layer `[[rules]] decision = "block"`
-    // (tightening) is STILL honored and produces NO ratchet warning.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -182,10 +155,6 @@ fn project_rules_block_honored_no_warning() {
 
 #[test]
 fn global_rules_allow_honored_no_warning() {
-    // C3-residual Fix-1 case 4: a GLOBAL-layer `[[rules]] decision = "allow"`
-    // is STILL honored (present in merged rules) and triggers NO ratchet
-    // warning (global is trusted, last-wins). The project file is empty so no
-    // project-layer rules are requested.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -213,23 +182,8 @@ fn global_rules_allow_honored_no_warning() {
     assert_no_warning_for(&warnings, "rules", "C3-residual Fix-1 global Allow honored");
 }
 
-// ── C3-residual Fix-1 bypass (iteration 2): a project-layer `[[rules]]`
-// entry whose top-level `decision = "prompt"` (or `"block"`) but whose
-// `when.then = "allow"` is a same-class auto-approve bypass. At runtime
-// `effective_decision` returns `when.then = Allow` when the env condition
-// matches, silently auto-approving a Danger command — exactly what Fix-1
-// exists to prevent. Such entries must be DROPPED at the project merge
-// (exactly like a plain `decision = "allow"` rule) and surface a `"rules"`
-// ratchet warning. The test asserts on OBSERVABLE behavior (merged `rules`
-// Vec contents + warnings Vec) so it passes under any correct implementation.
-
 #[test]
 fn project_rules_prompt_with_when_then_allow_dropped_and_warned() {
-    // C3-residual Fix-1 bypass: project `[[rules]] decision = "prompt"` with
-    // `when.then = "allow"` must be DROPPED at merge and warned, exactly like a
-    // plain `decision = "allow"` rule. Currently `is_untrusted_allow` only
-    // checks `rule.decision == Allow`, so this rule SURVIVES the project-layer
-    // drop — RED.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -279,11 +233,6 @@ fn project_rules_prompt_with_when_then_allow_dropped_and_warned() {
 
 #[test]
 fn project_rules_block_with_when_then_allow_dropped_and_warned() {
-    // C3-residual Fix-1 bypass (block shape): project `[[rules]] decision =
-    // "block"` with `when.then = "allow"` must also be DROPPED at merge and
-    // warned. Same root cause as the prompt shape — `is_untrusted_allow` must
-    // flag any rule whose `when.then == Allow`, regardless of the top-level
-    // `decision`. RED until fixed.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -327,13 +276,8 @@ fn project_rules_block_with_when_then_allow_dropped_and_warned() {
     );
 }
 
-// ── Fix 2: `audit.integrity_mode` ratcheted ──────────────────────────────
-
 #[test]
 fn project_audit_integrity_mode_off_weakened_from_chainsha256_kept_and_warned() {
-    // C3-residual Fix-2 case 6: base `ChainSha256` (default), project requests
-    // `Off`. Stricter of base/requested is kept (`ChainSha256`); a warning fires
-    // with field `"audit.integrity_mode"`, requested `"Off"`, kept `"ChainSha256"`.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -374,8 +318,6 @@ fn project_audit_integrity_mode_off_weakened_from_chainsha256_kept_and_warned() 
 
 #[test]
 fn project_audit_integrity_mode_chainsha256_tightens_from_off_honored_no_warning() {
-    // C3-residual Fix-2 case 7: base `Off`, project requests `ChainSha256`
-    // (tightening). Merged is `ChainSha256`, NO warning (kept == requested).
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -413,8 +355,6 @@ fn project_audit_integrity_mode_chainsha256_tightens_from_off_honored_no_warning
 
 #[test]
 fn project_audit_integrity_mode_chainsha256_equal_no_warning() {
-    // C3-residual Fix-2 case 8: base `ChainSha256`, project `ChainSha256`
-    // (equal). Merged `ChainSha256`, NO warning.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -448,9 +388,6 @@ fn project_audit_integrity_mode_chainsha256_equal_no_warning() {
 
 #[test]
 fn global_audit_integrity_mode_off_last_wins_no_warning() {
-    // C3-residual Fix-2 case 9: a GLOBAL-layer `integrity_mode = "Off"` overlay
-    // on base `ChainSha256` is honored (global last-wins, trusted) and triggers
-    // NO ratchet warning (the ratchet only gates the Project layer).
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -485,8 +422,6 @@ fn global_audit_integrity_mode_off_last_wins_no_warning() {
 
 #[test]
 fn project_audit_integrity_mode_off_equal_to_off_base_no_warning() {
-    // C3-residual Fix-2 case 10: base `Off`, project `Off` (equal). Merged `Off`,
-    // NO warning (kept == requested).
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);

@@ -89,7 +89,7 @@ fn dynamic_payload_emits_match_and_degradation_without_target() {
         0,
     );
 
-    // The sink Match is retained (REVIEW GATE: dynamic sink keeps its Match).
+    // A dynamic sink still retains its Match (ADR-022 §3/§7).
     assert_eq!(d.sink_match.pattern.risk, RiskLevel::Danger);
     assert_eq!(d.sink_match.pattern.id.as_ref(), "LANG-EXEC");
     // No recursive target — the payload is never evaluated.
@@ -171,8 +171,7 @@ fn cross_language_payload_target_uses_payload_language() {
 
 #[test]
 fn sink_match_is_code_execution_for_both_literal_and_dynamic() {
-    // REVIEW GATE: every recognized process/shell/eval sink retains its
-    // CodeExecution Match regardless of payload certainty.
+    // Every recognized sink retains its CodeExecution Match regardless of payload certainty (ADR-022 §3/§7).
     let lit = handle_sink(
         &code_exec(OperandCertainty::Known),
         SourceLanguage::Bash,

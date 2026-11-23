@@ -1,18 +1,8 @@
-//! RED tests for the shared language-aware operation classifier (plan
-//! Iteration 5, Slice 1). The classifier is the single place that maps a
-//! `DetectedOperation` into the existing `Category` / `RiskLevel` / `Match`
-//! vocabulary (ADR-022 §3), so no adapter may assign a final `RiskLevel`
-//! directly (Iteration 5 REVIEW GATE).
+//! Tests for the shared language-aware operation classifier (ADR-022 §3).
 //!
-//! These tests are written before the implementation exists. They pin:
-//! - the language-neutral matrix over every `OperationKind` and the
-//!   recursive/forced/destructive-mode modifiers;
-//! - the REVIEW GATE invariants — a `Dynamic` operand never lowers risk,
-//!   `CodeExecution` always emits a `Danger` `Match`, and the classifier
-//!   never assigns `RiskLevel::Block` (language-aware Matches are non-`Block`
-//!   by ADR-022 §5);
-//! - the `Match` builder carrying `MatchEvidence::LanguageRule` with the
-//!   operation and metadata-only provenance, always built in.
+//! Pins the language-neutral matrix, certainty-independence (ADR-022 §3/§7),
+//! non-`Block` language Matches (ADR-022 §5), and `MatchEvidence::LanguageRule`
+//! provenance.
 
 use super::classifier::{classify, language_match};
 use super::{
@@ -187,12 +177,7 @@ fn classify_package_destructive_is_warn() {
     assert_eq!(c.rule_id, "LANG-PKG-DEST");
 }
 
-// ── REVIEW GATE: the classifier never assigns Block ──────────────────────
-//
-// ADR-022 §5: an intrinsic `Block` remains unbypassable, and the Strict
-// Analysis override applies only to a non-`Block` language-aware Match. So a
-// language-aware rule may never classify to `Block` — that tier is reserved
-// for intrinsic shell-level denials.
+// ADR-022 §5: language-aware rules never classify to `Block` (reserved for intrinsic shell denials).
 
 #[test]
 fn classify_never_returns_block_over_all_kinds_and_modifiers() {
@@ -243,12 +228,7 @@ fn classify_never_returns_block_over_all_kinds_and_modifiers() {
     }
 }
 
-// ── REVIEW GATE: a Dynamic operand is never evidence of safety ───────────
-//
-// ADR-022 §3/§7: certainty governs whether a recursive target is enqueued and
-// whether degradation is recorded — it never lowers the operation's own risk.
-// The classifier's risk mapping is therefore certainty-independent, and a
-// `Dynamic` operand classifies at *least* as high as a `Known` one.
+// ADR-022 §3/§7: risk classification is certainty-independent; a `Dynamic` operand never lowers risk.
 
 #[test]
 fn classify_risk_is_identical_across_known_partial_dynamic() {

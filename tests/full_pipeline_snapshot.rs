@@ -44,11 +44,7 @@ exit 0
 "#,
     );
 
-    // Both snapshot flags off: git-off is under test, docker-off isolates the
-    // assertion so a stray docker invocation cannot add noise. `auto_snapshot_git`
-    // defaults to `true` and a project can no longer disable it (C3 security
-    // ratchet), so the trusted global config opts out of git snapshots; the
-    // project's matching `false` is then a no-op rather than a weakening.
+    // C3 ratchet (ADR-013): the project layer cannot weaken this field.
     write_global_config(home.path(), "auto_snapshot_git = false\n");
     fs::write(
         workspace.path().join(".aegis.toml"),

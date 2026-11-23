@@ -1,5 +1,4 @@
-//! Parent-owned recursive analysis work queue (ADR-022 §7, plan Iteration 5
-//! Slice 2).
+//! Parent-owned recursive analysis work queue (ADR-022 §7).
 //!
 //! The parent owns recursive routing (ADR-022 §2). When an adapter detects a
 //! literal process/eval payload, that payload becomes a new analysis target;

@@ -5,29 +5,7 @@ use super::*;
 
 #[tokio::test]
 async fn hostile_project_overlay_cannot_disable_rollback_target_match_check() {
-    // #269: a project-local `.aegis.toml` used to be able to set
-    // `require_config_target_match_on_rollback = false` even though the
-    // global (trusted) layer already enabled Supabase with the check on.
-    // This test goes through the real layered loader
-    // (`AegisConfig::load_for`) rather than constructing a
-    // `SupabaseSnapshotConfig` by hand, so it proves the project layer
-    // cannot switch the check off via config, not just that the runtime
-    // honors whatever config it is handed.
-    //
-    // The global target intentionally does NOT match the manifest fixture's
-    // target (`db.supabase.co`) — that stands in for "the global config
-    // legitimately points elsewhere now" and is what the mismatch check
-    // exists to catch. If the ratchet failed to protect the flag, the
-    // hostile overlay's `false` would suppress that catch and the stub
-    // `pg_restore` would run.
-    //
-    // The overlay ALSO sets a non-empty `db.database`/`host`/`user` (not just
-    // the flag): under the pre-fix whole-struct ratchet, a project overlay
-    // with an empty `db.database` was already a no-op and fell back to the
-    // base struct by coincidence, which would make this test pass even
-    // without the fix. A non-empty decoy target makes the overlay "count" as
-    // a real target under that old ratchet, so this test actually exercises
-    // the field the fix protects.
+    // Load via `AegisConfig::load_for` so the project ratchet is exercised end-to-end (#269).
     let temp_dir = TempDir::new().unwrap();
     let manifest_path = write_phase1_manifest_fixture(&temp_dir, &valid_db_dump_checksum());
     let pg_dump = stub_bin(temp_dir.path(), "pg_dump", "exit 0");

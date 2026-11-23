@@ -575,14 +575,7 @@ fn missing_direct_exec_path_degrades_instead_of_auto_approving() {
     assert_eq!(json["decision"], "prompt");
 }
 
-/// An `env -S` value that quotes its own spaces (`'import os; os.system
-/// ("id")'`) re-splits on plain whitespace into more words than the stage
-/// had tokens to begin with (PR #437 adversarial finding F3). The router
-/// used to compute the split's start position in the original tokens by
-/// subtracting the (now longer) split word count from the original token
-/// count, which underflowed and crashed the process instead of returning a
-/// verdict. It must instead degrade to a prompt, never auto-approve and
-/// never crash.
+/// Re-splitting `env -S` longer than the original stage tokens must degrade to a prompt, not crash (#437).
 #[test]
 fn env_split_string_value_that_re_splits_longer_than_the_original_tokens_prompts_instead_of_crashing()
  {
@@ -603,16 +596,7 @@ fn env_split_string_value_that_re_splits_longer_than_the_original_tokens_prompts
     assert_eq!(json["decision"], "prompt");
 }
 
-/// The exact adversarial shape from #437 review finding F1:
-/// `env -S 'env -S' 'env -S' ... 'true'`, nested 3000 levels deep. Each
-/// level's split value re-splits into the same shape one repeat shorter, so
-/// this fed the router's recursive `env -S` resolution one stack frame per
-/// level with nothing to stop it, and overflowed the stack under a
-/// constrained `ulimit -s` (observed at 512 KiB). `aegis-parser`'s
-/// `ENV_SPLIT_MAX_DEPTH` bound now stops resolution at a fixed depth, so
-/// this must finish with an ordinary verdict — never a crash, and never
-/// auto-approve, since a program is still hidden behind the unexamined tail
-/// of the chain.
+/// A 3000-deep `env -S` chain stops at `ENV_SPLIT_MAX_DEPTH` without stack overflow or auto-approval (#437).
 #[test]
 fn env_dash_s_chain_past_the_nesting_bound_yields_a_verdict_not_auto_approve() {
     let home = TempDir::new().unwrap();
