@@ -140,6 +140,7 @@ Architectural constraints:
   - pattern IDs in data: uppercase strings like `"FS-001"`
 - Prefer ASCII unless there is a strong reason not to.
 - Keep comments concise and explanatory, not redundant.
+- Keep each `.rs` file at or under 800 lines (`scripts/lint.sh text`); when a file reaches the cap, split it by responsibility rather than trimming code or comments to fit.
 - Every `unsafe` block carries a `// SAFETY:` comment directly above it naming the invariant that makes the call sound, enforced by `clippy::undocumented_unsafe_blocks` through `[workspace.lints]`.
 - All new public items must have `///` doc comments.
 - Avoid broad re-export layers unless they materially improve the public API.
