@@ -179,6 +179,12 @@ fn a_three_stage_pipe_ending_in_a_bare_interpreter_degrades_dynamically() {
 }
 
 #[test]
+fn a_bare_interpreter_in_the_first_stage_is_not_treated_as_a_piped_consumer() {
+    assert_eq!(route("python3", &[]), Vec::new());
+    assert_eq!(route("python3 | cat", &[]), Vec::new());
+}
+
+#[test]
 fn a_script_after_a_heredoc_consumed_by_a_no_op_is_routed() {
     let targets = route(": <<X\nhi\nX\ntrue; python3 ./evil.py", &[]);
     assert_eq!(

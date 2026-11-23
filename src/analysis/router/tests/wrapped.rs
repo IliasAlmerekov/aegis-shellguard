@@ -250,3 +250,15 @@ fn an_inline_body_with_single_quotes_keeps_its_quoting_through_a_subshell() {
         }]
     );
 }
+
+#[test]
+fn a_bash_function_with_empty_parens_routes_its_brace_body() {
+    let targets = route("function foo() { python3 ./evil.py; }", &[]);
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::ScriptFile {
+            language: SourceLanguage::Python,
+            path: PathBuf::from("./evil.py"),
+        }]
+    );
+}
