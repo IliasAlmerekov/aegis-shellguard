@@ -7,12 +7,7 @@
 
 use super::*;
 
-/// Regex compilation stays eager for every pattern regardless of source
-/// (issue #319 — a lazy built-in path was tried and reverted; see
-/// "Lazy built-in regex compilation reverted" in docs/performance-baseline.md).
-/// A malformed `Builtin`-sourced regex must therefore fail construction with a
-/// typed error, exactly like a malformed custom one, never surface later as a
-/// scan-time surprise.
+/// Regex compilation stays eager for every pattern source (#319).
 #[test]
 fn malformed_builtin_sourced_regex_fails_construction_not_scan() {
     let bad = Pattern {
@@ -69,17 +64,7 @@ fn pattern_with_no_extractable_keyword_is_always_a_full_scan_candidate() {
     );
 }
 
-/// Regression for a false negative that keyword narrowing in `full_scan`
-/// introduced on the #319 branch (removed before merge):
-/// `find_embedded_literal` walking the `sh` branch of `EXEC-006`'s
-/// alternation (`^sh\s+(?:--[a-z-]+\s+)*-[a-zA-Z]*c\b`) discards the
-/// two-character literal `"sh"` against its three-character floor, keeps
-/// scanning past the optional group's regex syntax, and picks up `":"`,
-/// `"-"`, `"-"` as though the command had to contain that text — a keyword no
-/// matching command actually contains. The narrowing used that keyword to decide
-/// which regexes `full_scan` runs at all, so `EXEC-006` was silently skipped.
-/// `full_scan` no longer narrows by keyword, so `sh -c id` must be caught
-/// through the real, shipped `patterns.toml`, not a hand-built pattern.
+/// `full_scan` must match `EXEC-006` on `sh -c id` through the shipped `patterns.toml` (#319).
 #[test]
 fn sh_dash_c_is_flagged_by_exec_006() {
     let scanner = Scanner::try_new(PatternSet::load().expect("patterns.toml must load"))

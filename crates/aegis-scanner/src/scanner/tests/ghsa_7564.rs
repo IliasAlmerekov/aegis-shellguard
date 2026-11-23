@@ -133,7 +133,7 @@ fn assess_sudo_dash_capital_c_reset_hard_warns_via_git001() {
     assert_assessment_matches_pattern("sudo git -C . reset --hard", RiskLevel::Warn, "GIT-001");
 }
 
-// ── The publicly-known form still fires (#431 / PR #450 review) ───────────
+// `git -C repo push --delete` (#431).
 
 #[test]
 fn assess_dash_capital_c_repo_push_delete_warns_via_git009() {
@@ -244,26 +244,15 @@ fn assess_dash_capital_c_push_dry_run_delete_stays_safe() {
     );
 }
 
-// ── Accepted false positive, pinned (Q4: keep scanning after print-and-exit) ─
+// Accepted false positive: keep scanning after print-and-exit options.
 
 #[test]
 fn assess_help_reset_hard_warns_via_git001() {
-    // `git --help reset --hard` only prints reset's manual page and exits;
-    // this Warn is an accepted false positive rather than a missed real one.
     assert_assessment_matches_pattern("git --help reset --hard", RiskLevel::Warn, "GIT-001");
 }
 
-// ── Candidate cap: each unlisted option can add a candidate, so an
-// unbounded chain makes the per-slice scan cost grow with the chain length
-// (GHSA-7564 review). Past the cap the scanner reports its own Warn
-// (`SCAN-004`) instead of scanning any candidate ───────────────────────────
+// Candidate cap (GHSA-7564): past the cap the scanner reports `SCAN-004` without scanning candidates.
 
-/// `pairs` unlisted options, each immediately followed by a plain-looking
-/// value, then `reset --hard`. Each pair's "took no value" reading lands on
-/// its own value token, so `pairs` pairs yield `pairs + 1` candidate starts:
-/// one per value, plus `reset` itself from the last pair's "took a value"
-/// reading (mirrors `alternating_unlisted_option_value_tokens` in
-/// `aegis-parser`'s `git_options.rs` tests).
 fn alternating_unlisted_option_command(pairs: usize) -> String {
     let mut parts = vec!["git".to_string()];
     for i in 0..pairs {

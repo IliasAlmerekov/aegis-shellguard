@@ -386,11 +386,6 @@ fn prefix_rule_quoted_git_push_not_flagged() {
     );
 }
 
-// H1 regression: a standalone background `&` must not hide a destructive
-// command from the token-prefix rules. On the pre-fix code `echo ok & git
-// push --force` was a single segment whose effective program is `echo`, so
-// GIT-003 never fired and the command assessed as Safe. Segmenting on the
-// background `&` exposes the `git push --force` segment to the prefix scan.
 #[test]
 fn ampersand_does_not_bypass_git_prefix_rule() {
     let s = scanner();
@@ -412,11 +407,7 @@ fn ampersand_does_not_bypass_git_prefix_rule() {
     );
 }
 
-// H1 regression: an escaped `\>` must not be mistaken for a redirect operator.
-// `echo a\> & git push --force` runs `git push --force` in the foreground after
-// the background `echo a>`. The escaped `>` left `current` ending in a literal
-// `>`, so the redirect discriminator wrongly kept the whole line as one segment
-// (effective program `echo`) and GIT-003 never fired — a fail-open bypass.
+// An escaped `\>` is literal, so a following `&` still splits the segment for GIT-003.
 #[test]
 fn ampersand_escaped_redirect_char_does_not_bypass_git_prefix_rule() {
     let s = scanner();
@@ -437,10 +428,6 @@ fn ampersand_escaped_redirect_char_does_not_bypass_git_prefix_rule() {
     );
 }
 
-// H1 regression for the pipeline path: a network-to-shell pipeline that sits
-// after a background `&` must still raise PIPE-001. This exercises the second
-// (pipeline) copy of the background-`&` discriminator in
-// split_top_level_command_groups.
 #[test]
 fn ampersand_does_not_bypass_pipeline_rule() {
     let s = scanner();
@@ -636,12 +623,7 @@ fn scanner_blocks_ifs_obfuscated_mkfs() {
     assert_command_matches_pattern("mkfs.ext4${IFS}/dev/sdb1", RiskLevel::Block, "FS-006");
 }
 
-// ── H2: destructive-SQL narrowness guards ─────────────────────────────────
-//
-// The match-anywhere destructive-SQL rules (ADR-015) are `\b`-anchored with a
-// mandatory `\s+` between the verb and its object, so they stay narrow: an
-// identifier that merely contains the word (`drop_table_log`) and an uncovered
-// statement (`DROP INDEX`) must not raise Danger.
+// Destructive-SQL narrowness guards (ADR-015).
 #[test]
 fn destructive_sql_does_not_match_identifier_containing_drop_table() {
     let s = scanner();
@@ -675,19 +657,12 @@ fn destructive_sql_does_not_match_uncovered_drop_index() {
     );
 }
 
-// bugs-01 (lead review of H2): DB-008 must still fire when the table identifier
-// contains spaces — either a quoted identifier delivered via `psql -c`
-// (`"my table"` survives normalization) or a bare double-quoted identifier whose
-// shell quotes are stripped to `my table`. The old PatternToken::Any prefix rule
-// matched the single de-quoted token; the regex must preserve that superset
-// guarantee (ADR-015) rather than regress on spaced identifiers.
+// DB-008 must match spaced table identifiers, bare or quoted via `psql -c` (ADR-015).
 #[test]
 fn destructive_sql_alter_drop_column_matches_spaced_table_identifier() {
     let s = scanner();
     for cmd in [
-        // bare: shell-quotes stripped → `ALTER TABLE my table DROP COLUMN x`
         "ALTER TABLE \"my table\" DROP COLUMN x",
-        // psql delivery: inner double-quotes survive as a literal identifier
         "psql -c 'ALTER TABLE \"my table\" DROP COLUMN email'",
     ] {
         let assessment = s.assess(cmd);
@@ -712,12 +687,7 @@ fn destructive_sql_alter_drop_column_matches_spaced_table_identifier() {
     }
 }
 
-// bugs-02 (lead review of H2): heredoc and stdin-pipe delivery are claimed
-// covered by ADR-015 but were untested. They reach the scanner through distinct
-// code paths (heredoc-body extraction / piped-segment scanning) from the
-// `-c`/`-e` logical-segment path the other H2 tests exercise. These guard those
-// vectors so a regression in heredoc/stdin handling cannot silently uncover
-// destructive SQL. No source change is expected — they should already pass.
+// Heredoc and stdin-pipe delivery of destructive SQL must fire (ADR-015).
 #[test]
 fn destructive_sql_detected_via_heredoc_body() {
     let s = scanner();

@@ -394,11 +394,8 @@ fn indirect_execution_dangerous_body_escalates_risk() {
             "python3 -c \"import os; os.system('shred -u secrets.key')\"",
             RiskLevel::Danger,
         ),
-        // EXEC-003 (Warn) + CL-001 terraform destroy in body (Danger) → Danger
-        // NOTE: token-prefix rules cannot see inside interpreted-language string
-        // literals, so the inner terraform destroy is invisible to prefix_scan.
-        // full_scan regex is also absent for CL-001 (migrated to prefix).
-        // Therefore this composite only escalates to Warn, not Danger.
+        // Token-prefix rules cannot inspect interpreted string literals, so CL-001
+        // does not fire inside `node -e` and this composite stays Warn (EXEC-003).
         (
             "node -e \"require('cp').execSync('terraform destroy')\"",
             RiskLevel::Warn,

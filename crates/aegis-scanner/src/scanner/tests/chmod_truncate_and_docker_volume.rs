@@ -1,9 +1,5 @@
 use super::*;
 
-// M5.3 — FS-019: recursive chmod over a system root. The rule is a
-// token-prefix rule (ADR-014), but it keys on the target path rather than the
-// mode: any recursive permission rewrite of a system root can destroy boot,
-// service, or authentication behaviour.
 #[test]
 fn assess_m5_fs019_recursive_chmod_system_roots_fire() {
     let cases: &[(&str, RiskLevel, &str)] = &[
@@ -59,16 +55,7 @@ fn assess_m5_ps005_is_filesystem_without_changing_its_match() {
     assert_eq!(ps005.pattern.category, Category::Filesystem);
 }
 
-// M5.4 — DB-009: destructive SQL `TRUNCATE` without the `TABLE` keyword.
-// Positive (must-fire) cases. The rule is a match-anywhere regex `Pattern`
-// (ADR-015): a SQL verb is an argument to a database client, never the
-// `Effective program`, so it fires on `-c`/`-e`/`--command`/`--execute`/
-// heredoc/stdin/`;`-compound delivery without enumerating clients. It fires
-// only on forms carrying a SQL-only anchor: the `ONLY` keyword, a
-// `CASCADE`/`RESTRICT` referential action, a `RESTART`/`CONTINUE IDENTITY`
-// clause, or a comma-separated table list followed by one of those strong
-// anchors. Bare `TRUNCATE <ident>` and a bare comma list are declared
-// uncovered forms (see `chmod_truncate_docker_narrowness.rs`).
+// DB-009 fires on `TRUNCATE` without `TABLE` only when a SQL-only anchor is present (ADR-015).
 #[test]
 fn assess_m5_db009_truncate_without_table_fires() {
     let cases: &[(&str, RiskLevel, &str)] = &[
@@ -118,10 +105,7 @@ fn assess_m5_db009_truncate_without_table_fires() {
     }
 }
 
-// Heredoc delivery reaches the scanner through a distinct code path
-// (heredoc-body extraction) from the `-c`/`-e` logical-segment path the other
-// cases exercise. The `ONLY` terminator must accept the `\n` that ends the
-// heredoc body line (ADR-015 delivery-agnostic guarantee).
+// `ONLY` terminator must accept `\n` in heredoc bodies (ADR-015).
 #[test]
 fn assess_m5_db009_truncate_only_via_heredoc_fires() {
     let s = scanner();
@@ -147,13 +131,6 @@ fn assess_m5_db009_truncate_only_via_heredoc_fires() {
     );
 }
 
-// M5.5 — DK-007: `docker volume rm` deletes a named volume. Positive
-// (must-fire) cases. The rule is a token-prefix rule `[docker, volume, rm]`
-// (ADR-014): the dangerous verb is the leading program, so a prefix match
-// covers the tail. `-f` needs no special handling — a prefix rule matches the
-// prefix and ignores the tail. Launcher/absolute-path delivery is covered by
-// the ADR-014 table in `basic.rs`; the near-miss negatives live in
-// `chmod_truncate_docker_narrowness.rs`.
 #[test]
 fn assess_m5_docker_volume_rm_fires_dk007() {
     assert_assessment_matches_pattern("docker volume rm pgdata", RiskLevel::Danger, "DK-007");

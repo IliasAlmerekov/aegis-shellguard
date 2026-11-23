@@ -252,11 +252,7 @@ fn is_git_long_option(given: &str, full: &str, min_len: usize) -> bool {
 
 /// redis-cli flags that consume one following value token.
 ///
-/// This list covers the most common connection and auth options. Unknown flags
-/// that also take a value would cause a false negative (we'd treat the value as
-/// the Redis command and fail to fire DB-006), but that is the safer direction:
-/// better to miss an edge case than to fire on `redis-cli GET FLUSHALL` where
-/// FLUSHALL is a key argument.
+/// Missing an unlisted value flag is preferred over false-firing on `redis-cli GET FLUSHALL`.
 const REDIS_CLI_FLAGS_WITH_VALUE: &[&str] = &[
     "-h",
     "-p",
@@ -297,13 +293,11 @@ fn redis_cli_flush_is_command(tokens: &[&str]) -> bool {
         "redis_cli_flush_is_command called on non-redis-cli tokens"
     );
 
-    let mut i = 1; // skip "redis-cli"
+    let mut i = 1;
     while i < tokens.len() {
         let token = tokens[i];
         if token.starts_with('-') {
-            // It is a flag — skip it.
             i += 1;
-            // If this flag consumes a value, skip the value too.
             if REDIS_CLI_FLAGS_WITH_VALUE.contains(&token) {
                 i += 1;
             }

@@ -1,12 +1,5 @@
 use super::*;
 
-// H3-followups — positive (must-fire) regression cases for the additive
-// scanner detections that closed the H3-followups backlog item. Narrowness
-// guards (near-miss / non-destructive invocations that must NOT fire) live in
-// `destructive_rule_narrowness.rs` to keep the positive/negative separation consistent with the
-// original H3 test split.
-
-// ── H3-followups: gcloud storage recursive delete and rsync delete ─────────
 #[test]
 fn assess_h3_followup_storage_sync_delete_rules() {
     let cases: &[(&str, RiskLevel, &str)] = &[
@@ -46,7 +39,6 @@ fn assess_h3_followup_storage_sync_delete_rules() {
     }
 }
 
-// ── H3-followups: device wipers ────────────────────────────────────────────
 #[test]
 fn assess_h3_followup_device_wiper_rules() {
     let cases: &[(&str, RiskLevel, &str)] = &[
@@ -72,11 +64,7 @@ fn assess_h3_followup_device_wiper_rules() {
     }
 }
 
-// ── H3-followups: rsync --delete-missing-args (FS-015) ────────────────────
-//
-// `--delete-missing-args` also triggers destination-side deletion (turns
-// missing-args errors into deletes) and must be covered by FS-015. This test
-// will be RED until the flag is added to the FS-015 alt list in builtins_a.rs.
+// `rsync --delete-missing-args` triggers destination-side deletion and must fire FS-015.
 #[test]
 fn test_fs015_rsync_delete_missing_args_fires() {
     assert_assessment_matches_pattern(
@@ -86,7 +74,6 @@ fn test_fs015_rsync_delete_missing_args_fires() {
     );
 }
 
-// ── H3-followups: redis-cli DB-006 delivery form ──────────────────────────
 #[test]
 fn assess_h3_followup_redis_cli_flush_rules() {
     let cases: &[(&str, RiskLevel, &str)] = &[

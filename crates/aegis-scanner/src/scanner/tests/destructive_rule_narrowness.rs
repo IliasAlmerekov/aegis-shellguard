@@ -1,18 +1,6 @@
 use super::*;
 
-// H3 — Pattern database has dangerous gaps: narrowness guards for the seven
-// rules added to close the gap (FS-011/012/013/014, CL-011/012/013). The
-// positive (must-fire) cases live alongside the other `assess_*` cases in
-// `basic.rs`; these guard the opposite direction — the near-miss invocations
-// that must NOT raise their rule — so the additions stay narrow and fail-closed
-// rather than fail-open.
-
-// ── Filesystem token-prefix narrowness (FS-011 / FS-012) ───────────────────
-//
-// FS-011 requires the `-a`/`--all` flag; the plain signature-only invocation
-// must stay clear. `wipefs -n -a` (dry-run + all) is an accepted fail-safe FP:
-// the AnyStar lets `-a` follow `-n`, so it still prompts. FS-012 keys on the
-// exact `unlink` program token, so neighbouring link commands stay Safe.
+// `wipefs -n -a` is an accepted fail-safe FP because AnyStar lets `-a` follow `-n`.
 #[test]
 fn h3_wipefs_without_all_flag_does_not_fire_fs011() {
     let s = scanner();
@@ -159,7 +147,6 @@ fn h3_gsutil_rm_single_object_does_not_fire_cl013() {
     );
 }
 
-// ── H3-followups: cloud storage and rsync narrowness ───────────────────────
 #[test]
 fn h3_followup_gcloud_storage_rm_without_recursive_stays_below_danger() {
     let s = scanner();
@@ -200,7 +187,6 @@ fn h3_followup_rsync_without_delete_stays_safe() {
     );
 }
 
-// ── H3-followups: device inspection narrowness ────────────────────────────
 #[test]
 fn h3_followup_device_inspection_commands_stay_safe() {
     let s = scanner();
@@ -224,7 +210,6 @@ fn h3_followup_device_inspection_commands_stay_safe() {
     }
 }
 
-// ── H3-followups: redis-cli non-flush narrowness ──────────────────────────
 #[test]
 fn h3_followup_redis_cli_non_flush_commands_stay_safe() {
     let s = scanner();
@@ -248,14 +233,7 @@ fn h3_followup_redis_cli_non_flush_commands_stay_safe() {
     }
 }
 
-// ── H3-followups: redis-cli DB-006 over-match narrowness ─────────────────
-//
-// `redis-cli GET FLUSHALL` must NOT fire DB-006: here FLUSHALL is a key-name
-// argument to the GET command, not the Redis flush verb. The current any_star
-// pattern causes DB-006 to fire anywhere FLUSHALL/FLUSHDB appears after
-// `redis-cli`, which is an over-match. This test will be RED until the DB-006
-// redis-cli rule is narrowed to only match when FLUSHALL/FLUSHDB is the actual
-// Redis command token (i.e. immediately follows option flags, not another verb).
+// DB-006 must not fire when FLUSHALL is a key argument to GET, not the Redis command.
 #[test]
 fn test_db006_redis_cli_get_flushall_stays_safe() {
     let s = scanner();

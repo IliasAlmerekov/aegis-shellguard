@@ -44,9 +44,7 @@ fn assess_file_write_after_and_and_scans_body() {
     );
 }
 
-// Issue #396 review: the owning program can be spelled by its absolute path
-// too, not just the bare word — `/usr/bin/cat` is still the same `Data
-// consumer`, just written out in full.
+// Stock absolute paths (`/usr/bin/cat`) are trusted data consumers (#396).
 #[test]
 fn assess_heredoc_owning_command_absolute_path_stays_safe() {
     let s = scanner();
@@ -66,8 +64,6 @@ fn assess_heredoc_owning_command_absolute_path_stays_safe() {
     );
 }
 
-// A same-line pipe out of `jq` means `sh` reads whatever `jq` prints — never
-// inert, whatever the JSON body says.
 #[test]
 fn assess_jq_piped_to_shell_still_fires() {
     assert_assessment_matches_pattern(
@@ -77,16 +73,12 @@ fn assess_jq_piped_to_shell_still_fires() {
     );
 }
 
-// `xargs` is not a `Data consumer` — it turns its stdin into argv for
-// whatever program it runs, so a dangerous body must keep firing.
 #[test]
 fn assess_xargs_nowdoc_body_still_fires() {
     assert_assessment_matches_pattern("xargs <<'EOF'\nrm -rf /\nEOF", RiskLevel::Block, "FS-001");
 }
 
-// A `$(...)` that is the right-hand side of an assignment is not a trusted
-// context: later text can run the captured variable, so the body stays
-// scanned (PR #463 review).
+// Assignment `$(...)` captures are untrusted (ADR-042).
 #[test]
 fn assess_cat_inside_assignment_command_substitution_still_fires() {
     assert_assessment_matches_pattern(
@@ -198,17 +190,9 @@ fn assess_data_consumer_bodies_that_reach_a_shell_still_fire() {
         "cat <<'EOF' \\\n| sh\nrm -rf /\nEOF",
         "git -c \"alias.x=!$(cat <<'EOF'\nrm -rf /\nEOF\n)\" x",
         "gh alias set --shell x \"$(cat <<'EOF'\nrm -rf /\nEOF\n)\"",
-        // Issue #396 review (finding 1): `git`'s message flag is only
-        // `-m`/`--message` — `-t` is `--template=<file>` and `-b` names a
-        // branch, neither a message.
         "git commit -t \"$(cat <<'EOF'\nrm -rf /\nEOF\n)\"",
         "git checkout -b \"$(cat <<'EOF'\nrm -rf /\nEOF\n)\"",
-        // Issue #396 review (finding 1): a global option before the
-        // subcommand occupies the position the gate reads as the
-        // subcommand.
         "git -c alias.x=y commit -m \"$(cat <<'EOF'\nrm -rf /\nEOF\n)\"",
-        // Issue #396 review (finding 2): `gh`'s message-flag trust is
-        // gated by subcommand for a heredoc-as-whole-value too.
         "gh pr checkout 1 -b \"$(cat <<'EOF'\nrm -rf /\nEOF\n)\"",
         // A `(` frame opened before the marker: process substitution,
         // subshell, or a subshell nested in an assignment's `$(...)`.
@@ -242,11 +226,7 @@ fn assess_data_consumer_bodies_that_reach_a_shell_still_fire() {
     );
 }
 
-// Issue #396 (capture-then-execute): a nowdoc captured into a variable is
-// never trusted, whatever later text does with it. Each shape below either
-// runs the variable or only forwards it; all of them keep the body scanned,
-// including the forms that broke the old forwarding allowlist in PR #463
-// review (`$((x))`, `${x@P}`, zsh `${(e)x}`, a computed name).
+// Captured heredocs are never trusted (ADR-042, #396).
 #[test]
 fn assess_captured_heredoc_always_fires() {
     let cases = [
@@ -269,10 +249,7 @@ fn assess_captured_heredoc_always_fires() {
     }
 }
 
-// PR #463 review (BLOCKER 1): `$'\''` is bash's ANSI-C escape for an
-// embedded `'`, not a quote toggle, so this line reads as a closed nowdoc
-// marker `<<'EOF'` to the naive toggle but as two ANSI-C strings and a bare
-// word to bash — no heredoc operator at all, and `rm -rf /` runs live.
+// ANSI-C `$'\''` escapes `'` instead of toggling quotes, so the prefix is untrusted.
 #[test]
 fn assess_ansi_c_quote_escape_before_marker_still_fires() {
     assert_assessment_matches_pattern(
@@ -282,11 +259,7 @@ fn assess_ansi_c_quote_escape_before_marker_still_fires() {
     );
 }
 
-// PR #463 review (BLOCKER 2): a quote opened on one line and never closed on
-// it carries into the marker line. Bash closes the pending quote at the
-// delimiter's own opening `'` and reopens a fresh one at its closing `'`, so
-// the `<<'EOF'` this line walk finds is not a heredoc operator to bash —
-// `rm -rf /` runs live between the two.
+// A quote left open on an earlier line turns the marker line into quoted text in bash.
 #[test]
 fn assess_quote_left_open_from_earlier_line_still_fires() {
     assert_assessment_matches_pattern(
@@ -296,7 +269,6 @@ fn assess_quote_left_open_from_earlier_line_still_fires() {
     );
 }
 
-// Same shape, a double quote left open instead of a single one.
 #[test]
 fn assess_double_quote_left_open_from_earlier_line_still_fires() {
     assert_assessment_matches_pattern(
@@ -306,7 +278,6 @@ fn assess_double_quote_left_open_from_earlier_line_still_fires() {
     );
 }
 
-// Same shape again, a backtick command substitution left open.
 #[test]
 fn assess_backtick_left_open_from_earlier_line_still_fires() {
     assert_assessment_matches_pattern(
@@ -316,9 +287,6 @@ fn assess_backtick_left_open_from_earlier_line_still_fires() {
     );
 }
 
-// Safe idiom: an apostrophe inside the body itself must not be read as an
-// unbalanced quote by the fix above. The body stays out of every prefix
-// check.
 #[test]
 fn assess_cat_body_with_apostrophe_stays_safe() {
     let s = scanner();
@@ -338,8 +306,6 @@ fn assess_cat_body_with_apostrophe_stays_safe() {
     );
 }
 
-// Safe idiom: a prefix line with a quote opened and closed on the same line
-// leaves no quote open at the marker, so the fix above must not flag it.
 #[test]
 fn assess_cat_after_balanced_quote_prefix_stays_safe() {
     let s = scanner();

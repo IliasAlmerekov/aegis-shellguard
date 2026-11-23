@@ -1,10 +1,5 @@
 use super::*;
 
-// Risk-level census: one representative command per RiskLevel, so the full
-// ladder (Safe → Warn → Danger → Block) is exercised and the count per level
-// stays visible. Extracted from `basic.rs` (M5.5 prefactor) to keep that file
-// under the 800-line budget; the census is valuable precisely because it is
-// complete, so it lives whole in its own module rather than split across files.
 #[test]
 fn assess_risk_levels() {
     let s = scanner();
