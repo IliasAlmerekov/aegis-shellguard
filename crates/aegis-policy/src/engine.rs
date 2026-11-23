@@ -66,14 +66,7 @@ impl PolicyEngine for DefaultPolicyEngine {
             };
         }
         match input.mode {
-            // `Mode::Audit` is an intentional, observe-only opt-out from *all*
-            // enforcement — prompts, blocks, and recovery backstops alike — so
-            // it declines ADR-016 recovery (`snapshots_required = false`) even
-            // for effect-opaque commands with snapshots configured and a plugin
-            // available. This is broader than `SnapshotPolicy::None` (the
-            // trusted/global recovery opt-out): Audit mode auto-approves
-            // everything and takes no snapshots, by design. The audit entry
-            // still records the assessment's `effect_opaque` flag.
+            // `Mode::Audit` opts out of all enforcement and ADR-016 snapshots; audit still logs `effect_opaque`.
             Mode::Audit => auto_approve(input, PolicyRationale::AuditMode, false, false),
             Mode::Protect => evaluate_protect(input),
             Mode::Strict => evaluate_strict(input),

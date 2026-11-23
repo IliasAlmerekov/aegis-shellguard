@@ -142,10 +142,8 @@ impl<T: Clone> Ratchet<T> for GlobalOnly<T> {
     }
 }
 
-/// The last layer to set this field wins, by deliberate decision rather than
-/// oversight — `config_version` (schema version, not a security posture) and
-/// `audit.compress_rotated` (storage format, not audit coverage: rotation and
-/// retention are the ratcheted knobs that control how much history survives).
+/// Last-wins field exempted from the project ratchet (ADR-013): used only for
+/// non-security settings such as `config_version` and `audit.compress_rotated`.
 pub(crate) struct Unratcheted<T> {
     _value: std::marker::PhantomData<T>,
 }

@@ -1,18 +1,9 @@
-// ── bugs-01: docker ratchet must reject intra-rank narrowing/incomparable ─
-// The current `ratchet_docker_scope` is rank-only: same-rank moves (Names→
-// different Names, Labeled→Names, Labeled→different label, Names→Labeled) are
-// KEPT (project wins) with no warning. Desired: under the Project layer, when
-// the docker provider is ENABLED in the trusted base AND the base scope is not
-// a no-op, a project overlay that NARROWS or is INCOMPARABLE with the base
-// eligible-container set is rejected (keep base + warn). Only keep-or-broaden
-// is permitted.
+// Under the Project layer with docker enabled, narrowing or incomparable scope
+// overlays are rejected (keep base + warn); only keep-or-broaden is allowed.
 
 #[test]
 fn project_docker_scope_names_to_disjoint_names_rejected() {
-    // bugs-01 RED: base Names `["prod-db"]`; project Names `["x"]` (disjoint,
-    // same rank). Current code keeps project `["x"]` with no warning. Desired:
-    // keep base `["prod-db"]` + warn — overlay patterns are NOT a superset of
-    // base patterns (some base pattern absent from overlay).
+    // Disjoint `Names` overlay is not a superset of base: keep base + warn.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);

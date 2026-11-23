@@ -1,21 +1,5 @@
-// ── C3-residual: two security-critical paths left out of ADR-013 ratchet ──
-//
-// Fix 1: a project-layer `[[rules]]` entry with `decision = "Allow"` must be
-// DROPPED at merge (project may not auto-approve via rules — only tighten via
-// Prompt/Block) and surfaced as a `project_security_ratchet` warning. Global
-// `[[rules]] Allow` stays honored (global is trusted, last-wins). Project
-// Prompt/Block rules are still honored (project may tighten).
-//
-// Fix 2: `audit.integrity_mode` must be ratcheted (stricter of base/requested
-// wins under the Project layer). `ChainSha256` is stricter than `Off`. Global
-// stays last-wins. The warning fires iff `kept != requested` under the Project
-// layer, mirroring `push_ratchet_warning`.
-//
-// These tests assert on the OBSERVABLE merged config + the warnings Vec so they
-// pass under EITHER correct implementation approach (provenance-based or
-// direct-filter). They must FAIL against the current (un-ratcheted) code.
-
-// ── Fix 1: project `[[rules]] decision = "Allow"` dropped + warned ────────
+// Project-layer `[[rules]]` with `Allow` (top-level or `when.then`) are dropped
+// and warned; `audit.integrity_mode` ratchets strictly under the project layer (ADR-013).
 
 /// Returns the full ratchet warning list (with requested/kept) for a project
 /// layer. Inlined here so the fragment can inspect `requested`/`kept` without
@@ -213,23 +197,9 @@ fn global_rules_allow_honored_no_warning() {
     assert_no_warning_for(&warnings, "rules", "C3-residual Fix-1 global Allow honored");
 }
 
-// ── C3-residual Fix-1 bypass (iteration 2): a project-layer `[[rules]]`
-// entry whose top-level `decision = "prompt"` (or `"block"`) but whose
-// `when.then = "allow"` is a same-class auto-approve bypass. At runtime
-// `effective_decision` returns `when.then = Allow` when the env condition
-// matches, silently auto-approving a Danger command — exactly what Fix-1
-// exists to prevent. Such entries must be DROPPED at the project merge
-// (exactly like a plain `decision = "allow"` rule) and surface a `"rules"`
-// ratchet warning. The test asserts on OBSERVABLE behavior (merged `rules`
-// Vec contents + warnings Vec) so it passes under any correct implementation.
-
 #[test]
 fn project_rules_prompt_with_when_then_allow_dropped_and_warned() {
-    // C3-residual Fix-1 bypass: project `[[rules]] decision = "prompt"` with
-    // `when.then = "allow"` must be DROPPED at merge and warned, exactly like a
-    // plain `decision = "allow"` rule. Currently `is_untrusted_allow` only
-    // checks `rule.decision == Allow`, so this rule SURVIVES the project-layer
-    // drop — RED.
+    // Project `[[rules]]` with `when.then = "allow"` must be dropped and warned like top-level `allow`.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);

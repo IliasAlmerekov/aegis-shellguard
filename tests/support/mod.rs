@@ -258,9 +258,7 @@ pub fn write_disabled_toggle(home: &Path) {
 /// Write a global user config (`~/.config/aegis/config.toml`) with the given
 /// contents.
 ///
-/// The project layer can no longer weaken security-critical fields like
-/// `allowlist_override_level` (C3 security ratchet). Tests that need a
-/// permissive posture must set it in the trusted global config instead.
+/// C3 ratchet (ADR-013): the project layer cannot weaken this field.
 pub fn write_global_config(home: &Path, contents: &str) {
     let global_dir = home.join(".config/aegis");
     fs::create_dir_all(&global_dir).unwrap();

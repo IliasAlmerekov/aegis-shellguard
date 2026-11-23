@@ -18,11 +18,7 @@ use crate::error::ConfigError;
 /// builds an [`aegis_scanner::Scanner`] to surface regex/ID errors. This is the
 /// config/scanner boundary — the scanner never sees config types.
 ///
-/// An empty slice returns `Ok(())` without building anything: there is no
-/// custom pattern for a `Scanner` build to validate that the (separately
-/// tested) built-in set would not already catch, and building one anyway
-/// costs the full built-in compile on every call site — this ran on every
-/// process start and every config layer before the fix (issue #319).
+/// An empty slice returns `Ok(())` without building a scanner (#319).
 pub(crate) fn validate_custom_patterns(patterns: &[UserPattern]) -> Result<()> {
     if patterns.is_empty() {
         return Ok(());

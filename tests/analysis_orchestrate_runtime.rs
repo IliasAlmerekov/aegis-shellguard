@@ -484,12 +484,8 @@ async fn script_resolution_is_inside_total_deadline_and_preserves_original_byte_
     );
 }
 
-// ── PR #437 review comment 4091038726 (A5): a `LauncherOperand` that
-// resolves `NotApplicable` (missing path or directory) must not consume the
-// `max_script_files` budget as if it were a confirmed script. `du -sh ./d1
-// ./d2 ... ./d9` names nine plain directories through the unclaimed-launcher
-// net (`du` is not itself an interpreter or a claimed program); none of them
-// are scripts, so none should compete for the eight-file budget. ──────────
+// Speculative `LauncherOperand` directories that resolve `NotApplicable`
+// must not consume `max_script_files` (#437).
 
 #[tokio::test]
 async fn run_launcher_operand_directories_beyond_max_script_files_do_not_prompt() {
@@ -539,12 +535,8 @@ async fn run_launcher_operand_candidates_beyond_the_pre_resolution_cap_fail_clos
     }
     let baseline = safe_baseline();
 
-    // max_script_files: 1 -> pre-resolution cap = 1 * 4 = 4 candidates.
-    // Candidates 5 and 6 must fail closed before resolution even runs, so
-    // only those two contribute a degraded per-target result: the first
-    // four resolve NotApplicable and contribute nothing (asserted below via
-    // target_count, since a pre-fix implementation that still budgets every
-    // candidate degrades starting at candidate 2 instead).
+    // `max_script_files: 1` caps speculative candidates at 4; candidates 5 and 6
+    // must fail closed before resolution while the first 4 resolve NotApplicable.
     let outcome = run_with_budget_in_cwd(
         &command,
         AnalysisCwd::Resolved(workspace.path()),

@@ -170,17 +170,8 @@ pub async fn run_with_budget_in_cwd(
     });
     let mut per_target: Vec<LanguageAnalysisResult> = Vec::new();
     let mut script_files = 0usize;
-    // `LauncherOperand` candidates (an unclaimed launcher's own path-like
-    // arguments, e.g. every operand of `du -sh ./d1 ./d2 ...`) are
-    // speculative: most resolve NotApplicable (missing path or plain
-    // directory) below and are never scripts at all, so they must not
-    // compete with real scripts for `max_script_files` (PR #437 review
-    // comment 4091038726). Resolving each one still costs a stat and a
-    // bounded shebang read, so an unrelated cap bounds that work
-    // independently of `max_script_files`: 4x is a locally chosen margin,
-    // generous enough that an ordinary many-operand command (`du -sh
-    // ./d1.../d9`) never hits it, small enough to keep worst-case
-    // resolution I/O bounded without a new config field.
+    // Speculative `LauncherOperand` candidates stay off `max_script_files`;
+    // 4x caps their stat/shebang I/O without a separate config field (#437).
     let mut launcher_operand_candidates = 0usize;
     let max_launcher_operand_candidates = budget.max_script_files.saturating_mul(4);
 

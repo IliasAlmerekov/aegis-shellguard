@@ -489,10 +489,7 @@ fn install_repairs_its_own_session_start_entry_under_a_stale_matcher() {
     }
 }
 
-/// The Claude installer registers PreToolUse before SessionStart, so a foreign
-/// `PreToolUse` entry that omits the optional `matcher` used to abort the whole
-/// Claude install — taking the effective-state notice down with the
-/// interception hook (M3a).
+/// A foreign `PreToolUse` entry without `matcher` must not abort Claude install.
 #[test]
 fn claude_install_coexists_with_a_foreign_pre_tool_use_entry_without_a_matcher() {
     let home = TempDir::new().unwrap();

@@ -503,10 +503,7 @@ impl AsyncWrite for FlushErrorWriter {
 
 #[tokio::test]
 async fn analyze_surfaces_a_flush_failure_as_io_not_timeout() {
-    // The writer accepts the request bytes (write succeeds) but the flush
-    // fails. Previously `let _ = writer.flush()` dropped this error and the
-    // read loop would later time out, masking the real cause as Timeout.
-    // Now the flush error ends the session as Io for every target.
+    // A flush error must end the session as `Io` rather than waiting to time out.
     let mut reader = tokio::io::empty(); // no responses will ever arrive
     let mut writer = FlushErrorWriter;
 

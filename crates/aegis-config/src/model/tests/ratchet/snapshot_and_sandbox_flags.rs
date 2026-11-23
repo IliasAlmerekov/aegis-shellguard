@@ -64,14 +64,7 @@ fn project_auto_snapshot_docker_cannot_weaken_global_true() {
 
 #[test]
 fn project_auto_snapshot_flags_can_tighten_default_false_to_true() {
-    // C3-04: the previous `project_auto_snapshot_git_can_tighten_default_false_to_true`
-    // was vacuous — `auto_snapshot_git` DEFAULTS to `true` (model.rs:343), so
-    // there was no "default false → project true" tightening for git. This
-    // table-driven test exercises every `auto_snapshot_*` flag whose default is
-    // actually `false` (docker/postgres/mysql/supabase/sqlite) for the tightening
-    // direction, and keeps git as the "default true" guard (project true stays
-    // true). It only reorganizes an already-true assertion, so it passes today
-    // and after the ratchet expansion.
+    // Exercise tightening (default false -> project true) across every `auto_snapshot_*` flag.
     let cases: &[(&str, bool, &str)] = &[
         ("git", true, "auto_snapshot_git"),
         ("docker", false, "auto_snapshot_docker"),

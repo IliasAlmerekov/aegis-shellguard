@@ -62,9 +62,7 @@ fn uninstalling_aegis_is_danger_in_every_spelling() {
     }
 }
 
-/// Aegis' own global options before the subcommand used to hide it from
-/// every `AEG-*` prefix rule, so `aegis --quiet uninstall --purge-data` was
-/// auto-approved as Safe.
+/// Global options before the subcommand must not hide `AEG-*` prefix rules.
 #[test]
 fn aegis_global_options_do_not_hide_a_self_management_subcommand() {
     for (command, id) in [

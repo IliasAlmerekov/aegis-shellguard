@@ -90,12 +90,7 @@ async fn run_analyzes_inline_python_and_merges_a_recursive_delete_match() {
 
 #[tokio::test]
 async fn run_analyzes_inline_python_after_a_semicolon_the_same_as_leading() {
-    // Regression for issue #384: routing used to look only at the command's
-    // first effective token, so a leading no-op before the real command
-    // (`true; python3 -c ...`) routed nothing and the worker never started —
-    // the exact same payload one token earlier (the test right above this
-    // one) already caught the LANG-FS-DEL-R match, only the placement
-    // changed.
+    // Multi-stage commands route every stage, not only the leading token (#384).
     let baseline = safe_baseline();
     let outcome = run_with_budget(
         "true; python3 -c \"shutil.rmtree('x')\"",
@@ -585,21 +580,8 @@ async fn run_analyzes_inline_javascript_writefilesync_and_lifts_to_warn() {
 
 #[tokio::test]
 async fn run_analyzes_javascript_exec_and_surfaces_the_recursive_javascript_target() {
-    // `node -e "eval('fs.unlinkSync(x)')"` — the inline body is a JavaScript
-    // `eval` of a literal JavaScript string. The top-level `eval` is a
-    // CodeExecution sink (LANG-EXEC at Danger); its literal payload
-    // `fs.unlinkSync(x)` is itself analyzable JavaScript, enqueued as a
-    // recursive target. Unlike the JS exec→Bash test (Slice 2), the recursive
-    // target is JavaScript — which IS supported — so BOTH matches must surface,
-    // `target_count` must cover the top-level AND the recursive target (>= 2),
-    // and the overall status must be Complete with NO degradation. This pins
-    // the JS→JS recursion contract; the JS exec test above recurses into Bash
-    // instead, so it does not cover a JavaScript recursive target.
-    //
-    // The inner operand `x` is a bare identifier (variable), so the recursive
-    // target is a FilesystemDelete with `Dynamic` certainty — a non-execution
-    // dynamic operand emits its match without degradation (Python C3 fix), so
-    // the recursive LANG-FS-DEL surfaces cleanly and the status stays Complete.
+    // JS `eval` of a literal JS string surfaces both the outer LANG-EXEC and
+    // the recursive LANG-FS-DEL target with `Complete` status.
     let baseline = safe_baseline();
     let outcome = run_with_budget(
         "node -e \"eval('fs.unlinkSync(x)')\"",

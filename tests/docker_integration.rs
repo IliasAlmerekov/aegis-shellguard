@@ -1,35 +1,7 @@
-//! Integration tests for [`DockerPlugin`] that exercise a **real Docker daemon**.
+//! Integration tests for [`DockerPlugin`] against a real Docker daemon.
 //!
-//! # Why these exist
-//!
-//! Unit tests in `src/snapshot/docker.rs` use mock shell scripts in place of the
-//! Docker CLI. That is fast and deterministic but it cannot catch:
-//!
-//! - Differences in `docker inspect` JSON schema across Docker versions.
-//! - Whether `docker commit` genuinely preserves filesystem state.
-//! - Whether a container recreated from the snapshot image actually starts.
-//! - Whether the name / label / restart-policy flags are accepted by the real CLI.
-//!
-//! These tests fill that gap.
-//!
-//! # How to run
-//!
-//! The tests are **skipped by default**. To opt in, set the environment variable
-//! and make sure the Docker daemon is running:
-//!
-//! ```bash
-//! AEGIS_DOCKER_TESTS=1 cargo test --test docker_integration
-//! ```
-//!
-//! In CI, add `AEGIS_DOCKER_TESTS: "1"` to the job environment and include a
-//! `docker` service or DinD setup.
-//!
-//! # Assumptions
-//!
-//! - `docker` is on `PATH`.
-//! - The `alpine` image is available (or can be pulled).
-//! - Tests are not run in parallel with other processes that create containers
-//!   named `aegis-itest-*` (the unique name prefix used here).
+//! Opt in with `AEGIS_DOCKER_TESTS=1 cargo test --test docker_integration`.
+//! Requires `docker` on `PATH`, the `alpine` image, and no concurrent `aegis-itest-*` containers.
 
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
