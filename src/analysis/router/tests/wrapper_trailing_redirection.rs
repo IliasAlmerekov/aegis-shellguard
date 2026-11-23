@@ -1,18 +1,10 @@
-//! Router unit tests pinning that a trailing redirection on a wrapper stage
-//! (a brace group, a coprocess, or a function definition) does not hide the
-//! wrapped command, and that a function body may be any compound command
-//! (`{}`, `()`, `case ... esac`), not only a brace group. Split from
-//! `router::tests` to stay under the file-size budget, same as this
-//! directory's other siblings.
+//! Trailing redirections on wrappers and compound-command function bodies (#384).
 
 use super::*;
 
 #[test]
 fn route_does_not_panic_on_the_fuzzed_unicode_whitespace_command() {
-    // Fuzz crash from CI run 35987983871, kept byte for byte. U+0085 (NEL) is
-    // whitespace that takes two bytes in UTF-8, so slicing one byte past it
-    // lands inside the character. The same input is the
-    // `fuzz/corpus/router/unicode-next-line.txt` seed.
+    // Kept byte-for-byte from `fuzz/corpus/router/unicode-next-line.txt`: U+0085 (NEL) is 2-byte UTF-8 whitespace.
     let command = concat!(
         "ca \u{85}\u{18}stiprc\u{fffd}",
         "||||||||||||||||||./scrip\n",

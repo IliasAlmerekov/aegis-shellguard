@@ -1,6 +1,4 @@
-//! Router unit tests pinning that a redirection between assignments,
-//! launcher words, and the program does not hide the program from routing.
-//! Split from `router::tests` to stay under the file-size budget.
+//! Redirections between assignments, launchers, and the program must not hide it (#384).
 
 use super::*;
 

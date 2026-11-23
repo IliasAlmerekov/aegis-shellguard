@@ -1,7 +1,4 @@
-//! Wrapper-routing regression tests for issue #430: a subshell, brace group,
-//! command substitution/backtick, or reserved-word prefix can hide an
-//! interpreter from routing, and the router must see through each shape.
-//! Split from `router::tests` to stay under the file-size budget.
+//! Wrapper-routing tests (#430, #384).
 
 use super::*;
 
@@ -120,12 +117,6 @@ fn a_command_substitution_with_no_interpreter_routes_nothing() {
     assert_eq!(route("echo $(date)", &[]), Vec::new());
 }
 
-// ── A cd inside the wrapped body degrades a relative target found there ────
-//
-// `route_wrapped_stage` walks every wrapper body with its own cwd tracking,
-// seeded from whatever cwd the caller already had (issue #384) — a `cd`
-// found inside a command substitution's body must not leave a sibling
-// relative target in the same body trusting the parent's cwd.
 #[test]
 fn a_cd_inside_a_command_substitution_degrades_a_relative_script_found_there() {
     let targets = route("echo $(cd sub; python3 script.py)", &[]);
@@ -137,17 +128,6 @@ fn a_cd_inside_a_command_substitution_degrades_a_relative_script_found_there() {
         }]
     );
 }
-
-// ── #384: a cd sharing a wrapper body with a routable command must not
-// suppress routing of that command ─────────────────────────────────────────
-//
-// A whole-stage `(...)`/`{...}` wrap containing *any* cd-like segment folds
-// the cd into cwd state without skipping the rest of the body: every other
-// segment in the wrapper still routes. A cd running *after* the routable
-// command must not affect that command's own resolution either (it reads
-// against the cwd this segment entered with, not the cwd the cd sets on the
-// way out) — the router has no notion of statement order inside a fold, only
-// "did this body perform a cd at all".
 
 #[test]
 fn a_subshell_whose_body_also_cds_still_routes_its_earlier_script() {
@@ -196,9 +176,6 @@ fn a_cd_tainted_subshell_piped_into_cat_still_routes_its_earlier_script() {
         }]
     );
 }
-
-// ── #384: a whole-stage-wrapped cd that leads its body degrades the
-// outer walk instead of silently dropping the rest of the body ────────────
 
 #[test]
 fn a_subshell_leading_with_a_literal_cd_joins_and_degrades_the_outer_walk() {
@@ -252,9 +229,6 @@ fn a_brace_group_leading_with_a_cd_and_a_semicolon_degrades() {
 
 #[test]
 fn an_untrusted_outer_cd_stays_degraded_through_a_literal_cd_inside_a_brace_group() {
-    // "Degraded never recovers" (ADR-022 §6): the outer `cd d1` (no `--`) is
-    // already untrusted, so the brace group's own literal `cd -- sub` must
-    // not resurrect trust in the joined path.
     let targets = route("cd d1 && { cd -- sub && python3 ./evil.py; }", &[]);
     assert_eq!(
         targets,
@@ -265,14 +239,6 @@ fn an_untrusted_outer_cd_stays_degraded_through_a_literal_cd_inside_a_brace_grou
     );
 }
 
-// ── An inline body's own quoting survives wrapper extraction ───────────────
-//
-// A wrapper body is real shell source, routed by splitting it with
-// `aegis_parser::list_segments` and feeding each raw stage straight to
-// `route_single_stage` — never through a dequoted/rejoined copy — so a
-// literal `'` inside an inline `-c` body is not mistaken for a second-pass
-// quote delimiter (issue #430 acceptance: `open('x','w')` must reach the
-// worker byte-for-byte, not corrode into `open(x,w)`).
 #[test]
 fn an_inline_body_with_single_quotes_keeps_its_quoting_through_a_subshell() {
     let targets = route(r#"(python3 -c "open('x','w')")"#, &[]);
@@ -281,6 +247,18 @@ fn an_inline_body_with_single_quotes_keeps_its_quoting_through_a_subshell() {
         vec![RoutedTarget::Inline {
             language: SourceLanguage::Python,
             source: "open('x','w')".to_owned(),
+        }]
+    );
+}
+
+#[test]
+fn a_bash_function_with_empty_parens_routes_its_brace_body() {
+    let targets = route("function foo() { python3 ./evil.py; }", &[]);
+    assert_eq!(
+        targets,
+        vec![RoutedTarget::ScriptFile {
+            language: SourceLanguage::Python,
+            path: PathBuf::from("./evil.py"),
         }]
     );
 }

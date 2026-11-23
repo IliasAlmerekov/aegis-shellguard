@@ -1,9 +1,4 @@
-//! Router unit tests (issue #384/#430) for heredoc-chained execs, the
-//! wrapper-peeling recursion bound, shell grammar that can hide an
-//! interpreter, and launcher/alias routing. Split from `router::tests` to
-//! stay under the repo's 800-line file-size budget; `use super::*` reaches
-//! the same `router` test imports (`RoutedTarget`, `SourceLanguage`,
-//! `route`, ...) `router::tests`'s other siblings use.
+//! Heredoc-chained execs, wrap-depth bound, shell grammar wrappers, and launchers (#384, #430).
 
 use super::*;
 use std::time::Instant;
@@ -67,11 +62,6 @@ fn heredoc_chained_exec_with_no_space_before_semicolon_is_routed() {
 
 #[test]
 fn heredoc_write_then_exec_reuse_still_wins_over_the_generic_tail_route() {
-    // The narrow reuse shape (router.rs's `heredoc_write_then_exec_reuse`)
-    // reads the heredoc body directly instead of re-reading the file it was
-    // just written to, and must not also produce a second, redundant
-    // `ScriptFile` route for the same command via the generic chained-exec
-    // tail path.
     let targets = route("cat > f <<EOF && python3 f\nprint(1)\nEOF", &[]);
     assert_eq!(
         targets,

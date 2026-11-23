@@ -1,24 +1,6 @@
-//! Executor-carrying git `-c`/`--config-env` key families and environment
-//! variables the unclaimed-interpreter net (issue #384/#430) must scan
-//! beyond the original, narrower set: git config keys documented as running
-//! a command rather than holding plain data, several of them with a
-//! user-chosen middle segment (`credential.<url>.helper`, `gpg.<format>
-//! .program`, `filter.<name>.clean`/`.smudge`/`.process`, `diff.<name>
-//! .command`/`.textconv`, `merge.<name>.driver`); the matching environment
-//! variables (`VISUAL`, `GIT_ASKPASS`, ...); and an executor assignment set
-//! outside the stage's own leading-assignment prefix, either through the
-//! `env` launcher or as a separate assignment stage (`export`/`declare -x`/
-//! `typeset -x`/`readonly`, or a bare `NAME=value`) on the same line. Split
-//! out of `unclaimed_interpreter_net.rs` to keep that file under this
-//! project's line budget. `use super::*` reaches the same `router` test
-//! imports (`RoutedTarget`, `SourceLanguage`, `route`, ...) its sibling
-//! files use.
+//! Executor-carrying git `-c`/`--config-env` key families, env vars, and SSH `-o` options (#384, #430).
 
 use super::*;
-
-// ── A git config key documented as running a command is degraded, whether
-// it is a fixed name or a family with a user-chosen middle segment
-// (issue #384/#430) ─────────────────────────────────────────────────────
 
 #[test]
 fn git_dash_c_new_top_level_executor_keys_running_a_script_are_routed() {
@@ -39,10 +21,7 @@ fn git_dash_c_new_top_level_executor_keys_running_a_script_are_routed() {
 
 #[test]
 fn git_dash_c_executor_key_behind_a_leading_git_global_option_is_still_routed() {
-    // GHSA-7564: the scanner's git-option skip must not change what the
-    // router itself reads off `slice.tokens`; a global option ahead of
-    // `-c` still routes the same as the unprefixed case in
-    // `executor_option_values.rs`'s `git_dash_c_core_pager_running_a_script_is_routed`.
+    // GHSA-7564: leading git global options must not hide `-c` from the router.
     for command in [
         r#"git -C . -c core.pager='python x.py' log"#,
         r#"git --no-pager -c core.pager='python x.py' log"#,
@@ -66,11 +45,6 @@ fn git_dash_c_executor_key_families_with_a_user_chosen_middle_segment_are_routed
         assert_eq!(route(command, &[]), vec![unresolved_dynamic()], "{command}");
     }
 }
-
-// ── `--config-env` names an environment variable, not a value: its value
-// must be resolved from the command's own assignment prefix, or the key
-// fails closed when that assignment is missing (issue #384/#430, review
-// comment 4091038640) ────────────────────────────────────────────────────
 
 #[test]
 fn config_env_glued_form_resolves_its_named_variable_from_the_assignment_prefix() {
@@ -203,9 +177,6 @@ fn readonly_assignment_stage_naming_an_interpreter_is_routed() {
         vec![unresolved_dynamic()]
     );
 }
-
-// ── A value or assignment naming no interpreter keeps today's auto-approve
-// decision (issue #384/#430) ────────────────────────────────────────────
 
 #[test]
 fn git_dash_c_of_an_unrelated_key_family_shape_is_not_routed() {

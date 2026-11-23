@@ -1,17 +1,6 @@
-//! An executor-carrying option value or environment-variable assignment
-//! naming a known interpreter degrades the stage even when its program sits
-//! on the unclaimed-interpreter net's `NAME_ONLY_PROGRAMS` (issue #384/#430):
-//! git `-c`/`--config-env`, man `-P`/`--pager=`, and leading `PAGER`-style
-//! assignments. Split out of `unclaimed_interpreter_net.rs` to keep that file
-//! under this project's line budget; `executor_config_keys.rs` covers the
-//! wider key and variable families. `use super::*` reaches the same `router`
-//! test imports its sibling files use.
+//! Executor-carrying option values and env assignments on `NAME_ONLY_PROGRAMS` (#384, #430).
 
 use super::*;
-
-// ── An executor-carrying option value or environment-variable assignment is
-// degraded even when the stage's own program sits on `NAME_ONLY_PROGRAMS`
-// (issue #384/#430) ──────────────────────────────────────────────────────
 
 #[test]
 fn git_dash_c_core_pager_running_a_script_is_routed() {
@@ -140,9 +129,6 @@ fn man_long_pager_flag_with_a_separate_value_running_a_script_is_routed() {
         vec![unresolved_dynamic()]
     );
 }
-
-// ── A config value or env assignment naming no interpreter keeps today's
-// auto-approve decision (issue #384/#430) ──────────────────────────────────
 
 #[test]
 fn git_dash_c_core_pager_of_a_plain_pager_is_not_routed() {

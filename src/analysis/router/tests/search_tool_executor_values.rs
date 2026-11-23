@@ -1,14 +1,6 @@
-//! `rg --pre` and `ag --pager` name a command the tool runs to preprocess
-//! its input, not a value it merely reads — read the same way `man -P`
-//! already is (GHSA-xj54 follow-up). Both `rg` and `ag` sit on the
-//! unclaimed net's own `NAME_ONLY_PROGRAMS` list, so without this dispatch a
-//! command smuggled through either flag was invisible to routing. `use
-//! super::*` reaches the same `router` test imports its sibling files use.
+//! `rg --pre` and `ag --pager` executor-option routing (GHSA-xj54).
 
 use super::*;
-
-// ── A separate-token or `=`-glued value routes as its own launcher operand
-// ─────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn rg_pre_separate_token_path_routes() {

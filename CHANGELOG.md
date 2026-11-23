@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Changed: weeded self-justifying, history, and review-id comments across `src/analysis/router` to concise invariants and added the 800-line split-by-responsibility rule to `CONVENTION.md` section 4; no code or behavior changes (#627).
 - Changed: renamed the nine tracker-id test files (`c3_*`, `h3_*`, `m5_*`, `agent_hooks_m4.rs`) after the behaviour they test, updated their module/include/ADR-033 citations, added the naming rule to `CONVENTION.md` section 9, and guarded `.rs` filenames against frozen tracker ids in `scripts/lint.sh text` (#626).
 - Changed: Isolate test process state and enforce the shared guard (#292).
 - Changed: deduplicated the remaining root integration test helpers (`aegis_bin`, `base_command`, `read_audit_entries`, `write_executable`, `repo_path`, `safe_baseline`, `run_snapshot_list`, `seed_snapshot`, `run_prune`, `version_matches`, `git`, `stash_hashes`, `repo_with_stash`) into `tests/support/mod.rs`, removed `aegis_test_binary`, and renamed distinct local stash/git helpers; no production code or test assertions changed (#625).
