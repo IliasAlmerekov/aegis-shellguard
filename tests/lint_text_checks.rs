@@ -363,3 +363,60 @@ fn text_passes_allowed_non_tracker_id_rust_filenames() {
     let output = run_text(tree.path());
     assert!(output.status.success(), "{}", stdout(&output));
 }
+
+#[test]
+fn text_fails_on_review_citation_comments_in_rust_and_toml_and_names_each() {
+    let tree = TempDir::new().unwrap();
+    let offenders = [
+        ("src/a.rs", "// R1-2: drop this\n"),
+        ("crates/x/src/b.rs", "/// See #437 review for details.\n"),
+        ("tests/c.rs", "//! finding F1\n"),
+        ("benches/d.rs", "    // finding 3\n"),
+        ("tests/fixtures/e.toml", "# PR #463 review: reason\n"),
+        ("crates/x/f.toml", "  # R2-10 note\n"),
+        ("src/g.toml", "# finding A12\n"),
+    ];
+    for (rel, body) in offenders {
+        write_file(tree.path(), rel, body);
+    }
+    let output = run_text(tree.path());
+    let report = stdout(&output);
+    assert!(!output.status.success(), "{report}");
+    assert!(report.contains("CONVENTION.md"), "{report}");
+    for (rel, _) in offenders {
+        assert!(report.contains(rel), "{rel} missing from:\n{report}");
+    }
+}
+
+#[test]
+fn text_passes_clean_comments_and_non_comment_review_patterns() {
+    let tree = TempDir::new().unwrap();
+    let clean_rs = [
+        "let x = 1; // R1-2 trailing comment",
+        "// r1-2 lowercase",
+        "// Finding F1 wrong case",
+        "// #437 Review wrong case",
+        "// finding f1 lowercase letter",
+        "// see #437",
+        "#[doc = \"#437 review finding F1 R1-2\"]",
+    ]
+    .join("\n");
+    write_file(tree.path(), "src/clean.rs", &clean_rs);
+
+    let clean_toml = [
+        "key = \"val\" # #437 review trailing",
+        "# r1-2 lowercase",
+        "# Finding F1 wrong case",
+        "# #437 Review wrong case",
+        "# finding f1 lowercase letter",
+        "# see #463",
+        "note = \"// R1-2\"",
+    ]
+    .join("\n");
+    write_file(tree.path(), "tests/fixtures/clean.toml", &clean_toml);
+
+    write_file(tree.path(), "crates/x/target/gen.rs", "// R1-2\n");
+    write_file(tree.path(), "tests/target/gen.toml", "# #437 review\n");
+    let output = run_text(tree.path());
+    assert!(output.status.success(), "{}", stdout(&output));
+}
