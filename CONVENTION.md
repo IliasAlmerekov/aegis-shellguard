@@ -266,6 +266,7 @@ Audit rules:
 Minimum expectations:
 
 - Unit tests live near the code in `#[cfg(test)]` modules where appropriate.
+- Name every test file after the behaviour it tests, never after a tracker or review id; `scripts/lint.sh text` fails on any `.rs` filename matching a frozen tracker id.
 - Test process state: use child `Command` settings first, inject values second, or use the restoring guard in `tests/support` last; never call `std::env::set_var`, `std::env::remove_var`, or `std::env::set_current_dir` elsewhere.
 - Integration tests live under `tests/`.
 - Parser changes must add edge-case coverage.

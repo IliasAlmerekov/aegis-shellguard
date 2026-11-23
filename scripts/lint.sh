@@ -9,9 +9,11 @@
 #   fmt     check formatting
 #   clippy  lint every target and feature, warnings are errors
 #   text    checks clippy cannot make: no `.rs` file under src/, crates/,
-#           tests/, fuzz/ or benches/ exceeds 800 lines, every backticked path
-#           in AGENTS.md, CONVENTION.md, CONTRIBUTING.md and CLAUDE.md exists
-#           in the tree, and scripts/test-tamper-check.test.sh passes
+#           tests/, fuzz/ or benches/ exceeds 800 lines, no `.rs` file under
+#           src/, crates/ or tests/ carries a frozen tracker id in its name,
+#           every backticked path in AGENTS.md, CONVENTION.md, CONTRIBUTING.md
+#           and CLAUDE.md exists in the tree, no unguarded `Command::new("git")`
+#           spawns exist, and scripts/test-tamper-check.test.sh passes
 #   all     fmt, clippy, then text (also the default with no argument)
 #
 # LINT_TEXT_ROOT points the text checks at another directory than the
@@ -166,6 +168,34 @@ $files
 EOF
 }
 
+# A test or source file is named after its behaviour, not a frozen tracker id (#626).
+check_tracker_id_filenames() {
+    set --
+    for dir in src crates tests; do
+        if [ -d "$dir" ]; then
+            set -- "$@" "$dir"
+        fi
+    done
+    [ "$#" -gt 0 ] || return 0
+    # Capture find first: in a pipeline its exit status would be lost.
+    find_status=0
+    files=$(find "$@" \( -name target -o -name .git -o -name .worktrees \
+        -o -name .cargo -o -name .claude -o -name node_modules \) -prune \
+        -o -type f -name '*.rs' -print) || find_status=$?
+    if [ "$find_status" -ne 0 ]; then
+        echo "find could not read every path under: $* (exit $find_status)"
+    fi
+    [ -n "$files" ] || return 0
+    while IFS= read -r file; do
+        base=${file##*/}
+        if printf '%s\n' "$base" | grep -qE '(^|_)[chm][0-9]+(_|\.rs$)'; then
+            echo "$file: filename carries a tracker id, see CONVENTION.md section 9"
+        fi
+    done <<EOF
+$files
+EOF
+}
+
 run_text() {
     echo "lint: text checks"
     root=${LINT_TEXT_ROOT:-.}
@@ -180,6 +210,11 @@ run_text() {
         text_failed=1
     fi
     out=$(cd "$root" && check_git_spawns)
+    if [ -n "$out" ]; then
+        echo "$out" >&2
+        text_failed=1
+    fi
+    out=$(cd "$root" && check_tracker_id_filenames)
     if [ -n "$out" ]; then
         echo "$out" >&2
         text_failed=1

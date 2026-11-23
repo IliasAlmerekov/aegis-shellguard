@@ -328,3 +328,38 @@ fn text_passes_git_spawn_in_the_shared_helpers() {
     let output = run_text(tree.path());
     assert!(output.status.success(), "{}", stdout(&output));
 }
+
+#[test]
+fn text_fails_on_tracker_id_rust_filenames_and_names_each() {
+    let tree = TempDir::new().unwrap();
+    let offenders = [
+        "crates/x/src/tests/h9_demo.rs",
+        "tests/foo_m7.rs",
+        "src/c3_foo.rs",
+        "crates/y/src/foo_c12_bar.rs",
+    ];
+    for rel in offenders {
+        write_file(tree.path(), rel, "// test\n");
+    }
+    let output = run_text(tree.path());
+    assert!(!output.status.success(), "{}", stdout(&output));
+    let report = stdout(&output);
+    for rel in offenders {
+        assert!(report.contains(rel), "{rel} missing from:\n{report}");
+    }
+}
+
+#[test]
+fn text_passes_allowed_non_tracker_id_rust_filenames() {
+    let tree = TempDir::new().unwrap();
+    for rel in [
+        "crates/aegis-language/src/l1_qualification_foo.rs",
+        "tests/audit_v2.rs",
+        "tests/normal_test.rs",
+        "crates/x/target/h9_gen.rs",
+    ] {
+        write_file(tree.path(), rel, "// test\n");
+    }
+    let output = run_text(tree.path());
+    assert!(output.status.success(), "{}", stdout(&output));
+}
