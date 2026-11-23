@@ -178,9 +178,6 @@ fn readonly_assignment_stage_naming_an_interpreter_is_routed() {
     );
 }
 
-// ── A value or assignment naming no interpreter keeps today's auto-approve
-// decision (issue #384/#430) ────────────────────────────────────────────
-
 #[test]
 fn git_dash_c_of_an_unrelated_key_family_shape_is_not_routed() {
     assert_eq!(

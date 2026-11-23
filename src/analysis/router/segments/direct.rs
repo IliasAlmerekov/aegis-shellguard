@@ -15,6 +15,7 @@ pub(super) fn route_direct_stage(
     if owned_tokens.is_empty() {
         return Vec::new();
     }
+    // The shell strips redirections before resolving argv[0], so routing strips them too (#384).
     let (tokens, slice, truncated) = effective_stage_slice(&owned_tokens);
     if truncated {
         // Fail closed when `env -S` nesting hits the parser's depth bound (`CONVENTION.md` §2).

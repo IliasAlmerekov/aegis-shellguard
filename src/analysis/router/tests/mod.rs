@@ -295,7 +295,7 @@ fn pipeline_into_a_non_interpreter_yields_no_targets() {
 
 #[test]
 fn heredoc_written_to_a_file_is_reused_when_the_same_command_executes_it() {
-    // ADR-022 §6: reuse the in-hand heredoc body instead of re-reading from disk.
+    // ADR-022 §6: reuse the in-hand heredoc body directly.
     let command = "cat > script.py <<'EOF' && python3 script.py\nprint(1)\nEOF";
     let targets = route(command, &[]);
     assert_eq!(
@@ -608,7 +608,7 @@ async fn resolve_drops_a_direct_exec_target_with_no_verified_shebang() {
 
 #[tokio::test]
 async fn resolve_for_analysis_treats_an_oversized_direct_exec_target_as_not_applicable() {
-    // Regression test for #345: compiled binaries invoked by path must not degrade.
+    // Compiled binaries invoked by path must not degrade (#345).
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("actionlint");
     std::fs::write(&path, vec![0xffu8; 2048]).unwrap();

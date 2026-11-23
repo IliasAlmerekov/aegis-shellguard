@@ -732,8 +732,6 @@ fn wrapper_flags_own_argument_is_not_mistaken_for_the_operand() {
     );
 }
 
-// ── A user-typed direct-exec target keeps its pre-existing behavior ────────
-
 #[tokio::test]
 async fn user_typed_direct_exec_of_a_missing_script_still_degrades() {
     let dir = tempfile::tempdir().unwrap();

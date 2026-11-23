@@ -10,7 +10,7 @@ fn strip_group_or_subshell_wrapper(raw: &str) -> Option<&str> {
         .or_else(|| trimmed.strip_prefix('(').and_then(|s| s.strip_suffix(')')))
 }
 
-/// Raw-substring `case` arm extraction (preserves inline quoting across `;;`/`;;&`/`;`&) (#384).
+/// Raw-substring `case` arm extraction (preserves inline quoting across `;;`/`;;&`/`;&`) (#384).
 fn case_arm_bodies(rest: &str) -> Vec<String> {
     let Some((_word, mut remaining)) = rest.split_once(" in ") else {
         return Vec::new();

@@ -425,7 +425,7 @@ fn stage_starts_with_reserved_word(trimmed: &str, word: &str) -> bool {
         .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
 }
 
-/// Cheap prefix/substring pre-filter so wrapper-free stages stay allocation-light (#430, `CONVENTION.md` §8).
+/// Cheap prefix/substring pre-filter for grammar `route_direct_stage` cannot see through (#430, `CONVENTION.md` §8).
 fn stage_may_be_wrapped(stage_raw: &str) -> bool {
     let trimmed = stage_raw.trim_start();
     trimmed.starts_with('(')

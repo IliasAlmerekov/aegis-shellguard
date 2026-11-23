@@ -130,9 +130,6 @@ fn man_long_pager_flag_with_a_separate_value_running_a_script_is_routed() {
     );
 }
 
-// ── A config value or env assignment naming no interpreter keeps today's
-// auto-approve decision (issue #384/#430) ──────────────────────────────────
-
 #[test]
 fn git_dash_c_core_pager_of_a_plain_pager_is_not_routed() {
     assert_eq!(route("git -c core.pager=less log", &[]), Vec::new());
