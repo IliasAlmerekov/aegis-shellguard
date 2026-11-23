@@ -1,12 +1,8 @@
-//! Whether the command text before a heredoc marker can change which program
-//! a bare `cat` or `jq` runs (ADR-042, PR #463 review round 3). The earlier
-//! check searched the prefix for denylisted words (`alias`, `hash`, `PATH`,
-//! ...), and each review found a shell table it missed: `BASH_CMDS[cat]=`,
-//! `BASH_ALIASES[cat]=`, zsh `functions[cat]=` and `commands[cat]=`, zsh
-//! `path=(...)`. This module inverts the check. Every simple command in the
-//! prefix must start with a literal word from [`INERT_PREFIX_PROGRAMS`], and
-//! no expansion in the prefix may assign a variable. Anything else, known or
-//! not, costs the body a scan.
+//! Inert-prefix allowlist for heredoc data consumers (ADR-042).
+//!
+//! Every simple command before the heredoc marker must start with a literal
+//! word from [`INERT_PREFIX_PROGRAMS`] or [`DATA_CONSUMER_PROGRAMS`], and no
+//! expansion in the prefix may assign a variable.
 
 use super::DATA_CONSUMER_PROGRAMS;
 

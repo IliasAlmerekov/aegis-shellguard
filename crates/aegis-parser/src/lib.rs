@@ -61,14 +61,10 @@ pub use tokenizer::{
     extract_prefix, split_tokens,
 };
 
-/// Reserved words that keep the *next* word in command position too (issue
-/// #384) — `!`/`if`/`then`/`elif`/`else`/`while`/`until`/`do`/`time` all
-/// introduce a command rather than being one themselves. The single source
-/// every command-position/reserved-word scan in this crate, and callers
-/// outside it, reads instead of each keeping its own copy to drift out of
-/// sync (issue #384/#430). `case`, `function`, and `coproc` are absent on
-/// purpose: each needs more than a flat membership check (nested `case`/
-/// `esac`, a header's name and body, a two-word start), done at call sites.
+/// Reserved words that keep the next word in command position (#384, #430).
+///
+/// `case`, `function`, and `coproc` are excluded because each requires
+/// multi-word or nested syntax handling at call sites.
 pub const COMMAND_STARTING_KEYWORDS: [&str; 9] = [
     "!", "if", "then", "elif", "else", "while", "until", "do", "time",
 ];
@@ -93,16 +89,10 @@ pub fn effective_token_slices<'a>(tokens: &[&'a str]) -> Vec<EffectiveTokenSlice
     effective_token_slices_checked(tokens).0
 }
 
-/// [`effective_token_slices`]'s companion for a caller that must tell a
-/// depth-bounded stop apart from an ordinary "nothing resolved" result: the
-/// same slices, paired with `true` when [`ENV_SPLIT_MAX_DEPTH`] cut an
-/// `env -S`/`--split-string` chain short before it reached the real program
-/// (#437 review, adversarial finding F1). A caller that would otherwise
-/// treat an empty or partial slice list as a non-program stage must check
-/// the flag first and fail closed instead — see `CONVENTION.md` §2
-/// (classification and policy failures must be fail-closed). Computes both
-/// in one resolution walk rather than making the caller run
-/// [`effective_token_slices`] and a second truncation query separately.
+/// Like [`effective_token_slices`], paired with `true` when `ENV_SPLIT_MAX_DEPTH`
+/// truncated an `env -S`/`--split-string` chain.
+///
+/// Callers must check the truncation flag first and fail closed (`CONVENTION.md` §2).
 pub fn effective_token_slices_checked<'a>(
     tokens: &[&'a str],
 ) -> (Vec<EffectiveTokenSlice<'a>>, bool) {
@@ -146,29 +136,15 @@ pub fn effective_program<'a>(tokens: &[&'a str]) -> Option<&'a str> {
     owned.into_iter().next()?.into_iter().next()
 }
 
-/// Ceiling on `env -S`/`--split-string` nesting (`env -S 'env -S ...'`, or
-/// the flat `env -S 'env -S' 'env -S' ... 'true'` shape that re-splits into
-/// the same form one repeat shorter each time): each level re-splits its own
-/// value and feeds it back into [`collect_effective_program_indices`], so
-/// without a bound a deep enough chain costs one stack frame per level with
-/// nothing else to stop it (#437 review, adversarial finding F1 — a 3000-deep
-/// chain overflowed the stack under a constrained `ulimit -s`). Matches the
-/// router's `MAX_WRAP_DEPTH` (`src/analysis/router/segments.rs`) and
-/// `OrchestrationBudget::L1_DEFAULT.max_depth` (ADR-022 §7's cross-language
-/// recursion-depth ceiling) in value; duplicated as its own constant rather
-/// than shared because this crate is a dependency-DAG leaf and may not
-/// depend on the root `aegis` binary crate that owns those (CONVENTION.md
-/// §3).
+/// Recursion ceiling on `env -S`/`--split-string` nesting to prevent stack overflow.
+///
+/// Mirrors `MAX_WRAP_DEPTH` and `OrchestrationBudget::L1_DEFAULT.max_depth` (ADR-022 §7);
+/// duplicated because `aegis-parser` is a dependency-DAG leaf (`CONVENTION.md` §3).
 const ENV_SPLIT_MAX_DEPTH: u32 = 8;
 
-/// Resolve effective-program candidates for `tokens` as two channels plus a
-/// truncation flag: `starts` are indices into `tokens` itself, `owned` are
-/// fully-resolved token vectors produced by an `env -S`/`--split-string`
-/// expansion somewhere during recursive launcher-prefix stripping, and the
-/// `bool` is `true` when [`ENV_SPLIT_MAX_DEPTH`] cut resolution short before
-/// it reached the real program (#437 review, finding F1). A split's words
-/// are new tokens, not a sub-range of `tokens` (review 4091038674 on PR
-/// #437), so they cannot be expressed as an index back into it.
+/// Resolve effective-program candidates as `(starts, owned, truncated)`:
+/// indices into `tokens`, split token vectors from `env -S`, and whether
+/// [`ENV_SPLIT_MAX_DEPTH`] stopped recursion.
 fn effective_program_resolution<'a>(tokens: &[&'a str]) -> (Vec<usize>, Vec<Vec<&'a str>>, bool) {
     let mut starts = Vec::new();
     let mut owned = Vec::new();
@@ -191,11 +167,7 @@ fn collect_effective_program_indices<'a>(
         return;
     }
 
-    // A redirection can sit between assignments, launcher words, and the
-    // program (`FOO=1 >out python3 x.py`, `env >out python3 x.py`) — the
-    // shell strips it before argv0 resolution the same way it does a
-    // leading one, so this check runs first at every recursive step, not
-    // only at index 0 (issue #384).
+    // Redirections can appear between assignments, launchers, and the program (#384).
     if starts_with_redirection_glyph(tokens[index]) {
         let len = redirection_token_len(tokens[index]).min(tokens.len() - index);
         collect_effective_program_indices(tokens, index + len, starts, owned, depth, truncated);
@@ -215,14 +187,8 @@ fn collect_effective_program_indices<'a>(
         return;
     }
 
-    // `env -S`/`--split-string` must be checked at every recursive step, not
-    // only before recursion starts — a launcher word ahead of `env`
-    // (`FOO=1 env -S ...`, `sudo env -S ...`) reaches this point mid-
-    // recursion, and generic `env_prefix_lengths` does not know split-string
-    // semantics (review 4091038674 on PR #437). A split value that is itself
-    // `env -S ...` feeds back into `collect_effective_program_slices`, one
-    // level deeper each time; past `ENV_SPLIT_MAX_DEPTH`, stop and record
-    // the truncation instead of recursing further (#437 review, finding F1).
+    // Check `env -S` at every recursive step (e.g. after `FOO=1` or `sudo`),
+    // stopping at `ENV_SPLIT_MAX_DEPTH` to prevent stack overflow.
     if let Some(split) = env_split_string_tokens(&tokens[index..]) {
         if depth >= ENV_SPLIT_MAX_DEPTH {
             *truncated = true;
@@ -253,13 +219,7 @@ fn collect_effective_program_indices<'a>(
     }
 }
 
-/// Resolve `tokens` — already `env -S`-split argv, not a sub-range of any
-/// outer token array — into effective-program token vectors, continuing
-/// recursive launcher-prefix stripping (and a further split, should the
-/// split content itself start with another `env -S`) on the split content.
-/// `depth` is this split's own nesting level, checked against
-/// [`ENV_SPLIT_MAX_DEPTH`] by [`collect_effective_program_indices`] before
-/// it recurses back in here.
+/// Resolve an `env -S`-split argv into owned effective-program token vectors.
 fn collect_effective_program_slices<'a>(
     tokens: &[&'a str],
     owned: &mut Vec<Vec<&'a str>>,
@@ -357,11 +317,7 @@ fn launcher_prefix_lengths(tokens: &[&str]) -> Option<Vec<usize>> {
     None
 }
 
-/// Resolve the launcher-prefix length for bare `xargs <program> <args...>`
-/// (issue #384): with no placeholder/replacement flag, `xargs` runs
-/// `<program> <args...>` directly (plus stdin lines appended as further
-/// arguments), so the program right after its own flags is the effective
-/// program the same way `sudo`'s or `nice`'s is.
+/// Resolve the launcher-prefix length for `xargs <flags> <program>` (#384).
 fn xargs_prefix_len(tokens: &[&str]) -> usize {
     let mut index = 1;
     while index < tokens.len() {
@@ -400,16 +356,7 @@ fn xargs_prefix_len(tokens: &[&str]) -> usize {
     index
 }
 
-/// Resolve the launcher-prefix length for the `rtk` wrapper.
-///
-/// `rtk <cmd>` transparently forwards `<cmd>`, so stripping the single `rtk`
-/// token exposes the real program (issue #339's baseline case). `rtk proxy
-/// <cmd>` is different: `proxy` is rtk's own meta-command for running `<cmd>`
-/// unfiltered, so `<cmd>` starts one token further in. Without this
-/// distinction `rtk proxy git rebase origin/main` resolves its effective
-/// program to `proxy`, which matches no rule and is auto-approved safe with
-/// no snapshot — a full detection bypass for the identical underlying
-/// command.
+/// Resolve the launcher-prefix length for `rtk` (`rtk proxy <cmd>` skips 2 tokens, #339).
 fn rtk_prefix_lengths(tokens: &[&str]) -> Vec<usize> {
     match tokens.get(1) {
         Some(sub) if sub.eq_ignore_ascii_case("proxy") => vec![2],
@@ -549,7 +496,7 @@ impl Parser {
     ///
     /// Tokenizes `cmd` (respecting quoting and escaping), then extracts the
     /// program name and argument list from the first logical command. The full
-    /// token sequence is joined into `normalized` — the canonical match target
+    /// token sequence is joined into `normalized`, the canonical match target
     /// used by the scanner. The raw string is preserved only for audit logging.
     pub fn parse(cmd: &str) -> ParsedCommand {
         let tokens = split_tokens(cmd);

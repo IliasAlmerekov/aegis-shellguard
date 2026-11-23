@@ -1,8 +1,4 @@
-//! Top-level list-segment splitting with separator tracking (issue #384).
-//!
-//! Split out of `segmentation.rs` to stay under the repo's 800-line file-size
-//! budget. A sibling of `segmentation` under the crate root, so it reaches
-//! `segmentation`'s shared scanning helpers through `pub(crate)`.
+//! Top-level list-segment splitting with separator tracking (#384).
 
 use std::ops::Range;
 
@@ -10,12 +6,8 @@ use crate::PipelineChain;
 use crate::embedded_scripts::heredoc_suspend_ranges;
 use crate::segmentation::{ends_with_redirect_target, finalize_segment, split_pipeline_segments};
 
-/// Walks a byte offset forward through a sorted, non-overlapping list of
-/// ranges, tracking which one (if any) currently contains it. Shared by
-/// every scanner that must treat a byte span — a `case` statement, a
-/// heredoc body — as opaque data rather than parseable shell grammar,
-/// instead of each one re-deriving the same "advance past ranges that have
-/// already ended" walk.
+/// Walks a byte offset forward through sorted, non-overlapping opaque byte ranges
+/// (such as `case` statements or heredoc bodies).
 pub(crate) struct SuspendCursor<'a> {
     remaining: std::slice::Iter<'a, Range<usize>>,
     active: Option<&'a Range<usize>>,
@@ -42,11 +34,11 @@ impl<'a> SuspendCursor<'a> {
 /// The top-level shell list operator connecting one [`ListSegment`] to the next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListSeparator {
-    /// `&&` — logical AND.
+    /// `&&` - logical AND.
     And,
-    /// `||` — logical OR.
+    /// `||` - logical OR.
     Or,
-    /// `;` — unconditional sequencing.
+    /// `;` - unconditional sequencing.
     Semicolon,
     /// A standalone background `&`.
     Background,
@@ -66,14 +58,11 @@ pub struct ListSegment {
     pub separator: Option<ListSeparator>,
 }
 
-/// Split `cmd` into top-level list segments — delimited by `;`, `&&`, `||`,
-/// background `&`, and newlines — each carrying its own pipeline chain
-/// (`|`-delimited stages) and the operator that follows it.
+/// Split `cmd` into top-level list segments delimited by `;`, `&&`, `||`,
+/// background `&`, and newlines, each with its pipeline chain and trailing
+/// separator (#384).
 ///
-/// Unlike [`crate::top_level_pipelines`], every group is returned even when it has
-/// only one pipeline stage: a caller that must route every top-level command
-/// of a compound command, not only its multi-stage pipelines, uses this
-/// instead (issue #384).
+/// Unlike [`crate::top_level_pipelines`], single-stage groups are included.
 pub fn list_segments(cmd: &str) -> Vec<ListSegment> {
     split_top_level_command_groups_with_separators(cmd)
         .into_iter()
@@ -87,14 +76,8 @@ pub fn list_segments(cmd: &str) -> Vec<ListSegment> {
         .collect()
 }
 
-/// Fold one completed word (`word_start..word_end` of `cmd`) into the
-/// `case`/`esac` nesting scan: open a range when `word` is `case` seen in
-/// command position, close the outermost one when `word` is `esac` seen in
-/// command position, and report whether the word just consumed leaves the
-/// *next* word in command position (true only for a reserved starter word in
-/// [`crate::COMMAND_STARTING_KEYWORDS`]). `case` and `esac` are handled by
-/// name here instead, since seeing either must also touch the nesting stack,
-/// not just flip a flag.
+/// Fold a completed word into the `case`/`esac` nesting scan and report
+/// whether the next word stays in command position.
 fn note_word_boundary(
     word: &str,
     word_start: usize,
@@ -121,29 +104,11 @@ fn note_word_boundary(
     }
 }
 
-/// Byte ranges spanning a whole top-level `case ... esac` statement (issue
-/// #384): a `case` block's own `;;`/`;;&`/`;&` arm
-/// terminators and any `&` inside an arm body are case grammar, not list
-/// operators, so top-level splitting must not treat them as one — only the
-/// router's own `case`-keyword wrapper handling (which re-parses each arm as
-/// its own list) should ever see them as boundaries.
+/// Byte ranges spanning outermost top-level `case ... esac` statements (#384).
 ///
-/// Only a `case`/`esac` word seen in *command position* opens or closes a
-/// range: the start of `cmd`, right after `;`/`&`/`|`/`(`/`)`/`{`/a newline,
-/// or right after a reserved starter word (`!`, `if`, `then`, ...). A bare
-/// word boundary is not enough — `grep case f` or `echo esac` must never
-/// suspend splitting, because there `case`/`esac` sit in argument position,
-/// not command position (issue #384, a real bypass: those two auto-
-/// approved a smuggled command that a plain `;` would have caught). Quoting
-/// falls out of the same word-level scan for free: a quoted `"esac"` keeps
-/// its quote characters as part of the word text, so it never matches the
-/// bare four-letter keyword.
-///
-/// Nesting is depth-counted so only the outermost `case`/`esac` pair
-/// produces a range, since that range already spans every statement nested
-/// inside it. A `case` with no matching `esac` (or vice versa) produces no
-/// range at all — the same fail-open gap as the rest of this crate's raw
-/// scans for malformed input.
+/// Only `case`/`esac` in command position open or close a range so argument
+/// words like `grep case f` never suspend list splitting. Unmatched `case`
+/// produces no range.
 pub(crate) fn case_statement_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
     if !cmd.contains("case") {
         return Vec::new();
@@ -246,18 +211,9 @@ fn finalize_with_separator(
     }
 }
 
-/// [`split_top_level_command_groups`], additionally recording the
-/// [`ListSeparator`] immediately following each returned group (`None` for
-/// the last group in `cmd`). The separator recorded for a group is whichever
-/// one the scanner encountered right after finishing that group's text — an
-/// empty group between two separators (e.g. `a;;b`, or a leading `;`) has no
-/// preceding text to decorate, so no entry is recorded for it.
+/// Split `cmd` into top-level command groups paired with their trailing [`ListSeparator`].
 ///
-/// A heredoc marker (issue #384) suspends list-operator recognition from its
-/// `<<` through the end of its terminator line: the body is data, never
-/// further segments, and anything chained on the marker's own physical line
-/// (e.g. `cat > f <<EOF && python3 f`) stays glued to the segment that owns
-/// the marker rather than splitting there.
+/// Heredoc and `case ... esac` spans stay opaque so internal separators do not split them (#384).
 pub(crate) fn split_top_level_command_groups_with_separators(
     cmd: &str,
 ) -> Vec<(String, Option<ListSeparator>)> {
@@ -338,19 +294,8 @@ pub(crate) fn split_top_level_command_groups_with_separators(
                 }
                 current.push(ch);
             }
-            // `{ ...; }` grouping syntax: real shell grammar requires `{` to
-            // stand alone as a word followed by whitespace, and `}` to stand
-            // alone right after a `;`/newline/whitespace — tracked the same
-            // way as `(...)` so a `cd` inside the group is never split away
-            // from the braces that make it a single unit to route (ADR-022
-            // §6, issue #384: a group's `cd` persists to the caller's
-            // cwd, unlike a subshell's, and the router must see the whole
-            // wrapper to tell the two apart). A `{` immediately after `)`
-            // additionally opens a POSIX function body (`f(){ ...; }`, issue
-            // #384): unlike a bare grouping `{`, real shell grammar allows
-            // no whitespace there, so this is the one preceding character a
-            // grouping `{` itself could never have — no ambiguity between
-            // the two shapes.
+            // Track `{ ...; }` groups and `f(){ ...; }` function bodies as single
+            // units so the router sees the whole wrapper (ADR-022 §6, #384).
             '{' if !in_single_quote
                 && !in_double_quote
                 && !in_backticks
@@ -407,7 +352,6 @@ pub(crate) fn split_top_level_command_groups_with_separators(
                 && command_subst_depth == 0 =>
             {
                 if next_char == Some('&') {
-                    // `&&` — logical AND
                     chars.next();
                     finalize_with_separator(
                         ListSeparator::And,
@@ -416,10 +360,7 @@ pub(crate) fn split_top_level_command_groups_with_separators(
                         &mut separators,
                     );
                 } else if next_char != Some('>') && !ends_with_redirect_target(&current) {
-                    // Standalone background `&` — a command separator.
-                    // Excludes redirect forms `&>` / `&>>` (peek is `>`) and
-                    // unescaped `>&` / `<&` / `2>&1` / `3>&-` (preceding char is
-                    // an unescaped `>` or `<`). An escaped `\>` is a literal arg.
+                    // Standalone background `&` (excludes `&>`, `&>>`, `>&`, `<&`).
                     finalize_with_separator(
                         ListSeparator::Background,
                         &mut current,
@@ -427,7 +368,6 @@ pub(crate) fn split_top_level_command_groups_with_separators(
                         &mut separators,
                     );
                 } else {
-                    // Part of a redirect operator — keep as an ordinary char.
                     current.push(ch);
                 }
             }
@@ -453,14 +393,7 @@ pub(crate) fn split_top_level_command_groups_with_separators(
 
     finalize_segment(&mut current, &mut segments);
 
-    // Every recorded separator decorates the segment pushed right before it,
-    // so `separators` and `segments` are already in lockstep, modulo the
-    // final segment (pushed by the unconditional `finalize_segment` call
-    // above, with no separator tracked for it) and a command that ends right
-    // on a separator (e.g. `"a;"`), where the last recorded separator would
-    // otherwise dangle off the end with nothing after it. Either way, the
-    // true last segment never has a following separator, so it is forced to
-    // `None` explicitly rather than relied on to fall out of the arithmetic.
+    // Force the final segment's trailing separator to `None` (even for trailing `;`).
     let mut separators: Vec<Option<ListSeparator>> = separators.into_iter().map(Some).collect();
     separators.resize(segments.len(), None);
     if let Some(last) = separators.last_mut() {
@@ -483,9 +416,6 @@ mod tests {
 
     #[test]
     fn heredoc_body_line_does_not_split_on_an_embedded_separator() {
-        // Issue #384: a `;` inside a heredoc body is not a real command
-        // separator, so it must not slice a later command away from its
-        // owning segment.
         let cmd = ": <<X\nhi; there\nX\ntrue; python3 ./evil.py";
         assert_eq!(
             raw_segments(cmd),
@@ -495,9 +425,7 @@ mod tests {
 
     #[test]
     fn heredoc_owning_segment_keeps_a_same_line_chained_exec_glued() {
-        // The `&&`-chained exec on the marker's own line must not become a
-        // separate segment: `heredoc_write_then_exec_reuse` (router.rs) needs
-        // the whole thing as one unit to recognize the write-then-exec shape.
+        // Keeps the same-line `&&` chain in one segment for write-then-exec detection (#384).
         let cmd = "cat > f <<EOF && python3 f\nprint(1)\nEOF";
         assert_eq!(
             raw_segments(cmd),
@@ -534,9 +462,6 @@ mod tests {
 
     #[test]
     fn a_brace_group_stays_one_segment_despite_an_internal_semicolon() {
-        // Issue #384: `{ cd -- d1; }` must stay one segment, or the router
-        // never sees the whole group and cannot tell a `cd` that persists to
-        // the caller's cwd from one it cannot resolve.
         let cmd = "{ cd -- d1; }; python3 ./sub/evil.py";
         assert_eq!(
             raw_segments(cmd),
@@ -552,11 +477,7 @@ mod tests {
 
     #[test]
     fn case_keyword_in_argument_position_does_not_suspend_splitting() {
-        // Issue #384: `case`/`esac` only mean anything in command position.
-        // Here both are plain arguments to `grep`, so the `;` between them
-        // must still split, or a smuggled `python3` auto-approves — the scan
-        // must open a range only on a command-position boundary, not any
-        // word boundary.
+        // Only command-position `case`/`esac` suspend splitting (#384).
         let cmd = "grep case f; python3 ./evil.py; grep esac f";
         assert_eq!(
             raw_segments(cmd),
@@ -584,10 +505,6 @@ mod tests {
 
     #[test]
     fn a_quoted_heredoc_marker_does_not_suspend_splitting() {
-        // A `<<` inside a quoted argument is data, not a heredoc operator —
-        // the shell prints it literally. The suspend-range scan must not
-        // treat it as one, or it swallows the rest of the command (including
-        // the real `;` separator) looking for a terminator that never comes.
         let cmd = "echo '<<EOF'; python3 ./evil.py";
         assert_eq!(raw_segments(cmd), vec!["echo '<<EOF'", "python3 ./evil.py"]);
     }
@@ -603,8 +520,6 @@ mod tests {
 
     #[test]
     fn esac_inside_a_quoted_string_does_not_close_a_case_statement_early() {
-        // The quoted `"esac"` inside the arm body must not pop the nesting
-        // stack; only the real, unquoted `esac` at the end may.
         let cmd = "case a in x) echo \"esac\";; esac; python3 ./evil.py";
         assert_eq!(
             raw_segments(cmd),

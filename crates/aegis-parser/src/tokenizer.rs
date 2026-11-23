@@ -19,7 +19,7 @@ pub use ansi_c::{canonical_ansi_c_quoting, canonical_ansi_c_quoting_marked};
 /// - Backslash outside quotes escapes the next character (treated literally).
 /// - `;`, `&&`, `||`, and `|` outside quotes are returned as separator tokens.
 /// - Unquoted literal `$IFS` / `${IFS}` are treated as shell word-separators
-///   (see [`ifs_marker_len`]), closing the C2 obfuscation bypass.
+///   (see `ifs_marker_len`), closing the C2 obfuscation bypass.
 /// - ANSI-C quoting (`$'...'`) is decoded the way bash decodes it, so
 ///   `$'\162m'` yields `rm`. A piece that never closes keeps its raw
 ///   spelling, `$'` included; see [`ansi_c_quoting_is_inexact`].
@@ -85,10 +85,7 @@ fn split_tokens_checked(cmd: &str) -> (Vec<String>, bool) {
                 }
             }
             '|' if !in_single_quote && !in_double_quote && ends_with_redirect_target(&current) => {
-                // `>|`/`<|` (e.g. the noclobber-override redirect `>|out`)
-                // glues a `|` straight onto an unescaped `>`/`<` — that is
-                // redirection syntax glued to the token being built, not a
-                // pipe separator (issue #384).
+                // `>|`/`<|` is redirection syntax, not a pipe separator (#384).
                 current.push(ch);
             }
             '|' if !in_single_quote && !in_double_quote => {
@@ -153,7 +150,7 @@ fn split_tokens_checked(cmd: &str) -> (Vec<String>, bool) {
 /// Recognize a literal unquoted IFS expansion at the tokenizer's current cursor.
 ///
 /// `chars` must be positioned **just past** the leading `$`. Returns the full
-/// marker length in characters — `4` for `$IFS`, `6` for `${IFS}` — when the
+/// marker length in characters (`4` for `$IFS`, `6` for `${IFS}`) when the
 /// upcoming characters form a literal IFS expansion, or `None` otherwise. The
 /// iterator is never advanced; the caller consumes the remaining marker
 /// characters only on a match.

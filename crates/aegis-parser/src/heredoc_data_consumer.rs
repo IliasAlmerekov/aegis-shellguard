@@ -1,11 +1,4 @@
-//! The `Data consumer` predicate for a nowdoc heredoc body (issue #396,
-//! #432): whether `cat` or `jq` owns the marker, whether anything
-//! pipes the consumer's own stdout, and whether the marker sits in a context
-//! [`heredoc_target_is_data_consumer`] trusts (ADR-042). Split out of
-//! [`super::embedded_scripts`] to keep that file under the 800-line budget
-//! in `scripts/lint.sh text`; `embedded_scripts` is this predicate's
-//! only caller. The [`message_flags`] submodule holds the `git`/`gh`
-//! message-flag gates for the same budget reason.
+//! `Data consumer` predicate for nowdoc heredoc bodies (ADR-042, #396, #432).
 
 use crate::split_tokens;
 
@@ -13,24 +6,10 @@ mod inert_prefix;
 mod message_flags;
 mod quotes;
 
-/// Programs that never execute their stdin: `cat` copies the bytes to
-/// stdout or a file, and `jq` parses them as JSON. A file write is not
-/// trusted, since that file may run implicitly later. `tee` is left out
-/// because it always writes a file (PR #463 review). Other output only reaches
-/// a shell through a pipe, a process substitution, or an enclosing
-/// substitution, which the rest of the predicate rules out. A nowdoc body
-/// fed only to one of these is `Data consumer` territory (issue #396, #432)
-/// — see [`heredoc_target_is_data_consumer`] for the full predicate,
-/// including the pipe and context checks a bare program match alone doesn't
-/// cover. `sed` (`e` command) and `awk` (`system()`) are deliberately not on
-/// this list: both can run shell commands from their own script argument.
+/// Programs that never execute their stdin (`cat`, `jq`) and their stock paths.
 ///
-/// Each program also gets its two most common absolute-path spellings,
-/// `/bin/<name>` and `/usr/bin/<name>`, alongside the bare word. Both are
-/// where a stock install actually puts the binary, so trusting them costs
-/// nothing a bare `cat` didn't already cost. Any other path — `./cat`,
-/// `/tmp/p/cat`, `/usr/local/bin/cat` — can still name a copied shell, so
-/// only these two prefixes count (issue #396 review).
+/// `tee` is excluded because it writes a file; `sed` and `awk` can execute commands;
+/// non-stock paths (e.g. `./cat`, `/tmp/p/cat`) may name a copied shell (#396, #432).
 const DATA_CONSUMER_PROGRAMS: &[&str] = &[
     "cat",
     "jq",
@@ -59,26 +38,10 @@ fn is_plain_identifier(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// Byte index in `text` right after the last unquoted occurrence of `;`,
-/// `&&`, `||`, `(`, `$(`, or a backtick — the boundary the simple command
-/// that owns a same-line heredoc marker starts at (issue #432: `true; cat >
-/// f <<'EOF'` must resolve to the command after `;`, not the line's own
-/// first token). `0` when none exists, so an unbroken line still resolves to
-/// its own first token exactly as before.
+/// Byte index in `text` right after the last unquoted `;`, `&&`, `||`, `(`, `$(`, or backtick.
 ///
-/// `$(`/backtick each open a fresh quote scope even inside an outer
-/// double-quoted string, mirroring [`open_frames`]'s own nesting
-/// rules — required so `gh pr create --body "$(cat <<'EOF'` resolves its
-/// owning command to `cat`, not to a still-open outer double quote hiding
-/// every later boundary from view (issue #396).
-///
-/// A single `|` is deliberately not a boundary here: a heredoc's own
-/// redirection overrides whatever a preceding pipe stage would have fed its
-/// stdin, so the consumer is still the word right after the marker's owning
-/// command — but leaving `|` unrecognized as a boundary means a lone pipe
-/// stays glued to whatever precedes it, which is the conservative
-/// (not-inert) outcome whenever that combination cannot otherwise be told
-/// apart (issue #396).
+/// `$(` and backticks open a fresh quote scope even inside double quotes (#396, #432).
+/// A single `|` is not a boundary so a piped prefix stays conservative (not inert).
 fn owning_simple_command_start(text: &str) -> usize {
     struct Frame {
         command_sub_depth: Option<usize>,
@@ -160,15 +123,10 @@ fn owning_simple_command_start(text: &str) -> usize {
     start
 }
 
-/// The program word of the simple command that starts at `owning_start` and
-/// ends at `marker_start` on `line`, exactly as written. `None` when the
-/// owning text has no program token, or when it starts with a `NAME=value`
-/// assignment: `PATH=/tmp/p cat` runs whatever `cat` sits in `/tmp/p`, so an
-/// assigned environment can make the consumer a shell (PR #463 review).
-/// Takes `owning_start` rather than recomputing it, since
-/// [`heredoc_target_is_data_consumer`] already needs
-/// [`owning_simple_command_start`]'s result for its own file-write check
-/// (issue #396 review).
+/// Program token of the simple command in `line[owning_start..marker_start]`.
+///
+/// Returns `None` if it starts with a `NAME=value` assignment because overriding
+/// `PATH` can replace `cat` or `jq` with a shell.
 fn owning_command_program(line: &str, owning_start: usize, marker_start: usize) -> Option<String> {
     let tokens = split_tokens(line[owning_start..marker_start].trim());
     tokens
@@ -177,24 +135,14 @@ fn owning_command_program(line: &str, owning_start: usize, marker_start: usize) 
         .filter(|token| !is_bare_assignment(token))
 }
 
-/// `true` when `program` — a heredoc's owning program word, exactly as
-/// written — is a [`DATA_CONSUMER_PROGRAMS`] member: the bare, case-exact
-/// name `cat` or `jq`, or one of their two trusted absolute paths.
-/// Any other path (`./cat`, `/tmp/p/cat`) can name a copied shell, and `CAT`
-/// is a different file on a case-sensitive filesystem, so neither is trusted
-/// (PR #463 review, issue #396 review).
+/// `true` when `program` is an exact, case-sensitive [`DATA_CONSUMER_PROGRAMS`] member.
 fn is_data_consumer_program(program: &str) -> bool {
     DATA_CONSUMER_PROGRAMS.contains(&program)
 }
 
-/// `true` when `tail` (the text on a heredoc marker's own line, past its
-/// delimiter spec) could send the body anywhere but plain output. A `|`
-/// pipes the consumer's output on (issue #396: `jq -r .a <<'JSON' | sh`).
-/// A quote, backtick, or `$` can open a construct that runs past the
-/// newline (`cat <<'EOF' "`, `$(`, `${`), so bash starts the body later
-/// than this line walk does and runs the lines in between (PR #463 review).
-/// The check does not track quote state: any of these characters in the
-/// tail costs a scanned body, never a skipped one.
+/// `true` when `tail` past the delimiter spec may pipe output or continue the command past newline.
+///
+/// Ignores quote state so false positives only cost a scanned body.
 fn tail_may_leave_plain_output(tail: &str) -> bool {
     tail.contains(['|', '\'', '"', '`', '$'])
 }
@@ -226,11 +174,9 @@ struct OpenFrame {
     kind: FrameKind,
 }
 
-/// Every `$(`, backtick, `(`, `{` group and `#` comment frame still open at
-/// the end of `text`, outermost first. A comment frame never closes. `$(` and a backtick each open a fresh quote scope even
-/// inside a double-quoted string, the same rule
-/// `embedded_scripts::find_unquoted_double_lt` follows, and restore the
-/// enclosing scope when they close.
+/// Every `$(`, backtick, `(`, `{` group, and `#` comment frame still open at the end of `text`.
+///
+/// Comment frames never close; `$(` and backticks open a fresh quote scope even inside double quotes.
 fn open_frames(text: &str) -> Vec<OpenFrame> {
     struct Frame {
         start: usize,
@@ -359,11 +305,9 @@ fn shell_words(text: &str) -> impl Iterator<Item = &str> {
     text.split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
 }
 
-/// `true` when `prefix` may define a POSIX shell function (`cat() { sh; }`,
-/// `cat ( ) ...`). A function named like a consumer replaces the program,
-/// so its heredoc body would reach whatever the function runs (PR #463
-/// review). Like the [`UNTRUSTED_PREFIX_WORDS`] check it ignores quotes, so
-/// a quoted `()` only costs a scanned body.
+/// `true` when `prefix` may define a POSIX shell function (which can shadow `cat`/`jq`).
+///
+/// Ignores quotes so a quoted `()` only costs a scanned body.
 fn defines_function(prefix: &str) -> bool {
     let mut compact = prefix.chars().filter(|c| !c.is_whitespace()).peekable();
     while let Some(ch) = compact.next() {
@@ -423,7 +367,7 @@ fn consumer_writes_file(command: &str) -> bool {
 }
 
 /// The frame a heredoc marker sits in. [`heredoc_target_is_data_consumer`]
-/// trusts only the first two (issue #396, #432).
+/// trusts only the first two (#396, #432).
 #[derive(Debug, PartialEq, Eq)]
 enum HeredocMarkerContext {
     /// No `$(`, backtick, `(`, `{` or comment frame is open before the marker.
@@ -431,30 +375,13 @@ enum HeredocMarkerContext {
     /// Inside exactly one `$(...)`, itself the whole value of a message flag
     /// (see [`is_trusted_message_value`]) of a `git` or `gh` invocation.
     TrustedCommandArg,
-    /// Anything else: nested frames, a backtick, a subshell or process
-    /// substitution `(`, an open `{` group, a `#` comment, an [`UNTRUSTED_PREFIX_WORDS`] word
-    /// before the marker, or a `$(...)` that is
-    /// not a `git`/`gh` message value — a `bash -c
-    /// "$(...)"`, `eval "$(...)"`, `ssh host "$(...)"`, `echo "$(...)" | sh`,
-    /// `git -c "alias.x=!$(...)"` or `gh alias set --shell x "$(...)"` shape
-    /// among them. A `NAME=$(...)` capture is untrusted too: later text can
-    /// run the variable in more ways than a line scan can rule out
-    /// (`$((x))`, `${x@P}`, zsh `${(e)x}`), so capture trust waits for a
-    /// follow-up issue (ADR-042).
+    /// Anything else: nested frames, non-message substitutions, compound
+    /// prefixes, or `NAME=$(...)` captures (ADR-042).
     Untrusted,
 }
 
-/// `true` when `owning` (the simple command text right before an enclosing
-/// `$(`, its opening quote already stripped) is a `git` or `gh` invocation
-/// whose last word is a message flag [`message_flags::git_message_flag_trusted`]
-/// or [`message_flags::gh_message_flag_trusted`] approves for that
-/// invocation's own subcommand, either standalone (`git commit -m `) or
-/// glued to its value (`gh pr create --body=`) (issue #396 review: the
-/// old single `MESSAGE_FLAGS` list trusted `git`'s `-t`/`--title` and
-/// `-b`/`--body` too — for `git`, `-t` is `--template=<file>` and `-b`
-/// names a branch, neither a message — and trusted every `git`/`gh` message
-/// flag under any subcommand at all, `gh pr checkout`'s `-b` branch
-/// argument among them).
+/// `true` when `owning` (simple command before `$(`, opening quote stripped)
+/// ends with a trusted `git`/`gh` message flag for its subcommand (#396).
 fn is_trusted_message_value(owning: &str) -> bool {
     let tokens = split_tokens(owning);
     let Some(program_pos) = tokens.iter().position(|token| !is_bare_assignment(token)) else {
@@ -498,20 +425,12 @@ fn is_trusted_message_value(owning: &str) -> bool {
 /// `embedded_scripts::walk_heredocs`) followed by the marker line up to the
 /// `<<`, so a `$(` opened on an earlier line still counts as enclosing.
 fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext {
-    // Bash's `$'...'` ANSI-C quoting escapes an embedded quote as `\'`, but
-    // every quote-tracking walk below (here, `open_frames`,
-    // `owning_simple_command_start`) toggles a quote on every `'` it sees,
-    // `$'` included: `cat $'\'' ' <<'EOF'` reads as a closed nowdoc marker to
-    // the toggle but as two ANSI-C strings and a plain word to bash (PR #463
-    // review). Teaching every walk ANSI-C escaping would still leave the next
-    // one; bailing here instead costs the body a scan whenever `$'` merely
-    // looks unrelated to the marker, never a bypass.
+    // Bail on ANSI-C `$'` because the quote-toggling walks below do not decode `\'` escapes.
     if prefix.contains("$'") {
         return HeredocMarkerContext::Untrusted;
     }
-    // The check ignores quotes on purpose: a quoted keyword only costs a
-    // scanned body, never a skipped one. Dropping the quote characters
-    // first also joins a word split by them (`PA""TH`, `al'ias'`).
+    // Ignores quotes on purpose so quoted keywords only cost a scan; stripping
+    // quotes also joins split words (`PA""TH`, `al'ias'`).
     let unquoted: String = prefix
         .chars()
         .filter(|c| !matches!(c, '\'' | '"' | '\\'))
@@ -525,12 +444,7 @@ fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext {
     }
     let frames = open_frames(prefix);
     let frame = match frames.as_slice() {
-        // `open_frames` only tracks bracket-shaped frames, so a bare quote
-        // left open on an earlier physical line and never closed before the
-        // marker's own `<<` reads as an empty list here even though bash
-        // read the marker line as the inside of that quote (PR #463 review,
-        // `quotes::quote_open_at_end`'s own doc comment has the worked
-        // example).
+        // `open_frames` only tracks bracket frames; reject unclosed quotes from earlier lines.
         [] if quotes::quote_open_at_end(prefix) => return HeredocMarkerContext::Untrusted,
         // Which program `cat` runs depends on every command before it
         // (ADR-042), so each one must be a known inert command.
@@ -562,26 +476,11 @@ fn heredoc_marker_context(prefix: &str) -> HeredocMarkerContext {
     HeredocMarkerContext::Untrusted
 }
 
-/// `true` when the nowdoc body at the marker whose `<<` sits at
-/// `marker_start`/ends its spec at `delimiter_end` on `line` is `Data
-/// consumer` territory (issue #396, #432): fed only to `cat` or `jq`
-/// — by the bare word or one of their two trusted absolute paths (issue
-/// #396 review) — as the program of the simple command that owns the marker,
-/// piped to nothing else, not continued onto the next line by a trailing `\`
-/// or by a quote or substitution the marker line leaves open, with no
-/// process substitution on the marker line (`cat
-/// <<'EOF' > >(sh)` hands the body to a shell), no
-/// write to a descriptor above 2 or a `/dev/fd/`/`/proc/` path, without
-/// writing a file, and reached
-/// only through a context this predicate trusts (top level or a `git`/`gh`
-/// message value's `$(...)`, with no subshell or process-substitution `(`
-/// or `{` group still open and no `#` comment or [`UNTRUSTED_PREFIX_WORDS`]
-/// word before the marker). A `NAME=$(...)` capture is never trusted (see
-/// [`HeredocMarkerContext::Untrusted`]).
-/// `preceding_lines` holds the command lines before `line`, bodies left out.
-/// Ignorant of nowdoc-ness itself — callers already gate on that
-/// separately, matching how `embedded_scripts::heredoc_target_program`'s
-/// interpreter check is computed unconditionally too.
+/// `true` when the heredoc marker on `line` is owned by a trusted data consumer
+/// (`cat` or `jq`) with no pipe, file write, descriptor > 2, process
+/// substitution, line continuation, or untrusted enclosing context (ADR-042, #396, #432).
+///
+/// Callers gate on nowdoc-ness separately.
 pub(super) fn heredoc_target_is_data_consumer(
     preceding_lines: &str,
     line: &str,
@@ -589,9 +488,6 @@ pub(super) fn heredoc_target_is_data_consumer(
     delimiter_end: usize,
 ) -> bool {
     let marker_prefix = &line[..marker_start];
-    // Computed once and threaded through both the program check right below
-    // and the file-write check further down, instead of re-deriving the
-    // owning command's start and its program word for each (issue #396 review).
     let owning_start = owning_simple_command_start(marker_prefix);
     let program = owning_command_program(line, owning_start, marker_start);
 

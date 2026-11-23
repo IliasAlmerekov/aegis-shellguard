@@ -31,8 +31,7 @@ impl Runner {
         }
     }
 
-    /// `true` when `tokens` (starting at the `uv` program token) spells `uv
-    /// tool run` — the long form of `uvx` (#421, ADR-040).
+    /// `true` when `tokens` starts with `uv tool run`, the long form of `uvx` (#421, ADR-040).
     fn is_uv_tool_run(tokens: &[&str]) -> bool {
         tokens.get(1) == Some(&"tool") && tokens.get(2) == Some(&"run")
     }
@@ -54,25 +53,15 @@ impl Runner {
         }
     }
 
-    /// `true` when this runner's own subcommand is the literal `run` word
-    /// (`uv run`, `poetry run`, `pipenv run`, `pipx run`) — the shape an
-    /// option can sit in front of (`uv --directory X run ...`), unlike `uvx`
-    /// and `npx`, which have no such subcommand to sit in front of (#421,
-    /// ADR-040).
+    /// `true` when this runner uses a literal `run` subcommand that options can precede (#421, ADR-040).
     pub fn has_run_subcommand(self) -> bool {
         matches!(self, Self::Uv | Self::Poetry | Self::Pipenv | Self::Pipx)
     }
 
-    /// `true` when `tokens` (starting at this runner's own program token)
-    /// hand off to a package-provided executable this runner selects itself
-    /// — `uvx`, `npx`, `pipx run`, and the `uv tool run` long form of `uvx`
-    /// — rather than naming the child program directly. A visible Match
-    /// behind one of these can still be a different binary than the one that
-    /// actually runs, so it never cancels Analysis degradation (#421,
-    /// ADR-040). `pipx run ./x.py` names its own Python source, but this
-    /// method only sees the runner prefix, not the operand. The router takes
-    /// the [`Self::runs_bare_python_script`] route before it asks this
-    /// question, so that shape never reaches here.
+    /// `true` when `tokens` invoke a package-provided executable (`uvx`, `npx`,
+    /// `pipx run`, `uv tool run`), which never cancels Analysis degradation (#421, ADR-040).
+    ///
+    /// Callers check [`Self::runs_bare_python_script`] first for `pipx run ./x.py`.
     pub fn selects_package_executable(self, tokens: &[&str]) -> bool {
         match self {
             Self::Uvx | Self::Npx | Self::Pipx => self.command_prefix_len(tokens).is_some(),
@@ -81,17 +70,12 @@ impl Runner {
         }
     }
 
-    /// `true` when `tokens` (starting at this runner's own program token)
-    /// treat a bare `.py` operand as Python even without a shebang: `uv run`
-    /// and `pipx run`, not the package-executable-selecting `uvx` or the
-    /// `uv tool run` long form of it (#421, ADR-040).
+    /// `true` when `tokens` treat a bare `.py` operand as Python (`uv run`, `pipx run`) (#421, ADR-040).
     pub fn runs_bare_python_script(self, tokens: &[&str]) -> bool {
         matches!(self, Self::Uv | Self::Pipx) && tokens.get(1) == Some(&"run")
     }
 
-    /// `true` when `tokens` (starting at this runner's own program token)
-    /// force the operand right after `run` to be treated as Python
-    /// regardless of its extension: `uv run --script` (#421, ADR-040).
+    /// `true` when `tokens` force the operand after `run` to be treated as Python (`uv run --script`) (#421, ADR-040).
     pub fn forces_python_script(self, tokens: &[&str]) -> bool {
         matches!(self, Self::Uv)
             && tokens.get(1) == Some(&"run")

