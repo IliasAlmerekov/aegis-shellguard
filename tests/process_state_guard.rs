@@ -1,4 +1,3 @@
-#[allow(dead_code)]
 #[path = "support/process_state.rs"]
 mod process_state;
 
@@ -71,14 +70,16 @@ fn main() {
     if std::env::var_os(CHILD).is_some() {
         run();
     } else {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .env(CHILD, "1")
+            .env("AEGIS_GUARD_PRESENT", "original")
+            .env_remove("AEGIS_GUARD_ABSENT")
+            .output()
+            .unwrap();
         assert!(
-            std::process::Command::new(std::env::current_exe().unwrap())
-                .env(CHILD, "1")
-                .env("AEGIS_GUARD_PRESENT", "original")
-                .env_remove("AEGIS_GUARD_ABSENT")
-                .status()
-                .unwrap()
-                .success()
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
         );
     }
 }

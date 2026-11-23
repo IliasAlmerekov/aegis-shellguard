@@ -267,9 +267,8 @@ fn build_planning_outcome(
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
-#[path = "../../tests/support/process_state.rs"]
-mod test_process_state;
+#[path = "../../tests/support/isolated_workspace.rs"]
+mod isolated_workspace;
 
 #[cfg(test)]
 mod tests {
@@ -281,7 +280,6 @@ mod tests {
     use aegis_config::AegisConfig;
     use aegis_policy::ExecutionTransport;
     use aegis_types::{Mode, SnapshotPolicy};
-    use tempfile::TempDir;
     use tokio::runtime::Handle;
 
     fn test_handle() -> Handle {
@@ -421,11 +419,8 @@ mod tests {
 
     #[test]
     fn unavailable_cwd_plans_recovery_without_snapshot_plugins() {
-        super::test_process_state::isolated(|| {
+        super::isolated_workspace::run(git_init, |_| {
             aegis_snapshot::testing::reset_registry_build_count();
-            let workspace = TempDir::new().unwrap();
-            git_init(workspace.path());
-            let _guard = super::test_process_state::CwdGuard::new(workspace.path());
 
             let mut config = AegisConfig::default();
             config.mode = Mode::Protect;
@@ -460,12 +455,8 @@ mod tests {
 
     #[test]
     fn danger_command_plan_materializes_snapshot_registry_once() {
-        super::test_process_state::isolated(|| {
+        super::isolated_workspace::run(git_init, |workspace| {
             aegis_snapshot::testing::reset_registry_build_count();
-
-            let workspace = TempDir::new().unwrap();
-            git_init(workspace.path());
-            let _guard = super::test_process_state::CwdGuard::new(workspace.path());
 
             let mut config = AegisConfig::default();
             config.mode = Mode::Protect;
@@ -478,7 +469,7 @@ mod tests {
                 &context,
                 super::PlanningRequest {
                     command: "terraform destroy -target=module.prod.api",
-                    cwd_state: CwdState::Resolved(workspace.path().to_path_buf()),
+                    cwd_state: CwdState::Resolved(workspace.to_path_buf()),
                     transport: ExecutionTransport::Shell,
                     ci_detected: false,
                 },
@@ -497,51 +488,52 @@ mod tests {
 
     #[test]
     fn effect_opaque_script_degradation_requires_approval_and_recovery_snapshot() {
-        super::test_process_state::isolated(|| {
-            // ADR-016 + ADR-022: recovery and language-analysis approval are
-            // orthogonal. A script that exceeds its read budget needs a one-time
-            // approval, while effect opacity still requires the recovery snapshot.
-            aegis_snapshot::testing::reset_registry_build_count();
+        super::isolated_workspace::run(
+            |workspace| {
+                git_init(workspace);
+                std::fs::write(workspace.join("cleanup.sh"), "echo ok\n").unwrap();
+            },
+            |workspace| {
+                // ADR-016 + ADR-022: recovery and language-analysis approval are
+                // orthogonal. A script that exceeds its read budget needs a one-time
+                // approval, while effect opacity still requires the recovery snapshot.
+                aegis_snapshot::testing::reset_registry_build_count();
 
-            let workspace = TempDir::new().unwrap();
-            git_init(workspace.path());
-            std::fs::write(workspace.path().join("cleanup.sh"), "echo ok\n").unwrap();
-            let _guard = super::test_process_state::CwdGuard::new(workspace.path());
+                let mut config = AegisConfig::default();
+                config.mode = Mode::Protect;
+                config.snapshot_policy = SnapshotPolicy::Selective;
+                config.auto_snapshot_git = true;
+                config.auto_snapshot_docker = false;
+                config.language_analysis.script_file_limit_bytes = 1;
+                let context = RuntimeContext::new(config, test_handle()).unwrap();
 
-            let mut config = AegisConfig::default();
-            config.mode = Mode::Protect;
-            config.snapshot_policy = SnapshotPolicy::Selective;
-            config.auto_snapshot_git = true;
-            config.auto_snapshot_docker = false;
-            config.language_analysis.script_file_limit_bytes = 1;
-            let context = RuntimeContext::new(config, test_handle()).unwrap();
+                let outcome = super::plan_with_context(
+                    &context,
+                    super::PlanningRequest {
+                        command: "sh ./cleanup.sh",
+                        cwd_state: CwdState::Resolved(workspace.to_path_buf()),
+                        transport: ExecutionTransport::Shell,
+                        ci_detected: false,
+                    },
+                );
 
-            let outcome = super::plan_with_context(
-                &context,
-                super::PlanningRequest {
-                    command: "sh ./cleanup.sh",
-                    cwd_state: CwdState::Resolved(workspace.path().to_path_buf()),
-                    transport: ExecutionTransport::Shell,
-                    ci_detected: false,
-                },
-            );
-
-            let PlanningOutcome::Planned(plan) = outcome else {
-                panic!("effect-opaque safe command must produce a normal plan");
-            };
-            assert_eq!(
-                plan.execution_disposition(),
-                ExecutionDisposition::RequiresApproval
-            );
-            // Recovery backstop: a pre-exec snapshot is requested from the git plugin.
-            assert_eq!(
-                plan.snapshot_plan(),
-                SnapshotPlan::Required {
-                    applicable_plugins: vec!["git"],
-                    git_targets: GitTargetPlan::default(),
-                }
-            );
-        });
+                let PlanningOutcome::Planned(plan) = outcome else {
+                    panic!("effect-opaque safe command must produce a normal plan");
+                };
+                assert_eq!(
+                    plan.execution_disposition(),
+                    ExecutionDisposition::RequiresApproval
+                );
+                // Recovery backstop: a pre-exec snapshot is requested from the git plugin.
+                assert_eq!(
+                    plan.snapshot_plan(),
+                    SnapshotPlan::Required {
+                        applicable_plugins: vec!["git"],
+                        git_targets: GitTargetPlan::default(),
+                    }
+                );
+            },
+        );
     }
 
     #[test]

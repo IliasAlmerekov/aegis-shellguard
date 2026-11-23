@@ -66,6 +66,7 @@ pub struct CwdGuard {
 
 impl CwdGuard {
     /// Change the working directory until the guard is dropped.
+    /// The previous directory must remain available until restoration.
     #[expect(
         clippy::disallowed_methods,
         reason = "the guard owns working-directory mutation"
@@ -90,21 +91,5 @@ impl Drop for CwdGuard {
     )]
     fn drop(&mut self) {
         std::env::set_current_dir(&self.previous).unwrap();
-    }
-}
-
-/// Run the current test in a child so unguarded cwd readers stay isolated.
-pub fn isolated(f: impl FnOnce()) {
-    const CHILD: &str = "AEGIS_PROCESS_STATE_TEST_CHILD";
-    if std::env::var_os(CHILD).is_some() {
-        f();
-    } else {
-        let name = std::thread::current().name().unwrap().to_owned();
-        let status = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", &name, "--nocapture"])
-            .env(CHILD, "1")
-            .status()
-            .unwrap();
-        assert!(status.success());
     }
 }

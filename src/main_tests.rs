@@ -1,6 +1,5 @@
-#[allow(dead_code)]
-#[path = "../tests/support/process_state.rs"]
-mod test_process_state;
+#[path = "../tests/support/isolated_workspace.rs"]
+mod isolated_workspace;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -460,11 +459,7 @@ allowlist_override_level = "Danger"
 
 #[test]
 fn unavailable_cwd_shell_plan_requires_recovery_without_plugins() {
-    test_process_state::isolated(|| {
-        let workspace = TempDir::new().unwrap();
-        git_init(workspace.path());
-        let _guard = test_process_state::CwdGuard::new(workspace.path());
-
+    isolated_workspace::run(git_init, |_| {
         let config = config_from_toml(
             r#"
 snapshot_policy = "Selective"
