@@ -30,7 +30,7 @@ fn m5_fs019_non_recursive_and_non_literal_root_targets_do_not_fire() {
 }
 
 // M5.4 — DB-009 narrowness guards. The positive (must-fire) cases live in
-// `m5_followups.rs`; these guard the opposite direction — the near-miss
+// `chmod_truncate_and_docker_volume.rs`; these guard the opposite direction — the near-miss
 // invocations that must NOT raise DB-009 — so the rule stays narrow and
 // fail-closed rather than fail-open. Bare `TRUNCATE <ident>` and a bare comma
 // list without a strong clause are declared uncovered forms: the word collides

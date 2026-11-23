@@ -3,7 +3,7 @@ use super::*;
 // H3-followups — positive (must-fire) regression cases for the additive
 // scanner detections that closed the H3-followups backlog item. Narrowness
 // guards (near-miss / non-destructive invocations that must NOT fire) live in
-// `h3_gaps.rs` to keep the positive/negative separation consistent with the
+// `destructive_rule_narrowness.rs` to keep the positive/negative separation consistent with the
 // original H3 test split.
 
 // ── H3-followups: gcloud storage recursive delete and rsync delete ─────────

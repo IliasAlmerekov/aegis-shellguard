@@ -44,7 +44,7 @@ stdout, and stray output would corrupt the frame stream (ADR-022 §2). The
 `hook` subcommand does install the subscriber, but keeps it off by default,
 because no human reads its stderr and byte-pinned tests assert its exact
 contents (`CONTAINED_PANIC_STDERR` in `src/install/hook.rs`, and
-`tests/agent_hooks_m4.rs`); setting `AEGIS_LOG` turns the stream on there.
+`tests/agent_hooks_panic_fail_closed.rs`); setting `AEGIS_LOG` turns the stream on there.
 
 The default level is `warn`. The existing `--verbosity <quiet|standard|
 verbose>` / `--quiet` / `-v` flags set the base level (`error` / `warn` /

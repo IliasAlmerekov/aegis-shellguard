@@ -8,7 +8,7 @@ use super::*;
 // inlined here via `include!` so they share this module's scope (notably the
 // `use super::*` imports and the `ratchet_helpers` re-exports). The split keeps
 // every file under the 800-line file-size budget; no test body was modified.
-include!("ratchet/c3_a.rs");
-include!("ratchet/c3_b.rs");
+include!("ratchet/snapshot_and_sandbox_flags.rs");
+include!("ratchet/provider_targets_and_sandbox.rs");
 include!("ratchet/bugs.rs");
-include!("ratchet/c3_residual.rs");
+include!("ratchet/rules_and_audit_integrity.rs");

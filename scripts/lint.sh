@@ -9,9 +9,11 @@
 #   fmt     check formatting
 #   clippy  lint every target and feature, warnings are errors
 #   text    checks clippy cannot make: no `.rs` file under src/, crates/,
-#           tests/, fuzz/ or benches/ exceeds 800 lines, every backticked path
-#           in AGENTS.md, CONVENTION.md, CONTRIBUTING.md and CLAUDE.md exists
-#           in the tree, and scripts/test-tamper-check.test.sh passes
+#           tests/, fuzz/ or benches/ exceeds 800 lines, no `.rs` file under
+#           src/, crates/ or tests/ carries a frozen tracker id in its name,
+#           every backticked path in AGENTS.md, CONVENTION.md, CONTRIBUTING.md
+#           and CLAUDE.md exists in the tree, no unguarded `Command::new("git")`
+#           spawns exist, and scripts/test-tamper-check.test.sh passes
 #   all     fmt, clippy, then text (also the default with no argument)
 #
 # LINT_TEXT_ROOT points the text checks at another directory than the
@@ -57,14 +59,18 @@ run_clippy() {
 # One shared exit status: run_text sets it, so a later check can join the others.
 text_failed=0
 
-# Prints one line per offender or read error, nothing when the tree is clean.
-check_rust_file_length() {
-    max=800
-    set --
-    for dir in src crates tests fuzz benches; do
+# Populates `files` with `.rs` paths under the existing candidate dirs in "$@".
+# Prints a diagnostic line when `find` fails to read a path.
+find_rust_files() {
+    files=""
+    count=$#
+    while [ "$count" -gt 0 ]; do
+        dir=$1
+        shift
         if [ -d "$dir" ]; then
             set -- "$@" "$dir"
         fi
+        count=$((count - 1))
     done
     [ "$#" -gt 0 ] || return 0
     # Capture find first: in a pipeline its exit status would be lost.
@@ -75,6 +81,12 @@ check_rust_file_length() {
     if [ "$find_status" -ne 0 ]; then
         echo "find could not read every path under: $* (exit $find_status)"
     fi
+}
+
+# Prints one line per offender or read error, nothing when the tree is clean.
+check_rust_file_length() {
+    max=800
+    find_rust_files src crates tests fuzz benches
     [ -n "$files" ] || return 0
     while IFS= read -r file; do
         # `grep -c ''` counts a last line without a trailing newline, `wc -l`
@@ -166,6 +178,20 @@ $files
 EOF
 }
 
+# A test or source file is named after its behaviour, not a frozen tracker id (#626).
+check_tracker_id_filenames() {
+    find_rust_files src crates tests
+    [ -n "$files" ] || return 0
+    while IFS= read -r file; do
+        base=${file##*/}
+        if printf '%s\n' "$base" | grep -qE '(^|_)[chm][0-9]+(_|\.rs$)'; then
+            echo "$file: filename carries a tracker id, see CONVENTION.md section 9"
+        fi
+    done <<EOF
+$files
+EOF
+}
+
 run_text() {
     echo "lint: text checks"
     root=${LINT_TEXT_ROOT:-.}
@@ -180,6 +206,11 @@ run_text() {
         text_failed=1
     fi
     out=$(cd "$root" && check_git_spawns)
+    if [ -n "$out" ]; then
+        echo "$out" >&2
+        text_failed=1
+    fi
+    out=$(cd "$root" && check_tracker_id_filenames)
     if [ -n "$out" ]; then
         echo "$out" >&2
         text_failed=1
