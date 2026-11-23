@@ -6,7 +6,7 @@ fn is_env_chdir_flag(tok: &str) -> bool {
     tok == "--chdir" || tok.starts_with("--chdir=") || tok.starts_with("-C")
 }
 
-/// `true` when `prefix` contains `env` followed by a `-C`/`--chdir` flag anywhere in the prefix (#384).
+/// Scans the whole `prefix` (not just `prefix[0]`) because another launcher can wrap `env -C`/`--chdir` (#384).
 pub(super) fn env_chdir_prefix(prefix: &[&str]) -> bool {
     prefix.iter().enumerate().any(|(idx, tok)| {
         let basename = tok.rsplit('/').next().unwrap_or(tok);

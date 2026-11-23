@@ -120,7 +120,6 @@ fn a_mid_command_dynamic_cd_degrades_the_script_that_follows_it() {
 
 #[test]
 fn a_literal_cd_rebases_only_the_directly_and_chained_segment() {
-    // Crossing `;` degrades the tracked cwd.
     let targets = route("cd -- /w && python3 a.py; python3 b.py", &[]);
     assert_eq!(
         targets,

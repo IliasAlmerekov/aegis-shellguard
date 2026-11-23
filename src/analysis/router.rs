@@ -254,7 +254,7 @@ struct RouteContext<'a> {
 }
 
 /// Route analyzable source in `command`. `trusted_aliases` maps trusted aliases
-/// (e.g. `"py"` → `"python3"`) to canonical registry names (#384, #430).
+/// (e.g. `"py"` -> `"python3"`) to canonical registry names (#384, #430).
 #[must_use]
 pub fn route(command: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarget> {
     route_with_home(command, trusted_aliases, None)

@@ -228,7 +228,7 @@ pub(super) fn unclaimed_interpreter_net(
                 reason: DegradationReason::DynamicSource,
             }];
         }
-        // D4-shaped `prefix=value` tokens candidate on `value` even when `-`-prefixed (#384, #430).
+        // `prefix=value` tokens candidate on `value` even when `-`-prefixed (#384, #430).
         if let Some(value) = d4_value(token) {
             if let ControlFlow::Break(degraded) =
                 record_path_candidate(value, &mut seen, home, ctx, &mut targets)

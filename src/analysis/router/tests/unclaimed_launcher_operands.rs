@@ -129,8 +129,7 @@ fn tilde_launcher_operand_does_not_follow_a_later_cd() {
     );
 }
 
-// ── GHSA-xj54: earlier HOME-mutating or opaque segments degrade later `~/` operands ──
-
+// GHSA-xj54
 #[test]
 fn a_home_change_or_opaque_earlier_segment_degrades_a_later_tilde_operand() {
     for command in [
