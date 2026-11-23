@@ -1,4 +1,7 @@
-use std::env;
+#[allow(dead_code)]
+#[path = "../tests/support/process_state.rs"]
+mod test_process_state;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -457,39 +460,39 @@ allowlist_override_level = "Danger"
 
 #[test]
 fn unavailable_cwd_shell_plan_requires_recovery_without_plugins() {
-    let original_cwd = env::current_dir().unwrap();
-    let workspace = TempDir::new().unwrap();
-    git_init(workspace.path());
-    env::set_current_dir(workspace.path()).unwrap();
+    test_process_state::isolated(|| {
+        let workspace = TempDir::new().unwrap();
+        git_init(workspace.path());
+        let _guard = test_process_state::CwdGuard::new(workspace.path());
 
-    let config = config_from_toml(
-        r#"
+        let config = config_from_toml(
+            r#"
 snapshot_policy = "Selective"
 auto_snapshot_git = true
 auto_snapshot_docker = false
 "#,
-    );
-    let context = RuntimeContext::new(config, test_handle()).unwrap();
-    let prepared = PreparedPlanner::Ready(Box::new(context));
-    let outcome = prepared.plan(aegis::planning::PlanningRequest {
-        command: "terraform destroy -target=module.prod.api",
-        cwd_state: CwdState::Unavailable,
-        transport: ExecutionTransport::Shell,
-        ci_detected: false,
+        );
+        let context = RuntimeContext::new(config, test_handle()).unwrap();
+        let prepared = PreparedPlanner::Ready(Box::new(context));
+        let outcome = prepared.plan(aegis::planning::PlanningRequest {
+            command: "terraform destroy -target=module.prod.api",
+            cwd_state: CwdState::Unavailable,
+            transport: ExecutionTransport::Shell,
+            ci_detected: false,
+        });
+
+        let PlanningOutcome::Planned(plan) = outcome else {
+            panic!("expected planned outcome");
+        };
+
+        assert_eq!(
+            plan.snapshot_plan(),
+            aegis::planning::SnapshotPlan::Required {
+                applicable_plugins: vec![],
+                git_targets: aegis::planning::GitTargetPlan::default(),
+            }
+        );
     });
-
-    let PlanningOutcome::Planned(plan) = outcome else {
-        panic!("expected planned outcome");
-    };
-
-    env::set_current_dir(original_cwd).unwrap();
-    assert_eq!(
-        plan.snapshot_plan(),
-        aegis::planning::SnapshotPlan::Required {
-            applicable_plugins: vec![],
-            git_targets: aegis::planning::GitTargetPlan::default(),
-        }
-    );
 }
 
 #[test]

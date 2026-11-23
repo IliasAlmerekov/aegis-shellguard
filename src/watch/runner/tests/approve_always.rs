@@ -265,6 +265,8 @@ async fn unavailable_cwd_never_persists_watch_rules() {
     const CHILD: &str = "AEGIS_TEST_UNAVAILABLE_RULE_CHILD";
     if std::env::var_os(CHILD).is_none() {
         let home = TempDir::new().unwrap();
+        let temp = TempDir::new().unwrap();
+        fs::write(temp.path().join(".aegis.toml"), "").unwrap();
         use std::os::unix::fs::PermissionsExt;
         let marker = home.path().join("runs");
         let git = home.path().join("git");
@@ -281,6 +283,7 @@ async fn unavailable_cwd_never_persists_watch_rules() {
                 "--nocapture",
             ])
             .env(CHILD, "1")
+            .current_dir(temp.path())
             .env("HOME", home.path())
             .env("AEGIS_REAL_SHELL", "/bin/sh")
             .env(
@@ -316,11 +319,7 @@ async fn unavailable_cwd_never_persists_watch_rules() {
             |line| line == "warning: cannot persist block rule: working directory unavailable"
         ));
     } else {
-        let temp = TempDir::new().unwrap();
-        let config = temp.path().join(".aegis.toml");
-        fs::write(&config, "").unwrap();
-        std::env::set_current_dir(temp.path()).unwrap();
-        let audit = temp.path().join("audit.jsonl");
+        let audit = std::env::current_dir().unwrap().join("audit.jsonl");
         let context = context_with_snapshot_policy(audit, SnapshotPolicy::Selective, vec![]);
         for decision in [PromptDecision::ApproveAlways, PromptDecision::DenyAlways] {
             if decision == PromptDecision::DenyAlways {
@@ -355,6 +354,6 @@ async fn unavailable_cwd_never_persists_watch_rules() {
             )
             .await;
         }
-        assert_eq!(fs::read_to_string(config).unwrap(), "");
+        assert_eq!(fs::read_to_string(".aegis.toml").unwrap(), "");
     }
 }

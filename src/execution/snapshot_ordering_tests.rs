@@ -59,6 +59,8 @@ fn unavailable_cwd_cannot_persist_shell_rules() {
     const CHILD: &str = "AEGIS_TEST_UNAVAILABLE_SHELL_RULE_CHILD";
     if std::env::var_os(CHILD).is_none() {
         let home = tempfile::TempDir::new().unwrap();
+        let workspace = tempfile::TempDir::new().unwrap();
+        std::fs::write(workspace.path().join(".aegis.toml"), "").unwrap();
         use std::os::unix::fs::PermissionsExt;
         let marker = home.path().join("runs");
         let git = home.path().join("git");
@@ -75,6 +77,7 @@ fn unavailable_cwd_cannot_persist_shell_rules() {
                 "--nocapture",
             ])
             .env(CHILD, "1")
+            .current_dir(workspace.path())
             .env("HOME", home.path())
             .env("AEGIS_REAL_SHELL", "/bin/sh")
             .env(
@@ -106,10 +109,6 @@ fn unavailable_cwd_cannot_persist_shell_rules() {
             |line| line == "warning: cannot persist block rule: working directory unavailable"
         ));
     } else {
-        let workspace = tempfile::TempDir::new().unwrap();
-        let config_path = workspace.path().join(".aegis.toml");
-        std::fs::write(&config_path, "").unwrap();
-        std::env::set_current_dir(workspace.path()).unwrap();
         let context = RuntimeContext::new(AegisConfig::default(), test_handle()).unwrap();
         let prepared = aegis::planning::PreparedPlanner::Ready(Box::new(context));
         let renderer = aegis_tui::TestRenderer::new();
@@ -145,7 +144,7 @@ fn unavailable_cwd_cannot_persist_shell_rules() {
                 }
             );
         }
-        assert_eq!(std::fs::read_to_string(config_path).unwrap(), "");
+        assert_eq!(std::fs::read_to_string(".aegis.toml").unwrap(), "");
     }
 }
 

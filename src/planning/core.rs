@@ -267,8 +267,12 @@ fn build_planning_outcome(
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
+#[path = "../../tests/support/process_state.rs"]
+mod test_process_state;
+
+#[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
 
     use super::*;
     use crate::planning::types::{ExecutionDisposition, PlanningOutcome, SnapshotPlan};
@@ -289,8 +293,6 @@ mod tests {
         std::mem::forget(rt);
         handle
     }
-
-    static CURRENT_DIR_TEST_MUTEX: Mutex<()> = Mutex::new(());
 
     fn context(mode: Mode, snapshot_policy: SnapshotPolicy) -> RuntimeContext {
         let mut config = AegisConfig::default();
@@ -419,133 +421,127 @@ mod tests {
 
     #[test]
     fn unavailable_cwd_plans_recovery_without_snapshot_plugins() {
-        aegis_snapshot::testing::reset_registry_build_count();
-        let _guard = CURRENT_DIR_TEST_MUTEX.lock().unwrap();
-        let original_cwd = std::env::current_dir().unwrap();
-        let workspace = TempDir::new().unwrap();
-        git_init(workspace.path());
-        std::env::set_current_dir(workspace.path()).unwrap();
+        super::test_process_state::isolated(|| {
+            aegis_snapshot::testing::reset_registry_build_count();
+            let workspace = TempDir::new().unwrap();
+            git_init(workspace.path());
+            let _guard = super::test_process_state::CwdGuard::new(workspace.path());
 
-        let mut config = AegisConfig::default();
-        config.mode = Mode::Protect;
-        config.snapshot_policy = SnapshotPolicy::Selective;
-        config.auto_snapshot_git = true;
-        config.auto_snapshot_docker = false;
-        let context = RuntimeContext::new(config, test_handle()).unwrap();
+            let mut config = AegisConfig::default();
+            config.mode = Mode::Protect;
+            config.snapshot_policy = SnapshotPolicy::Selective;
+            config.auto_snapshot_git = true;
+            config.auto_snapshot_docker = false;
+            let context = RuntimeContext::new(config, test_handle()).unwrap();
 
-        let outcome = super::plan_with_context(
-            &context,
-            super::PlanningRequest {
-                command: "terraform destroy -target=module.prod.api",
-                cwd_state: CwdState::Unavailable,
-                transport: ExecutionTransport::Shell,
-                ci_detected: false,
-            },
-        );
+            let outcome = super::plan_with_context(
+                &context,
+                super::PlanningRequest {
+                    command: "terraform destroy -target=module.prod.api",
+                    cwd_state: CwdState::Unavailable,
+                    transport: ExecutionTransport::Shell,
+                    ci_detected: false,
+                },
+            );
 
-        std::env::set_current_dir(original_cwd).unwrap();
-
-        let PlanningOutcome::Planned(plan) = outcome else {
-            panic!("danger command must produce a normal plan");
-        };
-        assert_eq!(aegis_snapshot::testing::registry_build_count(), 0);
-        assert_eq!(
-            plan.snapshot_plan(),
-            SnapshotPlan::Required {
-                applicable_plugins: vec![],
-                git_targets: GitTargetPlan::default(),
-            }
-        );
+            let PlanningOutcome::Planned(plan) = outcome else {
+                panic!("danger command must produce a normal plan");
+            };
+            assert_eq!(aegis_snapshot::testing::registry_build_count(), 0);
+            assert_eq!(
+                plan.snapshot_plan(),
+                SnapshotPlan::Required {
+                    applicable_plugins: vec![],
+                    git_targets: GitTargetPlan::default(),
+                }
+            );
+        });
     }
 
     #[test]
     fn danger_command_plan_materializes_snapshot_registry_once() {
-        aegis_snapshot::testing::reset_registry_build_count();
+        super::test_process_state::isolated(|| {
+            aegis_snapshot::testing::reset_registry_build_count();
 
-        let _guard = CURRENT_DIR_TEST_MUTEX.lock().unwrap();
-        let original_cwd = std::env::current_dir().unwrap();
-        let workspace = TempDir::new().unwrap();
-        git_init(workspace.path());
-        std::env::set_current_dir(workspace.path()).unwrap();
+            let workspace = TempDir::new().unwrap();
+            git_init(workspace.path());
+            let _guard = super::test_process_state::CwdGuard::new(workspace.path());
 
-        let mut config = AegisConfig::default();
-        config.mode = Mode::Protect;
-        config.snapshot_policy = SnapshotPolicy::Selective;
-        config.auto_snapshot_git = true;
-        config.auto_snapshot_docker = false;
-        let context = RuntimeContext::new(config, test_handle()).unwrap();
+            let mut config = AegisConfig::default();
+            config.mode = Mode::Protect;
+            config.snapshot_policy = SnapshotPolicy::Selective;
+            config.auto_snapshot_git = true;
+            config.auto_snapshot_docker = false;
+            let context = RuntimeContext::new(config, test_handle()).unwrap();
 
-        let outcome = super::plan_with_context(
-            &context,
-            super::PlanningRequest {
-                command: "terraform destroy -target=module.prod.api",
-                cwd_state: CwdState::Resolved(workspace.path().to_path_buf()),
-                transport: ExecutionTransport::Shell,
-                ci_detected: false,
-            },
-        );
+            let outcome = super::plan_with_context(
+                &context,
+                super::PlanningRequest {
+                    command: "terraform destroy -target=module.prod.api",
+                    cwd_state: CwdState::Resolved(workspace.path().to_path_buf()),
+                    transport: ExecutionTransport::Shell,
+                    ci_detected: false,
+                },
+            );
 
-        std::env::set_current_dir(original_cwd).unwrap();
-
-        let PlanningOutcome::Planned(plan) = outcome else {
-            panic!("danger command must produce a normal plan");
-        };
-        assert!(matches!(
-            plan.snapshot_plan(),
-            SnapshotPlan::Required { .. }
-        ));
-        assert_eq!(aegis_snapshot::testing::registry_build_count(), 1);
+            let PlanningOutcome::Planned(plan) = outcome else {
+                panic!("danger command must produce a normal plan");
+            };
+            assert!(matches!(
+                plan.snapshot_plan(),
+                SnapshotPlan::Required { .. }
+            ));
+            assert_eq!(aegis_snapshot::testing::registry_build_count(), 1);
+        });
     }
 
     #[test]
     fn effect_opaque_script_degradation_requires_approval_and_recovery_snapshot() {
-        // ADR-016 + ADR-022: recovery and language-analysis approval are
-        // orthogonal. A script that exceeds its read budget needs a one-time
-        // approval, while effect opacity still requires the recovery snapshot.
-        aegis_snapshot::testing::reset_registry_build_count();
+        super::test_process_state::isolated(|| {
+            // ADR-016 + ADR-022: recovery and language-analysis approval are
+            // orthogonal. A script that exceeds its read budget needs a one-time
+            // approval, while effect opacity still requires the recovery snapshot.
+            aegis_snapshot::testing::reset_registry_build_count();
 
-        let _guard = CURRENT_DIR_TEST_MUTEX.lock().unwrap();
-        let original_cwd = std::env::current_dir().unwrap();
-        let workspace = TempDir::new().unwrap();
-        git_init(workspace.path());
-        std::fs::write(workspace.path().join("cleanup.sh"), "echo ok\n").unwrap();
-        std::env::set_current_dir(workspace.path()).unwrap();
+            let workspace = TempDir::new().unwrap();
+            git_init(workspace.path());
+            std::fs::write(workspace.path().join("cleanup.sh"), "echo ok\n").unwrap();
+            let _guard = super::test_process_state::CwdGuard::new(workspace.path());
 
-        let mut config = AegisConfig::default();
-        config.mode = Mode::Protect;
-        config.snapshot_policy = SnapshotPolicy::Selective;
-        config.auto_snapshot_git = true;
-        config.auto_snapshot_docker = false;
-        config.language_analysis.script_file_limit_bytes = 1;
-        let context = RuntimeContext::new(config, test_handle()).unwrap();
+            let mut config = AegisConfig::default();
+            config.mode = Mode::Protect;
+            config.snapshot_policy = SnapshotPolicy::Selective;
+            config.auto_snapshot_git = true;
+            config.auto_snapshot_docker = false;
+            config.language_analysis.script_file_limit_bytes = 1;
+            let context = RuntimeContext::new(config, test_handle()).unwrap();
 
-        let outcome = super::plan_with_context(
-            &context,
-            super::PlanningRequest {
-                command: "sh ./cleanup.sh",
-                cwd_state: CwdState::Resolved(workspace.path().to_path_buf()),
-                transport: ExecutionTransport::Shell,
-                ci_detected: false,
-            },
-        );
+            let outcome = super::plan_with_context(
+                &context,
+                super::PlanningRequest {
+                    command: "sh ./cleanup.sh",
+                    cwd_state: CwdState::Resolved(workspace.path().to_path_buf()),
+                    transport: ExecutionTransport::Shell,
+                    ci_detected: false,
+                },
+            );
 
-        std::env::set_current_dir(original_cwd).unwrap();
-
-        let PlanningOutcome::Planned(plan) = outcome else {
-            panic!("effect-opaque safe command must produce a normal plan");
-        };
-        assert_eq!(
-            plan.execution_disposition(),
-            ExecutionDisposition::RequiresApproval
-        );
-        // Recovery backstop: a pre-exec snapshot is requested from the git plugin.
-        assert_eq!(
-            plan.snapshot_plan(),
-            SnapshotPlan::Required {
-                applicable_plugins: vec!["git"],
-                git_targets: GitTargetPlan::default(),
-            }
-        );
+            let PlanningOutcome::Planned(plan) = outcome else {
+                panic!("effect-opaque safe command must produce a normal plan");
+            };
+            assert_eq!(
+                plan.execution_disposition(),
+                ExecutionDisposition::RequiresApproval
+            );
+            // Recovery backstop: a pre-exec snapshot is requested from the git plugin.
+            assert_eq!(
+                plan.snapshot_plan(),
+                SnapshotPlan::Required {
+                    applicable_plugins: vec!["git"],
+                    git_targets: GitTargetPlan::default(),
+                }
+            );
+        });
     }
 
     #[test]

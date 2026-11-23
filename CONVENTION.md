@@ -266,6 +266,7 @@ Audit rules:
 Minimum expectations:
 
 - Unit tests live near the code in `#[cfg(test)]` modules where appropriate.
+- Test process state: use child `Command` settings first, inject values second, or use the restoring guard in `tests/support` last; never call the setters elsewhere.
 - Integration tests live under `tests/`.
 - Parser changes must add edge-case coverage.
 - Classification changes must add positive and negative cases.

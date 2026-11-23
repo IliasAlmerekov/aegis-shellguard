@@ -34,61 +34,62 @@ fn no_bwrap_path_dir() -> PathBuf {
 
 #[test]
 fn embedded_bwrap_confines_when_no_system_bwrap_on_path() {
-    // Point PATH at an empty dir so the resolver must fall back to the embedded
-    // build. Restore it afterwards so other tests are unaffected.
-    let no_bwrap = no_bwrap_path_dir();
-    let old_path = std::env::var_os("PATH");
-    // SAFETY: this integration-test binary runs only this test, so no other
-    // thread reads or mutates `PATH`.
-    unsafe { std::env::set_var("PATH", &no_bwrap) };
+    const CHILD: &str = "AEGIS_EMBEDDED_BWRAP_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let no_bwrap = no_bwrap_path_dir();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                std::thread::current().name().unwrap(),
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .env("PATH", &no_bwrap)
+            .status()
+            .unwrap();
+        std::fs::remove_dir_all(no_bwrap).unwrap();
+        assert!(status.success());
+    } else {
+        let no_bwrap = PathBuf::from(std::env::var_os("PATH").unwrap());
 
-    let config = SandboxConfig::default();
+        let config = SandboxConfig::default();
 
-    // Skip, not panic, when this host cannot confine at all. The probe runs
-    // under the no-bwrap PATH, so it also proves the embedded build is the
-    // program the resolver cached — the premise the rest of the test relies
-    // on. A host that passes this probe but still fails below is a genuine
-    // defect, and the panics stay for exactly that case.
-    if !aegis_sandbox::sandbox_available_for(&config) {
-        assert!(
-            std::env::var_os("AEGIS_CI_REQUIRE_SANDBOX").as_deref()
-                != Some(std::ffi::OsStr::new("1")),
-            "AEGIS_CI_REQUIRE_SANDBOX=1 is set, but embedded bwrap cannot confine on this host"
-        );
-        eprintln!(
-            "skipped: this host cannot create the user namespaces the sandbox \
+        // Skip, not panic, when this host cannot confine at all. The probe runs
+        // under the no-bwrap PATH, so it also proves the embedded build is the
+        // program the resolver cached — the premise the rest of the test relies
+        // on. A host that passes this probe but still fails below is a genuine
+        // defect, and the panics stay for exactly that case.
+        if !aegis_sandbox::sandbox_available_for(&config) {
+            assert!(
+                std::env::var_os("AEGIS_CI_REQUIRE_SANDBOX").as_deref()
+                    != Some(std::ffi::OsStr::new("1")),
+                "AEGIS_CI_REQUIRE_SANDBOX=1 is set, but embedded bwrap cannot confine on this host"
+            );
+            eprintln!(
+                "skipped: this host cannot create the user namespaces the sandbox \
              needs, so the embedded-build confinement contract is untestable here"
-        );
-        // SAFETY: this integration-test binary runs only this test, so no other
-        // thread reads or mutates `PATH`; restores the caller's `PATH`.
-        unsafe { std::env::set_var("PATH", old_path.unwrap_or_default()) };
-        std::fs::remove_dir_all(&no_bwrap).unwrap();
-        return;
+            );
+        } else {
+            // The probe dir is writable on the host, so only the sandbox's read-only
+            // root mount can make this write fail, proving the embedded bwrap applied.
+            let probe = no_bwrap.join("aegis_embedded_bwrap_probe.txt");
+            let args = [
+                OsString::from("-c"),
+                OsString::from(format!("echo x > '{}'", probe.display())),
+            ];
+            // `prepare_for_exec` defers Landlock to `exec()`, so spawning needs this.
+            let prepared = aegis_sandbox::prepare_for_spawn(&config, OsStr::new("sh"), &args);
+            let status = prepared.map(|mut p| p.command.status());
+            let probe_written = probe.exists();
+
+            // The host passed the availability probe, so a prepare error is a defect.
+            let status = status
+                .unwrap_or_else(|e| panic!("prepare_for_spawn failed after the probe passed: {e}"))
+                .expect("the confined command must spawn");
+            assert!(
+                !status.success() && !probe_written,
+                "write to a host-writable path must fail inside the sandbox; got {status}"
+            );
+        }
     }
-
-    // The probe dir is writable on the host, so only the sandbox's read-only
-    // root mount can make this write fail, proving the embedded bwrap applied.
-    let probe = no_bwrap.join("aegis_embedded_bwrap_probe.txt");
-    let args = [
-        OsString::from("-c"),
-        OsString::from(format!("echo x > '{}'", probe.display())),
-    ];
-    // `prepare_for_exec` defers Landlock to `exec()`, so spawning needs this.
-    let prepared = aegis_sandbox::prepare_for_spawn(&config, OsStr::new("sh"), &args);
-    let status = prepared.map(|mut p| p.command.status());
-    let probe_written = probe.exists();
-
-    // SAFETY: this integration-test binary runs only this test, so no other
-    // thread reads or mutates `PATH`; restores the caller's `PATH`.
-    unsafe { std::env::set_var("PATH", old_path.unwrap_or_default()) };
-    std::fs::remove_dir_all(&no_bwrap).unwrap();
-
-    // The host passed the availability probe, so a prepare error is a defect.
-    let status = status
-        .unwrap_or_else(|e| panic!("prepare_for_spawn failed after the probe passed: {e}"))
-        .expect("the confined command must spawn");
-    assert!(
-        !status.success() && !probe_written,
-        "write to a host-writable path must fail inside the sandbox; got {status}"
-    );
 }
