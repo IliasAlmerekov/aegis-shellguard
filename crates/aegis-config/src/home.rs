@@ -15,8 +15,6 @@ fn home_dir_from(home: Option<OsString>, userprofile: Option<OsString>) -> Optio
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::OsString;
-    use std::path::PathBuf;
 
     #[test]
     fn resolves_home_and_userprofile() {
