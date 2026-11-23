@@ -139,3 +139,32 @@ pub fn ceiling_issues(ceiling: &SandboxCeiling) -> Vec<aegis_config::validate::V
         .map(|warning| aegis_config::validate::ceiling_issue(&warning))
         .collect()
 }
+
+/// Report Sandbox status before command preparation.
+pub fn sandbox_status_before_preparation(
+    sandbox_config: Option<&aegis_sandbox::SandboxConfig>,
+) -> aegis_types::SandboxStatus {
+    if sandbox_config.is_some() {
+        aegis_types::SandboxStatus::NotAttempted
+    } else {
+        aegis_types::SandboxStatus::NotConfigured
+    }
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::sandbox_status_before_preparation;
+    use aegis_types::SandboxStatus;
+
+    #[test]
+    fn status_before_preparation_reflects_configuration() {
+        assert_eq!(
+            sandbox_status_before_preparation(None),
+            SandboxStatus::NotConfigured
+        );
+        assert_eq!(
+            sandbox_status_before_preparation(Some(&aegis_sandbox::SandboxConfig::default())),
+            SandboxStatus::NotAttempted
+        );
+    }
+}

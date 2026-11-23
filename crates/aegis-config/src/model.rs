@@ -338,10 +338,7 @@ impl AegisConfig {
     /// Load the effective config for the current working directory.
     pub fn load() -> Result<Self> {
         let current_dir = env::current_dir()?;
-        let home_dir = env::var_os("HOME")
-            .or_else(|| env::var_os("USERPROFILE"))
-            .filter(|value| !value.is_empty())
-            .map(PathBuf::from);
+        let home_dir = crate::home_dir();
 
         Self::load_for(&current_dir, home_dir.as_deref())
     }
@@ -349,10 +346,7 @@ impl AegisConfig {
     /// Load config without triggering runtime validation (for `aegis config show`).
     pub fn load_inspection() -> Result<Self> {
         let current_dir = env::current_dir()?;
-        let home_dir = env::var_os("HOME")
-            .or_else(|| env::var_os("USERPROFILE"))
-            .filter(|value| !value.is_empty())
-            .map(PathBuf::from);
+        let home_dir = crate::home_dir();
 
         Self::load_for_inspection(&current_dir, home_dir.as_deref())
     }

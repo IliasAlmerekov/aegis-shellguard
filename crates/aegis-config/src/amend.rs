@@ -47,10 +47,7 @@ pub enum AppendOutcome {
 pub fn active_config_path_for_append() -> Option<std::path::PathBuf> {
     // Unavailable cwd returns None so approve-always does not target an unknown config.
     let current_dir = std::env::current_dir().ok()?;
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .filter(|v| !v.is_empty())
-        .map(std::path::PathBuf::from)?;
+    let home = crate::home_dir()?;
     let project = current_dir.join(".aegis.toml");
     if project.is_file() {
         return Some(project);

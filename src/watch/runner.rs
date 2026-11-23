@@ -11,7 +11,7 @@ use crate::planning::{
 };
 use crate::runtime::{
     RuntimeContext, WatchAuditContext, allow_rule_persistence_degradation,
-    plan_recovery_degradation,
+    plan_recovery_degradation, sandbox_status_before_preparation,
 };
 use aegis_config::amend::{
     AppendOutcome, active_config_path_for_append, append_allow_rule, append_block_rule,
@@ -31,8 +31,7 @@ use super::protocol::{
 };
 use super::sandbox::{
     WatchExecution, append_watch_execution_audit, complete_watch_approved_execution,
-    emit_watch_audit_error, prepare_watch_command, sandbox_status_before_preparation,
-    warn_if_sandbox_unavailable_at_startup,
+    emit_watch_audit_error, prepare_watch_command, warn_if_sandbox_unavailable_at_startup,
 };
 
 /// mpsc channel capacity for the stdout/stderr pump tasks.
@@ -441,7 +440,7 @@ async fn run_watch_plan_with_persistence<C, R, P>(
                         if let Err(err) = append_watch_execution_audit(
                             &execution,
                             Decision::Denied,
-                            sandbox_status_before_preparation(context),
+                            sandbox_status_before_preparation(context.config().sandbox.as_ref()),
                         ) {
                             emit_watch_audit_error(&id, &err);
                             return;
@@ -541,7 +540,7 @@ fn append_watch_audit_with_empty_snapshots(
             allowlist_match: plan.decision_context().allowlist_match(),
             allowlist_effective: plan.policy_decision().allowlist_effective,
             ci_detected,
-            sandbox_status: sandbox_status_before_preparation(context),
+            sandbox_status: sandbox_status_before_preparation(context.config().sandbox.as_ref()),
             snapshot_attempts: &[],
             source: frame.source.clone(),
             cwd: cwd.and_then(audit_cwd),

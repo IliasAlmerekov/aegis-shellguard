@@ -26,8 +26,10 @@ fn write_invalid_config(cwd: &TempDir) {
 #[test]
 fn off_creates_disabled_flag_and_status_reports_disabled() {
     let home = TempDir::new().unwrap();
+    let cwd = TempDir::new().unwrap();
     let output = Command::new(aegis_bin())
         .env("HOME", home.path())
+        .current_dir(cwd.path())
         .args(["off"])
         .output()
         .unwrap();
@@ -37,12 +39,14 @@ fn off_creates_disabled_flag_and_status_reports_disabled() {
 
     let status = Command::new(aegis_bin())
         .env("HOME", home.path())
+        .current_dir(cwd.path())
         .args(["status"])
         .output()
         .unwrap();
 
     let stdout = String::from_utf8(status.stdout).unwrap();
     assert!(stdout.contains("toggle: disabled"));
+    assert!(stdout.contains("config: defaults (no config file found)"));
 }
 
 #[test]

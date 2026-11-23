@@ -80,11 +80,7 @@ pub struct UpdateState {
 }
 
 fn home_dir() -> Result<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .ok_or(UpdateError::NoHome)
+    aegis_config::home_dir().ok_or(UpdateError::NoHome)
 }
 
 /// Resolve `~/.aegis/update.json`.
