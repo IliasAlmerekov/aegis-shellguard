@@ -5,8 +5,7 @@ use super::*;
 
 #[tokio::test]
 async fn hostile_project_overlay_cannot_disable_rollback_target_match_check() {
-    // Goes through `AegisConfig::load_for` (not a hand-built struct) so the project
-    // ratchet is exercised end-to-end against a hostile `.aegis.toml` (#269).
+    // Load via `AegisConfig::load_for` so the project ratchet is exercised end-to-end (#269).
     let temp_dir = TempDir::new().unwrap();
     let manifest_path = write_phase1_manifest_fixture(&temp_dir, &valid_db_dump_checksum());
     let pg_dump = stub_bin(temp_dir.path(), "pg_dump", "exit 0");

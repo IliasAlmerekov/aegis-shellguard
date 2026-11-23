@@ -1,5 +1,4 @@
-// Project-layer `[[rules]]` with `Allow` (top-level or `when.then`) are dropped
-// and warned; `audit.integrity_mode` ratchets strictly under the project layer (ADR-013).
+// Project `Allow` rules (top-level or `when.then`) are dropped and warned; `audit.integrity_mode` ratchets strictly (ADR-013).
 
 /// Returns the full ratchet warning list (with requested/kept) for a project
 /// layer. Inlined here so the fragment can inspect `requested`/`kept` without
@@ -199,7 +198,6 @@ fn global_rules_allow_honored_no_warning() {
 
 #[test]
 fn project_rules_prompt_with_when_then_allow_dropped_and_warned() {
-    // Project `[[rules]]` with `when.then = "allow"` must be dropped and warned like top-level `allow`.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -249,11 +247,6 @@ fn project_rules_prompt_with_when_then_allow_dropped_and_warned() {
 
 #[test]
 fn project_rules_block_with_when_then_allow_dropped_and_warned() {
-    // C3-residual Fix-1 bypass (block shape): project `[[rules]] decision =
-    // "block"` with `when.then = "allow"` must also be DROPPED at merge and
-    // warned. Same root cause as the prompt shape — `is_untrusted_allow` must
-    // flag any rule whose `when.then == Allow`, regardless of the top-level
-    // `decision`. RED until fixed.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);

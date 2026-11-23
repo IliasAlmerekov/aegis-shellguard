@@ -10,8 +10,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
-// ADR-022 §0: `PreparedPlanner::plan` spawns no worker when `route` yields no target.
-// Group 4 routes to targets, so only `route` is timed there.
+// ADR-022 §0: `plan()` spawns no worker when `route()` yields no target; Group 4 routes to targets so only `route()` is timed.
 
 // ── Group 1: safe everyday commands, single segment ───────────────────────
 

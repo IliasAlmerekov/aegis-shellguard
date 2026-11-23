@@ -484,8 +484,7 @@ async fn script_resolution_is_inside_total_deadline_and_preserves_original_byte_
     );
 }
 
-// Speculative `LauncherOperand` directories that resolve `NotApplicable`
-// must not consume `max_script_files` (#437).
+// Speculative `LauncherOperand` directories resolving `NotApplicable` must not consume `max_script_files` (#437).
 
 #[tokio::test]
 async fn run_launcher_operand_directories_beyond_max_script_files_do_not_prompt() {
@@ -535,8 +534,7 @@ async fn run_launcher_operand_candidates_beyond_the_pre_resolution_cap_fail_clos
     }
     let baseline = safe_baseline();
 
-    // `max_script_files: 1` caps speculative candidates at 4; candidates 5 and 6
-    // must fail closed before resolution while the first 4 resolve NotApplicable.
+    // `max_script_files: 1` caps speculative candidates at 4; candidates 5 and 6 fail closed before resolution.
     let outcome = run_with_budget_in_cwd(
         &command,
         AnalysisCwd::Resolved(workspace.path()),

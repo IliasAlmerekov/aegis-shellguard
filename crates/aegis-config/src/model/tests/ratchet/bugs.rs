@@ -1,5 +1,4 @@
-// Under the Project layer with docker enabled, narrowing or incomparable scope
-// overlays are rejected (keep base + warn); only keep-or-broaden is allowed.
+// Project docker_scope overlays must keep-or-broaden base; narrowing or incomparable moves keep base and warn.
 
 #[test]
 fn project_docker_scope_names_to_disjoint_names_rejected() {
@@ -39,10 +38,6 @@ fn project_docker_scope_names_to_disjoint_names_rejected() {
 
 #[test]
 fn project_docker_scope_names_subset_patterns_rejected() {
-    // bugs-01 RED: base Names `["a", "b"]`; project Names `["a"]` (subset, same
-    // rank). Current code keeps project `["a"]` with no warning. Desired: keep
-    // base `["a", "b"]` + warn — overlay patterns are NOT a superset of base
-    // patterns (base "b" absent from overlay).
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -78,10 +73,6 @@ fn project_docker_scope_names_subset_patterns_rejected() {
 
 #[test]
 fn project_docker_scope_labeled_to_names_rejected() {
-    // bugs-01 RED: base default `Labeled` (label "aegis.snapshot"); project
-    // `Names` with `["x"]` (same rank, incomparable mode switch). Current code
-    // keeps project `Names` with no warning. Desired: keep base `Labeled` +
-    // label "aegis.snapshot" + warn.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -122,10 +113,6 @@ fn project_docker_scope_labeled_to_names_rejected() {
 
 #[test]
 fn project_docker_scope_labeled_to_labeled_different_label_rejected() {
-    // bugs-01 RED: base default `Labeled` (label "aegis.snapshot"); project
-    // `Labeled` with a different label "other" (same rank, incomparable).
-    // Current code keeps project label "other" with no warning. Desired: keep
-    // base label "aegis.snapshot" + warn.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -160,9 +147,6 @@ fn project_docker_scope_labeled_to_labeled_different_label_rejected() {
 
 #[test]
 fn project_docker_scope_names_to_labeled_rejected() {
-    // bugs-01 RED: base `Names` with `["prod-db"]`; project `Labeled` (same
-    // rank, incomparable mode switch). Current code keeps project `Labeled`
-    // with no warning. Desired: keep base `Names` + `["prod-db"]` + warn.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -277,20 +261,10 @@ fn project_docker_scope_labeled_to_labeled_same_label_allowed() {
     );
 }
 
-// ── bugs-02: do not ratchet under SnapshotPolicy::None ────────────────────
-// Under `SnapshotPolicy::None` the registry materializes NO providers, so the
-// provider target ratchet must not fire (no spurious keep-base / no spurious
-// warning). `provider_enabled_in_base` must be `base.snapshot_policy != None
-// && (Full || flag)`.
+// Under SnapshotPolicy::None no provider is materialized, so provider target ratchets do not fire.
 
 #[test]
 fn project_provider_target_not_ratcheted_under_snapshot_policy_none() {
-    // bugs-02 RED: global `snapshot_policy = "None"` + `auto_snapshot_postgres
-    // = true` + `[postgres_snapshot] database = "mydb"`; project empties the
-    // database. Under None the postgres provider is NEVER materialized, so the
-    // ratchet must NOT fire: keep project value "" + NO warning. Current code
-    // treats `auto_snapshot_postgres = true` as enabling the provider
-    // regardless of policy → keeps "mydb" + warns → test FAILS.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -323,21 +297,10 @@ fn project_provider_target_not_ratcheted_under_snapshot_policy_none() {
     );
 }
 
-// ── regressions-01: reordered equal allow_write subset must NOT warn ───────
-// The allow_write warning branch gates on `kept != requested` compared as
-// DEBUG STRINGS. A reordered-but-equal project subset (base `["/opt","/tmp"]`,
-// project `["/tmp","/opt"]`) yields `kept = ["/opt","/tmp"]` (base order) vs
-// `requested = ["/tmp","/opt"]` → Debug strings differ → SPURIOUS warning
-// though nothing was weakened. Desired: compare as sets; no warning when the
-// project requested nothing outside the base.
+// Equal allow_write sets in different order do not weaken base and must not warn.
 
 #[test]
 fn project_sandbox_allow_write_reordered_subset_no_warning() {
-    // regressions-01 RED: global `allow_write = ["/opt", "/tmp"]`; project
-    // `allow_write = ["/tmp", "/opt"]` (reordered equal set). Effective
-    // `allow_write` must equal the set `{"/opt", "/tmp"}` (order-insensitive)
-    // AND there must be NO `sandbox.allow_write` warning. Current code
-    // spuriously warns because the Debug strings differ in order → FAILS.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);

@@ -489,7 +489,6 @@ fn install_repairs_its_own_session_start_entry_under_a_stale_matcher() {
     }
 }
 
-/// A foreign `PreToolUse` entry without `matcher` must not abort Claude install.
 #[test]
 fn claude_install_coexists_with_a_foreign_pre_tool_use_entry_without_a_matcher() {
     let home = TempDir::new().unwrap();

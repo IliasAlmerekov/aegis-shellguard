@@ -62,7 +62,6 @@ fn uninstalling_aegis_is_danger_in_every_spelling() {
     }
 }
 
-/// Global options before the subcommand must not hide `AEG-*` prefix rules.
 #[test]
 fn aegis_global_options_do_not_hide_a_self_management_subcommand() {
     for (command, id) in [

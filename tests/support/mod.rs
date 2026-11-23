@@ -258,7 +258,7 @@ pub fn write_disabled_toggle(home: &Path) {
 /// Write a global user config (`~/.config/aegis/config.toml`) with the given
 /// contents.
 ///
-/// C3 ratchet (ADR-013): the project layer cannot weaken this field.
+/// C3 ratchet (ADR-013): the project layer cannot weaken ratcheted fields.
 pub fn write_global_config(home: &Path, contents: &str) {
     let global_dir = home.join(".config/aegis");
     fs::create_dir_all(&global_dir).unwrap();

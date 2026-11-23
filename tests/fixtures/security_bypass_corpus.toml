@@ -444,8 +444,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# same as above with the redirect before the marker, a
-# gap 0.6.10 already had (#463).
+# same as above with the redirect before the marker (#463).
 name = "heredoc_data_consumer_redirect_first_then_run_block"
 command = """cat > /tmp/aegis-f <<'EOF'
 rm -rf /

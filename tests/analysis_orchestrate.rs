@@ -580,8 +580,7 @@ async fn run_analyzes_inline_javascript_writefilesync_and_lifts_to_warn() {
 
 #[tokio::test]
 async fn run_analyzes_javascript_exec_and_surfaces_the_recursive_javascript_target() {
-    // JS `eval` of a literal JS string surfaces both the outer LANG-EXEC and
-    // the recursive LANG-FS-DEL target with `Complete` status.
+    // JS `eval` of a literal JS string surfaces outer LANG-EXEC and recursive LANG-FS-DEL with `Complete` status.
     let baseline = safe_baseline();
     let outcome = run_with_budget(
         "node -e \"eval('fs.unlinkSync(x)')\"",

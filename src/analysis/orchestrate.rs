@@ -170,8 +170,7 @@ pub async fn run_with_budget_in_cwd(
     });
     let mut per_target: Vec<LanguageAnalysisResult> = Vec::new();
     let mut script_files = 0usize;
-    // Speculative `LauncherOperand` candidates stay off `max_script_files`;
-    // 4x caps their stat/shebang I/O without a separate config field (#437).
+    // Speculative `LauncherOperand` candidates stay off `max_script_files`; 4x caps stat/shebang I/O (#437).
     let mut launcher_operand_candidates = 0usize;
     let max_launcher_operand_candidates = budget.max_script_files.saturating_mul(4);
 

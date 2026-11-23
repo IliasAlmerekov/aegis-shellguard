@@ -64,7 +64,6 @@ fn project_auto_snapshot_docker_cannot_weaken_global_true() {
 
 #[test]
 fn project_auto_snapshot_flags_can_tighten_default_false_to_true() {
-    // Exercise tightening (default false -> project true) across every `auto_snapshot_*` flag.
     let cases: &[(&str, bool, &str)] = &[
         ("git", true, "auto_snapshot_git"),
         ("docker", false, "auto_snapshot_docker"),
