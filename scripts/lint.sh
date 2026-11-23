@@ -59,14 +59,18 @@ run_clippy() {
 # One shared exit status: run_text sets it, so a later check can join the others.
 text_failed=0
 
-# Prints one line per offender or read error, nothing when the tree is clean.
-check_rust_file_length() {
-    max=800
-    set --
-    for dir in src crates tests fuzz benches; do
+# Populates `files` with `.rs` paths under the existing candidate dirs in "$@".
+# Prints a diagnostic line when `find` fails to read a path.
+find_rust_files() {
+    files=""
+    count=$#
+    while [ "$count" -gt 0 ]; do
+        dir=$1
+        shift
         if [ -d "$dir" ]; then
             set -- "$@" "$dir"
         fi
+        count=$((count - 1))
     done
     [ "$#" -gt 0 ] || return 0
     # Capture find first: in a pipeline its exit status would be lost.
@@ -77,6 +81,12 @@ check_rust_file_length() {
     if [ "$find_status" -ne 0 ]; then
         echo "find could not read every path under: $* (exit $find_status)"
     fi
+}
+
+# Prints one line per offender or read error, nothing when the tree is clean.
+check_rust_file_length() {
+    max=800
+    find_rust_files src crates tests fuzz benches
     [ -n "$files" ] || return 0
     while IFS= read -r file; do
         # `grep -c ''` counts a last line without a trailing newline, `wc -l`
@@ -170,21 +180,7 @@ EOF
 
 # A test or source file is named after its behaviour, not a frozen tracker id (#626).
 check_tracker_id_filenames() {
-    set --
-    for dir in src crates tests; do
-        if [ -d "$dir" ]; then
-            set -- "$@" "$dir"
-        fi
-    done
-    [ "$#" -gt 0 ] || return 0
-    # Capture find first: in a pipeline its exit status would be lost.
-    find_status=0
-    files=$(find "$@" \( -name target -o -name .git -o -name .worktrees \
-        -o -name .cargo -o -name .claude -o -name node_modules \) -prune \
-        -o -type f -name '*.rs' -print) || find_status=$?
-    if [ "$find_status" -ne 0 ]; then
-        echo "find could not read every path under: $* (exit $find_status)"
-    fi
+    find_rust_files src crates tests
     [ -n "$files" ] || return 0
     while IFS= read -r file; do
         base=${file##*/}

@@ -105,8 +105,9 @@ scripts/lint.sh
 
 The script runs rustfmt and clippy, over every target and feature, on the
 Rust version pinned in `.github/versions.env`, then the text checks
-(`scripts/lint.sh text`: no `.rs` file over 800 lines, no missing backticked
-paths in the four top-level docs, no test `git` spawn outside `src/test_git.rs`, and
+(`scripts/lint.sh text`: no `.rs` file over 800 lines, no `.rs` filename with a
+frozen tracker id, no missing backticked paths in the four top-level docs, no
+test `git` spawn outside `src/test_git.rs`, and
 `scripts/test-tamper-check.test.sh` passes). These are the same
 commands CI runs. If that version is missing, the script prints the `rustup` command that
 installs it. Pass `fmt` or `clippy` to run one of the two.
