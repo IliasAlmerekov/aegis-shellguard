@@ -1,9 +1,8 @@
-use std::fs;
-use std::path::{Path, PathBuf};
+mod support;
 
-fn repo_path(path: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(path)
-}
+use std::fs;
+
+use support::repo_path;
 
 fn security_gate_action() -> String {
     fs::read_to_string(repo_path(".github/actions/security-gate/action.yml"))

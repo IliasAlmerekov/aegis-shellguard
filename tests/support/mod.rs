@@ -18,8 +18,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
-use aegis_types::Decision;
-use aegis_types::RiskLevel;
+use aegis_types::{Assessment, Decision, ParsedCommand, RiskLevel};
 
 pub(crate) use test_git::git_command;
 
@@ -37,6 +36,21 @@ pub fn run_git(repo: &Path, args: &[&str]) -> Output {
     output
 }
 
+/// Runs `git args` in `repo` and returns its trimmed stdout; panics unless git succeeds.
+pub fn git(repo: &Path, args: &[&str]) -> String {
+    String::from_utf8_lossy(&run_git(repo, args).stdout)
+        .trim()
+        .to_string()
+}
+
+/// Returns the commit hashes of every stash entry in `repo`.
+pub fn stash_hashes(repo: &Path) -> Vec<String> {
+    git(repo, &["stash", "list", "--format=%H"])
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
 /// Makes `repo` a git repository with a test identity and commits whatever it
 /// holds, so the repository always has a first commit.
 pub fn init_git_repo(repo: &Path) {
@@ -48,11 +62,40 @@ pub fn init_git_repo(repo: &Path) {
     run_git(repo, &["commit", "-q", "--allow-empty", "-m", "init"]);
 }
 
+/// Creates a git repository under `home/repo` with one untracked-file stash
+/// and returns its canonicalized path and the stash hash.
+pub fn repo_with_stash(home: &Path) -> (PathBuf, String) {
+    let repo = home.join("repo");
+    fs::create_dir(&repo).unwrap();
+    let repo = repo.canonicalize().unwrap();
+    init_git_repo(&repo);
+    fs::write(repo.join("stashed.txt"), "stashed\n").unwrap();
+    git(
+        &repo,
+        &[
+            "stash",
+            "push",
+            "-q",
+            "--include-untracked",
+            "-m",
+            "aegis-test-stash",
+        ],
+    );
+    let hash = git(&repo, &["rev-parse", "stash@{0}"]);
+    (repo, hash)
+}
+
 /// Resolve a path relative to the repository root via the test crate's
 /// `CARGO_MANIFEST_DIR` (the workspace root for the `aegis` test harness).
 #[must_use]
 pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// Resolve a path relative to the repository root.
+#[must_use]
+pub fn repo_path(relative: &str) -> PathBuf {
+    repo_root().join(relative)
 }
 
 /// Read a workspace member's `Cargo.toml` and return its `[dependencies]`
@@ -239,12 +282,18 @@ pub fn read_stub_invocations(log_path: &Path) -> Vec<String> {
     }
 }
 
-pub fn append_audit_entry(home: &Path, plugin: &str, snapshot_id: &str) {
+fn append_snapshot_audit_entry(
+    home: &Path,
+    command: &str,
+    risk: RiskLevel,
+    plugin: &str,
+    snapshot_id: &str,
+) {
     let logger = AuditLogger::new(home.join(".aegis").join("audit.jsonl"));
     logger
         .append(AuditEntry::new(
-            "manual test command",
-            RiskLevel::Safe,
+            command,
+            risk,
             Vec::new(),
             Decision::Approved,
             vec![AuditSnapshot {
@@ -256,6 +305,73 @@ pub fn append_audit_entry(home: &Path, plugin: &str, snapshot_id: &str) {
             None,
         ))
         .unwrap();
+}
+
+pub fn append_audit_entry(home: &Path, plugin: &str, snapshot_id: &str) {
+    append_snapshot_audit_entry(
+        home,
+        "manual test command",
+        RiskLevel::Safe,
+        plugin,
+        snapshot_id,
+    );
+}
+
+/// Append an approved `Danger` audit entry recording a snapshot for `plugin`.
+pub fn seed_snapshot(home: &Path, plugin: &str, snapshot_id: &str) {
+    append_snapshot_audit_entry(home, "rm -rf src", RiskLevel::Danger, plugin, snapshot_id);
+}
+
+fn aegis_subcommand(home: &Path) -> Command {
+    let mut cmd = Command::new(aegis_bin());
+    cmd.env("HOME", home).env("AEGIS_CI", "0");
+    cmd
+}
+
+/// Build an `aegis snapshot list` command configured for `home` with CI mode off.
+pub fn snapshot_list_command(home: &Path) -> Command {
+    let mut cmd = aegis_subcommand(home);
+    cmd.args(["snapshot", "list"]);
+    cmd
+}
+
+/// Run `aegis snapshot list` for `home` and return its output.
+pub fn run_snapshot_list(home: &Path) -> Output {
+    snapshot_list_command(home).output().unwrap()
+}
+
+/// Run `aegis snapshot prune` with `extra_args` inside `home`.
+pub fn run_prune(home: &Path, extra_args: &[&str]) -> Output {
+    let mut cmd = aegis_subcommand(home);
+    cmd.current_dir(home)
+        .args(["snapshot", "prune"])
+        .args(extra_args);
+    cmd.output().unwrap()
+}
+
+/// Empty-command `Safe` assessment used as a neutral baseline in analysis tests.
+#[must_use]
+pub fn safe_baseline() -> Assessment {
+    Assessment {
+        risk: RiskLevel::Safe,
+        effect_opaque: false,
+        matched: Vec::new(),
+        highlight_ranges: Vec::new(),
+        command: ParsedCommand {
+            program: None,
+            argv: Vec::new(),
+            normalized: String::new(),
+            inline_scripts: Vec::new(),
+            raw: String::new(),
+        },
+        analysis: None,
+    }
+}
+
+/// `true` when `expected` appears as a whole whitespace-delimited token in `output`.
+#[must_use]
+pub fn version_matches(output: &str, expected: &str) -> bool {
+    output.split_whitespace().any(|token| token == expected)
 }
 
 /// `true` when this host can confine a command with `config`.

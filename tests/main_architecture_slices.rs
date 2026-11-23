@@ -1,9 +1,8 @@
-use std::fs;
-use std::path::PathBuf;
+mod support;
 
-fn repo_path(relative: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative)
-}
+use std::fs;
+
+use support::repo_path;
 
 fn read_main_rs() -> String {
     fs::read_to_string(repo_path("src/main.rs")).expect("src/main.rs must exist")

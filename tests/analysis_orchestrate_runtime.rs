@@ -14,9 +14,10 @@ use aegis_policy::{
     PolicyConfigFlags, PolicyExecutionContext, PolicyInput, evaluate_policy,
 };
 use aegis_types::{
-    AllowlistOverrideLevel, AnalysisStatus, Assessment, CiPolicy, DegradationReason, MatchEvidence,
-    Mode, ParsedCommand, RiskLevel, SnapshotPolicy,
+    AllowlistOverrideLevel, AnalysisStatus, CiPolicy, DegradationReason, MatchEvidence, Mode,
+    RiskLevel, SnapshotPolicy,
 };
+use support::safe_baseline;
 
 #[cfg(unix)]
 fn worker_fixture(dir: &Path, name: &str, body: &str) -> PathBuf {
@@ -29,23 +30,6 @@ fn budget_with_timeout(total_timeout: Duration) -> OrchestrationBudget {
     OrchestrationBudget {
         total_timeout,
         ..OrchestrationBudget::L1_DEFAULT
-    }
-}
-
-fn safe_baseline() -> Assessment {
-    Assessment {
-        risk: RiskLevel::Safe,
-        effect_opaque: false,
-        matched: Vec::new(),
-        highlight_ranges: Vec::new(),
-        command: ParsedCommand {
-            program: None,
-            argv: Vec::new(),
-            normalized: String::new(),
-            inline_scripts: Vec::new(),
-            raw: String::new(),
-        },
-        analysis: None,
     }
 }
 

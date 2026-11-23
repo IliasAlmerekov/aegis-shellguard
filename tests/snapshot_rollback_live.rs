@@ -1,15 +1,11 @@
+mod support;
+
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
+use support::{base_command, read_audit_entries, write_executable, write_global_config};
 use tempfile::TempDir;
-
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
-
-fn aegis_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
-}
 
 fn sqlite_live_tests_enabled() -> bool {
     std::env::var("AEGIS_SQLITE_SNAPSHOT_TESTS").is_ok()
@@ -32,25 +28,6 @@ macro_rules! require_sqlite3 {
             return;
         }
     };
-}
-
-fn base_command(home: &Path) -> Command {
-    let mut command = Command::new(aegis_bin());
-    command.env("AEGIS_REAL_SHELL", "/bin/sh");
-    command.env("AEGIS_CI", "0");
-    command.env("HOME", home);
-    command
-}
-
-fn write_executable(path: &Path, body: &str) {
-    fs::write(path, body).unwrap();
-
-    #[cfg(unix)]
-    {
-        let mut permissions = fs::metadata(path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(path, permissions).unwrap();
-    }
 }
 
 fn run_sqlite3(db_path: &Path, sql: &str) {
@@ -85,29 +62,6 @@ fn query_scalar(db_path: &Path, sql: &str) -> String {
     );
 
     String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
-fn read_audit_entries(home: &Path) -> Vec<serde_json::Value> {
-    let path = home.join(".aegis").join("audit.jsonl");
-    let contents = fs::read_to_string(path).unwrap();
-
-    contents
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-        .collect()
-}
-
-/// Write a global user config (`~/.config/aegis/config.toml`) with the given
-/// contents.
-///
-/// The project layer can no longer weaken `allowlist_override_level` (C3
-/// security ratchet). Tests needing a permissive override must set it in the
-/// trusted global config.
-fn write_global_config(home: &Path, contents: &str) {
-    let global_dir = home.join(".config/aegis");
-    fs::create_dir_all(&global_dir).unwrap();
-    fs::write(global_dir.join("config.toml"), contents).unwrap();
 }
 
 #[test]

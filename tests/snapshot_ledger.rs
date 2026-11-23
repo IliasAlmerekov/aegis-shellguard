@@ -9,12 +9,8 @@ use std::process::{Command, Output};
 
 use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
 use aegis_types::{Decision, RiskLevel};
-use support::run_git;
+use support::{aegis_bin, repo_with_stash, stash_hashes};
 use tempfile::TempDir;
-
-fn aegis_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
-}
 
 fn default_audit_path(home: &Path) -> PathBuf {
     home.join(".aegis").join("audit.jsonl")
@@ -216,38 +212,6 @@ fn archived_prune_entry_hides_snapshot_under_custom_audit_path() {
         ],
         "prune must remove the live Snapshot and nothing for the archived prune"
     );
-}
-
-fn git(repo: &Path, args: &[&str]) -> String {
-    String::from_utf8_lossy(&run_git(repo, args).stdout)
-        .trim()
-        .to_string()
-}
-
-/// A git repository with one stash; returns the repository and the stash hash.
-fn repo_with_stash(home: &Path) -> (PathBuf, String) {
-    let repo = home.join("repo");
-    fs::create_dir(&repo).unwrap();
-    let repo = repo.canonicalize().unwrap();
-    git(&repo, &["init", "-q"]);
-    git(&repo, &["config", "user.email", "test@aegis.dev"]);
-    git(&repo, &["config", "user.name", "Aegis Test"]);
-    git(&repo, &["config", "core.autocrlf", "false"]);
-    git(&repo, &["commit", "-q", "--allow-empty", "-m", "init"]);
-    fs::write(repo.join("stashed.txt"), "stashed\n").unwrap();
-    git(
-        &repo,
-        &["stash", "push", "-q", "--include-untracked", "-m", "old"],
-    );
-    let hash = git(&repo, &["rev-parse", "stash@{0}"]);
-    (repo, hash)
-}
-
-fn stash_hashes(repo: &Path) -> Vec<String> {
-    git(repo, &["stash", "list", "--format=%H"])
-        .lines()
-        .map(str::to_owned)
-        .collect()
 }
 
 #[test]

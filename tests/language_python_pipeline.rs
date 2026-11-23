@@ -25,6 +25,8 @@
 //! - `merge_analysis` lifts a baseline `Safe` `Assessment` to the language
 //!   `Match`'s risk and carries the analysis status onto `Assessment.analysis`.
 
+mod support;
+
 use aegis::analysis::mapping::{map_adapter_result, map_operation};
 use aegis::analysis::queue::{AnalysisQueue, PushOutcome, QueueBudget, QueueTarget};
 use aegis_language::SourceLanguage;
@@ -40,12 +42,8 @@ use aegis_types::{
 };
 
 /// A throwaway `Assessment` baseline (Safe, no matches) for the merge test.
-fn safe_baseline() -> Assessment {
+fn python_baseline() -> Assessment {
     Assessment {
-        risk: RiskLevel::Safe,
-        effect_opaque: false,
-        matched: Vec::new(),
-        highlight_ranges: Vec::new(),
         command: ParsedCommand {
             program: Some("python3".to_string()),
             argv: Vec::new(),
@@ -53,7 +51,7 @@ fn safe_baseline() -> Assessment {
             inline_scripts: Vec::new(),
             raw: "python3".to_string(),
         },
-        analysis: None,
+        ..support::safe_baseline()
     }
 }
 
@@ -356,7 +354,7 @@ fn merge_lifts_baseline_safe_to_danger_and_carries_status() {
     // result with a Danger LANG-EXEC Match → merged risk Danger, the language
     // Match is appended, and the analysis status is carried onto Assessment.
     let outcome = map_python("subprocess.run(cmd)");
-    let merged = merge_analysis(&safe_baseline(), &outcome.analysis);
+    let merged = merge_analysis(&python_baseline(), &outcome.analysis);
 
     assert_eq!(
         merged.risk,

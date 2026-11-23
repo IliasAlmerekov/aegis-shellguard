@@ -9,27 +9,13 @@
 //! command reads the wrong file while still reporting Safe. `d1/sub/evil.py`
 //! is the dangerous payload; `sub/evil.py` is a decoy with the same tail.
 
+mod support;
+
 use std::time::Duration;
 
 use aegis::analysis::{AnalysisCwd, OrchestrationBudget, Outcome, run_with_budget_in_cwd};
-use aegis_types::{AnalysisStatus, Assessment, ParsedCommand, RiskLevel};
-
-fn safe_baseline() -> Assessment {
-    Assessment {
-        risk: RiskLevel::Safe,
-        effect_opaque: false,
-        matched: Vec::new(),
-        highlight_ranges: Vec::new(),
-        command: ParsedCommand {
-            program: None,
-            argv: Vec::new(),
-            normalized: String::new(),
-            inline_scripts: Vec::new(),
-            raw: String::new(),
-        },
-        analysis: None,
-    }
-}
+use aegis_types::{AnalysisStatus, RiskLevel};
+use support::safe_baseline;
 
 fn dangerous_recursive_delete() -> &'static str {
     "import shutil\nshutil.rmtree('x')\n"

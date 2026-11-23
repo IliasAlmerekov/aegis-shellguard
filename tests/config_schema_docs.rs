@@ -1,11 +1,9 @@
+mod support;
+
 use std::fs;
-use std::path::PathBuf;
 
 use aegis_config::PruneConfig;
-
-fn repo_path(relative: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative)
-}
+use support::repo_path;
 
 /// Field names declared on `PruneConfig`, read from its generated JSON
 /// schema rather than hard-coded — a field renamed or added there is

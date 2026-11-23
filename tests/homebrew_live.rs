@@ -7,7 +7,11 @@
 //   AEGIS_TEST_LIVE_HOMEBREW=1 AEGIS_TEST_EXPECTED_VERSION=0.7.0 \
 //     cargo test --test homebrew_live -- --nocapture
 
+mod support;
+
 use std::process::Command;
+
+use support::version_matches;
 
 const FORMULA: &str = "IliasAlmerekov/aegis/aegis";
 
@@ -25,11 +29,6 @@ fn assert_brew_ok(label: &str, output: &std::process::Output) {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-}
-
-/// True when `aegis --version` output names exactly `expected` as a token.
-fn version_matches(output: &str, expected: &str) -> bool {
-    output.split_whitespace().any(|token| token == expected)
 }
 
 #[test]

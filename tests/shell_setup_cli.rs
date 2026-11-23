@@ -1,10 +1,10 @@
+mod support;
+
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-fn aegis_bin() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
-}
+use support::aegis_bin;
 
 fn run_setup_shell(args: &[&str], home: &Path, envs: &[(&str, &str)]) -> std::process::Output {
     let mut command = Command::new(aegis_bin());

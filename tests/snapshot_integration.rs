@@ -1,61 +1,13 @@
 mod support;
 
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::Path;
 
-use serde_json::Value;
+use support::{
+    base_command, git_command, init_git_repo, read_audit_entries, run_git, write_executable,
+    write_global_config,
+};
 use tempfile::TempDir;
-
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
-use support::{git_command, init_git_repo, run_git};
-
-fn aegis_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
-}
-
-fn base_command(home: &Path) -> Command {
-    let mut command = Command::new(aegis_bin());
-    command.env("AEGIS_REAL_SHELL", "/bin/sh");
-    command.env("AEGIS_CI", "0");
-    command.env("HOME", home);
-    command
-}
-
-fn read_audit_entries(home: &Path) -> Vec<Value> {
-    let path = home.join(".aegis").join("audit.jsonl");
-    let contents = fs::read_to_string(path).unwrap();
-
-    contents
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect()
-}
-
-fn write_executable(path: &Path, body: &str) {
-    fs::write(path, body).unwrap();
-
-    #[cfg(unix)]
-    {
-        let mut permissions = fs::metadata(path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(path, permissions).unwrap();
-    }
-}
-
-/// Write a global user config (`~/.config/aegis/config.toml`) with the given
-/// contents.
-///
-/// The project layer can no longer weaken `allowlist_override_level` (C3
-/// security ratchet). Tests needing a permissive override must set it in the
-/// trusted global config.
-fn write_global_config(home: &Path, contents: &str) {
-    let global_dir = home.join(".config/aegis");
-    fs::create_dir_all(&global_dir).unwrap();
-    fs::write(global_dir.join("config.toml"), contents).unwrap();
-}
 
 fn commit_file(path: &Path, name: &str, contents: &str) {
     fs::write(path.join(name), contents).unwrap();

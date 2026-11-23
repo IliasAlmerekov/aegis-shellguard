@@ -85,17 +85,14 @@ fn disabled_watch_without_cwd_reports_error_and_does_not_execute() {
 #[cfg(unix)]
 #[test]
 fn enabled_watch_without_cwd_denies_unattended_danger() {
-    use std::os::unix::fs::PermissionsExt;
     let home = TempDir::new().unwrap();
     let cwd = TempDir::new().unwrap();
     let marker = home.path().join("executed");
     let stub = home.path().join("terraform");
-    fs::write(
+    crate::support::write_executable(
         &stub,
-        format!("#!/bin/sh\nprintf ran > {}\n", marker.display()),
-    )
-    .unwrap();
-    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+        &format!("#!/bin/sh\nprintf ran > {}\n", marker.display()),
+    );
     let config_dir = home.path().join(".config/aegis");
     fs::create_dir_all(&config_dir).unwrap();
     let user = Command::new("id").arg("-un").output().unwrap();

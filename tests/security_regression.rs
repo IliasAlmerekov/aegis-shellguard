@@ -1,22 +1,12 @@
+mod support;
+
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::Path;
 
 use serde::Deserialize;
 use serde_json::Value;
+use support::base_command;
 use tempfile::TempDir;
-
-fn aegis_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
-}
-
-fn base_command(home: &Path) -> Command {
-    let mut command = Command::new(aegis_bin());
-    command.env("AEGIS_REAL_SHELL", "/bin/sh");
-    command.env("AEGIS_CI", "0");
-    command.env("HOME", home);
-    command
-}
 
 #[derive(Debug, Deserialize)]
 struct SecurityRegressionCorpus {

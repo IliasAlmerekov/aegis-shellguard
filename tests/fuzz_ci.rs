@@ -1,8 +1,6 @@
-use std::path::{Path, PathBuf};
+mod support;
 
-fn repo_path(path: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(path)
-}
+use support::repo_path;
 
 fn read_repo_file(path: &str) -> String {
     std::fs::read_to_string(repo_path(path))

@@ -4,16 +4,14 @@
 //! including the interactive-TTY-only notice gate via a `script`(1) pty,
 //! mirroring the pattern `tests/installer_tty.rs` already uses.
 
+mod support;
+
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 
+use support::{aegis_bin, write_executable};
 use tempfile::TempDir;
-
-fn aegis_bin() -> &'static str {
-    env!("CARGO_BIN_EXE_aegis")
-}
 
 /// A `curl` stand-in on `PATH` so these tests never touch the real network.
 /// Its response is controlled entirely by `AEGIS_TEST_STUB_MODE` /
@@ -26,9 +24,7 @@ case \"$AEGIS_TEST_STUB_MODE\" in\n\
   missing-field) echo '{\"name\":\"x\"}'; exit 0 ;;\n\
   *) echo \"{\\\"version\\\":\\\"${AEGIS_TEST_STUB_VERSION:-9.9.9}\\\"}\"; exit 0 ;;\n\
 esac\n";
-    let path = dir.join("curl");
-    fs::write(&path, script).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    write_executable(&dir.join("curl"), script);
 }
 
 fn stubbed_path(stub_dir: &Path) -> String {
@@ -277,7 +273,7 @@ fn notice_prints_on_a_real_tty_only_for_a_strictly_newer_version() {
         &["update", "check"],
     );
 
-    let shell_cmd = format!("{} -c true", aegis_bin());
+    let shell_cmd = format!("{} -c true", aegis_bin().display());
     let run_under_pty = |script: &Path, home: &Path, path: &str| -> std::process::Output {
         let mut command = Command::new(script);
         #[cfg(target_os = "macos")]
@@ -332,7 +328,7 @@ fn interactive_shell_run_records_background_check_attempt_when_stale() {
         &["update", "enable", "--channel", "npm"],
     );
 
-    let shell_cmd = format!("{} -c true", aegis_bin());
+    let shell_cmd = format!("{} -c true", aegis_bin().display());
     let mut command = Command::new(&script);
     #[cfg(target_os = "macos")]
     command.args(["-q", "/dev/null", "/bin/sh", "-c", &shell_cmd]);

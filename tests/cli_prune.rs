@@ -1,53 +1,12 @@
+mod support;
+
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::Path;
 
-use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
+use aegis_audit::AuditLogger;
 use aegis_types::Decision;
-use aegis_types::RiskLevel;
+use support::{run_prune, seed_snapshot, snapshot_list_command};
 use tempfile::TempDir;
-
-fn aegis_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
-}
-
-fn run_prune(home: &Path, extra_args: &[&str]) -> std::process::Output {
-    let mut cmd = Command::new(aegis_bin());
-    cmd.env("HOME", home)
-        .env("AEGIS_CI", "0")
-        .current_dir(home)
-        .args(["snapshot", "prune"])
-        .args(extra_args);
-    cmd.output().unwrap()
-}
-
-fn run_snapshot_list(home: &Path) -> std::process::Output {
-    let mut cmd = Command::new(aegis_bin());
-    cmd.env("HOME", home)
-        .env("AEGIS_CI", "0")
-        .current_dir(home)
-        .args(["snapshot", "list"]);
-    cmd.output().unwrap()
-}
-
-fn seed_snapshot(home: &Path, plugin: &str, snapshot_id: &str) {
-    let logger = AuditLogger::new(home.join(".aegis").join("audit.jsonl"));
-    logger
-        .append(AuditEntry::new(
-            "rm -rf src",
-            RiskLevel::Danger,
-            Vec::new(),
-            Decision::Approved,
-            vec![AuditSnapshot {
-                plugin: plugin.to_string(),
-                snapshot_id: snapshot_id.to_string(),
-                git_target: None,
-            }],
-            None,
-            None,
-        ))
-        .unwrap();
-}
 
 fn write_prune_policy(home: &Path) {
     // Prune retention is ratcheted for project config, so the policy lives in
@@ -142,7 +101,10 @@ fn test_prune_yes_ignores_hostile_project_retention() {
         "prune --yes must exit 0: stderr=\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let list_output = run_snapshot_list(home.path());
+    let list_output = snapshot_list_command(home.path())
+        .current_dir(home.path())
+        .output()
+        .unwrap();
     let list_stdout = String::from_utf8_lossy(&list_output.stdout);
     assert!(
         list_stdout.contains(&snapshot_id),
@@ -170,7 +132,10 @@ fn test_prune_yes_flag_executes_deletion() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let list_output = run_snapshot_list(home.path());
+    let list_output = snapshot_list_command(home.path())
+        .current_dir(home.path())
+        .output()
+        .unwrap();
     let list_stdout = String::from_utf8_lossy(&list_output.stdout);
     assert!(
         !list_stdout.contains(&snapshot_id),

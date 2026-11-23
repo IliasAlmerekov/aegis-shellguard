@@ -5,6 +5,8 @@
 //! ADR-022's four-language L1 set as independent expectations rather than
 //! deriving assertions from the production manifest.
 
+mod support;
+
 use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -14,6 +16,7 @@ use aegis::analysis::queue::QueueBudget;
 use aegis::runtime::RuntimeConfig;
 use aegis_config::AegisConfig;
 use aegis_language::manifest::BUILTIN_MANIFEST;
+use support::repo_path;
 
 const QUALIFIED_GRAMMARS: &[(&str, &str, &str)] = &[
     ("python", "tree-sitter-python", "0.25.0"),
@@ -89,10 +92,6 @@ const NOT_LINKED_TREE_SITTER_CRATES: &[&str] = &[];
 /// tree, and the LGPL notice is asserted against the distributed notices.
 const BUBBLEWRAP_VERSION: &str = "0.11.2";
 const BUBBLEWRAP_VENDOR_DIR: &str = "crates/aegis-sandbox/vendor/bubblewrap";
-
-fn repo_path(relative: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative)
-}
 
 fn read_repo_file(relative: &str) -> String {
     let path = repo_path(relative);

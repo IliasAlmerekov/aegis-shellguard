@@ -60,12 +60,6 @@ pub fn write_fake_release_binary(path: &Path) {
     super::write_executable(path, "#!/bin/sh\necho 'aegis 1.0.0'\n");
 }
 
-pub fn aegis_test_binary() -> PathBuf {
-    std::env::var_os("CARGO_BIN_EXE_aegis")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| panic!("CARGO_BIN_EXE_aegis is not set for installer flow tests"))
-}
-
 pub fn copy_release_binary(source: &Path, target: &Path) {
     fs::copy(source, target).unwrap();
 
@@ -332,7 +326,7 @@ pub fn prepare_real_binary_release(
     let checksum_asset = temp.path().join("aegis-linux-x86_64.sha256");
 
     fs::create_dir_all(stub_dir).unwrap();
-    copy_release_binary(&aegis_test_binary(), &binary_asset);
+    copy_release_binary(&super::aegis_bin(), &binary_asset);
 
     let binary_digest = sha256_hex(&fs::read(&binary_asset).unwrap());
     write_release_checksum(&checksum_asset, "aegis-linux-x86_64", &binary_digest);

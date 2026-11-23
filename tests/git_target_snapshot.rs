@@ -16,12 +16,8 @@ use aegis_config::AegisConfig;
 use aegis_policy::ExecutionTransport;
 use aegis_snapshot::SnapshotRegistry;
 use aegis_types::{Mode, SnapshotPolicy};
-use support::run_git;
+use support::git;
 use tempfile::TempDir;
-
-fn git(repo: &Path, args: &[&str]) -> String {
-    String::from_utf8_lossy(&run_git(repo, args).stdout).into_owned()
-}
 
 /// A repository with one commit holding `tracked.txt`.
 fn repo(path: &Path) {

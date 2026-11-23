@@ -8,8 +8,12 @@
 //   AEGIS_TEST_LIVE_NPM=1 AEGIS_TEST_EXPECTED_VERSION=0.7.0 \
 //     cargo test --test npm_live -- --nocapture
 
+mod support;
+
 use std::process::Command;
 use std::time::Duration;
+
+use support::version_matches;
 
 const PACKAGE: &str = "@iliasalmerekov/aegis";
 const INSTALL_ATTEMPTS: u32 = 10;
@@ -20,11 +24,6 @@ fn run(command: &str, args: &[&str]) -> std::process::Output {
         .args(args)
         .output()
         .unwrap_or_else(|error| panic!("failed to run {command} {args:?}: {error}"))
-}
-
-/// True when `aegis --version` output names exactly `expected` as a token.
-fn version_matches(output: &str, expected: &str) -> bool {
-    output.split_whitespace().any(|token| token == expected)
 }
 
 #[test]

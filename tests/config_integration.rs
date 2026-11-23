@@ -1,49 +1,11 @@
 mod support;
 
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use serde_json::Value;
+use support::{base_command, init_git_repo, read_audit_entries, write_executable};
 use tempfile::TempDir;
-
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
-use support::init_git_repo;
-
-fn aegis_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
-}
-
-fn base_command(home: &Path) -> Command {
-    let mut command = Command::new(aegis_bin());
-    command.env("AEGIS_REAL_SHELL", "/bin/sh");
-    command.env("AEGIS_CI", "0");
-    command.env("HOME", home);
-    command
-}
-
-fn read_audit_entries(home: &Path) -> Vec<Value> {
-    let path = home.join(".aegis").join("audit.jsonl");
-    let contents = fs::read_to_string(path).unwrap();
-
-    contents
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| serde_json::from_str::<Value>(line).unwrap())
-        .collect()
-}
-
-fn write_executable(path: &Path, body: &str) {
-    fs::write(path, body).unwrap();
-
-    #[cfg(unix)]
-    {
-        let mut permissions = fs::metadata(path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(path, permissions).unwrap();
-    }
-}
 
 #[test]
 fn custom_patterns_from_config_change_runtime_decision_and_source_label() {

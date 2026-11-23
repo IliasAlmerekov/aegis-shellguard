@@ -44,17 +44,6 @@ fn has_recursive_delete(assessment: &Assessment) -> bool {
         .any(|item| item.pattern.id.as_ref() == "LANG-FS-DEL-R")
 }
 
-fn write_executable(path: &Path, body: &str) {
-    std::fs::write(path, body).expect("write executable");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = std::fs::metadata(path).unwrap().permissions();
-        permissions.set_mode(0o755);
-        std::fs::set_permissions(path, permissions).unwrap();
-    }
-}
-
 /// Asserts a `LANG-FS-DEL-R` Match lifted to Danger with complete analysis.
 async fn assert_complete_recursive_delete(command: &str, cwd: &Path) {
     let assessment = analyzed(command, run_in(command, cwd).await);

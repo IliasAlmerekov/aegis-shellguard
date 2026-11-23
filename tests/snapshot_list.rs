@@ -1,42 +1,7 @@
-use std::path::{Path, PathBuf};
-use std::process::Command;
+mod support;
 
-use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot};
-use aegis_types::Decision;
-use aegis_types::RiskLevel;
+use support::{run_snapshot_list, seed_snapshot};
 use tempfile::TempDir;
-
-fn aegis_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_aegis"))
-}
-
-fn run_snapshot_list(home: &Path) -> std::process::Output {
-    Command::new(aegis_bin())
-        .env("HOME", home)
-        .env("AEGIS_CI", "0")
-        .args(["snapshot", "list"])
-        .output()
-        .unwrap()
-}
-
-fn seed_snapshot(home: &Path, plugin: &str, snapshot_id: &str) {
-    let logger = AuditLogger::new(home.join(".aegis").join("audit.jsonl"));
-    logger
-        .append(AuditEntry::new(
-            "rm -rf src",
-            RiskLevel::Danger,
-            Vec::new(),
-            Decision::Approved,
-            vec![AuditSnapshot {
-                plugin: plugin.to_string(),
-                snapshot_id: snapshot_id.to_string(),
-                git_target: None,
-            }],
-            None,
-            None,
-        ))
-        .unwrap();
-}
 
 #[test]
 fn snapshot_list_prints_recorded_snapshot() {

@@ -7,7 +7,7 @@ use std::io::{ErrorKind, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use support::init_git_repo;
+use support::{init_git_repo, write_executable};
 use tempfile::TempDir;
 
 fn aegis_watch(input: &[u8]) -> std::process::Output {
@@ -598,11 +598,7 @@ fn watch_without_tty_denies_allowlisted_danger_without_a_snapshot_provider() {
     let bin = cwd_path.join("bin");
     fs::create_dir_all(&bin).unwrap();
     let stub = bin.join("terraform");
-    fs::write(&stub, "#!/bin/sh\nprintf ran > executed\n").unwrap();
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    write_executable(&stub, "#!/bin/sh\nprintf ran > executed\n");
     let config_dir = home.path().join(".config").join("aegis");
     fs::create_dir_all(&config_dir).unwrap();
     fs::write(

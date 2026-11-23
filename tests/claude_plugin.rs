@@ -7,7 +7,7 @@
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output, Stdio};
 
 use tempfile::TempDir;
@@ -15,6 +15,7 @@ use tempfile::TempDir;
 mod support;
 
 use support::agent_hooks::{json_contains_command, read_json, write_installed_plugin};
+use support::repo_path;
 
 /// CI markers the hooks consult; cleared so a developer's environment cannot
 /// flip a hook into its CI-override branch.
@@ -34,10 +35,6 @@ const PLUGIN_PRE_TOOL_USE: &str = "plugins/aegis/hooks/aegis-pre-tool-use.sh";
 const PLUGIN_SESSION_START: &str = "plugins/aegis/hooks/aegis-session-start.sh";
 
 const UNAVAILABLE_DENY: &str = "aegis binary unavailable; refusing to run command unscanned";
-
-fn repo_path(relative: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative)
-}
 
 fn read_repo_file(relative: &str) -> String {
     let path = repo_path(relative);
