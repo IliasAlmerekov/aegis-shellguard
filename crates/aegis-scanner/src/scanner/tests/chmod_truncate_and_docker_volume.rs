@@ -68,7 +68,7 @@ fn assess_m5_ps005_is_filesystem_without_changing_its_match() {
 // `CASCADE`/`RESTRICT` referential action, a `RESTART`/`CONTINUE IDENTITY`
 // clause, or a comma-separated table list followed by one of those strong
 // anchors. Bare `TRUNCATE <ident>` and a bare comma list are declared
-// uncovered forms (see `m5_gaps.rs`).
+// uncovered forms (see `chmod_truncate_docker_narrowness.rs`).
 #[test]
 fn assess_m5_db009_truncate_without_table_fires() {
     let cases: &[(&str, RiskLevel, &str)] = &[
@@ -153,7 +153,7 @@ fn assess_m5_db009_truncate_only_via_heredoc_fires() {
 // covers the tail. `-f` needs no special handling — a prefix rule matches the
 // prefix and ignores the tail. Launcher/absolute-path delivery is covered by
 // the ADR-014 table in `basic.rs`; the near-miss negatives live in
-// `m5_gaps.rs`.
+// `chmod_truncate_docker_narrowness.rs`.
 #[test]
 fn assess_m5_docker_volume_rm_fires_dk007() {
     assert_assessment_matches_pattern("docker volume rm pgdata", RiskLevel::Danger, "DK-007");

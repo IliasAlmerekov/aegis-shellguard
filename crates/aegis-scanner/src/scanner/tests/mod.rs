@@ -35,8 +35,9 @@ fn test_match_result(matched_text: &str, start: usize, end: usize) -> MatchResul
 }
 
 /// Assert that `assess(cmd)` reaches `expected_risk` and that `expected_id` is
-/// among the matched patterns. Shared across the `basic` and `h3_gaps` test
-/// modules (the `edge_cases` module keeps its own `assert_command_matches_pattern`).
+/// among the matched patterns. Shared across the `basic` and
+/// `destructive_rule_narrowness` test modules (the `edge_cases` module keeps
+/// its own `assert_command_matches_pattern`).
 #[cfg(test)]
 fn assert_assessment_matches_pattern(cmd: &str, expected_risk: RiskLevel, expected_id: &str) {
     let s = scanner();
@@ -64,14 +65,15 @@ fn assert_assessment_matches_pattern(cmd: &str, expected_risk: RiskLevel, expect
 mod advanced;
 mod ansi_c_quoting;
 mod basic;
+mod chmod_truncate_and_docker_volume;
+mod chmod_truncate_docker_narrowness;
 mod compatibility;
 mod construction;
+mod destructive_rule_narrowness;
 mod edge_cases;
 mod effect_opaque;
 mod ghsa_7564;
 mod ghsa_7gcj;
-mod h3_followups;
-mod h3_gaps;
 mod issue_344;
 mod issue_357;
 mod issue_396;
@@ -82,9 +84,8 @@ mod issue_471;
 mod issue_484;
 mod issue_525;
 mod issue_525_codex3;
-mod m5_followups;
-mod m5_gaps;
-mod m5_npm;
 mod match_evidence;
+mod npm_publish;
 mod risk_levels;
 mod shell_prefixes;
+mod storage_wipers_and_redis_flush;
