@@ -13,30 +13,28 @@
 //! All tests MUST fail before `crates/aegis-snapshot/src/lib.rs` is created
 //! (they fail with `error[E0432]: unresolved import`).
 
-use std::process::Command;
+#[path = "../../../tests/support/isolated_test.rs"]
+mod isolated_test;
 
 use aegis_config::AegisConfig;
 use aegis_snapshot::{SnapshotError, SnapshotPlugin, SnapshotRegistry, SnapshotRegistryConfig};
 use aegis_types::SnapshotPolicy;
 
-fn in_child(home: bool) -> bool {
+fn in_child(home: bool) -> Option<isolated_test::Completion> {
     const CHILD: &str = "AEGIS_SNAPSHOT_CONTRACT_CHILD";
     if std::env::var_os(CHILD).is_some() {
-        return true;
+        return Some(isolated_test::Completion);
     }
-    let name = std::thread::current().name().unwrap().to_owned();
-    let mut command = Command::new(std::env::current_exe().unwrap());
-    command
-        .args(["--exact", &name, "--nocapture"])
-        .env(CHILD, "1")
-        .env_remove("USERPROFILE");
+    let mut command = isolated_test::command();
+    command.env(CHILD, "1");
+    command.env_remove("USERPROFILE");
     if home {
         command.env("HOME", std::env::temp_dir());
     } else {
         command.env_remove("HOME");
     }
-    assert!(command.status().unwrap().success());
-    false
+    isolated_test::run(&mut command);
+    None
 }
 
 // ── Test 1: public API compileability ────────────────────────────────────────
@@ -79,7 +77,7 @@ fn test_snapshot_error_implements_std_error_send_sync() {
 /// true in any standard CI / developer environment) it must succeed.
 #[test]
 fn test_snapshot_registry_config_try_new_succeeds_with_home_set() {
-    if in_child(true) {
+    if let Some(_completion) = in_child(true) {
         let config = AegisConfig::default();
         let result: Result<SnapshotRegistryConfig, SnapshotError> =
             SnapshotRegistryConfig::try_new(&config);
@@ -91,7 +89,7 @@ fn test_snapshot_registry_config_try_new_succeeds_with_home_set() {
 /// neither `HOME` nor `USERPROFILE` is set in the environment.
 #[test]
 fn test_snapshot_registry_config_try_new_errors_without_home() {
-    if in_child(false) {
+    if let Some(_completion) = in_child(false) {
         let config = AegisConfig::default();
         let result: Result<SnapshotRegistryConfig, SnapshotError> =
             SnapshotRegistryConfig::try_new(&config);
@@ -129,7 +127,7 @@ fn test_available_provider_names_contains_all_six_builtins() {
 /// `configured_provider_names()` must return all 6 names.
 #[test]
 fn test_snapshot_registry_full_policy_contains_all_six_providers() {
-    if in_child(true) {
+    if let Some(_completion) = in_child(true) {
         let mut config = AegisConfig::default();
         config.snapshot_policy = SnapshotPolicy::Full;
 

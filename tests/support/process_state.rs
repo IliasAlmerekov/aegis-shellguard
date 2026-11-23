@@ -1,4 +1,4 @@
-//! Restoring guards for process state in tests.
+//! Restoring guard for process state in single-threaded tests.
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -6,90 +6,76 @@ use std::sync::{Mutex, MutexGuard};
 
 static PROCESS_STATE: Mutex<()> = Mutex::new(());
 
-/// Restores one environment variable when dropped.
-pub struct EnvVarGuard {
-    key: OsString,
-    previous: Option<OsString>,
+/// Holds the shared process-state lock and restores changes on drop.
+pub struct ProcessStateGuard {
     _lock: MutexGuard<'static, ()>,
+    env: Vec<(OsString, Option<OsString>)>,
+    cwd: Option<PathBuf>,
 }
 
-impl EnvVarGuard {
-    /// Set or remove a variable until the guard is dropped.
+impl ProcessStateGuard {
+    /// Lock process state, including for read-only operations.
+    pub fn lock() -> Self {
+        Self {
+            _lock: PROCESS_STATE
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()),
+            env: Vec::new(),
+            cwd: None,
+        }
+    }
+
+    /// Set or remove a variable until this guard is dropped.
     ///
     /// # Safety
-    /// No other thread or library may access the process environment while this guard lives.
+    /// No other thread or foreign library may access the environment until drop.
     #[expect(
         clippy::disallowed_methods,
         reason = "the guard owns environment mutation"
     )]
-    pub unsafe fn new(key: &OsStr, value: Option<&OsStr>) -> Self {
-        let lock = PROCESS_STATE
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let previous = std::env::var_os(key);
-        // SAFETY: the caller excludes all concurrent environment access for the guard's lifetime.
+    pub unsafe fn set_env(&mut self, key: &OsStr, value: Option<&OsStr>) {
+        let previous = (key.to_owned(), std::env::var_os(key));
+        // SAFETY: the caller excludes all concurrent environment access until drop.
         unsafe {
             match value {
                 Some(value) => std::env::set_var(key, value),
                 None => std::env::remove_var(key),
             }
         }
-        Self {
-            key: key.to_owned(),
-            previous,
-            _lock: lock,
-        }
+        self.env.push(previous);
     }
-}
 
-impl Drop for EnvVarGuard {
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the guard restores environment state"
-    )]
-    fn drop(&mut self) {
-        // SAFETY: the constructor's caller excludes concurrent access until this guard is dropped.
-        unsafe {
-            match &self.previous {
-                Some(value) => std::env::set_var(&self.key, value),
-                None => std::env::remove_var(&self.key),
-            }
-        }
-    }
-}
-
-/// Restores the working directory when dropped.
-pub struct CwdGuard {
-    previous: PathBuf,
-    _lock: MutexGuard<'static, ()>,
-}
-
-impl CwdGuard {
-    /// Change the working directory until the guard is dropped.
-    /// The previous directory must remain available until restoration.
+    /// Change cwd until drop. All code using cwd must coordinate with this lock,
+    /// and the original directory must remain available until restoration.
     #[expect(
         clippy::disallowed_methods,
         reason = "the guard owns working-directory mutation"
     )]
-    pub fn new(path: &Path) -> Self {
-        let lock = PROCESS_STATE
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let previous = std::env::current_dir().unwrap();
-        std::env::set_current_dir(path).unwrap();
-        Self {
-            previous,
-            _lock: lock,
+    pub fn set_cwd(&mut self, path: &Path) {
+        if self.cwd.is_none() {
+            self.cwd = Some(std::env::current_dir().unwrap());
         }
+        std::env::set_current_dir(path).unwrap();
     }
 }
 
-impl Drop for CwdGuard {
+impl Drop for ProcessStateGuard {
     #[expect(
         clippy::disallowed_methods,
-        reason = "the guard restores the working directory"
+        reason = "the guard restores process state"
     )]
     fn drop(&mut self) {
-        std::env::set_current_dir(&self.previous).unwrap();
+        for (key, previous) in self.env.drain(..).rev() {
+            // SAFETY: set_env's caller excludes concurrent access until drop.
+            unsafe {
+                match previous {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+        if let Some(cwd) = &self.cwd {
+            std::env::set_current_dir(cwd).unwrap();
+        }
     }
 }

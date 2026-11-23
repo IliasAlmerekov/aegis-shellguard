@@ -1,5 +1,10 @@
 //! `compute_trusted_ceiling` ignores `GIT_*` and `TMPDIR` environment variables.
 
+#[allow(dead_code)]
+#[path = "../../../tests/support/process_state.rs"]
+mod process_state;
+
+use std::ffi::OsStr;
 use std::fs;
 use std::path::PathBuf;
 
@@ -11,38 +16,29 @@ fn paths(c: &TrustedCeiling) -> Vec<PathBuf> {
     c.roots.iter().map(|r| r.path.clone()).collect()
 }
 
-#[test]
-fn git_and_tmp_environment_variables_do_not_change_the_ceiling() {
-    const REPO: &str = "AEGIS_CEILING_ENV_REPO";
-    const BEFORE: &str = "AEGIS_CEILING_ENV_BEFORE";
-    if let Some(repo) = std::env::var_os(REPO) {
-        let repo = PathBuf::from(repo);
-        let after = compute_trusted_ceiling(&SandboxSettings::default(), &repo);
-        assert_eq!(format!("{after:?}"), std::env::var(BEFORE).unwrap());
-        let mut expected = vec![repo];
-        expected.extend(ResolverInputs::system().temp_dirs);
-        assert_eq!(paths(&after), expected);
-    } else {
-        let tmp = TempDir::new().unwrap();
-        let base = fs::canonicalize(tmp.path()).unwrap();
-        let repo = base.join("repo");
-        fs::create_dir_all(repo.join(".git")).unwrap();
-        fs::create_dir_all(repo.join("src")).unwrap();
-        let before = compute_trusted_ceiling(&SandboxSettings::default(), &repo);
-        let status = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                std::thread::current().name().unwrap(),
-                "--nocapture",
-            ])
-            .env(REPO, &repo)
-            .env(BEFORE, format!("{before:?}"))
-            .env("GIT_WORK_TREE", "/")
-            .env("GIT_DIR", "/")
-            .env("GIT_COMMON_DIR", "/")
-            .env("TMPDIR", "/var/tmp")
-            .status()
-            .unwrap();
-        assert!(status.success());
+fn main() {
+    let tmp = TempDir::new().unwrap();
+    let base = fs::canonicalize(tmp.path()).unwrap();
+    let repo = base.join("repo");
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    fs::create_dir_all(repo.join("src")).unwrap();
+    let mut guard = process_state::ProcessStateGuard::lock();
+    let before = compute_trusted_ceiling(&SandboxSettings::default(), &repo);
+    // SAFETY: this harness-free executable starts no threads or foreign environment readers.
+    unsafe {
+        for (key, value) in [
+            ("GIT_WORK_TREE", "/"),
+            ("GIT_DIR", "/"),
+            ("GIT_COMMON_DIR", "/"),
+            ("TMPDIR", "/var/tmp"),
+        ] {
+            guard.set_env(OsStr::new(key), Some(OsStr::new(value)));
+        }
     }
+    let after = compute_trusted_ceiling(&SandboxSettings::default(), &repo);
+    assert_eq!(after, before);
+    drop(guard);
+    let mut expected = vec![repo];
+    expected.extend(ResolverInputs::system().temp_dirs);
+    assert_eq!(paths(&after), expected);
 }

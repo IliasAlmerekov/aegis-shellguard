@@ -3,7 +3,8 @@
 //! Each environment case runs in a child with its own environment.
 
 use std::fs;
-use std::process::Command;
+#[path = "support/isolated_test.rs"]
+mod isolated_test;
 
 use aegis::planning::evaluate_policy_rules;
 use aegis_config::{AegisConfig, PolicyPatternToken, PolicyRule, WhenClause};
@@ -18,16 +19,13 @@ use aegis_types::{
 };
 use tempfile::TempDir;
 
-fn in_child(key: &str, value: Option<&str>) -> bool {
+fn in_child(key: &str, value: Option<&str>) -> Option<isolated_test::Completion> {
     const CHILD: &str = "AEGIS_POLICY_ENV_CHILD";
     if std::env::var_os(CHILD).is_some() {
-        return true;
+        return Some(isolated_test::Completion);
     }
-    let name = std::thread::current().name().unwrap().to_owned();
-    let mut command = Command::new(std::env::current_exe().unwrap());
-    command
-        .args(["--exact", &name, "--nocapture"])
-        .env(CHILD, "1");
+    let mut command = isolated_test::command();
+    command.env(CHILD, "1");
     match value {
         Some(value) => {
             command.env(key, value);
@@ -36,8 +34,17 @@ fn in_child(key: &str, value: Option<&str>) -> bool {
             command.env_remove(key);
         }
     }
-    assert!(command.status().unwrap().success());
-    false
+    isolated_test::run(&mut command);
+    None
+}
+
+#[test]
+fn unknown_isolated_test_is_not_a_success() {
+    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+    command.args(["--exact", "no_such_test", "--nocapture"]);
+    let output = command.output().unwrap();
+    assert!(output.status.success());
+    assert!(!isolated_test::completed(&output));
 }
 
 fn single(s: &str) -> PolicyPatternToken {
@@ -57,7 +64,7 @@ fn danger_assessment(cmd: &str) -> Assessment {
 
 #[test]
 fn evaluate_policy_rules_when_clause_overrides_on_env_match() {
-    if in_child("AEGIS_TEST_ENV_VAR_UNIQUE", Some("true")) {
+    if let Some(_completion) = in_child("AEGIS_TEST_ENV_VAR_UNIQUE", Some("true")) {
         let rules = vec![PolicyRule {
             pattern: vec![single("rm")],
             decision: PolicyRuleDecision::Prompt,
@@ -78,7 +85,7 @@ fn evaluate_policy_rules_when_clause_overrides_on_env_match() {
 
 #[test]
 fn evaluate_policy_rules_when_clause_uses_base_on_env_mismatch() {
-    if in_child("AEGIS_TEST_ENV_VAR_ABSENT", None) {
+    if let Some(_completion) = in_child("AEGIS_TEST_ENV_VAR_ABSENT", None) {
         let rules = vec![PolicyRule {
             pattern: vec![single("rm")],
             decision: PolicyRuleDecision::Prompt,
@@ -99,7 +106,7 @@ fn evaluate_policy_rules_when_clause_uses_base_on_env_mismatch() {
 
 #[test]
 fn evaluate_policy_rules_when_missing_env_empty_value_does_not_match() {
-    if in_child("AEGIS_TEST_ABSENT_EMPTY", None) {
+    if let Some(_completion) = in_child("AEGIS_TEST_ABSENT_EMPTY", None) {
         let rules = vec![PolicyRule {
             pattern: vec![single("ls")],
             decision: PolicyRuleDecision::Block,
@@ -120,7 +127,7 @@ fn evaluate_policy_rules_when_missing_env_empty_value_does_not_match() {
 
 #[test]
 fn project_rules_prompt_with_when_then_allow_does_not_autoapprove_danger_under_protect() {
-    if in_child("AEGIS_TEST_C3_RESIDUAL_WHEN", Some("match")) {
+    if let Some(_completion) = in_child("AEGIS_TEST_C3_RESIDUAL_WHEN", Some("match")) {
         let workspace = TempDir::new().unwrap();
         let home = TempDir::new().unwrap();
         let global_dir = home.path().join(".config/aegis");

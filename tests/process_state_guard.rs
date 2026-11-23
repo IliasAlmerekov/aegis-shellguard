@@ -1,7 +1,6 @@
 #[path = "support/process_state.rs"]
 mod process_state;
 
-use process_state::{CwdGuard, EnvVarGuard};
 use std::ffi::OsStr;
 
 struct ProbePanic;
@@ -14,31 +13,21 @@ fn run() {
     assert_eq!(original.as_deref(), Some(OsStr::new("original")));
     assert!(absent.is_none());
     let result = std::panic::catch_unwind(|| {
-        // SAFETY: this executable starts no threads and no other code accesses its environment.
-        let _present = unsafe {
-            EnvVarGuard::new(
-                OsStr::new("AEGIS_GUARD_PRESENT"),
+        let mut guard = process_state::ProcessStateGuard::lock();
+        // SAFETY: this executable starts no threads or foreign environment readers.
+        unsafe {
+            guard.set_env(OsStr::new("AEGIS_GUARD_PRESENT"), None);
+            guard.set_env(
+                OsStr::new("AEGIS_GUARD_ABSENT"),
                 Some(OsStr::new("changed")),
-            )
-        };
+            );
+        }
+        guard.set_cwd(temp.path());
+        assert!(std::env::var_os("AEGIS_GUARD_PRESENT").is_none());
         assert_eq!(
-            std::env::var_os("AEGIS_GUARD_PRESENT").as_deref(),
+            std::env::var_os("AEGIS_GUARD_ABSENT").as_deref(),
             Some(OsStr::new("changed"))
         );
-        std::panic::panic_any(ProbePanic);
-    });
-    assert!(result.unwrap_err().is::<ProbePanic>());
-    assert_eq!(std::env::var_os("AEGIS_GUARD_PRESENT"), original);
-    let result = std::panic::catch_unwind(|| {
-        // SAFETY: this executable starts no threads and no other code accesses its environment.
-        let _removed = unsafe { EnvVarGuard::new(OsStr::new("AEGIS_GUARD_PRESENT"), None) };
-        assert!(std::env::var_os("AEGIS_GUARD_PRESENT").is_none());
-        std::panic::panic_any(ProbePanic);
-    });
-    assert!(result.unwrap_err().is::<ProbePanic>());
-    assert_eq!(std::env::var_os("AEGIS_GUARD_PRESENT"), original);
-    let result = std::panic::catch_unwind(|| {
-        let _cwd = CwdGuard::new(temp.path());
         assert_eq!(
             std::env::current_dir().unwrap(),
             temp.path().canonicalize().unwrap()
@@ -46,23 +35,20 @@ fn run() {
         std::panic::panic_any(ProbePanic);
     });
     assert!(result.unwrap_err().is::<ProbePanic>());
+    assert_eq!(std::env::var_os("AEGIS_GUARD_PRESENT"), original);
+    assert_eq!(std::env::var_os("AEGIS_GUARD_ABSENT"), absent);
     assert_eq!(std::env::current_dir().unwrap(), cwd);
     let result = std::panic::catch_unwind(|| {
-        // SAFETY: this executable starts no threads and no other code accesses its environment.
-        let _absent = unsafe {
-            EnvVarGuard::new(
-                OsStr::new("AEGIS_GUARD_ABSENT"),
-                Some(OsStr::new("changed")),
-            )
-        };
-        assert_eq!(
-            std::env::var_os("AEGIS_GUARD_ABSENT").as_deref(),
-            Some(OsStr::new("changed"))
-        );
-        std::panic::panic_any(ProbePanic);
+        let mut guard = process_state::ProcessStateGuard::lock();
+        // SAFETY: this executable starts no threads or foreign environment readers.
+        unsafe {
+            guard.set_env(OsStr::new("AEGIS_GUARD_PRESENT"), None);
+            guard.set_env(OsStr::new("INVALID=KEY"), Some(OsStr::new("x")));
+        }
     });
-    assert!(result.unwrap_err().is::<ProbePanic>());
-    assert_eq!(std::env::var_os("AEGIS_GUARD_ABSENT"), absent);
+    assert!(result.is_err());
+    assert_eq!(std::env::var_os("AEGIS_GUARD_PRESENT"), original);
+    let _recovered = process_state::ProcessStateGuard::lock();
 }
 
 fn main() {

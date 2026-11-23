@@ -1,5 +1,8 @@
 //! `Scanner::git_stage_report` reads Aegis's own environment (#525, #471).
 
+#[path = "../../../tests/support/isolated_test.rs"]
+mod isolated_test;
+
 use aegis_scanner::{CdUnresolved, DangerStageTarget, StageDir, scanner_for};
 
 fn stages(cmd: &str) -> Vec<(StageDir, DangerStageTarget)> {
@@ -17,6 +20,7 @@ fn stages(cmd: &str) -> Vec<(StageDir, DangerStageTarget)> {
 fn git_stage_report_reads_cdpath_and_git_env_from_the_process() {
     const CASE: &str = "AEGIS_SCANNER_ENV_CASE";
     if let Ok(case) = std::env::var(CASE) {
+        let _completion = isolated_test::Completion;
         let cd_rm = "cd x && rm -rf y";
         let cd_git = "cd x && git filter-branch --index-filter true";
         let chain = StageDir::Chain(vec!["x".to_string()]);
@@ -68,14 +72,8 @@ fn git_stage_report_reads_cdpath_and_git_env_from_the_process() {
             ("function", Some(("BASH_FUNC_cd%%", "() { :; }"))),
             ("bashopts", Some(("BASHOPTS", "cmdhist:lastpipe"))),
         ] {
-            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
-            child
-                .args([
-                    "--exact",
-                    std::thread::current().name().unwrap(),
-                    "--nocapture",
-                ])
-                .env(CASE, case);
+            let mut child = isolated_test::command();
+            child.env(CASE, case);
             for key in [
                 "CDPATH",
                 "GIT_DIR",
@@ -89,7 +87,7 @@ fn git_stage_report_reads_cdpath_and_git_env_from_the_process() {
             if let Some((key, value)) = variable {
                 child.env(key, value);
             }
-            assert!(child.status().unwrap().success(), "case {case}");
+            isolated_test::run(&mut child);
         }
     }
 }

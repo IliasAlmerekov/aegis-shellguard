@@ -8,6 +8,9 @@
 //! contract tests. The resolver caches its program choice per process, so this
 //! test sets `PATH` to a directory without `bwrap` *before* any sandbox call.
 
+#[path = "../../../tests/support/isolated_test.rs"]
+mod isolated_test;
+
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
@@ -16,19 +19,18 @@ use aegis_sandbox::SandboxConfig;
 /// A `PATH` directory that has `true` and `sh` (so the sandbox probe and the
 /// `sh -c` command can exec them) but no `bwrap`, forcing the resolver to fall
 /// back to the embedded build.
-fn no_bwrap_path_dir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("aegis_no_bwrap_path_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
+fn no_bwrap_path_dir() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
     // Symlink `true` so the probe's `-- true` resolves inside the namespace, and
     // `sh` so the sandbox's `sh -c` command resolves.
     let true_path = std::fs::canonicalize("/usr/bin/true")
         .or_else(|_| std::fs::canonicalize("/bin/true"))
         .expect("a `true` binary must exist");
-    std::os::unix::fs::symlink(true_path, dir.join("true")).unwrap();
+    std::os::unix::fs::symlink(true_path, dir.path().join("true")).unwrap();
     let sh_path = std::fs::canonicalize("/bin/sh")
         .or_else(|_| std::fs::canonicalize("/usr/bin/sh"))
         .expect("a `sh` binary must exist");
-    std::os::unix::fs::symlink(sh_path, dir.join("sh")).unwrap();
+    std::os::unix::fs::symlink(sh_path, dir.path().join("sh")).unwrap();
     dir
 }
 
@@ -37,20 +39,15 @@ fn embedded_bwrap_confines_when_no_system_bwrap_on_path() {
     const CHILD: &str = "AEGIS_EMBEDDED_BWRAP_CHILD";
     if std::env::var_os(CHILD).is_none() {
         let no_bwrap = no_bwrap_path_dir();
-        let status = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                std::thread::current().name().unwrap(),
-                "--nocapture",
-            ])
+        let mut command = isolated_test::command();
+        command
             .env(CHILD, "1")
-            .env("PATH", &no_bwrap)
-            .status()
-            .unwrap();
-        std::fs::remove_dir_all(no_bwrap).unwrap();
-        assert!(status.success());
+            .env("PATH", no_bwrap.path())
+            .env("AEGIS_NO_BWRAP_DIR", no_bwrap.path());
+        isolated_test::run(&mut command);
     } else {
-        let no_bwrap = PathBuf::from(std::env::var_os("PATH").unwrap());
+        let _completion = isolated_test::Completion;
+        let no_bwrap = PathBuf::from(std::env::var_os("AEGIS_NO_BWRAP_DIR").unwrap());
 
         let config = SandboxConfig::default();
 
