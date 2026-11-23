@@ -427,8 +427,7 @@ reason = "unscoped rule contributed by a layer with no custom patterns"
     assert!(message.contains("must declare cwd or user scope"));
 }
 
-/// `AegisConfig::load_for` does not eagerly compile custom patterns; invalid
-/// regexes surface when `RuntimeContext` builds the scanner (#399).
+/// Invalid custom patterns surface when `RuntimeContext` builds the scanner, not at `load_for` (#399).
 #[test]
 fn invalid_custom_pattern_config_no_longer_fails_at_load_for() {
     let workspace = TempDir::new().unwrap();

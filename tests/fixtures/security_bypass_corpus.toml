@@ -158,10 +158,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# printf -v launders a captured
-# heredoc variable into a second variable, so the forwarding allowlist
-# must not clear the printf call itself. The second variable's later run
-# still fires FS-001 (#396).
+# `printf -v` launders a captured heredoc variable into a second variable, so the forwarding allowlist must not clear the printf call itself. The second variable's later run still fires FS-001 (#396).
 name = "heredoc_capture_then_printf_v_launder_block"
 command = """x=$(cat <<'EOF'
 rm -rf /
@@ -175,9 +172,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# a leading assignment can change which program
-# runs. `PATH=/tmp/p cat` finds a planted `/tmp/p/cat` that is really a
-# shell, so any assignment ahead of the consumer drops the data trust (#463).
+# A leading assignment can change which program runs. `PATH=/tmp/p cat` finds a planted `/tmp/p/cat` that is really a shell, so any assignment ahead of the consumer drops the data trust (#463).
 name = "heredoc_data_consumer_path_prefix_assignment_block"
 command = """PATH=/tmp/p cat <<'EOF'
 rm -rf /
@@ -188,8 +183,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# a consumer named by path (`./cat`, `/tmp/p/cat`) can be
-# a copied shell, so only the bare word `cat` or `jq` is trusted (#463).
+# A consumer named by path (`./cat`, `/tmp/p/cat`) can be a copied shell, so only the bare word `cat` or `jq` is trusted (#463).
 name = "heredoc_data_consumer_relative_path_block"
 command = """./cat <<'EOF'
 rm -rf /
@@ -222,8 +216,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# a case-folded name is a different program on a
-# case-sensitive filesystem, so `CAT` gets no data trust either (#463).
+# A case-folded name is a different program on a case-sensitive filesystem, so `CAT` gets no data trust either (#463).
 name = "heredoc_data_consumer_case_folded_name_block"
 command = """CAT <<'EOF'
 rm -rf /
@@ -234,8 +227,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# a POSIX function named `cat` defined earlier in the
-# command replaces the program, so its heredoc body reaches a shell (#463).
+# A POSIX function named `cat` defined earlier in the command replaces the program, so its heredoc body reaches a shell (#463).
 name = "heredoc_data_consumer_shadowed_by_function_block"
 command = """cat() { sh; }; cat <<'EOF'
 rm -rf /
@@ -246,7 +238,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# an alias named `cat` makes the consumer a shell (#463).
+# An alias named `cat` makes the consumer a shell (#463).
 name = "heredoc_data_consumer_shadowed_by_alias_block"
 command = """shopt -s expand_aliases; alias cat=sh
 cat <<'EOF'
@@ -258,9 +250,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# bash's command hash table rebinds `cat`
-# without any denylisted word. Only a prefix of known inert commands keeps
-# the heredoc body trusted (ADR-042, #463).
+# Bash's command hash table rebinds `cat` without any denylisted word. Only a prefix of known inert commands keeps the heredoc body trusted (ADR-042, #463).
 name = "heredoc_data_consumer_bash_cmds_table_block"
 command = """BASH_CMDS[cat]=/bin/bash
 cat <<'EOF'
@@ -272,7 +262,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# the alias table, written by subscript (#463).
+# The alias table, written by subscript (#463).
 name = "heredoc_data_consumer_bash_aliases_table_block"
 command = """shopt -s expand_aliases; BASH_ALIASES[cat]=bash
 cat <<'EOF'
@@ -284,7 +274,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# zsh's function table, written by subscript (#463).
+# Zsh's function table, written by subscript (#463).
 name = "heredoc_data_consumer_zsh_functions_table_block"
 command = """functions[cat]=sh
 cat <<'EOF'
@@ -296,7 +286,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# zsh's command hash table (#463).
+# Zsh's command hash table (#463).
 name = "heredoc_data_consumer_zsh_commands_table_block"
 command = """commands[cat]=/bin/sh
 cat <<'EOF'
@@ -308,7 +298,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# zsh's `path` array is tied to `PATH` (#463).
+# Zsh's `path` array is tied to `PATH` (#463).
 name = "heredoc_data_consumer_zsh_path_array_block"
 command = """path=(/tmp/p $path)
 cat <<'EOF'
@@ -320,8 +310,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# a command word built by an expansion runs
-# `eval`, so the literal `git` after it is only an argument (#463).
+# A command word built by an expansion runs `eval`, so the literal `git` after it is only an argument (#463).
 name = "heredoc_data_consumer_computed_command_word_block"
 command = """$(echo eval) git '; BASH_CMDS[cat]=/bin/bash'
 cat <<'EOF'
@@ -333,8 +322,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# an unquoted heredoc body fed to a builtin is
-# expanded in the current shell, and the prefix never sees that body (#463).
+# An unquoted heredoc body fed to a builtin is expanded in the current shell, and the prefix never sees that body (#463).
 name = "heredoc_data_consumer_builtin_heredoc_expansion_block"
 command = """: <<X
 $((PATH=0))
@@ -348,8 +336,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# zsh reads `} always { ... }` as a second group,
-# so the word after a closing `}` is a command word again (#463).
+# Zsh reads `} always { ... }` as a second group, so the word after a closing `}` is a command word again (#463).
 name = "heredoc_data_consumer_zsh_always_block"
 command = """{ true; } always { functions[cat]=sh; }
 cat <<'EOF'
@@ -361,8 +348,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# a standalone `PATH=` statement changes which
-# `cat` runs just like a prefix assignment does (#463).
+# A standalone `PATH=` statement changes which `cat` runs just like a prefix assignment does (#463).
 name = "heredoc_data_consumer_path_statement_block"
 command = """PATH=/tmp/p; cat <<'EOF'
 rm -rf /
@@ -373,8 +359,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# quotes inside a word do not hide it, so
-# `PA""TH` is still the PATH variable (#463).
+# Quotes inside a word do not hide it, so `PA""TH` is still the PATH variable (#463).
 name = "heredoc_data_consumer_quote_split_path_block"
 command = """export PA""TH=/tmp/p; cat <<'EOF'
 rm -rf /
@@ -396,7 +381,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# a sourced file can define a `cat` function (#463).
+# A sourced file can define a `cat` function (#463).
 name = "heredoc_data_consumer_after_dot_source_block"
 command = """. /tmp/p/lib.sh; cat <<'EOF'
 rm -rf /
@@ -407,7 +392,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# a nameref can write PATH without naming it (#463).
+# A nameref can write PATH without naming it (#463).
 name = "heredoc_data_consumer_after_nameref_block"
 command = """declare -n r="${x}TH"; r=/tmp/p; cat <<'EOF'
 rm -rf /
@@ -418,8 +403,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# arithmetic can assign to a computed name,
-# which makes PATH a relative directory (#463).
+# Arithmetic can assign to a computed name, which makes PATH a relative directory (#463).
 name = "heredoc_data_consumer_after_arithmetic_assignment_block"
 command = """(( $n = 5 )); cat <<'EOF'
 rm -rf /
@@ -430,9 +414,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# a file written by a consumer and run later in the same
-# command executes the body, so a file write is trusted only when it is
-# the whole command (#463).
+# A file written by a consumer and run later in the same command executes the body, so a file write is trusted only when it is the whole command (#463).
 name = "heredoc_data_consumer_file_then_run_block"
 command = """cat <<'EOF' > /tmp/aegis-f
 rm -rf /
@@ -444,7 +426,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# same as above with the redirect before the marker (#463).
+# Same as above with the redirect before the marker (#463).
 name = "heredoc_data_consumer_redirect_first_then_run_block"
 command = """cat > /tmp/aegis-f <<'EOF'
 rm -rf /
@@ -456,7 +438,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# the run can sit on the marker line itself (#463).
+# The run can sit on the marker line itself (#463).
 name = "heredoc_data_consumer_same_line_run_block"
 command = """cat <<'EOF' > /tmp/aegis-f; sh /tmp/aegis-f
 rm -rf /
@@ -467,8 +449,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# a background reader started before the write (a FIFO
-# fed to `sh`) runs the body too (#463).
+# A background reader started before the write (a FIFO fed to `sh`) runs the body too (#463).
 name = "heredoc_data_consumer_fifo_reader_before_block"
 command = """sh /tmp/aegis-f &
 cat <<'EOF' > /tmp/aegis-f
@@ -480,8 +461,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# matching the target path is not enough, a
-# glob can run the written file without naming it (#463).
+# Matching the target path is not enough, a glob can run the written file without naming it (#463).
 name = "heredoc_data_consumer_glob_run_block"
 command = """cat > /tmp/aegis-z/x.sh <<'EOF'
 rm -rf /
@@ -493,11 +473,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# a heredoc body with no line that exactly equals the
-# delimiter runs to the end of the command, the same way bash's own
-# recovery inside $(...) ends the heredoc at a delimiter-prefixed line
-# (EOF)) and keeps parsing the rest as a new command. Neither shape earns
-# Data consumer trust (#463).
+# A heredoc body with no line that exactly equals the delimiter runs to the end of the command, the same way bash's own recovery inside $(...) ends the heredoc at a delimiter-prefixed line (EOF)) and keeps parsing the rest as a new command. Neither shape earns Data consumer trust (#463).
 name = "heredoc_data_consumer_unterminated_body_block"
 command = """x=$(cat <<'EOF'
 hi
@@ -509,10 +485,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# a later line that happens to equal the delimiter does not
-# undo the loss of trust from the earlier EOF) line. bash already ended the
-# heredoc and closed the substitution there, so the stray EOF below just
-# runs as its own harmless command alongside the real payload (#463).
+# A later line that happens to equal the delimiter does not undo the loss of trust from the earlier EOF) line. bash already ended the heredoc and closed the substitution there, so the stray EOF below just runs as its own harmless command alongside the real payload (#463).
 name = "heredoc_data_consumer_delimiter_prefixed_then_stray_terminator_block"
 command = """x=$(cat <<'EOF'
 hi
@@ -536,8 +509,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# the same EOF) recovery happens inside a git commit
-# message capture, not just a plain assignment (#463).
+# The same EOF) recovery happens inside a git commit message capture, not just a plain assignment (#463).
 name = "heredoc_data_consumer_delimiter_prefixed_git_commit_message_block"
 command = """git commit -m "$(cat <<'EOF'
 hi
@@ -548,9 +520,7 @@ expected_decision = "block"
 expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
-# a quote or substitution left open on the marker line
-# makes bash start the body later than the line walk, so the lines in
-# between run as commands (#463).
+# A quote or substitution left open on the marker line makes bash start the body later than the line walk, so the lines in between run as commands (#463).
 [[cases]]
 name = "heredoc_data_consumer_open_double_quote_on_marker_line_block"
 command = """cat <<'EOF' "
@@ -635,8 +605,7 @@ expected_decision = "block"
 expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
-# git, bash, and editors read some variables
-# themselves, so a captured nowdoc runs with no `$NAME` in the later text (#463).
+# Git, bash, and editors read some variables themselves, so a captured nowdoc runs with no `$NAME` in the later text (#463).
 [[cases]]
 name = "heredoc_data_consumer_git_ssh_command_env_prefix_block"
 command = """GIT_SSH_COMMAND="$(cat <<'EOF'
@@ -723,10 +692,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# `$'\''` is bash's ANSI-C escape for an embedded
-# `'`, not a quote toggle, so this reads as a closed nowdoc marker to a naive
-# toggle but as two ANSI-C strings and a bare word to bash — no heredoc
-# operator at all (#463).
+# `$'\''` is bash's ANSI-C escape for an embedded `'`, not a quote toggle, so this reads as a closed nowdoc marker to a naive toggle but as two ANSI-C strings and a bare word to bash — no heredoc operator at all (#463).
 name = "heredoc_data_consumer_ansi_c_quote_escape_block"
 command = """cat $'\\'' ' <<'EOF'
 x'; rm -rf /; : '
@@ -738,10 +704,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# a quote opened on one line and never closed on
-# it carries into the marker line. Bash closes the pending quote at the
-# delimiter's own opening `'` and reopens a fresh one at its closing `'`, so
-# the `<<'EOF'` this line walk finds is not a heredoc operator to bash (#463).
+# A quote opened on one line and never closed on it carries into the marker line. Bash closes the pending quote at the delimiter's own opening `'` and reopens a fresh one at its closing `'`, so the `<<'EOF'` this line walk finds is not a heredoc operator to bash (#463).
 name = "heredoc_data_consumer_quote_left_open_block"
 command = """echo 'start
 cat <<'EOF'
@@ -780,9 +743,7 @@ expected_exit_code = 3
 expected_block_reason = "intrinsic_risk_block"
 
 [[cases]]
-# `e$'x'ec "$x"` spells `exec "$x"` to bash, so a captured
-# nowdoc run this way must block. Captures are never trusted now, which
-# keeps this body scanned (#463).
+# `e$'x'ec "$x"` spells `exec "$x"` to bash, so a captured nowdoc run this way must block. Captures are never trusted now, which keeps this body scanned (#463).
 name = "heredoc_data_consumer_ansi_c_quote_splice_block"
 command = """x=$(cat <<'EOF'
 rm -rf /

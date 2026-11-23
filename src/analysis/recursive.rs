@@ -69,8 +69,7 @@ pub fn handle_sink(
         op.kind,
     );
 
-    // The visible sink always emits its CodeExecution Match, regardless of
-    // payload certainty (ADR-022 §3/§7 REVIEW GATE).
+    // The visible sink always emits its CodeExecution Match regardless of payload certainty (ADR-022 §3/§7).
     let sink_match = language_match(op, provenance, highlight_range);
 
     match resolved_payload {

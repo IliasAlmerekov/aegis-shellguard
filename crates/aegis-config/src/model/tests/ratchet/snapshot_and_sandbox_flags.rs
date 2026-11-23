@@ -6,9 +6,7 @@
 
 #[test]
 fn project_auto_snapshot_git_cannot_weaken_global_true() {
-    // F2: under SnapshotPolicy::Selective each plugin is gated by its
-    // auto_snapshot_* flag, so disabling one is equivalent to setting
-    // snapshot_policy = "None" (which IS ratcheted). The flag must ratchet too.
+    // Under Selective policy each plugin is gated by its `auto_snapshot_*` flag, so the flag must ratchet.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -36,7 +34,6 @@ fn project_auto_snapshot_git_cannot_weaken_global_true() {
 
 #[test]
 fn project_auto_snapshot_docker_cannot_weaken_global_true() {
-    // F2: same bypass via the docker snapshot flag.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -104,9 +101,7 @@ fn project_auto_snapshot_flags_can_tighten_default_false_to_true() {
 
 #[test]
 fn project_sandbox_allow_network_cannot_weaken_global_false() {
-    // F3: `allow_network` is directional — `true` is WEAKER (grants network
-    // access). A project enabling network over a global deny must be ratcheted
-    // back to the stricter `false`.
+    // `allow_network` is directional: `true` is weaker, so project `true` over global `false` ratchets to `false`.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -162,9 +157,7 @@ fn project_sandbox_allow_network_can_tighten_global_true_to_false() {
 
 #[test]
 fn project_sandbox_allow_write_cannot_expand_global_base() {
-    // F3: `allow_write` is a Vec<PathBuf> — more entries = weaker. Under the
-    // Project layer the ratchet must keep the base set and ignore the project
-    // expansion (which could add writable paths the global base did not allow).
+    // More `allow_write` entries is weaker, so the project layer cannot expand the global base set.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);

@@ -211,7 +211,7 @@ check_review_citations() {
         echo "find could not read every path under: $* (exit $find_status)"
     fi
     [ -n "$files" ] || return 0
-    pat='(R[0-9]+-[0-9]+|#[0-9]+ review|finding [A-Z]?[0-9]+)'
+    pat='([^A-Za-z0-9_]R[0-9]+-[0-9]+|#[0-9]+ review|finding [A-Z]?[0-9]+)'
     while IFS= read -r file; do
         case "$file" in
             *.rs) prefix='^[[:space:]]*//' ;;

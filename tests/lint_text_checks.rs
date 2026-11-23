@@ -397,6 +397,7 @@ fn text_passes_clean_comments_and_non_comment_review_patterns() {
         "// Finding F1 wrong case",
         "// #437 Review wrong case",
         "// finding f1 lowercase letter",
+        "// VAR1-2 not a review round",
         "// see #437",
         "#[doc = \"#437 review finding F1 R1-2\"]",
     ]
@@ -409,6 +410,7 @@ fn text_passes_clean_comments_and_non_comment_review_patterns() {
         "# Finding F1 wrong case",
         "# #437 Review wrong case",
         "# finding f1 lowercase letter",
+        "# STR1-2 not a review round",
         "# see #463",
         "note = \"// R1-2\"",
     ]

@@ -7,7 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
-- Changed: weeded remaining self-justifying, history, review-id, and repeated C3-ratchet comments across `src/`, `crates/`, `tests/`, `benches/`, and `tests/fixtures/security_bypass_corpus.toml`, added the review-citation guard to `scripts/lint.sh text`, and recorded the why-comment rule in `CONVENTION.md` section 4; no production code or behavior changes (#629).
+- Changed: weeded remaining self-justifying, history, and review-id comments and shortened repeated C3-ratchet comments across `src/`, `crates/`, `tests/`, `benches/`, and `tests/fixtures/security_bypass_corpus.toml`, added the review-citation guard to `scripts/lint.sh text`, and recorded the why-comment rule in `CONVENTION.md` section 4; no production code or behavior changes (#629).
 - Changed: weeded self-justifying, history, review-id, and stale test-status comments across `aegis-parser` and `aegis-scanner` to concise invariants; no code or behavior changes (#628).
 - Changed: weeded self-justifying, history, and review-id comments across `src/analysis/router` to concise invariants and added the 800-line split-by-responsibility rule to `CONVENTION.md` section 4; no code or behavior changes (#627).
 - Changed: renamed the nine tracker-id test files (`c3_*`, `h3_*`, `m5_*`, `agent_hooks_m4.rs`) after the behaviour they test, updated their module/include/ADR-033 citations, added the naming rule to `CONVENTION.md` section 9, and guarded `.rs` filenames against frozen tracker ids in `scripts/lint.sh text` (#626).

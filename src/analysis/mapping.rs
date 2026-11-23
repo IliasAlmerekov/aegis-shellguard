@@ -13,7 +13,7 @@
 //!   moves into `AnalysisProvenance`, the payload feeds the recursive sink
 //!   invariant). No adapter assigns a final `RiskLevel`; every operation routes
 //!   through the shared classifier via [`aegis_types::language_match`]
-//!   (Iteration 5 REVIEW GATE).
+//!   (ADR-022 §3).
 //! - [`map_adapter_result`] runs the full composition for one analysis target:
 //!   each detected operation becomes a `LANG-*` `Match`, a `CodeExecution` sink
 //!   with a literal payload additionally enqueues a bounded recursive

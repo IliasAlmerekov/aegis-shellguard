@@ -575,8 +575,7 @@ fn missing_direct_exec_path_degrades_instead_of_auto_approving() {
     assert_eq!(json["decision"], "prompt");
 }
 
-/// An `env -S` value that re-splits into more words than the original stage
-/// tokens must degrade to a prompt, never underflow or crash (#437).
+/// Re-splitting `env -S` longer than the original stage tokens must degrade to a prompt, not crash (#437).
 #[test]
 fn env_split_string_value_that_re_splits_longer_than_the_original_tokens_prompts_instead_of_crashing()
  {
@@ -597,8 +596,7 @@ fn env_split_string_value_that_re_splits_longer_than_the_original_tokens_prompts
     assert_eq!(json["decision"], "prompt");
 }
 
-/// A 3000-deep `env -S` chain must stop at `ENV_SPLIT_MAX_DEPTH` and yield
-/// a non-approving verdict without overflowing the stack (#437).
+/// A 3000-deep `env -S` chain stops at `ENV_SPLIT_MAX_DEPTH` without stack overflow or auto-approval (#437).
 #[test]
 fn env_dash_s_chain_past_the_nesting_bound_yields_a_verdict_not_auto_approve() {
     let home = TempDir::new().unwrap();

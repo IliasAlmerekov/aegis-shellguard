@@ -1,5 +1,4 @@
-//! RED tests for the parent-owned recursive analysis work queue (plan
-//! Iteration 5, Slice 2; ADR-022 §7).
+//! Tests for the parent-owned recursive analysis work queue (ADR-022 §7).
 //!
 //! Pins: literal-payload recursion, cross-language nesting, duplicate-hash
 //! dedup, cycle breaking, the depth-8 ceiling, target-count and

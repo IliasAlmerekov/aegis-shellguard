@@ -196,7 +196,7 @@ integrity_mode = "ChainSha256"
 
 #[test]
 fn verify_integrity_rejects_legacy_log_without_chain_data() {
-    // C3 ratchet (ADR-013): the project layer cannot weaken this field.
+    // Unchained logs must fail verification; global layer sets Off because of the C3 ratchet (ADR-013).
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
 

@@ -1,6 +1,5 @@
-//! Planning tests for the Codex review of PR #529 (#525, ADR-050): the
-//! Snapshot plan after `cd` steps, where paths decide between a resolved
-//! target, an unresolved one and a duplicate of the process cwd pass.
+//! Snapshot plan after `cd` steps (#525, ADR-050): resolved targets,
+//! unresolved paths, and process-cwd deduplication.
 
 use super::git_target_plan_tests::{cd_plan, fixture, resolved, unresolved};
 use crate::planning::GitTargetUnresolved;
