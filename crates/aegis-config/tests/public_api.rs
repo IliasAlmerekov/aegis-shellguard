@@ -2,6 +2,9 @@
 //! A refactor may reshape the internals freely, but removing or narrowing
 //! one of these is a breaking change for the crate.
 
+#[path = "../../../tests/support/isolated_test.rs"]
+mod isolated_test;
+
 use std::fs;
 
 use aegis_config::model::ConfigLayerPath;
@@ -31,6 +34,7 @@ fn a_single_layer_can_be_merged_without_runtime_validation() {
 fn current_environment_loads_project_config() {
     const CHILD: &str = "AEGIS_CONFIG_TEST_CHILD";
     if std::env::var_os(CHILD).is_some() {
+        let _completion = isolated_test::Completion;
         let project = std::env::current_dir().unwrap().join(".aegis.toml");
         assert_eq!(aegis_config::active_config_path_for_append(), Some(project));
         assert_eq!(AegisConfig::load().unwrap().mode, Mode::Strict);
@@ -41,17 +45,10 @@ fn current_environment_loads_project_config() {
     let home = TempDir::new().unwrap();
     let project = TempDir::new().unwrap();
     fs::write(project.path().join(".aegis.toml"), "mode = \"Strict\"\n").unwrap();
-    let output = std::process::Command::new(std::env::current_exe().unwrap())
-        .arg("--exact")
-        .arg("current_environment_loads_project_config")
-        .env(CHILD, "1")
-        .env("HOME", home.path())
-        .current_dir(project.path())
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stdout)
+    isolated_test::run(
+        isolated_test::command()
+            .env(CHILD, "1")
+            .env("HOME", home.path())
+            .current_dir(project.path()),
     );
 }
