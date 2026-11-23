@@ -25,3 +25,7 @@ tempfile = "3"
 
 [lints]
 workspace = true
+
+[[test]]
+name = "inner_wrapper_fds"
+harness = false

@@ -13,14 +13,29 @@
 //! All tests MUST fail before `crates/aegis-snapshot/src/lib.rs` is created
 //! (they fail with `error[E0432]: unresolved import`).
 
-use std::sync::Mutex;
+#[path = "../../../tests/support/isolated_test.rs"]
+mod isolated_test;
 
 use aegis_config::AegisConfig;
 use aegis_snapshot::{SnapshotError, SnapshotPlugin, SnapshotRegistry, SnapshotRegistryConfig};
 use aegis_types::SnapshotPolicy;
 
-/// Guards tests that mutate `HOME`/`USERPROFILE` so they are never concurrent.
-static HOME_ENV: Mutex<()> = Mutex::new(());
+fn in_child(home: bool) -> Option<isolated_test::Completion> {
+    const CHILD: &str = "AEGIS_SNAPSHOT_CONTRACT_CHILD";
+    if std::env::var_os(CHILD).is_some() {
+        return Some(isolated_test::Completion);
+    }
+    let mut command = isolated_test::command();
+    command.env(CHILD, "1");
+    command.env_remove("USERPROFILE");
+    if home {
+        command.env("HOME", std::env::temp_dir());
+    } else {
+        command.env_remove("HOME");
+    }
+    isolated_test::run(&mut command);
+    None
+}
 
 // ── Test 1: public API compileability ────────────────────────────────────────
 //
@@ -62,37 +77,24 @@ fn test_snapshot_error_implements_std_error_send_sync() {
 /// true in any standard CI / developer environment) it must succeed.
 #[test]
 fn test_snapshot_registry_config_try_new_succeeds_with_home_set() {
-    let _guard = HOME_ENV.lock().unwrap();
-    // Ensure HOME is set — on any standard Linux/macOS environment this is
-    // already true; we set it explicitly for robustness in constrained CI.
-    // SAFETY: guarded by `HOME_ENV`; every test in this binary that reads or mutates the environment holds `HOME_ENV`.
-    unsafe { std::env::set_var("HOME", std::env::temp_dir()) };
-
-    let config = AegisConfig::default();
-    let result: Result<SnapshotRegistryConfig, SnapshotError> =
-        SnapshotRegistryConfig::try_new(&config);
-    assert!(result.is_ok(), "try_new failed: {result:?}");
+    if let Some(_completion) = in_child(true) {
+        let config = AegisConfig::default();
+        let result: Result<SnapshotRegistryConfig, SnapshotError> =
+            SnapshotRegistryConfig::try_new(&config);
+        assert!(result.is_ok(), "try_new failed: {result:?}");
+    }
 }
 
 /// `SnapshotRegistryConfig::try_new` must return `Err(SnapshotError)` when
 /// neither `HOME` nor `USERPROFILE` is set in the environment.
 #[test]
 fn test_snapshot_registry_config_try_new_errors_without_home() {
-    let _guard = HOME_ENV.lock().unwrap();
-    // SAFETY: guarded by `HOME_ENV`; every test in this binary that reads or mutates the environment holds `HOME_ENV`.
-    unsafe {
-        std::env::remove_var("HOME");
-        std::env::remove_var("USERPROFILE");
+    if let Some(_completion) = in_child(false) {
+        let config = AegisConfig::default();
+        let result: Result<SnapshotRegistryConfig, SnapshotError> =
+            SnapshotRegistryConfig::try_new(&config);
+        assert!(result.is_err(), "expected Err when HOME is unset, got Ok");
     }
-
-    let config = AegisConfig::default();
-    let result: Result<SnapshotRegistryConfig, SnapshotError> =
-        SnapshotRegistryConfig::try_new(&config);
-    assert!(result.is_err(), "expected Err when HOME is unset, got Ok");
-
-    // Restore HOME so subsequent tests are not affected.
-    // SAFETY: guarded by `HOME_ENV`; every test in this binary that reads or mutates the environment holds `HOME_ENV`.
-    unsafe { std::env::set_var("HOME", std::env::temp_dir()) };
 }
 
 // ── Test 4: available_provider_names returns all 6 built-in names ─────────────
@@ -125,31 +127,29 @@ fn test_available_provider_names_contains_all_six_builtins() {
 /// `configured_provider_names()` must return all 6 names.
 #[test]
 fn test_snapshot_registry_full_policy_contains_all_six_providers() {
-    let _guard = HOME_ENV.lock().unwrap();
-    // SAFETY: guarded by `HOME_ENV`; every test in this binary that reads or mutates the environment holds `HOME_ENV`.
-    unsafe { std::env::set_var("HOME", std::env::temp_dir()) };
+    if let Some(_completion) = in_child(true) {
+        let mut config = AegisConfig::default();
+        config.snapshot_policy = SnapshotPolicy::Full;
 
-    let mut config = AegisConfig::default();
-    config.snapshot_policy = SnapshotPolicy::Full;
+        let registry_config =
+            SnapshotRegistryConfig::try_new(&config).expect("try_new failed with HOME set");
+        let registry = SnapshotRegistry::from_runtime_config(&registry_config);
 
-    let registry_config =
-        SnapshotRegistryConfig::try_new(&config).expect("try_new failed with HOME set");
-    let registry = SnapshotRegistry::from_runtime_config(&registry_config);
+        let configured = registry.configured_provider_names();
+        let expected = ["git", "docker", "postgres", "mysql", "sqlite", "supabase"];
 
-    let configured = registry.configured_provider_names();
-    let expected = ["git", "docker", "postgres", "mysql", "sqlite", "supabase"];
-
-    for name in &expected {
-        assert!(
-            configured.contains(name),
-            "registry missing provider \"{name}\" under Full policy: got {configured:?}"
+        for name in &expected {
+            assert!(
+                configured.contains(name),
+                "registry missing provider \"{name}\" under Full policy: got {configured:?}"
+            );
+        }
+        assert_eq!(
+            configured.len(),
+            expected.len(),
+            "registry has unexpected provider count under Full policy: {configured:?}"
         );
     }
-    assert_eq!(
-        configured.len(),
-        expected.len(),
-        "registry has unexpected provider count under Full policy: {configured:?}"
-    );
 }
 
 // ── Test 6: `aegis_snapshot::SnapshotPlugin` is the sole definition ────────────

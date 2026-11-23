@@ -45,6 +45,7 @@ homepage = "https://github.com/IliasAlmerekov/aegis-shellguard"
 
 [workspace.lints.clippy]
 undocumented_unsafe_blocks = "deny"
+disallowed_methods = "deny"
 
 [lints]
 workspace = true
@@ -120,4 +121,8 @@ harness = false
 
 [[bench]]
 name = "router_bench"
+harness = false
+
+[[test]]
+name = "process_state_guard"
 harness = false

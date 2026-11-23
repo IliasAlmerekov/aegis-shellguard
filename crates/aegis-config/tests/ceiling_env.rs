@@ -1,8 +1,13 @@
 //! `compute_trusted_ceiling` ignores `GIT_*` and `TMPDIR` environment variables.
-//!
-//! This file is its own integration-test binary and holds one test, so editing
-//! the process environment cannot race another test.
 
+#[expect(
+    dead_code,
+    reason = "this test uses only environment changes; the dedicated probe tests cwd"
+)]
+#[path = "../../../tests/support/process_state.rs"]
+mod process_state;
+
+use std::ffi::OsStr;
 use std::fs;
 use std::path::PathBuf;
 
@@ -14,37 +19,28 @@ fn paths(c: &TrustedCeiling) -> Vec<PathBuf> {
     c.roots.iter().map(|r| r.path.clone()).collect()
 }
 
-#[test]
-fn git_and_tmp_environment_variables_do_not_change_the_ceiling() {
+fn main() {
     let tmp = TempDir::new().unwrap();
     let base = fs::canonicalize(tmp.path()).unwrap();
     let repo = base.join("repo");
     fs::create_dir_all(repo.join(".git")).unwrap();
     fs::create_dir_all(repo.join("src")).unwrap();
-
+    let mut guard = process_state::ProcessStateGuard::lock();
     let before = compute_trusted_ceiling(&SandboxSettings::default(), &repo);
-    let keys = ["GIT_WORK_TREE", "GIT_DIR", "GIT_COMMON_DIR", "TMPDIR"];
-    let saved: Vec<_> = keys.iter().map(std::env::var_os).collect();
-    // SAFETY: this integration-test binary runs only this test, so no other
-    // thread reads or mutates the environment.
+    // SAFETY: this harness-free executable starts no threads or foreign environment readers.
     unsafe {
-        std::env::set_var("GIT_WORK_TREE", "/");
-        std::env::set_var("GIT_DIR", "/");
-        std::env::set_var("GIT_COMMON_DIR", "/");
-        std::env::set_var("TMPDIR", "/var/tmp");
-    }
-    let after = compute_trusted_ceiling(&SandboxSettings::default(), &repo);
-    // SAFETY: this integration-test binary runs only this test, so no other
-    // thread reads or mutates the environment.
-    unsafe {
-        for (key, value) in keys.iter().zip(saved) {
-            match value {
-                Some(value) => std::env::set_var(key, value),
-                None => std::env::remove_var(key),
-            }
+        for (key, value) in [
+            ("GIT_WORK_TREE", "/"),
+            ("GIT_DIR", "/"),
+            ("GIT_COMMON_DIR", "/"),
+            ("TMPDIR", "/var/tmp"),
+        ] {
+            guard.set_env(OsStr::new(key), Some(OsStr::new(value)));
         }
     }
+    let after = compute_trusted_ceiling(&SandboxSettings::default(), &repo);
     assert_eq!(after, before);
+    drop(guard);
     let mut expected = vec![repo];
     expected.extend(ResolverInputs::system().temp_dirs);
     assert_eq!(paths(&after), expected);
