@@ -3,12 +3,8 @@
 use super::*;
 use std::borrow::Cow;
 
-// ADR-043: these programs only produce output or inspect data and metadata.
-// echo prints data; ls/pwd list locations; cat/head/tail read data;
-// grep/wc select or count data; stat reads metadata; the remaining path
-// utilities return names or resolved paths. printf and rg need the option
-// checks below because they can write shell state or launch a program.
-// file is excluded because -C writes compiled magic files.
+// ADR-043: read-only output/inspection utilities; `file` is excluded (`-C` writes magic files),
+// and `printf`/`rg` have dedicated option checks below.
 const READ_ONLY: &[&str] = &[
     "echo", "printf", "ls", "cat", "head", "tail", "grep", "rg", "wc", "stat", "basename",
     "dirname", "readlink", "realpath", "pwd",

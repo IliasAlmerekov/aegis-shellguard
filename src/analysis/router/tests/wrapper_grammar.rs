@@ -1,6 +1,4 @@
-//! Router unit tests pinning that a `case` pattern's own `)` (or `|`) inside
-//! a wrapper is shell grammar, not the wrapper's own closing punctuation.
-//! Split from `router::tests` to stay under the file-size budget.
+//! `case` pattern punctuation (`)`, `|`, quoted `;;`) inside wrappers (#384).
 
 use super::*;
 
@@ -66,11 +64,6 @@ fn a_benign_case_arm_inside_a_subshell_stays_unrouted() {
 
 #[test]
 fn a_quoted_terminator_lookalike_inside_an_arm_does_not_end_it_early() {
-    // `'x;;y'` is a single quoted argument to the benign call, not the end
-    // of the arm — the real terminator is the unquoted `;;` right before
-    // `esac`. A quote-unaware scan stops at the quoted `;;` instead, drops
-    // the rest of the arm (including `python3 evil.py`) on the floor, and
-    // the shell still runs it.
     let command = "case x in x) python3 benign.py 'x;;y'; python3 evil.py;; esac";
     assert_eq!(
         route(command, &[]),

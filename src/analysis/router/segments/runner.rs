@@ -1,11 +1,6 @@
 use super::*;
 use aegis_parser::Runner;
 
-/// `true` when some token in `prefix` is a recognized runner program whose
-/// own prefix (starting at that token) satisfies `predicate`. Every
-/// runner-prefix scan in this module shares this shape — differing only in
-/// what `predicate` checks about the matched runner and its own trailing
-/// tokens.
 fn any_runner_prefix(prefix: &[&str], predicate: impl Fn(Runner, &[&str]) -> bool) -> bool {
     prefix.iter().enumerate().any(|(index, token)| {
         Runner::from_program(token).is_some_and(|runner| predicate(runner, &prefix[index..]))

@@ -1,13 +1,4 @@
-//! The fail-closed net for a stage no other routing path claims, once a
-//! later token names a known interpreter (issue #384/#430, ADR-022 §6
-//! amendment). `launcher_prefix_lengths` (`crates/aegis-parser/src/lib.rs`)
-//! enumerates launcher words by name, so an unlisted wrapper (`setsid`,
-//! `strace`, `ionice`, `taskset`, `find … -exec`, …) leaves its program
-//! token unrecognized and the interpreter it wraps invisible to every other
-//! routing path — this net catches what the closed list misses instead of
-//! growing that list one word at a time. `use super::*` reaches the same
-//! `router` test imports (`RoutedTarget`, `SourceLanguage`, `route`, ...)
-//! `router::tests`'s other siblings use.
+//! Fail-closed net for unclaimed stages (#384, #430, ADR-022 §6).
 
 use super::*;
 
@@ -189,9 +180,6 @@ fn script_dash_qc_quoted_interpreter_command_is_routed() {
 
 #[test]
 fn quoted_multiword_token_naming_a_benign_command_is_not_routed() {
-    // "echo" is not a registered registry interpreter, so a quoted command
-    // that merely starts with it carries no interpreter to catch, the same
-    // way `echo python3` itself names one as data rather than running it.
     assert_eq!(route(r#"ssh host "echo hello""#, &[]), Vec::new());
 }
 
@@ -275,14 +263,6 @@ async fn setsid_launcher_operand_without_a_shebang_stays_auto_approved() {
 }
 
 // ── A launcher operand that is missing or a directory stays speculative ────
-//
-// `resolve`/`resolve_for_analysis` read a launcher operand exactly like a
-// user-typed direct-exec target, with one exception (issue #384/#430 round
-// 5): a missing path or a literal directory is an everyday shape for an
-// *ordinary* command's argument (`vim ./new.txt`, `du -sh ./srcdir`), not
-// evidence of anything unsafe, so it drops silently instead of degrading —
-// unlike a user-typed `./missing.sh`, which still degrades exactly as it did
-// before this net existed.
 
 #[tokio::test]
 async fn vim_missing_file_operand_is_not_degraded() {
@@ -435,11 +415,7 @@ async fn pytest_directory_operand_is_not_degraded() {
 #[tokio::test]
 #[cfg(unix)]
 async fn setsid_launcher_operand_naming_a_symlink_still_degrades() {
-    // A symlink is neither "missing" nor a "literal directory" — the narrow
-    // pair this fix carves out — so it keeps degrading exactly as a
-    // user-typed direct-exec target's symlink operand already does
-    // (`source_reader::read_script_file` rejects every symlink without
-    // following it, regardless of what it points to).
+    // Symlinks are rejected without following by `source_reader::read_script_file`.
     let dir = tempfile::tempdir().unwrap();
     let target = dir.path().join("real.py");
     std::fs::write(&target, "print(1)\n").unwrap();
@@ -651,9 +627,6 @@ fn alias_replacement_naming_a_variable_is_routed() {
 
 #[test]
 fn a_redefined_alias_resolves_to_its_latest_definition() {
-    // review comment 4091038665: `run` is redefined from the benign `echo`
-    // to `python3` before its call site, so the definition active there —
-    // the last one before use — is the one that must be seen.
     assert_eq!(
         route("alias run=echo; alias run=python3; run ./evil.py", &[]),
         vec![unresolved_dynamic()]
@@ -685,17 +658,12 @@ fn alias_for_a_plain_command_with_no_path_like_operand_is_not_routed() {
 
 #[test]
 fn a_redefined_alias_naming_a_plain_command_last_is_degraded() {
-    // The initial alias definition still names an interpreter in an equals
-    // value. The router does not expand aliases, so it degrades instead of
-    // treating the later definition as proof that the command is safe.
+    // The router does not expand aliases, so an earlier interpreter alias still degrades.
     assert_eq!(
         route("alias run=python3; alias run=git; run status", &[]),
         vec![unresolved_dynamic()]
     );
 }
-
-// ── A static program word with a dynamic operand, or a bare dynamic word
-// with no operand at all, stays exactly as auto-approved as before ─────────
 
 #[test]
 fn echo_of_a_variable_is_not_routed() {
@@ -724,9 +692,7 @@ fn ls_of_a_brace_list_operand_is_not_routed() {
 
 #[test]
 fn bare_variable_with_no_operand_is_not_routed() {
-    // `$EDITOR` alone opens an interactive editor with no arguments of its
-    // own — the same everyday shape as `vim` with no file — so there is no
-    // operand for this net to treat as a launched target (issue #384/#430).
+    // ADR-043: bare `$EDITOR` with no operands is an interactive exception (#384, #430).
     assert_eq!(route("$EDITOR", &[]), Vec::new());
 }
 

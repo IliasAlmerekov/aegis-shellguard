@@ -1,16 +1,6 @@
-//! New router tests for issue #384 (route every segment of a compound
-//! command). Split from `router::tests` to stay under the repo's 800-line
-//! file-size budget; `use super::*` reaches through to the same `router` test
-//! imports (`RoutedTarget`, `SourceLanguage`, `route`, ...).
+//! Compound-command list-segment routing tests (#384).
 
 use super::*;
-
-// ── Every top-level segment is routed (issue #384) ──────────────────────────
-//
-// Routing looks past the command's first effective token: a script hidden
-// behind a leading no-op (`true; python3 evil.py`) or any other list operator
-// still routes, so the language-aware analysis stage starts and the command
-// does not auto-approve.
 
 #[test]
 fn a_script_after_a_semicolon_is_routed() {
@@ -69,10 +59,6 @@ fn a_script_after_a_newline_is_routed() {
 
 #[test]
 fn a_pipeline_stage_with_its_own_script_argument_is_routed_like_a_standalone_command() {
-    // The producer's stdout is irrelevant here: `python3 ./evil.py` names its
-    // own script file, so it routes exactly as it would outside a pipeline —
-    // the second documented gap in #384 (pipeline routing only recognized a
-    // *bare* last stage reading piped stdin).
     assert_eq!(
         route("true | python3 ./evil.py", &[]),
         vec![RoutedTarget::ScriptFile {
@@ -122,9 +108,6 @@ fn an_inline_body_after_a_semicolon_is_routed() {
 
 #[test]
 fn a_mid_command_dynamic_cd_degrades_the_script_that_follows_it() {
-    // `cd x` (no `--`) is not the literal, tracked shape, and it appears
-    // after a `;` rather than leading — routing tracks a `cd` at any
-    // position, not only when it leads the whole command.
     let targets = route("true; cd x && python3 a.py", &[]);
     assert_eq!(
         targets,
@@ -137,8 +120,7 @@ fn a_mid_command_dynamic_cd_degrades_the_script_that_follows_it() {
 
 #[test]
 fn a_literal_cd_rebases_only_the_directly_and_chained_segment() {
-    // The `&&`-chained script rebases onto the literal cwd; crossing the `;`
-    // after it means the next script can no longer trust that cwd.
+    // Crossing `;` degrades the tracked cwd.
     let targets = route("cd -- /w && python3 a.py; python3 b.py", &[]);
     assert_eq!(
         targets,
@@ -175,8 +157,6 @@ fn a_literal_cd_rebases_every_segment_in_an_unbroken_and_chain() {
 
 #[test]
 fn a_cd_piped_into_the_next_stage_degrades_it() {
-    // A `cd` running as a pipeline stage runs in a subshell — its effect on
-    // the cwd never reaches its sibling stage (ADR-022 §6).
     let targets = route("cd -- /w | python3 a.py", &[]);
     assert_eq!(
         targets,
@@ -189,10 +169,6 @@ fn a_cd_piped_into_the_next_stage_degrades_it() {
 
 #[test]
 fn a_three_stage_pipe_ending_in_a_bare_interpreter_degrades_dynamically() {
-    // Only the narrow, exactly-two-stage `printf '%s' <literal> | <interp>`
-    // shape is statically recoverable; a bare interpreter at a later stage of
-    // a longer chain still reads piped stdin, so it is honest Dynamic
-    // degradation rather than silently yielding no target at all.
     let targets = route("true | true | python3", &[]);
     assert_eq!(
         targets,
@@ -202,13 +178,6 @@ fn a_three_stage_pipe_ending_in_a_bare_interpreter_degrades_dynamically() {
         }]
     );
 }
-
-// ── A heredoc marker does not send the whole command down a single-segment-
-// only path (issue #384) ────────────────────────────────────────────────────
-//
-// A real command hiding behind an inert heredoc-consuming no-op (`:`, `cat`)
-// must still be reached, not swallowed by a `<<WORD` fallback that routes
-// only the first segment.
 
 #[test]
 fn a_script_after_a_heredoc_consumed_by_a_no_op_is_routed() {

@@ -46,12 +46,6 @@ fn untrusted_program_name_yields_no_targets() {
 
 #[test]
 fn effective_program_resolves_through_stacked_launcher_prefixes() {
-    // The Iteration-0 prototype's fixed `COMMAND_PREFIXES` list handled
-    // only a single literal prefix and did not know `timeout <n>` consumes
-    // an extra argument, nor that `env VAR=val` consumes assignments. This
-    // pins that the `aegis-parser` `Effective program` resolution (which
-    // production launcher-prefix detection already handles) now covers
-    // both through the shared `effective_token_slices` call.
     let targets = route(r#"sudo timeout 5 python3 -c "print(4)""#, &[]);
     assert_eq!(
         targets,
@@ -73,9 +67,7 @@ fn effective_program_resolves_through_stacked_launcher_prefixes() {
 
 #[test]
 fn exact_registry_match_wins_over_a_conflicting_trusted_alias() {
-    // A misconfigured trusted-alias table must not be able to hijack a
-    // canonical registry program name (ADR-022 §6: explicit interpreter
-    // takes precedence).
+    // ADR-022 §6: explicit interpreter takes precedence over trusted aliases.
     let targets = route(r#"python3 -c "print(6)""#, &[("python3", "bash")]);
     assert_eq!(
         targets,
@@ -100,8 +92,7 @@ fn explicit_interpreter_with_file_argument_is_a_script_file_route() {
 
 #[test]
 fn inline_flag_wins_over_a_file_argument_on_the_same_line() {
-    // Malformed/adversarial input: both a flag and a bare word present.
-    // Explicit interpreter's inline form takes precedence (ADR-022 §6).
+    // ADR-022 §6: inline form takes precedence over a trailing file arg.
     let targets = route(r#"python3 -c "print(7)" ignored.py"#, &[]);
     assert_eq!(
         targets,
@@ -114,12 +105,7 @@ fn inline_flag_wins_over_a_file_argument_on_the_same_line() {
 
 #[test]
 fn a_file_argument_before_the_inline_flag_ends_interpreter_option_parsing() {
-    // Real interpreter argv semantics: once the first positional (script)
-    // argument is seen, everything after it is the *script's* argv, not the
-    // interpreter's own flags. A trailing `-c "..."` after a file argument
-    // must not be misread as an inline body that shadows the real,
-    // unanalyzed file — that would let an adversarial command hide its real
-    // source behind a decoy `-c` string (ADR-022 §6).
+    // ADR-022 §6: tokens after the script file belong to the script's argv, not the interpreter.
     let targets = route(r#"python3 malicious.py -c "print(1)""#, &[]);
     assert_eq!(
         targets,
@@ -132,10 +118,6 @@ fn a_file_argument_before_the_inline_flag_ends_interpreter_option_parsing() {
 
 #[test]
 fn a_spaced_redirection_target_is_not_misread_as_the_script_file() {
-    // The shell strips `> file`/`2> file`/`>> file`/`< file` from argv
-    // before exec — the interpreter never sees the redirect target. A
-    // redirection preceding the real script argument must not let its
-    // target token win the walk and shadow the file that actually executes.
     for command in [
         "python3 > out.txt malicious.py",
         "python3 >> out.txt malicious.py",
@@ -155,9 +137,6 @@ fn a_spaced_redirection_target_is_not_misread_as_the_script_file() {
 
 #[test]
 fn a_self_contained_fd_duplication_redirection_consumes_only_its_own_token() {
-    // `2>&1` carries its own target in the same token (no separate token to
-    // skip) — it must not cause the walk to over-skip and miss the real
-    // script argument that immediately follows.
     for command in ["python3 2>&1 script.py", "python3 >&2 script.py"] {
         assert_eq!(
             route(command, &[]),
@@ -172,9 +151,6 @@ fn a_self_contained_fd_duplication_redirection_consumes_only_its_own_token() {
 
 #[test]
 fn a_bash_combined_redirection_target_is_not_misread_as_the_script_file() {
-    // `&>`/`&>>` (bash's combined stdout+stderr redirection) is a spaced
-    // operator with a separate target token, same as `>`/`2>`/`>>` — it must
-    // be skipped as a pair, not let its target shadow the real script file.
     for command in [
         "python3 &> out.txt malicious.py",
         "python3 &>> out.txt malicious.py",
@@ -233,10 +209,6 @@ fn literal_here_string_is_routed_as_inline_source() {
 
 #[test]
 fn script_file_argument_before_a_heredoc_marker_wins_over_stdin() {
-    // Real shell semantics: `script.py` runs; the heredoc is stdin, which
-    // only matters if the script itself reads it. The router must not
-    // substitute the heredoc body as a decoy source for the file that
-    // actually executes.
     let command = "python3 script.py <<EOF\nprint(1)\nEOF";
     let targets = route(command, &[]);
     assert_eq!(
@@ -263,12 +235,6 @@ fn script_file_argument_before_a_here_string_marker_wins_over_stdin() {
 
 #[test]
 fn heredoc_body_word_that_looks_like_a_glued_inline_flag_is_not_misread_as_one() {
-    // The tokenizer has no heredoc-boundary awareness: a heredoc body whose
-    // first word happens to start with the interpreter's inline flag
-    // (`-c` for python3, glued to the rest of that body word) must not be
-    // consumed by the inline-flag scan — it is heredoc *body*, not a further
-    // command argument, and must resolve through the (quoted, exact) heredoc
-    // stdin route instead.
     let command = "python3 <<'EOF'\n-crm -rf /\nEOF";
     let targets = route(command, &[]);
     assert_eq!(
@@ -295,11 +261,6 @@ fn here_string_body_word_that_looks_like_a_glued_inline_flag_is_not_misread_as_o
 
 #[test]
 fn glued_flag_lookalike_is_not_misread_as_inline_body() {
-    // `-e-x` must not be misread as `-e` (Node's inline flag) with body
-    // `-x` — the glued-form guard in `inline_body` rejects any body that
-    // itself starts with `-`. With no inline body, no heredoc/here-string,
-    // and no plain file argument (`-e-x` starts with `-`), there is no
-    // route.
     assert_eq!(route("node -e-x", &[]), Vec::new());
 }
 
@@ -334,10 +295,7 @@ fn pipeline_into_a_non_interpreter_yields_no_targets() {
 
 #[test]
 fn heredoc_written_to_a_file_is_reused_when_the_same_command_executes_it() {
-    // `cat > FILE <<'EOF' ... EOF && <interp> FILE`: the heredoc body is
-    // already in hand, so the router must not fall back to a `ScriptFile`
-    // route that re-reads `FILE` from disk (ADR-022 §6 favors the source it
-    // already has over a redundant read).
+    // ADR-022 §6: reuse the in-hand heredoc body instead of re-reading from disk.
     let command = "cat > script.py <<'EOF' && python3 script.py\nprint(1)\nEOF";
     let targets = route(command, &[]);
     assert_eq!(
@@ -364,9 +322,6 @@ fn heredoc_written_via_tee_is_also_reused() {
 
 #[test]
 fn heredoc_written_then_executed_with_variable_expansion_degrades_dynamically() {
-    // The reused body still goes through the same literal/dynamic
-    // classification as ordinary heredoc stdin (ADR-022 §6) — an expanding
-    // heredoc must not be silently unrouted nor treated as safe-to-evaluate.
     let command = "cat > script.py <<EOF && python3 script.py\necho $HOME\nEOF";
     let targets = route(command, &[]);
     assert_eq!(
@@ -380,11 +335,6 @@ fn heredoc_written_then_executed_with_variable_expansion_degrades_dynamically() 
 
 #[test]
 fn heredoc_written_then_executed_with_a_mismatched_path_is_not_reused() {
-    // Written to `script.py` but a different file is executed — the router
-    // must not substitute the heredoc body as evidence for `other.py`. It
-    // still routes `other.py` itself as an ordinary `ScriptFile` (read from
-    // disk at resolution time, issue #384): the chained exec on the
-    // marker's own line is real command text, not evidence about `script.py`.
     let command = "cat > script.py <<'EOF' && python3 other.py\nprint(1)\nEOF";
     assert_eq!(
         route(command, &[]),
@@ -403,11 +353,6 @@ fn heredoc_written_to_a_file_with_no_chained_exec_falls_back_to_current_behavior
 
 #[test]
 fn heredoc_write_then_exec_with_a_third_chained_segment_is_not_reused() {
-    // A further top-level segment after the exec means this is not the
-    // narrow exactly-two-segment shape the heredoc-body reuse is scoped to,
-    // so the router falls back to routing `python3 script.py` as an ordinary
-    // `ScriptFile` (issue #384); the trailing `&& rm script.py` names no
-    // interpreter, so it stays unrouted, same as a bare `rm` anywhere else.
     let command = "cat > script.py <<'EOF' && python3 script.py && rm script.py\nprint(1)\nEOF";
     assert_eq!(
         route(command, &[]),
@@ -420,10 +365,6 @@ fn heredoc_write_then_exec_with_a_third_chained_segment_is_not_reused() {
 
 #[test]
 fn heredoc_marker_glued_directly_to_the_chained_operator_is_still_recognized() {
-    // `&&` is a shell metacharacter — it terminates the unquoted heredoc
-    // delimiter word without needing whitespace, exactly as real shell
-    // lexing would (mirroring `aegis-parser`'s marker grammar rather than a
-    // whitespace-only boundary).
     let command = "cat > script.py <<EOF&& python3 script.py\nprint(3)\nEOF";
     let targets = route(command, &[]);
     assert_eq!(
@@ -522,9 +463,6 @@ fn literal_cd_dashdash_prefix_rebases_a_relative_script_file() {
 
 #[test]
 fn cd_prefix_with_a_glob_metacharacter_degrades_a_relative_script_file() {
-    // A shell may glob-expand `pro?ect` to a directory this literal-path
-    // check has no way to know — treating it as literal and rebasing onto
-    // it verbatim would be a wrong (not just missing) cwd.
     let targets = route("cd -- /tmp/pro?ect && python3 script.py", &[]);
     assert_eq!(
         targets,
@@ -576,9 +514,7 @@ fn cd_with_command_substitution_degrades_a_relative_script_file() {
 
 #[test]
 fn dynamic_cd_preserves_degradation_for_a_relative_direct_exec() {
-    // ADR-022 §6 / Iteration 10 P7: a direct-exec route has no language
-    // until its shebang is read, but an unresolved cwd must still be visible
-    // as degradation rather than silently dropping the target.
+    // ADR-022 §6: relative DirectExec under unknown cwd must degrade untyped.
     let targets = route("cd -- $(mktemp -d) && ./script.py", &[]);
     assert_eq!(
         targets,
@@ -600,16 +536,7 @@ fn direct_exec_of_a_relative_path_is_routed_pending_shebang_verification() {
 
 #[test]
 fn route_never_touches_the_filesystem_for_a_script_file_target() {
-    // `route` decides *what* to analyze without any filesystem access — only
-    // `resolve` (async, later) reads the file. This is structurally
-    // guaranteed (`route` and its helpers are synchronous and the module
-    // imports no `fs`/I/O API — see the `resolve_one` boundary, the only
-    // place `source_reader::read_script_file` is called). This test is a
-    // black-box behavioral pin, not independent proof of zero syscalls: a
-    // path whose parent directories do not exist yields the identical routed
-    // target as an existing file would, so a regression that starts probing
-    // the filesystem (and branches on the result) would be caught here —
-    // though a stat call whose result is silently discarded would not be.
+    // Behavioral pin only: a nonexistent path yields the same route as an existing one.
     assert_eq!(
         route("python3 /this/directory/does/not/exist/script.py", &[]),
         vec![RoutedTarget::ScriptFile {
@@ -631,16 +558,11 @@ fn route_never_touches_the_filesystem_for_a_direct_exec_target() {
 
 #[test]
 fn bare_program_name_without_a_path_is_not_a_direct_exec_candidate() {
-    // Would require `PATH` resolution, which routing never performs.
     assert_eq!(route("myscript", &[]), Vec::new());
 }
 
 #[test]
 fn direct_exec_of_a_relative_path_is_routed_through_a_launcher_prefix() {
-    // `effective_token_slices` already strips launcher prefixes for the
-    // known-interpreter path (see `effective_program_resolves_through_stacked_launcher_prefixes`
-    // above); direct-exec routing must see the same effective program, not
-    // the raw first token, or a launched script silently yields no route.
     for command in [
         "sudo ./script.py",
         "timeout 5 ./script.py",
@@ -686,12 +608,7 @@ async fn resolve_drops_a_direct_exec_target_with_no_verified_shebang() {
 
 #[tokio::test]
 async fn resolve_for_analysis_treats_an_oversized_direct_exec_target_as_not_applicable() {
-    // A verified shebang is a short ASCII prefix; a directly executed file
-    // too large to read within budget cannot be confirmed as a shebang
-    // script, so it resolves the same as "no shebang" (`NotApplicable`)
-    // rather than degrading — regression test for #345, where a compiled
-    // binary invoked via a path (e.g. `/tmp/actionlint <file>`) was denied
-    // non-interactively as a language-aware command.
+    // Regression test for #345: compiled binaries invoked by path must not degrade.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("actionlint");
     std::fs::write(&path, vec![0xffu8; 2048]).unwrap();

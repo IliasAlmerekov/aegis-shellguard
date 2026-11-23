@@ -1,16 +1,9 @@
 //! Production source-target router (ADR-022 §6).
 //!
-//! Detects analyzable source in an intercepted command, reusing the real
-//! `aegis-parser` tokenizer and `Effective program` resolution rather than
-//! duplicating it (`aegis-language` cannot depend on `aegis-parser` directly —
-//! ADR-022 §4's leaf-crate boundary, pinned by
-//! `tests/aegis_language_boundary.rs`).
-//!
-//! [`route`] is pure and touches no filesystem — it only decides *what* to
-//! analyze ([`RoutedTarget::Inline`] source already in hand, or a
-//! [`RoutedTarget::ScriptFile`] path not yet read). [`resolve`] turns a
-//! `ScriptFile` route into an [`aegis_language::SourceTarget`], deferring to
-//! [`crate::analysis::source_reader`] for the bounded, catch-only read.
+//! Uses `aegis-parser` directly because `aegis-language` is a leaf crate
+//! (ADR-022 §4, `tests/aegis_language_boundary.rs`).
+//! [`route`] touches no filesystem; [`resolve`] performs bounded reads via
+//! [`crate::analysis::source_reader`].
 
 use std::cell::Cell;
 use std::path::{Path, PathBuf};
@@ -69,16 +62,9 @@ pub enum RoutedTarget {
         /// The path as it appeared in the command.
         path: PathBuf,
     },
-    /// A path-like first operand of an unclaimed stage behind an
-    /// unenumerated launcher (`setsid ./pyx`) — the unclaimed-interpreter
-    /// net's own candidate (issue #384/#430), not a program the
-    /// command itself named. [`resolve`] reads it exactly like
-    /// [`RoutedTarget::DirectExec`] (a verified shebang makes it a target;
-    /// no shebang, nothing), except a path that does not exist or is itself
-    /// a directory is speculative rather than unsafe: an ordinary command
-    /// takes a missing or directory argument every day (`vim ./new.txt`,
-    /// `du -sh ./srcdir`), so it resolves to no target and no degradation
-    /// instead of prompting.
+    /// A path-like operand of an unclaimed stage (`setsid ./pyx`), resolved
+    /// like `DirectExec` except missing paths and directories are `NotApplicable`
+    /// (#384, #430).
     LauncherOperand {
         /// The path as it appeared in the command.
         path: PathBuf,
@@ -151,11 +137,7 @@ pub(super) async fn resolve_for_analysis(
                 Ok(path) => path,
                 Err(reason) => return Resolution::Degraded(reason),
             };
-            // Missing or a literal directory is an everyday shape for an
-            // ordinary command's argument (`vim ./new.txt`, `du -sh
-            // ./srcdir`), not evidence of anything unsafe — unlike a
-            // user-typed `RoutedTarget::DirectExec`, which keeps degrading
-            // on the same read failure (issue #384/#430).
+            // Speculative operand: missing or directory is NotApplicable, unlike DirectExec (#384, #430).
             if launcher_operand_is_missing_or_directory(&path).await {
                 return Resolution::NotApplicable;
             }
@@ -164,10 +146,7 @@ pub(super) async fn resolve_for_analysis(
     }
 }
 
-/// Read `path` and resolve it exactly as [`RoutedTarget::DirectExec`] always
-/// has: a verified shebang makes it a target, anything else (no shebang, too
-/// large, not UTF-8) is `NotApplicable`, and every other read failure
-/// (symlink, FIFO, socket, device, permission denied, …) degrades.
+/// Verified shebang resolves; no shebang, oversized, or non-UTF-8 is `NotApplicable`; other read errors degrade.
 async fn resolve_verified_shebang_read(path: &Path, script_file_limit_bytes: u64) -> Resolution {
     match source_reader::read_script_file(path, script_file_limit_bytes).await {
         Ok(read) => {
@@ -186,15 +165,7 @@ async fn resolve_verified_shebang_read(path: &Path, script_file_limit_bytes: u64
                 source_byte_offset: read.source_byte_offset,
             }
         }
-        // A verified shebang is a short ASCII prefix, so a file too
-        // large to read within budget or not valid UTF-8 at all
-        // cannot carry one — conclusively "no verified shebang", the
-        // same outcome as the `Ok` branch above with no `#!` match,
-        // not suspicious unresolved content. Otherwise a directly
-        // executed compiled binary (e.g. `actionlint`, #345) would
-        // degrade to a language-aware confirmation it can never pass
-        // non-interactively, despite being no more opaque to Aegis
-        // than any other `PATH`-resolved binary.
+        // Oversized or non-UTF-8 files (e.g. compiled binaries, #345) cannot carry an ASCII shebang.
         Err(SourceReadError::TooLarge { .. } | SourceReadError::InvalidUtf8) => {
             Resolution::NotApplicable
         }
@@ -202,12 +173,7 @@ async fn resolve_verified_shebang_read(path: &Path, script_file_limit_bytes: u64
     }
 }
 
-/// `true` when `path` does not exist, or is itself — not through a symlink —
-/// a directory. Checked with `symlink_metadata` (no follow), the same
-/// no-follow stat [`source_reader::read_script_file`] performs internally,
-/// so a symlink (to a directory or anything else) is left to
-/// [`resolve_verified_shebang_read`]'s ordinary degrade path rather than
-/// silently dropped here (issue #384/#430).
+/// Uses no-follow `symlink_metadata` so symlinks still reach `resolve_verified_shebang_read`'s degrade path (#384, #430).
 async fn launcher_operand_is_missing_or_directory(path: &Path) -> bool {
     match tokio::fs::symlink_metadata(path).await {
         Ok(metadata) => metadata.is_dir(),
@@ -269,87 +235,42 @@ const INTERPRETERS: &[Interpreter] = &[
         language: SourceLanguage::JavaScript,
     },
     Interpreter {
-        // Debian/Ubuntu's `nodejs` package installs the binary under this
-        // name instead of `node` (issue #384 L1) — the same interpreter,
-        // registered directly rather than as a basename family since it
-        // carries no version suffix for `strip_version_suffix` to normalize.
+        // Debian/Ubuntu installs Node as `nodejs` (#384).
         program: "nodejs",
         inline_flag: "-e",
         language: SourceLanguage::JavaScript,
     },
 ];
 
-/// The command text and trusted-alias table that list-segment, stage, and
-/// unclaimed-net routing thread together, unchanged, across the whole
-/// recursive walk (issue #384/#430 refactor): `unclaimed_interpreter_net`'s
-/// `alias_value` scan needs the original command text to look for an `alias`
-/// defined earlier in it, and `resolve_interpreter` needs the alias table as
-/// its last-resort lookup. Bundled into one reference-sized struct so a
-/// threading call site carries one parameter instead of two.
+/// Immutable command context threaded through segment and wrapper routing.
 struct RouteContext<'a> {
-    /// The full original command text passed to [`route`].
     command: &'a str,
-    /// See [`route`]'s own doc comment.
     trusted_aliases: &'a [(&'a str, &'a str)],
-    /// The caller-supplied home directory used only for `~/` launcher
-    /// operands. Routing does not read process environment itself.
+    /// Caller-supplied home directory for `~/` launcher operands; routing does not read process env.
     home: Option<&'a Path>,
-    /// Byte offset into `command` marking the end of the top-level list
-    /// segment currently being routed — [`route`] advances this once per
-    /// segment, before recursing into it. An `alias` scan scopes itself to
-    /// `command[..alias_scope_end.get()]` instead of searching `command` for
-    /// the stage's own text (issue #437, F2): the same stage text can appear
-    /// in more than one top-level segment (`run x; alias run=python3; run
-    /// x`), and a text search always lands on the first occurrence — scoping
-    /// every call site to whichever alias was active *before the call it
-    /// happened to be built from* rather than the one at that call's own
-    /// position, silently missing a redefinition between two identical
-    /// calls. Segment granularity rather than the call's exact position: a
-    /// stage recursed into from inside a wrapper body is scoped to its
-    /// *enclosing* top-level segment, not its own narrower position within
-    /// it, since the router does not track a byte offset that fine-grained.
-    /// That is deliberately the conservative direction — it only ever widens
-    /// the scan window, so it can find an alias definition it should not
-    /// yet be entitled to, never miss one it should have found.
+    /// End offset of the enclosing top-level segment in `command`; segment granularity
+    /// only widens the alias scan window (conservative direction, #437).
     alias_scope_end: Cell<usize>,
 }
 
-/// Route analyzable source in `command`. `trusted_aliases` maps a trusted
-/// global alias (e.g. a wrapper script name) to the canonical registry
-/// `program` name it stands in for (e.g. `"py"` → `"python3"`); a
-/// caller-supplied parameter rather than an `aegis-config` read.
-///
-/// Routes every top-level list segment (issue #384), not only the first, and
-/// looks through a wrapper — subshell, brace group, command substitution, or
-/// reserved-word prefix — that would otherwise hide the real command (#430).
-/// A `cd`/`pushd`/`popd`/`source`/`.` found anywhere, including inside a
-/// wrapper body, is tracked with the same cwd-folding rules and degrades a
-/// later relative target it cannot place correctly (#384).
+/// Route analyzable source in `command`. `trusted_aliases` maps trusted aliases
+/// (e.g. `"py"` → `"python3"`) to canonical registry names (#384, #430).
 #[must_use]
 pub fn route(command: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarget> {
     route_with_home(command, trusted_aliases, None)
 }
 
-/// Route analyzable source in `command` with a caller-supplied home directory.
-///
-/// `home` is used only to expand literal `~/` launcher operands. Pass `None`
-/// when the caller cannot establish a home directory; such an operand then
-/// degrades rather than being interpreted relative to the command directory.
-/// An earlier segment that assigns or removes `HOME`, or that can change
-/// shell state without this call seeing how (`eval`/`source`/`.`), withholds
-/// `home` from every later `~/rest` operand the same way (decision D1,
-/// GHSA-xj54): bash re-reads its own current `HOME` for every `~`
-/// expansion, not the value this function was called with.
+/// Route analyzable source in `command` with a caller-supplied `home` for `~/`
+/// launcher operands. `None` or any earlier `HOME`-mutating/opaque segment degrades
+/// later `~/` operands (GHSA-xj54).
 #[must_use]
 pub fn route_with_home(
     command: &str,
     trusted_aliases: &[(&str, &str)],
     home: Option<&Path>,
 ) -> Vec<RoutedTarget> {
-    // Route the words bash runs: ANSI-C quoting (`$'...'`) rewritten to plain
-    // single quotes, so every raw-text walk below reads quote edges correctly.
-    // Each rewritten piece keeps an empty `$''` in front, so Rule C still
-    // degrades every stage that used ANSI-C quoting.
+    // Rewrite `$'...'` to single quotes with a leading `$''` marker so raw-text
+    // walks see quote edges while Rule C still degrades ANSI-C quoting.
     let canonical = aegis_parser::canonical_ansi_c_quoting_marked(command);
     let command = canonical.as_ref();
     let ctx = RouteContext {
@@ -370,13 +291,7 @@ pub fn route_with_home(
     targets
 }
 
-/// The byte offset right after `raw`'s own text in `command`, searching no
-/// earlier than `search_from`. `raw` is a top-level list segment's own raw
-/// text — a genuine substring of `command`, so this ordinarily finds it
-/// exactly; falls back to `command.len()` (the whole rest of the command) on
-/// the no-match case a malformed or already-desynced walk would produce,
-/// since that only ever widens a later `alias` scope rather than narrowing
-/// it (issue #437, F2).
+/// Falls back to `command.len()` on no-match so alias scope only widens, never narrows (#437).
 fn segment_text_end(command: &str, search_from: usize, raw: &str) -> usize {
     command
         .get(search_from..)
@@ -407,12 +322,7 @@ fn stdin_target(language: SourceLanguage, route: StdinRoute) -> RoutedTarget {
     }
 }
 
-/// Detect the narrow `<write-cmd> <<HEREDOC && <interp> <path>` shape and
-/// reuse the already-in-hand heredoc body instead of routing a `ScriptFile`
-/// that would re-read the identical content from disk. Recognized exactly:
-/// `cat > PATH`/`tee PATH` before the heredoc marker, one top-level `&&`
-/// after it, and a second segment of exactly `<interpreter> PATH` naming the
-/// same literal path. Any other shape falls through to the routing above.
+/// Reuse the in-hand heredoc body for `<cat > PATH | tee PATH> <<HEREDOC && <interp> PATH`.
 fn heredoc_write_then_exec_reuse(
     command: &str,
     trusted_aliases: &[(&str, &str)],
@@ -430,8 +340,6 @@ fn heredoc_write_then_exec_reuse(
         .iter()
         .any(|tok| matches!(tok.as_str(), ";" | "&&" | "||" | "|"))
     {
-        // A further top-level separator means this is not the narrow
-        // exactly-two-segment shape this reuse is scoped to.
         return None;
     }
     let exec_refs: Vec<&str> = exec_tokens.iter().map(String::as_str).collect();
@@ -522,17 +430,11 @@ fn strip_version_suffix(name: &str) -> &str {
     &name[..end]
 }
 
-/// Extract the inline body for `flag` from token `tok`, returning `None` if
-/// `tok` is not the flag. Handles both the standalone (`-c "code"`) and glued
-/// (`-ccode`) forms.
 fn inline_body(tok: &str, flag: &str, rest: &[&str], pos: usize) -> Option<String> {
     if tok == flag {
-        // Standalone flag: the body is the next token, if any.
         return rest.get(pos + 1).map(|s| (*s).to_owned());
     }
-    // Glued form: `-c<code>` (flag immediately followed by its body, no `-`
-    // continuation, so a lookalike long flag like `-e-x` is not misread as
-    // `-e` with body `-x`).
+    // Reject `-`-prefixed tails so lookalike flags (e.g. `-e-x`) are not read as glued bodies.
     let stripped = tok.strip_prefix(flag)?;
     if stripped.is_empty() || stripped.starts_with('-') {
         return None;

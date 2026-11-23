@@ -1,7 +1,4 @@
-//! Router unit tests for an interpreter fed its script through a stdin
-//! redirect — glued, fd-prefixed, or placed ahead of the program token
-//! (issue #384). Covers the shapes beyond a spaced trailing
-//! `python3 < ./evil.py`.
+//! Interpreter stdin-redirection tests (#384).
 
 use super::*;
 
@@ -37,18 +34,11 @@ fn an_fd_prefixed_glued_trailing_stdin_redirect_routes_the_file() {
 
 #[test]
 fn a_non_stdin_fd_glued_trailing_redirect_does_not_route_the_file() {
-    // `3<` opens descriptor 3, not the interpreter's stdin (descriptor 0) —
-    // only an omitted descriptor or an explicit `0` may stand in for a piped
-    // or redirected script source (#437 review comment 4091038714).
     assert_eq!(route("python3 3<./evil.py", &[]), Vec::new());
 }
 
 #[test]
 fn a_non_stdin_fd_redirect_after_a_pipe_still_degrades_dynamically() {
-    // The fd-3 redirect carries no script source of its own, so the stage
-    // falls back to whatever the previous pipeline stage produced — same as
-    // a fully bare `python3` there — rather than silently dropping the
-    // pipeline's dynamic-stdin route.
     assert_eq!(
         route("cat ./evil.py | python3 3<./benign.py", &[]),
         vec![evil_py_dynamic()]
@@ -95,10 +85,6 @@ fn a_spaced_leading_stdin_redirect_routes_the_file() {
 
 #[test]
 fn multiple_leading_stdin_redirects_use_the_last_one() {
-    // Shell redirections apply left to right, so the second `<` here wins
-    // and becomes the interpreter's actual stdin (#437 review comment
-    // 4091038705) — matching the overwrite behavior already used for
-    // redirects placed after the program.
     assert_eq!(
         route("< ./benign.py < ./evil.py python3", &[]),
         vec![evil_py_script_file()]
@@ -107,9 +93,6 @@ fn multiple_leading_stdin_redirects_use_the_last_one() {
 
 #[test]
 fn a_pipe_into_an_interpreter_with_a_bare_stdin_sentinel_degrades_dynamically() {
-    // `-` alone tells a real interpreter to read its script from stdin, same
-    // as no argument at all — the piped-in `evil.py` content, not nothing
-    // (#437 review comment 4091038647).
     assert_eq!(
         route("cat ./evil.py | python3 -", &[]),
         vec![evil_py_dynamic()]
