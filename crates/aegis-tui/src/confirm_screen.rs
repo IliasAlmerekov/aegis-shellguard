@@ -14,6 +14,7 @@ use super::shared::{
 };
 use super::stdout_renderer::PromptDecision;
 
+/// Drops `queue!`/`flush` errors: terminal writes have no fallback channel.
 pub(super) fn render_dialog<W: Write>(
     assessment: &Assessment,
     explanation: &CommandExplanation,

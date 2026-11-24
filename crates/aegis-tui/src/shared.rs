@@ -9,7 +9,7 @@ use aegis_types::MatchResult;
 use aegis_types::{Assessment, DecisionSource, HighlightRange, MatchEvidence, PatternSource};
 
 /// Build plain-language `Reason:` lines for an analysis Match or degradation.
-pub(super) fn analysis_reason_lines(assessment: &Assessment) -> Vec<String> {
+fn analysis_reason_lines(assessment: &Assessment) -> Vec<String> {
     let mut reasons = Vec::new();
     for m in &assessment.matched {
         if let MatchEvidence::LanguageRule {
