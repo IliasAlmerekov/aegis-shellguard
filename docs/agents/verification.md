@@ -6,7 +6,7 @@ How an agent proves a change in this repo. `implement` reads this file to pick a
 
 - **Location**: unit tests sit in `#[cfg(test)]` modules next to the code, often as sibling `*_tests.rs` files or a `tests/` submodule. Integration tests live in `tests/` for the root `aegis` crate and in `crates/<name>/tests/` for each workspace crate. Fuzz targets live in `fuzz/fuzz_targets/`, benches in `benches/` and `crates/aegis-language/benches/`.
 - **Single file**: `cargo test --test <file_stem>` for a root integration test file, `cargo test -p <crate> --test <file_stem>` for a crate's integration test, `cargo test -p <crate> <module::path>` for a unit test module.
-- **Full suite**: CI only. It runs `scripts/lint.sh`, `cargo test --workspace`, `cargo audit` and `cargo deny check`. Locally run `scripts/lint.sh fmt` and the targeted test; a full local build costs tens of gigabytes of `target/` per checkout.
+- **Full suite**: CI only. It runs `scripts/lint.sh`, `cargo test --workspace`, `cargo audit` and `cargo deny check`. Locally run `scripts/lint.sh fmt`, `scripts/lint.sh text`, `DEFAULT_BRANCH=main scripts/test-tamper-check.sh` (flags per-file net assertion drops, including helpers moved to `tests/support/`; never add `tamper-check: allow` without human approval), and the targeted test; a full local build costs tens of gigabytes of `target/` per checkout.
 - **Property testing**: none installed. Generated-input coverage comes from the `cargo fuzz` targets (`libfuzzer-sys`) in `fuzz/`.
 
 ## Run
