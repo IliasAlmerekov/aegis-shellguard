@@ -188,17 +188,6 @@ pub(crate) enum InstallError {
     /// A managed shell block has no end marker.
     #[error("unterminated managed shell block; repair it before uninstalling")]
     UnterminatedShellBlock,
-
-    /// A write failed and its temporary file could not be removed either.
-    #[error("{original}; cannot clean up {}: {source}", path.display())]
-    CleanupFailed {
-        /// The write failure.
-        original: Box<InstallError>,
-        /// The leftover temporary file.
-        path: PathBuf,
-        /// The cleanup failure.
-        source: std::io::Error,
-    },
 }
 
 impl InstallError {

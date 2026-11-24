@@ -328,37 +328,21 @@ fn prune_registrations(settings: &mut Value) -> Result<bool, InstallError> {
 }
 
 fn write_existing_file(path: &Path, content: &str) -> Result<(), InstallError> {
-    let parent = path.parent().ok_or_else(|| InstallError::InvalidPath {
-        path: path.to_path_buf(),
-        reason: "has no parent directory",
-    })?;
-    let temporary = super::temporary_settings_path(parent);
-    // Only clean up a temporary file that this invocation actually created.
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temporary)
-        .map_err(InstallError::io("cannot create", &temporary))?;
-    let result = (|| -> Result<(), InstallError> {
-        use std::io::Write;
-        file.set_permissions(fs::metadata(path).map_err(InstallError::Os)?.permissions())
-            .map_err(InstallError::Os)?;
-        file.write_all(content.as_bytes())
-            .map_err(InstallError::Os)?;
-        file.sync_all().map_err(InstallError::Os)?;
-        fs::rename(&temporary, path).map_err(InstallError::io("cannot replace", path))
-    })();
-    let Err(original) = result else {
-        return Ok(());
-    };
-    match remove_if_present(&temporary) {
-        Ok(()) => Err(original),
-        Err(source) => Err(InstallError::CleanupFailed {
-            original: Box::new(original),
-            path: temporary,
-            source,
-        }),
+    if path.parent().is_none() {
+        return Err(InstallError::InvalidPath {
+            path: path.to_path_buf(),
+            reason: "has no parent directory",
+        });
     }
+    use std::os::unix::fs::PermissionsExt;
+
+    let mode = fs::metadata(path)
+        .map_err(InstallError::Os)?
+        .permissions()
+        .mode()
+        & 0o7777;
+    aegis_config::write_atomic(path, content.as_bytes(), Some(mode))
+        .map_err(InstallError::io("cannot replace", path))
 }
 
 /// Removes `path`, treating a file that is already gone as removed.
@@ -462,22 +446,6 @@ mod tests {
 
         assert_eq!(binary, fs::canonicalize(&cellar_binary).unwrap());
         assert_eq!(channel, Some(RemovalChannel::Homebrew));
-    }
-
-    #[test]
-    fn cleanup_failed_display_names_the_write_failure_and_the_leftover_file() {
-        let original = InstallError::io("cannot replace", Path::new("/h/settings.json"))(
-            std::io::Error::other("disk full"),
-        );
-        let error = InstallError::CleanupFailed {
-            original: Box::new(original),
-            path: PathBuf::from("/h/.aegis-1.tmp"),
-            source: std::io::Error::other("permission denied"),
-        };
-        assert_eq!(
-            error.to_string(),
-            "cannot replace /h/settings.json: disk full; cannot clean up /h/.aegis-1.tmp: permission denied"
-        );
     }
 
     #[test]

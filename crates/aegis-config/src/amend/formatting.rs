@@ -1,9 +1,7 @@
 //! TOML formatting and atomic config file append helpers.
 
 use std::fs;
-use std::io::Write;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use time::OffsetDateTime;
 
@@ -61,21 +59,7 @@ pub(super) fn append_config_table_entry(
         fs::create_dir_all(parent)?;
     }
 
-    let pid = std::process::id();
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let tmp_path = config_path.with_extension(format!("tmp.{pid}.{nanos}"));
-    {
-        let mut tmp = fs::File::create(&tmp_path)?;
-        tmp.write_all(content.as_bytes())?;
-        tmp.sync_all()?;
-    }
-    fs::rename(&tmp_path, config_path).inspect_err(|_| {
-        // Best-effort temp cleanup; preserve the primary rename error.
-        let _ = fs::remove_file(&tmp_path);
-    })?;
+    crate::write_atomic(config_path, content.as_bytes(), None)?;
 
     Ok(())
 }

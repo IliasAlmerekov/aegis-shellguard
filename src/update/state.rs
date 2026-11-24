@@ -6,7 +6,6 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -118,30 +117,7 @@ pub fn save(path: &Path, state: &UpdateState) -> Result<()> {
         detail: format!("failed to serialize update state: {err}"),
     })?;
 
-    let pid = std::process::id();
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let tmp_path = path.with_extension(format!("tmp.{pid}.{nanos}"));
-
-    {
-        let file = fs::File::create(&tmp_path)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            file.set_permissions(fs::Permissions::from_mode(0o600))?;
-        }
-        use std::io::Write;
-        let mut file = file;
-        file.write_all(body.as_bytes())?;
-        file.sync_all()?;
-    }
-
-    fs::rename(&tmp_path, path).inspect_err(|_| {
-        // Best-effort temp cleanup; preserve the primary rename error.
-        let _ = fs::remove_file(&tmp_path);
-    })?;
+    aegis_config::write_atomic(path, body.as_bytes(), Some(0o600))?;
     Ok(())
 }
 

@@ -1,14 +1,11 @@
 use std::fs;
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::path::Path;
 
 use serde_json::Value;
 
 use super::{
     AgentInstallResult, InstallError, InstallOutcome, agent_dir_exists, combine_outcomes,
-    resolved_aegis_bin, shell_quote, temporary_settings_path, write_executable,
-    write_settings_atomically,
+    resolved_aegis_bin, shell_quote, write_executable, write_settings_atomically,
 };
 
 const CODEX_PRE_TOOL_USE_HOOK_SH: &str = include_str!("../../scripts/hooks/codex-pre-tool-use.sh");
@@ -230,26 +227,8 @@ fn write_toml_atomically(path: &Path, value: &toml::Value) -> Result<(), Install
         source,
     })?;
 
-    let temp_path = temporary_settings_path(parent);
-    {
-        let mut temp = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp_path)
-            .map_err(InstallError::io(
-                "failed to create temporary file",
-                &temp_path,
-            ))?;
-
-        temp.write_all(rendered.as_bytes())
-            .map_err(InstallError::io("failed to write", &temp_path))?;
-        temp.sync_all()
-            .map_err(InstallError::io("failed to flush", &temp_path))?;
-    }
-
-    fs::rename(&temp_path, path).map_err(InstallError::io("failed to replace", path))?;
-
-    Ok(())
+    aegis_config::write_atomic(path, rendered.as_bytes(), None)
+        .map_err(InstallError::io("failed to replace", path))
 }
 
 #[cfg(test)]

@@ -9,11 +9,7 @@ pub(crate) mod uninstall;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value};
 
@@ -70,15 +66,14 @@ pub(crate) fn write_executable(path: &Path, content: &str) -> Result<InstallOutc
         }
     }
 
-    let parent = path.parent().ok_or_else(|| InstallError::InvalidPath {
-        path: path.to_path_buf(),
-        reason: "has no parent",
-    })?;
-    let tmp = temporary_settings_path(parent);
-    fs::write(&tmp, content).map_err(InstallError::io("failed to write", &tmp))?;
-    fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755))
-        .map_err(InstallError::io("failed to chmod", &tmp))?;
-    fs::rename(&tmp, path).map_err(InstallError::io("failed to install", path))?;
+    if path.parent().is_none() {
+        return Err(InstallError::InvalidPath {
+            path: path.to_path_buf(),
+            reason: "has no parent",
+        });
+    }
+    aegis_config::write_atomic(path, content.as_bytes(), Some(0o755))
+        .map_err(InstallError::io("failed to install", path))?;
     Ok(InstallOutcome::Installed)
 }
 
@@ -443,54 +438,16 @@ pub(crate) fn write_settings_atomically(path: &Path, settings: &Value) -> Result
 
     fs::create_dir_all(parent).map_err(InstallError::io("failed to create", parent))?;
 
-    let temp_path = temporary_settings_path(parent);
-    {
-        let mut temp = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temp_path)
-            .map_err(InstallError::io(
-                "failed to create temporary file",
-                &temp_path,
-            ))?;
-
-        serde_json::to_writer_pretty(&mut temp, settings).map_err(|source| {
-            InstallError::SerializeJson {
-                action: "failed to serialize JSON for",
-                path: path.to_path_buf(),
-                source,
-            }
+    let mut bytes =
+        serde_json::to_vec_pretty(settings).map_err(|source| InstallError::SerializeJson {
+            action: "failed to serialize JSON for",
+            path: path.to_path_buf(),
+            source,
         })?;
-        temp.write_all(b"\n")
-            .map_err(InstallError::io("failed to finish writing", path))?;
-        temp.sync_all()
-            .map_err(InstallError::io("failed to flush", &temp_path))?;
-    }
+    bytes.push(b'\n');
 
-    fs::rename(&temp_path, path).map_err(InstallError::io("failed to replace", path))?;
-
-    Ok(())
-}
-
-pub(crate) fn temporary_settings_path(parent: &Path) -> PathBuf {
-    // Per-process monotonic counter so two calls in the same process always yield
-    // distinct names — `SystemTime::now()` is not guaranteed to advance between
-    // rapid calls (its resolution is coarser than a nanosecond on some platforms,
-    // e.g. macOS), which would otherwise collide.
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-
-    let pid = std::process::id();
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-
-    // pid+nanos give cross-process distinctness; seq guarantees in-process
-    // distinctness. The ultimate collision guard remains write_settings_atomically()
-    // using create_new(true), which fails closed instead of silently overwriting
-    // another installer's temporary file.
-    parent.join(format!(".settings.json.aegis-{pid}-{nanos}-{seq}.tmp"))
+    aegis_config::write_atomic(path, &bytes, None)
+        .map_err(InstallError::io("failed to replace", path))
 }
 
 pub(crate) fn home_dir() -> Option<PathBuf> {
@@ -655,34 +612,6 @@ mod tests {
             serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(written["new"], true);
         assert!(written.get("old").is_none());
-    }
-
-    #[test]
-    fn write_settings_atomically_uses_create_new_for_temp_file() {
-        // Verify the collision guard: pre-create a file at the expected temp
-        // path so that write_settings_atomically's create_new(true) open fails
-        // rather than silently overwriting another caller's temp file.
-        let dir = TempDir::new().expect("temp dir");
-        let settings = serde_json::json!({});
-
-        // Seed the parent with a pre-existing temp file at the exact path the
-        // function would choose.  Because pid and nanos are sampled at call
-        // time we cannot predict the name, so we instead verify the invariant
-        // through the success path: two sequential calls must each produce a
-        // distinct temp path (no silent collision between runs in the same
-        // process).
-        let path_a = temporary_settings_path(dir.path());
-        let path_b = temporary_settings_path(dir.path());
-        // The per-process sequence counter guarantees two calls in the same
-        // process produce different names, independent of clock resolution.
-        assert_ne!(
-            path_a, path_b,
-            "temporary_settings_path must generate distinct paths to avoid collisions"
-        );
-
-        // The happy path must also complete without error.
-        let dest = dir.path().join("settings.json");
-        write_settings_atomically(&dest, &settings).expect("must succeed");
     }
 
     #[test]
