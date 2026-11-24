@@ -25,8 +25,9 @@ fails when `CONTRIBUTING.md` names a Rust toolchain other than
   runs on `ubuntu-24.04` and macOS on `macos-26`; no job uses a floating
   `*-latest` label. The `gate` job in `ci.yml` and the `config` job in
   `release.yml` load the labels, so they repeat the Linux label as a literal.
-  So does the Merge admission check, which must run even when `gate` failed.
-  A runner-image bump edits `.github/build-targets.json` and those three lines,
+  So does the Merge admission check, which must run even when `gate` failed,
+  and the single-job `msrv` workflow, which does not run `load-versions`.
+  A runner-image bump edits `.github/build-targets.json` and those four lines,
   and `tests/supply_chain_ci.rs` fails if they disagree.
 - GitHub Actions used by `.github/workflows/ci.yml` and `.github/workflows/release.yml` are pinned by full commit SHA with readable release comments. `.github/dependabot.yml` opens the weekly pull request that moves those SHAs forward, along with the cargo and npm dependency updates.
 
@@ -137,6 +138,19 @@ required status checks.
   packages, split round-robin over 4 shards, only for TRUNK and BRANCH tier PRs.
   It cannot fail the run; each shard uploads its `mutants.out` as the
   `mutants-out-<k>` artifact
+
+## MSRV workflow
+
+`.github/workflows/msrv.yml` is advisory. Its job is not in the Merge admission
+check and is not a required status check: a red result signals an accidental
+MSRV regression without gating merges.
+
+- `MSRV check`: reads `rust-version` from `[workspace.package]` in `Cargo.toml`,
+  installs that toolchain through `.github/actions/setup-rust` and the `libcap`
+  headers through `.github/actions/install-libcap`, and runs
+  `cargo +<msrv> check --workspace --all-targets --locked`
+- Triggers on the same events as `ci.yml`: pull requests into any branch, pushes
+  to `main`, `merge_group`, the weekly schedule, and `workflow_dispatch`
 
 ## Homebrew tap validation
 

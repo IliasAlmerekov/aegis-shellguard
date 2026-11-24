@@ -71,6 +71,11 @@ fn release_workflow() -> String {
         .expect("release workflow should be readable")
 }
 
+fn msrv_workflow() -> String {
+    fs::read_to_string(repo_path(".github/workflows/msrv.yml"))
+        .expect("MSRV workflow should be readable")
+}
+
 /// `.github/versions.env` as `(KEY, value)` pairs, comments and blank lines
 /// dropped.
 fn pinned_versions() -> Vec<(String, String)> {
@@ -132,10 +137,7 @@ fn no_workflow_hardcodes_a_pinned_version() {
             ]
         };
 
-        for (name, workflow) in [
-            ("ci.yml", ci_workflow()),
-            ("release.yml", release_workflow()),
-        ] {
+        for (name, workflow) in workflows() {
             for spelling in &spellings {
                 assert!(
                     !workflow.contains(spelling),
@@ -384,10 +386,7 @@ fn checkout_steps(workflow: &str) -> Vec<String> {
 /// token, and keeps it so the later `git push` works.
 #[test]
 fn no_checkout_leaves_the_workflow_token_in_the_checkout() {
-    for (name, workflow) in [
-        ("ci.yml", ci_workflow()),
-        ("release.yml", release_workflow()),
-    ] {
+    for (name, workflow) in workflows() {
         let steps = checkout_steps(&workflow);
         assert!(
             !steps.is_empty(),
@@ -647,22 +646,25 @@ fn pinned_linux_runner() -> String {
     pinned.to_string()
 }
 
-/// Both workflows, as `(file name, contents)`.
-fn workflows() -> [(&'static str, String); 2] {
+/// Checked workflows, as `(file name, contents)`.
+fn workflows() -> [(&'static str, String); 3] {
     [
         ("ci.yml", ci_workflow()),
         ("release.yml", release_workflow()),
+        ("msrv.yml", msrv_workflow()),
     ]
 }
 
 /// The jobs that name the Linux runner as a literal. `gate` and `config` load
 /// the runner labels, so they cannot read their own from a job output. The
 /// Merge admission check runs with `if: always()` and must fail when `gate`
-/// failed, which leaves every `gate` output empty.
-const LITERAL_RUNNER_JOBS: [(&str, &str); 3] = [
+/// failed, which leaves every `gate` output empty. `msrv` is a single-job
+/// workflow without `load-versions`, so it pins the same Linux label directly.
+const LITERAL_RUNNER_JOBS: [(&str, &str); 4] = [
     ("ci.yml", "gate"),
     ("ci.yml", "merge-admission"),
     ("release.yml", "config"),
+    ("msrv.yml", "msrv"),
 ];
 
 /// A `-latest` label moves to a new OS image whenever GitHub decides:
@@ -674,6 +676,7 @@ fn no_workflow_uses_a_floating_runner_label() {
     for name in [
         ".github/workflows/ci.yml",
         ".github/workflows/release.yml",
+        ".github/workflows/msrv.yml",
         ".github/build-targets.json",
     ] {
         let text = fs::read_to_string(repo_path(name))

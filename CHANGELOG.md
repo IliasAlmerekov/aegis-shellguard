@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Added: advisory `.github/workflows/msrv.yml` workflow checking `cargo +<msrv> check --workspace --all-targets --locked` against `rust-version` in `Cargo.toml` (#636).
 - Changed: Share atomic temp-then-rename file writing through `aegis_config::write_atomic` (#631).
 - Changed: Share home directory lookup and pre-preparation Sandbox status (#630).
 - Changed: weeded remaining self-justifying, history, and review-id comments and shortened repeated C3-ratchet comments across `src/`, `crates/`, `tests/`, `benches/`, and `tests/fixtures/security_bypass_corpus.toml`, added the review-citation guard to `scripts/lint.sh text`, and recorded the why-comment rule in `CONVENTION.md` section 4; no production code or behavior changes (#629).
