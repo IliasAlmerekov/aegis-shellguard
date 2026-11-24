@@ -13,7 +13,7 @@ How an agent proves a change in this repo. `implement` reads this file to pick a
 
 - **Start**: `cargo build --bin aegis`. There is no service; every invocation is one process.
 - **Ready when**: `target/debug/aegis --version` exits 0.
-- **Drive**: `cli` for verdicts: `target/debug/aegis -c '<command>'`, checking stdout, stderr and the exit code; `--output json` gives the evaluation as JSON. `tmux` for the interactive confirmation prompt, with `tmux send-keys` and `tmux capture-pane`.
+- **Drive**: `cli` for verdicts: `target/debug/aegis -c '<command>'`, checking stdout, stderr and the exit code; `--output json` gives the evaluation as JSON. For a list of commands, `scripts/probe-decisions.sh <binary> <cases-file>` prints decision, risk, snapshot request and analysis status per command in an isolated workspace and `HOME` (`--help`). `tmux` for the interactive confirmation prompt, with `tmux send-keys` and `tmux capture-pane`.
 - **URL or entry point**: `target/debug/aegis`.
 - **Test login**: none.
 - **Setup**: run every probe in a throwaway directory with its own `HOME`, so it never reads or writes the real `~/.aegis`. Set `AEGIS_AUDIT_PATH` to a file inside that directory. Unset `GIT_DIR`, `GIT_WORK_TREE` and `GIT_INDEX_FILE`, which git hooks export in linked worktrees. `AEGIS_CI=1` forces CI behaviour, `AEGIS_FORCE_NO_TTY=1` forces the no-TTY path.
