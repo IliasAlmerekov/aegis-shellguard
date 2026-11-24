@@ -131,11 +131,18 @@ The convenience installer is exercised end-to-end in CI on the pinned Linux and 
 
 ## Snapshot/rollback live backend validation
 
-The `Live snapshot/rollback (Docker + SQLite)` CI job closes the live snapshot/rollback gate by exercising snapshot and rollback against real backends on the pinned Linux runner.
+All six mandatory 1.0 snapshot providers ([ADR-026](adr/adr-026-snapshot-rollback-contract-for-1-0.md)) are proved by repeatable snapshot-then-rollback cycles in CI:
 
-- Docker coverage runs `tests/docker_integration.rs::snapshot_rollback_reverts_filesystem_change` with `AEGIS_DOCKER_TESTS=1` after pulling the `alpine` fixture image.
-- SQLite coverage runs `tests/snapshot_rollback_live.rs::sqlite_snapshot_rollback_restores_database_file_through_aegis_cli` with `AEGIS_SQLITE_SNAPSHOT_TESTS=1` after installing the real `sqlite3` CLI.
-- The SQLite test uses the Aegis CLI end-to-end: a Danger-shaped allowlisted command creates a pre-execution SQLite snapshot, mutates the database through `sqlite3`, rolls back by the audit-recorded snapshot id, and verifies the post-rollback database contents.
+- **Git**: `crates/aegis-snapshot/src/git/tests.rs::snapshot_and_rollback_restores_changes` (and neighboring crate tests) run real `git` snapshot and rollback in `Quality (fmt, clippy, test)`.
+- **Docker**: `tests/docker_integration.rs::snapshot_rollback_reverts_filesystem_change` runs with `AEGIS_DOCKER_TESTS=1` against a real Docker daemon and `alpine` image in `Live snapshot/rollback (Docker + SQLite)`.
+- **SQLite**: `tests/snapshot_rollback_live.rs::sqlite_snapshot_rollback_restores_database_file_through_aegis_cli` runs with `AEGIS_SQLITE_SNAPSHOT_TESTS=1` through the Aegis CLI end-to-end (creating a pre-execution snapshot, mutating the database through `sqlite3`, rolling back by the audit-recorded snapshot id, and verifying restored contents) in `Live snapshot/rollback (Docker + SQLite)` on Linux and `Live snapshot/rollback (SQLite, macOS)` on macOS.
+- **PostgreSQL**: `tests/snapshot_rollback_db_live.rs::postgres_snapshot_rollback_restores_live_database` runs with `AEGIS_POSTGRES_SNAPSHOT_TESTS=1` against a pinned `postgres:16-alpine` service container in `Live snapshot/rollback (Postgres + MySQL + Supabase)`.
+- **MySQL**: `tests/snapshot_rollback_db_live.rs::mysql_snapshot_rollback_restores_live_database` runs with `AEGIS_MYSQL_SNAPSHOT_TESTS=1` against a pinned `mysql:8.0` service container in `Live snapshot/rollback (Postgres + MySQL + Supabase)`.
+- **Supabase**: `tests/snapshot_rollback_db_live.rs::supabase_snapshot_rollback_restores_live_postgres_database` runs with `AEGIS_SUPABASE_SNAPSHOT_TESTS=1` against the pinned `postgres:16-alpine` service container over Supabase's Postgres-compatible dump/restore path in `Live snapshot/rollback (Postgres + MySQL + Supabase)`.
+
+Release evidence (one-time pre-release check, not a repeating CI gate):
+
+- [ ] One live Supabase snapshot-then-rollback run executed against a real Supabase project before 1.0 release, with evidence recorded here.
 
 ## Supply-chain gate evidence
 

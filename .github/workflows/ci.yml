@@ -412,6 +412,84 @@ jobs:
           AEGIS_SQLITE_SNAPSHOT_TESTS: "1"
         run: cargo test --test snapshot_rollback_live sqlite_snapshot_rollback_restores_database_file_through_aegis_cli -- --exact --nocapture
 
+  # Live database snapshot/rollback cycles against pinned PostgreSQL 16 and
+  # MySQL 8.0 (`mysql:8.0`) service containers. Supabase runs against the same
+  # PostgreSQL container over its Postgres-compatible dump/restore path.
+  snapshot-rollback-live-db:
+    name: Live snapshot/rollback (Postgres + MySQL + Supabase)
+    runs-on: ${{ needs.gate.outputs.linux_runner }}
+    timeout-minutes: 20
+    needs: gate
+    if: needs.gate.outputs.heavy == 'true'
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ needs.gate.outputs.rust_toolchain }}
+          cache-key-prefix: snapshot-rollback-db-
+
+      - uses: ./.github/actions/install-libcap
+
+      - name: Install PostgreSQL and MySQL client tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client mysql-client
+
+      - name: Run live PostgreSQL snapshot rollback test
+        env:
+          AEGIS_POSTGRES_SNAPSHOT_TESTS: "1"
+          PGHOST: "127.0.0.1"
+          PGPORT: "5432"
+          PGUSER: "postgres"
+          PGPASSWORD: "postgres"
+        run: cargo test --test snapshot_rollback_db_live postgres_snapshot_rollback_restores_live_database -- --exact --nocapture
+
+      - name: Run live MySQL 8.0 snapshot rollback test
+        env:
+          AEGIS_MYSQL_SNAPSHOT_TESTS: "1"
+          MYSQL_HOST: "127.0.0.1"
+          MYSQL_TCP_PORT: "3306"
+          MYSQL_USER: "root"
+          MYSQL_PWD: "root"
+        run: cargo test --test snapshot_rollback_db_live mysql_snapshot_rollback_restores_live_database -- --exact --nocapture
+
+      - name: Run live Supabase snapshot rollback test
+        env:
+          AEGIS_SUPABASE_SNAPSHOT_TESTS: "1"
+          PGHOST: "127.0.0.1"
+          PGPORT: "5432"
+          PGUSER: "postgres"
+          PGPASSWORD: "postgres"
+        run: cargo test --test snapshot_rollback_db_live supabase_snapshot_rollback_restores_live_postgres_database -- --exact --nocapture
+
   # macOS half of the live snapshot/rollback coverage. Hosted macOS runners
   # ship no Docker daemon, so only the SQLite lifecycle test runs here; the
   # Docker test stays Linux-only (docs/ci.md). macOS ships /usr/bin/sqlite3,
@@ -533,6 +611,7 @@ jobs:
       - performance
       - live-installer
       - snapshot-rollback-live
+      - snapshot-rollback-live-db
       - snapshot-rollback-live-macos
       - fuzz
     steps:
@@ -540,7 +619,7 @@ jobs:
         shell: bash
         env:
           NEEDS: ${{ toJSON(needs) }}
-          HEAVY_JOBS: build-macos cross-matrix performance live-installer snapshot-rollback-live snapshot-rollback-live-macos fuzz
+          HEAVY_JOBS: build-macos cross-matrix performance live-installer snapshot-rollback-live snapshot-rollback-live-db snapshot-rollback-live-macos fuzz
         run: |
           set -euo pipefail
           heavy=$(jq -r '.gate.outputs.heavy // ""' <<<"$NEEDS")
