@@ -1,0 +1,70 @@
+name: MSRV
+
+# Advisory workflow outside Merge admission; does not gate merges.
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["**"]
+  merge_group:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  # Single-job workflow without load-versions; pinned label is checked by tests/supply_chain_ci.rs.
+  msrv:
+    name: MSRV check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read MSRV from Cargo.toml
+        id: msrv
+        shell: bash
+        run: |
+          set -euo pipefail
+          msrv="$(awk '
+            { sub(/\r$/, "") }
+            /^\[workspace\.package\][[:space:]]*(#.*)?$/ { in_section = 1; next }
+            /^\[/ { in_section = 0 }
+            in_section && /^[[:space:]]*rust-version[[:space:]]*=/ {
+              sub(/^[^=]*=[[:space:]]*"/, "")
+              sub(/".*$/, "")
+              print
+              exit
+            }
+          ' Cargo.toml)"
+          if [ -z "$msrv" ]; then
+            echo "error: [workspace.package].rust-version is missing or empty in Cargo.toml" >&2
+            exit 1
+          fi
+          echo "msrv=$msrv" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ steps.msrv.outputs.msrv }}
+
+      - uses: ./.github/actions/install-libcap
+
+      - name: cargo check (MSRV)
+        shell: bash
+        env:
+          MSRV: ${{ steps.msrv.outputs.msrv }}
+        run: cargo "+$MSRV" check --workspace --all-targets --locked
