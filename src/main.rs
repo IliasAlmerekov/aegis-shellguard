@@ -350,9 +350,7 @@ enum ConfigValidateOutput {
 }
 
 fn main() {
-    // The internal language-worker mode short-circuits before clap parsing
-    // and Tokio runtime construction: the worker is a minimal, synchronous,
-    // parse-only process and must not pay for either (ADR-022 §2, ADR-054).
+    // Short-circuit the parse-only worker before clap and Tokio startup (ADR-022 §2, ADR-054).
     #[cfg(feature = "language-analysis")]
     if std::env::args().any(|a| a == aegis::analysis::INTERNAL_LANGUAGE_WORKER_FLAG) {
         process::exit(cli_dispatch::run_internal_language_worker());

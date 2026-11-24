@@ -102,9 +102,7 @@ jobs:
         with:
           toolchain: ${{ needs.gate.outputs.rust_toolchain }}
 
-  # Opt-in language-aware analysis (ADR-024, ADR-054, #212, #226): exercises
-  # Tree-sitter grammars, worker, and license/supply-chain policy with
-  # `--features language-analysis` on every run so the opt-in feature never rots.
+  # Unconditional opt-in feature gate (ADR-024 §7, ADR-054, #212, #226).
   language-analysis:
     name: Language analysis (test, clippy, deny)
     runs-on: ${{ needs.gate.outputs.linux_runner }}

@@ -189,3 +189,14 @@ pub const BUILTIN_MANIFEST: &[GrammarEntry] = &[
         abi: SUPPORTED_LANGUAGE_ABI,
     },
 ];
+
+#[cfg(all(test, feature = "grammars"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fallback_abi_constants_match_pinned_tree_sitter_runtime() {
+        assert_eq!(SUPPORTED_LANGUAGE_ABI, 15);
+        assert_eq!(MIN_SUPPORTED_LANGUAGE_ABI, 13);
+    }
+}

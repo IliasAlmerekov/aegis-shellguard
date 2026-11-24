@@ -31,6 +31,38 @@ fn language_analysis_feature_stays_opt_in_and_out_of_default() {
         !default_features.contains(&"language-analysis"),
         "`language-analysis` must stay excluded from default features: {default_features:?}"
     );
+
+    let lang_manifest: toml::Table = repo_file("crates/aegis-language/Cargo.toml")
+        .parse()
+        .expect("crates/aegis-language/Cargo.toml must parse");
+    let lang_deps = lang_manifest
+        .get("dependencies")
+        .and_then(toml::Value::as_table)
+        .expect("aegis-language must define [dependencies]");
+    for (dep, spec) in lang_deps {
+        if dep.starts_with("tree-sitter") {
+            let optional = spec
+                .as_table()
+                .and_then(|t| t.get("optional"))
+                .and_then(toml::Value::as_bool)
+                .unwrap_or(false);
+            assert!(
+                optional,
+                "aegis-language dependency `{dep}` must be optional so default builds link no Tree-sitter crate"
+            );
+        }
+    }
+    let lang_default: Vec<&str> = lang_manifest
+        .get("features")
+        .and_then(toml::Value::as_table)
+        .and_then(|f| f.get("default"))
+        .and_then(toml::Value::as_array)
+        .map(|arr| arr.iter().filter_map(toml::Value::as_str).collect())
+        .unwrap_or_default();
+    assert!(
+        !lang_default.contains(&"grammars"),
+        "aegis-language must not enable `grammars` in default features: {lang_default:?}"
+    );
 }
 
 #[test]

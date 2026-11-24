@@ -184,46 +184,61 @@ pub async fn run_with_budget_in_cwd(
     let max_launcher_operand_candidates = budget.max_script_files.saturating_mul(4);
 
     for target in routed {
-        if let RoutedTarget::Unresolved { reason } = &target {
-            per_target.push(degraded(*reason));
-            continue;
-        }
-        if matches!(
-            &target,
-            RoutedTarget::Inline { source, .. }
-                if source.len() > budget.inline_source_limit_bytes
-        ) {
-            per_target.push(degraded(DegradationReason::LimitExceeded));
-            continue;
-        }
-        let is_launcher_operand = matches!(&target, RoutedTarget::LauncherOperand { .. });
         #[cfg(feature = "language-analysis")]
-        let (origin, file_path) = match &target {
-            RoutedTarget::Inline { .. } => (SourceOrigin::Inline, None),
-            RoutedTarget::ScriptFile { path, .. }
-            | RoutedTarget::DirectExec { path }
-            | RoutedTarget::LauncherOperand { path } => (
-                SourceOrigin::ScriptFile,
-                Some(path.to_string_lossy().into_owned()),
-            ),
-            RoutedTarget::Dynamic { .. } | RoutedTarget::Unresolved { .. } => {
-                (SourceOrigin::Stdin, None)
+        let (origin, file_path);
+        let (is_script_file, is_launcher_operand) = match &target {
+            RoutedTarget::Unresolved { reason } => {
+                per_target.push(degraded(*reason));
+                continue;
             }
-        };
-        let is_script_file = match &target {
-            RoutedTarget::ScriptFile { .. } | RoutedTarget::DirectExec { .. } => true,
-            RoutedTarget::LauncherOperand { .. } => {
+            RoutedTarget::Inline { source, .. } => {
+                if source.len() > budget.inline_source_limit_bytes {
+                    per_target.push(degraded(DegradationReason::LimitExceeded));
+                    continue;
+                }
+                #[cfg(feature = "language-analysis")]
+                {
+                    (origin, file_path) = (SourceOrigin::Inline, None);
+                }
+                (false, false)
+            }
+            RoutedTarget::ScriptFile { path, .. } | RoutedTarget::DirectExec { path } => {
+                #[cfg(feature = "language-analysis")]
+                {
+                    (origin, file_path) = (
+                        SourceOrigin::ScriptFile,
+                        Some(path.to_string_lossy().into_owned()),
+                    );
+                }
+                #[cfg(not(feature = "language-analysis"))]
+                // Path provenance is recorded only by the language-analysis worker path.
+                let _ = path;
+                (true, false)
+            }
+            RoutedTarget::LauncherOperand { path } => {
                 launcher_operand_candidates += 1;
                 if launcher_operand_candidates > max_launcher_operand_candidates {
                     per_target.push(degraded(DegradationReason::LimitExceeded));
                     continue;
                 }
-                false
+                #[cfg(feature = "language-analysis")]
+                {
+                    (origin, file_path) = (
+                        SourceOrigin::ScriptFile,
+                        Some(path.to_string_lossy().into_owned()),
+                    );
+                }
+                #[cfg(not(feature = "language-analysis"))]
+                // Path provenance is recorded only by the language-analysis worker path.
+                let _ = path;
+                (false, true)
             }
-            RoutedTarget::Inline { .. } | RoutedTarget::Dynamic { .. } => false,
-            RoutedTarget::Unresolved { reason } => {
-                per_target.push(degraded(*reason));
-                continue;
+            RoutedTarget::Dynamic { .. } => {
+                #[cfg(feature = "language-analysis")]
+                {
+                    (origin, file_path) = (SourceOrigin::Stdin, None);
+                }
+                (false, false)
             }
         };
         if is_script_file {
@@ -300,36 +315,25 @@ pub async fn run_with_budget_in_cwd(
     {
         // Only the language-analysis worker path uses aegis_path and shell_scanner.
         let _ = (aegis_path, shell_scanner);
-        if !per_target.is_empty() {
-            let aggregated = aggregate(&per_target);
-            let mut assessment = merge_analysis(baseline, &aggregated);
-            assessment.effect_opaque |= any_resolved || unresolved_execution;
-            return Outcome::Analyzed {
-                assessment,
-                target_count: per_target.len(),
+        if per_target.is_empty() {
+            if any_resolved {
+                let mut assessment = baseline.clone();
+                assessment.effect_opaque = true;
+                return Outcome::Analyzed {
+                    assessment,
+                    target_count: 0,
+                };
+            }
+            return Outcome::NotStarted {
+                baseline: baseline.clone(),
             };
         }
-        if any_resolved {
-            let mut assessment = baseline.clone();
-            assessment.effect_opaque = true;
-            return Outcome::Analyzed {
-                assessment,
-                target_count: 0,
-            };
-        }
-        Outcome::NotStarted {
-            baseline: baseline.clone(),
-        }
+        unresolved_execution |= any_resolved;
     }
 
     #[cfg(feature = "language-analysis")]
     {
-        // Drain loop: pop → spawn a fresh worker → analyze one target → map the
-        // response → enqueue recursive targets → repeat. LIFO order makes this
-        // depth-first; the aggregate is order-independent (matches concatenated,
-        // reasons deduplicated). One worker per pop: Worker::analyze closes stdin
-        // and reaps the child every session, so the worker cannot be reused across
-        // pops without refactoring worker_client (deferred perf optimization).
+        // Worker::analyze closes stdin and reaps the child per session, so each pop spawns one worker.
         while let Some(target) = queue.pop() {
             let Some(remaining) = session_deadline.checked_duration_since(Instant::now()) else {
                 per_target.push(degraded(DegradationReason::LimitExceeded));
@@ -343,8 +347,7 @@ pub async fn run_with_budget_in_cwd(
             };
             let results: Vec<TargetResult> = match Worker::spawn(aegis_path).await {
                 Ok(mut worker) => worker.analyze(vec![request], remaining).await,
-                // A spawn failure degrades this target as WorkerFailure; the parent
-                // never treats a worker failure as evidence of safety (ADR-022 §2).
+                // Spawn failure degrades as WorkerFailure rather than claiming safety (ADR-022 §2).
                 Err(_) => vec![TargetResult::Failed(WorkerError::Closed)],
             };
             let result = results
@@ -364,18 +367,15 @@ pub async fn run_with_budget_in_cwd(
                 push_with_degradation(&mut queue, recursive, &mut per_target);
             }
         }
+    }
 
-        // Aggregate across every analyzed target (top-level + recursive) into ONE
-        // result and merge once: merge_analysis overwrites Assessment.analysis with
-        // the latest status/reasons, so a per-target merge would clobber earlier
-        // reasons (D3).
-        let aggregated = aggregate(&per_target);
-        let mut assessment = merge_analysis(baseline, &aggregated);
-        assessment.effect_opaque |= unresolved_execution;
-        Outcome::Analyzed {
-            assessment,
-            target_count: per_target.len(),
-        }
+    // Merge once so earlier targets' degradation reasons are not overwritten.
+    let aggregated = aggregate(&per_target);
+    let mut assessment = merge_analysis(baseline, &aggregated);
+    assessment.effect_opaque |= unresolved_execution;
+    Outcome::Analyzed {
+        assessment,
+        target_count: per_target.len(),
     }
 }
 

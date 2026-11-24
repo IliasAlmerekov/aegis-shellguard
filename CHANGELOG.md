@@ -8,7 +8,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 ## [Unreleased]
 
 - Changed: gated Tree-sitter grammars and the language worker behind the opt-in `language-analysis` Cargo feature; the default build no longer parses script contents, so scripts reached through runners, executors, or launchers now run with a required snapshot instead of receiving a danger verdict, while dynamic shell words still require approval (#212, ADR-054).
-
 - Added: live PostgreSQL, MySQL 8.0, and Supabase snapshot/rollback CI cycles (`snapshot-rollback-live-db`), and replaced `which` subprocess calls in PostgreSQL and MySQL providers with a shared `PATH` lookup helper (#214).
 - Added: advisory `.github/workflows/msrv.yml` workflow checking `cargo +<msrv> check --workspace --all-targets --locked` against `rust-version` in `Cargo.toml` (#636).
 - Changed: Share atomic temp-then-rename file writing through `aegis_config::write_atomic` (#631).
