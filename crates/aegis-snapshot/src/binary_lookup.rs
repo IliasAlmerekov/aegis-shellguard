@@ -29,6 +29,12 @@ async fn binary_available_in(binary: &str, path_env: Option<&OsStr>) -> bool {
         return false;
     };
 
+    #[cfg(windows)]
+    let pathext = env::var_os("PATHEXT")
+        .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".into())
+        .to_string_lossy()
+        .into_owned();
+
     for path_dir in env::split_paths(path_env) {
         let candidate = path_dir.join(binary);
         if is_runnable_file_async(&candidate).await {
@@ -37,11 +43,6 @@ async fn binary_available_in(binary: &str, path_env: Option<&OsStr>) -> bool {
 
         #[cfg(windows)]
         {
-            let pathext = env::var_os("PATHEXT")
-                .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".into())
-                .to_string_lossy()
-                .to_string();
-
             for ext in pathext.split(';') {
                 let ext = ext.trim();
                 if ext.is_empty() {
@@ -143,6 +144,49 @@ mod tests {
         assert!(binary_available_in(&bin.to_string_lossy(), None).await);
     }
 
+    const CHILD_PASSED: i32 = 42;
+    const CHILD_FAILED: i32 = 43;
+
+    fn run_isolated_child(
+        test_fn: &str,
+        env_var: &str,
+        cwd: Option<&Path>,
+        path_override: Option<&Path>,
+    ) {
+        let module_path = module_path!()
+            .split_once("::")
+            .map_or(module_path!(), |(_crate_name, rest)| rest);
+        let test_name = format!("{module_path}::{test_fn}");
+
+        let exe = env::current_exe().unwrap();
+        let mut cmd = std::process::Command::new(exe);
+        cmd.args(["--exact", &test_name, "--nocapture"])
+            .env(env_var, "1");
+        if let Some(dir) = cwd {
+            cmd.current_dir(dir);
+        }
+        if let Some(path) = path_override {
+            cmd.env("PATH", path);
+        }
+        let output = cmd.output().expect("failed to re-exec test binary");
+
+        match output.status.code() {
+            Some(code) if code == CHILD_PASSED => {}
+            Some(0) => {
+                panic!("child ran no test for --exact {test_name:?}; check the test filter name")
+            }
+            Some(code) if code == CHILD_FAILED => panic!(
+                "{test_fn} child assertion failed:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            ),
+            other => panic!(
+                "child exited unexpectedly ({other:?}):\nstdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            ),
+        }
+    }
+
     #[tokio::test]
     async fn binary_available_in_resolves_relative_path_with_separator_without_path_env() {
         if env::var_os("AEGIS_RELATIVE_PATH_CHILD").is_some() {
@@ -160,32 +204,13 @@ mod tests {
         fs::create_dir(&sub).unwrap();
         stub_bin(&sub, "pg_dump", "exit 0");
 
-        let module_path = module_path!()
-            .split_once("::")
-            .map_or(module_path!(), |(_crate_name, rest)| rest);
-        let test_name = format!(
-            "{module_path}::binary_available_in_resolves_relative_path_with_separator_without_path_env"
-        );
-
-        let exe = env::current_exe().unwrap();
-        let output = std::process::Command::new(exe)
-            .current_dir(dir.path())
-            .args(["--exact", &test_name, "--nocapture"])
-            .env("AEGIS_RELATIVE_PATH_CHILD", "1")
-            .output()
-            .expect("failed to re-exec test binary");
-
-        assert_eq!(
-            output.status.code(),
-            Some(CHILD_PASSED),
-            "relative path lookup failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
+        run_isolated_child(
+            "binary_available_in_resolves_relative_path_with_separator_without_path_env",
+            "AEGIS_RELATIVE_PATH_CHILD",
+            Some(dir.path()),
+            None,
         );
     }
-
-    const CHILD_PASSED: i32 = 42;
-    const CHILD_FAILED: i32 = 43;
 
     #[tokio::test]
     async fn providers_find_dump_binaries_on_path_without_which() {
@@ -239,34 +264,11 @@ mod tests {
             "temp PATH directory must not contain a `which` binary"
         );
 
-        let module_path = module_path!()
-            .split_once("::")
-            .map_or(module_path!(), |(_crate_name, rest)| rest);
-        let test_name =
-            format!("{module_path}::providers_find_dump_binaries_on_path_without_which");
-
-        let exe = env::current_exe().unwrap();
-        let output = std::process::Command::new(exe)
-            .args(["--exact", &test_name, "--nocapture"])
-            .env("AEGIS_BINARY_LOOKUP_CHILD", "1")
-            .env("PATH", bin_dir.path())
-            .output()
-            .expect("failed to re-exec test binary");
-
-        match output.status.code() {
-            Some(code) if code == CHILD_PASSED => {}
-            Some(0) => {
-                panic!("child ran no test for --exact {test_name:?}; check the test filter name")
-            }
-            Some(code) if code == CHILD_FAILED => panic!(
-                "provider is_applicable failed when PATH had dump binaries but no `which`:\n{}",
-                String::from_utf8_lossy(&output.stderr)
-            ),
-            other => panic!(
-                "child exited unexpectedly ({other:?}):\nstdout:\n{}\nstderr:\n{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            ),
-        }
+        run_isolated_child(
+            "providers_find_dump_binaries_on_path_without_which",
+            "AEGIS_BINARY_LOOKUP_CHILD",
+            None,
+            Some(bin_dir.path()),
+        );
     }
 }

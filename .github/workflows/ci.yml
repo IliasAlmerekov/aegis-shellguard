@@ -412,9 +412,7 @@ jobs:
           AEGIS_SQLITE_SNAPSHOT_TESTS: "1"
         run: cargo test --test snapshot_rollback_live sqlite_snapshot_rollback_restores_database_file_through_aegis_cli -- --exact --nocapture
 
-  # Live database snapshot/rollback cycles against pinned PostgreSQL 16 and
-  # MySQL 8.0 (`mysql:8.0`) service containers. Supabase runs against the same
-  # PostgreSQL container over its Postgres-compatible dump/restore path.
+  # Supabase reuses the PostgreSQL 16 service container over pg_dump/pg_restore; MySQL uses mysql:8.0.
   snapshot-rollback-live-db:
     name: Live snapshot/rollback (Postgres + MySQL + Supabase)
     runs-on: ${{ needs.gate.outputs.linux_runner }}
@@ -423,7 +421,7 @@ jobs:
     if: needs.gate.outputs.heavy == 'true'
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16-alpine@sha256:f2f98726820d0342055351c6e9d36e705f5bfffb3dd53ff556325114b08afb6d
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -436,7 +434,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
       mysql:
-        image: mysql:8.0
+        image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
         env:
           MYSQL_ROOT_PASSWORD: root
         ports:
