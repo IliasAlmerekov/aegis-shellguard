@@ -1,5 +1,7 @@
 //! Supported-interface agreement regression for Language-aware analysis.
 
+#![cfg(feature = "language-analysis")]
+
 mod support;
 
 use std::env;

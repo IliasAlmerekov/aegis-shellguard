@@ -25,6 +25,8 @@
 //! - `merge_analysis` lifts a baseline `Safe` `Assessment` to the language
 //!   `Match`'s risk and carries the analysis status onto `Assessment.analysis`.
 
+#![cfg(feature = "language-analysis")]
+
 mod support;
 
 use aegis::analysis::mapping::{map_adapter_result, map_operation};

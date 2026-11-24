@@ -5,6 +5,8 @@
 //! these exercise the full route -> spawn -> Analyze -> map -> merge
 //! composition through `aegis::analysis::run_with_budget_in_cwd`.
 
+#![cfg(feature = "language-analysis")]
+
 mod support;
 
 use std::time::Duration;

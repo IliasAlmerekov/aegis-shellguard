@@ -16,6 +16,8 @@
 //! Crash/hang/timeout handling and prior-result retention are parent-client
 //! concerns and are covered by the slice-4 client tests, not here.
 
+#![cfg(feature = "language-analysis")]
+
 mod support;
 
 use std::io::{Read, Write};

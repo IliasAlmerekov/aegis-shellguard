@@ -4,6 +4,8 @@
 //! route → spawn → Analyze → map → merge composition through the public
 //! `aegis::analysis::run_with_budget` boundary.
 
+#![cfg(feature = "language-analysis")]
+
 mod support;
 
 use std::time::Duration;
