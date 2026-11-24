@@ -22,11 +22,19 @@ pub const RELEASE_GRAMMARS: &[&str] = &["python", "javascript", "typescript", "b
 /// 15 for the pinned 0.26 runtime). A grammar generated for this ABI is always
 /// accepted; a grammar generated for an older ABI down to
 /// [`MIN_SUPPORTED_LANGUAGE_ABI`] is accepted as backwards-compatible.
+#[cfg(feature = "grammars")]
 pub const SUPPORTED_LANGUAGE_ABI: u32 = tree_sitter::LANGUAGE_VERSION as u32;
+/// The Tree-sitter language ABI version of the pinned 0.26 runtime.
+#[cfg(not(feature = "grammars"))]
+pub const SUPPORTED_LANGUAGE_ABI: u32 = 15;
 
 /// The oldest Tree-sitter ABI the pinned runtime accepts
 /// (`tree_sitter::MIN_COMPATIBLE_LANGUAGE_VERSION`).
+#[cfg(feature = "grammars")]
 pub const MIN_SUPPORTED_LANGUAGE_ABI: u32 = tree_sitter::MIN_COMPATIBLE_LANGUAGE_VERSION as u32;
+/// The oldest Tree-sitter ABI the pinned 0.26 runtime accepts.
+#[cfg(not(feature = "grammars"))]
+pub const MIN_SUPPORTED_LANGUAGE_ABI: u32 = 13;
 
 /// The official release targets across which the qualified grammar set must be
 /// identical (ADR-022 §8). Official release binaries statically link every
@@ -181,3 +189,14 @@ pub const BUILTIN_MANIFEST: &[GrammarEntry] = &[
         abi: SUPPORTED_LANGUAGE_ABI,
     },
 ];
+
+#[cfg(all(test, feature = "grammars"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fallback_abi_constants_match_pinned_tree_sitter_runtime() {
+        assert_eq!(SUPPORTED_LANGUAGE_ABI, 15);
+        assert_eq!(MIN_SUPPORTED_LANGUAGE_ABI, 13);
+    }
+}

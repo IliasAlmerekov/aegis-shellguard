@@ -42,6 +42,7 @@ fn uv_run_harmless_inline_python_uses_exec_002() {
     );
 }
 
+#[cfg(feature = "language-analysis")]
 #[test]
 fn runner_python_script_forms_prompt() {
     let home = TempDir::new().unwrap();

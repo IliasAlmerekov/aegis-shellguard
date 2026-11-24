@@ -1,6 +1,8 @@
 //! JavaScript adapter corpus under `tests/corpora/javascript/` (ADR-022 §3, §7, §11).
 //! Pins detected operations, modifiers, operand certainty, nested payloads, and parse errors.
 
+#![cfg(feature = "grammars")]
+
 #[path = "common/corpus_harness.rs"]
 mod corpus_harness;
 

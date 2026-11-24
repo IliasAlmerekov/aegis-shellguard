@@ -138,12 +138,14 @@ fn release_target_set_matches_adr022_release_matrix() {
     );
 }
 
+#[cfg(feature = "grammars")]
 use aegis_language::{SourceLanguage, parse};
 
 /// A trivial well-formed snippet per release grammar, with the root node kind
 // the corresponding grammar assigns to a complete top-level statement. These
 // expected kinds come from each grammar's published `node-types.json`, an
 // independent source of truth — not from the parser's own output.
+#[cfg(feature = "grammars")]
 #[test]
 fn each_release_grammar_parses_a_trivial_snippet_on_host() {
     let cases = [
@@ -182,6 +184,7 @@ fn builtin_manifest_satisfies_the_release_contract() {
         .expect("the built-in release manifest must satisfy the qualification contract");
 }
 
+#[cfg(feature = "grammars")]
 #[test]
 fn builtin_manifest_abi_matches_the_live_tree_sitter_runtime() {
     // The manifest's recorded ABI must equal each wired grammar's actual

@@ -4,6 +4,7 @@
 //! and the [`parse`] entry point, keeping the native C toolchain boundary inside
 //! `aegis-language` (ADR-022 §8).
 
+#[cfg(feature = "grammars")]
 use tree_sitter::{Language, Parser, Tree};
 
 /// The supported source languages for the L1 foundation (ADR-022 §9).
@@ -45,6 +46,7 @@ impl SourceLanguage {
     }
 
     /// The pinned Tree-sitter [`Language`] for this source language.
+    #[cfg(feature = "grammars")]
     #[must_use]
     pub fn tree_sitter_language(self) -> Language {
         match self {
@@ -57,6 +59,7 @@ impl SourceLanguage {
 }
 
 /// A Tree-sitter parse failure.
+#[cfg(feature = "grammars")]
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
     /// The grammar's Tree-sitter ABI is incompatible with the pinned runtime.
@@ -73,6 +76,7 @@ pub enum ParseError {
 /// Parse `source` as `language` using the pinned Tree-sitter runtime.
 ///
 /// Pure and in-process: performs no filesystem access and spawns no worker.
+#[cfg(feature = "grammars")]
 pub fn parse(language: SourceLanguage, source: &str) -> Result<Tree, ParseError> {
     let mut parser = Parser::new();
     parser

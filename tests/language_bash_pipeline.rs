@@ -9,6 +9,8 @@
 //! miss it (#458). These tests assert only what holds either way. The Match
 //! and completion checks live in `analysis_orchestrate::cli_deadline_parity`.
 
+#![cfg(feature = "language-analysis")]
+
 mod support;
 
 use std::path::Path;

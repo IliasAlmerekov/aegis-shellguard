@@ -455,6 +455,7 @@ fn json_output_applies_ci_block_to_inline_python_delete() {
     assert_eq!(json["block_reason"], "protect_ci_policy");
 }
 
+#[cfg(feature = "language-analysis")]
 #[test]
 fn strict_json_output_uses_analysis_override_instead_of_unrelated_strict_block() {
     let home = TempDir::new().unwrap();
@@ -481,6 +482,7 @@ fn strict_json_output_uses_analysis_override_instead_of_unrelated_strict_block()
     assert!(json.get("block_reason").is_none());
 }
 
+#[cfg(feature = "language-analysis")]
 #[test]
 fn trusted_global_alias_reaches_language_aware_routing() {
     let home = TempDir::new().unwrap();
@@ -618,6 +620,7 @@ fn env_dash_s_chain_past_the_nesting_bound_yields_a_verdict_not_auto_approve() {
     );
 }
 
+#[cfg(feature = "language-analysis")]
 #[test]
 fn tilde_launcher_operand_with_interpreter_shebang_prompts_but_missing_or_plain_files_are_safe() {
     let home = TempDir::new().unwrap();

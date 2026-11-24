@@ -7,6 +7,8 @@
 //! two cannot drift apart: a word must read the same way in the shell scanner
 //! and in the language adapter.
 
+#![cfg(feature = "language-analysis")]
+
 use aegis_language::languages::bash_word::shell_word;
 use aegis_parser::split_tokens;
 

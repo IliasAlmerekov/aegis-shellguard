@@ -35,7 +35,10 @@ use serde_json::Value;
 use support::{base_command, write_global_config};
 use tempfile::TempDir;
 
+#[cfg(feature = "language-analysis")]
 const GOLDEN_PATH: &str = "tests/fixtures/evaluation_golden.jsonl";
+#[cfg(not(feature = "language-analysis"))]
+const GOLDEN_PATH: &str = "tests/fixtures/evaluation_golden_default.jsonl";
 const UPDATE_VAR: &str = "AEGIS_UPDATE_EVALUATION_GOLDEN";
 const MODES: [&str; 2] = ["protect", "strict"];
 

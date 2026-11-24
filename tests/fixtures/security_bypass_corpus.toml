@@ -65,6 +65,10 @@ command = "python -c \"import base64; exec(base64.b64decode('cHJpbnQoJ2hpJyk=').
 expected_risk = "danger"
 expected_decision = "prompt"
 expected_exit_code = 2
+default_expected_risk = "warn"
+default_expected_decision = "block"
+default_expected_exit_code = 3
+default_expected_block_reason = "strict_policy"
 
 [[cases]]
 name = "multiline_nested_shell_body_block"
@@ -813,6 +817,9 @@ command = "bash -c \"r\\m -rf /tmp/aegis-ansi-probe\""
 expected_risk = "danger"
 expected_decision = "prompt"
 expected_exit_code = 2
+default_expected_decision = "block"
+default_expected_exit_code = 3
+default_expected_block_reason = "strict_policy"
 
 [[cases]]
 name = "escaped_quote_in_double_quoted_shell_body"
@@ -820,6 +827,9 @@ command = "sh -c \"rm -rf \\\"/tmp/aegis-ansi-probe\\\"\""
 expected_risk = "danger"
 expected_decision = "prompt"
 expected_exit_code = 2
+default_expected_decision = "block"
+default_expected_exit_code = 3
+default_expected_block_reason = "strict_policy"
 
 [[cases]]
 # Command substitution inside double quotes starts a fresh quoting context, so

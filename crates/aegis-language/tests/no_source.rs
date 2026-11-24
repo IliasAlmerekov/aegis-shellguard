@@ -4,6 +4,8 @@
 //! [`aegis_language::worker::analyze`] returns [`Outcome::NotStarted`] for the
 //! shared `NO_SOURCE` corpus.
 
+#![cfg(feature = "grammars")]
+
 use aegis_language::router::source_targets;
 use aegis_language::worker::{Outcome, analyze};
 

@@ -1,5 +1,7 @@
 //! Live routed-source and effective-budget orchestration regressions.
 
+#![cfg(feature = "language-analysis")]
+
 mod support;
 
 use std::path::{Path, PathBuf};

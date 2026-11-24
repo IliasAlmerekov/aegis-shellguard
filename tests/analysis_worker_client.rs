@@ -6,6 +6,8 @@
 //! modes the well-behaved worker never produces (timeout, duplicate response,
 //! out-of-order response, unexpected id, partial prior results on early EOF).
 
+#![cfg(feature = "language-analysis")]
+
 use std::io;
 use std::pin::Pin;
 use std::process::Stdio;

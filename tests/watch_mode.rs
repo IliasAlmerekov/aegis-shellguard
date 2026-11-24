@@ -56,6 +56,7 @@ fn aegis_watch_in_env(
 /// analysis. The CLI clamps the analysis deadline to 100 ms, and a loaded
 /// test run can miss it (#458). Callers pass frames that Watch denies without
 /// a TTY, so a repeat executes nothing.
+#[cfg(feature = "language-analysis")]
 fn watch_until_analysis_completes(cwd: &Path, input: &[u8]) -> (TempDir, std::process::Output) {
     support::until_analysis_completes(
         "Watch",
@@ -126,6 +127,7 @@ fn watch_without_tty_denies_required_recovery_degradation_before_execution() {
     assert_eq!(entry["recovery_degradation"], "no_snapshot_available");
 }
 
+#[cfg(feature = "language-analysis")]
 #[test]
 fn watch_without_tty_denies_safe_language_degradation_before_recovery() {
     let home = TempDir::new().unwrap();
@@ -193,6 +195,7 @@ fn watch_executes_effect_opaque_command_when_required_snapshot_is_ready() {
     assert!(entry.get("recovery_degradation").is_none());
 }
 
+#[cfg(feature = "language-analysis")]
 #[test]
 fn watch_without_tty_denies_language_aware_match_before_execution() {
     let cwd = TempDir::new().unwrap();
@@ -226,6 +229,7 @@ fn watch_without_tty_denies_language_aware_match_before_execution() {
     assert_eq!(entry["analysis"]["status"], "complete");
 }
 
+#[cfg(feature = "language-analysis")]
 #[test]
 fn watch_resolves_relative_script_file_against_frame_cwd() {
     let process_cwd = TempDir::new().unwrap();

@@ -102,6 +102,53 @@ jobs:
         with:
           toolchain: ${{ needs.gate.outputs.rust_toolchain }}
 
+  # Unconditional opt-in feature gate (ADR-024 §7, ADR-054, #212, #226).
+  language-analysis:
+    name: Language analysis (test, clippy, deny)
+    runs-on: ${{ needs.gate.outputs.linux_runner }}
+    timeout-minutes: 20
+    needs: gate
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ needs.gate.outputs.rust_toolchain }}
+          components: clippy
+          cache-key-prefix: language-analysis-
+
+      - uses: ./.github/actions/install-libcap
+
+      - uses: ./.github/actions/install-cargo-tool
+        with:
+          tool: cargo-deny
+          version: ${{ needs.gate.outputs.cargo_deny_version }}
+
+      - name: Install zsh
+        run: |
+          if ! command -v zsh >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y zsh
+          fi
+
+      - name: Enable unprivileged user namespaces for sandbox tests
+        run: |
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: cargo test --workspace --features language-analysis
+        env:
+          AEGIS_CI_REQUIRE_SANDBOX: "1"
+        run: cargo test --workspace --features language-analysis
+
+      - name: cargo clippy --workspace --all-targets --features language-analysis
+        run: cargo clippy --workspace --all-targets --features language-analysis -- -D warnings
+
+      - name: cargo deny --features language-analysis check
+        run: cargo deny --features language-analysis check
+
   # The landing page is a separate npm workspace with its own test suite and
   # its own build. It shipped for a while with neither running in CI, so a
   # broken static export or a failing scene test could only be caught by
@@ -293,8 +340,8 @@ jobs:
       # makes a no-source command start the worker panics and fails this job.
       # The contract is also pinned by a fast `tests/no_source.rs` test in the
       # quality job; this harness keeps the no-source path on the perf wall.
-      - name: cargo bench --bench no_source_bench -p aegis-language
-        run: cargo bench --bench no_source_bench -p aegis-language
+      - name: cargo bench --bench no_source_bench -p aegis-language --features grammars
+        run: cargo bench --bench no_source_bench -p aegis-language --features grammars
 
       # ADR-022 Iteration 0 GREEN measurement: parse latency per foundation
       # grammar. Parses one representative inline-source snippet per grammar so
@@ -302,8 +349,8 @@ jobs:
       # target would pay. Since Iteration 10 each recorded mean is also gated by
       # a row in perf/scanner_bench_baseline.toml, so editing a snippet requires
       # rebaselining that row (see docs/performance-baseline.md).
-      - name: cargo bench --bench parse_latency_bench -p aegis-language
-        run: cargo bench --bench parse_latency_bench -p aegis-language
+      - name: cargo bench --bench parse_latency_bench -p aegis-language --features grammars
+        run: cargo bench --bench parse_latency_bench -p aegis-language --features grammars
 
       # ADR-034: the Startup cost budget covers one process invocation from
       # process start to decision, the part scanner_bench's warm-loop shape
@@ -601,6 +648,7 @@ jobs:
     needs:
       - gate
       - quality
+      - language-analysis
       - landing
       - security
       - build

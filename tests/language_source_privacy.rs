@@ -1,5 +1,7 @@
 //! End-to-end privacy regressions for Language-aware source analysis.
 
+#![cfg(feature = "language-analysis")]
+
 mod support;
 
 use std::fs;

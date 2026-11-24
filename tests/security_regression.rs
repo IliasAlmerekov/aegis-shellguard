@@ -21,6 +21,47 @@ struct SecurityRegressionCase {
     expected_decision: String,
     expected_exit_code: i32,
     expected_block_reason: Option<String>,
+    #[cfg(not(feature = "language-analysis"))]
+    #[serde(default)]
+    default_expected_risk: Option<String>,
+    #[cfg(not(feature = "language-analysis"))]
+    #[serde(default)]
+    default_expected_decision: Option<String>,
+    #[cfg(not(feature = "language-analysis"))]
+    #[serde(default)]
+    default_expected_exit_code: Option<i32>,
+    #[cfg(not(feature = "language-analysis"))]
+    #[serde(default)]
+    default_expected_block_reason: Option<String>,
+}
+
+impl SecurityRegressionCase {
+    #[cfg(feature = "language-analysis")]
+    fn expected(&self) -> (&str, &str, i32, Option<&str>) {
+        (
+            &self.expected_risk,
+            &self.expected_decision,
+            self.expected_exit_code,
+            self.expected_block_reason.as_deref(),
+        )
+    }
+
+    #[cfg(not(feature = "language-analysis"))]
+    fn expected(&self) -> (&str, &str, i32, Option<&str>) {
+        (
+            self.default_expected_risk
+                .as_deref()
+                .unwrap_or(&self.expected_risk),
+            self.default_expected_decision
+                .as_deref()
+                .unwrap_or(&self.expected_decision),
+            self.default_expected_exit_code
+                .unwrap_or(self.expected_exit_code),
+            self.default_expected_block_reason
+                .as_deref()
+                .or(self.expected_block_reason.as_deref()),
+        )
+    }
 }
 
 fn load_corpus() -> SecurityRegressionCorpus {
@@ -62,6 +103,8 @@ fn security_regression_corpus_preserves_non_safe_decisions_for_bypass_attempts()
 
     for case in &corpus.cases {
         let (exit_code, json, stderr) = run_case(home.path(), workspace.path(), case);
+        let (expected_risk, expected_decision, expected_exit_code, expected_block_reason) =
+            case.expected();
 
         assert!(
             stderr.is_empty(),
@@ -70,19 +113,19 @@ fn security_regression_corpus_preserves_non_safe_decisions_for_bypass_attempts()
             String::from_utf8_lossy(&stderr)
         );
         assert_eq!(
-            exit_code, case.expected_exit_code,
+            exit_code, expected_exit_code,
             "case {} exit code mismatch",
             case.name
         );
         assert_eq!(
             json["risk"].as_str(),
-            Some(case.expected_risk.as_str()),
+            Some(expected_risk),
             "case {} risk mismatch",
             case.name
         );
         assert_eq!(
             json["decision"].as_str(),
-            Some(case.expected_decision.as_str()),
+            Some(expected_decision),
             "case {} decision mismatch",
             case.name
         );
@@ -94,10 +137,10 @@ fn security_regression_corpus_preserves_non_safe_decisions_for_bypass_attempts()
             case.name
         );
 
-        match &case.expected_block_reason {
+        match expected_block_reason {
             Some(reason) => assert_eq!(
                 json["block_reason"].as_str(),
-                Some(reason.as_str()),
+                Some(reason),
                 "case {} block_reason mismatch",
                 case.name
             ),

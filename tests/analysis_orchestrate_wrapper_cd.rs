@@ -9,6 +9,8 @@
 //! command reads the wrong file while still reporting Safe. `d1/sub/evil.py`
 //! is the dangerous payload; `sub/evil.py` is a decoy with the same tail.
 
+#![cfg(feature = "language-analysis")]
+
 mod support;
 
 use std::time::Duration;

@@ -1,11 +1,12 @@
 # cargo-audit handles the full Cargo.lock scan (including optional crates) in CI.
-# cargo-deny checks the resolved default-feature graph.
-#
-# The Tree-sitter chain added by `aegis-language` (tree-sitter, the four pinned
-# grammars, tree-sitter-language, streaming-iterator, and the `cc` build driver —
-# see docs/language-grammar-manifest.md) IS in the default graph. All of it is
-# MIT / Apache-2.0, covered by the [licenses] allow-list below, so `cargo deny
-# check` stays green with no per-crate exception needed (ADR-022 §8).
+# cargo-deny checks the resolved feature graph it is invoked with: the default
+# security-gate checks the default-feature graph (no Tree-sitter crates), and
+# the dedicated `language-analysis` CI job runs `cargo deny --features
+# language-analysis check` over the opt-in Tree-sitter chain (tree-sitter, the four
+# pinned grammars, tree-sitter-language, streaming-iterator, and the `cc` build
+# driver — see docs/language-grammar-manifest.md, ADR-024, ADR-054). All of it
+# is MIT / Apache-2.0, covered by the [licenses] allow-list below, so both
+# graphs stay green with no per-crate exception needed (ADR-022 §8).
 [advisories]
 
 [licenses]

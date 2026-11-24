@@ -694,6 +694,7 @@ auto_snapshot_docker = false
     assert_eq!(entries[0]["risk"], "Warn");
 }
 
+#[cfg(feature = "language-analysis")]
 #[test]
 fn language_aware_confirmation_cannot_be_persisted_from_shell() {
     let home = TempDir::new().unwrap();
@@ -748,6 +749,7 @@ fn language_aware_confirmation_cannot_be_persisted_from_shell() {
     );
 }
 
+#[cfg(feature = "language-analysis")]
 #[test]
 fn strict_analysis_override_approves_exactly_once_from_shell() {
     let home = TempDir::new().unwrap();
