@@ -304,9 +304,9 @@ evidence about the command.
 _Avoid_: analysis state, result status
 
 **Analysis degradation**:
-Language-aware analysis ran but could not fully resolve a target — typed by a
-`Degradation reason` and never authorizing auto-execution. Prior `Match`es and
-earlier target results are retained (ADR-022 §4, §5).
+Source routing or language-aware analysis could not fully resolve a target —
+typed by a `Degradation reason` and never authorizing auto-execution. Prior
+`Match`es and earlier target results are retained (ADR-022 §4, §5, ADR-054).
 _Avoid_: analysis warning, analysis failure
 
 **Degradation reason**:
@@ -345,6 +345,16 @@ _Avoid_: decision basis
 A `Match` whose `RiskLevel` equals the `Assessment`'s maximum; the `Assessment
 basis` retains every such `Match`, not just one.
 _Avoid_: primary match, winning match
+
+**Source router**:
+The grammar-free step (built on `aegis-parser` alone) that inspects argv to find
+analysis targets — script files, inline bodies, runner children, executor
+values, launcher operands, and dynamic shell words. It runs in every build,
+independent of the `language-analysis` cargo feature: on the default build it
+folds resolved targets into `Effect-opaque execution` and records
+`Analysis degradation` for unresolved ones without linking Tree-sitter or
+starting the worker (ADR-022 §6, ADR-054).
+_Avoid_: language router, AST router, Tree-sitter router
 
 **Unclaimed stage**:
 A pipeline stage (or a single-stage `List segment`) that reaches the end of source
