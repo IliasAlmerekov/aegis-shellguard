@@ -53,8 +53,9 @@ pub(super) fn dynamic_stage_net(stage_raw: &str, ctx: &RouteContext<'_>) -> Opti
         return Some(unresolved());
     }
     let tokens = aegis_parser::split_tokens(strip_trailing_redirection(stage_raw));
-    let words: Vec<&str> = tokens.iter().map(String::as_str).collect();
-    let assignments = skip_assignment_keyword(&words);
+    let raw_words: Vec<&str> = tokens.iter().map(String::as_str).collect();
+    let words = strip_leading_command_keywords(&raw_words);
+    let assignments = skip_assignment_keyword(words);
     if assignments
         .iter()
         .take_while(|token| is_assignment_token(token))
@@ -67,13 +68,13 @@ pub(super) fn dynamic_stage_net(stage_raw: &str, ctx: &RouteContext<'_>) -> Opti
     // like a dynamic one for every program whose argv this net checks. The
     // decoded word is known, but the router stays conservative here.
     let ansi_c_quoting = contains_unquoted_ansi_c_quote(stage_raw);
-    for slice in aegis_parser::effective_token_slices(&words) {
+    for slice in aegis_parser::effective_token_slices(words) {
         // env -S also expands ${VAR} when its value was single-quoted by
         // the outer shell. Limit the search to this candidate's launcher
         // prefix; a later literal operand named env is not a launcher.
-        let split_string_expansion = env_split_string_expands_variable(&words, slice.program);
+        let split_string_expansion = env_split_string_expands_variable(words, slice.program);
         let active_expansion = shell_expansion || split_string_expansion;
-        if ifs_in_launcher_prefix(&words, slice.program) {
+        if ifs_in_launcher_prefix(words, slice.program) {
             return Some(unresolved());
         }
         if is_dynamic_program_word(slice.program)
@@ -88,7 +89,7 @@ pub(super) fn dynamic_stage_net(stage_raw: &str, ctx: &RouteContext<'_>) -> Opti
         }
         let program = slice.program.rsplit('/').next().unwrap_or(slice.program);
         let argv = &slice.tokens[1..];
-        let xargs_stdin = xargs_in_launcher_prefix(&words, slice.program);
+        let xargs_stdin = xargs_in_launcher_prefix(words, slice.program);
         let stdin_exec_consumer =
             xargs_stdin || resolve_interpreter(program, ctx.trusted_aliases).is_some();
         if stdin_exec_consumer
@@ -113,6 +114,17 @@ pub(super) fn dynamic_stage_net(stage_raw: &str, ctx: &RouteContext<'_>) -> Opti
         }
     }
     None
+}
+
+fn strip_leading_command_keywords<'a>(mut words: &'a [&'a str]) -> &'a [&'a str] {
+    while let Some((&first, rest)) = words.split_first() {
+        if first == "{" || aegis_parser::COMMAND_STARTING_KEYWORDS.contains(&first) {
+            words = rest;
+        } else {
+            break;
+        }
+    }
+    words
 }
 
 fn strip_shell_comments(text: &str) -> Cow<'_, str> {

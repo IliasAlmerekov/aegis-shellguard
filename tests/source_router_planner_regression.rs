@@ -35,6 +35,14 @@ fn evaluate_json(home: &Path, cwd: &Path, command: &str) -> Value {
     json
 }
 
+fn assert_auto_approves(home: &Path, cwd: &Path, command: &str) {
+    let json = evaluate_json(home, cwd, command);
+    assert_eq!(
+        json["decision"], "auto_approve",
+        "safe read-only command must auto-approve for `{command}`: {json}"
+    );
+}
+
 fn assert_requires_approval(home: &Path, cwd: &Path, command: &str) {
     let json = evaluate_json(home, cwd, command);
     assert_eq!(
@@ -169,6 +177,46 @@ fn git_global_options_control_still_requires_approval() {
         "git -C . reset --hard HEAD~1",
         "git --no-pager reset --hard",
         "git -c k=v reset --hard",
+    ] {
+        assert_requires_approval(home.path(), workspace.path(), command);
+    }
+}
+
+#[test]
+fn read_only_commands_after_shell_keywords_or_brace_auto_approve() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+
+    for command in [
+        r#"for f in a b; do echo "$f"; done"#,
+        r#"for f in a; do cat "$f"; done"#,
+        r#"if true; then echo "$f"; fi"#,
+        r#"while false; do echo "$f"; done"#,
+        r#"{ echo "$f"; }"#,
+        r#"while read -r l; do echo "$l"; done < f"#,
+        r#"! echo "$f""#,
+        r#"! { echo "$f"; }"#,
+        r#"then ! echo "$f""#,
+        "do",
+        "then",
+    ] {
+        assert_auto_approves(home.path(), workspace.path(), command);
+    }
+}
+
+#[test]
+fn dynamic_program_non_read_only_and_brace_expansion_after_keywords_require_approval() {
+    let home = TempDir::new().unwrap();
+    let workspace = TempDir::new().unwrap();
+
+    for command in [
+        "do $X -rf /",
+        "then $CMD",
+        "{ $X; }",
+        "! $X",
+        r#"for f in a b; do rm -rf "$f"; done"#,
+        r#"do git commit -m "$MSG""#,
+        "{a,b} x",
     ] {
         assert_requires_approval(home.path(), workspace.path(), command);
     }
