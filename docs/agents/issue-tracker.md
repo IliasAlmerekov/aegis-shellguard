@@ -6,12 +6,17 @@
 - Write issue titles, bodies, and comments in English.
 - A command that gets past Aegis analysis (a bypass) is a security report. File it as a private GitHub Security Advisory, never as a public issue.
 - The `1.0` milestone is the release gate (ADR-027). Put an issue in it only when it falsifies a promise in `PRD.md`.
+- **Milestone status**: one call lists the open `1.0` issues with labels, open blockers, and linked PRs:
+
+  ```sh
+  gh api graphql -f query='{repository(owner:"IliasAlmerekov",name:"aegis-shellguard"){milestone(number:1){issues(states:OPEN,first:100){nodes{number title labels(first:10){nodes{name}} blockedBy(first:20){nodes{number state}} closedByPullRequestsReferences(first:5,includeClosedPrs:true){nodes{number state}}}}}}}' --jq '.data.repository.milestone.issues.nodes[] | "#\(.number) [\([.labels.nodes[].name] | join(","))] blocked-by:\([.blockedBy.nodes[] | select(.state == "OPEN") | .number] | join(",")) prs:\([.closedByPullRequestsReferences.nodes[] | "\(.number)/\(.state)"] | join(",")) \(.title)"'
+  ```
 
 Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
 ## Conventions
 
-- **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
+- **Create an issue**: `gh issue create --title "..." --body-file <file>`. Write a multi-line body to a file first and pass it with `--body-file` (or `-F` for comments); a Bash call that nests heredocs can be blocked whole.
 - **Read an issue**: `gh issue view <number> --json number,title,body,labels,comments` (always pass `--json`; bare `gh issue view` fails on the deprecated `projectCards` GraphQL field).
 - **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
 - **Make an issue a sub-issue of a parent**: `gh issue create --parent <parent> ...`, or `gh issue edit <parent> --add-sub-issue <child>` afterwards (`gh` 2.94+). Older `gh`: `gh api --method POST repos/<owner>/<repo>/issues/<parent>/sub_issues -F sub_issue_id=<child-db-id>` (database id, as in **Blocking** below). Without sub-issues, put `Part of #<parent>` at the top of the child body.
