@@ -2,7 +2,12 @@
 
 ## Status
 
-Accepted
+Accepted. Partially superseded by
+[ADR-054](adr-054-source-router-stays-in-every-build.md) for the §1 cut line
+(the `language-analysis` feature gates Tree-sitter, the grammars, and the
+worker, while the grammar-free source router stays in every build) and for the
+§4 claim that ADR-016 recovery is unaffected without `src/analysis`. Sections
+§2 and §3 remain in force unchanged.
 
 ## Context
 
