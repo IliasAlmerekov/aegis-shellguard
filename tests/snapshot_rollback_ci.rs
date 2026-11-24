@@ -110,3 +110,87 @@ fn ci_docs_record_macos_docker_skip() {
         "docs/ci.md must record why the Docker live test is skipped on macOS"
     );
 }
+
+fn live_db_job_block(ci: &str) -> &str {
+    let rest = ci
+        .split("\n  snapshot-rollback-live-db:\n")
+        .nth(1)
+        .expect("CI must define the snapshot-rollback-live-db job");
+    let end = rest
+        .match_indices("\n  ")
+        .find_map(|(idx, _)| {
+            let next = rest.as_bytes().get(idx + 3).copied()?;
+            next.is_ascii_alphabetic().then_some(idx)
+        })
+        .unwrap_or(rest.len());
+    &rest[..end]
+}
+
+fn has_step_with(block: &str, env_line: &str, command: &str) -> bool {
+    block
+        .split("\n      - name:")
+        .skip(1)
+        .any(|step| step.contains(env_line) && step.contains(command))
+}
+
+#[test]
+fn ci_defines_live_db_snapshot_rollback_job() {
+    let ci = workflow();
+    let block = live_db_job_block(&ci);
+
+    assert!(
+        block.contains("name: Live snapshot/rollback (Postgres + MySQL + Supabase)"),
+        "live DB snapshot-rollback job must have a clear human-readable name"
+    );
+    assert!(
+        block.contains("runs-on: ${{ needs.gate.outputs.linux_runner }}"),
+        "live DB snapshot-rollback job must run on the pinned Linux runner"
+    );
+    assert!(
+        block.contains("if: needs.gate.outputs.heavy == 'true'"),
+        "live DB snapshot-rollback job must sit behind the heavy-job gate"
+    );
+    assert!(
+        block.contains("image: postgres:16-alpine@sha256:") && !block.contains("postgres:latest"),
+        "live DB job must start a digest-pinned PostgreSQL 16 service container"
+    );
+    assert!(
+        block.contains("image: mysql:8.0@sha256:") && !block.contains("mysql:latest"),
+        "live DB job must start a digest-pinned MySQL 8.0 service container"
+    );
+    assert!(
+        block.contains("postgresql-client") && block.contains("mysql-client"),
+        "live DB job must install postgresql-client and mysql-client"
+    );
+}
+
+#[test]
+fn ci_live_db_snapshot_rollback_job_runs_postgres_mysql_and_supabase_tests() {
+    let ci = workflow();
+    let block = live_db_job_block(&ci);
+
+    assert!(
+        has_step_with(
+            block,
+            "AEGIS_POSTGRES_SNAPSHOT_TESTS: \"1\"",
+            "cargo test --test snapshot_rollback_db_live postgres_snapshot_rollback_restores_live_database -- --exact --nocapture"
+        ),
+        "CI must run the live Postgres snapshot/rollback test with AEGIS_POSTGRES_SNAPSHOT_TESTS=1 in the same step"
+    );
+    assert!(
+        has_step_with(
+            block,
+            "AEGIS_MYSQL_SNAPSHOT_TESTS: \"1\"",
+            "cargo test --test snapshot_rollback_db_live mysql_snapshot_rollback_restores_live_database -- --exact --nocapture"
+        ),
+        "CI must run the live MySQL snapshot/rollback test with AEGIS_MYSQL_SNAPSHOT_TESTS=1 in the same step"
+    );
+    assert!(
+        has_step_with(
+            block,
+            "AEGIS_SUPABASE_SNAPSHOT_TESTS: \"1\"",
+            "cargo test --test snapshot_rollback_db_live supabase_snapshot_rollback_restores_live_postgres_database -- --exact --nocapture"
+        ),
+        "CI must run the live Supabase snapshot/rollback test with AEGIS_SUPABASE_SNAPSHOT_TESTS=1 in the same step"
+    );
+}

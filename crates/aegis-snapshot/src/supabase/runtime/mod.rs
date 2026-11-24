@@ -53,8 +53,8 @@ impl SnapshotPlugin for SupabasePlugin {
 
     async fn is_applicable(&self, _cwd: &Path) -> bool {
         !self.config.db.database.trim().is_empty()
-            && Self::binary_available(&self.pg_dump_bin).await
-            && Self::binary_available(&self.pg_restore_bin).await
+            && crate::binary_lookup::binary_available(&self.pg_dump_bin).await
+            && crate::binary_lookup::binary_available(&self.pg_restore_bin).await
     }
 
     async fn snapshot(&self, _cwd: &Path, _cmd: &str) -> Result<String> {

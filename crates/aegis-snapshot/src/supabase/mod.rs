@@ -1,6 +1,5 @@
 //! Supabase snapshot provider.
 
-use std::env;
 use std::fs;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -30,9 +29,6 @@ const MANIFEST_FILE_NAME: &str = "manifest.json";
 thread_local! {
     static INJECT_MANIFEST_WRITE_FAILURE_FOR_TESTS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
-
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -134,70 +130,6 @@ impl SupabasePlugin {
         }
     }
 
-    async fn binary_available(binary: &str) -> bool {
-        let binary_path = Path::new(binary);
-        if binary_path.components().count() > 1 || binary_path.is_absolute() {
-            return Self::is_runnable_file_async(binary_path).await;
-        }
-
-        let Some(path_env) = env::var_os("PATH") else {
-            return false;
-        };
-
-        for path_dir in env::split_paths(&path_env) {
-            let candidate = path_dir.join(binary);
-            if Self::is_runnable_file_async(&candidate).await {
-                return true;
-            }
-
-            #[cfg(windows)]
-            {
-                let pathext = env::var_os("PATHEXT")
-                    .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".into())
-                    .to_string_lossy()
-                    .to_string();
-
-                for ext in pathext.split(';') {
-                    let ext = ext.trim();
-                    if ext.is_empty() {
-                        continue;
-                    }
-
-                    let candidate = path_dir.join(format!("{binary}{ext}"));
-                    if Self::is_runnable_file_async(&candidate).await {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        false
-    }
-
-    async fn is_runnable_file_async(path: &Path) -> bool {
-        let Ok(metadata) = tokio::fs::metadata(path).await else {
-            return false;
-        };
-
-        Self::metadata_is_runnable_file(metadata)
-    }
-
-    fn metadata_is_runnable_file(metadata: std::fs::Metadata) -> bool {
-        if !metadata.is_file() {
-            return false;
-        }
-
-        #[cfg(unix)]
-        {
-            metadata.permissions().mode() & 0o111 != 0
-        }
-
-        #[cfg(not(unix))]
-        {
-            true
-        }
-    }
-
     fn validate_manifest_path(path: &Path, label: &str) -> Result<()> {
         if !path.is_absolute()
             || path.file_name() != Some(MANIFEST_FILE_NAME.as_ref())
@@ -248,13 +180,13 @@ impl SupabasePlugin {
                 subject: "supabase_snapshot.db.database",
             });
         }
-        if !Self::binary_available(&self.pg_dump_bin).await {
+        if !crate::binary_lookup::binary_available(&self.pg_dump_bin).await {
             return Err(SnapshotError::RequiredWhen {
                 subject: "pg_dump",
                 condition: "for supabase snapshots",
             });
         }
-        if !Self::binary_available(&self.pg_restore_bin).await {
+        if !crate::binary_lookup::binary_available(&self.pg_restore_bin).await {
             return Err(SnapshotError::RequiredWhen {
                 subject: "pg_restore",
                 condition: "for strict supabase rollback",
