@@ -1,10 +1,3 @@
-//! Full-planner regression tests for source-router coverage (ADR-054, issue #212).
-//!
-//! Drives the `aegis` binary through `--output json` (which runs `plan_with_context`)
-//! across every advisory class handled by the grammar-free source router, plus the
-//! scanner-level GHSA-7564 control. Must pass on both default and `language-analysis`
-//! feature builds.
-
 mod support;
 
 use std::fs;
@@ -72,7 +65,6 @@ fn assert_script_target_never_auto_approves_without_snapshot(
 
 #[test]
 fn later_list_segment_script_targets_never_auto_approve_without_snapshot() {
-    // GHSA-c5pv
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
     fs::write(workspace.path().join("script.py"), DANGER_PY).unwrap();
@@ -92,7 +84,6 @@ fn later_list_segment_script_targets_never_auto_approve_without_snapshot() {
 
 #[test]
 fn command_runner_script_targets_never_auto_approve_without_snapshot() {
-    // GHSA-399c / ADR-040
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
     fs::write(workspace.path().join("script.py"), DANGER_PY).unwrap();
@@ -112,7 +103,6 @@ fn command_runner_script_targets_never_auto_approve_without_snapshot() {
 
 #[test]
 fn executor_values_and_dynamic_launcher_operands_require_approval() {
-    // GHSA-xj54
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
     fs::write(workspace.path().join("script.py"), DANGER_PY).unwrap();
@@ -128,7 +118,6 @@ fn executor_values_and_dynamic_launcher_operands_require_approval() {
 
 #[test]
 fn resolved_launcher_operand_script_targets_never_auto_approve_without_snapshot() {
-    // GHSA-xj54
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
     write_executable(&workspace.path().join("shebang-script"), DANGER_SHEBANG_PY);
@@ -145,7 +134,6 @@ fn resolved_launcher_operand_script_targets_never_auto_approve_without_snapshot(
 
 #[test]
 fn ansi_c_quoted_unclaimed_stages_require_approval() {
-    // GHSA-xprr
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
 
@@ -160,7 +148,6 @@ fn ansi_c_quoted_unclaimed_stages_require_approval() {
 
 #[test]
 fn dynamic_shell_words_require_approval() {
-    // ADR-043
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
 
@@ -175,7 +162,6 @@ fn dynamic_shell_words_require_approval() {
 
 #[test]
 fn git_global_options_control_still_requires_approval() {
-    // GHSA-7564
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
 
