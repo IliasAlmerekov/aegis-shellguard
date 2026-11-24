@@ -334,23 +334,14 @@ fn write_existing_file(path: &Path, content: &str) -> Result<(), InstallError> {
             reason: "has no parent directory",
         });
     }
-    #[cfg(unix)]
-    let mode = {
-        use std::os::unix::fs::PermissionsExt;
-        Some(
-            fs::metadata(path)
-                .map_err(InstallError::Os)?
-                .permissions()
-                .mode()
-                & 0o7777,
-        )
-    };
-    #[cfg(not(unix))]
-    let mode = {
-        fs::metadata(path).map_err(InstallError::Os)?;
-        None
-    };
-    aegis_config::write_atomic(path, content.as_bytes(), mode)
+    use std::os::unix::fs::PermissionsExt;
+
+    let mode = fs::metadata(path)
+        .map_err(InstallError::Os)?
+        .permissions()
+        .mode()
+        & 0o7777;
+    aegis_config::write_atomic(path, content.as_bytes(), Some(mode))
         .map_err(InstallError::io("cannot replace", path))
 }
 
