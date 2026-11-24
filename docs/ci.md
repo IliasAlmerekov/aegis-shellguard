@@ -29,7 +29,7 @@ fails when `CONTRIBUTING.md` names a Rust toolchain other than
   and the single-job `msrv` workflow, which does not run `load-versions`.
   A runner-image bump edits `.github/build-targets.json` and those four lines,
   and `tests/supply_chain_ci.rs` fails if they disagree.
-- GitHub Actions used by `.github/workflows/ci.yml` and `.github/workflows/release.yml` are pinned by full commit SHA with readable release comments. `.github/dependabot.yml` opens the weekly pull request that moves those SHAs forward, along with the cargo and npm dependency updates.
+- GitHub Actions used by `.github/workflows/ci.yml`, `.github/workflows/release.yml`, and `.github/workflows/msrv.yml` are pinned by full commit SHA with readable release comments. `.github/dependabot.yml` opens the weekly pull request that moves those SHAs forward, along with the cargo and npm dependency updates.
 
 ## Current CI Jobs
 

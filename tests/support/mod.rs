@@ -403,3 +403,21 @@ pub fn confinement_available() -> bool {
     };
     confinement_available_for(&probe)
 }
+
+/// `rust-version` from the `[workspace.package]` table of the root `Cargo.toml`.
+/// Only lines inside that table count, so a `rust-version` key in any other
+/// table cannot be picked up by mistake.
+pub fn workspace_msrv() -> String {
+    let manifest =
+        fs::read_to_string(repo_path("Cargo.toml")).expect("Cargo.toml should be readable");
+
+    manifest
+        .lines()
+        .map(str::trim)
+        .skip_while(|line| *line != "[workspace.package]")
+        .skip(1)
+        .take_while(|line| !line.starts_with('['))
+        .find_map(|line| line.strip_prefix("rust-version = "))
+        .map(|value| value.trim_matches('"').to_string())
+        .expect("Cargo.toml should set rust-version in [workspace.package]")
+}

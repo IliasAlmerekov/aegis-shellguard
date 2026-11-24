@@ -1,17 +1,13 @@
 mod support;
 
 use std::fs;
+use std::process::Command;
 
-use support::repo_path;
+use support::{repo_path, workspace_msrv};
 
 fn ci_workflow() -> String {
     fs::read_to_string(repo_path(".github/workflows/ci.yml"))
         .expect("CI workflow should be readable")
-}
-
-fn release_workflow() -> String {
-    fs::read_to_string(repo_path(".github/workflows/release.yml"))
-        .expect("release workflow should be readable")
 }
 
 fn msrv_workflow() -> String {
@@ -19,41 +15,134 @@ fn msrv_workflow() -> String {
         .expect("MSRV workflow should be readable")
 }
 
-fn workspace_msrv() -> String {
-    let manifest =
-        fs::read_to_string(repo_path("Cargo.toml")).expect("Cargo.toml should be readable");
+/// Extracts the dedented `run: |` script from the `Read MSRV from Cargo.toml`
+/// step in `.github/workflows/msrv.yml`.
+fn extract_msrv_step_script(workflow: &str) -> String {
+    let normalized = workflow.replace("\r\n", "\n");
+    let step = normalized
+        .split("- name: Read MSRV from Cargo.toml\n")
+        .nth(1)
+        .expect("msrv.yml should define the `Read MSRV from Cargo.toml` step");
+    let after_run = step
+        .split("run: |\n")
+        .nth(1)
+        .expect("Read MSRV step should have a multiline `run: |` block");
 
-    manifest
-        .lines()
-        .map(str::trim)
-        .skip_while(|line| *line != "[workspace.package]")
-        .skip(1)
-        .take_while(|line| !line.starts_with('['))
-        .find_map(|line| line.strip_prefix("rust-version = "))
-        .map(|value| value.trim_matches('"').to_string())
-        .expect("Cargo.toml should set rust-version in [workspace.package]")
+    let mut lines = Vec::new();
+    let mut base_indent: Option<usize> = None;
+    for line in after_run.lines() {
+        if line.trim().is_empty() {
+            lines.push("");
+            continue;
+        }
+        let indent = line.len() - line.trim_start_matches(' ').len();
+        let min_indent = *base_indent.get_or_insert(indent);
+        if indent < min_indent {
+            break;
+        }
+        lines.push(&line[min_indent..]);
+    }
+    let script = lines.join("\n");
+    assert!(
+        !script.trim().is_empty(),
+        "extracted Read MSRV script should not be empty"
+    );
+    script
 }
 
 #[test]
-fn msrv_workflow_reads_msrv_from_cargo_toml_and_never_hardcodes_it() {
+fn no_workflow_file_hardcodes_the_workspace_msrv() {
     let msrv = workspace_msrv();
-    for (name, workflow) in [
-        ("ci.yml", ci_workflow()),
-        ("release.yml", release_workflow()),
-        ("msrv.yml", msrv_workflow()),
-    ] {
+    let workflows_dir = repo_path(".github/workflows");
+    let mut checked = 0;
+
+    for entry in fs::read_dir(&workflows_dir).expect(".github/workflows should be readable") {
+        let path = entry.expect("workflow dir entry should be readable").path();
+        let is_yaml = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext == "yml" || ext == "yaml");
+        if !is_yaml {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .expect("workflow filename should be valid UTF-8");
+        let text = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("{name} should be readable: {err}"));
         assert!(
-            !workflow.contains(&msrv),
+            !text.contains(&msrv),
             "{name} must not hardcode the workspace MSRV {msrv}; read it from Cargo.toml"
         );
+        checked += 1;
     }
 
-    let workflow = msrv_workflow();
     assert!(
-        workflow.contains("Cargo.toml")
-            && workflow.contains("workspace")
-            && workflow.contains("rust-version"),
-        "msrv.yml must read rust-version from [workspace.package] in Cargo.toml"
+        checked >= 3,
+        "expected to scan all workflow files under .github/workflows, found {checked}"
+    );
+}
+
+#[test]
+fn msrv_extraction_step_reads_workspace_package_and_fails_when_missing() {
+    let workflow = msrv_workflow();
+    let script = extract_msrv_step_script(&workflow);
+
+    // Positive fixture: [package] inherits workspace MSRV, real value is in [workspace.package].
+    let pos_dir = tempfile::tempdir().expect("tempdir should be created");
+    fs::write(
+        pos_dir.path().join("Cargo.toml"),
+        "[package]\nname = \"fixture\"\nrust-version.workspace = true\n\n[workspace.package]\nrust-version = \"1.89\"\n",
+    )
+    .expect("positive fixture Cargo.toml should be writable");
+    let pos_output = pos_dir.path().join("github_output");
+    fs::write(&pos_output, "").expect("GITHUB_OUTPUT file should be writable");
+
+    let pos = Command::new("bash")
+        .arg("-c")
+        .arg(&script)
+        .current_dir(pos_dir.path())
+        .env("GITHUB_OUTPUT", &pos_output)
+        .output()
+        .expect("bash should execute the MSRV extraction script");
+    assert!(
+        pos.status.success(),
+        "MSRV extraction script failed on valid fixture:\n{}",
+        String::from_utf8_lossy(&pos.stderr)
+    );
+    let recorded = fs::read_to_string(&pos_output).expect("GITHUB_OUTPUT should be readable");
+    assert_eq!(
+        recorded.trim(),
+        "msrv=1.89",
+        "extraction script must write msrv=1.89 from [workspace.package]"
+    );
+
+    // Negative fixture: [package] sets rust-version, but [workspace.package] omits it.
+    let neg_dir = tempfile::tempdir().expect("tempdir should be created");
+    fs::write(
+        neg_dir.path().join("Cargo.toml"),
+        "[package]\nname = \"fixture\"\nrust-version = \"1.70\"\n\n[workspace.package]\nversion = \"0.1.0\"\n",
+    )
+    .expect("negative fixture Cargo.toml should be writable");
+    let neg_output = neg_dir.path().join("github_output");
+    fs::write(&neg_output, "").expect("GITHUB_OUTPUT file should be writable");
+
+    let neg = Command::new("bash")
+        .arg("-c")
+        .arg(&script)
+        .current_dir(neg_dir.path())
+        .env("GITHUB_OUTPUT", &neg_output)
+        .output()
+        .expect("bash should execute the MSRV extraction script");
+    assert!(
+        !neg.status.success(),
+        "MSRV extraction script must fail when [workspace.package].rust-version is missing"
+    );
+
+    assert!(
+        workflow.contains("toolchain: ${{ steps.msrv.outputs.msrv }}"),
+        "msrv.yml must pass the extracted MSRV output to setup-rust"
     );
     assert!(
         workflow.contains("cargo \"+$MSRV\" check --workspace --all-targets --locked"),

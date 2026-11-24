@@ -2,7 +2,7 @@ mod support;
 
 use std::fs;
 
-use support::repo_path;
+use support::{repo_path, workspace_msrv};
 
 fn security_gate_action() -> String {
     fs::read_to_string(repo_path(".github/actions/security-gate/action.yml"))
@@ -173,24 +173,6 @@ fn docs_ci_documents_the_pinned_versions() {
             "docs/ci.md should document the pinned inputs verbatim; missing: {line}"
         );
     }
-}
-
-/// `rust-version` from the `[workspace.package]` table of the root
-/// `Cargo.toml`. Only lines inside that table count, so a `rust-version` key
-/// in any other table cannot be picked up by mistake.
-fn workspace_msrv() -> String {
-    let manifest =
-        fs::read_to_string(repo_path("Cargo.toml")).expect("Cargo.toml should be readable");
-
-    manifest
-        .lines()
-        .map(str::trim)
-        .skip_while(|line| *line != "[workspace.package]")
-        .skip(1)
-        .take_while(|line| !line.starts_with('['))
-        .find_map(|line| line.strip_prefix("rust-version = "))
-        .map(|value| value.trim_matches('"').to_string())
-        .expect("Cargo.toml should set rust-version in [workspace.package]")
 }
 
 fn contributing() -> String {
