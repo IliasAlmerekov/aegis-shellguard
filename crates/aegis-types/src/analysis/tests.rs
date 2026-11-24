@@ -103,6 +103,49 @@ fn degradation_reason_round_trips_each_bucket() {
 }
 
 #[test]
+fn degradation_reason_phrase_covers_every_variant() {
+    let cases = [
+        (
+            DegradationReason::DynamicSource,
+            "a command word, argument, or working directory is only known at run time",
+        ),
+        (
+            DegradationReason::UnsafeSource,
+            "a source file is missing, unreadable, or unsafe to read",
+        ),
+        (
+            DegradationReason::LimitExceeded,
+            "a size, depth, or time limit was reached",
+        ),
+        (
+            DegradationReason::UnsupportedEncoding,
+            "a source file uses an unsupported text encoding",
+        ),
+        (
+            DegradationReason::IncompleteSyntax,
+            "a script could not be fully parsed",
+        ),
+        (
+            DegradationReason::GrammarUnavailable,
+            "this build has no parser for the script's syntax",
+        ),
+        (
+            DegradationReason::WorkerFailure,
+            "the analysis worker failed",
+        ),
+    ];
+
+    for (variant, expected) in cases {
+        let phrase = variant.phrase();
+        assert_eq!(phrase, expected, "unexpected phrase for {variant:?}");
+        assert!(
+            !phrase.to_ascii_lowercase().contains("language"),
+            "phrase for {variant:?} must not mention language: {phrase:?}"
+        );
+    }
+}
+
+#[test]
 fn operation_kind_round_trips_through_serde() {
     let all = [
         OperationKind::FilesystemDelete,

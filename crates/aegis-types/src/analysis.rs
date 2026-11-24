@@ -143,6 +143,24 @@ pub enum DegradationReason {
     WorkerFailure,
 }
 
+impl DegradationReason {
+    /// Return a plain-language phrase explaining why analysis degraded.
+    #[must_use]
+    pub fn phrase(self) -> &'static str {
+        match self {
+            Self::DynamicSource => {
+                "a command word, argument, or working directory is only known at run time"
+            }
+            Self::UnsafeSource => "a source file is missing, unreadable, or unsafe to read",
+            Self::LimitExceeded => "a size, depth, or time limit was reached",
+            Self::UnsupportedEncoding => "a source file uses an unsupported text encoding",
+            Self::IncompleteSyntax => "a script could not be fully parsed",
+            Self::GrammarUnavailable => "this build has no parser for the script's syntax",
+            Self::WorkerFailure => "the analysis worker failed",
+        }
+    }
+}
+
 /// The kind of destructive effect or execution sink a language-aware rule
 /// detected (ADR-022 §3 initial scope).
 ///

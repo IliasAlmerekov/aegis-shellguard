@@ -729,9 +729,8 @@ fn language_aware_confirmation_cannot_be_persisted_from_shell() {
         "a rejected persistent approval must not execute"
     );
     assert!(
-        String::from_utf8_lossy(&output.stderr)
-            .contains("Approve this language-aware assessment once?"),
-        "the shell must present the non-persistable language-analysis prompt"
+        String::from_utf8_lossy(&output.stderr).contains("Approve this command once?"),
+        "the shell must present the non-persistable analysis prompt"
     );
     assert!(
         !workspace.path().join(".aegis.toml").exists(),

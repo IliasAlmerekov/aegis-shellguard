@@ -92,7 +92,7 @@ impl PolicyExplanation {
             PolicyRationale::AllowlistOverride => "allowlist override applied",
             PolicyRationale::RequiresConfirmation => "requires confirmation",
             PolicyRationale::AnalysisConfirmationRequired => {
-                "language analysis requires one-time confirmation"
+                "analysis requires one-time confirmation"
             }
             PolicyRationale::AnalysisOverrideRequired => "analysis override required",
             PolicyRationale::IntrinsicRiskBlock => "blocked by intrinsic risk",
@@ -191,4 +191,46 @@ pub struct SnapshotOutcomeExplanation {
     pub plugin: String,
     /// Opaque snapshot identifier returned by the plugin.
     pub snapshot_id: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn analysis_concise_reason_labels_omit_language_wording() {
+        let confirm = PolicyExplanation {
+            action: PolicyAction::Prompt,
+            rationale: PolicyRationale::AnalysisConfirmationRequired,
+            requires_confirmation: true,
+            snapshots_required: false,
+            allowlist_effective: false,
+            block_reason: None,
+        };
+        assert_eq!(
+            confirm.concise_reason_label(),
+            "analysis requires one-time confirmation"
+        );
+        assert!(
+            !confirm
+                .concise_reason_label()
+                .to_ascii_lowercase()
+                .contains("language")
+        );
+
+        let override_exp = PolicyExplanation {
+            rationale: PolicyRationale::AnalysisOverrideRequired,
+            ..confirm
+        };
+        assert_eq!(
+            override_exp.concise_reason_label(),
+            "analysis override required"
+        );
+        assert!(
+            !override_exp
+                .concise_reason_label()
+                .to_ascii_lowercase()
+                .contains("language")
+        );
+    }
 }

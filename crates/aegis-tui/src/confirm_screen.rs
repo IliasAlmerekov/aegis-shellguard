@@ -5,15 +5,16 @@ use crossterm::{
     style::{Attribute, Color, Print, ResetColor, SetAttribute, SetForegroundColor},
 };
 
-use aegis_explanation::{CommandExplanation, GitTargetExplanation};
+use aegis_explanation::{CommandExplanation, GitTargetExplanation, PolicyRationale};
 use aegis_types::{Assessment, MatchEvidence, RiskLevel, SnapshotRecord};
 
 use super::shared::{
-    confirmation_reason_text, decision_source_label, pattern_source_label, print_command_line,
-    print_dangerous_action,
+    confirmation_reason_text, decision_source_label, pattern_source_label, print_analysis_reasons,
+    print_command_line, print_dangerous_action,
 };
 use super::stdout_renderer::PromptDecision;
 
+/// Drops `queue!`/`flush` errors: terminal writes have no fallback channel.
 pub(super) fn render_dialog<W: Write>(
     assessment: &Assessment,
     explanation: &CommandExplanation,
@@ -35,13 +36,20 @@ pub(super) fn render_dialog<W: Write>(
     );
 
     print_command_line(assessment, out);
-    let _ = queue!(
-        out,
-        Print(format!(
-            "  Reason: {}\n",
-            confirmation_reason_text(explanation)
-        )),
-    );
+    if matches!(
+        explanation.policy.rationale,
+        PolicyRationale::AnalysisConfirmationRequired | PolicyRationale::AnalysisOverrideRequired
+    ) {
+        print_analysis_reasons(assessment, explanation, out);
+    } else {
+        let _ = queue!(
+            out,
+            Print(format!(
+                "  Reason: {}\n",
+                confirmation_reason_text(explanation)
+            )),
+        );
+    }
 
     if assessment.risk == RiskLevel::Danger {
         print_dangerous_action(assessment, out);
@@ -130,16 +138,6 @@ pub(super) fn render_dialog<W: Write>(
             out,
             Print(format!("\n  Decision source: {decision_label}\n")),
         );
-    }
-
-    if let Some(analysis) = &assessment.analysis {
-        let _ = queue!(
-            out,
-            Print(format!("\n  Language analysis: {:?}\n", analysis.status)),
-        );
-        for reason in &analysis.degradation_reasons {
-            let _ = queue!(out, Print(format!("    degradation: {reason:?}\n")));
-        }
     }
 
     // Git targets (#471): the working tree each git stage acts on. An
@@ -321,16 +319,12 @@ pub(super) fn prompt_analysis_override<R: BufRead, W: Write>(
     )
 }
 
-/// Prompt for a non-persistable, one-time language-analysis confirmation.
+/// Prompt for a non-persistable, one-time analysis confirmation.
 pub(super) fn prompt_analysis_confirmation<R: BufRead, W: Write>(
     input: &mut R,
     out: &mut W,
 ) -> PromptDecision {
-    prompt_one_time_analysis(
-        input,
-        out,
-        "\n  Approve this language-aware assessment once? [y/N]: ",
-    )
+    prompt_one_time_analysis(input, out, "\n  Approve this command once? [y/N]: ")
 }
 
 fn prompt_one_time_analysis<R: BufRead, W: Write>(
