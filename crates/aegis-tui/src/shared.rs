@@ -6,7 +6,63 @@ use aegis_explanation::CommandExplanation;
 use aegis_explanation::{BlockReason, PolicyRationale};
 #[cfg(test)]
 use aegis_types::MatchResult;
-use aegis_types::{Assessment, DecisionSource, HighlightRange, PatternSource};
+use aegis_types::{Assessment, DecisionSource, HighlightRange, MatchEvidence, PatternSource};
+
+/// Build plain-language `Reason:` lines for an analysis Match or degradation.
+pub(super) fn analysis_reason_lines(assessment: &Assessment) -> Vec<String> {
+    let mut reasons = Vec::new();
+    for m in &assessment.matched {
+        if let MatchEvidence::LanguageRule {
+            operation,
+            provenance,
+            ..
+        } = &m.evidence
+        {
+            let rule_id = provenance
+                .rule_id
+                .as_deref()
+                .unwrap_or(m.pattern.id.as_ref());
+            // Built from DetectedOperation, never touching matched_text or source bytes (ADR-022 §10).
+            let description = aegis_types::classify(operation).description;
+            reasons.push(format!("matched rule {rule_id}: {description}"));
+        }
+    }
+    if let Some(analysis) = &assessment.analysis {
+        let mut seen = Vec::new();
+        for &reason in &analysis.degradation_reasons {
+            if !seen.contains(&reason) {
+                seen.push(reason);
+                reasons.push(format!(
+                    "Aegis could not resolve what this command runs: {}",
+                    reason.phrase()
+                ));
+            }
+        }
+    }
+    reasons
+}
+
+/// Drops `queue!` errors: terminal writes have no fallback channel.
+pub(super) fn print_analysis_reasons<W: Write>(
+    assessment: &Assessment,
+    explanation: &CommandExplanation,
+    out: &mut W,
+) {
+    let reasons = analysis_reason_lines(assessment);
+    if reasons.is_empty() {
+        let _ = queue!(
+            out,
+            Print(format!(
+                "  Reason: {}\n",
+                confirmation_reason_text(explanation)
+            )),
+        );
+    } else {
+        for reason in reasons {
+            let _ = queue!(out, Print(format!("  Reason: {reason}\n")));
+        }
+    }
+}
 
 /// Drops `queue!` errors: terminal writes have no fallback channel.
 pub(super) fn print_command_line<W: Write>(assessment: &Assessment, out: &mut W) {

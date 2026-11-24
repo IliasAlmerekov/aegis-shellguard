@@ -781,9 +781,9 @@ fn analysis_confirmation_renders_decisive_evidence_and_degradation_without_sourc
         "origin=ScriptFile",
         "location=7:3 (bytes 42..61)",
         "certainty=Known",
-        "Language analysis: Degraded",
-        "degradation: IncompleteSyntax",
-        "degradation: LimitExceeded",
+        "Reason: matched rule LANG-FS-DEL: Filesystem deletion detected in source",
+        "Reason: Aegis could not resolve what this command runs: a script could not be fully parsed",
+        "Reason: Aegis could not resolve what this command runs: a size, depth, or time limit was reached",
     ] {
         assert!(text.contains(required), "missing {required:?} in:\n{text}");
     }
@@ -792,8 +792,7 @@ fn analysis_confirmation_renders_decisive_evidence_and_degradation_without_sourc
         "language evidence rendering must not expose the source body: {text}"
     );
     assert_eq!(
-        text.matches("Approve this language-aware assessment once?")
-            .count(),
+        text.matches("Approve this command once?").count(),
         1,
         "{text}"
     );

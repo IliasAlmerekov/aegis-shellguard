@@ -256,6 +256,7 @@ pub fn strip_ansi(s: &str) -> String {
     re.replace_all(s, "").to_string()
 }
 
+mod analysis_wording_tests;
 mod block_tests;
 mod danger_tests;
 mod decision_tests;
