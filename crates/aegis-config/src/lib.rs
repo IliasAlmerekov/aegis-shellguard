@@ -18,6 +18,7 @@
 
 pub mod allowlist;
 pub mod amend;
+mod atomic;
 pub mod ceiling;
 /// Typed configuration errors.
 pub mod error;
@@ -28,6 +29,7 @@ pub mod pattern_match;
 pub mod snapshot;
 pub mod validate;
 
+pub use atomic::write_atomic;
 pub use error::ConfigError;
 pub use home::home_dir;
 

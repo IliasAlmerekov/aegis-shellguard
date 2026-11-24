@@ -218,17 +218,8 @@ fn write_text_atomically(path: &Path, content: &str) -> Result<(), InstallError>
     })?;
     std::fs::create_dir_all(parent).map_err(InstallError::io("failed to create", parent))?;
 
-    let temp_path = parent.join(format!(
-        ".{}.aegis-{}.tmp",
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("shellrc"),
-        std::process::id()
-    ));
-
-    std::fs::write(&temp_path, content).map_err(InstallError::io("failed to write", &temp_path))?;
-    std::fs::rename(&temp_path, path).map_err(InstallError::io("failed to replace", path))?;
-    Ok(())
+    aegis_config::write_atomic(path, content.as_bytes(), None)
+        .map_err(InstallError::io("failed to replace", path))
 }
 
 fn install_shell_setup_file(
