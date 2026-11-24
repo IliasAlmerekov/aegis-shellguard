@@ -64,19 +64,15 @@ fn assert_script_target_never_auto_approves_without_snapshot(
         .unwrap_or_else(|| panic!("missing snapshot_plan.requested for `{command}`: {json}"));
 
     assert!(
-        !(decision == "auto_approve" && !snapshot_requested),
-        "script target must never auto-approve without a required snapshot for `{command}`: {json}"
-    );
-    assert!(
         matches!(decision, "prompt" | "block")
             || (decision == "auto_approve" && snapshot_requested),
-        "unexpected planner outcome for `{command}`: {json}"
+        "script target must never auto-approve without a required snapshot for `{command}`: {json}"
     );
 }
 
 #[test]
 fn later_list_segment_script_targets_never_auto_approve_without_snapshot() {
-    // GHSA-c5pv: scripts in later list segments stay routed and snapshot-backed.
+    // GHSA-c5pv
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
     fs::write(workspace.path().join("script.py"), DANGER_PY).unwrap();
@@ -96,7 +92,7 @@ fn later_list_segment_script_targets_never_auto_approve_without_snapshot() {
 
 #[test]
 fn command_runner_script_targets_never_auto_approve_without_snapshot() {
-    // GHSA-399c / ADR-040: runner-launched scripts stay routed and snapshot-backed.
+    // GHSA-399c / ADR-040
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
     fs::write(workspace.path().join("script.py"), DANGER_PY).unwrap();
@@ -116,7 +112,7 @@ fn command_runner_script_targets_never_auto_approve_without_snapshot() {
 
 #[test]
 fn executor_values_and_dynamic_launcher_operands_require_approval() {
-    // GHSA-xj54: executor option values and dynamic/interpreter launcher operands prompt.
+    // GHSA-xj54
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
     fs::write(workspace.path().join("script.py"), DANGER_PY).unwrap();
@@ -132,8 +128,7 @@ fn executor_values_and_dynamic_launcher_operands_require_approval() {
 
 #[test]
 fn resolved_launcher_operand_script_targets_never_auto_approve_without_snapshot() {
-    // GHSA-xj54: literal launcher operands with an interpreter shebang never auto-approve
-    // without a required snapshot.
+    // GHSA-xj54
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
     write_executable(&workspace.path().join("shebang-script"), DANGER_SHEBANG_PY);
@@ -150,7 +145,7 @@ fn resolved_launcher_operand_script_targets_never_auto_approve_without_snapshot(
 
 #[test]
 fn ansi_c_quoted_unclaimed_stages_require_approval() {
-    // GHSA-xprr: ANSI-C quoting in unclaimed stages degrades to DynamicSource and prompts.
+    // GHSA-xprr
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
 
@@ -165,7 +160,7 @@ fn ansi_c_quoted_unclaimed_stages_require_approval() {
 
 #[test]
 fn dynamic_shell_words_require_approval() {
-    // ADR-043: dynamic command words, fd targets, and indirect variable writes prompt.
+    // ADR-043
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
 
@@ -180,7 +175,7 @@ fn dynamic_shell_words_require_approval() {
 
 #[test]
 fn git_global_options_control_still_requires_approval() {
-    // GHSA-7564 control: scanner-level git global option handling prompts regardless of routing.
+    // GHSA-7564
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
 
