@@ -13,11 +13,14 @@
 mod support;
 
 use std::fs;
+use std::path::Path;
 
+use aegis::analysis::{AnalysisCwd, OrchestrationBudget, Outcome, run_with_budget_in_cwd};
 use aegis_config::AegisConfig;
+use aegis_types::{AnalysisStatus, DegradationReason};
 use tempfile::TempDir;
 
-use support::{base_command, read_audit_entries, write_global_config};
+use support::{base_command, read_audit_entries, safe_baseline, write_global_config};
 
 #[test]
 fn project_language_analysis_config_parses_and_tightening_applies_on_default_build() {
@@ -118,4 +121,53 @@ fn audit_records_degraded_analysis_for_dynamic_source_on_default_build() {
             .any(|p| p.as_str().is_some_and(|id| id.starts_with("LANG-"))),
         "default build must never emit grammar LANG-* matches: {entry}"
     );
+}
+
+#[tokio::test]
+async fn inline_source_limit_boundary_degrades_only_above_limit_on_default_build() {
+    let mut budget = OrchestrationBudget::L1_DEFAULT;
+    budget.inline_source_limit_bytes = 8;
+    let baseline = safe_baseline();
+
+    let at_limit = run_with_budget_in_cwd(
+        "python3 -c '12345678'",
+        AnalysisCwd::Resolved(Path::new(".")),
+        &baseline,
+        None,
+        &[],
+        budget,
+        None,
+    )
+    .await;
+    match at_limit {
+        Outcome::Analyzed { assessment, .. } => {
+            assert!(assessment.effect_opaque);
+            assert!(assessment.analysis.is_none());
+        }
+        other => panic!("expected Analyzed at exact inline limit, got {other:?}"),
+    }
+
+    let over_limit = run_with_budget_in_cwd(
+        "python3 -c '123456789'",
+        AnalysisCwd::Resolved(Path::new(".")),
+        &baseline,
+        None,
+        &[],
+        budget,
+        None,
+    )
+    .await;
+    match over_limit {
+        Outcome::Analyzed { assessment, .. } => {
+            let analysis = assessment
+                .analysis
+                .expect("oversized inline target must degrade");
+            assert_eq!(analysis.status, AnalysisStatus::Degraded);
+            assert_eq!(
+                analysis.degradation_reasons,
+                vec![DegradationReason::LimitExceeded]
+            );
+        }
+        other => panic!("expected degraded Analyzed over inline limit, got {other:?}"),
+    }
 }

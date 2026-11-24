@@ -331,41 +331,39 @@ pub async fn run_with_budget_in_cwd(
         unresolved_execution |= any_resolved;
     }
 
+    // Worker::analyze closes stdin and reaps the child per session, so each pop spawns one worker.
     #[cfg(feature = "language-analysis")]
-    {
-        // Worker::analyze closes stdin and reaps the child per session, so each pop spawns one worker.
-        while let Some(target) = queue.pop() {
-            let Some(remaining) = session_deadline.checked_duration_since(Instant::now()) else {
-                per_target.push(degraded(DegradationReason::LimitExceeded));
-                break;
+    while let Some(target) = queue.pop() {
+        let Some(remaining) = session_deadline.checked_duration_since(Instant::now()) else {
+            per_target.push(degraded(DegradationReason::LimitExceeded));
+            break;
+        };
+        let request = TargetRequest {
+            request_id: 1,
+            language: target.language,
+            source: target.source.as_bytes().to_vec(),
+            kind: RequestKind::Analyze,
+        };
+        let results: Vec<TargetResult> = match Worker::spawn(aegis_path).await {
+            Ok(mut worker) => worker.analyze(vec![request], remaining).await,
+            // Spawn failure degrades as WorkerFailure rather than claiming safety (ADR-022 §2).
+            Err(_) => vec![TargetResult::Failed(WorkerError::Closed)],
+        };
+        let result = results
+            .into_iter()
+            .next()
+            .unwrap_or(TargetResult::Failed(WorkerError::Closed));
+        let (mut analysis, recursive_targets) = map_target_result(result, &target);
+        if target.language == SourceLanguage::Bash {
+            let shell_scan = match shell_scanner {
+                Some(scanner) => scan_shell_source(scanner, &target.source),
+                None => degraded(DegradationReason::GrammarUnavailable),
             };
-            let request = TargetRequest {
-                request_id: 1,
-                language: target.language,
-                source: target.source.as_bytes().to_vec(),
-                kind: RequestKind::Analyze,
-            };
-            let results: Vec<TargetResult> = match Worker::spawn(aegis_path).await {
-                Ok(mut worker) => worker.analyze(vec![request], remaining).await,
-                // Spawn failure degrades as WorkerFailure rather than claiming safety (ADR-022 §2).
-                Err(_) => vec![TargetResult::Failed(WorkerError::Closed)],
-            };
-            let result = results
-                .into_iter()
-                .next()
-                .unwrap_or(TargetResult::Failed(WorkerError::Closed));
-            let (mut analysis, recursive_targets) = map_target_result(result, &target);
-            if target.language == SourceLanguage::Bash {
-                let shell_scan = match shell_scanner {
-                    Some(scanner) => scan_shell_source(scanner, &target.source),
-                    None => degraded(DegradationReason::GrammarUnavailable),
-                };
-                fold_result(&mut analysis, shell_scan);
-            }
-            per_target.push(analysis);
-            for recursive in recursive_targets {
-                push_with_degradation(&mut queue, recursive, &mut per_target);
-            }
+            fold_result(&mut analysis, shell_scan);
+        }
+        per_target.push(analysis);
+        for recursive in recursive_targets {
+            push_with_degradation(&mut queue, recursive, &mut per_target);
         }
     }
 
