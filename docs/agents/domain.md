@@ -4,6 +4,7 @@
 
 - `CONTEXT.md` at the repo root: the domain glossary. It plays the role other skills call `GLOSSARY.md`; write new terms here, never into a new `GLOSSARY.md`.
 - `docs/adr/`: read the ADRs that touch the area you work in. `docs/adr/README.md` indexes them. New ADRs are `docs/adr/adr-NNN-slug.md` with Status, Context, Decision, Consequences, plus an index line.
+- Before you move, gate or delete a module, check the advisory index in `SECURITY.md` for fixes that live in it.
 
 ## Use the glossary's vocabulary
 

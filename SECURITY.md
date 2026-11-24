@@ -67,6 +67,20 @@ The product also has explicit design limitations documented in `README.md`, `doc
 - encoded payload variants outside the implemented heuristic coverage
 - subshell or injection techniques that are not visible to the current interception boundary
 
+## Published advisories
+
+One row per published advisory; a row may name several tests. When an advisory is published, add its row here and its ID to `PUBLISHED_ADVISORIES` in `tests/advisory_index.rs`. Before you move, gate or delete a module, check which rows name its layer. `tests/advisory_index.rs` fails when a published advisory has no row or a row names a test that does not exist.
+
+| Advisory | Patched | ADR | Layer | Regression test |
+|---|---|---|---|---|
+| GHSA-mgwj-4828-3mrg | 0.6.8 | none | scanner | `crates/aegis-scanner/src/scanner/tests/shell_prefixes.rs::shell_grammar_prefixes_preserve_program_risk` |
+| GHSA-7gcj-4f7x-7fxj | 0.6.9 | none | scanner | `crates/aegis-scanner/src/scanner/tests/ghsa_7gcj.rs::assess_rm_operand_then_dash_rf_is_danger_via_fs020`, `crates/aegis-scanner/src/scanner/tests/ghsa_7gcj.rs::assess_rm_dash_v_dash_rf_is_danger_via_fs020` |
+| GHSA-c5pv-6qf7-w4cc | 0.6.9 | ADR-054 | source router | `tests/source_router_planner_regression.rs::later_list_segment_script_targets_never_auto_approve_without_snapshot` |
+| GHSA-xj54-q8xw-w92r | 0.6.10 | ADR-054 | source router | `tests/source_router_planner_regression.rs::executor_values_and_dynamic_launcher_operands_require_approval` |
+| GHSA-399c-6p33-f6m8 | 0.6.11 | ADR-040 | source router | `tests/source_router_planner_regression.rs::command_runner_script_targets_never_auto_approve_without_snapshot` |
+| GHSA-7564-rmfj-ch4p | 0.6.11 | ADR-041 | scanner | `crates/aegis-scanner/src/scanner/tests/ghsa_7564.rs::assess_dash_capital_c_reset_hard_warns_via_git001` |
+| GHSA-xprr-pwj3-gq85 | 0.7.1 | ADR-051 | parser, source router | `crates/aegis-parser/src/tests/ansi_c_tests.rs::ansi_c_piece_joins_the_surrounding_word`, `crates/aegis-parser/src/tests/tokenizer_tests.rs::line_continuation_joins_the_word_outside_quotes`, `tests/source_router_planner_regression.rs::ansi_c_quoted_unclaimed_stages_require_approval` |
+
 ## Disclosure expectations
 
 - Please provide a reasonable time window for investigation and remediation before public disclosure.
