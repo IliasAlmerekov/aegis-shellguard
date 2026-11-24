@@ -35,7 +35,7 @@ fn every_non_default_feature_is_tested_linted_and_denied_in_ci() {
         for command in [
             format!("cargo test --workspace --features {name}"),
             format!("cargo clippy --workspace --all-targets --features {name}"),
-            format!("cargo deny check --features {name}"),
+            format!("cargo deny --features {name} check"),
         ] {
             assert!(
                 ci.contains(&command),

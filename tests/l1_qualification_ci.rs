@@ -23,10 +23,22 @@ fn every_release_target_builds_the_shipping_binary_in_release_mode() {
         "macOS release targets must build the shipping binary in release mode"
     );
 
+    assert!(
+        !action.contains("--features language-analysis"),
+        "default release targets must stay opt-in and not enable `--features language-analysis` (ADR-024, ADR-054)"
+    );
+
     let workflow = repo_file(".github/workflows/ci.yml");
     assert!(
         workflow.contains("uses: ./.github/actions/build-target"),
         "release CI must compile every target through the build-target action"
+    );
+    assert!(
+        workflow.contains("cargo test --workspace --features language-analysis")
+            && workflow
+                .contains("cargo clippy --workspace --all-targets --features language-analysis")
+            && workflow.contains("cargo deny --features language-analysis check"),
+        "CI must still exercise the opt-in `language-analysis` feature in a dedicated job (ADR-024 §7)"
     );
     assert!(
         workflow.contains("include: ${{ fromJSON(needs.gate.outputs.build_targets) }}"),
