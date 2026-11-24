@@ -262,3 +262,56 @@ fn a_bash_function_with_empty_parens_routes_its_brace_body() {
         }]
     );
 }
+
+#[test]
+fn read_only_commands_after_shell_keywords_or_brace_do_not_degrade() {
+    for cmd in [
+        r#"for f in a b; do echo "$f"; done"#,
+        r#"for f in a; do cat "$f"; done"#,
+        r#"if true; then echo "$f"; fi"#,
+        r#"while false; do echo "$f"; done"#,
+        r#"{ echo "$f"; }"#,
+        r#"while read -r l; do echo "$l"; done < f"#,
+        r#"! echo "$f""#,
+        r#"! { echo "$f"; }"#,
+        r#"then ! echo "$f""#,
+        "do",
+        "then",
+    ] {
+        assert_eq!(
+            route(cmd, &[]),
+            Vec::new(),
+            "read-only command or bare keyword must not degrade: {cmd}"
+        );
+    }
+}
+
+#[test]
+fn dynamic_program_word_after_shell_keyword_or_brace_still_degrades() {
+    for cmd in ["do $X -rf /", "then $CMD", "{ $X; }", "! $X"] {
+        assert_eq!(
+            route(cmd, &[]),
+            vec![unresolved_dynamic()],
+            "dynamic program word after keyword must degrade: {cmd}"
+        );
+    }
+}
+
+#[test]
+fn non_read_only_command_with_dynamic_arg_after_shell_keyword_still_degrades() {
+    for cmd in [
+        r#"for f in a b; do rm -rf "$f"; done"#,
+        r#"do git commit -m "$MSG""#,
+    ] {
+        assert_eq!(
+            route(cmd, &[]),
+            vec![unresolved_dynamic()],
+            "non-read-only command with dynamic argv must degrade: {cmd}"
+        );
+    }
+}
+
+#[test]
+fn brace_expansion_program_word_still_degrades() {
+    assert_eq!(route("{a,b} x", &[]), vec![unresolved_dynamic()]);
+}
