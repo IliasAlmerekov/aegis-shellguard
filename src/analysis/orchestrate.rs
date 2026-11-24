@@ -156,7 +156,7 @@ pub async fn run_with_budget_in_cwd(
             baseline: baseline.clone(),
         };
     }
-    let unresolved_execution = routed.iter().any(|target| {
+    let mut unresolved_execution = routed.iter().any(|target| {
         matches!(
             target,
             RoutedTarget::Unresolved {
@@ -168,135 +168,162 @@ pub async fn run_with_budget_in_cwd(
         )
     });
 
+    #[cfg(feature = "language-analysis")]
+    let mut queue = AnalysisQueue::new(QueueBudget {
+        max_depth: budget.max_depth,
+        max_targets: budget.max_targets,
+        max_aggregate_bytes: budget.max_aggregate_bytes,
+        deadline: Some(session_deadline),
+    });
+    #[cfg(not(feature = "language-analysis"))]
+    let mut any_resolved = false;
+    let mut per_target: Vec<LanguageAnalysisResult> = Vec::new();
+    let mut script_files = 0usize;
+    // Speculative `LauncherOperand` candidates stay off `max_script_files`; 4x caps stat/shebang I/O (#437).
+    let mut launcher_operand_candidates = 0usize;
+    let max_launcher_operand_candidates = budget.max_script_files.saturating_mul(4);
+
+    for target in routed {
+        if let RoutedTarget::Unresolved { reason } = &target {
+            per_target.push(degraded(*reason));
+            continue;
+        }
+        if matches!(
+            &target,
+            RoutedTarget::Inline { source, .. }
+                if source.len() > budget.inline_source_limit_bytes
+        ) {
+            per_target.push(degraded(DegradationReason::LimitExceeded));
+            continue;
+        }
+        let is_launcher_operand = matches!(&target, RoutedTarget::LauncherOperand { .. });
+        #[cfg(feature = "language-analysis")]
+        let (origin, file_path) = match &target {
+            RoutedTarget::Inline { .. } => (SourceOrigin::Inline, None),
+            RoutedTarget::ScriptFile { path, .. }
+            | RoutedTarget::DirectExec { path }
+            | RoutedTarget::LauncherOperand { path } => (
+                SourceOrigin::ScriptFile,
+                Some(path.to_string_lossy().into_owned()),
+            ),
+            RoutedTarget::Dynamic { .. } | RoutedTarget::Unresolved { .. } => {
+                (SourceOrigin::Stdin, None)
+            }
+        };
+        let is_script_file = match &target {
+            RoutedTarget::ScriptFile { .. } | RoutedTarget::DirectExec { .. } => true,
+            RoutedTarget::LauncherOperand { .. } => {
+                launcher_operand_candidates += 1;
+                if launcher_operand_candidates > max_launcher_operand_candidates {
+                    per_target.push(degraded(DegradationReason::LimitExceeded));
+                    continue;
+                }
+                false
+            }
+            RoutedTarget::Inline { .. } | RoutedTarget::Dynamic { .. } => false,
+            RoutedTarget::Unresolved { reason } => {
+                per_target.push(degraded(*reason));
+                continue;
+            }
+        };
+        if is_script_file {
+            script_files += 1;
+            if script_files > budget.max_script_files {
+                per_target.push(degraded(DegradationReason::LimitExceeded));
+                continue;
+            }
+        }
+
+        let Some(remaining) = session_deadline.checked_duration_since(Instant::now()) else {
+            per_target.push(degraded(DegradationReason::LimitExceeded));
+            break;
+        };
+        let resolution = match tokio::time::timeout(
+            remaining,
+            resolve_for_analysis(target, command_cwd, budget.script_file_limit_bytes),
+        )
+        .await
+        {
+            Ok(resolution) => resolution,
+            Err(_) => {
+                per_target.push(degraded(DegradationReason::LimitExceeded));
+                break;
+            }
+        };
+        match resolution {
+            Resolution::Resolved {
+                #[cfg(feature = "language-analysis")]
+                language,
+                #[cfg(feature = "language-analysis")]
+                source,
+                #[cfg(feature = "language-analysis")]
+                source_hash,
+                #[cfg(feature = "language-analysis")]
+                source_byte_offset,
+                ..
+            } => {
+                // A launcher operand only proves itself a real script here
+                // (verified shebang); only now does it compete with
+                // ScriptFile/DirectExec for the same max_script_files budget.
+                if is_launcher_operand {
+                    script_files += 1;
+                    if script_files > budget.max_script_files {
+                        per_target.push(degraded(DegradationReason::LimitExceeded));
+                        continue;
+                    }
+                }
+                #[cfg(feature = "language-analysis")]
+                push_with_degradation(
+                    &mut queue,
+                    QueueTarget::new(language, source, 0)
+                        .with_source_hash(source_hash)
+                        .with_source_byte_offset(source_byte_offset)
+                        .with_provenance(origin, file_path),
+                    &mut per_target,
+                );
+                #[cfg(not(feature = "language-analysis"))]
+                {
+                    any_resolved = true;
+                }
+            }
+            Resolution::Degraded(reason) => {
+                unresolved_execution |= reason == DegradationReason::DynamicSource;
+                per_target.push(degraded(reason));
+            }
+            // A direct executable without a verified shebang is not an
+            // analyzable source target and does not claim safety.
+            Resolution::NotApplicable => {}
+        }
+    }
+
     #[cfg(not(feature = "language-analysis"))]
     {
         // Only the language-analysis worker path uses aegis_path and shell_scanner.
         let _ = (aegis_path, shell_scanner);
-        return run_router_only(
-            routed,
-            command_cwd,
-            baseline,
-            budget,
-            session_deadline,
-            unresolved_execution,
-        )
-        .await;
+        if !per_target.is_empty() {
+            let aggregated = aggregate(&per_target);
+            let mut assessment = merge_analysis(baseline, &aggregated);
+            assessment.effect_opaque |= any_resolved || unresolved_execution;
+            return Outcome::Analyzed {
+                assessment,
+                target_count: per_target.len(),
+            };
+        }
+        if any_resolved {
+            let mut assessment = baseline.clone();
+            assessment.effect_opaque = true;
+            return Outcome::Analyzed {
+                assessment,
+                target_count: 0,
+            };
+        }
+        Outcome::NotStarted {
+            baseline: baseline.clone(),
+        }
     }
 
     #[cfg(feature = "language-analysis")]
     {
-        let mut unresolved_execution = unresolved_execution;
-        let mut queue = AnalysisQueue::new(QueueBudget {
-            max_depth: budget.max_depth,
-            max_targets: budget.max_targets,
-            max_aggregate_bytes: budget.max_aggregate_bytes,
-            deadline: Some(session_deadline),
-        });
-        let mut per_target: Vec<LanguageAnalysisResult> = Vec::new();
-        let mut script_files = 0usize;
-        // Speculative `LauncherOperand` candidates stay off `max_script_files`; 4x caps stat/shebang I/O (#437).
-        let mut launcher_operand_candidates = 0usize;
-        let max_launcher_operand_candidates = budget.max_script_files.saturating_mul(4);
-
-        for target in routed {
-            if let RoutedTarget::Unresolved { reason } = &target {
-                per_target.push(degraded(*reason));
-                continue;
-            }
-            if matches!(
-                &target,
-                RoutedTarget::Inline { source, .. }
-                    if source.len() > budget.inline_source_limit_bytes
-            ) {
-                per_target.push(degraded(DegradationReason::LimitExceeded));
-                continue;
-            }
-            let is_launcher_operand = matches!(&target, RoutedTarget::LauncherOperand { .. });
-            let (origin, file_path, is_script_file) = match &target {
-                RoutedTarget::Inline { .. } => (SourceOrigin::Inline, None, false),
-                RoutedTarget::ScriptFile { path, .. } | RoutedTarget::DirectExec { path } => (
-                    SourceOrigin::ScriptFile,
-                    Some(path.to_string_lossy().into_owned()),
-                    true,
-                ),
-                RoutedTarget::LauncherOperand { path } => {
-                    launcher_operand_candidates += 1;
-                    if launcher_operand_candidates > max_launcher_operand_candidates {
-                        per_target.push(degraded(DegradationReason::LimitExceeded));
-                        continue;
-                    }
-                    (
-                        SourceOrigin::ScriptFile,
-                        Some(path.to_string_lossy().into_owned()),
-                        false,
-                    )
-                }
-                RoutedTarget::Dynamic { .. } => (SourceOrigin::Stdin, None, false),
-                RoutedTarget::Unresolved { reason } => {
-                    per_target.push(degraded(*reason));
-                    continue;
-                }
-            };
-            if is_script_file {
-                script_files += 1;
-                if script_files > budget.max_script_files {
-                    per_target.push(degraded(DegradationReason::LimitExceeded));
-                    continue;
-                }
-            }
-
-            let Some(remaining) = session_deadline.checked_duration_since(Instant::now()) else {
-                per_target.push(degraded(DegradationReason::LimitExceeded));
-                break;
-            };
-            let resolution = match tokio::time::timeout(
-                remaining,
-                resolve_for_analysis(target, command_cwd, budget.script_file_limit_bytes),
-            )
-            .await
-            {
-                Ok(resolution) => resolution,
-                Err(_) => {
-                    per_target.push(degraded(DegradationReason::LimitExceeded));
-                    break;
-                }
-            };
-            match resolution {
-                Resolution::Resolved {
-                    language,
-                    source,
-                    source_hash,
-                    source_byte_offset,
-                } => {
-                    // A launcher operand only proves itself a real script here
-                    // (verified shebang); only now does it compete with
-                    // ScriptFile/DirectExec for the same max_script_files budget.
-                    if is_launcher_operand {
-                        script_files += 1;
-                        if script_files > budget.max_script_files {
-                            per_target.push(degraded(DegradationReason::LimitExceeded));
-                            continue;
-                        }
-                    }
-                    push_with_degradation(
-                        &mut queue,
-                        QueueTarget::new(language, source, 0)
-                            .with_source_hash(source_hash)
-                            .with_source_byte_offset(source_byte_offset)
-                            .with_provenance(origin, file_path),
-                        &mut per_target,
-                    )
-                }
-                Resolution::Degraded(reason) => {
-                    unresolved_execution |= reason == DegradationReason::DynamicSource;
-                    per_target.push(degraded(reason));
-                }
-                // A direct executable without a verified shebang is not an
-                // analyzable source target and does not claim safety.
-                Resolution::NotApplicable => {}
-            }
-        }
-
         // Drain loop: pop → spawn a fresh worker → analyze one target → map the
         // response → enqueue recursive targets → repeat. LIFO order makes this
         // depth-first; the aggregate is order-independent (matches concatenated,
@@ -349,120 +376,6 @@ pub async fn run_with_budget_in_cwd(
             assessment,
             target_count: per_target.len(),
         }
-    }
-}
-
-/// Default-build source-router path without Tree-sitter or the worker (ADR-054 §2–§3).
-#[cfg(not(feature = "language-analysis"))]
-async fn run_router_only(
-    routed: Vec<RoutedTarget>,
-    command_cwd: AnalysisCwd<'_>,
-    baseline: &Assessment,
-    budget: OrchestrationBudget,
-    session_deadline: Instant,
-    mut unresolved_execution: bool,
-) -> Outcome {
-    let mut per_target: Vec<LanguageAnalysisResult> = Vec::new();
-    let mut any_resolved = false;
-    let mut script_files = 0usize;
-    // Speculative `LauncherOperand` candidates stay off `max_script_files`; 4x caps stat/shebang I/O (#437).
-    let mut launcher_operand_candidates = 0usize;
-    let max_launcher_operand_candidates = budget.max_script_files.saturating_mul(4);
-
-    for target in routed {
-        if let RoutedTarget::Unresolved { reason } = &target {
-            per_target.push(degraded(*reason));
-            continue;
-        }
-        if matches!(
-            &target,
-            RoutedTarget::Inline { source, .. }
-                if source.len() > budget.inline_source_limit_bytes
-        ) {
-            per_target.push(degraded(DegradationReason::LimitExceeded));
-            continue;
-        }
-        let is_launcher_operand = matches!(&target, RoutedTarget::LauncherOperand { .. });
-        let is_script_file = match &target {
-            RoutedTarget::ScriptFile { .. } | RoutedTarget::DirectExec { .. } => true,
-            RoutedTarget::LauncherOperand { .. } => {
-                launcher_operand_candidates += 1;
-                if launcher_operand_candidates > max_launcher_operand_candidates {
-                    per_target.push(degraded(DegradationReason::LimitExceeded));
-                    continue;
-                }
-                false
-            }
-            RoutedTarget::Inline { .. } | RoutedTarget::Dynamic { .. } => false,
-            RoutedTarget::Unresolved { reason } => {
-                per_target.push(degraded(*reason));
-                continue;
-            }
-        };
-        if is_script_file {
-            script_files += 1;
-            if script_files > budget.max_script_files {
-                per_target.push(degraded(DegradationReason::LimitExceeded));
-                continue;
-            }
-        }
-
-        let Some(remaining) = session_deadline.checked_duration_since(Instant::now()) else {
-            per_target.push(degraded(DegradationReason::LimitExceeded));
-            break;
-        };
-        let resolution = match tokio::time::timeout(
-            remaining,
-            resolve_for_analysis(target, command_cwd, budget.script_file_limit_bytes),
-        )
-        .await
-        {
-            Ok(resolution) => resolution,
-            Err(_) => {
-                per_target.push(degraded(DegradationReason::LimitExceeded));
-                break;
-            }
-        };
-        match resolution {
-            Resolution::Resolved { .. } => {
-                if is_launcher_operand {
-                    script_files += 1;
-                    if script_files > budget.max_script_files {
-                        per_target.push(degraded(DegradationReason::LimitExceeded));
-                        continue;
-                    }
-                }
-                any_resolved = true;
-            }
-            Resolution::Degraded(reason) => {
-                unresolved_execution |= reason == DegradationReason::DynamicSource;
-                per_target.push(degraded(reason));
-            }
-            Resolution::NotApplicable => {}
-        }
-    }
-
-    if !per_target.is_empty() {
-        let aggregated = aggregate(&per_target);
-        let mut assessment = merge_analysis(baseline, &aggregated);
-        assessment.effect_opaque |= any_resolved || unresolved_execution;
-        return Outcome::Analyzed {
-            assessment,
-            target_count: per_target.len(),
-        };
-    }
-
-    if any_resolved {
-        let mut assessment = baseline.clone();
-        assessment.effect_opaque = true;
-        return Outcome::Analyzed {
-            assessment,
-            target_count: 0,
-        };
-    }
-
-    Outcome::NotStarted {
-        baseline: baseline.clone(),
     }
 }
 

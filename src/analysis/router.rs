@@ -86,7 +86,13 @@ pub struct UnresolvedTarget {
 /// Resolution result used by live orchestration, including original-byte hash
 /// metadata and degradations that do not have a known language yet.
 pub(super) enum Resolution {
-    #[cfg_attr(not(feature = "language-analysis"), allow(dead_code))]
+    #[cfg_attr(
+        not(feature = "language-analysis"),
+        expect(
+            dead_code,
+            reason = "fields are read only when language-analysis feeds the worker"
+        )
+    )]
     Resolved {
         language: SourceLanguage,
         source: String,

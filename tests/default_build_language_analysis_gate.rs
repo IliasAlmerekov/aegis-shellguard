@@ -35,7 +35,6 @@ fn project_language_analysis_config_parses_and_tightening_applies_on_default_bui
     .unwrap();
 
     let loaded = AegisConfig::load_for(project.path(), Some(home.path())).unwrap();
-    // Project cannot loosen global max_depth (4 stays 4), but can tighten max_targets (10 -> 4).
     assert_eq!(loaded.language_analysis.max_depth, 4);
     assert_eq!(loaded.language_analysis.max_targets, 4);
 }

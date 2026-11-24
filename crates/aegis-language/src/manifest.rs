@@ -24,6 +24,7 @@ pub const RELEASE_GRAMMARS: &[&str] = &["python", "javascript", "typescript", "b
 /// [`MIN_SUPPORTED_LANGUAGE_ABI`] is accepted as backwards-compatible.
 #[cfg(feature = "grammars")]
 pub const SUPPORTED_LANGUAGE_ABI: u32 = tree_sitter::LANGUAGE_VERSION as u32;
+/// The Tree-sitter language ABI version of the pinned 0.26 runtime.
 #[cfg(not(feature = "grammars"))]
 pub const SUPPORTED_LANGUAGE_ABI: u32 = 15;
 
@@ -31,6 +32,7 @@ pub const SUPPORTED_LANGUAGE_ABI: u32 = 15;
 /// (`tree_sitter::MIN_COMPATIBLE_LANGUAGE_VERSION`).
 #[cfg(feature = "grammars")]
 pub const MIN_SUPPORTED_LANGUAGE_ABI: u32 = tree_sitter::MIN_COMPATIBLE_LANGUAGE_VERSION as u32;
+/// The oldest Tree-sitter ABI the pinned 0.26 runtime accepts.
 #[cfg(not(feature = "grammars"))]
 pub const MIN_SUPPORTED_LANGUAGE_ABI: u32 = 13;
 
