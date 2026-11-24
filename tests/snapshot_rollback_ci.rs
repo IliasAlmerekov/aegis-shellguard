@@ -111,16 +111,19 @@ fn ci_docs_record_macos_docker_skip() {
     );
 }
 
-#[test]
-fn ci_defines_live_db_snapshot_rollback_job() {
-    let ci = workflow();
-    let block = ci
-        .split("\n  snapshot-rollback-live-db:\n")
+fn live_db_job_block(ci: &str) -> &str {
+    ci.split("\n  snapshot-rollback-live-db:\n")
         .nth(1)
         .expect("CI must define the snapshot-rollback-live-db job")
         .split("\n  snapshot-rollback-live-macos:\n")
         .next()
-        .unwrap();
+        .unwrap()
+}
+
+#[test]
+fn ci_defines_live_db_snapshot_rollback_job() {
+    let ci = workflow();
+    let block = live_db_job_block(&ci);
 
     assert!(
         block.contains("name: Live snapshot/rollback (Postgres + MySQL + Supabase)"),
@@ -151,13 +154,7 @@ fn ci_defines_live_db_snapshot_rollback_job() {
 #[test]
 fn ci_live_db_snapshot_rollback_job_runs_postgres_mysql_and_supabase_tests() {
     let ci = workflow();
-    let block = ci
-        .split("\n  snapshot-rollback-live-db:\n")
-        .nth(1)
-        .expect("CI must define the snapshot-rollback-live-db job")
-        .split("\n  snapshot-rollback-live-macos:\n")
-        .next()
-        .unwrap();
+    let block = live_db_job_block(&ci);
 
     assert!(
         block.contains("AEGIS_POSTGRES_SNAPSHOT_TESTS: \"1\"")

@@ -15,7 +15,7 @@ pub(crate) async fn binary_available(binary: &str) -> bool {
 
 /// Return `true` when `binary` resolves to a runnable file directly or inside
 /// `path_env`.
-pub(crate) async fn binary_available_in(binary: &str, path_env: Option<&OsStr>) -> bool {
+async fn binary_available_in(binary: &str, path_env: Option<&OsStr>) -> bool {
     if binary.is_empty() {
         return false;
     }
@@ -141,6 +141,47 @@ mod tests {
 
         assert!(binary_available_in("mysqldump", Some(joined.as_os_str())).await);
         assert!(binary_available_in(&bin.to_string_lossy(), None).await);
+    }
+
+    #[tokio::test]
+    async fn binary_available_in_resolves_relative_path_with_separator_without_path_env() {
+        if env::var_os("AEGIS_RELATIVE_PATH_CHILD").is_some() {
+            let found = binary_available_in("sub/pg_dump", None).await;
+            let missing = binary_available_in("sub/missing", None).await;
+            if found && !missing {
+                std::process::exit(CHILD_PASSED);
+            }
+            eprintln!("found={found} missing={missing}");
+            std::process::exit(CHILD_FAILED);
+        }
+
+        let dir = TempDir::new().unwrap();
+        let sub = dir.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        stub_bin(&sub, "pg_dump", "exit 0");
+
+        let module_path = module_path!()
+            .split_once("::")
+            .map_or(module_path!(), |(_crate_name, rest)| rest);
+        let test_name = format!(
+            "{module_path}::binary_available_in_resolves_relative_path_with_separator_without_path_env"
+        );
+
+        let exe = env::current_exe().unwrap();
+        let output = std::process::Command::new(exe)
+            .current_dir(dir.path())
+            .args(["--exact", &test_name, "--nocapture"])
+            .env("AEGIS_RELATIVE_PATH_CHILD", "1")
+            .output()
+            .expect("failed to re-exec test binary");
+
+        assert_eq!(
+            output.status.code(),
+            Some(CHILD_PASSED),
+            "relative path lookup failed:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     const CHILD_PASSED: i32 = 42;

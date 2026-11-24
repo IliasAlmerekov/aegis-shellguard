@@ -4,7 +4,7 @@
 //! Each test is gated behind its own opt-in environment variable so default
 //! `cargo test` requires no running database server:
 //! - `AEGIS_POSTGRES_SNAPSHOT_TESTS=1` (against PostgreSQL 16)
-//! - `AEGIS_MYSQL_SNAPSHOT_TESTS=1` (against MySQL 8.0)
+//! - `AEGIS_MYSQL_SNAPSHOT_TESTS=1` (against MySQL 8.0, image `mysql:8.0`)
 //! - `AEGIS_SUPABASE_SNAPSHOT_TESTS=1` (against PostgreSQL 16 via Supabase's
 //!   Postgres-compatible dump/restore path)
 
@@ -18,7 +18,6 @@ struct PgConn {
     host: String,
     port: u16,
     user: String,
-    password: String,
     database: String,
 }
 
@@ -30,7 +29,6 @@ impl PgConn {
             .and_then(|v| v.parse::<u16>().ok())
             .unwrap_or(5432);
         let user = std::env::var("PGUSER").unwrap_or_else(|_| "postgres".to_string());
-        let password = std::env::var("PGPASSWORD").unwrap_or_else(|_| "postgres".to_string());
         let database = std::env::var(db_env).unwrap_or_else(|_| default_db.to_string());
         assert!(
             !database.is_empty()
@@ -44,7 +42,6 @@ impl PgConn {
             host,
             port,
             user,
-            password,
             database,
         }
     }
@@ -68,7 +65,6 @@ impl PgConn {
                 "-c",
                 sql,
             ])
-            .env("PGPASSWORD", &self.password)
             .output()
             .unwrap_or_else(|error| panic!("psql should run: {error}"));
 
@@ -110,7 +106,6 @@ impl Drop for PgDbGuard<'_> {
                 "-c",
                 &format!("DROP DATABASE IF EXISTS {};", self.0.database),
             ])
-            .env("PGPASSWORD", &self.0.password)
             .output();
     }
 }
@@ -119,7 +114,6 @@ struct MysqlConn {
     host: String,
     port: u16,
     user: String,
-    password: String,
     database: String,
 }
 
@@ -131,7 +125,6 @@ impl MysqlConn {
             .and_then(|v| v.parse::<u16>().ok())
             .unwrap_or(3306);
         let user = std::env::var("MYSQL_USER").unwrap_or_else(|_| "root".to_string());
-        let password = std::env::var("MYSQL_PWD").unwrap_or_else(|_| "root".to_string());
         let database =
             std::env::var("AEGIS_MYSQL_TEST_DB").unwrap_or_else(|_| "aegis_mysql_test".to_string());
         assert!(
@@ -145,22 +138,19 @@ impl MysqlConn {
             host,
             port,
             user,
-            password,
             database,
         }
     }
 
     fn run_mysql(&self, database: Option<&str>, sql: &str) -> String {
         let mut command = Command::new("mysql");
-        command
-            .args([
-                &format!("--host={}", self.host),
-                &format!("--port={}", self.port),
-                &format!("--user={}", self.user),
-                "--batch",
-                "--skip-column-names",
-            ])
-            .env("MYSQL_PWD", &self.password);
+        command.args([
+            &format!("--host={}", self.host),
+            &format!("--port={}", self.port),
+            &format!("--user={}", self.user),
+            "--batch",
+            "--skip-column-names",
+        ]);
         if let Some(db) = database {
             command.arg(db);
         }
@@ -203,7 +193,6 @@ impl Drop for MysqlDbGuard<'_> {
                 "-e",
                 &format!("DROP DATABASE IF EXISTS `{}`;", self.0.database),
             ])
-            .env("MYSQL_PWD", &self.0.password)
             .output();
     }
 }
@@ -217,7 +206,64 @@ fn live_test_enabled(env_var: &str, requirement: &str) -> bool {
     }
 }
 
-/// Live snapshot-then-rollback cycle against a PostgreSQL 16 server.
+async fn run_pg_rollback_cycle(conn: &PgConn, plugin: &dyn SnapshotPlugin, label: &str) {
+    let _guard = PgDbGuard(conn);
+    conn.recreate_database();
+    conn.run_psql(
+        &conn.database,
+        "CREATE TABLE items (id SERIAL PRIMARY KEY, name TEXT NOT NULL); \
+         INSERT INTO items (name) VALUES ('before');",
+    );
+    assert_eq!(
+        conn.run_psql(
+            &conn.database,
+            "SELECT string_agg(name, ',' ORDER BY id) FROM items;"
+        ),
+        "before",
+        "{label}: initial seed row must be present before snapshot"
+    );
+
+    let cwd = TempDir::new().unwrap();
+    assert!(
+        plugin.is_applicable(cwd.path()).await,
+        "{label}: plugin must be applicable when PostgreSQL client tools are on PATH"
+    );
+
+    let snapshot_id = plugin
+        .snapshot(cwd.path(), "DROP TABLE items")
+        .await
+        .unwrap_or_else(|err| panic!("{label}: snapshot must succeed against live server: {err}"));
+
+    conn.run_psql(&conn.database, "INSERT INTO items (name) VALUES ('after');");
+    assert_eq!(
+        conn.run_psql(
+            &conn.database,
+            "SELECT string_agg(name, ',' ORDER BY id) FROM items;"
+        ),
+        "before,after",
+        "{label}: mutation must be visible before rollback"
+    );
+
+    plugin
+        .rollback(&snapshot_id)
+        .await
+        .unwrap_or_else(|err| panic!("{label}: rollback must succeed against live server: {err}"));
+
+    assert_eq!(
+        conn.run_psql(
+            &conn.database,
+            "SELECT string_agg(name, ',' ORDER BY id) FROM items;"
+        ),
+        "before",
+        "{label}: rollback must restore the pre-mutation database contents"
+    );
+
+    plugin
+        .delete(&snapshot_id)
+        .await
+        .unwrap_or_else(|err| panic!("{label}: snapshot delete must succeed: {err}"));
+}
+
 #[tokio::test]
 async fn postgres_snapshot_rollback_restores_live_database() {
     if live_test_enabled(
@@ -225,22 +271,6 @@ async fn postgres_snapshot_rollback_restores_live_database() {
         "a running PostgreSQL server",
     ) {
         let conn = PgConn::from_env("AEGIS_POSTGRES_TEST_DB", "aegis_pg_test");
-        let _guard = PgDbGuard(&conn);
-        conn.recreate_database();
-        conn.run_psql(
-            &conn.database,
-            "CREATE TABLE items (id SERIAL PRIMARY KEY, name TEXT NOT NULL); \
-             INSERT INTO items (name) VALUES ('before');",
-        );
-        assert_eq!(
-            conn.run_psql(
-                &conn.database,
-                "SELECT string_agg(name, ',' ORDER BY id) FROM items;"
-            ),
-            "before",
-            "initial seed row must be present before snapshot"
-        );
-
         let temp = TempDir::new().unwrap();
         let plugin = PostgresPlugin::new(
             conn.database.clone(),
@@ -249,48 +279,10 @@ async fn postgres_snapshot_rollback_restores_live_database() {
             conn.user.clone(),
             temp.path().join("snapshots"),
         );
-        assert!(
-            plugin.is_applicable(temp.path()).await,
-            "PostgresPlugin must be applicable when pg_dump is on PATH"
-        );
-
-        let snapshot_id = plugin
-            .snapshot(temp.path(), "DROP TABLE items")
-            .await
-            .expect("postgres snapshot must succeed against live server");
-
-        conn.run_psql(&conn.database, "INSERT INTO items (name) VALUES ('after');");
-        assert_eq!(
-            conn.run_psql(
-                &conn.database,
-                "SELECT string_agg(name, ',' ORDER BY id) FROM items;"
-            ),
-            "before,after",
-            "mutation must be visible before rollback"
-        );
-
-        plugin
-            .rollback(&snapshot_id)
-            .await
-            .expect("postgres rollback must succeed against live server");
-
-        assert_eq!(
-            conn.run_psql(
-                &conn.database,
-                "SELECT string_agg(name, ',' ORDER BY id) FROM items;"
-            ),
-            "before",
-            "postgres rollback must restore the pre-mutation database contents"
-        );
-
-        plugin
-            .delete(&snapshot_id)
-            .await
-            .expect("postgres snapshot delete must succeed");
+        run_pg_rollback_cycle(&conn, &plugin, "postgres").await;
     }
 }
 
-/// Live snapshot-then-rollback cycle against a MySQL 8.0 server (`mysql:8.0`).
 #[tokio::test]
 async fn mysql_snapshot_rollback_restores_live_database() {
     if live_test_enabled("AEGIS_MYSQL_SNAPSHOT_TESTS", "a running MySQL 8.0 server") {
@@ -363,8 +355,6 @@ async fn mysql_snapshot_rollback_restores_live_database() {
     }
 }
 
-/// Live snapshot-then-rollback cycle for [`SupabasePlugin`] over its
-/// Postgres-compatible dump/restore path against a PostgreSQL 16 server.
 #[tokio::test]
 async fn supabase_snapshot_rollback_restores_live_postgres_database() {
     if live_test_enabled(
@@ -372,22 +362,6 @@ async fn supabase_snapshot_rollback_restores_live_postgres_database() {
         "a running PostgreSQL server",
     ) {
         let conn = PgConn::from_env("AEGIS_SUPABASE_TEST_DB", "aegis_supabase_test");
-        let _guard = PgDbGuard(&conn);
-        conn.recreate_database();
-        conn.run_psql(
-            &conn.database,
-            "CREATE TABLE items (id SERIAL PRIMARY KEY, name TEXT NOT NULL); \
-             INSERT INTO items (name) VALUES ('before');",
-        );
-        assert_eq!(
-            conn.run_psql(
-                &conn.database,
-                "SELECT string_agg(name, ',' ORDER BY id) FROM items;"
-            ),
-            "before",
-            "initial seed row must be present before snapshot"
-        );
-
         let temp = TempDir::new().unwrap();
         let config = SupabaseSnapshotConfig {
             project_ref: "aegis-ci-postgres".to_string(),
@@ -400,43 +374,6 @@ async fn supabase_snapshot_rollback_restores_live_postgres_database() {
             ..SupabaseSnapshotConfig::default()
         };
         let plugin = SupabasePlugin::new(config, temp.path().join("snapshots"));
-        assert!(
-            plugin.is_applicable(temp.path()).await,
-            "SupabasePlugin must be applicable when pg_dump and pg_restore are on PATH"
-        );
-
-        let snapshot_id = plugin
-            .snapshot(temp.path(), "DROP TABLE items")
-            .await
-            .expect("supabase snapshot must succeed against live PostgreSQL server");
-
-        conn.run_psql(&conn.database, "INSERT INTO items (name) VALUES ('after');");
-        assert_eq!(
-            conn.run_psql(
-                &conn.database,
-                "SELECT string_agg(name, ',' ORDER BY id) FROM items;"
-            ),
-            "before,after",
-            "mutation must be visible before rollback"
-        );
-
-        plugin
-            .rollback(&snapshot_id)
-            .await
-            .expect("supabase rollback must succeed against live PostgreSQL server");
-
-        assert_eq!(
-            conn.run_psql(
-                &conn.database,
-                "SELECT string_agg(name, ',' ORDER BY id) FROM items;"
-            ),
-            "before",
-            "supabase rollback must restore the pre-mutation database contents"
-        );
-
-        plugin
-            .delete(&snapshot_id)
-            .await
-            .expect("supabase snapshot delete must succeed");
+        run_pg_rollback_cycle(&conn, &plugin, "supabase").await;
     }
 }
