@@ -154,14 +154,7 @@ impl SnapshotPlugin for MysqlPlugin {
             return false;
         }
 
-        tokio::process::Command::new("which")
-            .arg(&self.mysqldump_bin)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .await
-            .map(|status| status.success())
-            .unwrap_or(false)
+        crate::binary_lookup::binary_available(&self.mysqldump_bin).await
     }
 
     async fn snapshot(&self, _cwd: &Path, _cmd: &str) -> Result<String> {

@@ -22,6 +22,7 @@ use async_trait::async_trait;
 pub mod error;
 pub use error::SnapshotError;
 
+mod binary_lookup;
 mod busy;
 mod database_target;
 mod docker;
