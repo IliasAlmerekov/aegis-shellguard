@@ -279,6 +279,7 @@ Minimum expectations:
 - Hot-path behavior must be checked for performance regressions when parser/scanner logic changes.
 - A test of a shell script runs the script, or the block under test, against a fixture.
   An assert on the script's source text proves nothing about what it does.
+  Because `cargo test --workspace` runs on both Linux and macOS (`macos-26`), executed shell blocks must stay POSIX/BSD+GNU portable (avoid GNU-only flags and Python 3.11+ stdlib).
 - A test spawns `git` through `git_command` in `src/test_git.rs`, which strips the inherited `GIT_` variables, such as the `GIT_DIR` a worktree hook exports.
   Integration tests take it, `run_git` and `init_git_repo` from `tests/support`. `scripts/lint.sh text` fails on any other `Command::new("git")`.
 - `tests/evaluation_golden.rs` pins the verdict of a fixed command corpus in `tests/fixtures/evaluation_golden.jsonl`.

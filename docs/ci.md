@@ -23,12 +23,11 @@ fails when `CONTRIBUTING.md` names a Rust toolchain other than
   (`build`) both expand it into `strategy.matrix.include`, and the jobs that
   name a runner outside the matrix read their label from the same file. Linux
   runs on `ubuntu-24.04` and macOS on `macos-26`; no job uses a floating
-  `*-latest` label. The `gate` job in `ci.yml` and the `config` job in
-  `release.yml` load the labels, so they repeat the Linux label as a literal.
-  So does the Merge admission check, which must run even when `gate` failed,
-  and the single-job `msrv` workflow, which does not run `load-versions`.
-  A runner-image bump edits `.github/build-targets.json` and those four lines,
-  and `tests/supply_chain_ci.rs` fails if they disagree.
+  `*-latest` label. Jobs that cannot read `linux_runner` from `load-versions`
+  repeat the pinned Linux label as a literal and are listed in
+  `LITERAL_RUNNER_JOBS` in `tests/supply_chain_ci.rs`. A runner-image bump
+  edits `.github/build-targets.json` and those listed jobs, and
+  `tests/supply_chain_ci.rs` fails if they disagree.
 - GitHub Actions used by `.github/workflows/ci.yml`, `.github/workflows/release.yml`, and `.github/workflows/msrv.yml` are pinned by full commit SHA with readable release comments. `.github/dependabot.yml` opens the weekly pull request that moves those SHAs forward, along with the cargo and npm dependency updates.
 
 ## Current CI Jobs
