@@ -19,18 +19,25 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "language-analysis")]
 use aegis_language::SourceLanguage;
+#[cfg(feature = "language-analysis")]
 use aegis_language::protocol::Response;
+#[cfg(feature = "language-analysis")]
+use aegis_types::SourceOrigin;
 use aegis_types::{
-    AnalysisStatus, Assessment, DegradationReason, LanguageAnalysisResult, SourceOrigin,
-    merge_analysis,
+    AnalysisStatus, Assessment, DegradationReason, LanguageAnalysisResult, merge_analysis,
 };
 
 use super::AnalysisCwd;
+#[cfg(feature = "language-analysis")]
 use super::mapping::map_adapter_result;
+#[cfg(feature = "language-analysis")]
 use super::queue::{AnalysisQueue, QueueBudget, QueueTarget};
 use super::router::{Resolution, RoutedTarget, resolve_for_analysis, route_with_home};
+#[cfg(feature = "language-analysis")]
 use super::shell_scan::{fold_result, scan_shell_source};
+#[cfg(feature = "language-analysis")]
 use super::worker_client::{RequestKind, TargetRequest, TargetResult, Worker, WorkerError};
 use aegis_scanner::Scanner;
 
@@ -149,7 +156,7 @@ pub async fn run_with_budget_in_cwd(
             baseline: baseline.clone(),
         };
     }
-    let mut unresolved_execution = routed.iter().any(|target| {
+    let unresolved_execution = routed.iter().any(|target| {
         matches!(
             target,
             RoutedTarget::Unresolved {
@@ -161,13 +168,202 @@ pub async fn run_with_budget_in_cwd(
         )
     });
 
-    let mut queue = AnalysisQueue::new(QueueBudget {
-        max_depth: budget.max_depth,
-        max_targets: budget.max_targets,
-        max_aggregate_bytes: budget.max_aggregate_bytes,
-        deadline: Some(session_deadline),
-    });
+    #[cfg(not(feature = "language-analysis"))]
+    {
+        // Only the language-analysis worker path uses aegis_path and shell_scanner.
+        let _ = (aegis_path, shell_scanner);
+        return run_router_only(
+            routed,
+            command_cwd,
+            baseline,
+            budget,
+            session_deadline,
+            unresolved_execution,
+        )
+        .await;
+    }
+
+    #[cfg(feature = "language-analysis")]
+    {
+        let mut unresolved_execution = unresolved_execution;
+        let mut queue = AnalysisQueue::new(QueueBudget {
+            max_depth: budget.max_depth,
+            max_targets: budget.max_targets,
+            max_aggregate_bytes: budget.max_aggregate_bytes,
+            deadline: Some(session_deadline),
+        });
+        let mut per_target: Vec<LanguageAnalysisResult> = Vec::new();
+        let mut script_files = 0usize;
+        // Speculative `LauncherOperand` candidates stay off `max_script_files`; 4x caps stat/shebang I/O (#437).
+        let mut launcher_operand_candidates = 0usize;
+        let max_launcher_operand_candidates = budget.max_script_files.saturating_mul(4);
+
+        for target in routed {
+            if let RoutedTarget::Unresolved { reason } = &target {
+                per_target.push(degraded(*reason));
+                continue;
+            }
+            if matches!(
+                &target,
+                RoutedTarget::Inline { source, .. }
+                    if source.len() > budget.inline_source_limit_bytes
+            ) {
+                per_target.push(degraded(DegradationReason::LimitExceeded));
+                continue;
+            }
+            let is_launcher_operand = matches!(&target, RoutedTarget::LauncherOperand { .. });
+            let (origin, file_path, is_script_file) = match &target {
+                RoutedTarget::Inline { .. } => (SourceOrigin::Inline, None, false),
+                RoutedTarget::ScriptFile { path, .. } | RoutedTarget::DirectExec { path } => (
+                    SourceOrigin::ScriptFile,
+                    Some(path.to_string_lossy().into_owned()),
+                    true,
+                ),
+                RoutedTarget::LauncherOperand { path } => {
+                    launcher_operand_candidates += 1;
+                    if launcher_operand_candidates > max_launcher_operand_candidates {
+                        per_target.push(degraded(DegradationReason::LimitExceeded));
+                        continue;
+                    }
+                    (
+                        SourceOrigin::ScriptFile,
+                        Some(path.to_string_lossy().into_owned()),
+                        false,
+                    )
+                }
+                RoutedTarget::Dynamic { .. } => (SourceOrigin::Stdin, None, false),
+                RoutedTarget::Unresolved { reason } => {
+                    per_target.push(degraded(*reason));
+                    continue;
+                }
+            };
+            if is_script_file {
+                script_files += 1;
+                if script_files > budget.max_script_files {
+                    per_target.push(degraded(DegradationReason::LimitExceeded));
+                    continue;
+                }
+            }
+
+            let Some(remaining) = session_deadline.checked_duration_since(Instant::now()) else {
+                per_target.push(degraded(DegradationReason::LimitExceeded));
+                break;
+            };
+            let resolution = match tokio::time::timeout(
+                remaining,
+                resolve_for_analysis(target, command_cwd, budget.script_file_limit_bytes),
+            )
+            .await
+            {
+                Ok(resolution) => resolution,
+                Err(_) => {
+                    per_target.push(degraded(DegradationReason::LimitExceeded));
+                    break;
+                }
+            };
+            match resolution {
+                Resolution::Resolved {
+                    language,
+                    source,
+                    source_hash,
+                    source_byte_offset,
+                } => {
+                    // A launcher operand only proves itself a real script here
+                    // (verified shebang); only now does it compete with
+                    // ScriptFile/DirectExec for the same max_script_files budget.
+                    if is_launcher_operand {
+                        script_files += 1;
+                        if script_files > budget.max_script_files {
+                            per_target.push(degraded(DegradationReason::LimitExceeded));
+                            continue;
+                        }
+                    }
+                    push_with_degradation(
+                        &mut queue,
+                        QueueTarget::new(language, source, 0)
+                            .with_source_hash(source_hash)
+                            .with_source_byte_offset(source_byte_offset)
+                            .with_provenance(origin, file_path),
+                        &mut per_target,
+                    )
+                }
+                Resolution::Degraded(reason) => {
+                    unresolved_execution |= reason == DegradationReason::DynamicSource;
+                    per_target.push(degraded(reason));
+                }
+                // A direct executable without a verified shebang is not an
+                // analyzable source target and does not claim safety.
+                Resolution::NotApplicable => {}
+            }
+        }
+
+        // Drain loop: pop → spawn a fresh worker → analyze one target → map the
+        // response → enqueue recursive targets → repeat. LIFO order makes this
+        // depth-first; the aggregate is order-independent (matches concatenated,
+        // reasons deduplicated). One worker per pop: Worker::analyze closes stdin
+        // and reaps the child every session, so the worker cannot be reused across
+        // pops without refactoring worker_client (deferred perf optimization).
+        while let Some(target) = queue.pop() {
+            let Some(remaining) = session_deadline.checked_duration_since(Instant::now()) else {
+                per_target.push(degraded(DegradationReason::LimitExceeded));
+                break;
+            };
+            let request = TargetRequest {
+                request_id: 1,
+                language: target.language,
+                source: target.source.as_bytes().to_vec(),
+                kind: RequestKind::Analyze,
+            };
+            let results: Vec<TargetResult> = match Worker::spawn(aegis_path).await {
+                Ok(mut worker) => worker.analyze(vec![request], remaining).await,
+                // A spawn failure degrades this target as WorkerFailure; the parent
+                // never treats a worker failure as evidence of safety (ADR-022 §2).
+                Err(_) => vec![TargetResult::Failed(WorkerError::Closed)],
+            };
+            let result = results
+                .into_iter()
+                .next()
+                .unwrap_or(TargetResult::Failed(WorkerError::Closed));
+            let (mut analysis, recursive_targets) = map_target_result(result, &target);
+            if target.language == SourceLanguage::Bash {
+                let shell_scan = match shell_scanner {
+                    Some(scanner) => scan_shell_source(scanner, &target.source),
+                    None => degraded(DegradationReason::GrammarUnavailable),
+                };
+                fold_result(&mut analysis, shell_scan);
+            }
+            per_target.push(analysis);
+            for recursive in recursive_targets {
+                push_with_degradation(&mut queue, recursive, &mut per_target);
+            }
+        }
+
+        // Aggregate across every analyzed target (top-level + recursive) into ONE
+        // result and merge once: merge_analysis overwrites Assessment.analysis with
+        // the latest status/reasons, so a per-target merge would clobber earlier
+        // reasons (D3).
+        let aggregated = aggregate(&per_target);
+        let mut assessment = merge_analysis(baseline, &aggregated);
+        assessment.effect_opaque |= unresolved_execution;
+        Outcome::Analyzed {
+            assessment,
+            target_count: per_target.len(),
+        }
+    }
+}
+
+/// Default-build source-router path without Tree-sitter or the worker (ADR-054 §2–§3).
+#[cfg(not(feature = "language-analysis"))]
+async fn run_router_only(
+    routed: Vec<RoutedTarget>,
+    command_cwd: AnalysisCwd<'_>,
+    baseline: &Assessment,
+    budget: OrchestrationBudget,
+    session_deadline: Instant,
+    mut unresolved_execution: bool,
+) -> Outcome {
     let mut per_target: Vec<LanguageAnalysisResult> = Vec::new();
+    let mut any_resolved = false;
     let mut script_files = 0usize;
     // Speculative `LauncherOperand` candidates stay off `max_script_files`; 4x caps stat/shebang I/O (#437).
     let mut launcher_operand_candidates = 0usize;
@@ -187,26 +383,17 @@ pub async fn run_with_budget_in_cwd(
             continue;
         }
         let is_launcher_operand = matches!(&target, RoutedTarget::LauncherOperand { .. });
-        let (origin, file_path, is_script_file) = match &target {
-            RoutedTarget::Inline { .. } => (SourceOrigin::Inline, None, false),
-            RoutedTarget::ScriptFile { path, .. } | RoutedTarget::DirectExec { path } => (
-                SourceOrigin::ScriptFile,
-                Some(path.to_string_lossy().into_owned()),
-                true,
-            ),
-            RoutedTarget::LauncherOperand { path } => {
+        let is_script_file = match &target {
+            RoutedTarget::ScriptFile { .. } | RoutedTarget::DirectExec { .. } => true,
+            RoutedTarget::LauncherOperand { .. } => {
                 launcher_operand_candidates += 1;
                 if launcher_operand_candidates > max_launcher_operand_candidates {
                     per_target.push(degraded(DegradationReason::LimitExceeded));
                     continue;
                 }
-                (
-                    SourceOrigin::ScriptFile,
-                    Some(path.to_string_lossy().into_owned()),
-                    false,
-                )
+                false
             }
-            RoutedTarget::Dynamic { .. } => (SourceOrigin::Stdin, None, false),
+            RoutedTarget::Inline { .. } | RoutedTarget::Dynamic { .. } => false,
             RoutedTarget::Unresolved { reason } => {
                 per_target.push(degraded(*reason));
                 continue;
@@ -237,15 +424,7 @@ pub async fn run_with_budget_in_cwd(
             }
         };
         match resolution {
-            Resolution::Resolved {
-                language,
-                source,
-                source_hash,
-                source_byte_offset,
-            } => {
-                // A launcher operand only proves itself a real script here
-                // (verified shebang); only now does it compete with
-                // ScriptFile/DirectExec for the same max_script_files budget.
+            Resolution::Resolved { .. } => {
                 if is_launcher_operand {
                     script_files += 1;
                     if script_files > budget.max_script_files {
@@ -253,76 +432,37 @@ pub async fn run_with_budget_in_cwd(
                         continue;
                     }
                 }
-                push_with_degradation(
-                    &mut queue,
-                    QueueTarget::new(language, source, 0)
-                        .with_source_hash(source_hash)
-                        .with_source_byte_offset(source_byte_offset)
-                        .with_provenance(origin, file_path),
-                    &mut per_target,
-                )
+                any_resolved = true;
             }
             Resolution::Degraded(reason) => {
                 unresolved_execution |= reason == DegradationReason::DynamicSource;
                 per_target.push(degraded(reason));
             }
-            // A direct executable without a verified shebang is not an
-            // analyzable source target and does not claim safety.
             Resolution::NotApplicable => {}
         }
     }
 
-    // Drain loop: pop → spawn a fresh worker → analyze one target → map the
-    // response → enqueue recursive targets → repeat. LIFO order makes this
-    // depth-first; the aggregate is order-independent (matches concatenated,
-    // reasons deduplicated). One worker per pop: Worker::analyze closes stdin
-    // and reaps the child every session, so the worker cannot be reused across
-    // pops without refactoring worker_client (deferred perf optimization).
-    while let Some(target) = queue.pop() {
-        let Some(remaining) = session_deadline.checked_duration_since(Instant::now()) else {
-            per_target.push(degraded(DegradationReason::LimitExceeded));
-            break;
+    if !per_target.is_empty() {
+        let aggregated = aggregate(&per_target);
+        let mut assessment = merge_analysis(baseline, &aggregated);
+        assessment.effect_opaque |= any_resolved || unresolved_execution;
+        return Outcome::Analyzed {
+            assessment,
+            target_count: per_target.len(),
         };
-        let request = TargetRequest {
-            request_id: 1,
-            language: target.language,
-            source: target.source.as_bytes().to_vec(),
-            kind: RequestKind::Analyze,
-        };
-        let results: Vec<TargetResult> = match Worker::spawn(aegis_path).await {
-            Ok(mut worker) => worker.analyze(vec![request], remaining).await,
-            // A spawn failure degrades this target as WorkerFailure; the parent
-            // never treats a worker failure as evidence of safety (ADR-022 §2).
-            Err(_) => vec![TargetResult::Failed(WorkerError::Closed)],
-        };
-        let result = results
-            .into_iter()
-            .next()
-            .unwrap_or(TargetResult::Failed(WorkerError::Closed));
-        let (mut analysis, recursive_targets) = map_target_result(result, &target);
-        if target.language == SourceLanguage::Bash {
-            let shell_scan = match shell_scanner {
-                Some(scanner) => scan_shell_source(scanner, &target.source),
-                None => degraded(DegradationReason::GrammarUnavailable),
-            };
-            fold_result(&mut analysis, shell_scan);
-        }
-        per_target.push(analysis);
-        for recursive in recursive_targets {
-            push_with_degradation(&mut queue, recursive, &mut per_target);
-        }
     }
 
-    // Aggregate across every analyzed target (top-level + recursive) into ONE
-    // result and merge once: merge_analysis overwrites Assessment.analysis with
-    // the latest status/reasons, so a per-target merge would clobber earlier
-    // reasons (D3).
-    let aggregated = aggregate(&per_target);
-    let mut assessment = merge_analysis(baseline, &aggregated);
-    assessment.effect_opaque |= unresolved_execution;
-    Outcome::Analyzed {
-        assessment,
-        target_count: per_target.len(),
+    if any_resolved {
+        let mut assessment = baseline.clone();
+        assessment.effect_opaque = true;
+        return Outcome::Analyzed {
+            assessment,
+            target_count: 0,
+        };
+    }
+
+    Outcome::NotStarted {
+        baseline: baseline.clone(),
     }
 }
 
@@ -339,6 +479,7 @@ fn degraded(reason: DegradationReason) -> LanguageAnalysisResult {
 /// preserve Matches already produced, record the limit). A duplicate or an
 /// acceptance records nothing — a duplicate was already analyzed, an
 /// acceptance is normal flow.
+#[cfg(feature = "language-analysis")]
 fn push_with_degradation(
     queue: &mut AnalysisQueue,
     target: QueueTarget,
@@ -363,6 +504,7 @@ fn push_with_degradation(
 /// - `Responded(Parsed|ParseFailed)` (defensive — unreachable when sending
 ///   `Analyze`) → `Degraded` with `[WorkerFailure]`.
 /// - `Failed(WorkerError)` → `Degraded` with `[WorkerFailure]`.
+#[cfg(feature = "language-analysis")]
 fn map_target_result(
     result: TargetResult,
     target: &QueueTarget,

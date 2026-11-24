@@ -32,16 +32,22 @@ pub enum AnalysisCwd<'a> {
 }
 
 pub mod heredoc;
+#[cfg(feature = "language-analysis")]
 pub mod mapping;
 pub mod orchestrate;
+#[cfg(feature = "language-analysis")]
 pub mod queue;
+#[cfg(feature = "language-analysis")]
 pub mod recursive;
 pub mod router;
+#[cfg(feature = "language-analysis")]
 pub mod shell_scan;
 pub mod source_reader;
+#[cfg(feature = "language-analysis")]
 pub mod worker_client;
 
 pub use orchestrate::{OrchestrationBudget, Outcome, run_with_budget, run_with_budget_in_cwd};
+#[cfg(feature = "language-analysis")]
 pub use worker_client::{
     INTERNAL_LANGUAGE_WORKER_FLAG, RequestKind, TargetRequest, TargetResult, Worker, WorkerError,
     analyze,

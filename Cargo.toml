@@ -67,6 +67,7 @@ aegis-language = { version = "0.9.0", path = "crates/aegis-language" }
 
 [features]
 default = []
+language-analysis = ["aegis-language/grammars"]
 
 [dependencies]
 aegis-types.workspace = true

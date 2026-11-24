@@ -18,6 +18,7 @@ path = "../crates/aegis-scanner"
 
 [dependencies.aegis-language]
 path = "../crates/aegis-language"
+features = ["grammars"]
 
 [dependencies.aegis]
 path = "../"

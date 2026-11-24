@@ -26,6 +26,7 @@ use crate::{Cli, Commands};
 /// non-zero so the parent client can detect abnormal termination; the parent
 /// also detects this via EOF and timeout, so the exit code is a hint, not the
 /// primary signal.
+#[cfg(feature = "language-analysis")]
 pub(crate) fn run_internal_language_worker() -> i32 {
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
