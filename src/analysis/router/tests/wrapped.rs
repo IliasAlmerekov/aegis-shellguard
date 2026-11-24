@@ -263,8 +263,6 @@ fn a_bash_function_with_empty_parens_routes_its_brace_body() {
     );
 }
 
-// ── #690: dynamic-argument net strips leading shell keywords and `{` ────────
-
 #[test]
 fn read_only_commands_after_shell_keywords_or_brace_do_not_degrade() {
     for cmd in [
