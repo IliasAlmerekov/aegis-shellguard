@@ -8,7 +8,7 @@ use aegis_explanation::{BlockReason, PolicyRationale};
 use aegis_types::MatchResult;
 use aegis_types::{Assessment, DecisionSource, HighlightRange, MatchEvidence, PatternSource};
 
-/// Build plain-language `Reason:` lines for an analysis Match or degradation.
+/// Build plain-language `Reason:` lines for a Language-aware Match or Analysis degradation.
 fn analysis_reason_lines(assessment: &Assessment) -> Vec<String> {
     let mut reasons = Vec::new();
     for m in &assessment.matched {

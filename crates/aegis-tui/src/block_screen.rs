@@ -109,7 +109,7 @@ pub(super) fn render_noninteractive_denial<W: Write>(
     let _ = out.flush();
 }
 
-/// Print the non-interactive denial for an analysis Match or degradation.
+/// Print the non-interactive denial for a Language-aware Match or Analysis degradation.
 ///
 /// Unlike an ordinary Warn/Danger denial, this path must not suggest an
 /// allowlist: ADR-022 §5 permits only a non-persistable one-time decision.
