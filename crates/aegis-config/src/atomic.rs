@@ -114,6 +114,15 @@ mod tests {
             .mode()
             & 0o7777;
         assert_eq!(state_mode, 0o600);
+
+        let group_writable = dir.path().join("shared.conf");
+        write_atomic(&group_writable, b"x", Some(0o664)).expect("write 0664");
+        let group_mode = fs::metadata(&group_writable)
+            .expect("stat shared")
+            .permissions()
+            .mode()
+            & 0o7777;
+        assert_eq!(group_mode, 0o664);
     }
 
     #[test]
