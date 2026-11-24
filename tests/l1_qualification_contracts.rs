@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use aegis::analysis::OrchestrationBudget;
+#[cfg(feature = "language-analysis")]
 use aegis::analysis::queue::QueueBudget;
 use aegis::runtime::RuntimeConfig;
 use aegis_config::AegisConfig;
@@ -210,7 +211,7 @@ fn qualified_grammar_metadata_matches_cargo_pins_and_distributed_notices() {
         assert_eq!(entry.version, version);
         assert_eq!(entry.license_spdx, "MIT");
 
-        let cargo_pin = format!(r#"{crate_name} = "={version}""#);
+        let cargo_pin = format!(r#"{crate_name} = {{ version = "={version}", optional = true }}"#);
         assert!(
             cargo_toml.contains(&cargo_pin),
             "Cargo must pin `{crate_name}` exactly at {version}"
@@ -221,7 +222,9 @@ fn qualified_grammar_metadata_matches_cargo_pins_and_distributed_notices() {
     // which is only reachable transitively through the grammar crates.
     let runtime_version = locked_version(&lockfile, "tree-sitter");
     assert!(
-        cargo_toml.contains(&format!(r#"tree-sitter = "={runtime_version}""#)),
+        cargo_toml.contains(&format!(
+            r#"tree-sitter = {{ version = "={runtime_version}", optional = true }}"#
+        )),
         "Cargo must pin the Tree-sitter runtime exactly at the locked {runtime_version}"
     );
 
@@ -306,10 +309,13 @@ fn config_defaults_and_public_budget_constants_agree_with_adr022() {
     assert_eq!(orchestration.max_aggregate_bytes, 1024 * 1024);
     assert_eq!(orchestration.total_timeout.as_millis(), 100);
 
-    let queue = QueueBudget::L1_DEFAULT;
-    assert_eq!(queue.max_depth, 8);
-    assert_eq!(queue.max_targets, 16);
-    assert_eq!(queue.max_aggregate_bytes, 1024 * 1024);
+    #[cfg(feature = "language-analysis")]
+    {
+        let queue = QueueBudget::L1_DEFAULT;
+        assert_eq!(queue.max_depth, 8);
+        assert_eq!(queue.max_targets, 16);
+        assert_eq!(queue.max_aggregate_bytes, 1024 * 1024);
+    }
 
     // `max_targets` is the one value here with no ADR-022 §7 anchor — its ceiling
     // is set and justified in `src/analysis/queue.rs`. It is pinned anyway,
@@ -329,8 +335,8 @@ fn config_defaults_and_public_budget_constants_agree_with_adr022() {
         orchestration.script_file_limit_bytes
     );
     assert_eq!(effective.max_script_files, orchestration.max_script_files);
-    assert_eq!(effective.max_depth, queue.max_depth);
-    assert_eq!(effective.max_targets, queue.max_targets);
+    assert_eq!(effective.max_depth, orchestration.max_depth);
+    assert_eq!(effective.max_targets, orchestration.max_targets);
     assert_eq!(
         effective.max_aggregate_bytes,
         orchestration.max_aggregate_bytes
@@ -349,8 +355,8 @@ fn ci_keeps_safe_and_slow_path_qualification_benches_on_the_performance_gate() {
     let workflow = workflow.replace("\r\n", "\n");
     for command in [
         "cargo bench --bench scanner_bench",
-        "cargo bench --bench no_source_bench -p aegis-language",
-        "cargo bench --bench parse_latency_bench -p aegis-language",
+        "cargo bench --bench no_source_bench -p aegis-language --features grammars",
+        "cargo bench --bench parse_latency_bench -p aegis-language --features grammars",
         "cargo bench --bench startup_bench",
         "cargo bench --bench router_bench",
     ] {
@@ -455,7 +461,7 @@ fn production_qualification_record_covers_all_remaining_iteration_10_measurement
         "| Worker warm-session latency | Not applicable to the production orchestration | no reusable session | `orchestrate` deliberately spawns, closes, and reaps one ephemeral worker per queued target. The protocol can carry a bounded sequence, but production does not reuse a warm worker; a future reuse optimization needs its own benchmark and review. |",
         "| Peak worker RSS | five cold worker samples with `/usr/bin/time` | 4.1–4.3 MiB | The direct worker process stayed within this observed host range; it is evidence only, not a cross-platform memory promise. |",
         "| Aggregate-timeout boundary | `tests/analysis_orchestrate_runtime.rs::run_records_target_aggregate_and_total_time_budget_exhaustion` | enforced at the configured total deadline | The default is 100 ms. The regression asserts typed `LimitExceeded` while retaining prior target results; no timer-derived throughput claim is made. |",
-        "| Per-target release-binary size | native `target/release/aegis` | 9.7 MiB | Local native size is recorded for drift detection. Grew from 9.5 MiB when the embedded bubblewrap fallback (ADR-029 §3) was added; the embedded `bwrap` is ~116 KiB. Exact sizes for Linux musl x86_64/aarch64 and macOS x86_64/aarch64 must come from the required CI contexts; local cross-target sizes are not substituted for release artifacts. |",
+        "| Per-target release-binary size | native `target/release/aegis` | 6.9 MiB (default); 9.7 MiB (`--features language-analysis`) | Local native size is recorded for drift detection. Default build (6.87 MiB) excludes Tree-sitter and the four grammars (ADR-024, ADR-054, #212); `--features language-analysis` is 9.7 MiB (up from 9.5 MiB when the ~116 KiB embedded bubblewrap fallback from ADR-029 §3 was added). Exact sizes for Linux musl x86_64/aarch64 and macOS x86_64/aarch64 must come from the required CI contexts; local cross-target sizes are not substituted for release artifacts. |",
     ] {
         assert!(
             performance.contains(row),
