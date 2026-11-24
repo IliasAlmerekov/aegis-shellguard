@@ -1,9 +1,6 @@
 name: MSRV
 
-# Advisory check against the workspace MSRV declared in `[workspace.package]`
-# in `Cargo.toml`. Not listed in the Merge admission check in `ci.yml` and not
-# a required status check: a red result signals an accidental MSRV regression
-# without gating merges.
+# Advisory workflow outside Merge admission; does not gate merges.
 
 permissions:
   contents: read
@@ -28,8 +25,7 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
-  # Single-job workflow without `load-versions`; pinned Linux label matches
-  # `.github/build-targets.json` and is guarded by `tests/supply_chain_ci.rs`.
+  # Single-job workflow without load-versions; pinned label is checked by tests/supply_chain_ci.rs.
   msrv:
     name: MSRV check
     runs-on: ubuntu-24.04
@@ -44,15 +40,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          msrv="$(python3 -c '
-          import sys, tomllib
-          with open("Cargo.toml", "rb") as f:
-              data = tomllib.load(f)
-          msrv = data.get("workspace", {}).get("package", {}).get("rust-version", "")
-          if not isinstance(msrv, str) or not msrv.strip():
-              sys.exit("error: [workspace.package].rust-version is missing or empty in Cargo.toml")
-          print(msrv.strip())
-          ')"
+          msrv="$(awk '
+            { sub(/\r$/, "") }
+            /^\[workspace\.package\][[:space:]]*(#.*)?$/ { in_section = 1; next }
+            /^\[/ { in_section = 0 }
+            in_section && /^[[:space:]]*rust-version[[:space:]]*=/ {
+              sub(/^[^=]*=[[:space:]]*"/, "")
+              sub(/".*$/, "")
+              print
+              exit
+            }
+          ' Cargo.toml)"
+          if [ -z "$msrv" ]; then
+            echo "error: [workspace.package].rust-version is missing or empty in Cargo.toml" >&2
+            exit 1
+          fi
           echo "msrv=$msrv" >> "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/setup-rust
