@@ -1,24 +1,22 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use crate::analysis::{AnalysisProvenance, DetectedOperation, MatchEvidence};
-use crate::pattern::{Pattern, PatternSource};
-use crate::risk::RiskLevel;
-use crate::{Category, DetectionSource, HighlightRange, MatchResult};
+use aegis_types::{
+    AnalysisProvenance, Category, DetectedOperation, DetectionSource, HighlightRange,
+    LANGUAGE_AWARE_MATCH_LABEL, MatchEvidence, MatchResult, OperationKind, Pattern, PatternSource,
+    RiskLevel,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Classification {
-    pub category: Category,
-    pub risk: RiskLevel,
-    pub rule_id: &'static str,
-    pub description: &'static str,
-    pub safe_alt: Option<&'static str>,
+struct Classification {
+    category: Category,
+    risk: RiskLevel,
+    rule_id: &'static str,
+    description: &'static str,
+    safe_alt: Option<&'static str>,
 }
 
-#[must_use]
-pub fn classify(op: &DetectedOperation) -> Classification {
-    use crate::analysis::OperationKind;
-
+fn classify(op: &DetectedOperation) -> Classification {
     let kind = op.kind;
     let mods = op.modifiers;
 
@@ -99,13 +97,6 @@ pub fn classify(op: &DetectedOperation) -> Classification {
             description: "Destructive database operation detected in source",
             safe_alt: Some("Run a reversible migration or back up the database first"),
         },
-        OperationKind::CodeExecution => Classification {
-            category: Category::Process,
-            risk: RiskLevel::Danger,
-            rule_id: "LANG-EXEC",
-            description: "Process, shell, or eval execution sink detected in source",
-            safe_alt: Some("Run a known, bounded command instead of arbitrary code"),
-        },
         OperationKind::CloudDestructive => Classification {
             category: Category::Cloud,
             risk: RiskLevel::Danger,
@@ -127,11 +118,18 @@ pub fn classify(op: &DetectedOperation) -> Classification {
             description: "Destructive package-manager operation detected in source",
             safe_alt: Some("Remove a specific named package after confirmation"),
         },
+        _ => Classification {
+            category: Category::Process,
+            risk: RiskLevel::Danger,
+            rule_id: "LANG-EXEC",
+            description: "Process, shell, or eval execution sink detected in source",
+            safe_alt: Some("Run a known, bounded command instead of arbitrary code"),
+        },
     }
 }
 
 #[must_use]
-pub fn language_match(
+pub(super) fn language_match(
     op: &DetectedOperation,
     provenance: AnalysisProvenance,
     highlight_range: Option<HighlightRange>,
@@ -149,7 +147,7 @@ pub fn language_match(
     });
     MatchResult {
         pattern,
-        matched_text: crate::assessment::LANGUAGE_AWARE_MATCH_LABEL.to_string(),
+        matched_text: LANGUAGE_AWARE_MATCH_LABEL.to_string(),
         highlight_range,
         evidence: MatchEvidence::LanguageRule {
             source: DetectionSource::Builtin,
@@ -158,3 +156,6 @@ pub fn language_match(
         },
     }
 }
+
+#[cfg(test)]
+mod tests;

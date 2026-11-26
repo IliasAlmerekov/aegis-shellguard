@@ -17,23 +17,9 @@ use aegis_language::operation::{
     OperandCertainty as LangCert, OperationKind as LangKind, OperationModifiers as LangMods,
 };
 use aegis_types::{
-    AnalysisStatus, Assessment, Category, DegradationReason, DetectionMechanism,
-    OperandCertainty as TypesCert, OperationKind as TypesKind, ParsedCommand, RiskLevel,
-    SourceOrigin, merge_analysis,
+    AnalysisStatus, Category, DegradationReason, DetectionMechanism, OperandCertainty as TypesCert,
+    OperationKind as TypesKind, RiskLevel, SourceOrigin,
 };
-
-fn python_baseline() -> Assessment {
-    Assessment {
-        command: ParsedCommand {
-            program: Some("python3".to_string()),
-            argv: Vec::new(),
-            normalized: "python3".to_string(),
-            inline_scripts: Vec::new(),
-            raw: "python3".to_string(),
-        },
-        ..support::safe_baseline()
-    }
-}
 
 fn map_python(source: &str) -> aegis::analysis::mapping::MappingOutcome {
     let adapter = analyze(source);
@@ -308,35 +294,6 @@ fn recursive_target_is_accepted_by_parent_queue() {
     let outcome = q.push(target);
     assert_eq!(outcome, PushOutcome::Accepted);
     assert_eq!(q.accepted_count(), 2);
-}
-
-#[test]
-fn merge_lifts_baseline_safe_to_danger_and_carries_status() {
-    let outcome = map_python("subprocess.run(cmd)");
-    let merged = merge_analysis(&python_baseline(), &outcome.analysis);
-
-    assert_eq!(
-        merged.risk,
-        RiskLevel::Danger,
-        "risk never decreases: a Danger language Match lifts Safe → Danger",
-    );
-    assert!(
-        merged
-            .matched
-            .iter()
-            .any(|m| m.pattern.id.as_ref() == "LANG-EXEC"),
-        "the language Match is appended to the merged Assessment",
-    );
-    let summary = merged
-        .analysis
-        .as_ref()
-        .expect("merge carries the analysis summary");
-    assert_eq!(summary.status, AnalysisStatus::Degraded);
-    assert!(
-        summary
-            .degradation_reasons
-            .contains(&DegradationReason::DynamicSource),
-    );
 }
 
 #[test]

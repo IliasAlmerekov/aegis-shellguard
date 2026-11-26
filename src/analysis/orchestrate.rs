@@ -7,13 +7,12 @@ use aegis_language::SourceLanguage;
 use aegis_language::protocol::Response;
 #[cfg(feature = "language-analysis")]
 use aegis_types::SourceOrigin;
-use aegis_types::{
-    AnalysisStatus, Assessment, DegradationReason, LanguageAnalysisResult, merge_analysis,
-};
+use aegis_types::{AnalysisStatus, Assessment, DegradationReason};
 
 use super::AnalysisCwd;
 #[cfg(feature = "language-analysis")]
 use super::mapping::map_adapter_result;
+use super::merge::{LanguageAnalysisResult, merge_analysis};
 #[cfg(feature = "language-analysis")]
 use super::queue::{AnalysisQueue, QueueBudget, QueueTarget};
 use super::router::{Resolution, RoutedTarget, resolve_for_analysis, route_with_home};

@@ -9,7 +9,6 @@ module-cycle aegis_parser::embedded_scripts,aegis_parser::heredoc_data_consumer,
 module-cycle aegis_scanner::patterns,aegis_scanner::scanner
 module-cycle aegis_scanner::scanner::assessment,aegis_scanner::scanner::quote_split
 module-cycle aegis_scanner::scanner::cd_walk,aegis_scanner::scanner::git_stages
-module-cycle aegis_types::analysis,aegis_types::assessment
 tangle aegis_config::model::AegisConfig,aegis_config::model::ratchet::context::RatchetContext,aegis_config::model::ratchet::context::provider_enabled_in_base
 tangle aegis_scanner::scanner::Scanner,aegis_scanner::scanner::git_stages::StageEvidence
 field-leak aegis::planning::git_target::GitTargetPlan::opportunistic_dirs
@@ -33,7 +32,6 @@ field-leak aegis_config::model::AegisConfig::sandbox
 field-leak aegis_snapshot::supabase::SupabasePlugin::config
 shallow-module aegis_config::model::ratchet
 shallow-module aegis_snapshot::registry
-shallow-module aegis_types
 wide-directory crates/aegis-config/src/
 wide-directory crates/aegis-parser/src/
 wide-directory crates/aegis-scanner/src/scanner/tests/

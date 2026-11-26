@@ -1,6 +1,8 @@
-use aegis_types::{AnalysisStatus, DegradationReason, LanguageAnalysisResult};
+use aegis_types::{AnalysisStatus, DegradationReason};
 
 use aegis_scanner::Scanner;
+
+use super::merge::LanguageAnalysisResult;
 
 pub const SHELL_SOURCE_MATCH_LABEL: &str = "shell command in analyzed source";
 

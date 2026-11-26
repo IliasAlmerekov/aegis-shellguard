@@ -16,9 +16,12 @@ pub enum AnalysisCwd<'a> {
     Unavailable,
 }
 
+#[cfg(feature = "language-analysis")]
+mod classifier;
 pub mod heredoc;
 #[cfg(feature = "language-analysis")]
 pub mod mapping;
+mod merge;
 pub mod orchestrate;
 #[cfg(feature = "language-analysis")]
 pub mod queue;

@@ -19,17 +19,12 @@ pub enum PromptDecision {
 fn analysis_reason_lines(assessment: &Assessment) -> Vec<String> {
     let mut reasons = Vec::new();
     for m in &assessment.matched {
-        if let MatchEvidence::LanguageRule {
-            operation,
-            provenance,
-            ..
-        } = &m.evidence
-        {
+        if let MatchEvidence::LanguageRule { provenance, .. } = &m.evidence {
             let rule_id = provenance
                 .rule_id
                 .as_deref()
                 .unwrap_or(m.pattern.id.as_ref());
-            let description = aegis_types::classify(operation).description;
+            let description = &m.pattern.description;
             reasons.push(format!("matched rule {rule_id}: {description}"));
         }
     }

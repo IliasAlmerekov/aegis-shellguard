@@ -5,10 +5,11 @@ use aegis_language::operation::{
 };
 use aegis_types::{
     AnalysisProvenance, AnalysisStatus, ByteSpan, DegradationReason, DetectedOperation,
-    LanguageAnalysisResult, OperandCertainty, OperationKind, OperationModifiers, SourceOrigin,
-    language_match,
+    OperandCertainty, OperationKind, OperationModifiers, SourceOrigin,
 };
 
+use super::classifier::language_match;
+use super::merge::LanguageAnalysisResult;
 use super::queue::QueueTarget;
 use super::recursive::handle_sink;
 

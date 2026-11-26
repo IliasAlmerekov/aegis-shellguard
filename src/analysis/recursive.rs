@@ -1,9 +1,10 @@
 use aegis_language::SourceLanguage;
 use aegis_types::{
     AnalysisProvenance, DegradationReason, DetectedOperation, HighlightRange, MatchResult,
-    OperationKind, language_match,
+    OperationKind,
 };
 
+use super::classifier::language_match;
 use super::queue::QueueTarget;
 
 #[derive(Debug, Clone)]

@@ -1,11 +1,13 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use aegis_types::{
+    AnalysisProvenance, AnalysisStatus, Assessment, Category, DegradationReason, DetectedOperation,
+    DetectionSource, HighlightRange, MatchEvidence, MatchResult, OperandCertainty, OperationKind,
+    OperationModifiers, ParsedCommand, Pattern, PatternSource, RiskLevel, SourceOrigin,
+};
+
 use super::*;
-use crate::assessment::{Assessment, HighlightRange, MatchResult};
-use crate::command::ParsedCommand;
-use crate::pattern::{Category, Pattern, PatternSource};
-use crate::risk::RiskLevel;
 
 fn pattern(id: &str, risk: RiskLevel) -> Arc<Pattern> {
     Arc::new(Pattern {
@@ -69,7 +71,7 @@ fn empty_command() -> ParsedCommand {
     }
 }
 
-fn baseline(risk: RiskLevel, matched: Vec<MatchResult>) -> Assessment {
+pub(super) fn baseline(risk: RiskLevel, matched: Vec<MatchResult>) -> Assessment {
     Assessment {
         risk,
         effect_opaque: false,
