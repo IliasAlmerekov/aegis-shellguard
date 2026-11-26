@@ -1,4 +1,7 @@
-#![expect(dead_code, reason = "shared by many test crates that each use a subset")]
+#![expect(
+    dead_code,
+    reason = "shared by many test crates that each use a subset"
+)]
 
 pub mod agent_hooks;
 pub mod installer;

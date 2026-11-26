@@ -1,3 +1,8 @@
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test helpers fail loudly"
+)]
 use std::fs;
 use std::path::Path;
 use std::process::Command;

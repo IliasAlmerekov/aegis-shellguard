@@ -1,3 +1,4 @@
+#![expect(clippy::unwrap_used, reason = "test helpers fail loudly")]
 use std::fs;
 
 use aegis_audit::{AuditEntry, AuditLogger, AuditQuery, MatchedPattern};

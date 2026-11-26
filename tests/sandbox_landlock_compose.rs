@@ -1,5 +1,10 @@
 #![cfg(target_os = "linux")]
-
+#![expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test helpers fail loudly"
+)]
 #![expect(unsafe_code, reason = "FFI calls, each documented by a SAFETY comment")]
 mod support;
 

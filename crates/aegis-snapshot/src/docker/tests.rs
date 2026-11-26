@@ -35,17 +35,16 @@ fn output_with_etxtbsy_retry(path: &std::path::Path) -> io::Result<std::process:
     const ATTEMPTS: usize = 20;
     const DELAY_MS: u64 = 10;
 
-    for attempt in 0..ATTEMPTS {
+    for _ in 1..ATTEMPTS {
         match StdCommand::new(path).output() {
-            Ok(output) => return Ok(output),
-            Err(error) if is_executable_busy(&error) && attempt + 1 < ATTEMPTS => {
+            Err(error) if is_executable_busy(&error) => {
                 std::thread::sleep(Duration::from_millis(DELAY_MS));
             }
-            Err(error) => return Err(error),
+            result => return result,
         }
     }
 
-    unreachable!("retry loop must return or error")
+    StdCommand::new(path).output()
 }
 
 fn single_quote_for_shell(path: &std::path::Path) -> String {

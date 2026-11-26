@@ -1,4 +1,5 @@
 #![cfg(feature = "language-analysis")]
+#![expect(clippy::expect_used, reason = "test helpers fail loudly")]
 
 use std::io;
 use std::pin::Pin;

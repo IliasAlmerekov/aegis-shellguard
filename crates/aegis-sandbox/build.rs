@@ -2,7 +2,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn main() {
+fn main() -> Result<(), String> {
     println!("cargo:rustc-check-cfg=cfg(bwrap_available)");
     println!("cargo:rerun-if-env-changed=AEGIS_BWRAP_SOURCE_DIR");
     println!("cargo:rerun-if-env-changed=PKG_CONFIG_ALLOW_CROSS");
@@ -30,12 +30,10 @@ fn main() {
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os != "linux" || env::var_os("AEGIS_SKIP_BWRAP_BUILD").is_some() {
-        return;
+        return Ok(());
     }
 
-    if let Err(err) = try_build_bwrap() {
-        panic!("failed to compile bubblewrap for Linux target: {err}");
-    }
+    try_build_bwrap().map_err(|err| format!("failed to compile bubblewrap for Linux target: {err}"))
 }
 
 fn try_build_bwrap() -> Result<(), String> {

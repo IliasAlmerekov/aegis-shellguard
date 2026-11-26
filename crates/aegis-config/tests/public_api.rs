@@ -1,3 +1,4 @@
+#![expect(clippy::unwrap_used, reason = "test helpers fail loudly")]
 #[path = "../../../tests/support/isolated_test.rs"]
 mod isolated_test;
 

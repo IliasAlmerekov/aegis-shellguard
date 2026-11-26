@@ -1,4 +1,5 @@
 #![cfg(feature = "grammars")]
+#![expect(clippy::panic, reason = "test helpers fail loudly")]
 
 #[path = "common/corpus_harness.rs"]
 mod corpus_harness;

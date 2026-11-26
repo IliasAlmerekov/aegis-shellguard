@@ -1,3 +1,4 @@
+#![expect(clippy::panic, reason = "test helpers fail loudly")]
 use aegis_language::manifest::{
     GrammarEntry, ManifestError, RELEASE_GRAMMARS, SUPPORTED_LANGUAGE_ABI, validate_entry,
 };

@@ -1,3 +1,4 @@
+#![expect(clippy::unwrap_used, reason = "test helpers fail loudly")]
 use std::fs;
 #[path = "support/isolated_test.rs"]
 mod isolated_test;

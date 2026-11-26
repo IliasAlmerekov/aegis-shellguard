@@ -1,3 +1,9 @@
+#![expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test helpers fail loudly"
+)]
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;

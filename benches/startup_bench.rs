@@ -1,3 +1,8 @@
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test helpers fail loudly"
+)]
 use std::hint::black_box;
 use std::process::Command;
 use std::time::Duration;

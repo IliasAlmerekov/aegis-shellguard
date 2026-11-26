@@ -17,8 +17,8 @@ fn required_unavailability_is_audited_as_blocked_and_never_executes() {
                 .push(format!("audit:{decision:?}:{status:?}"));
             Ok::<_, String>(())
         },
-        |_: ()| unreachable!("required preparation must not execute"),
-        |_: ()| unreachable!("required preparation must not wait"),
+        |_: ()| panic!("required preparation must not execute"),
+        |_: ()| panic!("required preparation must not wait"),
         |message| events.borrow_mut().push(format!("error:{message}")),
         || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
     );
@@ -48,8 +48,8 @@ fn apparmor_unavailability_blocks_and_audits() {
                 .push(format!("audit:{decision:?}:{status:?}"));
             Ok::<_, String>(())
         },
-        |_: ()| unreachable!(),
-        |_: ()| unreachable!(),
+        |_: ()| panic!(),
+        |_: ()| panic!(),
         |message| events.borrow_mut().push(format!("error:{message}")),
         || aegis::runtime::sandbox_unavailable_code_and_message(false, true).1,
     );
@@ -83,8 +83,8 @@ fn required_nested_unavailability_names_the_cause_and_never_executes() {
                 .push(format!("audit:{decision:?}:{status:?}"));
             Ok::<_, String>(())
         },
-        |_: ()| unreachable!("required preparation must not execute"),
-        |_: ()| unreachable!("required preparation must not wait"),
+        |_: ()| panic!("required preparation must not execute"),
+        |_: ()| panic!("required preparation must not wait"),
         |message| events.borrow_mut().push(format!("error:{message}")),
         || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
     );
@@ -119,8 +119,8 @@ fn setup_failure_is_audited_as_not_attempted_and_never_executes() {
                 .push(format!("audit:{decision:?}:{status:?}"));
             Ok::<_, String>(())
         },
-        |_: ()| unreachable!("failed preparation must not execute"),
-        |_: ()| unreachable!("failed preparation must not wait"),
+        |_: ()| panic!("failed preparation must not execute"),
+        |_: ()| panic!("failed preparation must not wait"),
         |message| events.borrow_mut().push(format!("error:{message}")),
         || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
     );
@@ -289,8 +289,8 @@ fn unavailable_sandbox_blocks_for_default_and_empty_sandbox_section() {
                     .push(format!("audit:{decision:?}:{status:?}"));
                 Ok::<_, String>(())
             },
-            |_: ()| unreachable!("unavailable sandbox must not execute"),
-            |_: ()| unreachable!("unavailable sandbox must not wait"),
+            |_: ()| panic!("unavailable sandbox must not execute"),
+            |_: ()| panic!("unavailable sandbox must not wait"),
             |message| events.borrow_mut().push(format!("error:{message}")),
             || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
         );

@@ -1,3 +1,4 @@
+#![expect(clippy::unwrap_used, reason = "test helpers fail loudly")]
 #![expect(unsafe_code, reason = "FFI calls, each documented by a SAFETY comment")]
 
 #[expect(

@@ -398,7 +398,8 @@ fn removal_command(channel: Option<RemovalChannel>, binary: &Path) -> String {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
+#[cfg(unix)]
 mod tests {
     use super::*;
 

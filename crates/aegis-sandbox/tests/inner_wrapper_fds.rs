@@ -2,7 +2,11 @@
 fn main() {}
 
 #[cfg(target_os = "linux")]
-#[expect(unsafe_code, reason = "fcntl probes whether inherited fds were closed")]
+#[expect(
+    unsafe_code,
+    clippy::expect_used,
+    reason = "fcntl probes inherited fds and the child fails loudly"
+)]
 fn main() {
     const CHILD: &str = "AEGIS_INNER_WRAPPER_FDS_CHILD";
     if std::env::var_os(CHILD).is_some() {
