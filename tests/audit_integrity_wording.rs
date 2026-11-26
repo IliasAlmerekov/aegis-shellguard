@@ -11,7 +11,7 @@ const BANNED_PHRASES: [&str; 4] = [
     concat!("tamper", " evidence"),
 ];
 
-const ALLOWED_CONTEXTS: [(&str, &str); 4] = [
+const ALLOWED_CONTEXTS: [(&str, &str); 3] = [
     (
         "CHANGELOG.md",
         concat!(
@@ -29,13 +29,6 @@ const ALLOWED_CONTEXTS: [(&str, &str); 4] = [
     (
         "CONTEXT.md",
         concat!("_Avoid_: tamper", "-evident log, tamper", "-proof audit"),
-    ),
-    (
-        "docs/adr/adr-013-project-config-security-ratchet.md",
-        concat!(
-            "  tamper",
-            "-evidence — see TASKS.md H5 — but silently disabling even that from an"
-        ),
     ),
 ];
 

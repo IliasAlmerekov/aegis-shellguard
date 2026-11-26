@@ -58,7 +58,7 @@ What each job runs:
 
 - `Determine heavy-job gate`: loads the pinned versions and runner labels, and computes `heavy`
 - `Quality (fmt, clippy, test)`: formatting, clippy, and tests
-- `Language analysis (test, clippy, deny)`: workspace tests, clippy lints, and `cargo-deny` with `--features language-analysis` (ADR-024, ADR-054)
+- `Language analysis (test, clippy, deny)`: workspace tests, clippy lints, and `cargo-deny` with `--features language-analysis`
 - `Landing (test, build)`: type check, tests, and static export build of the `landing/` npm workspace
 - `Security (audit, deny)`: `cargo-audit` and `cargo-deny`
 - `Release build (ubuntu-24.04)` and `Release build (macos-26)`: `cargo build --release` on each runner. The Linux label in the name comes from `.github/build-targets.json`.
@@ -303,8 +303,7 @@ binary with a known CVE in its dependency chain. The way out is to update the
 dependency, merge, and re-tag.
 
 The Tag admission check is not the 1.0 release gate. That one is milestone
-membership and lives in the issue tracker
-([ADR-027](adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)).
+membership and lives in the issue tracker.
 
 This is a deterministic workflow-input contract, not a formal reproducible-build guarantee.
 

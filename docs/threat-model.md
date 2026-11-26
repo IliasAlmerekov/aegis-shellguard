@@ -6,8 +6,7 @@ to reduce risk, and where its protection intentionally stops.
 It is a companion to:
 
 - `README.md` — user-facing security model and limitations
-- `docs/adr/README.md` — ADR index and shared verification guidance
-- `docs/adr/adr-010-full-shell-evaluation-and-deferred-execution-remain-non-goals.md` — explicit shell-evaluation non-goals
+- `ARCHITECTURE.md` — crate map, fail-closed rule, and the project config ratchet
 - `docs/config-schema.md` — runtime policy, allowlist, snapshot, and audit settings
 
 ## Security posture
@@ -102,12 +101,12 @@ visible in the assessed command text.
 
 **Mitigations:**
 
-- Aegis marks only the bounded ADR-016 shapes; it does not inspect the referenced
+- Aegis marks only the bounded effect-opaque shapes; it does not inspect the referenced
   script file or raise `RiskLevel` solely because the shape is effect-opaque.
 - In Protect and Strict with `SnapshotPolicy::Selective` or
   `SnapshotPolicy::Full`, **Required recovery** means every applicable Snapshot
   plugin must create its Snapshot before execution, independently of how many
-  plugins apply (ADR-036).
+  plugins apply.
 - If no Snapshot is created, or an applicable plugin fails while another
   succeeds, non-interactive execution denies. Interactive execution explains
   which of the two happened and can proceed only through a one-time Recovery
@@ -115,8 +114,8 @@ visible in the assessed command text.
   allowlist rule.
 - Audit records `no_snapshot_available` or `partial_snapshot_coverage` together
   with the final `Denied` or human `Approved` decision.
-- The Sandbox adds confinement but is not the primary ADR-016 backstop. It is
-  mandatory in 1.0 on its own ground (ADR-029), not because Required recovery
+- The Sandbox adds confinement but is not the primary Required recovery backstop. It is
+  mandatory in 1.0 on its own ground, not because Required recovery
   demands it; the two obligations are independent, and satisfying one never
   satisfies the other.
 
@@ -133,7 +132,7 @@ or TOCTOU change, and does not read referenced scripts during classification.
 **Threat:** The platform cannot prepare confinement, or an operator assumes
 confinement hides every readable file and secret.
 
-**Mitigations (1.0 contract, ADR-029):** The Sandbox is a write/network guardrail,
+**Mitigations (1.0 contract):** The Sandbox is a write/network guardrail,
 not a confidentiality boundary and not a privilege boundary. The layer is
 mandatory: confinement is attempted for every executed command outside
 `Mode::Audit`, and when it cannot be established the command is **blocked** — the
@@ -205,8 +204,7 @@ be writable or owned by another user, so an actor able to rename entries there
 retains races between separate open, rename, remove, and lock operations. Use a
 dedicated owner-only directory for custom audit paths. Compressed rotation adds
 no `fsync` or power-loss durability guarantee. Non-Unix builds retain compatible
-I/O but make no mode, owner, ACL, no-follow, or Windows reparse-point guarantee
-(ADR-020).
+I/O but make no mode, owner, ACL, no-follow, or Windows reparse-point guarantee.
 
 **Known limitation:** the `sandbox_status` field (which records a sandbox
 bypass, `unavailable`) is intentionally outside the hash-chain payload for
@@ -217,8 +215,7 @@ with write access to `audit.jsonl` could flip a recorded `unavailable` back to
 verifying under the original layout. See the note on `AuditIntegrityPayload` in
 `crates/aegis-audit/src/logger/integrity.rs`.
 
-**Audit v2 fields are covered by the chain.** The Audit schema v2 additions
-(ADR-022 §10) — Assessment `basis`, language-aware `analysis` summary, typed
+**Audit v2 fields are covered by the chain.** The Audit schema v2 additions — Assessment `basis`, language-aware `analysis` summary, typed
 Match `evidence`, and stable `detection_id` — were added to
 `AuditIntegrityPayload` with `skip_serializing_if = "Option::is_none"`. A legacy
 v1 entry (all v2 fields `None`) serializes the payload byte-for-byte identical
@@ -237,19 +234,19 @@ The Watch NDJSON `OutputFrame` carries only the decision, exit code, sandbox
 status, and base64 child stdout/stderr chunks — it does not project
 `matched_patterns`, `evidence`, `basis`, `analysis`, or `explanation`, so there
 is no v2 leak path to Watch output today. Error-report frames and `tracing`
-events likewise do not project the v2 fields. ADR-022 §10's multi-surface
-REVIEW GATE ("no source content reaches JSONL, Watch output, error reports, or
+events likewise do not project the v2 fields. The multi-surface
+review gate ("no source content reaches JSONL, Watch output, error reports, or
 tracing") is therefore satisfied for the v2 additions by construction; the
 Watch / TUI / error / tracing surfaces only become v2-aware in Iteration 9
 (policy + UX integration), at which point per-surface privacy guards are added
 alongside the projection. A short in-memory source snippet for TUI display
-(ADR-022 §10, "TUI-only") is likewise deferred to Iteration 9 — it must never
+("TUI-only") is likewise deferred to Iteration 9 — it must never
 reach the audit log, and the audit privacy tests pin that invariant now.
 
 ### 5. Snapshot failure or false recovery expectations
 
 **Threat:** Operators assume every dangerous command is recoverable or confuse
-ADR-016 Required recovery with a general backup guarantee.
+Required recovery with a general backup guarantee.
 
 **Mitigations:**
 
@@ -330,7 +327,7 @@ OOM-kill — the agent may read the empty stdout as "nothing objected" and run t
 command unscanned. The one moment a guardrail must be loudest is the moment it
 goes silent.
 
-**Mitigations (ADR-023):**
+**Mitigations:**
 
 - an in-process unwind guard at the `Hook` boundary converts a contained panic
   into the ordinary deny response with one fixed, detail-free reason
@@ -355,7 +352,7 @@ The following properties are part of Aegis' intended contract:
 - non-interactive risky commands must not auto-approve
 - approved commands must be audited
 - ordinary Snapshot behavior must be described honestly as best-effort, while
-  ADR-016 Required recovery must fail closed or receive a one-time override
+  Required recovery must fail closed or receive a one-time override
 
 ## Explicit non-goals
 
@@ -380,13 +377,13 @@ Both targets are integrated into CI with bounded runs and corpus-backed seed inp
 ## Aegis's own outbound network use
 
 Aegis itself makes exactly one outbound network call, and only with explicit,
-persisted opt-in: the update check (ADR-038, `aegis update enable`). It is an
+persisted opt-in: the update check (`aegis update enable`). It is an
 HTTPS GET to the npm registry for the `latest` version of
 `@iliasalmerekov/aegis`, bounded in time and response size, never executed
 without consent, never rendered outside an interactive TTY, and never used to
 self-update or to run `npm`. This is distinct from — and does not relax — the
 guardrail's own detection of outbound irreversible actions in commands it
-intercepts (ADR-032).
+intercepts.
 
 ## Operational guidance
 
@@ -416,5 +413,4 @@ Use Aegis as one layer in a larger safety posture:
 - `tests/audit_integrity.rs`
 - `tests/snapshot_integration.rs`
 - `README.md`
-- `docs/adr/README.md`
-- `docs/adr/adr-010-full-shell-evaluation-and-deferred-execution-remain-non-goals.md`
+- `ARCHITECTURE.md`

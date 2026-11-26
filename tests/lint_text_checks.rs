@@ -193,7 +193,7 @@ fn text_skips_globs_placeholders_home_templates_bare_ext_slashes_and_allowlist()
         "Globs: `crates/*/src/**`, `tests/foo?.rs`, `src/[ab].rs`.\n\
          Placeholders: `docs/<topic>.md`, `<appDataDir>/brain/<id>/notes.md`.\n\
          Home: `~/.agents/skills/`, `~/.config/aegis/config.toml`, `~/.aegis/audit.jsonl`.\n\
-         Template: `docs/adr/adr-NNN-slug.md`.\n\
+         Template: `docs/guide/guide-NNN-slug.md`.\n\
          Bare extensions: `.rs`, `.md`, `.toml`, `.yml`, `.sh`.\n\
          Slash-only: `///`, `/`.\n\
          Allowlist: `.aegis.toml`.\n",

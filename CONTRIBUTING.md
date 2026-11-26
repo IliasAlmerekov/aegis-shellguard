@@ -5,7 +5,7 @@ Thanks for helping improve Aegis.
 Before opening a pull request, please read:
 
 - [`CONVENTION.md`](CONVENTION.md) — project rules, security invariants, style, and release gates
-- [`docs/adr/README.md`](docs/adr/README.md) — architecture decision records and documented non-goals
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — crate map, fail-closed rule, and the project config ratchet
 - [`SECURITY.md`](SECURITY.md) — responsible disclosure process for security reports
 
 For non-trivial changes, please open an issue first so we can agree on scope before implementation.
@@ -167,7 +167,7 @@ Please make sure your PR:
 - includes tests or explains why no test change was needed
 - keeps documentation in sync with behavior
 - does not present the Sandbox as a confidentiality or privilege boundary, or
-  Aegis as a complete security boundary (ADR-029)
+  Aegis as a complete security boundary
 - stays focused; unrelated cleanup should be split into a separate PR
 
 ## Where to ask questions

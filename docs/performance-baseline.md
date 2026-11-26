@@ -6,8 +6,7 @@ performance checks.
 ## The two budgets
 
 Aegis publishes two performance budgets, and confusing them is easy enough that
-it already happened in this repository. `ADR-034` defines them and records the
-measurement they came from; `PRD.md` §6 carries the numbers.
+it already happened in this repository. `PRD.md` §6 carries the numbers.
 
 - **Assessment budget** — what one `assess` call may cost on any input,
   including the worst one. 2 ms. A typical safe command costs about 2.6 µs; the
@@ -120,7 +119,7 @@ Three conclusions the numbers support:
    `no_source_does_not_start_worker` all pass well under their ceilings.
 3. **The cost is accumulated detection work, not one defect.** The ramp is
    gradual across the shell-security commits, with the largest single step at
-   `bdfbaf9` (ADR-014), which made the inline-script body a *second* regex scan target
+   `bdfbaf9`, which made the inline-script body a *second* regex scan target
    (`effective_token_slices` → `join(" ")` → `full_scan`, on top of the
    `recursive::scan_targets` pass). The redundant second scan of the same body is
    tracked as **P3-9** in the
@@ -152,7 +151,7 @@ The row beside it used to measure 1,000 cycled safe commands per iteration,
 last recorded at 2.602 ms — 2.6 µs per command. That figure was read as a
 per-command number and compared against the 2 ms `Assessment budget` more than
 once in project documents, which it never was: a batch mean cannot be compared
-against a per-command budget (ADR-034). The row is removed rather than fixed in
+against a per-command budget. The row is removed rather than fixed in
 place, and `safe_command_assess` replaces it with one `assess()` call per
 iteration, timed directly against the budget it was always meant to check.
 
@@ -216,7 +215,7 @@ inputs past the 2 ms Assessment budget:
 | 41-clause `;`-chained command spanning every built-in category (adversarial but syntactically ordinary) | mean 5.0 ms, max 10.2 ms, 29 of 41 patterns compiled in one call |
 
 A compound command touching several pattern categories at once is ordinary
-shell syntax, not a contrived edge case, and ADR-034's Assessment budget
+shell syntax, not a contrived edge case, and the Assessment budget
 covers "one `assess()` call on any input." Regex compilation therefore stays
 part of the (30 ms-budgeted) Startup cost, where it already had comfortable
 headroom, rather than moving into the 2 ms Assessment budget. Net effect:
@@ -301,10 +300,10 @@ value pinned within a few percent of one capture.
 
 ### Startup cost (`benches/startup_bench.rs`)
 
-Four rows split the `Startup cost` from the `Assessment budget` (ADR-034):
+Four rows split the `Startup cost` from the `Assessment budget`:
 one process invocation is dominated by construction, not by classification, so
 a gate on `assess()` alone never saw most of what an agent actually pays. The
-first three are original to ADR-034; the fourth,
+first three are original to the budget split; the fourth,
 `runtime_context_custom_pattern_construction`, is documented separately below
 (issue #397).
 
@@ -434,7 +433,7 @@ ceilings above are the repeatable regression policy.
 | Worker warm-session latency | Not applicable to the production orchestration | no reusable session | `orchestrate` deliberately spawns, closes, and reaps one ephemeral worker per queued target. The protocol can carry a bounded sequence, but production does not reuse a warm worker; a future reuse optimization needs its own benchmark and review. |
 | Peak worker RSS | five cold worker samples with `/usr/bin/time` | 4.1–4.3 MiB | The direct worker process stayed within this observed host range; it is evidence only, not a cross-platform memory promise. |
 | Aggregate-timeout boundary | `tests/analysis_orchestrate_runtime.rs::run_records_target_aggregate_and_total_time_budget_exhaustion` | enforced at the configured total deadline | The default is 100 ms. The regression asserts typed `LimitExceeded` while retaining prior target results; no timer-derived throughput claim is made. |
-| Per-target release-binary size | native `target/release/aegis` | 6.9 MiB (default); 9.7 MiB (`--features language-analysis`) | Local native size is recorded for drift detection. Default build (6.87 MiB) excludes Tree-sitter and the four grammars (ADR-024, ADR-054, #212); `--features language-analysis` is 9.7 MiB (up from 9.5 MiB when the ~116 KiB embedded bubblewrap fallback from ADR-029 §3 was added). Exact sizes for Linux musl x86_64/aarch64 and macOS x86_64/aarch64 must come from the required CI contexts; local cross-target sizes are not substituted for release artifacts. |
+| Per-target release-binary size | native `target/release/aegis` | 6.9 MiB (default); 9.7 MiB (`--features language-analysis`) | Local native size is recorded for drift detection. Default build (6.87 MiB) excludes Tree-sitter and the four grammars (#212); `--features language-analysis` is 9.7 MiB (up from 9.5 MiB when the ~116 KiB embedded bubblewrap fallback was added). Exact sizes for Linux musl x86_64/aarch64 and macOS x86_64/aarch64 must come from the required CI contexts; local cross-target sizes are not substituted for release artifacts. |
 
 The worker cold-session and RSS commands send one length-bounded `Parse`
 request directly over the documented pipe protocol and discard only the binary
@@ -493,8 +492,7 @@ independently of the delta threshold above. The two checks can disagree — a
 regression inside the allowed delta can still land above the budget, and
 `aegis_benchcheck` fails the row either way. Only three rows carry one today:
 `safe_command_assess` and `heredoc_worst_case` against the 2 ms `Assessment
-budget`, and `startup_safe_command` against the 30 ms `Startup cost` ceiling
-(ADR-034). The other rows have no per-command or per-invocation promise to
+budget`, and `startup_safe_command` against the 30 ms `Startup cost` ceiling. The other rows have no per-command or per-invocation promise to
 check against, so there is nothing for a budget to bind to.
 
 None of the three budgets binds today — the delta threshold fires first on

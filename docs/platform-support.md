@@ -29,8 +29,7 @@ That means the supported runtime boundary is:
 The Sandbox limits what an executed command may write and whether it can reach
 the network. It is not a confidentiality boundary and not a privilege boundary:
 a confined command can still read every file its user can read, and the Sandbox
-does not stop anything else the user could do within the paths it may write
-([ADR-029](adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md)). The mechanism
+does not stop anything else the user could do within the paths it may write. The mechanism
 and its strength differ by platform.
 
 | Platform | Mechanism | Known gaps |
@@ -65,9 +64,7 @@ macOS refuses Aegis' own `sandbox_apply` call. The Sandbox then reports
 `Unavailable`, and with confinement required Aegis blocks every command. This is
 always the case under Codex on macOS. Under Claude Code it happens only once
 `/sandbox` is enabled. Aegis does not treat the outer profile as a substitute for
-its own, because the two layers protect different things
-([ADR-029](adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md), amendment of
-2026-08-28).
+its own, because the two layers protect different things.
 
 The block carries its own diagnostic, code
 `sandbox_required_nested_unavailable`, which names the outer sandbox as the

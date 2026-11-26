@@ -61,7 +61,7 @@ such as `uv run` or `npx` (`aegis_parser::Runner`). Its supported prefix exposes
 the child as the `Effective program` for scanner matching and source routing.
 It does not resolve package manifests or prove which package provides an
 executable; that uncertainty remains `Analysis degradation` even when visible
-source produces a `Match` (ADR-040).
+source produces a `Match`.
 _Avoid_: package resolver, manifest expansion
 
 **Effective program**:
@@ -92,7 +92,7 @@ A top-level command unit produced by `aegis-parser`'s `list_segments`
 (`ListSegment`/`ListSeparator`) — the command cut at `;`, `&&`, `||`, a standalone
 background `&`, and newline, with each segment keeping its own pipeline chain intact.
 Unlike `Logical segment`, `|` never starts a new List segment: a pipeline's stages stay
-grouped under one, so the source router (ADR-022 §6) can track cwd state and route
+grouped under one, so the source router can track cwd state and route
 every stage of that pipeline in turn without losing the pipeline's own shape.
 _Avoid_: segment, list group, top-level segment
 
@@ -153,7 +153,7 @@ A regex-based detection rule (built-in or user-defined) matched against the
 normalized command string; matches **anywhere** in the string. Database rules are
 regex `Pattern`s (match-anywhere), not `Token-prefix rule`s: SQL verbs (`DROP TABLE`)
 arrive embedded in `psql -c` / `mysql -e` / heredoc / stdin, not as a leading program
-token (ADR-015).
+token.
 _Avoid_: rule, signature (reserve "rule" for prefix rules)
 
 **Data consumer**:
@@ -175,7 +175,7 @@ the `$(...)` value of a `git`/`gh` message flag (`-m`, `--message`, `-t`,
 `--title`, `-b`, `--body`) with no subshell, process-substitution `(` or
 `{ ...; }` group open around it. A heredoc captured into a variable
 (`name=$(...)`) is not a Data consumer target. The body also needs an exact closing delimiter with no earlier
-delimiter-prefixed line. Any other shape keeps the body scanned (ADR-042).
+delimiter-prefixed line. Any other shape keeps the body scanned.
 _Avoid_: inert heredoc, safe heredoc target
 
 **Token-prefix rule**:
@@ -188,7 +188,7 @@ find `-r`/`-R`/`--recursive` anywhere in the invocation, not only in the
 position right after `rm` that the `FS-001`/`PS-006` regexes are anchored to
 (GHSA-7gcj-4f7x-7fxj). A destructive operation that arrives embedded
 mid-command instead (SQL verbs, a redirect to a sensitive path) stays a regex
-`Pattern` (ADR-014/015).
+`Pattern`.
 _Avoid_: prefix pattern, first-token rule
 
 **Quick scan**:
@@ -204,7 +204,7 @@ _Avoid_: pattern size cap, regex limit
 
 **Assessment budget**:
 The upper bound on what one `assess` call may cost, on any input including the worst
-one. It bounds classification only, not the process that performs it (ADR-034). The
+one. It bounds classification only, not the process that performs it. The
 number lives in `PRD.md` and is enforced per row in `perf/scanner_bench_baseline.toml`.
 _Avoid_: hot-path budget, scan budget
 
@@ -212,7 +212,7 @@ _Avoid_: hot-path budget, scan budget
 What one process invocation costs from process start to the decision, before exec.
 Because Aegis is a `$SHELL` proxy, an agent pays it on every command; there is no warm
 variant of it. It is dominated by construction — the `Scanner`, the runtime context,
-the async runtime — rather than by classification (ADR-034).
+the async runtime — rather than by classification.
 _Avoid_: cold start, warm start, init time
 
 **Full scan**:
@@ -230,7 +230,7 @@ An `aegis` invocation that changes Aegis' own `Effective enforcement state`, rec
 artifacts, or installed integration points: `off`, `rollback`, `snapshot prune --yes`,
 `config init`, `install-hooks`, `setup-shell`, `uninstall`. The scanner classifies these under
 `Category::Aegis` so every spelling is covered, including an absolute path, a launcher
-prefix, and any position inside a compound command (ADR-035). An `aegis` command that
+prefix, and any position inside a compound command. An `aegis` command that
 only reads state or only tightens enforcement (`on`, `status`, `audit`,
 `snapshot list`, `config show`, `config validate`) is not one.
 _Avoid_: self-modify, aegis meta command, kill-switch command
@@ -239,7 +239,7 @@ _Avoid_: self-modify, aegis meta command, kill-switch command
 One pattern hit (`MatchResult`) — the `Pattern` that fired, matched text, and the
 highlight span in the original command. For a regex or Token-prefix rule Match the
 matched text is the actual text fragment that triggered it; production-created
-Language-aware Matches (ADR-022 §10) use only a stable, source-free label
+Language-aware Matches use only a stable, source-free label
 (`public_matched_text`'s `LANGUAGE_AWARE_MATCH_LABEL`) and typically no highlight
 span. Any hand-built Language-aware Match receives that same label on rendered,
 persisted, machine-readable, and `Debug` surfaces — the detected operation and its
@@ -258,8 +258,7 @@ _Avoid_: origin, cause
 **Detection rule**:
 The common contract every detection mechanism exposes before 1.0 — a regex
 `Pattern`, a `Token-prefix rule`, or a built-in Language-aware rule. Each `Match`
-identifies which mechanism fired and whether the rule is built in or custom
-(ADR-022 §4).
+identifies which mechanism fired and whether the rule is built in or custom.
 _Avoid_: detection signature, rule (reserve "rule" for `Token-prefix rule` / `Policy rule`)
 
 **Detection mechanism**:
@@ -283,20 +282,20 @@ _Avoid_: match detail, match info
 A language-neutral operation a language adapter emits — operation kind (delete,
 overwrite, code execution, …), modifiers (recursive / forced / destructive),
 and `Operand certainty` — rather than assigning `RiskLevel` directly from an API
-spelling. A shared classifier maps it to `Category` / `RiskLevel` (ADR-022 §3).
+spelling. A shared classifier maps it to `Category` / `RiskLevel`.
 _Avoid_: detected action, finding
 
 **Operand certainty**:
 How completely a `Detected operation`'s operand is statically known: `Known`,
 `Partial`, or `Dynamic` (`OperandCertainty`). A `Dynamic` operand is never
 evidence of safety — it records `Analysis degradation` in addition to the
-visible operation (ADR-022 §3, §7).
+visible operation.
 _Avoid_: operand confidence, resolution level
 
 **Analysis status**:
 The per-target state of language-aware analysis: `NotApplicable`, `Complete`, or
 `Degraded` (`AnalysisStatus`). Ordered by increasing degradation, so the worst
-target drives the merged `Assessment` (ADR-022 §4). Distinct from an **absent**
+target drives the merged `Assessment`. Distinct from an **absent**
 `AnalysisSummary`, which means the stage never ran — not built into this binary,
 or not reached; `NotApplicable` means it ran and found no analyzable source.
 Absence is the ordinary case while the stage is not `Default-on`, and it is never
@@ -306,7 +305,7 @@ _Avoid_: analysis state, result status
 **Analysis degradation**:
 Source routing or language-aware analysis could not fully resolve a target —
 typed by a `Degradation reason` and never authorizing auto-execution. Prior
-`Match`es and earlier target results are retained (ADR-022 §4, §5, ADR-054).
+`Match`es and earlier target results are retained.
 _Avoid_: analysis warning, analysis failure
 
 **Degradation reason**:
@@ -321,7 +320,7 @@ The metadata record of where a language-aware result came from — language,
 `Source origin`, rule ID, `Detected operation`, file path, source hash, span,
 `Operand certainty`, `Analysis status`, `Degradation reason`. Metadata only: it
 must never persist source body, full snippet, imported source, variable value,
-or syntax tree (ADR-022 §10).
+or syntax tree.
 _Avoid_: analysis metadata, evidence origin
 
 **Source origin**:
@@ -338,7 +337,7 @@ _Avoid_: target result, per-file analysis
 What produced the final interception decision, expressed as the decisive
 `Match`es — every `Match` at the `Assessment`'s maximum `RiskLevel`, or
 `Fallback` when nothing matched (`AssessmentBasis`). Replaces the singular
-`Decision source` (ADR-022 §4).
+`Decision source`.
 _Avoid_: decision basis
 
 **Decisive Match**:
@@ -353,13 +352,13 @@ values, launcher operands, and dynamic shell words. It runs in every build,
 independent of the `language-analysis` cargo feature: on the default build it
 folds resolved targets into `Effect-opaque execution` and records
 `Analysis degradation` for unresolved ones without linking Tree-sitter or
-starting the worker (ADR-022 §6, ADR-054).
+starting the worker.
 _Avoid_: language router, AST router, Tree-sitter router
 
 **Unclaimed stage**:
 A pipeline stage (or a single-stage `List segment`) that reaches the end of source
 routing having produced no `RoutedTarget` from any other path — the condition that
-feeds the fail-closed `unclaimed_interpreter_net` (ADR-022 §6 amendment, issue
+feeds the fail-closed `unclaimed_interpreter_net` (issue
 #384/#430). It degrades to `Unresolved`/`Dynamic source` once a later token names a
 known registry interpreter, or resolves as a `Launcher operand` candidate for each
 path-like operand it carries, including every split of a no-`=` short-flag
@@ -376,7 +375,7 @@ or environment-variable
 assignment (`LESSOPEN`, `GIT_SSH_COMMAND`, and others in that family) that names a
 command a program runs rather than data it reads. Degrades the `Unclaimed stage`
 net even for a program on `NAME_ONLY_PROGRAMS`, since the value runs regardless of
-the program's other arguments (ADR-022 §6 amendment, issue #384/#430). A path-like
+the program's other arguments (issue #384/#430). A path-like
 value that names no interpreter routes as its own `Launcher operand`, so `resolve`
 checks its shebang (`EDITOR=/dev/null setsid ./pyx`) the same way `setsid ./pyx`
 does; every distinct `Executor value` on a stage gets its own candidate this way,
@@ -388,20 +387,20 @@ A wrapper program name (e.g. a `py` shim) that the trusted global config layer
 maps to the canonical registry interpreter it stands in for
 (`language_analysis.trusted_aliases`, `TrustedAlias`). Global-layer only — a
 project `.aegis.toml` can never add or narrow this list; project-supplied
-entries are dropped entirely rather than merged (ADR-022 §6).
+entries are dropped entirely rather than merged.
 _Avoid_: interpreter alias, program alias
 
 **Script-file limit**:
 The maximum bytes read from a routed script file
 (`language_analysis.script_file_limit_bytes`), bounded by a non-configurable
 1 MiB hard ceiling at every config layer. Project config may only lower it,
-never raise it (ADR-022 §6, §7).
+never raise it.
 _Avoid_: script budget, file-size limit
 
 **Language-analysis budget**:
 A hard-bounded limit on inline bytes, script-file count/bytes, recursion depth,
 target count, aggregate bytes, or total session time. Trusted global config may
-tune within the hard ceiling; project config may only tighten it (ADR-022 §7).
+tune within the hard ceiling; project config may only tighten it.
 _Avoid_: analysis toggle, semantic-rule override
 
 **Analysis confirmation**:
@@ -419,7 +418,7 @@ _Avoid_: strict bypass, allowlist override
 **Adapter qualification**:
 The evidence gate one language adapter must pass before it may be linked and
 trusted — its corpus, degradation, ABI, supply-chain, and all-target release
-checks (ADR-022 §11, recorded in `docs/language-qualification.md`). It is a
+checks (recorded in `docs/language-qualification.md`). It is a
 property of the adapter's evidence and says nothing about whether the stage is
 switched on for users.
 _Avoid_: adapter readiness, certification
@@ -427,7 +426,7 @@ _Avoid_: adapter readiness, certification
 **Default-on**:
 Whether language-aware analysis runs for a user without opting in. A release
 decision, held separately from `Adapter qualification` — a qualified adapter is
-not thereby default-on, and per ADR-024 none is in 1.0. The two must never be
+not thereby default-on, and none is in 1.0. The two must never be
 stated as one condition.
 _Avoid_: enabled, production-enabled, shipped
 
@@ -452,7 +451,7 @@ _Avoid_: allow ceiling, max downgrade
 The rule that a project-local `.aegis.toml` may only **tighten** a security-critical
 field, never **weaken** it. Global config stays the user's trusted layer; a project
 layer that asks for a weaker value keeps the more restrictive one and `config validate`
-warns (ADR-013). "Tighten" and "weaken" are the canonical directions, and the stricter
+warns. "Tighten" and "weaken" are the canonical directions, and the stricter
 direction is field-specific — more confinement, more Snapshot coverage, fewer
 write paths, and a `Snapshot target` left where trusted config put it are all
 tightenings regardless of the underlying boolean.
@@ -473,7 +472,7 @@ A typed `[[rules]]` entry in config whose outcome is a `PolicyRuleDecision` — 
 no `allowlist_override_level` ceiling — unlike an `[[allow]]` allowlist entry, which is
 capped by the override level. Because that makes a project-layer `Allow` a silent
 auto-approve of a `Warn`/`Danger` command, project-layer `[[rules]] Allow` is untrusted:
-the ratchet drops it and `config validate` warns (ADR-013); a project that needs an
+the ratchet drops it and `config validate` warns; a project that needs an
 auto-approve must declare it in global config. This `Block` is a *rule outcome*, distinct
 from the `Block` `RiskLevel` and from a blocklist entry.
 _Avoid_: custom rule (reserve "rule" wording for prefix rules / Patterns)
@@ -509,13 +508,13 @@ _Avoid_: snapshot file, baseline, expected output
 
 **Toggle**:
 The global on/off switch checked at command boundaries; when off, Aegis passes commands
-through unguarded (ADR-005).
+through unguarded.
 _Avoid_: enable flag, kill switch
 
 **CI override**:
 The rule that a continuous-integration environment keeps enforcement on regardless of a
 `Toggle` that is off, so an operator's local escape hatch cannot silently travel into
-automation (ADR-006). It only ever tightens: it cannot turn enforcement off.
+automation. It only ever tightens: it cannot turn enforcement off.
 _Avoid_: CI mode, CI bypass, forced mode
 
 **Effective enforcement state**:
@@ -541,7 +540,7 @@ _Avoid_: session warning, startup banner, session audit
 
 **Sandbox**:
 The OS-level layer that restricts what an executed command may write and whether it
-may reach the network. Mandatory on Linux and macOS outside `Mode::Audit` (ADR-029):
+may reach the network. Mandatory on Linux and macOS outside `Mode::Audit`:
 confinement is attempted for every executed command (outside `Mode::Audit`,
 `Disabled passthrough`, and a shell session without `-c`), and unavailability
 blocks rather than degrading to an unconfined run. Not a security or
@@ -555,7 +554,7 @@ The upper bound on the authority any command may receive, resolved from
 configuration before classification: writable roots plus network. Nothing later in
 the flow may exceed it. Its default admits the workspace tree and `/tmp` with the
 network off, because a mandatory `Sandbox` whose default forbids all writes cannot
-run ordinary work (ADR-030).
+run ordinary work.
 _Avoid_: static profile, base profile, session profile
 
 **Workspace**:
@@ -571,8 +570,8 @@ An optional declaration on a Rule stating how the `Trusted ceiling` narrows when
 Rule matches. It can only subtract. Targets are located by a named
 program-specific extractor, never by argv position and never by `Category`
 inference. A Rule that declares none is the identity — the ceiling passes through
-unchanged (ADR-030).
-Target state: 1.x (ADR-030 amendment).
+unchanged.
+Target state: 1.x.
 _Avoid_: permission grant, capability, sandbox rule
 
 **Effective confinement profile**:
@@ -580,8 +579,7 @@ The writable roots and network permission actually applied to one command: the
 `Trusted ceiling` intersected with project tightening and with any outer agent
 sandbox. In 1.x it is also intersected with every matched `Confinement
 restriction`, and it is recorded in the `AuditEntry`, because `Sandbox status`
-alone no longer says what was confined once the profile varies per command
-(ADR-030 amendment).
+alone no longer says what was confined once the profile varies per command.
 _Avoid_: derived profile, computed profile, final profile
 
 **Confinement degradation**:
@@ -589,7 +587,7 @@ The state where a `Confinement restriction` was declared but its extractor resol
 no target, so the command runs under the `Trusted ceiling` instead of a narrowed
 profile. Like `Recovery degradation` it must never be silent: it is visible in the
 confirmation dialog, not only in the `Audit log`.
-Target state: 1.x (ADR-030 amendment).
+Target state: 1.x.
 _Avoid_: extractor failure, profile fallback
 
 **Sandbox status**:
@@ -617,7 +615,7 @@ A best-effort pre-execution capture (e.g. `git stash`) produced by an applicable
 `Snapshot plugin`. It preserves only the state that plugin captures at that
 moment; it is not a complete backup and does not promise to reverse every later
 command effect. Taking one is invisible in the captured state: the git plugin
-leaves the working tree exactly as it found it (ADR-037).
+leaves the working tree exactly as it found it.
 _Avoid_: backup, checkpoint
 
 **Snapshot plugin**:
@@ -637,14 +635,13 @@ or `GIT_WORK_TREE=` in the stage's env prefix, a launcher that changes the
 directory such as `env -C`, an unlisted option read two ways, or a `cd` that is
 `cd -`, `pushd`, takes an option, may not have run, hides behind `eval` or
 `source`, or meets a set `CDPATH`); no Snapshot covers an unresolved Git target
-and the dialog and audit entry say so (ADR-048, ADR-050).
+and the dialog and audit entry say so.
 _Avoid_: Snapshot target (reserved for database plugins and the ratchet)
 
 **Opportunistic directory**:
 The directory a non-git Danger stage runs in after a `cd`. It gets a git Snapshot
 only if it lies inside a repository the git provider covers; anywhere else the
-stage behaves as if run there directly, with no Snapshot and no disclosure
-(ADR-050). A git stage has no such leniency: it needs a Git target.
+stage behaves as if run there directly, with no Snapshot and no disclosure. A git stage has no such leniency: it needs a Git target.
 _Avoid_: soft directory
 
 **Snapshot target**:
@@ -652,7 +649,7 @@ The state a database `Snapshot plugin` captures and a Rollback restores into: a
 database with its host, port, and user, or a SQLite file path. The manifest
 records it when the Snapshot is taken, and Rollback restores into that recorded
 target. Once trusted config enables a target, the ratchet keeps a project layer
-from repointing it (ADR-013).
+from repointing it.
 _Avoid_: destination, connection, decoy
 
 **Snapshot store**:
@@ -721,8 +718,7 @@ artifact: `Present`, `Absent` when the artifact is confirmed gone,
 Snapshot recorded that there was nothing to capture. Checked on demand by
 `aegis snapshot verify` and by `aegis rollback` before it restores; never cached
 and never part of the pre-command path. It is a property of the artifact now,
-unlike `Snapshot attempt readiness`, which belongs to one attempt (ADR-026,
-ADR-052).
+unlike `Snapshot attempt readiness`, which belongs to one attempt.
 _Avoid_: snapshot health, availability, snapshot status
 
 **No-rollback disclosure**:
@@ -731,7 +727,7 @@ command cannot be rolled back because no `Snapshot plugin` applies. It is shown
 only when no `Recovery opt-out` is in effect, and approval then requires the
 full word `yes`. The same text without colour reaches stderr and the `Audit
 log`. An unresolved Git target alongside an applicable plugin is not a
-no-rollback disclosure (ADR-026 §4).
+no-rollback disclosure.
 _Avoid_: irreversible warning, snapshot gap
 
 **Recovery opt-out**:
@@ -748,7 +744,7 @@ every applicable `Snapshot plugin`. It has two reasons: no attempt reached
 `Ready` at all, or some attempts did while others failed. It is distinct from a
 `Recovery opt-out` and must never silently become permission to execute. It is
 never recorded while `Recovery status` is `Ready`; a plugin that reported itself
-inapplicable is not a failure and never produces one (ADR-036).
+inapplicable is not a failure and never produces one.
 _Avoid_: snapshot warning, best-effort failure
 
 **Recovery status**:
@@ -785,7 +781,7 @@ The recorded `cwd` and Git target that tie an `AuditEntry` to a place. Every new
 entry records its `cwd`; a git `Snapshot` also records its Git target. A
 `Snapshot` is bound to the current location when its Git target is the
 repository top level there, or its sqlite file lies beneath it; docker and
-database `Snapshot`s are never bound (ADR-053).
+database `Snapshot`s are never bound.
 _Avoid_: working directory (for the recorded field), project
 
 **Unavailable working directory**:
@@ -859,7 +855,7 @@ permission to run the command. Two layers provide it: an in-process unwind guard
 at the `Hook` boundary (fixed, detail-free deny reason) and the installed per-agent
 `Hook` script, which survives the binary's death and denies on a non-zero exit
 status. External SIGKILL, an OOM-kill of the agent process itself, and a corrupted
-`Hook` script are not covered (ADR-023).
+`Hook` script are not covered.
 _Avoid_: crash handling, panic recovery (reserve "recovery" for snapshot rollback)
 
 **Execution renderer**:
@@ -870,7 +866,7 @@ Sandbox, Audit, spawn) and how it shows a dialog or writes a warning or error
 so `Wrapper` and `Watch` can share one implementation without depending on each
 other.
 _Avoid_: adapter (reserved for `Adapter qualification`, a per-language code
-adapter — a different domain, ADR-022), surface (this file's `## Surfaces` are
+adapter — a different domain), surface (this file's `## Surfaces` are
 Wrapper/Hook, not this seam)
 
 ## Release automation
@@ -882,8 +878,7 @@ the workspace passes formatting, lint, tests, the CVE audit and the dependency
 policy check, and `CHANGELOG.md` carries a non-empty section for the version.
 It answers "may this commit be published at all", and is evaluated afresh at
 tag time rather than inherited from the commit's earlier history. It is not the
-1.0 release gate, which is milestone membership and lives in the issue tracker
-(ADR-027).
+1.0 release gate, which is milestone membership and lives in the issue tracker.
 _Avoid_: release gate, quality gate, publish gate, CI gate
 
 **Merge admission check**:
@@ -927,7 +922,7 @@ _Avoid_: phase ID, milestone number
 
 **Installation channel**:
 The distribution Aegis was installed from and should check for a newer release
-on (`Channel::Npm` in v1; ADR-038). Stored in `Update state`, never inferred
+on (`Channel::Npm` in v1). Stored in `Update state`, never inferred
 from how the running binary happens to be invoked.
 _Avoid_: distribution channel, package source
 
@@ -936,21 +931,21 @@ The channel whose binary-removal command `aegis uninstall` prints. It comes from
 the canonical path of the running binary, or from an explicit `--channel`. It is
 a hint for the operator, not proof of package ownership, and is never written to
 `Update state`. `aegis uninstall` prints the command and never runs a package
-manager (ADR-044).
+manager.
 _Avoid_: Installation channel, uninstall channel
 
 **Update check**:
 One request to the installation channel's registry for its `latest` version,
 made only with consent and bounded in time and response size. Never confused
 with `aegis update check`, the CLI command that runs one on demand regardless
-of consent — see ADR-038 for why an explicit invocation is its own
+of consent: an explicit invocation is its own
 authorization.
 _Avoid_: version check, registry poll
 
 **Update state**:
 The consent, selected `Installation channel`, cached latest version, and
 notice-throttling timestamps persisted at `~/.aegis/update.json`, global and
-never read from a project `.aegis.toml` layer (ADR-038). A project must not be
+never read from a project `.aegis.toml` layer. A project must not be
 able to turn on an outbound request on a developer's machine.
 _Avoid_: update config, update cache
 
@@ -958,5 +953,5 @@ _Avoid_: update config, update cache
 The one-line "a newer version is available" message printed to stderr by the
 `$SHELL proxy`'s text path, gated to an interactive TTY, non-CI, and at most
 once per day per distinct available version. Never printed by `Watch`, JSON
-output, or a `Hook`; never triggers a self-update or runs `npm` (ADR-038).
+output, or a `Hook`; never triggers a self-update or runs `npm`.
 _Avoid_: update prompt, version banner

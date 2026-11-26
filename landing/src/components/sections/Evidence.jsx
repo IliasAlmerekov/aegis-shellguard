@@ -67,8 +67,8 @@ const PILLARS = [
     title: 'Audit trail',
     note: 'One hash-chained line per decision.',
     source: {
-      label: 'ADR-017',
-      href: REPO + 'docs/adr/adr-017-audit-integrity-chain-has-no-external-anchor.md',
+      label: 'aegis-audit',
+      href: REPO + 'crates/aegis-audit/src/logger.rs',
     },
   },
   {
@@ -86,8 +86,8 @@ const PILLARS = [
     title: 'Config ratchet',
     note: '29 fields a cloned config can only tighten.',
     source: {
-      label: 'ADR-013',
-      href: REPO + 'docs/adr/adr-013-project-config-security-ratchet.md',
+      label: 'ARCHITECTURE.md',
+      href: REPO + 'ARCHITECTURE.md',
     },
   },
   {
@@ -97,8 +97,8 @@ const PILLARS = [
     title: 'Honest limits',
     note: 'A guardrail on command text, not OS isolation.',
     source: {
-      label: 'ADR-003',
-      href: REPO + 'docs/adr/adr-003-aegis-is-a-heuristic-guardrail-not-a-sandbox.md',
+      label: 'threat-model.md',
+      href: REPO + 'docs/threat-model.md',
     },
   },
 ]
