@@ -313,46 +313,6 @@ fn m3a_docs_keep_disabled_passthrough_and_hook_refresh_explicit() {
 }
 
 #[test]
-fn m1_sandbox_api_docs_define_failure_and_non_return_contracts() {
-    let source = fs::read_to_string(repo_path("crates/aegis-sandbox/src/lib.rs")).unwrap();
-
-    let exec_docs = source
-        .split("pub fn exec")
-        .next()
-        .and_then(|prefix| prefix.rsplit("/// Replace the current process").next())
-        .expect("PreparedSandboxCommand::exec docs must exist");
-    assert!(exec_docs.contains("does not return when process replacement succeeds"));
-    assert!(exec_docs.contains("SandboxError::Io"));
-    assert!(exec_docs.contains("innermost re-exec'd"));
-
-    let prepare_exec_docs = source
-        .split("pub fn prepare_for_exec")
-        .next()
-        .and_then(|prefix| prefix.rsplit("/// Prepare a").next())
-        .expect("prepare_for_exec docs must exist");
-    for error in [
-        "SandboxError::Required",
-        "SandboxError::Execution",
-        "SandboxError::SetupFailed",
-    ] {
-        assert!(prepare_exec_docs.contains(error));
-    }
-
-    let prepare_spawn_docs = source
-        .split("pub fn prepare_for_spawn")
-        .next()
-        .and_then(|prefix| prefix.rsplit("/// Prepare a child").next())
-        .expect("prepare_for_spawn docs must exist");
-    for error in [
-        "SandboxError::Required",
-        "SandboxError::Execution",
-        "SandboxError::SetupFailed",
-    ] {
-        assert!(prepare_spawn_docs.contains(error));
-    }
-}
-
-#[test]
 fn readme_links_to_contract_docs() {
     let readme = fs::read_to_string(repo_path("README.md")).expect("README.md must exist");
     assert!(

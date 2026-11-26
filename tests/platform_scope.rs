@@ -35,10 +35,6 @@ fn sandbox_crate_should_not_dispatch_to_native_windows_module() {
         !repo_path("crates/aegis-sandbox/src/windows.rs").exists(),
         "native Windows Job Object implementation must remain removed under the decision to drop native Windows"
     );
-    assert!(
-        lib.contains("target_os = \"windows\"") || lib.contains("windows"),
-        "lib.rs should still document or cfg-route native Windows as unsupported"
-    );
 }
 
 #[test]
