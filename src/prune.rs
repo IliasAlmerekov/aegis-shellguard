@@ -10,7 +10,7 @@ pub(crate) async fn execute(args: crate::PruneArgs) -> Result<Vec<PrunableRecord
     let registry = SnapshotRegistry::for_rollback().map_err(AegisError::from)?;
     let logger = AuditLogger::from_audit_config(&config.audit);
     let ledger = SnapshotLedger::load(&logger)?;
-    let records = registry.resolve_prunable_records(&ledger.live_snapshots());
+    let records = registry.resolve_prunable_records(&ledger.into_live_snapshots());
     let policy = RetentionPolicy::from_config(&config.prune);
     let now = SystemClock.now();
     let candidates = policy.apply(&records, now);

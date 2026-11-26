@@ -103,8 +103,8 @@ impl SnapshotLedger {
         &self.commands
     }
 
-    pub fn live_snapshots(&self) -> Vec<RecordedSnapshot> {
-        self.live.clone()
+    pub fn into_live_snapshots(self) -> Vec<RecordedSnapshot> {
+        self.live
     }
 
     pub fn bound_commands<'a>(
@@ -422,7 +422,7 @@ mod tests {
         let started = std::time::Instant::now();
         let ledger = SnapshotLedger::from_entries(&entries);
 
-        assert_eq!(ledger.live_snapshots().len(), 40_000);
+        assert_eq!(ledger.into_live_snapshots().len(), 40_000);
         assert!(
             started.elapsed() < std::time::Duration::from_secs(2),
             "ledger construction took {:?}",

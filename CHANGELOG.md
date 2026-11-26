@@ -6,7 +6,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 ---
 
 ## [Unreleased]
-- Changed: `aegis-audit` logger split into `entry`, `lock`, `writer`, `integrity`, `query`, `rotation` modules without a cycle, and `SnapshotLedger` no longer exposes its records: `live_records()` and `recent_commands()` are replaced by `live_snapshots()`, `bound_commands()` and `format_listing()` (#706).
 - Fixed: `aegis watch` no longer launches `aegis -c <cmd>` per frame when `SHELL` points at the Aegis binary; watch now uses the same shell resolution as the interactive path and falls back to `/bin/sh` (#705).
 
 - Changed: strict workspace lints. `[workspace.lints]` denies `dead_code`, `unsafe_code`, `unwrap_used`, `expect_used`, `panic`, `allow_attributes` and related lints, `#[allow]` is banned in favor of `#[expect]` with a reason, and the per-crate `cfg_attr` deny attributes are gone. The bwrap build script and the built-in prefix rule self-check return errors instead of panicking. `main` returns `ExitCode` and `std::process::exit` is denied. A new `Architecture lints (deslop-please)` CI job runs a pinned `deslop-please` against an allowlist of existing findings (#704).

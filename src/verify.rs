@@ -68,9 +68,9 @@ pub(crate) async fn execute(id: Option<String>) -> Result<Vec<VerifyRow>, AegisE
             vec![(target.plugin, target.snapshot_id)]
         }
         None => SnapshotLedger::load(&logger)?
-            .live_snapshots()
-            .iter()
-            .map(|record| (record.plugin.clone(), record.snapshot_id.clone()))
+            .into_live_snapshots()
+            .into_iter()
+            .map(|record| (record.plugin, record.snapshot_id))
             .collect(),
     };
     let registry = SnapshotRegistry::from_runtime_config(
