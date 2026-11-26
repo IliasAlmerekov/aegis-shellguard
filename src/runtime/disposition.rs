@@ -34,9 +34,7 @@ pub trait DispositionOutput {
 
     fn warn(&mut self, message: &str);
 
-    fn persist_allow(&mut self, cmd: &str, cwd: &Path) {
-        persist_allow_rule(cmd, cwd);
-    }
+    fn persist_allow(&mut self, cmd: &str, cwd: &Path);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

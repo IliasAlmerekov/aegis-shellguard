@@ -2,7 +2,7 @@ use aegis::error::AegisError;
 use aegis::planning::{InterceptionPlan, PreparedPlanner};
 use aegis::runtime::disposition::{
     AuditRecord, DispositionOutput, RecoveryGate, SandboxFailure, append_audit, decide,
-    recovery_gate, setup_failed_message, snapshot_request,
+    persist_allow_rule, recovery_gate, setup_failed_message, snapshot_request,
 };
 use aegis_snapshot::SnapshotCoverage;
 use aegis_tui::{ExecutionRenderer, PromptDecision, RecoveryPromptDecision, TerminalRenderer};
@@ -35,6 +35,10 @@ impl<R: ExecutionRenderer> DispositionOutput for ShellOutput<'_, R> {
 
     fn warn(&mut self, message: &str) {
         self.0.warn(message);
+    }
+
+    fn persist_allow(&mut self, cmd: &str, cwd: &std::path::Path) {
+        persist_allow_rule(cmd, cwd);
     }
 }
 
