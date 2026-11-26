@@ -371,7 +371,7 @@ mod resolver_self_tests {
     #[test]
     fn an_unrelated_attribute_does_not_gate_the_module() {
         let files = [
-            file("c/src/lib.rs", "#[allow(dead_code)]\nmod real;\n"),
+            file("c/src/lib.rs", "#[inline]\nmod real;\n"),
             file("c/src/real.rs", ""),
         ];
         assert!(test_only(&files).is_empty());

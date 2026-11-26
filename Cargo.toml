@@ -44,7 +44,14 @@ license = "MIT"
 repository = "https://github.com/IliasAlmerekov/aegis-shellguard"
 homepage = "https://github.com/IliasAlmerekov/aegis-shellguard"
 
+[workspace.lints.rust]
+dead_code = "deny"
+unused_imports = "deny"
+unused_variables = "deny"
+
 [workspace.lints.clippy]
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
 undocumented_unsafe_blocks = "deny"
 disallowed_methods = "deny"
 missing_errors_doc = "allow"
