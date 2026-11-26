@@ -85,7 +85,7 @@ pub struct SandboxConfig {
 
 #[derive(Debug)]
 pub struct PreparedSandboxCommand {
-    pub command: std::process::Command,
+    command: std::process::Command,
     pub status: SandboxStatus,
     #[cfg(target_os = "linux")]
     reports_status: bool,
@@ -140,6 +140,14 @@ impl Drop for ReportedSandboxChild {
     }
 }
 
+pub fn inherit_stdio(command: &mut std::process::Command) {
+    use std::process::Stdio;
+    command
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+}
+
 impl PreparedSandboxCommand {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn active(
@@ -152,6 +160,18 @@ impl PreparedSandboxCommand {
             #[cfg(target_os = "linux")]
             reports_status,
         }
+    }
+
+    pub fn inherit_stdio(&mut self) {
+        inherit_stdio(&mut self.command);
+    }
+
+    pub fn spawn(mut self) -> Result<std::process::Child, SandboxError> {
+        self.command.spawn().map_err(SandboxError::Io)
+    }
+
+    pub fn into_command_for_tokio(self) -> std::process::Command {
+        self.command
     }
 
     #[cfg(unix)]
@@ -381,6 +401,20 @@ mod tests {
             .expect("source must be the original io::Error, not a stringified message");
         assert_eq!(io_source.kind(), std::io::ErrorKind::PermissionDenied);
         assert_eq!(err.to_string(), "failed to spawn sandboxed command: denied");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn inherit_stdio_stops_the_command_from_capturing_output() {
+        let mut command = std::process::Command::new("sh");
+        command
+            .args(["-c", "printf x"])
+            .stdout(std::process::Stdio::piped());
+        let mut prepared = PreparedSandboxCommand::active(command, false);
+        prepared.inherit_stdio();
+        let mut child = prepared.spawn().expect("sh must run");
+        assert!(child.stdout.is_none());
+        child.wait().expect("sh must exit");
     }
 
     #[cfg(target_os = "linux")]
