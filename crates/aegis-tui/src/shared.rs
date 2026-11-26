@@ -8,6 +8,14 @@ use aegis_explanation::{BlockReason, PolicyRationale};
 use aegis_types::MatchResult;
 use aegis_types::{Assessment, DecisionSource, HighlightRange, MatchEvidence, PatternSource};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptDecision {
+    Approve,
+    ApproveAlways,
+    Deny,
+    DenyAlways,
+}
+
 fn analysis_reason_lines(assessment: &Assessment) -> Vec<String> {
     let mut reasons = Vec::new();
     for m in &assessment.matched {

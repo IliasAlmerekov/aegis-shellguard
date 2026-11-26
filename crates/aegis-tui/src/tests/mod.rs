@@ -1,7 +1,7 @@
 pub(crate) use crate::block_screen::render_policy_block;
 pub use crate::recovery_screen::{RecoveryPromptDecision, show_recovery_override_with_input};
+pub use crate::shared::PromptDecision;
 pub(crate) use crate::shared::{build_highlighted_command, sorted_highlight_ranges_for_tests};
-pub use crate::stdout_renderer::PromptDecision;
 pub use crate::stdout_renderer::show_confirmation_with_input;
 pub use crate::tty_renderer::tty_unavailable_decision;
 pub(crate) use crate::tty_renderer::tty_unavailable_prompt_decision;
