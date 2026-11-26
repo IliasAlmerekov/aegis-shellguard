@@ -8,11 +8,9 @@ vendored C:
 
 1. **Tree-sitter** — the runtime (including the ICU subset it vendors), its
    `tree-sitter-language` ABI shim, and the four qualified grammar crates,
-   scoped to `aegis-language` by
-   [ADR-022 §8](https://github.com/IliasAlmerekov/aegis-shellguard/blob/main/docs/adr/adr-022-language-aware-analysis-is-an-additive-isolated-stage.md).
+   scoped to `aegis-language`.
 2. **bubblewrap** — the vendored C sources compiled into the embedded `bwrap`
-   fallback, scoped to `aegis-sandbox` by
-   [ADR-029 §3–§4](https://github.com/IliasAlmerekov/aegis-shellguard/blob/main/docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md).
+   fallback, scoped to `aegis-sandbox`.
 
 Both are pinned by contract tests that read the vendored sources.
 
@@ -69,7 +67,7 @@ pinned by the contract test.
 
 ## bubblewrap
 
-bubblewrap is the second sanctioned native-C build input (ADR-029 §3–§4), scoped
+bubblewrap is the second sanctioned native-C build input, scoped
 to `aegis-sandbox`. Its C sources are vendored under
 `crates/aegis-sandbox/vendor/bubblewrap/` at a pinned version and compiled into
 the embedded `bwrap` fallback used when no usable `bwrap` is on `PATH`. It is

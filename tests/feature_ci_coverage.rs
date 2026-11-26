@@ -21,7 +21,7 @@ fn root_features() -> Vec<String> {
 fn root_manifest_declares_no_starlark_policy_feature() {
     assert!(
         !root_features().iter().any(|name| name == "starlark-policy"),
-        "the starlark-policy feature was removed by ADR-028"
+        "the starlark-policy feature was removed"
     );
 }
 

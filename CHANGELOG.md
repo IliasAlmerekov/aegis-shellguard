@@ -8,6 +8,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 ## [Unreleased]
 
 - Changed: landing copy leads with rollback instead of "ShellGuard": the page title, meta description, hero, Why Aegis lines, and closing call to action say Aegis snapshots your work and rolls back what the agent broke, and the demo status reads "snapshot saved" once the snapshot is taken.
+- Removed: the architecture decision records (`docs/adr/`, `docs/architecture-decisions.md`) and the ADR index test; `ARCHITECTURE.md` now describes the crate map, the fail-closed rule, and the project config ratchet (#701).
 - Fixed: router degradation denials and confirmation dialogs now explain why Aegis could not resolve the command instead of calling it a "language-aware" command, and share plain-language reason lines across Protect and Strict modes (#691).
 - Added: `scripts/probe-decisions.sh` probes the decision, risk, snapshot request, analysis status, and degradation reasons of an Aegis binary for a cases file in an isolated workspace and `HOME` (#695).
 - Added: published-advisory index in `SECURITY.md` mapping each GHSA to its layer and regression test, a `tests/advisory_index.rs` contract that keeps it complete, and the missing GHSA-399c and GHSA-xprr links (#694, ADR-054).

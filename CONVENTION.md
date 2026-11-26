@@ -5,13 +5,12 @@ tooling, and release readiness in Aegis.
 
 It consolidates the current enforced rules from:
 
-- `docs/adr/README.md`
 - `.github/workflows/ci.yml`
 - `CONTRIBUTING.md`
 
 If these documents ever disagree, treat this precedence as authoritative:
 
-1. Security invariants and ADRs
+1. Security invariants
 2. CI-enforced rules
 3. This file
 4. Contributor guidance
@@ -33,8 +32,6 @@ Aegis is:
 
 - a heuristic command guardrail
 - a mandatory OS confinement layer in 1.0 — a write/network guardrail
-  ([ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md), which
-  supersedes ADR-003)
 - not a confidentiality boundary and not a privilege boundary
 - not a complete security boundary
 
@@ -67,8 +64,8 @@ These rules are non-negotiable.
   Normal progress (a snapshot was created, a plugin was not applicable, no container was
   found) stays `info`. Do not mechanically promote every `info` inside an `Err` branch: a
   plugin correctly deciding it has nothing to do is not a coverage degradation.
-- A change to how the Aegis `Hook` gets registered names in its ADR every party that can
-  switch the `Hook` off, and what the user sees when one does (#500, ADR-047).
+- A change to how the Aegis `Hook` gets registered names in its PR every party that can
+  switch the `Hook` off, and what the user sees when one does (#500).
 
 ## 3. Architecture Rules
 
@@ -79,7 +76,7 @@ flow inward toward `aegis-types`; no library crate may depend on the root
 binary crate. DAG boundaries for the core crates and the `aegis-language` leaf
 are enforced by `tests/architecture_boundaries.rs` (`aegis-language` must not
 be depended on by any other workspace member, and must not itself depend on any
-other workspace member — ADR-022 §4); `aegis-sandbox` is covered by
+other workspace member); `aegis-sandbox` is covered by
 `tests/platform_scope.rs`.
 
 Current module responsibilities:
@@ -95,8 +92,8 @@ Current module responsibilities:
 - `crates/aegis-tui/`: interactive confirmation flow (crossterm)
 - `crates/aegis-audit/`: `AuditLogger`, append-only JSONL, rotation, optional hash-chain
 - `crates/aegis-snapshot/`: snapshot plugin trait and six backends (git, docker, pg, mysql, sqlite, supabase)
-- `crates/aegis-sandbox/`: execution confinement (bwrap + Landlock on Linux, sandbox-exec on macOS; mandatory in 1.0 per ADR-029 and #229)
-- `crates/aegis-language/`: isolated Tree-sitter boundary for additive language-aware analysis; owns the grammar manifest and parsing (ADR-022)
+- `crates/aegis-sandbox/`: execution confinement (bwrap + Landlock on Linux, sandbox-exec on macOS; mandatory in 1.0, #229)
+- `crates/aegis-language/`: isolated Tree-sitter boundary for additive language-aware analysis; owns the grammar manifest and parsing
 
 There are no `src/` re-export shims over these crates (issue #281): every
 call site imports a type from the crate that defines it, never through an
@@ -139,7 +136,7 @@ Architectural constraints:
   - enum variants: `PascalCase`
   - pattern IDs in data: uppercase strings like `"FS-001"`
 - Prefer ASCII unless there is a strong reason not to.
-- A comment that explains why holds at most one line the code cannot show: a constraint, an invariant, a measurement, an ADR or GHSA link, an issue number. History, rejected alternatives, comparisons with other designs, review-round and finding-id citations, and restatements of the code go in the commit message or an ADR; `scripts/lint.sh text` rejects review-round and finding-id citations. API docs, format specs and `// SAFETY:` comments follow their own rules.
+- A comment that explains why holds at most one line the code cannot show: a constraint, an invariant, a measurement, a GHSA link, an issue number. History, rejected alternatives, comparisons with other designs, review-round and finding-id citations, and restatements of the code go in the commit message; `scripts/lint.sh text` rejects review-round and finding-id citations. API docs, format specs and `// SAFETY:` comments follow their own rules.
 - Keep each `.rs` file at or under 800 lines (`scripts/lint.sh text`); when a file reaches the cap, split it by responsibility rather than trimming code or comments to fit.
 - Every `unsafe` block carries a `// SAFETY:` comment directly above it naming the invariant that makes the call sound, enforced by `clippy::undocumented_unsafe_blocks` through `[workspace.lints]`.
 - All new public items must have `///` doc comments.
@@ -188,22 +185,21 @@ member crate's `Cargo.toml`):
 - `tracing` + `tracing-subscriber` — structured logging.
 - `criterion` — benchmarks.
 - `semver` — strict SemVer parsing and comparison for the opt-in update
-  notice (ADR-038); pure Rust, no dependencies of its own.
+  notice; pure Rust, no dependencies of its own.
 - `cc` (build-dependency) — the C compiler driver for the vendored bubblewrap
-  build; **only** `aegis-sandbox` may depend on it (ADR-029 §3–§4).
+  build; **only** `aegis-sandbox` may depend on it.
 - `pkg-config` (build-dependency) — locates `libcap` for the vendored bubblewrap
-  build; **only** `aegis-sandbox` may depend on it (ADR-029 §3–§4).
+  build; **only** `aegis-sandbox` may depend on it.
 - `tree-sitter` — Tree-sitter runtime; **only** `aegis-language` may
-  depend on it (ADR-022 §8). It is the first sanctioned native-C build input.
+  depend on it. It is the first sanctioned native-C build input.
 - `tree-sitter-python`, `tree-sitter-javascript`, `tree-sitter-typescript`,
   `tree-sitter-bash` — the L1-foundation production-qualified grammars; **only**
   `aegis-language` may depend on them. A grammar is added here only after
   independent qualification (license, maintainer, transitive deps, upstream
-  corpus, fuzzing, all-target release builds — ADR-022 §5).
+  corpus, fuzzing, all-target release builds).
 - bubblewrap — the second sanctioned native-C build input, vendored under
   `crates/aegis-sandbox/vendor/bubblewrap/` at a pinned version and compiled
-  into the embedded `bwrap` fallback; **only** `aegis-sandbox` may build it
-  (ADR-029 §3–§4). It is `LGPL-2.0-or-later`, which `cargo deny` cannot see
+  into the embedded `bwrap` fallback; **only** `aegis-sandbox` may build it. It is `LGPL-2.0-or-later`, which `cargo deny` cannot see
   because vendored C is not a cargo dependency — so it is recorded in
   `THIRD_PARTY_NOTICES.md` and enforced by the contract test that reads the
   vendored sources, not by cargo-deny.
@@ -211,7 +207,7 @@ member crate's `Cargo.toml`):
 Compiling the workspace on Linux needs `libcap` headers (`libcap-dev` on
 Debian/Ubuntu): the `aegis-sandbox` build script compiles the vendored
 bubblewrap C sources and probes `libcap` via `pkg-config`, failing the build
-when the headers are absent (ADR-029 §3–§4). CI installs them on every
+when the headers are absent. CI installs them on every
 Linux-compiling job through `.github/actions/install-libcap`. Two escape
 hatches exist for local builds only; neither may be used in CI:
 
@@ -228,9 +224,8 @@ Dependency rules:
 - `once_cell` is banned; use `std::sync::LazyLock`.
 - Avoid dependencies that add unnecessary portability or build complexity.
 - Native C build inputs are forbidden except for the pinned Tree-sitter runtime
-  and production-qualified generated grammars governed by ADR-022, and the
-  vendored bubblewrap C sources governed by ADR-029 §3–§4. Any other native
-  dependency requires a separate ADR and supported-target build evidence.
+  and production-qualified generated grammars and the vendored bubblewrap C sources. Any other native
+  dependency needs a written justification in the PR and supported-target build evidence.
 - Supply-chain health is part of project correctness, not an optional extra.
 
 ## 7. Configuration and Audit Contracts
@@ -330,8 +325,7 @@ Local development rules:
   GitHub issue number instead. No identifier may carry a second meaning in another
   document, a test name, an assert message, or a source file name. Other milestones
   are referred to by name, not by an invented ID.
-- Release gating lives in the `1.0` milestone
-  ([ADR-027](docs/adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)); the
+- Release gating lives in the `1.0` milestone; the
   open supply-chain items (SBOM, signing, `cargo publish --dry-run`) are tracked in
   issue #414.
 
@@ -369,7 +363,7 @@ High-risk changes must be reviewed for:
 The project can be described as production-ready only when all of the following are true:
 
 - all current security invariants in this document are implemented and tested
-- every issue in the `1.0` milestone ([ADR-027](docs/adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)) is closed or explicitly retired
+- every issue in the `1.0` milestone is closed or explicitly retired
 - supported platforms and environment assumptions are documented
 - config, audit log, and exit-code compatibility policy is documented
 - release workflow is reproducible and verified

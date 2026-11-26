@@ -2,13 +2,13 @@
 
 > **Status:** L1 qualification evidence. The four foundation grammars below
 > are statically linked, routed through the production worker, and covered by
-> the 4-target release matrix (ADR-022 §8). Their corpus, fuzz, interface, and
+> the 4-target release matrix. Their corpus, fuzz, interface, and
 > benchmark evidence is recorded per adapter in
 > [`language-qualification.md`](language-qualification.md); that record is not
 > itself release enablement.
 
-This document is the human-readable release grammar manifest required by
-[ADR-022 §8](adr/adr-022-language-aware-analysis-is-an-additive-isolated-stage.md):
+This document is the human-readable release grammar manifest required for
+release builds:
 official release binaries statically link every production-qualified grammar
 and never download grammars at runtime. The authoritative machine-readable
 form is `aegis_language::manifest::BUILTIN_MANIFEST`, validated by
@@ -99,20 +99,18 @@ records and attributes it separately.
 
 ## Rejected grammars and targets (evidence)
 
-Per ADR-022 §8 ("document rejected grammars or targets with evidence"), the
-inputs evaluated and **excluded** from the L1 foundation, and why:
+These are the inputs evaluated and **excluded** from the L1 foundation, and why:
 
 | Excluded input                     | Reason |
 |------------------------------------|--------|
-| Runtime `wasm` feature / `wasm_store.c` | ADR-022 forbids dynamic/runtime grammar loading; static linking only. Not compiled. |
+| Runtime `wasm` feature / `wasm_store.c` | Dynamic/runtime grammar loading; static linking only. Not compiled. |
 | `LANGUAGE_TSX` (TypeScript crate's `tsx/` dialect) | Only `LANGUAGE_TYPESCRIPT` is wired for L1; TSX is a separate dialect qualified on demand, not part of the four-language foundation. |
-| Go, PHP, Ruby, PowerShell, Perl, Lua grammars | Staged 1.x adapters (ADR-022 §9). Each must pass its own qualification gate before it may be linked; none is compiled into L1. |
+| Go, PHP, Ruby, PowerShell, Perl, Lua grammars | Staged 1.x adapters. Each must pass its own qualification gate before it may be linked; none is compiled into L1. |
 | GNU-libc Linux, Windows, and other targets | The release set is the four static-friendly targets below. musl (not gnu) is chosen for fully static Linux binaries; Windows is out of scope (M4 drop-Windows). |
 
 ## Staged 1.x adapters (NOT qualified for L1)
 
-Go, PHP, Ruby, PowerShell, Perl, and Lua are staged 1.x adapters
-(ADR-022 §9). They have no entry above and must not be compiled into the
+Go, PHP, Ruby, PowerShell, Perl, and Lua are staged 1.x adapters. They have no entry above and must not be compiled into the
 release binary until each passes its independent qualification gate: pinned
 grammar and license evidence, all-target artifact parity, positive/negative/
 alias/literal/malformed/new-syntax corpora, worker crash/timeout/protocol
@@ -124,7 +122,7 @@ than receiving a weaker best-effort parser.
 
 ## Non-configurable static linking
 
-Per ADR-022 §8, official release binaries never download grammars at runtime
+Official release binaries never download grammars at runtime
 and never load dynamic grammar libraries. The qualified set must be identical
 across `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`,
 `x86_64-apple-darwin`, and `aarch64-apple-darwin` — verified by the 4-target

@@ -7,8 +7,7 @@ proved something and left the record; it never means the item is required.
 
 The 1.0 gate is the
 [`1.0` milestone](https://github.com/IliasAlmerekov/aegis-shellguard/milestone/1)
-and nothing else
-([ADR-027](adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)); the
+and nothing else; the
 promises it measures against are in [`PRD.md`](../PRD.md) §5–§8. This document
 keeps no 1.0 checklist of its own, and the lists below are not one — they are the
 distribution and hardening tracks, kept because they are where the evidence
@@ -46,7 +45,7 @@ path, not the 1.0 release:
 - [x] `README.md`, `docs/*`, and release notes agree on what Aegis does and does
       not guarantee: a heuristic command guardrail with an OS confinement layer
       that is a write/network guardrail, **not a confidentiality boundary and not
-      a privilege boundary**. ADR-029 superseded ADR-003 and made that layer a
+      a privilege boundary**. The 1.0 contract makes that layer a
       mandatory part of 1.0, so "Aegis is not a sandbox" is no longer the right
       phrasing — the two surviving halves above are, and they are what the docs
       contract test enforces.
@@ -131,7 +130,7 @@ The convenience installer is exercised end-to-end in CI on the pinned Linux and 
 
 ## Snapshot/rollback live backend validation
 
-All six mandatory 1.0 snapshot providers ([ADR-026](adr/adr-026-snapshot-rollback-contract-for-1-0.md)) are proved by repeatable snapshot-then-rollback cycles in CI:
+All six mandatory 1.0 snapshot providers are proved by repeatable snapshot-then-rollback cycles in CI:
 
 - **Git**: `crates/aegis-snapshot/src/git/tests.rs::snapshot_and_rollback_restores_changes` (and neighboring crate tests) run real `git` snapshot and rollback in `Quality (fmt, clippy, test)`.
 - **Docker**: `tests/docker_integration.rs::snapshot_rollback_reverts_filesystem_change` runs with `AEGIS_DOCKER_TESTS=1` against a real Docker daemon and `alpine` image in `Live snapshot/rollback (Docker + SQLite)`.
