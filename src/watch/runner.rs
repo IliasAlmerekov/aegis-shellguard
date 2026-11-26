@@ -25,7 +25,7 @@ use aegis_types::{Decision, EXIT_BLOCKED, EXIT_DENIED, EXIT_INTERNAL};
 
 use super::protocol::{
     InputFrame, MAX_FRAME_BYTES, OutputDecision, OutputFrame, ReadLineResult, emit_frame,
-    read_bounded_line,
+    exit_internal, read_bounded_line,
 };
 use super::sandbox::{
     WatchExecution, append_watch_execution_audit, complete_watch_approved_execution,
@@ -150,7 +150,7 @@ async fn process_frame(line: String, context: &RuntimeContext, ci_detected: bool
     match outcome {
         PlanningOutcome::SetupFailure(plan) => {
             report_watch_setup_failure(&plan);
-            std::process::exit(EXIT_INTERNAL);
+            exit_internal();
         }
         PlanningOutcome::Planned(plan) => run_watch_plan(frame, context, plan, ci_detected).await,
     }
@@ -411,7 +411,7 @@ async fn run_watch_plan_with_persistence<C, R, P>(
                         })
                         .is_err()
                         {
-                            std::process::exit(EXIT_INTERNAL);
+                            exit_internal();
                         }
                         return;
                     }
@@ -451,7 +451,7 @@ async fn run_watch_plan_with_persistence<C, R, P>(
             })
             .is_err()
             {
-                std::process::exit(EXIT_INTERNAL);
+                exit_internal();
             }
         }
         _ => {
@@ -473,7 +473,7 @@ async fn run_watch_plan_with_persistence<C, R, P>(
             })
             .is_err()
             {
-                std::process::exit(EXIT_INTERNAL);
+                exit_internal();
             }
         }
     }
@@ -578,7 +578,7 @@ fn emit_error_or_exit(id: Option<String>, message: String) {
     })
     .is_err()
     {
-        std::process::exit(EXIT_INTERNAL);
+        exit_internal();
     }
 }
 
@@ -672,7 +672,7 @@ pub(super) async fn execute_prepared_and_emit(
         };
         if emit_frame(&frame).is_err() {
             let _ = child.kill().await;
-            std::process::exit(EXIT_INTERNAL);
+            exit_internal();
         }
     }
 
@@ -697,7 +697,7 @@ pub(super) async fn execute_prepared_and_emit(
     })
     .is_err()
     {
-        std::process::exit(EXIT_INTERNAL);
+        exit_internal();
     }
 }
 

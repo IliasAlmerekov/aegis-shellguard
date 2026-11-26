@@ -53,6 +53,7 @@ unused_variables = "deny"
 [workspace.lints.clippy]
 allow_attributes = "deny"
 allow_attributes_without_reason = "deny"
+exit = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"

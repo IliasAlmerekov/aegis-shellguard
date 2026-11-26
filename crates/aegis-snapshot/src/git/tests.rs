@@ -487,6 +487,10 @@ async fn assert_child_reports_isolation_held(fn_name: &str, env: &[(&str, &std::
     }
 }
 
+#[expect(
+    clippy::exit,
+    reason = "child process of a self-spawning test reports its result by exit status"
+)]
 #[tokio::test]
 async fn is_applicable_ignores_ambient_git_dir_pointing_elsewhere() {
     if std::env::var_os("AEGIS_GIT_ENV_CHILD").is_some() {
@@ -515,6 +519,10 @@ async fn is_applicable_ignores_ambient_git_dir_pointing_elsewhere() {
     .await;
 }
 
+#[expect(
+    clippy::exit,
+    reason = "child process of a self-spawning test reports its result by exit status"
+)]
 #[tokio::test]
 async fn snapshot_does_not_stash_into_ambient_git_dir() {
     if std::env::var_os("AEGIS_GIT_ENV_CHILD").is_some() {
