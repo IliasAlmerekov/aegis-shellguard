@@ -156,6 +156,7 @@ Architectural constraints:
   expect and panic inside test code; a test crate whose helpers outside `#[test]` functions trip
   these lints carries one crate-level `#![expect(..., reason = "...")]` naming only the lints it
   trips.
+- The `aegis` binary prints only through `src/output.rs` (`out!` and `err!`); `print_stdout` and `print_stderr` are denied. `std::process::exit` is denied (`clippy::exit`): return an `ExitCode` and pass exit codes up as values.
 - `#[allow(...)]` is banned (`clippy::allow_attributes`, `clippy::allow_attributes_without_reason`).
   Fix the code, or suppress with `#[expect(lint, reason = "...")]` on the smallest item. An
   `#[expect]` that no longer fires is itself a warning, so a stale marker fails the build. Modules

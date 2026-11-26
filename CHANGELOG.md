@@ -7,7 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
-- Changed: strict workspace lints. `[workspace.lints]` denies `dead_code`, `unsafe_code`, `unwrap_used`, `expect_used`, `panic`, `allow_attributes` and related lints, `#[allow]` is banned in favor of `#[expect]` with a reason, and the per-crate `cfg_attr` deny attributes are gone. The bwrap build script and the built-in prefix rule self-check return errors instead of panicking (#704).
+- Changed: strict workspace lints. `[workspace.lints]` denies `dead_code`, `unsafe_code`, `unwrap_used`, `expect_used`, `panic`, `allow_attributes` and related lints, `#[allow]` is banned in favor of `#[expect]` with a reason, and the per-crate `cfg_attr` deny attributes are gone. The bwrap build script and the built-in prefix rule self-check return errors instead of panicking. `main` returns `ExitCode` and `std::process::exit` is denied. A new `Architecture lints (deslop-please)` CI job runs a pinned `deslop-please` against an allowlist of existing findings (#704).
 - Removed: BREAKING: `sandbox.enabled` and `sandbox.required` are removed. A config that still sets either now fails to load as an unknown field; delete the lines (#703).
 - Removed: the unused `regex` dependency of the root crate, and added a required `Unused dependencies (machete)` CI job that runs `cargo machete` at a pinned version (#703).
 - Changed: deleted every comment from the Rust code; only `// SAFETY:` stays. `scripts/lint.sh comments` runs a lexer-based `xtask check-comments` in CI, and user-visible doc text moved into clap and schemars attributes (#702).
