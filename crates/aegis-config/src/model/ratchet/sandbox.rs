@@ -10,6 +10,8 @@ use super::super::partial::PartialSandboxSettings;
 use super::direction::{Ratchet, Tighten, bool_false_is_stricter, format_display};
 use super::warning::{RatchetSink, is_project};
 
+pub(crate) type AllowWriteMerge = (Option<Vec<WriteRoot>>, bool, Option<Vec<WriteRoot>>);
+
 pub(crate) fn custom_allow_write(
     base: Option<Vec<WriteRoot>>,
     base_narrows_computed: bool,
@@ -18,7 +20,7 @@ pub(crate) fn custom_allow_write(
     layer: ConfigSourceLayer,
     location: &str,
     sink: &mut RatchetSink,
-) -> (Option<Vec<WriteRoot>>, bool, Option<Vec<WriteRoot>>) {
+) -> AllowWriteMerge {
     sink.touch("sandbox.allow_write");
     let Some(requested) = overlay else {
         return (base, base_narrows_computed, base_trusted);
