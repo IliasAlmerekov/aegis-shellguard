@@ -2,7 +2,7 @@
 mod isolated_workspace;
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use aegis::planning::{CwdState, PlanningOutcome, PreparedPlanner};
 use aegis::runtime::RuntimeContext;
@@ -15,10 +15,7 @@ use tokio::runtime::Handle;
 
 use super::*;
 use crate::cli_commands::config_load_error_lines;
-use crate::shell_compat::{
-    InvocationMode, ShellLaunchOptions, parse_shell_compat_invocation, resolve_shell_inner,
-    same_file,
-};
+use crate::shell_compat::{InvocationMode, ShellLaunchOptions, parse_shell_compat_invocation};
 use crate::shell_flow::decide_command;
 use crate::test_git::git_init;
 use aegis::error::AegisError;
@@ -144,64 +141,6 @@ fn shell_launch_options_drop_login_flag_for_posix_sh() {
         Vec::<&str>::new()
     );
     assert_eq!(launch.session_flags(Path::new("/bin/zsh")), vec!["-l"]);
-}
-
-#[test]
-fn shell_resolution_aegis_real_shell_takes_priority() {
-    let result = resolve_shell_inner(
-        Some(std::ffi::OsStr::new("/usr/bin/zsh")),
-        Some(std::ffi::OsStr::new("/bin/bash")),
-        None,
-    );
-    assert_eq!(result, PathBuf::from("/usr/bin/zsh"));
-}
-
-#[test]
-fn shell_resolution_missing_aegis_real_shell_falls_through_to_shell() {
-    let result = resolve_shell_inner(None, Some(std::ffi::OsStr::new("/bin/bash")), None);
-    assert_eq!(result, PathBuf::from("/bin/bash"));
-}
-
-#[test]
-fn shell_resolution_shell_pointing_to_aegis_falls_back_to_posix() {
-    let aegis_path = PathBuf::from("/usr/local/bin/aegis");
-    let result = resolve_shell_inner(None, Some(aegis_path.as_os_str()), Some(&aegis_path));
-    assert_eq!(
-        result,
-        PathBuf::from("/bin/sh"),
-        "SHELL pointing to Aegis itself must fall back to /bin/sh"
-    );
-}
-
-#[test]
-fn shell_resolution_invalid_shell_path_returned_as_is() {
-    let result = resolve_shell_inner(None, Some(std::ffi::OsStr::new("/nonexistent/shell")), None);
-    assert_eq!(result, PathBuf::from("/nonexistent/shell"));
-}
-
-#[test]
-fn shell_resolution_both_missing_falls_back_to_bin_sh() {
-    let result = resolve_shell_inner(None, None, None);
-    assert_eq!(result, PathBuf::from("/bin/sh"));
-}
-
-#[test]
-fn same_file_true_for_identical_paths() {
-    let p = PathBuf::from("/bin/sh");
-    assert!(same_file(&p, Some(&p)));
-}
-
-#[test]
-fn same_file_false_when_other_is_none() {
-    assert!(!same_file(&PathBuf::from("/bin/sh"), None));
-}
-
-#[test]
-fn same_file_false_for_distinct_paths() {
-    assert!(!same_file(
-        &PathBuf::from("/bin/sh"),
-        Some(&PathBuf::from("/usr/bin/bash"))
-    ));
 }
 
 #[test]

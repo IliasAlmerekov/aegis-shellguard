@@ -301,9 +301,7 @@ fn prepare_watch_command_blocking(
     cmd: &str,
     sandbox: Option<&aegis_sandbox::SandboxConfig>,
 ) -> Result<(std::process::Command, SandboxStatus), aegis_sandbox::SandboxError> {
-    let shell = std::env::var_os("AEGIS_REAL_SHELL")
-        .or_else(|| std::env::var_os("SHELL"))
-        .unwrap_or_else(|| "/bin/sh".into());
+    let shell = crate::runtime::shell::resolve_shell();
     let args = [
         std::ffi::OsString::from("-c"),
         std::ffi::OsString::from(cmd),

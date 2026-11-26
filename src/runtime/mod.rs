@@ -1,6 +1,7 @@
 pub mod context;
 pub mod recovery;
 mod sandbox;
+pub mod shell;
 pub mod user;
 
 pub use context::{AuditWriteOptions, RuntimeConfig, RuntimeContext, WatchAuditContext};
