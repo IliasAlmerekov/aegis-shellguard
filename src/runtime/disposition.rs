@@ -9,16 +9,9 @@ use aegis_parser::{extract_prefix, split_tokens};
 use aegis_policy::BlockReason;
 use aegis_snapshot::SnapshotCoverage;
 use aegis_tui::{PromptDecision, RecoveryPromptDecision};
-use aegis_types::{
-    Decision, EXIT_BLOCKED, EXIT_INTERNAL, RecoveryDegradation, SandboxStatus, SnapshotAttempt,
-    SnapshotRecord,
-};
+use aegis_types::{Decision, EXIT_BLOCKED, EXIT_INTERNAL, RecoveryDegradation, SandboxStatus};
 
-use super::{
-    AuditWriteOptions, RuntimeContext, WatchAuditContext, allow_rule_persistence_degradation,
-    plan_recovery_degradation,
-};
-use crate::error::AegisError;
+use super::{allow_rule_persistence_degradation, plan_recovery_degradation};
 use crate::planning::{
     CwdState, ExecutionDisposition, GitTargetPlan, InterceptionPlan, SnapshotPlan,
 };
@@ -218,114 +211,6 @@ fn persist_rule(kind: RuleKind, cmd: &str, cwd: &Path) {
             RuleKind::Allow => err!("error: failed to append allow rule: {err}"),
             RuleKind::Block => err!("error: failed to append block rule: {err}"),
         },
-    }
-}
-
-pub struct AuditRecord<'a> {
-    pub decision: Decision,
-    pub sandbox_status: SandboxStatus,
-    pub snapshots: &'a [SnapshotRecord],
-    pub attempts: &'a [SnapshotAttempt],
-    pub recovery_degradation: Option<RecoveryDegradation>,
-}
-
-impl AuditRecord<'_> {
-    pub fn without_snapshots(decision: Decision, sandbox_status: SandboxStatus) -> Self {
-        Self {
-            decision,
-            sandbox_status,
-            snapshots: &[],
-            attempts: &[],
-            recovery_degradation: None,
-        }
-    }
-}
-
-pub struct WatchOrigin {
-    pub source: Option<String>,
-    pub cwd: Option<String>,
-    pub id: Option<String>,
-}
-
-pub fn append_audit(
-    context: &RuntimeContext,
-    plan: &InterceptionPlan,
-    record: &AuditRecord<'_>,
-    origin: Option<WatchOrigin>,
-) -> Result<(), AegisError> {
-    let allowlist_match = plan.decision_context().allowlist_match();
-    let allowlist_effective = plan.policy_decision().allowlist_effective;
-    let ci_detected = plan.decision_context().ci_detected();
-    let (assessment, explanation) = (plan.assessment(), plan.explanation());
-    let AuditRecord {
-        decision,
-        sandbox_status,
-        snapshots,
-        attempts: snapshot_attempts,
-        recovery_degradation,
-    } = *record;
-    match (origin, recovery_degradation) {
-        (None, None) => context.append_audit_entry(
-            assessment,
-            decision,
-            snapshots,
-            explanation,
-            AuditWriteOptions {
-                allowlist_match,
-                allowlist_effective,
-                ci_detected,
-                sandbox_status,
-                snapshot_attempts,
-            },
-        ),
-        (None, Some(degradation)) => context.append_audit_entry_with_recovery_degradation(
-            assessment,
-            decision,
-            snapshots,
-            explanation,
-            AuditWriteOptions {
-                allowlist_match,
-                allowlist_effective,
-                ci_detected,
-                sandbox_status,
-                snapshot_attempts,
-            },
-            degradation,
-        ),
-        (Some(origin), None) => context.append_watch_audit_entry(
-            assessment,
-            decision,
-            snapshots,
-            explanation,
-            WatchAuditContext {
-                allowlist_match,
-                allowlist_effective,
-                ci_detected,
-                sandbox_status,
-                snapshot_attempts,
-                source: origin.source,
-                cwd: origin.cwd,
-                id: origin.id,
-            },
-        ),
-        (Some(origin), Some(degradation)) => context
-            .append_watch_audit_entry_with_recovery_degradation(
-                assessment,
-                decision,
-                snapshots,
-                explanation,
-                WatchAuditContext {
-                    allowlist_match,
-                    allowlist_effective,
-                    ci_detected,
-                    sandbox_status,
-                    snapshot_attempts,
-                    source: origin.source,
-                    cwd: origin.cwd,
-                    id: origin.id,
-                },
-                degradation,
-            ),
     }
 }
 
