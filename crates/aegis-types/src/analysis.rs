@@ -401,13 +401,6 @@ impl MatchEvidence {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct LanguageAnalysisResult {
-    pub status: AnalysisStatus,
-    pub matches: Vec<crate::MatchResult>,
-    pub degradation_reasons: Vec<DegradationReason>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[schemars(
     description = "Summary of language-aware analysis carried on a merged `Assessment`.
@@ -422,49 +415,5 @@ pub struct AnalysisSummary {
     pub degradation_reasons: Vec<DegradationReason>,
 }
 
-pub fn merge_analysis(
-    baseline: &crate::Assessment,
-    language: &LanguageAnalysisResult,
-) -> crate::Assessment {
-    let mut merged_matched = baseline.matched.clone();
-    let baseline_ids: std::collections::HashSet<&str> = baseline
-        .matched
-        .iter()
-        .map(|m| m.pattern.id.as_ref())
-        .collect();
-    for m in &language.matches {
-        if !baseline_ids.contains(m.pattern.id.as_ref()) {
-            merged_matched.push(m.clone());
-        }
-    }
-
-    let risk = merged_matched
-        .iter()
-        .map(|m| m.pattern.risk)
-        .chain(language.matches.iter().map(|m| m.pattern.risk))
-        .max()
-        .map(|mx| mx.max(baseline.risk))
-        .unwrap_or(baseline.risk);
-
-    crate::Assessment {
-        risk,
-        effect_opaque: baseline.effect_opaque,
-        matched: merged_matched,
-        highlight_ranges: baseline.highlight_ranges.clone(),
-        command: baseline.command.clone(),
-        analysis: Some(AnalysisSummary {
-            status: language.status,
-            degradation_reasons: language.degradation_reasons.clone(),
-        }),
-    }
-}
-
-#[cfg(test)]
-mod merge_tests;
 #[cfg(test)]
 mod tests;
-
-pub mod classifier;
-
-#[cfg(test)]
-mod classifier_tests;

@@ -155,7 +155,7 @@ pub fn make_language_match(id: &'static str, risk: RiskLevel, matched_text: &str
             category: Category::Filesystem,
             risk,
             pattern: Cow::Borrowed(""),
-            description: Cow::Borrowed("Language-aware filesystem deletion"),
+            description: Cow::Borrowed("Filesystem deletion detected in source"),
             safe_alt: None,
             source: PatternSource::Builtin,
             justification: None,

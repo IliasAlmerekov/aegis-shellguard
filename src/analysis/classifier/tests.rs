@@ -1,10 +1,10 @@
-use super::classifier::{classify, language_match};
-use super::{
-    AnalysisProvenance, AnalysisStatus, ByteSpan, DetectedOperation, DetectionMechanism,
-    DetectionSource, MatchEvidence, OperandCertainty, OperationKind, OperationModifiers,
-    SourceOrigin,
+use aegis_types::{
+    AnalysisProvenance, AnalysisStatus, ByteSpan, Category, DetectedOperation, DetectionMechanism,
+    DetectionSource, HighlightRange, LANGUAGE_AWARE_MATCH_LABEL, MatchEvidence, MatchResult,
+    OperandCertainty, OperationKind, OperationModifiers, PatternSource, RiskLevel, SourceOrigin,
 };
-use crate::{Category, HighlightRange, MatchResult, PatternSource, RiskLevel};
+
+use super::{classify, language_match};
 
 fn op(kind: OperationKind) -> DetectedOperation {
     DetectedOperation {
@@ -22,7 +22,7 @@ fn op_with(kind: OperationKind, modifiers: OperationModifiers) -> DetectedOperat
     }
 }
 
-fn provenance(op: &DetectedOperation) -> AnalysisProvenance {
+pub(in crate::analysis) fn provenance(op: &DetectedOperation) -> AnalysisProvenance {
     AnalysisProvenance {
         language: Some("python".to_string()),
         source_origin: SourceOrigin::Inline,
@@ -313,10 +313,7 @@ fn language_match_builds_matchresult_with_language_rule_evidence() {
         Some(HighlightRange { start: 0, end: 16 }),
     );
 
-    assert_eq!(
-        m.matched_text,
-        crate::assessment::LANGUAGE_AWARE_MATCH_LABEL
-    );
+    assert_eq!(m.matched_text, LANGUAGE_AWARE_MATCH_LABEL);
     assert_eq!(
         m.highlight_range,
         Some(HighlightRange { start: 0, end: 16 })
