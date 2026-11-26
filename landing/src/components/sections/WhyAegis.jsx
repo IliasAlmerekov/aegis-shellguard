@@ -12,8 +12,8 @@ const LINE_ONE = [
 ]
 
 const LINE_TWO = [
-  { text: 'Aegis pauses risky commands for approval', tone: 'bright' },
-  { text: 'and blocks catastrophic ones.', tone: 'dim' },
+  { text: 'Aegis asks first and saves a snapshot,', tone: 'bright' },
+  { text: 'so one command can roll the damage back.', tone: 'dim' },
 ]
 
 /* Each word is its own inline-block so the entrance can stagger across the

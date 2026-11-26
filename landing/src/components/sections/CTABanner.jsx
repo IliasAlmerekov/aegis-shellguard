@@ -26,13 +26,14 @@ export function CTABanner() {
 
               <p>
                 Open source, zero telemetry, minimal overhead on the safe path.
-                Install with the installer, Homebrew, npm, or Cargo and your AI
-                agents work under supervision.
+                Install with the installer, Homebrew, npm, or Cargo, and your
+                agent's destructive commands wait for you, with a snapshot taken
+                first.
               </p>
             </div>
 
             <div className="taped-footer-cta">
-              <h2 id="get-started-heading">Guard your stack in minutes.</h2>
+              <h2 id="get-started-heading">Set up rollback in minutes.</h2>
               <div className="taped-footer-actions">
                 <a
                   href="https://github.com/IliasAlmerekov/aegis-shellguard"
