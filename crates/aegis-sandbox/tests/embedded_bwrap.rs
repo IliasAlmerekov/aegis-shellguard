@@ -58,13 +58,15 @@ fn embedded_bwrap_confines_when_no_system_bwrap_on_path() {
                 OsString::from("-c"),
                 OsString::from(format!("echo x > '{}'", probe.display())),
             ];
-            let prepared = aegis_sandbox::prepare_for_spawn(&config, OsStr::new("sh"), &args);
-            let status = prepared.map(|p| p.into_command().status());
+            let prepared = aegis_sandbox::prepare_for_spawn(&config, OsStr::new("sh"), &args)
+                .unwrap_or_else(|e| panic!("prepare_for_spawn failed after the probe passed: {e}"));
+            let status = prepared
+                .spawn()
+                .expect("the confined command must spawn")
+                .wait()
+                .expect("the confined command must exit");
             let probe_written = probe.exists();
 
-            let status = status
-                .unwrap_or_else(|e| panic!("prepare_for_spawn failed after the probe passed: {e}"))
-                .expect("the confined command must spawn");
             assert!(
                 !status.success() && !probe_written,
                 "write to a host-writable path must fail inside the sandbox; got {status}"

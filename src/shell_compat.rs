@@ -235,11 +235,8 @@ pub(crate) fn prepare_command(
     }
 
     let mut command = Command::new(&shell);
-    command
-        .args(&shell_args)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
+    command.args(&shell_args);
+    aegis_sandbox::inherit_stdio(&mut command);
     Ok((
         PreparedShellCommand::Direct(command),
         SandboxStatus::NotConfigured,
@@ -280,12 +277,12 @@ pub(crate) fn exec_prepared_command(
         }
 
         #[cfg(not(windows))]
-        let mut command = match prepared {
-            PreparedShellCommand::Direct(command) => command,
-            PreparedShellCommand::Sandboxed(prepared) => prepared.into_command(),
+        let child = match prepared {
+            PreparedShellCommand::Direct(mut command) => {
+                command.spawn().map_err(aegis_sandbox::SandboxError::Io)?
+            }
+            PreparedShellCommand::Sandboxed(prepared) => prepared.spawn()?,
         };
-        #[cfg(not(windows))]
-        let child = command.spawn().map_err(aegis_sandbox::SandboxError::Io)?;
         #[cfg(not(windows))]
         Ok((
             aegis_sandbox::ReportedSandboxChild::from_child(child, SandboxStatus::NotConfigured),

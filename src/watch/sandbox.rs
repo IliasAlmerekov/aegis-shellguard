@@ -272,7 +272,7 @@ fn prepare_watch_command_blocking(
     if let Some(config) = sandbox {
         let prepared = aegis_sandbox::prepare_for_spawn(config, shell.as_os_str(), &args)?;
         let status = prepared.status;
-        return Ok((prepared.into_command(), status));
+        return Ok((prepared.into_command_for_tokio(), status));
     }
 
     let mut command = std::process::Command::new(shell);

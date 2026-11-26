@@ -140,6 +140,14 @@ impl Drop for ReportedSandboxChild {
     }
 }
 
+pub fn inherit_stdio(command: &mut std::process::Command) {
+    use std::process::Stdio;
+    command
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+}
+
 impl PreparedSandboxCommand {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn active(
@@ -155,14 +163,14 @@ impl PreparedSandboxCommand {
     }
 
     pub fn inherit_stdio(&mut self) {
-        use std::process::Stdio;
-        self.command
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
+        inherit_stdio(&mut self.command);
     }
 
-    pub fn into_command(self) -> std::process::Command {
+    pub fn spawn(mut self) -> Result<std::process::Child, SandboxError> {
+        self.command.spawn().map_err(SandboxError::Io)
+    }
+
+    pub fn into_command_for_tokio(self) -> std::process::Command {
         self.command
     }
 
@@ -399,11 +407,14 @@ mod tests {
     #[test]
     fn inherit_stdio_stops_the_command_from_capturing_output() {
         let mut command = std::process::Command::new("sh");
-        command.args(["-c", "printf x"]);
+        command
+            .args(["-c", "printf x"])
+            .stdout(std::process::Stdio::piped());
         let mut prepared = PreparedSandboxCommand::active(command, false);
         prepared.inherit_stdio();
-        let output = prepared.into_command().output().expect("sh must run");
-        assert!(output.stdout.is_empty());
+        let mut child = prepared.spawn().expect("sh must run");
+        assert!(child.stdout.is_none());
+        child.wait().expect("sh must exit");
     }
 
     #[cfg(target_os = "linux")]

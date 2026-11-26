@@ -274,7 +274,8 @@ pub(crate) fn sysctl_userns_available() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{find_system_bwrap_in_paths, proc_version_indicates_wsl1};
+    use super::{build_bwrap_args, find_system_bwrap_in_paths, proc_version_indicates_wsl1};
+    use crate::SandboxConfig;
 
     #[test]
     fn apparmor_public_probe_reads_both_sysctl_states() {
@@ -471,5 +472,135 @@ mod tests {
             .map(|s| s.success())
             .unwrap_or(false);
         assert!(ok, "extracted embedded bwrap must run --version");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn bwrap_args_include_bind_for_tmp_when_in_allow_write() {
+        let cfg = SandboxConfig {
+            allow_write: vec![crate::WriteRoot::new("/tmp")],
+            trusted_roots: vec![crate::WriteRoot::new("/tmp")],
+            ..Default::default()
+        };
+        let args = build_bwrap_args(&cfg).expect("build_bwrap_args failed");
+        let has_bind_tmp = args.windows(3).any(|w| {
+            w[0].as_os_str() == "--bind" && w[1].as_os_str() == "/tmp" && w[2].as_os_str() == "/tmp"
+        });
+        assert!(has_bind_tmp, "expected --bind /tmp /tmp, got: {args:?}");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn bwrap_args_include_share_net_when_allow_network_true() {
+        let cfg = SandboxConfig {
+            allow_network: true,
+            ..Default::default()
+        };
+        let args = build_bwrap_args(&cfg).expect("build_bwrap_args failed");
+        assert!(
+            args.iter().any(|a| a.as_os_str() == "--share-net"),
+            "expected --share-net, got: {args:?}"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn bwrap_args_share_net_appears_before_bind_when_both_present() {
+        let cfg = SandboxConfig {
+            allow_write: vec![crate::WriteRoot::new("/tmp")],
+            trusted_roots: vec![crate::WriteRoot::new("/tmp")],
+            allow_network: true,
+        };
+        let args = build_bwrap_args(&cfg).expect("build_bwrap_args failed");
+
+        let share_pos = args
+            .iter()
+            .position(|a| a.as_os_str() == "--share-net")
+            .expect("--share-net missing");
+        let bind_pos = args
+            .windows(3)
+            .position(|w| {
+                w[0].as_os_str() == "--bind"
+                    && w[1].as_os_str() == "/tmp"
+                    && w[2].as_os_str() == "/tmp"
+            })
+            .expect("--bind /tmp /tmp missing");
+
+        assert!(share_pos < bind_pos, "--share-net must precede --bind");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn bwrap_args_omit_nonexistent_allow_write_path() {
+        let cfg = SandboxConfig {
+            allow_write: vec![crate::WriteRoot::new("/nonexistent_aegis_test_path_xyz")],
+            trusted_roots: vec![crate::WriteRoot::new("/nonexistent_aegis_test_path_xyz")],
+            ..Default::default()
+        };
+        let args = build_bwrap_args(&cfg).expect("an omitted root is not an error");
+        assert!(!args.iter().any(|a| a.as_os_str() == "--bind"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_bwrap_args_include_allow_write_paths() {
+        let cfg = SandboxConfig {
+            allow_write: vec![crate::WriteRoot::new("/tmp")],
+            trusted_roots: vec![crate::WriteRoot::new("/tmp")],
+            ..Default::default()
+        };
+        let args = build_bwrap_args(&cfg).expect("build_bwrap_args must succeed for /tmp");
+        let found = args.windows(3).any(|w| {
+            w[0].as_os_str() == "--bind" && w[1].as_os_str() == "/tmp" && w[2].as_os_str() == "/tmp"
+        });
+        assert!(
+            found,
+            "build_bwrap_args must emit --bind /tmp /tmp for allow_write=[/tmp], got: {args:?}"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_bwrap_args_include_share_net_when_network_allowed() {
+        let cfg = SandboxConfig {
+            allow_network: true,
+            ..Default::default()
+        };
+        let args = build_bwrap_args(&cfg).expect("build_bwrap_args must succeed");
+        assert!(
+            args.iter().any(|a| a.as_os_str() == "--share-net"),
+            "build_bwrap_args must include --share-net when allow_network=true, got: {args:?}"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_share_net_appears_before_bind_mounts() {
+        let cfg = SandboxConfig {
+            allow_write: vec![crate::WriteRoot::new("/tmp")],
+            trusted_roots: vec![crate::WriteRoot::new("/tmp")],
+            allow_network: true,
+        };
+        let args = build_bwrap_args(&cfg).expect("build_bwrap_args must succeed");
+
+        let share_net_pos = args
+            .iter()
+            .position(|a| a.as_os_str() == "--share-net")
+            .expect("--share-net must be present in args when allow_network=true");
+
+        let bind_pos = args
+            .windows(3)
+            .position(|w| {
+                w[0].as_os_str() == "--bind"
+                    && w[1].as_os_str() == "/tmp"
+                    && w[2].as_os_str() == "/tmp"
+            })
+            .expect("--bind /tmp /tmp must be present in args when allow_write=[/tmp]");
+
+        assert!(
+            share_net_pos < bind_pos,
+            "--share-net (pos {share_net_pos}) must appear BEFORE --bind /tmp /tmp \
+             (pos {bind_pos}). Full args: {args:?}"
+        );
     }
 }
