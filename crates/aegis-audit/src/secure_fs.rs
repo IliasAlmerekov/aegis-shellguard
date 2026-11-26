@@ -1,3 +1,5 @@
+#![expect(unsafe_code, reason = "FFI calls, each documented by a SAFETY comment")]
+
 use std::fs::{self, File, OpenOptions};
 use std::path::Path;
 

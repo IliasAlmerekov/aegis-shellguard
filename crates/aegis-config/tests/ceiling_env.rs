@@ -1,3 +1,5 @@
+#![expect(unsafe_code, reason = "FFI calls, each documented by a SAFETY comment")]
+
 #[expect(
     dead_code,
     reason = "this test uses only environment changes; the dedicated probe tests cwd"

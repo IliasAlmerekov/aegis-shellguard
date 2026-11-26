@@ -1,5 +1,6 @@
 #![cfg(target_os = "linux")]
 
+#![expect(unsafe_code, reason = "FFI calls, each documented by a SAFETY comment")]
 mod support;
 
 use std::process::Command;

@@ -1,3 +1,5 @@
+#![expect(unsafe_code, reason = "FFI calls, each documented by a SAFETY comment")]
+
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};

@@ -1,3 +1,5 @@
+#![expect(unsafe_code, reason = "libc calls are sandbox/system boundaries, each documented by a SAFETY comment")]
+
 use std::fs::{self, Metadata};
 use std::io::Read;
 use std::os::unix::ffi::OsStrExt;

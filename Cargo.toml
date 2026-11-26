@@ -46,6 +46,7 @@ homepage = "https://github.com/IliasAlmerekov/aegis-shellguard"
 
 [workspace.lints.rust]
 dead_code = "deny"
+unsafe_code = "deny"
 unused_imports = "deny"
 unused_variables = "deny"
 

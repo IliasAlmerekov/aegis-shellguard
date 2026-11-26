@@ -2,6 +2,7 @@
 fn main() {}
 
 #[cfg(target_os = "linux")]
+#[expect(unsafe_code, reason = "fcntl probes whether inherited fds were closed")]
 fn main() {
     const CHILD: &str = "AEGIS_INNER_WRAPPER_FDS_CHILD";
     if std::env::var_os(CHILD).is_some() {

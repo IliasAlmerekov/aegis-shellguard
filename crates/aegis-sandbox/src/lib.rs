@@ -1,3 +1,5 @@
+#![expect(unsafe_code, reason = "libc calls are sandbox/system boundaries, each documented by a SAFETY comment")]
+
 #![cfg_attr(
     not(test),
     deny(
