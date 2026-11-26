@@ -667,3 +667,42 @@ fn danger_without_provider_discloses_on_stderr_without_changing_frames() {
         "No Snapshot provider applies: this command cannot be rolled back."
     );
 }
+
+#[test]
+fn watch_does_not_launch_aegis_as_its_shell_when_shell_env_is_aegis() {
+    let home = TempDir::new().unwrap();
+    let cwd = TempDir::new().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_aegis"))
+        .arg("watch")
+        .env_remove("AEGIS_REAL_SHELL")
+        .env("SHELL", env!("CARGO_BIN_EXE_aegis"))
+        .env("AEGIS_CI", "0")
+        .env("AEGIS_FORCE_NO_TTY", "1")
+        .env("HOME", home.path())
+        .current_dir(cwd.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn aegis watch");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"{\"cmd\":\"echo hi\",\"id\":\"1\"}\n")
+        .unwrap();
+    drop(child.stdin.take());
+    let output = child.wait_with_output().unwrap();
+
+    assert!(output.status.success());
+    let frames = parse_frames(&output.stdout);
+    let result = frames.iter().find(|f| f["type"] == "result").unwrap();
+    assert_eq!(result["exit_code"], 0);
+    let entries = support::read_audit_entries(home.path());
+    let transports: Vec<_> = entries.iter().map(|e| &e["transport"]).collect();
+    assert_eq!(
+        transports,
+        ["watch"],
+        "an inner `aegis -c` would add a shell-transport audit entry"
+    );
+}
