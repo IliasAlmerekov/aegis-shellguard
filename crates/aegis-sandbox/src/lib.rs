@@ -397,6 +397,17 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    fn inherit_stdio_stops_the_command_from_capturing_output() {
+        let mut command = std::process::Command::new("sh");
+        command.args(["-c", "printf x"]);
+        let mut prepared = PreparedSandboxCommand::active(command, false);
+        prepared.inherit_stdio();
+        let output = prepared.into_command().output().expect("sh must run");
+        assert!(output.stdout.is_empty());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
     fn read_status_from_fd_decodes_active_byte() {
         use std::io::Write;
         use std::os::unix::io::AsRawFd;
