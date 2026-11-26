@@ -1,9 +1,5 @@
 use super::*;
 
-// Issue #396: `jq` parses its stdin as JSON, never as commands. A
-// dangerous-looking substring inside a JSON value (a shell command quoted as
-// data) must not be treated as a live command just because it sits inside a
-// nowdoc body.
 #[test]
 fn assess_jq_nowdoc_body_with_dangerous_looking_json_stays_safe() {
     let s = scanner();
@@ -23,8 +19,6 @@ fn assess_jq_nowdoc_body_with_dangerous_looking_json_stays_safe() {
     );
 }
 
-// A file can run implicitly later, so a dangerous body stays scanned even
-// when an earlier command is separated by `;`.
 #[test]
 fn assess_file_write_after_semicolon_scans_body() {
     assert_assessment_matches_pattern(
@@ -34,7 +28,6 @@ fn assess_file_write_after_semicolon_scans_body() {
     );
 }
 
-// The same rule holds for an `&&` chain.
 #[test]
 fn assess_file_write_after_and_and_scans_body() {
     assert_assessment_matches_pattern(
@@ -44,7 +37,6 @@ fn assess_file_write_after_and_and_scans_body() {
     );
 }
 
-// Stock absolute paths (`/usr/bin/cat`) are trusted data consumers (#396).
 #[test]
 fn assess_heredoc_owning_command_absolute_path_stays_safe() {
     let s = scanner();
@@ -78,7 +70,6 @@ fn assess_xargs_nowdoc_body_still_fires() {
     assert_assessment_matches_pattern("xargs <<'EOF'\nrm -rf /\nEOF", RiskLevel::Block, "FS-001");
 }
 
-// Assignment `$(...)` captures are untrusted (ADR-042).
 #[test]
 fn assess_cat_inside_assignment_command_substitution_still_fires() {
     assert_assessment_matches_pattern(
@@ -88,8 +79,6 @@ fn assess_cat_inside_assignment_command_substitution_still_fires() {
     );
 }
 
-// A `$(...)` that is the value of a `gh` message flag is a trusted context:
-// the `gh pr create --body "$(cat <<'EOF' ...)"` idiom.
 #[test]
 fn assess_cat_inside_gh_argument_command_substitution_stays_safe() {
     let s = scanner();
@@ -109,8 +98,6 @@ fn assess_cat_inside_gh_argument_command_substitution_stays_safe() {
     );
 }
 
-// A `$(...)` argument of any other command is not a trusted context — `ssh`
-// runs whatever text it receives remotely, so the body must keep firing.
 #[test]
 fn assess_cat_inside_ssh_argument_command_substitution_still_fires() {
     assert_assessment_matches_pattern(
@@ -120,7 +107,6 @@ fn assess_cat_inside_ssh_argument_command_substitution_still_fires() {
     );
 }
 
-// A backtick command-substitution position is never a trusted context.
 #[test]
 fn assess_cat_inside_backtick_substitution_still_fires() {
     assert_assessment_matches_pattern(
@@ -130,8 +116,6 @@ fn assess_cat_inside_backtick_substitution_still_fires() {
     );
 }
 
-// The `git commit -m "$(cat <<'EOF' ...)"` idiom: a `-m` value is only ever
-// stored as the commit message.
 #[test]
 fn assess_cat_inside_git_commit_message_substitution_stays_safe() {
     let s = scanner();
@@ -151,8 +135,6 @@ fn assess_cat_inside_git_commit_message_substitution_stays_safe() {
     );
 }
 
-// The `git tag -m`/`gh issue comment --body` idioms: message flags trusted
-// under the subcommands this gate lists.
 #[test]
 fn assess_cat_inside_git_tag_and_gh_issue_comment_message_substitutions_stay_safe() {
     let cases = [
@@ -176,10 +158,6 @@ fn assess_cat_inside_git_tag_and_gh_issue_comment_message_substitutions_stay_saf
     }
 }
 
-// Bodies that reach a shell through a shape the data-consumer predicate must
-// reject: a `$(` opened on an earlier line, a process substitution, a line
-// continuation into a pipe, and `git`/`gh` arguments that are not message
-// values (a `!` alias runs a shell, `gh alias set --shell` stores one).
 #[test]
 fn assess_data_consumer_bodies_that_reach_a_shell_still_fire() {
     let cases = [
@@ -194,17 +172,13 @@ fn assess_data_consumer_bodies_that_reach_a_shell_still_fire() {
         "git checkout -b \"$(cat <<'EOF'\nrm -rf /\nEOF\n)\"",
         "git -c alias.x=y commit -m \"$(cat <<'EOF'\nrm -rf /\nEOF\n)\"",
         "gh pr checkout 1 -b \"$(cat <<'EOF'\nrm -rf /\nEOF\n)\"",
-        // A `(` frame opened before the marker: process substitution,
-        // subshell, or a subshell nested in an assignment's `$(...)`.
         "exec 3< <(\ncat <<'EOF'\nrm -rf /\nEOF\n)",
         "bash <(\ncat <<'EOF'\nrm -rf /\nEOF\n)",
         "source <(\ncat <<'EOF'\nrm -rf /\nEOF\n)",
         "(cat <<'EOF'\nrm -rf /\nEOF\n) | sh",
         "x=$( (cat <<'EOF'\nrm -rf /\nEOF\n) | sh )",
-        // Output to a descriptor that may be a pipe opened earlier.
         "cat <<'EOF' >&3\nrm -rf /\nEOF",
         "cat <<'EOF' > /dev/fd/3\nrm -rf /\nEOF",
-        // A compound command whose output leaves after the terminator line.
         "{ true; cat <<'EOF'\nrm -rf /\nEOF\n} | sh",
         "exec 3> >(sh)\n{ true; cat <<'EOF'\nrm -rf /\nEOF\n} >&3",
         "for i in 1; do true; cat <<'EOF'\nrm -rf /\nEOF\ndone | sh",
@@ -217,8 +191,6 @@ fn assess_data_consumer_bodies_that_reach_a_shell_still_fire() {
         assert_assessment_matches_pattern(cmd, RiskLevel::Block, "FS-001");
     }
 
-    // The JSON quote right after `/` keeps PS-006 from matching, so FS-001
-    // alone decides the level here.
     assert_assessment_matches_pattern(
         "git config alias.y \"!$(jq -r .a <<'JSON'\n{\"a\":\"rm -rf /\"}\nJSON\n)\"",
         RiskLevel::Danger,
@@ -226,7 +198,6 @@ fn assess_data_consumer_bodies_that_reach_a_shell_still_fire() {
     );
 }
 
-// Captured heredocs are never trusted (ADR-042, #396).
 #[test]
 fn assess_captured_heredoc_always_fires() {
     let cases = [
@@ -249,7 +220,6 @@ fn assess_captured_heredoc_always_fires() {
     }
 }
 
-// ANSI-C `$'\''` escapes `'` instead of toggling quotes, so the prefix is untrusted.
 #[test]
 fn assess_ansi_c_quote_escape_before_marker_still_fires() {
     assert_assessment_matches_pattern(
@@ -259,7 +229,6 @@ fn assess_ansi_c_quote_escape_before_marker_still_fires() {
     );
 }
 
-// A quote left open on an earlier line turns the marker line into quoted text in bash.
 #[test]
 fn assess_quote_left_open_from_earlier_line_still_fires() {
     assert_assessment_matches_pattern(

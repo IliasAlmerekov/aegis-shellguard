@@ -1,5 +1,3 @@
-//! Snapshot registry materialization and runtime dispatch.
-
 use std::path::{Path, PathBuf};
 
 use aegis_config::{
@@ -19,53 +17,28 @@ use crate::paths::resolve_snapshots_dir;
 use crate::readiness::{ATTEMPT_TIMEOUT, ArtifactReadiness};
 use crate::retention::{PrunableRecord, prunable_records_newest_first};
 
-/// Return the names of snapshot providers built into this binary/runtime.
 pub fn available_provider_names() -> &'static [&'static str] {
     &builtin::BUILTIN_SNAPSHOT_PROVIDER_NAMES
 }
 
-/// Holds the runtime snapshot provider set used for snapshot and rollback flows.
-///
-/// Entries may be materialized from the effective runtime config or assembled
-/// for broader recovery operations such as rollback. A provider being present
-/// here means it is available for later applicability checks, not that it will
-/// snapshot every command or in every working directory.
 pub struct SnapshotRegistry {
     plugins: Vec<Box<dyn SnapshotPlugin>>,
 }
 
-/// Eager runtime snapshot config used to materialize a [`SnapshotRegistry`].
-///
-/// This captures the config boundary between "which built-in providers are
-/// available at runtime" and the later per-command/per-directory applicability
-/// checks performed by each provider.
 #[derive(Debug, Clone)]
 pub struct SnapshotRegistryConfig {
-    /// Global snapshot policy (None, Selective, or Full).
     pub snapshot_policy: SnapshotPolicy,
-    /// Enable Git snapshots when true.
     pub auto_snapshot_git: bool,
-    /// Enable Docker snapshots when true.
     pub auto_snapshot_docker: bool,
-    /// Enable PostgreSQL snapshots when true.
     pub auto_snapshot_postgres: bool,
-    /// Connection details for PostgreSQL snapshots.
     pub postgres_snapshot: PostgresSnapshotConfig,
-    /// Enable MySQL snapshots when true.
     pub auto_snapshot_mysql: bool,
-    /// Connection details for MySQL snapshots.
     pub mysql_snapshot: MysqlSnapshotConfig,
-    /// Enable Supabase snapshots when true.
     pub auto_snapshot_supabase: bool,
-    /// Connection details for Supabase snapshots.
     pub supabase_snapshot: SupabaseSnapshotConfig,
-    /// Enable SQLite snapshots when true.
     pub auto_snapshot_sqlite: bool,
-    /// Path to the SQLite database file to snapshot.
     pub sqlite_snapshot_path: String,
-    /// Directory where snapshot artifacts are stored.
     pub snapshots_dir: PathBuf,
-    /// Docker snapshot scope (image vs container).
     pub docker_scope: DockerScope,
 }
 
@@ -105,14 +78,11 @@ async fn liveness_within(
 }
 
 impl SnapshotRegistryConfig {
-    /// Fallible constructor — propagates `HOME`-unset error.
     pub fn try_new(config: &AegisConfig) -> std::result::Result<Self, SnapshotError> {
         let snapshots_dir = resolve_snapshots_dir()?;
         Ok(registry_config_from_parts(config, snapshots_dir))
     }
 
-    /// Build a rollback runtime config that preserves effective provider
-    /// settings while forcing all built-in providers to be available.
     pub fn for_rollback_from_config(
         config: &AegisConfig,
     ) -> std::result::Result<Self, SnapshotError> {
@@ -129,20 +99,11 @@ impl SnapshotRegistryConfig {
 }
 
 impl SnapshotRegistry {
-    /// Construct a registry from an explicit plugin list.
-    ///
-    /// Test-only: production code uses
-    /// [`SnapshotRegistry::from_runtime_config`].
     #[cfg(any(test, feature = "testing"))]
     pub fn new_with_plugins(plugins: Vec<Box<dyn SnapshotPlugin>>) -> Self {
         Self { plugins }
     }
 
-    /// Build a snapshot registry from the eager runtime config.
-    ///
-    /// This materializes the config-filtered set of available snapshot
-    /// providers. Applicability remains a later concern evaluated by each
-    /// provider for a specific working directory or command.
     pub fn from_runtime_config(config: &SnapshotRegistryConfig) -> Self {
         #[cfg(any(test, feature = "testing"))]
         crate::testing::increment_registry_build_count();
@@ -150,7 +111,7 @@ impl SnapshotRegistry {
         let mut plugins: Vec<Box<dyn SnapshotPlugin>> = Vec::new();
 
         match config.snapshot_policy {
-            SnapshotPolicy::None => { /* no plugins */ }
+            SnapshotPolicy::None => {}
             SnapshotPolicy::Selective => {
                 plugins = builtin::BuiltinProvider::ALL
                     .into_iter()
@@ -169,44 +130,20 @@ impl SnapshotRegistry {
         Self { plugins }
     }
 
-    /// Build a registry that can roll back any built-in snapshot type.
-    ///
-    /// This intentionally ignores per-plugin snapshot flags: operators must be
-    /// able to restore previously recorded snapshots even if snapshot creation
-    /// is disabled in the current config.
     pub fn for_rollback() -> std::result::Result<Self, SnapshotError> {
         Ok(Self::from_runtime_config(
             &SnapshotRegistryConfig::for_rollback_from_config(&AegisConfig::default())?,
         ))
     }
 
-    /// Return the names of providers materialized into this registry instance.
-    ///
-    /// For registries built from runtime config, this reports the
-    /// config-filtered materialized provider set. For registries built for
-    /// other purposes, such as [`SnapshotRegistry::for_rollback`], it reports
-    /// the providers materialized for that registry's use.
     pub fn configured_provider_names(&self) -> Vec<&'static str> {
         self.plugins.iter().map(|plugin| plugin.name()).collect()
     }
 
-    /// Call every applicable plugin and collect snapshot records.
-    ///
-    /// Plugins that are not applicable for `cwd` are skipped silently.
-    /// Plugin failures are logged as warnings and do not abort the loop.
-    ///
-    /// The returned [`SnapshotCoverage`] carries the applicable-plugin count
-    /// from this same pass, so a caller can tell a complete attempt from a
-    /// partial one without asking every plugin for applicability a second
-    /// time and risking a different answer.
     pub async fn snapshot_all(&self, cwd: &Path, cmd: &str) -> SnapshotCoverage {
         self.snapshot_matching(cwd, cmd, |_| true).await
     }
 
-    /// [`Self::snapshot_all`] without the plugin named `excluded`.
-    ///
-    /// Used when the git `Snapshot plugin` follows a Git target instead of
-    /// the process cwd (#471): every other plugin still runs at `cwd`.
     pub async fn snapshot_all_except(
         &self,
         excluded: &str,
@@ -217,10 +154,6 @@ impl SnapshotRegistry {
             .await
     }
 
-    /// Run only the plugin named `plugin`, rooted at `dir`.
-    ///
-    /// Returns an empty coverage when the plugin is not materialized in this
-    /// registry or is not applicable to `dir`.
     pub async fn snapshot_plugin_at(
         &self,
         plugin: &str,
@@ -231,8 +164,6 @@ impl SnapshotRegistry {
             .await
     }
 
-    /// Whether the plugin named `plugin` is materialized in this registry
-    /// and applicable to `dir`.
     pub async fn plugin_applicable_at(&self, plugin: &str, dir: &Path) -> bool {
         for candidate in &self.plugins {
             if candidate.name() == plugin {
@@ -274,13 +205,6 @@ impl SnapshotRegistry {
         coverage
     }
 
-    /// Check the artifact of every record in `coverage` and store the
-    /// verdicts in `coverage.attempts` (ADR-031 §6).
-    ///
-    /// Run once per command, after its passes are merged: each check gets at
-    /// most [`ATTEMPT_TIMEOUT`] and all of them share a 500 ms budget. A
-    /// check that does not finish, or has no budget left, fails closed as
-    /// `Unavailable`. The bound is a timeout here, not trust in the plugin.
     pub async fn check_readiness(&self, coverage: &mut SnapshotCoverage) {
         let deadline = tokio::time::Instant::now() + COMMAND_READINESS_BUDGET;
         let mut attempts = Vec::with_capacity(coverage.records.len());
@@ -300,12 +224,6 @@ impl SnapshotRegistry {
         coverage.attempts = attempts;
     }
 
-    /// Return the subset of configured providers that are applicable to `cwd`.
-    ///
-    /// This is a later-stage runtime-use check than either
-    /// [`crate::available_provider_names`] (providers known to the binary/runtime) or
-    /// [`SnapshotRegistry::configured_provider_names`] (providers materialized
-    /// by the current runtime config). No snapshots are created.
     pub async fn applicable_plugins(&self, cwd: &Path) -> Vec<&'static str> {
         let mut names = Vec::new();
         for plugin in &self.plugins {
@@ -316,7 +234,6 @@ impl SnapshotRegistry {
         names
     }
 
-    /// Roll back one snapshot using the named plugin.
     pub async fn rollback(
         &self,
         plugin_name: &str,
@@ -334,7 +251,6 @@ impl SnapshotRegistry {
         plugin.rollback(snapshot_id).await
     }
 
-    /// Delete one snapshot using the named plugin.
     pub async fn delete(
         &self,
         plugin_name: &str,
@@ -352,10 +268,6 @@ impl SnapshotRegistry {
         plugin.delete(snapshot_id).await
     }
 
-    /// Check the Snapshot liveness of one snapshot using the named plugin.
-    ///
-    /// The check is bounded at [`LIVENESS_TIMEOUT`]; a check that overruns is
-    /// [`Liveness::Inconclusive`].
     pub async fn liveness(
         &self,
         plugin_name: &str,
@@ -365,7 +277,6 @@ impl SnapshotRegistry {
             .plugins
             .iter()
             .find(|plugin| plugin.name() == plugin_name)
-            // Liveness checks what Rollback needs, so an unknown plugin reads as Rollback would report it.
             .ok_or_else(|| SnapshotError::PluginUnavailable {
                 plugin: plugin_name.to_string(),
                 operation: "rollback",
@@ -374,12 +285,6 @@ impl SnapshotRegistry {
         liveness_within(LIVENESS_TIMEOUT, plugin.as_ref(), snapshot_id).await
     }
 
-    /// Turn the Snapshot ledger's live records into prune records, newest
-    /// first in log order.
-    ///
-    /// `records` are the ledger's live records, oldest first in log order; the
-    /// ledger has already removed every pruned Snapshot. A prune is final, so a
-    /// record of a pruned Snapshot never comes back here.
     pub fn resolve_prunable_records(&self, records: &[RecordedSnapshot]) -> Vec<PrunableRecord> {
         prunable_records_newest_first(records)
     }
@@ -396,8 +301,6 @@ mod tests {
 
     use super::*;
 
-    /// A plugin that is always applicable and always fails to snapshot, so
-    /// `snapshot_all` reaches its warn arm deterministically.
     struct AlwaysFailingPlugin;
 
     #[async_trait]
@@ -438,7 +341,6 @@ mod tests {
         }
     }
 
-    /// The fields captured off the single `tracing` event the test expects.
     #[derive(Default)]
     struct CapturedFields {
         message: Option<String>,
@@ -470,9 +372,6 @@ mod tests {
         }
     }
 
-    /// A minimal `tracing::Subscriber` that records the fields of the one
-    /// event it expects to see, without pulling in `tracing-subscriber` as a
-    /// dependency just for this test.
     struct CollectingSubscriber(Arc<Mutex<Option<CapturedFields>>>);
 
     impl tracing::Subscriber for CollectingSubscriber {
@@ -499,7 +398,6 @@ mod tests {
         fn exit(&self, _span: &span::Id) {}
     }
 
-    /// A plugin that is always applicable and always succeeds.
     struct AlwaysSucceedingPlugin;
 
     #[async_trait]
@@ -540,7 +438,6 @@ mod tests {
         }
     }
 
-    /// A plugin that never applies, so it must not enter the applicable count.
     struct NeverApplicablePlugin;
 
     #[async_trait]
@@ -728,8 +625,6 @@ mod tests {
             error.contains("mock plugin failure"),
             "error field must carry the plugin's failure detail, got {error:?}"
         );
-        // The command string itself must never appear in the tracing fields
-        // (CONVENTION.md §2 — no raw command string in the Diagnostic stream).
         assert!(!error.contains("rm -rf /"));
         assert_ne!(captured.message.as_deref(), Some("rm -rf /"));
     }

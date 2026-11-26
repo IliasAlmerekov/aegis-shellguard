@@ -83,7 +83,6 @@ fn segments_subshell_body_extracted() {
     );
 }
 
-// A `)` inside double quotes does not close the enclosing subshell (#430).
 #[test]
 fn unwrap_subshell_group_ignores_a_close_paren_inside_double_quotes() {
     assert_eq!(
@@ -92,7 +91,6 @@ fn unwrap_subshell_group_ignores_a_close_paren_inside_double_quotes() {
     );
 }
 
-// A `)` inside double quotes does not close the enclosing `$(...)` (#430).
 #[test]
 fn command_substitution_body_ignores_a_close_paren_inside_double_quotes() {
     assert_eq!(
@@ -268,7 +266,6 @@ fn segments_combined_redirect_no_spaces_not_split() {
     );
 }
 
-// Even backslash count (`\\>`) leaves `>` unescaped, so `&` is part of `>&`.
 #[test]
 fn segments_double_backslash_redirect_kept() {
     let segs = logical_segments(r"echo a\\> & cmd");

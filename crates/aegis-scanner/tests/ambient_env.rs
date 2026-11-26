@@ -1,5 +1,3 @@
-//! `Scanner::git_stage_report` reads Aegis's own environment (#525, #471).
-
 #[path = "../../../tests/support/isolated_test.rs"]
 mod isolated_test;
 

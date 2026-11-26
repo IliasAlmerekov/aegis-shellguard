@@ -8,16 +8,6 @@
     )
 )]
 
-//! Command risk scanning for Aegis.
-//!
-//! This crate owns the [`Scanner`] (Aho-Corasick quick scan + regex full scan +
-//! token-prefix matching) and the [`PatternSet`] that feeds it (built-in
-//! patterns embedded from `patterns.toml`, merged with caller-supplied custom
-//! patterns). It depends on `aegis-types` for the data vocabulary and
-//! `aegis-parser` for tokenization. It is deliberately ignorant of where custom
-//! patterns come from — callers convert their config types into [`Pattern`]
-//! before handing them over.
-
 mod error;
 mod nested;
 mod patterns;
@@ -39,10 +29,6 @@ pub use untrusted::{
     compile_untrusted_regex,
 };
 
-/// Process-wide built-in scanner, compiled once from the embedded
-/// `patterns.toml`. The error is carried as a `String` (not `ScannerError`,
-/// which does not implement `Clone`) so each access can rebuild a fresh typed
-/// error without cloning the original.
 static BUILTIN_SCANNER: LazyLock<Result<Arc<Scanner>, String>> = LazyLock::new(|| {
     PatternSet::load()
         .and_then(Scanner::try_new)
@@ -50,18 +36,10 @@ static BUILTIN_SCANNER: LazyLock<Result<Arc<Scanner>, String>> = LazyLock::new(|
         .map_err(|e| e.to_string())
 });
 
-/// Assess a command with the built-in scanner.
 pub fn assess(cmd: &str) -> Result<Assessment, ScannerError> {
     Ok(builtin_scanner()?.assess(cmd))
 }
 
-/// Resolve the effective scanner for the provided custom-pattern set.
-///
-/// An empty slice returns a clone of the process-wide built-in-scanner `Arc`.
-/// A non-empty slice builds a fresh scanner merging the built-in patterns with
-/// `custom_patterns` and returns it wrapped in a new `Arc`. Callers own
-/// keeping that `Arc` alive as long as the merged scanner is needed; nothing
-/// here caches it.
 pub fn scanner_for(custom_patterns: &[Pattern]) -> Result<Arc<Scanner>, ScannerError> {
     if custom_patterns.is_empty() {
         return builtin_scanner();

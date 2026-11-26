@@ -1,23 +1,3 @@
-//! Parent-side client for the ephemeral language worker (ADR-022 §2, L1
-//! Iteration 3 slice 4).
-//!
-//! The parent process owns async orchestration. It spawns the worker as a
-//! short-lived subprocess (`aegis --internal-language-worker`), writes
-//! length-bounded request frames to the worker's stdin, reads response frames
-//! from its stdout, correlates each response to its request by `request_id`
-//! in send order, and enforces a per-session deadline. Every worker failure —
-//! a timeout, an early close, a malformed frame on stdout, a duplicate or
-//! out-of-order response, or an I/O error — is reported as a typed
-//! [`WorkerError`] that maps to [`aegis_types::DegradationReason::WorkerFailure`].
-//!
-//! Responses already received when a failure ends the session are retained;
-//! the remaining targets carry the failure (ADR-022 §2: "Results already
-//! produced by the shell Scanner or an earlier analysis target are retained").
-//!
-//! This module is the pure client. Wiring its results into an `Assessment`
-//! (monotonic merge with the baseline and prior target results) lands with the
-//! Iteration 1 merge function and Iteration 4 source routing.
-
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -29,109 +9,46 @@ use aegis_language::SourceLanguage;
 use aegis_language::protocol::{self, DecodeError, Request, Response};
 use aegis_types::DegradationReason;
 
-/// The undocumented internal flag that turns the `aegis` binary into the
-/// ephemeral language worker (ADR-022 §2). This is the single source of truth:
-/// `src/main.rs` raw-argv-detects it before clap/runtime construction, and
-/// [`Worker::spawn`] appends it when re-execing the binary in worker mode.
 pub const INTERNAL_LANGUAGE_WORKER_FLAG: &str = "--internal-language-worker";
 
-/// Which worker request a [`TargetRequest`] encodes on the wire.
-///
-/// `Parse` is the Iteration 3 bounded-parser round-trip (`Request::Parse`);
-/// `Analyze` is the full adapter analysis (ADR-022 §2, L1 Iteration 6,
-/// `Request::Analyze`). Both share the same payload shape (`language`,
-/// `source`); only the wire `kind` byte differs, so the transport is unified.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestKind {
-    /// `Request::Parse` — the Iteration 3 bounded-parser round-trip.
     Parse,
-    /// `Request::Analyze` — full adapter analysis (ADR-022 §2, L1 Iteration 6).
     Analyze,
 }
 
-/// A single request addressed to the worker by `request_id`.
 #[derive(Debug, Clone)]
 pub struct TargetRequest {
-    /// The correlation id used to match this request with its response.
     pub request_id: u32,
-    /// The language to parse `source` as.
     pub language: SourceLanguage,
-    /// The original source bytes to parse.
     pub source: Vec<u8>,
-    /// Which request to encode on the wire (`Parse` or `Analyze`).
     pub kind: RequestKind,
 }
 
-/// Why a target's analysis did not produce a clean [`Response`]. Every variant
-/// maps to [`DegradationReason::WorkerFailure`] (ADR-022 §2, §4).
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum WorkerError {
-    /// The per-session deadline elapsed before all responses arrived.
     #[error("language-analysis deadline exceeded")]
     Timeout,
-    /// The worker closed its stdout before all expected responses arrived
-    /// (crash, early exit, or non-zero termination), or a write to its stdin
-    /// failed because the pipe was already closed.
     #[error("worker closed its output before all responses arrived")]
     Closed,
-    /// A frame on the worker's stdout failed to decode — protocol noise that
-    /// would corrupt the framed stream.
     #[error("worker stdout contained a malformed frame: {0}")]
     ProtocolNoise(#[from] DecodeError),
-    /// A response arrived twice for the same `request_id`.
     #[error("duplicate response for request id {request_id}")]
-    DuplicateResponse {
-        /// The `request_id` that was duplicated.
-        request_id: u32,
-    },
-    /// A response arrived out of send order.
+    DuplicateResponse { request_id: u32 },
     #[error("out-of-order response: expected {expected}, got {got}")]
-    OutOfOrder {
-        /// The `request_id` that was expected next.
-        expected: u32,
-        /// The `request_id` that arrived instead.
-        got: u32,
-    },
-    /// A response arrived for a `request_id` that was never sent.
+    OutOfOrder { expected: u32, got: u32 },
     #[error("unexpected response for request id {request_id} (not in flight)")]
-    UnexpectedResponse {
-        /// The `request_id` that was not in flight.
-        request_id: u32,
-    },
-    /// The worker exited with a non-zero status after the session. A non-zero
-    /// exit taints the whole session — the worker is untrusted, so even
-    /// responses already received degrade (ADR-022 §2: a non-zero exit is a
-    /// worker failure). `code` is `None` when the worker was terminated by a
-    /// signal rather than exiting with a code.
+    UnexpectedResponse { request_id: u32 },
     #[error("worker exited with non-zero status: {code:?}")]
-    NonZeroExit {
-        /// The reaped exit code, or `None` if terminated by a signal.
-        code: Option<i32>,
-    },
-    /// A read from or write to the worker pipe failed.
-    ///
-    /// `WorkerError` must be `Clone` — it is copied into every pending
-    /// `TargetResult` when a session-ending failure is fanned out to the
-    /// targets still awaiting a response — but `std::io::Error` is not
-    /// `Clone`. Holding `Arc<std::io::Error>` would preserve the value
-    /// exactly, but a fail-closed branch here only ever needs to distinguish
-    /// *kinds* of I/O failure (a closed pipe vs. a permission fault vs.
-    /// something else), never the original error's platform-specific detail
-    /// or backtrace. `ErrorKind` is `Copy`, so keeping it alongside the
-    /// rendered message is the cheaper of the two `Clone`-compatible shapes
-    /// and loses nothing this type's callers read.
+    NonZeroExit { code: Option<i32> },
     #[error("worker i/o error: {message}")]
     Io {
-        /// The underlying error's kind, e.g. `BrokenPipe` or
-        /// `PermissionDenied`.
         kind: std::io::ErrorKind,
-        /// The rendered `io::Error` message.
         message: String,
     },
 }
 
 impl WorkerError {
-    /// Build a [`Self::Io`] from an [`std::io::Error`], keeping its kind.
     fn from_io(error: std::io::Error) -> Self {
         WorkerError::Io {
             kind: error.kind(),
@@ -141,36 +58,17 @@ impl WorkerError {
 }
 
 impl From<WorkerError> for DegradationReason {
-    /// Every worker failure degrades as `WorkerFailure` — the parent retains
-    /// prior results and never treats a worker failure as evidence of safety
-    /// (ADR-022 §2, §5).
     fn from(_: WorkerError) -> Self {
         DegradationReason::WorkerFailure
     }
 }
 
-/// The per-target outcome: either a clean [`Response`] or a typed
-/// [`WorkerError`].
 #[derive(Debug, Clone)]
 pub enum TargetResult {
-    /// The worker returned a well-formed response for this target.
     Responded(Response),
-    /// The target did not get a clean response; the worker failed for it.
     Failed(WorkerError),
 }
 
-/// Send `requests` to a worker over `reader` / `writer`, correlating responses
-/// by `request_id` in send order, under `deadline`.
-///
-/// Returns one [`TargetResult`] per request, in send order. All request frames
-/// are written first, then responses are read and matched. Responses already
-/// received when a failure ends the session are retained; the remaining targets
-/// carry the failure that ended the session.
-///
-/// This is the transport-agnostic core: `reader` is the worker→parent stream
-/// and `writer` is the parent→worker stream. [`Worker`] wraps it for the real
-/// subprocess; tests also feed it [`tokio::io::duplex`] ends to exercise
-/// timeout, duplicate, and out-of-order responses without spawning a process.
 pub async fn analyze<R, W>(
     reader: &mut R,
     writer: &mut W,
@@ -185,14 +83,10 @@ where
     let sent_ids: Vec<u32> = requests.iter().map(|r| r.request_id).collect();
     let mut results: Vec<Option<TargetResult>> = vec![None; n];
 
-    // Send all requests. A send failure (encode, write, or flush) ends the
-    // session with that failure for every target — the flush error is NOT
-    // dropped, so it cannot masquerade as a read Timeout later.
     if let Err(fail) = send_requests(writer, &requests).await {
         return all_failed(n, fail);
     }
 
-    // Read responses under a deadline, correlating by request_id in send order.
     let outcome = timeout(deadline, read_responses(reader, &sent_ids, &mut results)).await;
     let session_failure: Option<WorkerError> = match outcome {
         Ok(Ok(())) => None,
@@ -200,8 +94,6 @@ where
         Err(_) => Some(WorkerError::Timeout),
     };
 
-    // Any target that did not get a clean response carries the failure that
-    // ended the session (ADR-022 §2: prior results retained, remainder failed).
     if let Some(fail) = session_failure {
         for slot in results.iter_mut() {
             if slot.is_none() {
@@ -216,11 +108,6 @@ where
         .collect()
 }
 
-/// Encode and send all `requests` to `writer` as one stream of frames, then
-/// flush. A failure to encode (oversized source), write, or flush is propagated
-/// as a typed [`WorkerError`] rather than dropped — a dropped flush error would
-/// leave the worker without the requests and surface later as a read Timeout,
-/// masking the real cause.
 async fn send_requests<W>(writer: &mut W, requests: &[TargetRequest]) -> Result<(), WorkerError>
 where
     W: AsyncWrite + Unpin + Send,
@@ -249,15 +136,10 @@ where
     Ok(())
 }
 
-/// Build `n` copies of `fail` as `TargetResult::Failed`.
 fn all_failed(n: usize, fail: WorkerError) -> Vec<TargetResult> {
     (0..n).map(|_| TargetResult::Failed(fail.clone())).collect()
 }
 
-/// Read response frames from `reader` and place them in `results` in send
-/// order, correlating each by `request_id`. Returns `Err` with the typed
-/// failure that ended the session; on `Err`, `results` contains every response
-/// received before the failure (the caller fills the rest).
 async fn read_responses<R>(
     reader: &mut R,
     sent_ids: &[u32],
@@ -272,7 +154,6 @@ where
     let mut expected = 0usize;
 
     while expected < n {
-        // Decode one complete frame, reading more bytes until one is available.
         let frame = loop {
             match protocol::decode_response(&buf) {
                 Ok(Some(frame)) => {
@@ -288,7 +169,6 @@ where
             }
         };
 
-        // Correlate by request_id, strictly in send order.
         let id = frame.request_id;
         if id == sent_ids[expected] {
             results[expected] = Some(TargetResult::Responded(frame.message));
@@ -307,25 +187,15 @@ where
     Ok(())
 }
 
-/// A spawned ephemeral language worker subprocess.
 pub struct Worker {
     child: Child,
     stdin: Option<ChildStdin>,
     stdout: Option<ChildStdout>,
-    /// The reaped exit code once the child has been waited on; `None` before.
     exit_code: Option<i32>,
-    /// Whether the child has already been reaped (so shutdown does not re-wait).
     reaped: bool,
 }
 
 impl Worker {
-    /// Spawn the `aegis --internal-language-worker` subprocess with piped
-    /// stdin/stdout/stderr.
-    ///
-    /// `aegis_path` overrides the binary to spawn; `None` uses `current_exe`,
-    /// which is what production wiring does (the parent re-execs itself in
-    /// worker mode). Tests pass a path to the built `aegis` binary or to a
-    /// substitute command to exercise crash/noise behavior.
     pub async fn spawn(aegis_path: Option<&str>) -> std::io::Result<Worker> {
         let mut cmd = match aegis_path {
             Some(path) => Command::new(path),
@@ -341,9 +211,6 @@ impl Worker {
         Self::spawn_command(cmd)
     }
 
-    /// Spawn an arbitrary command as the worker (no `--internal-language-worker`
-    /// flag appended). Tests use this to run a substitute binary that mimics a
-    /// misbehaving worker (responds-then-exits-nonzero, etc.).
     pub fn spawn_command(mut cmd: Command) -> std::io::Result<Worker> {
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -360,18 +227,6 @@ impl Worker {
         })
     }
 
-    /// Run a full session against this worker under `deadline`:
-    ///
-    /// 1. Send all request frames and flush (a send failure degrades every
-    ///    target with the typed error — the flush error is not dropped).
-    /// 2. Close stdin so the worker sees end-of-session and exits (ADR-022 §2
-    ///    ephemeral contract).
-    /// 3. Read all responses under the deadline, correlating by `request_id`.
-    /// 4. If every response was received, wait for the worker to exit; a
-    ///    non-zero exit taints the whole session as [`WorkerError::NonZeroExit`]
-    ///    (the worker is untrusted). A read failure kills and reaps the worker
-    ///    and fills the remaining targets with that failure (prior results
-    ///    retained).
     pub async fn analyze(
         &mut self,
         requests: Vec<TargetRequest>,
@@ -399,7 +254,6 @@ impl Worker {
                 .child
                 .wait()
                 .await
-                // A wait error becomes code=None, which still fails closed via NonZeroExit below.
                 .ok()
                 .and_then(|status| status.code());
             self.reaped = true;
@@ -436,17 +290,11 @@ impl Worker {
             .collect()
     }
 
-    /// The worker's exit code, once [`analyze`](Self::analyze) or
-    /// [`shutdown`](Self::shutdown) has reaped it; `None` until then (or if it
-    /// was terminated by a signal).
     #[must_use]
     pub fn exit_code(&self) -> Option<i32> {
         self.exit_code
     }
 
-    /// Close stdin (signaling end-of-session), then wait for the worker to
-    /// exit and return its exit code. If [`analyze`](Self::analyze) already
-    /// reaped the child, returns the cached code without re-waiting.
     pub async fn shutdown(mut self) -> std::io::Result<Option<i32>> {
         self.stdin.take();
         self.stdout.take();
@@ -458,10 +306,6 @@ impl Worker {
         Ok(self.exit_code)
     }
 
-    /// Kill the child if it is still running and reap it, recording the exit
-    /// code. Best-effort: errors are ignored (the caller already has a failure
-    /// to report). `wait` is safe here because `start_kill` sends SIGKILL, so
-    /// the child exits promptly.
     async fn reap_kill(&mut self) {
         let _ = self.child.start_kill();
         if let Ok(status) = self.child.wait().await {

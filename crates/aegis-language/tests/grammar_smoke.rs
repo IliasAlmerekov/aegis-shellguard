@@ -1,11 +1,7 @@
-//! Grammar manifest contract and host smoke tests (ADR-022 §8, §9).
-
 use aegis_language::manifest::{
     GrammarEntry, ManifestError, RELEASE_GRAMMARS, SUPPORTED_LANGUAGE_ABI, validate_entry,
 };
 
-/// A grammar entry that satisfies every contract clause except the single
-/// field a given test mutates.
 fn well_formed(language: &'static str) -> GrammarEntry {
     GrammarEntry {
         language,
@@ -62,10 +58,6 @@ fn rejects_a_grammar_with_unsupported_tree_sitter_abi() {
 
 #[test]
 fn accepts_a_grammar_at_a_backwards_compatible_abi() {
-    // Tree-sitter runtime 0.26 speaks LANGUAGE_VERSION 15 but remains
-    // backwards-compatible down to MIN_COMPATIBLE_LANGUAGE_VERSION 13. A
-    // grammar generated for ABI 14 (e.g. the pinned tree-sitter-typescript
-    // 0.23.2) is therefore qualified, not rejected.
     use aegis_language::manifest::MIN_SUPPORTED_LANGUAGE_ABI;
     let mut entry = well_formed("python");
     entry.abi = MIN_SUPPORTED_LANGUAGE_ABI + 1;
@@ -92,8 +84,6 @@ fn rejects_a_grammar_below_the_minimum_compatible_abi() {
 
 #[test]
 fn rejects_a_grammar_absent_from_the_release_manifest() {
-    // Ruby is a staged 1.x adapter (ADR-022 §9), not part of the L1 release
-    // set, so a compiled-in Ruby grammar must be rejected.
     let entry = well_formed("ruby");
     assert_eq!(
         validate_entry(&entry, RELEASE_GRAMMARS),
@@ -115,8 +105,6 @@ fn accepts_every_well_formed_release_grammar() {
 
 #[test]
 fn release_grammar_set_matches_adr022_l1_foundation() {
-    // ADR-022 §9: the L1 foundation ships Python, JavaScript, TypeScript, and
-    // Shell/Bash. Go, PHP, Ruby, PowerShell, Perl, and Lua are 1.x adapters.
     assert_eq!(
         RELEASE_GRAMMARS,
         &["python", "javascript", "typescript", "bash"]
@@ -125,7 +113,6 @@ fn release_grammar_set_matches_adr022_l1_foundation() {
 
 #[test]
 fn release_target_set_matches_adr022_release_matrix() {
-    // ADR-022 §8: the qualified grammar set must be identical across these four targets.
     use aegis_language::manifest::RELEASE_TARGETS;
     assert_eq!(
         RELEASE_TARGETS,
@@ -141,17 +128,10 @@ fn release_target_set_matches_adr022_release_matrix() {
 #[cfg(feature = "grammars")]
 use aegis_language::{SourceLanguage, parse};
 
-/// A trivial well-formed snippet per release grammar, with the root node kind
-// the corresponding grammar assigns to a complete top-level statement. These
-// expected kinds come from each grammar's published `node-types.json`, an
-// independent source of truth — not from the parser's own output.
 #[cfg(feature = "grammars")]
 #[test]
 fn each_release_grammar_parses_a_trivial_snippet_on_host() {
     let cases = [
-        // The expected root kinds are each grammar's published document node
-        // (from node-types.json), an independent source of truth: asserting
-        // them proves the right grammar is wired to the right language id.
         (SourceLanguage::Python, "x = 1\n", "module"),
         (SourceLanguage::JavaScript, "let x = 1;\n", "program"),
         (
@@ -187,9 +167,6 @@ fn builtin_manifest_satisfies_the_release_contract() {
 #[cfg(feature = "grammars")]
 #[test]
 fn builtin_manifest_abi_matches_the_live_tree_sitter_runtime() {
-    // The manifest's recorded ABI must equal each wired grammar's actual
-    // runtime ABI (tree_sitter::Language::abi_version), proving the manifest
-    // is not a stale hand-asserted constant.
     use aegis_language::manifest::BUILTIN_MANIFEST;
 
     for entry in BUILTIN_MANIFEST {
@@ -211,22 +188,15 @@ fn builtin_manifest_abi_matches_the_live_tree_sitter_runtime() {
 use std::fs;
 use std::process::Command;
 
-/// Read the workspace `Cargo.lock`. The test crate's `CARGO_MANIFEST_DIR` is
-/// `crates/aegis-language`, so the lockfile is two directories up.
 fn cargo_lock() -> String {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.lock");
     fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()))
 }
 
-/// Return every `version` Cargo.lock records for a package `name`. A
-/// well-formed lockfile has exactly one (cargo-deny bans duplicates); returning
-/// all of them lets the pin test assert the manifest version is the locked one
-/// and the uniqueness assertion catch a future duplicate.
 fn locked_versions(name: &str) -> Vec<String> {
     let mut versions = Vec::new();
     for block in cargo_lock().split("\n[[package]]") {
-        // The package name is the first `name = "..."` line in the block.
         let Some(block_name) = block
             .lines()
             .find_map(|l| l.strip_prefix("name = ").map(str::trim))
@@ -280,9 +250,6 @@ fn builtin_manifest_versions_match_cargo_lock_pins() {
 
 #[test]
 fn builtin_manifest_versions_match_exact_cargo_metadata_requirements() {
-    // Cargo metadata is the build tool's view of the package manifest. Exact
-    // requirements prevent a fresh lockfile resolution from silently selecting
-    // a newer grammar than the reviewed manifest records (ADR-022 §8).
     let workspace_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let output = Command::new(env!("CARGO"))
         .current_dir(&workspace_root)

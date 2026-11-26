@@ -1,5 +1,3 @@
-//! Interpreter stdin-redirection tests (#384).
-
 use super::*;
 
 fn evil_py_script_file() -> RoutedTarget {

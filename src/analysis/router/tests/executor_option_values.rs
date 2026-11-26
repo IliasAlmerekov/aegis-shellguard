@@ -1,5 +1,3 @@
-//! Executor-carrying option values and env assignments on `NAME_ONLY_PROGRAMS` (#384, #430).
-
 use super::*;
 
 #[test]
@@ -201,10 +199,6 @@ fn name_only_program_mentioning_an_interpreter_assignment_is_not_routed() {
         assert_eq!(route(command, &[]), Vec::new(), "{command}");
     }
 }
-
-// ── Rule B: an executor value that is path-like, but names no known
-// interpreter, routes as a LauncherOperand so `resolve` checks its shebang
-// (issue #384/#430) ─────────────────────────────────────────────────────
 
 #[test]
 fn d4_flag_value_that_is_path_like_is_a_launcher_operand() {

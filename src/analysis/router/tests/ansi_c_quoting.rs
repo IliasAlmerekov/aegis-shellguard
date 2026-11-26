@@ -1,5 +1,3 @@
-//! Rule C (#384, #430, GHSA-xj54): unclaimed stages with ANSI-C quoting (`$'...'`) degrade.
-
 use super::*;
 
 #[test]

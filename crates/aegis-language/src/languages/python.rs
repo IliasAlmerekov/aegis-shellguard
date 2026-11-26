@@ -1,9 +1,3 @@
-//! Python language adapter (ADR-022 §3, §7).
-//!
-//! Captures call sites via `queries/python/calls.scm` and interprets them into
-//! language-neutral [`DetectedOperation`]s and [`NestedTarget`] payloads; never
-//! assigns `RiskLevel` directly (ADR-022 §3).
-
 use std::cell::RefCell;
 use std::sync::LazyLock;
 
@@ -42,32 +36,19 @@ thread_local! {
     });
 }
 
-/// The payload language an execution sink's literal source should be recursively
-/// parsed as (ADR-022 §7 cross-language nesting).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ExecLang {
-    /// `eval` / `exec` payloads are Python source.
     Python,
-    /// `os.system` / `subprocess.*` string payloads are shell source (Bash).
     Bash,
 }
 
-/// How a recognized call site is classified before operand certainty is
-/// attached; maps API spellings to operations without assigning `RiskLevel`
-/// (ADR-022 §3).
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CallClass {
-    /// A non-execution destructive operation with fixed modifiers.
     Op(OperationKind, OperationModifiers),
-    /// `open(...)` — overwrite/truncation depends on the mode argument.
     Open,
-    /// A recognized execution sink whose literal payload is recursively
-    /// analyzable in `ExecLang`.
     Exec(ExecLang),
 }
 
-/// Classify a fully-qualified call path into a [`CallClass`], or `None` when the
-/// call is not a tracked destructive or execution-sink API.
 fn classify_path(path: &str) -> Option<CallClass> {
     Some(match path {
         "os.remove" | "os.unlink" | "os.rmdir" => CallClass::Op(
@@ -97,18 +78,8 @@ fn classify_path(path: &str) -> Option<CallClass> {
     })
 }
 
-/// Analyze Python `source` for destructive effects and execution sinks.
-///
-/// Pure and in-process: parses `source` with the pinned Python grammar, runs
-/// the call-capture query, and interprets each call site in Rust. No filesystem
-/// access, no subprocess (ADR-022 §2). A nonzero `parse_errors` means the source
-/// was malformed; the root mapping records `DegradationReason::IncompleteSyntax`.
 #[must_use]
 pub fn analyze(source: &str) -> AdapterResult {
-    // `parse` returns `None` only on a NULL C result; treat as a malformed
-    // (unrecoverable) parse. A real empty program still produces a tree. The
-    // parser is held in `PARSER` (per-thread, one-time `set_language`); the
-    // borrow is released before any node traversal below.
     let Some(tree) = PARSER.with(|cell| cell.borrow_mut().parse(source.as_bytes(), None)) else {
         return AdapterResult {
             operations: Vec::new(),
@@ -126,10 +97,6 @@ pub fn analyze(source: &str) -> AdapterResult {
     let capture_names = CALLS_QUERY.capture_names();
     let mut matches = cursor.matches(&CALLS_QUERY, root, bytes);
     while let Some(m) = matches.next() {
-        // Resolve this match's captures by name. A match carries @call, @args,
-        // and either (@obj, @attr) for an attribute call or @fname for a bare
-        // identifier call (the query's two patterns are disjoint on the
-        // `function` field shape).
         let mut call = None;
         let mut args = None;
         let mut obj = None;
@@ -147,7 +114,6 @@ pub fn analyze(source: &str) -> AdapterResult {
             }
         }
         let (Some(call_node), Some(args_node)) = (call, args) else {
-            // A well-formed query match always carries both; skip defensively.
             continue;
         };
 
@@ -164,7 +130,7 @@ pub fn analyze(source: &str) -> AdapterResult {
         };
 
         let Some(class) = classify_path(&path) else {
-            continue; // not a tracked API
+            continue;
         };
 
         if let Some(op) = interpret(&class, call_node, args_node, bytes) {
@@ -172,8 +138,6 @@ pub fn analyze(source: &str) -> AdapterResult {
         }
     }
 
-    // Tree-sitter yields matches in capture order; sort by source position so
-    // callers see operations in document order regardless of query internals.
     operations.sort_by_key(|op| (op.span.byte_start, op.span.byte_end));
 
     AdapterResult {
@@ -183,8 +147,6 @@ pub fn analyze(source: &str) -> AdapterResult {
     }
 }
 
-/// Build a [`DetectedOperation`] for one classified call site, attaching operand
-/// certainty and (for execution sinks) a nested literal payload.
 fn interpret(
     class: &CallClass,
     call_node: Node,
@@ -228,7 +190,6 @@ fn interpret(
                     span: span_for(n),
                 })
             });
-            // certainty == Known iff a literal source payload was recovered.
             let certainty = if payload.is_some() {
                 OperandCertainty::Known
             } else {
@@ -245,7 +206,6 @@ fn interpret(
     }
 }
 
-/// Map an [`ExecLang`] to the [`SourceLanguage`] its payload is parsed as.
 fn exec_language(lang: ExecLang) -> SourceLanguage {
     match lang {
         ExecLang::Python => SourceLanguage::Python,
@@ -253,8 +213,6 @@ fn exec_language(lang: ExecLang) -> SourceLanguage {
     }
 }
 
-/// The first positional argument of an `argument_list`, or `None` when the call
-/// has no positional argument (a `keyword_argument` is not positional).
 fn first_positional_arg(args_node: Node) -> Option<Node> {
     let mut cursor = args_node.walk();
     args_node
@@ -262,10 +220,6 @@ fn first_positional_arg(args_node: Node) -> Option<Node> {
         .find(|c| c.kind() != "keyword_argument")
 }
 
-/// Operand certainty for a non-execution operand: `Known` iff it is a pure
-/// string literal (a `string` with no interpolation, or a `concatenated_string`
-/// of pure strings); otherwise `Dynamic`. A computed/imported operand is never
-/// evidence of safety (ADR-022 §3, §7).
 fn operand_certainty(arg: Option<Node>) -> OperandCertainty {
     match arg {
         Some(n) if is_string_literal(n) => OperandCertainty::Known,
@@ -273,9 +227,6 @@ fn operand_certainty(arg: Option<Node>) -> OperandCertainty {
     }
 }
 
-/// Whether `node` is a pure string literal: a `string` with no interpolation,
-/// or a `concatenated_string` whose every child is a pure string literal.
-/// Structural — does not decode the content.
 fn is_string_literal(node: Node) -> bool {
     match node.kind() {
         "string" => {
@@ -292,20 +243,14 @@ fn is_string_literal(node: Node) -> bool {
     }
 }
 
-/// The text content of a pure string-literal node, or `None` when the node is
-/// not a literal (a variable, f-string with interpolation, non-string child in
-/// a concatenation, etc.).
 fn string_literal_content(node: Node, bytes: &[u8]) -> Option<String> {
     match node.kind() {
         "string" => {
-            // An f-string carries `interpolation` children; that makes it
-            // non-literal. A plain string has exactly one `string_content`.
             let mut cursor = node.walk();
             let mut content: Option<String> = None;
             for child in node.named_children(&mut cursor) {
                 match child.kind() {
                     "string_content" => {
-                        // Source is valid UTF-8 (&str input); non-UTF-8 falls back to None.
                         content = Some(child.utf8_text(bytes).ok()?.to_string());
                     }
                     "interpolation" => return None,
@@ -329,12 +274,9 @@ fn string_literal_content(node: Node, bytes: &[u8]) -> Option<String> {
     }
 }
 
-/// The destructive shape of an `open(...)` call, resolved from its mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct OpenMode {
-    /// Whether the call overwrites or appends to an existing file.
     overwrite: bool,
-    /// Whether the mode truncates an existing file (`'w'`).
     destructive_mode: bool,
 }
 
@@ -346,17 +288,12 @@ fn open_mode(args_node: Node, bytes: &[u8]) -> Option<OpenMode> {
     })
 }
 
-/// The `open` mode string, from a `mode=` keyword argument or the second
-/// positional argument, when it is a pure string literal.
 fn open_mode_string(args_node: Node, bytes: &[u8]) -> Option<String> {
     let mut cursor = args_node.walk();
     let mut positional = 0u32;
     for child in args_node.named_children(&mut cursor) {
         if child.kind() == "keyword_argument" {
-            // `mode=...`: the value is the second named child of the
-            // keyword_argument (after the `name` identifier).
             let name = child.child_by_field_name("name")?;
-            // Source is valid UTF-8 (&str input); non-UTF-8 cannot match "mode".
             if name.utf8_text(bytes).ok()? == "mode" {
                 let value = child.child_by_field_name("value")?;
                 return string_literal_content(value, bytes);
@@ -364,7 +301,6 @@ fn open_mode_string(args_node: Node, bytes: &[u8]) -> Option<String> {
         } else {
             positional += 1;
             if positional == 2 {
-                // Second positional argument is the mode by convention.
                 return string_literal_content(child, bytes);
             }
         }
@@ -377,7 +313,6 @@ mod tests {
     use super::*;
     use crate::operation::{OperandCertainty, OperationKind, OperationModifiers};
 
-    /// Assert `source` yields exactly one operation and return it.
     fn one_op(source: &str) -> DetectedOperation {
         let result = analyze(source);
         assert_eq!(
@@ -393,7 +328,6 @@ mod tests {
         result.operations.into_iter().next().unwrap()
     }
 
-    /// Assert `source` yields no operations (and parses cleanly).
     fn no_ops(source: &str) {
         let result = analyze(source);
         assert_eq!(
@@ -406,8 +340,6 @@ mod tests {
             result.operations
         );
     }
-
-    // --- Filesystem deletion ------------------------------------------------
 
     #[test]
     fn os_remove_literal_path_yields_filesystem_delete_known() {
@@ -461,8 +393,6 @@ mod tests {
         );
     }
 
-    // --- Permission / ownership ---------------------------------------------
-
     #[test]
     fn os_chmod_chown_and_shutil_chown_are_permission_or_ownership() {
         for src in [
@@ -474,8 +404,6 @@ mod tests {
             assert_eq!(op.kind, OperationKind::PermissionOrOwnershipChange, "{src}");
         }
     }
-
-    // --- open() overwrite ----------------------------------------------------
 
     #[test]
     fn open_write_mode_is_destructive_overwrite() {
@@ -520,8 +448,6 @@ mod tests {
         no_ops("open(\"f\", \"x\")");
     }
 
-    // --- Execution sinks: eval / exec (Python payload) ----------------------
-
     #[test]
     fn eval_literal_emits_code_execution_with_python_payload() {
         let op = one_op("eval(\"os.remove('x')\")");
@@ -551,8 +477,6 @@ mod tests {
         assert_eq!(op.certainty, OperandCertainty::Dynamic);
         assert!(op.payload.is_none(), "a dynamic payload is never evaluated");
     }
-
-    // --- Execution sinks: os.system / subprocess (Bash payload) --------------
 
     #[test]
     fn os_system_literal_emits_code_execution_with_bash_payload() {
@@ -597,9 +521,6 @@ mod tests {
 
     #[test]
     fn subprocess_run_with_list_argv_is_dynamic_without_payload() {
-        // A literal argv list is not shell source to recursively parse; the
-        // visible sink still fires as CodeExecution, but no nested target is
-        // recovered (the parent records DynamicSource degradation).
         let op = one_op("subprocess.run([\"ls\", \"-la\"])");
         assert_eq!(op.kind, OperationKind::CodeExecution);
         assert_eq!(op.certainty, OperandCertainty::Dynamic);
@@ -613,8 +534,6 @@ mod tests {
         assert_eq!(op.certainty, OperandCertainty::Dynamic);
         assert!(op.payload.is_none());
     }
-
-    // --- Negatives ----------------------------------------------------------
 
     #[test]
     fn comment_mentioning_os_remove_is_not_an_operation() {
@@ -636,8 +555,6 @@ mod tests {
         no_ops("print(\"hello\")");
     }
 
-    // --- Composition / ordering / spans -------------------------------------
-
     #[test]
     fn multiple_operations_are_emitted_in_source_order() {
         let result = analyze("os.remove(\"a\")\nos.system(\"rm b\")\n");
@@ -652,8 +569,6 @@ mod tests {
 
     #[test]
     fn nested_calls_detect_both_inner_and_outer() {
-        // subprocess.run(eval("x")): the outer sink takes a non-literal (the
-        // eval call), so it is Dynamic; the inner eval has a literal payload.
         let result = analyze("subprocess.run(eval(\"x\"))");
         assert_eq!(result.operations.len(), 2);
         let kinds: Vec<_> = result.operations.iter().map(|o| o.kind).collect();
@@ -661,7 +576,6 @@ mod tests {
             kinds,
             vec![OperationKind::CodeExecution, OperationKind::CodeExecution]
         );
-        // The inner eval recovered a literal; the outer subprocess.run did not.
         assert!(
             result.operations.iter().any(|o| o
                 .payload
@@ -687,8 +601,6 @@ mod tests {
         assert_eq!(op.span.line, 1);
         assert_eq!(op.span.column, 1);
     }
-
-    // --- Malformed source ---------------------------------------------------
 
     #[test]
     fn malformed_source_records_parse_errors() {

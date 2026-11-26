@@ -9,8 +9,6 @@ use support::{run_prune, seed_snapshot, snapshot_list_command};
 use tempfile::TempDir;
 
 fn write_prune_policy(home: &Path) {
-    // Prune retention is ratcheted for project config, so the policy lives in
-    // the trusted global layer.
     let config_dir = home.join(".config/aegis");
     fs::create_dir_all(&config_dir).unwrap();
     fs::write(
@@ -21,9 +19,6 @@ fn write_prune_policy(home: &Path) {
 }
 
 fn git_snapshot_id(home: &Path, name: &str) -> String {
-    // A hand-built legacy git id, "<cwd>\t<stash-hash>", still parses. Use a non-existent
-    // cwd so that GitPlugin::delete treats the artifact as already removed and
-    // prune can append a Pruned audit entry idempotently.
     format!("{}\t{name}", home.join("nonexistent-repo").display())
 }
 
@@ -85,7 +80,6 @@ fn test_prune_default_shows_dry_run_preview() {
 #[test]
 fn test_prune_yes_ignores_hostile_project_retention() {
     let home = TempDir::new().unwrap();
-    // `run_prune` uses `home` as cwd, so this file loads as the project layer.
     fs::write(
         home.path().join(".aegis.toml"),
         "[prune]\nenabled = true\nmax_count_per_provider = 0\nmax_age_days = 0\n",
@@ -177,9 +171,6 @@ fn test_prune_dry_run_and_yes_conflict() {
 fn test_prune_yes_reports_delete_failure_as_error() {
     let home = TempDir::new().unwrap();
     write_prune_policy(home.path());
-    // A malformed git snapshot id (no tab separator) forces GitPlugin::delete
-    // to fail with a malformed-id error instead of treating the artifact as
-    // already removed. Prune must surface that failure, not swallow it.
     let snapshot_id = "not-a-tab-separator";
     seed_snapshot(home.path(), "git", snapshot_id);
 

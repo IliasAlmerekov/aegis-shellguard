@@ -1,23 +1,5 @@
-//! Recognise `aegis` commands the `Hook` may wrap instead of deny.
-//!
-//! A read-only `aegis` command may appear alone, chained with other read-only
-//! `aegis` commands (`&&`, `||`, `;`, newline), or piped into a text filter.
-//! Its output may go to `/dev/null` or to another descriptor (`2>&1`). Every
-//! other shape stays denied, because it could carry a command that changes
-//! Aegis itself (#333, #379).
-
-/// Programs a read-only `aegis` command may pipe into. None of them writes a
-/// file or runs a command, so a pipeline cannot turn read-only output into a
-/// change to Aegis. `sort -o`, `uniq IN OUT`, `tee`, and `sh` would.
 pub(super) const PIPE_FILTERS: [&str; 6] = ["head", "tail", "grep", "wc", "jq", "cut"];
 
-/// True when every command in `command` is a read-only `aegis` invocation or a
-/// `PIPE_FILTERS` program that reads a pipe, joined only by the operators and
-/// redirections listed in the module docs.
-///
-/// Quotes, `$`, backticks, parentheses, and globs are rejected before any
-/// splitting, so the split below never has to reason about quoting or
-/// substitution, and a read-only prefix cannot hide a second command.
 pub(super) fn is_read_only_aegis_command(command: &str) -> bool {
     let Some(commands) = split_simple_commands(command) else {
         return false;
@@ -32,15 +14,10 @@ pub(super) fn is_read_only_aegis_command(command: &str) -> bool {
         .all(|(index, simple)| match simple.words.split_first() {
             Some((&"aegis", args)) => is_read_only_aegis_args(args),
             Some((program, _)) => simple.reads_pipe && PIPE_FILTERS.contains(program),
-            // Only a trailing `;` or newline may leave an empty command.
             None => index == last && !simple.reads_pipe,
         })
 }
 
-/// True when `args` (the words after `aegis`) name a command that only reads
-/// state: help and version output, `status`, `audit`, `snapshot list`,
-/// `config show`, and `config validate`. `aegis off` and `aegis rollback`
-/// change Aegis itself and do not match.
 fn is_read_only_aegis_args(args: &[&str]) -> bool {
     let is_help_flag = |arg: &str| arg == "--help" || arg == "-h";
     match args {
@@ -51,16 +28,11 @@ fn is_read_only_aegis_args(args: &[&str]) -> bool {
     }
 }
 
-/// One simple command: its words with redirections removed, and whether a `|`
-/// feeds its stdin.
 struct SimpleCommand<'a> {
     words: Vec<&'a str>,
     reads_pipe: bool,
 }
 
-/// Split `command` into simple commands. Returns `None` for any character
-/// outside the plain-word set, a background `&`, `|&`, input redirection, or a
-/// redirection whose target is not `/dev/null` or a descriptor.
 fn split_simple_commands(command: &str) -> Option<Vec<SimpleCommand<'_>>> {
     if !command
         .chars()
@@ -105,8 +77,6 @@ fn split_simple_commands(command: &str) -> Option<Vec<SimpleCommand<'_>>> {
                     i += 1;
                 }
                 let word = &command[start..i];
-                // A lone descriptor number directly before `>` belongs to the
-                // redirection (`2>/dev/null`), not to the command's words.
                 let is_descriptor = word.len() == 1 && word.as_bytes()[0].is_ascii_digit();
                 if bytes.get(i) == Some(&b'>') && is_descriptor {
                     continue;
@@ -125,9 +95,6 @@ fn new_command(reads_pipe: bool) -> SimpleCommand<'static> {
     }
 }
 
-/// Skip one output redirection that starts at the `>` at `start`, and return
-/// the index after it. Accepts `>&N`, `>/dev/null`, and `>>/dev/null`, with
-/// optional blanks before the target. Returns `None` for any other target.
 fn skip_redirection(command: &str, start: usize) -> Option<usize> {
     let bytes = command.as_bytes();
     let mut i = start + 1;

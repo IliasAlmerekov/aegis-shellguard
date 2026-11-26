@@ -85,8 +85,6 @@ fn assess_still_returns_uncertain_when_inline_script_exceeds_limit() {
     );
 }
 
-// ── safe commands ────────────────────────────────────────────────────────
-
 #[test]
 fn safe_commands_not_flagged() {
     let s = scanner();
@@ -104,8 +102,6 @@ fn safe_commands_not_flagged() {
         assert!(!s.quick_scan(cmd), "expected false for safe command: {cmd}");
     }
 }
-
-// ── dangerous commands are flagged ───────────────────────────────────────
 
 #[test]
 fn filesystem_patterns_flagged() {
@@ -136,11 +132,11 @@ fn git_patterns_flagged() {
 fn database_patterns_flagged() {
     let s = scanner();
     assert!(s.quick_scan("DROP TABLE users;"));
-    assert!(s.quick_scan("drop table orders;")); // case-insensitive
+    assert!(s.quick_scan("drop table orders;"));
     assert!(s.quick_scan("DELETE FROM accounts;"));
     assert!(s.quick_scan("TRUNCATE TABLE logs;"));
     assert!(s.quick_scan("FLUSHALL"));
-    assert!(s.quick_scan("FLUSHDB")); // second alternative
+    assert!(s.quick_scan("FLUSHDB"));
     assert!(s.quick_scan("mongorestore --accept-data-loss"));
     assert!(s.quick_scan("ALTER TABLE t DROP COLUMN col;"));
 }
@@ -168,7 +164,6 @@ fn docker_patterns_flagged() {
 
 #[test]
 fn package_outbound_patterns_flagged() {
-    // PKG-006/PKG-007 seed `npm` as a quick-scan keyword (issue #194).
     let s = scanner();
     assert!(s.quick_scan("npm publish"));
     assert!(s.quick_scan("npm unpublish my-pkg"));
@@ -180,9 +175,9 @@ fn process_patterns_flagged() {
     assert!(s.quick_scan("kill -9 1"));
     assert!(s.quick_scan("pkill -9 nginx"));
     assert!(s.quick_scan("killall python3"));
-    assert!(s.quick_scan(":(){ :|:& };:")); // fork bomb
-    assert!(s.quick_scan("rm -rf /")); // PS-006 / FS-001
-    assert!(s.quick_scan("umount /")); // PS-007
+    assert!(s.quick_scan(":(){ :|:& };:"));
+    assert!(s.quick_scan("rm -rf /"));
+    assert!(s.quick_scan("umount /"));
 }
 
 #[test]
@@ -194,25 +189,20 @@ fn package_patterns_flagged() {
     assert!(s.quick_scan("pip install requests --trusted-host pypi.org"));
 }
 
-// ── keyword extraction helpers ───────────────────────────────────────────
-
 #[test]
 fn leading_literal_strips_escapes() {
-    // `:\(\)\{...` → `:(){` (escaped parens/braces count as literal chars)
     let lit = super::keywords::leading_literal_for_tests(r":\(\)\{.*:\|.*\}");
     assert_eq!(lit, ":(){");
 }
 
 #[test]
 fn leading_literal_stops_at_shorthand() {
-    // `rm\s+...` → `rm` (stops at `\s`)
     let lit = super::keywords::leading_literal_for_tests(r"rm\s+.*");
     assert_eq!(lit, "rm");
     assert_eq!(super::keywords::extract_keywords(r"\brm\s+.*"), vec!["rm"]);
 }
 #[test]
 fn split_alternation_ignores_escaped_pipe() {
-    // `:\(\)\{.*:\|.*\}` has `\|` which must NOT split
     let parts = super::keywords::split_top_alternation_for_tests(r":\(\)\{.*:\|.*\}");
     assert_eq!(parts.len(), 1);
 }
@@ -228,8 +218,6 @@ fn strip_optional_prefix_removes_sudo_group() {
     let result = super::keywords::strip_leading_optional_group_for_tests(r"(sudo\s+)?rm\s+.*");
     assert!(result.starts_with("rm"), "got: {result}");
 }
-
-// ── assess: full pipeline (70 test cases) ────────────────────────────────
 
 #[test]
 fn assess_blocks_uppercase_rm_rf_root() {
@@ -357,11 +345,6 @@ fn assess_token_prefix_rules_through_absolute_paths_and_launchers() {
     }
 }
 
-// Issue #339: `rtk proxy <cmd>` must classify identically to the bare and
-// plain-`rtk`-wrapped forms of `<cmd>`. `proxy` is rtk's own meta-command for
-// running the wrapped command unfiltered, not the program being classified —
-// treating it as the effective program let the wrapped command through with
-// no matched pattern.
 #[test]
 fn assess_rtk_proxy_does_not_bypass_classification() {
     assert_assessment_matches_pattern("git rebase origin/main", RiskLevel::Warn, "GIT-005");
@@ -373,11 +356,6 @@ fn assess_rtk_proxy_does_not_bypass_classification() {
     );
 }
 
-// H2: destructive SQL is delivered embedded in a db-cli invocation
-// (`psql -c '…'`, `mysql -e '…'`, `--command=`, `--execute`, RTK-wrapped, and
-// `;`-compound statements), where the SQL verb is never the leading program
-// token. The destructive-SQL rules match the normalized command anywhere
-// (ADR-015), so embedded `DROP`/`ALTER … DROP COLUMN` is still caught.
 #[test]
 fn assess_detects_destructive_sql_embedded_in_db_cli_invocations() {
     let cases = [
@@ -408,7 +386,6 @@ fn assess_detects_destructive_sql_embedded_in_db_cli_invocations() {
             RiskLevel::Warn,
             "DB-008",
         ),
-        // anti-regression: bare SQL must stay Danger after the regex migration.
         ("DROP TABLE users;", RiskLevel::Danger, "DB-001"),
     ];
 
@@ -462,8 +439,6 @@ fn assess_flags_uppercase_echo_pipe_bash() {
     );
 }
 
-// Mixed-case variants: real attacks rarely use full uppercase. case_insensitive
-// built-in regex compilation must catch mixed case just like full uppercase.
 #[test]
 fn assess_blocks_mixedcase_rm_rf_root() {
     assert_assessment_matches_pattern("Rm -rF /", RiskLevel::Block, "PS-006");
@@ -504,7 +479,6 @@ fn assess_safe_returns_empty_matched() {
     assert!(a.matched.is_empty());
 }
 
-// Filesystem token-prefix rules: FS-011 (`wipefs`) and FS-012 (`unlink`) (ADR-014).
 #[test]
 fn assess_h3_wipefs_unlink_prefix_rules() {
     let cases: &[(&str, RiskLevel, &str)] = &[
@@ -523,7 +497,6 @@ fn assess_h3_wipefs_unlink_prefix_rules() {
     }
 }
 
-// Match-anywhere redirect regexes: FS-013 (`authorized_keys`) and FS-014 (shell rc clobber) (ADR-015).
 #[test]
 fn assess_h3_authorized_keys_and_rc_clobber_regexes() {
     let cases: &[(&str, RiskLevel, &str)] = &[
@@ -545,7 +518,6 @@ fn assess_h3_authorized_keys_and_rc_clobber_regexes() {
         ),
         ("> ~/.bashrc", RiskLevel::Warn, "FS-014"),
         ("echo unset PATH > ~/.zshrc", RiskLevel::Warn, "FS-014"),
-        // Exercise every FS-014 rc-file alternation branch.
         ("> ~/.bash_profile", RiskLevel::Warn, "FS-014"),
         ("> ~/.zprofile", RiskLevel::Warn, "FS-014"),
         ("> ~/.profile", RiskLevel::Warn, "FS-014"),
@@ -557,7 +529,6 @@ fn assess_h3_authorized_keys_and_rc_clobber_regexes() {
     }
 }
 
-// Cloud token-prefix rules: CL-011, CL-012, CL-013 (ADR-014).
 #[test]
 fn assess_h3_cloud_prefix_rules() {
     let cases: &[(&str, RiskLevel, &str)] = &[
@@ -592,7 +563,6 @@ fn assess_h3_cloud_prefix_rules() {
     }
 }
 
-// Global flags before `s3` (`aws --profile prod s3 ...`) must still match `aws s3` rules.
 #[test]
 fn assess_h3_aws_global_flags_before_service_still_fire() {
     let cases: &[(&str, RiskLevel, &str)] = &[

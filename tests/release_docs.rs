@@ -31,11 +31,6 @@ fn publishable_crates_give_every_path_dependency_a_version_requirement() {
     }
 }
 
-// Internal path dependencies are declared once, with a version, in the root
-// `[workspace.dependencies]` table; every crate and the root binary pull them
-// in via `.workspace = true`. That shorthand carries no `path` key of its own,
-// so `assert_path_dependencies_are_versioned` can't see it — this test checks
-// the one place the path+version pairing still needs to hold.
 #[test]
 fn workspace_dependencies_give_every_path_dependency_a_version_requirement() {
     let manifest = repo_path("Cargo.toml");

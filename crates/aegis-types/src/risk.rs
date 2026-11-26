@@ -1,5 +1,3 @@
-//! Risk classification for shell commands.
-
 use std::fmt;
 use std::str::FromStr;
 

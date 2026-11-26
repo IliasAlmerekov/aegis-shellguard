@@ -157,9 +157,6 @@ fn scoped_allowlist_rule_with_user_is_valid_for_runtime() {
 
 #[test]
 fn validate_custom_patterns_is_ok_for_empty_slice_without_building_a_scanner() {
-    // Issue #319: an empty slice must short-circuit before touching the
-    // scanner at all. There is nothing for a scanner build to validate that
-    // an empty custom-pattern set could fail on, so this must always be Ok.
     assert!(validate_custom_patterns(&[]).is_ok());
 }
 
@@ -181,9 +178,6 @@ fn validate_custom_patterns_still_rejects_a_bad_regex_when_non_empty() {
 
 #[test]
 fn validate_builtin_scanner_passes_on_the_shipped_pattern_set() {
-    // The diagnostics-only check (issue #319 change 2): the built-in TOML
-    // must still compile into a working scanner on its own, with no custom
-    // patterns in play.
     assert!(validate_builtin_scanner().is_ok());
 }
 
@@ -204,7 +198,7 @@ fn load_minimal_project_config_without_errors() {
     assert!(config.custom_patterns.is_empty());
     assert!(config.allowlist.is_empty());
     assert!(config.auto_snapshot_git);
-    assert!(!config.auto_snapshot_docker); // default is false (opt-in)
+    assert!(!config.auto_snapshot_docker);
 }
 
 #[test]
@@ -361,18 +355,12 @@ fn supabase_snapshot_fields_merge_by_replacement_and_scalar_override() {
     let (merged, _warnings) =
         AegisConfig::merge_layer(base, overlay, ConfigSourceLayer::Project, "test.aegis.toml");
 
-    // Base left `auto_snapshot_supabase` off, so the database-target fields
-    // are still free to be set by the project layer (#269 only protects a
-    // target the trusted base already enabled).
     assert!(merged.auto_snapshot_supabase);
     assert_eq!(merged.supabase_snapshot.project_ref, "overlay_proj");
     assert_eq!(merged.supabase_snapshot.db.database, "overlay_db");
     assert_eq!(merged.supabase_snapshot.db.host, "overlay.supabase.co");
     assert_eq!(merged.supabase_snapshot.db.port, 6543);
     assert_eq!(merged.supabase_snapshot.db.user, "overlay_user");
-    // #269: `require_config_target_match_on_rollback` ratchets unconditionally
-    // — the project cannot switch it off even for a target it is otherwise
-    // free to configure.
     assert!(
         merged
             .supabase_snapshot
@@ -382,11 +370,6 @@ fn supabase_snapshot_fields_merge_by_replacement_and_scalar_override() {
 
 #[test]
 fn partial_supabase_snapshot_overlay_sets_only_the_fields_it_names() {
-    // Base leaves `auto_snapshot_supabase` at its default `false`, so the
-    // target fields are unprotected and the project may set `project_ref`
-    // alone; every field the overlay leaves unset stays at `base`, not at
-    // `SupabaseSnapshotConfig::default()` — Partial fields are `Option`, so
-    // "unset" and "explicitly default" are distinct (#269).
     let base = AegisConfig {
         supabase_snapshot: SupabaseSnapshotConfig {
             project_ref: "base_proj".to_string(),

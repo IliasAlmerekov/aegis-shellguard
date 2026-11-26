@@ -179,7 +179,6 @@ fn sandbox_bypass_serializes_status_and_legacy_boolean() {
     let json = serde_json::to_value(&entry).unwrap();
 
     assert_eq!(json["sandbox_status"], "unavailable");
-    // Legacy boolean is mirrored so older readers still see the bypass.
     assert_eq!(json["sandbox_active"], serde_json::json!(false));
 }
 
@@ -301,8 +300,6 @@ fn read_all_backfills_pattern_ids_for_legacy_entries() {
     assert_eq!(json["allowlist_effective"], serde_json::json!(false));
 }
 
-// ── ADR-016: recovery backstop audit fields ───────────────────────────────
-
 #[test]
 fn legacy_entry_without_recovery_backstop_fields_still_deserializes() {
     let dir = TempDir::new().unwrap();
@@ -314,9 +311,6 @@ fn legacy_entry_without_recovery_backstop_fields_still_deserializes() {
     let entries = logger.read_all().unwrap();
     assert_eq!(entries.len(), 1);
     let base = entries[0].as_base();
-    // Pre-ADR-016 logs never recorded these axes; they must read back as
-    // `None` (not `Some(false)`) so "not recorded" stays distinguishable from
-    // "explicitly false" — the same convention used for allowlist flags.
     assert_eq!(base.effect_opaque, None);
     assert_eq!(base.snapshots_required, None);
     assert_eq!(base.confinement_required, None);
@@ -343,7 +337,6 @@ fn new_entry_records_recovery_backstop_for_effect_opaque_command() {
     assert_eq!(json["confinement_required"], serde_json::json!(false));
     assert!(json.get("recovery_degradation").is_none());
 
-    // Round-trips through serde.
     let roundtripped: AuditEntry = serde_json::from_value(json).unwrap();
     let base = roundtripped.as_base();
     assert_eq!(base.effect_opaque, Some(true));

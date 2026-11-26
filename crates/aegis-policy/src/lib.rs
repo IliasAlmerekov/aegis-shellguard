@@ -8,14 +8,6 @@
     )
 )]
 
-//! Pure policy evaluation for Aegis.
-//!
-//! Given a scanner [`aegis_types::Assessment`] and the surrounding decision
-//! context (operating mode, CI state, allowlist/blocklist results, snapshot
-//! policy), the [`PolicyEngine`] yields a [`PolicyDecision`]. Evaluation is a
-//! pure function with no I/O and no side effects — persistence of decisions
-//! ("amend") is a separate, config-layer concern.
-
 mod engine;
 mod types;
 

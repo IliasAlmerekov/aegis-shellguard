@@ -1,6 +1,5 @@
 use super::*;
 
-/// Mock docker whose `image inspect <name>` succeeds only for `name == live`.
 fn mock_with_live_image(dir: &std::path::Path, live: &str) {
     write_mock_docker(
         dir,

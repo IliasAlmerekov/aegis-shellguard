@@ -1,10 +1,3 @@
-//! Policy-configuration enums shared between the config layer and the policy engine.
-//!
-//! These describe *how* decisions are made (operating mode, CI behaviour,
-//! snapshot policy, allowlist override ceiling). They are pure data — config
-//! deserializes them and the policy engine consumes them — so they live here, at
-//! the bottom of the dependency DAG, rather than in either crate.
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, schemars::JsonSchema)]

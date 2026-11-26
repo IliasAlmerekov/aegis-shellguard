@@ -1,10 +1,3 @@
-//! TypeScript language adapter (ADR-022 §3, §7).
-//!
-//! Captures call sites via `queries/typescript/calls.scm` and delegates
-//! interpretation to the shared `family` module, emitting language-neutral
-//! [`crate::operation::DetectedOperation`]s without assigning `RiskLevel`
-//! directly (ADR-022 §3).
-
 use std::cell::RefCell;
 use std::sync::LazyLock;
 
@@ -40,19 +33,8 @@ thread_local! {
     });
 }
 
-/// Analyze TypeScript `source` for destructive effects and execution sinks.
-///
-/// Pure and in-process: parses `source` with the pinned TypeScript grammar,
-/// runs the call-capture query, and interprets each call site in Rust via the
-/// shared `family` module. No filesystem access, no subprocess (ADR-022 §2). A
-/// nonzero `parse_errors` means the source was malformed; the root mapping
-/// records `DegradationReason::IncompleteSyntax`.
 #[must_use]
 pub fn analyze(source: &str) -> AdapterResult {
-    // `parse` returns `None` only on a NULL C result; treat as a malformed
-    // (unrecoverable) parse. A real empty program still produces a tree. The
-    // parser is held in `PARSER` (per-thread, one-time `set_language`); the
-    // borrow is released before any node traversal below.
     let Some(tree) = PARSER.with(|cell| cell.borrow_mut().parse(source.as_bytes(), None)) else {
         return AdapterResult {
             operations: Vec::new(),

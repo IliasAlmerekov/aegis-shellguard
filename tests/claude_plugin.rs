@@ -1,9 +1,3 @@
-//! Tests for the Claude Code plugin shipped under `plugins/aegis/` and listed
-//! by the root `.claude-plugin/marketplace.json` (#500, ADR-047).
-//!
-//! The plugin hooks run as processes with a controlled `PATH`, `HOME`, and
-//! `AEGIS_BIN`, the same way Claude Code runs them.
-
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -17,8 +11,6 @@ mod support;
 use support::agent_hooks::{json_contains_command, read_json, write_installed_plugin};
 use support::repo_path;
 
-/// CI markers the hooks consult; cleared so a developer's environment cannot
-/// flip a hook into its CI-override branch.
 const CI_MARKER_VARS: [&str; 9] = [
     "AEGIS_CI",
     "CI",
@@ -64,8 +56,6 @@ fn claude_plugin_hooks_match_templates() {
         ),
     ] {
         let expected = read_repo_file(template).replace("__AEGIS_BIN__", "aegis");
-        // The template ships through two channels, settings.json install and
-        // the plugin, so its comments must hold for both.
         for single_channel_claim in ["Installed to:", "templated to an absolute"] {
             assert!(
                 !expected.contains(single_channel_claim),
@@ -81,9 +71,6 @@ fn claude_plugin_hooks_match_templates() {
     }
 }
 
-/// A `PATH` directory holding only the tools the hook scripts call, so the
-/// test controls whether `aegis` resolves. With `with_aegis` the test binary
-/// is linked in as `aegis`.
 fn tool_path(dir: &Path, with_aegis: bool) -> String {
     for tool in ["bash", "tr", "printenv", "cat", "grep"] {
         let source = ["/usr/bin", "/bin"]
@@ -138,8 +125,6 @@ fn bash_payload(command: &str) -> String {
     .to_string()
 }
 
-/// Run `aegis install-hooks --claude-code` against a temp HOME with a
-/// `~/.claude` directory, so the rendered shims land in `~/.claude/hooks/`.
 fn install_claude_settings_hooks(home: &Path) {
     fs::create_dir_all(home.join(".claude")).unwrap();
     let install = Command::new(env!("CARGO_BIN_EXE_aegis"))
@@ -267,7 +252,6 @@ fn read_repo_json(relative: &str) -> serde_json::Value {
         .unwrap_or_else(|err| panic!("{relative} is not valid JSON: {err}"))
 }
 
-/// The single command a hooks.json event registers under `matcher`.
 fn registered_command<'a>(hooks: &'a serde_json::Value, event: &str, matcher: &str) -> &'a str {
     let entries = hooks["hooks"][event].as_array().unwrap();
     assert_eq!(entries.len(), 1, "{event} must have exactly one entry");
@@ -302,8 +286,6 @@ fn claude_plugin_manifests_are_consistent() {
     assert_eq!(plugins[0]["name"], "aegis");
     assert_eq!(plugins[0]["source"], "./plugins/aegis");
 
-    // A Snapshot is best-effort and depends on a provider applying; the
-    // catalog text must not promise one before every destructive command.
     for description in [&plugin["description"], &plugins[0]["description"]] {
         let description = description.as_str().unwrap();
         assert!(
@@ -327,8 +309,6 @@ fn claude_plugin_rollback_command_runs_through_bash_tool() {
             .any(|line| line.trim() == "disable-model-invocation: true"),
         "front matter must set disable-model-invocation: true:\n{front_matter}"
     );
-    // `!`-prefixed lines run in Claude Code before the prompt reaches the
-    // model, outside the Bash tool, so PreToolUse and Aegis never see them.
     assert!(
         !command.contains("!`"),
         "the command must not inject shell output"
@@ -338,8 +318,6 @@ fn claude_plugin_rollback_command_runs_through_bash_tool() {
     }
 }
 
-/// Where `status_reports_claude_hook_registration` puts the aegis-managed
-/// PreToolUse entry.
 #[derive(Clone, Copy, Debug)]
 enum EntryScope {
     Absent,
@@ -347,7 +325,6 @@ enum EntryScope {
     ProjectLocal,
 }
 
-/// A settings object with an aegis-managed PreToolUse Bash entry.
 fn settings_with_aegis_entry(dir: &Path) -> serde_json::Value {
     let shim = dir.join(".claude/hooks/aegis-pre-tool-use.sh");
     serde_json::json!({
@@ -360,7 +337,6 @@ fn settings_with_aegis_entry(dir: &Path) -> serde_json::Value {
     })
 }
 
-/// Run `aegis status` with `home` as `HOME` from `cwd` and return its stdout.
 fn aegis_status(home: &Path, cwd: &Path) -> String {
     let output = Command::new(env!("CARGO_BIN_EXE_aegis"))
         .arg("status")
@@ -399,8 +375,6 @@ fn status_reports_claude_hook_registration() {
     ] {
         let home = TempDir::new().unwrap();
         let project = TempDir::new().unwrap();
-        // The status line prints the path from the canonical cwd, which on
-        // macOS is /private/var/... for a /var/folders/... temp dir.
         let project_dir = fs::canonicalize(project.path()).unwrap();
         let user_settings = home.path().join(".claude/settings.json");
         let local_settings = project_dir.join(".claude/settings.local.json");
@@ -427,8 +401,6 @@ fn status_reports_claude_hook_registration() {
         let stdout = aegis_status(home.path(), &project_dir);
         let line = claude_hooks_line(&stdout);
         assert!(line.starts_with(expected), "{entry:?}: {line}");
-        // The plugin is either off or enabled and installed here, so the
-        // enabled-but-not-installed warning must not print.
         assert!(
             !stdout.contains("claude code plugin:"),
             "{entry:?}: unexpected plugin warning:\n{stdout}"
@@ -449,8 +421,6 @@ fn status_reports_claude_hook_registration() {
 
 #[test]
 fn status_reports_every_duplicate_settings_file() {
-    // Removing the entries from one file must not leave the user with a
-    // duplicate they were never told about.
     let home = TempDir::new().unwrap();
     let project = TempDir::new().unwrap();
     let project_dir = fs::canonicalize(project.path()).unwrap();
@@ -476,7 +446,6 @@ fn status_reports_every_duplicate_settings_file() {
     }
 }
 
-/// Copy `plugins/aegis/hooks/` into `<root>/hooks/`, keeping the modes.
 fn copy_plugin_hooks(root: &Path) {
     let source = repo_path("plugins/aegis/hooks");
     fs::create_dir_all(root.join("hooks")).unwrap();
@@ -488,9 +457,6 @@ fn copy_plugin_hooks(root: &Path) {
 
 #[test]
 fn claude_plugin_hook_commands_run_from_a_root_with_spaces() {
-    // Claude Code runs each hooks.json command through a shell with
-    // CLAUDE_PLUGIN_ROOT set. An unquoted root with a space splits into two
-    // words, the hook cannot start, and Claude Code lets Bash run unguarded.
     let base = TempDir::new().unwrap();
     let root = base.path().join("plugin cache").join("aegis");
     copy_plugin_hooks(&root);
@@ -537,19 +503,12 @@ fn claude_plugin_hook_commands_run_from_a_root_with_spaces() {
 const PLUGIN_NOT_INSTALLED_LINE: &str =
     "Claude Code: plugin aegis is enabled but not installed; installed settings hooks instead";
 
-/// Ways the Aegis plugin can be enabled in `enabledPlugins` while Claude Code
-/// has not installed it, so it registers no `Hook`.
 #[derive(Clone, Copy, Debug)]
 enum NotInstalled {
-    /// `installed_plugins.json` does not exist.
     NoFile,
-    /// The file is not JSON.
     Malformed,
-    /// The file lists other plugins only.
     KeyAbsent,
-    /// The Aegis key holds an empty array.
     EmptyArray,
-    /// The recorded `installPath` does not exist.
     InstallPathMissing,
 }
 
@@ -561,8 +520,6 @@ const NOT_INSTALLED_CASES: [NotInstalled; 5] = [
     NotInstalled::InstallPathMissing,
 ];
 
-/// Enable `aegis@aegis-shellguard` in user settings and leave it not
-/// installed in the way `case` names.
 fn enable_plugin_without_install(home: &Path, case: NotInstalled) {
     let claude = home.join(".claude");
     fs::create_dir_all(claude.join("plugins")).unwrap();
@@ -690,9 +647,6 @@ const UNKNOWN_FORMAT_INSTALL_LINE: &str = "Claude Code: plugin aegis is enabled 
 const UNKNOWN_FORMAT_STATUS_LINE: &str =
     "claude code hooks: unknown (unrecognised installed_plugins.json format)";
 
-/// Enable `aegis@aegis-shellguard` in user settings and record it in an
-/// `installed_plugins.json` whose top-level `version` is `version` (absent
-/// for `None`), with an install directory that exists.
 fn enable_plugin_with_format_version(home: &Path, version: Option<u64>) {
     let claude = home.join(".claude");
     let install_path = claude.join("plugins/cache/aegis-shellguard/aegis/1.0.0");

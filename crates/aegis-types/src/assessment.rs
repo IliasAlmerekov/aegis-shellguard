@@ -1,8 +1,3 @@
-//! The result of assessing a shell command through the scanner pipeline.
-//!
-//! These are the *data* types produced by the scanner. The scanning logic that
-//! builds them lives in the scanner layer; only the shapes live here.
-
 use std::fmt;
 use std::sync::Arc;
 
@@ -140,7 +135,7 @@ pub enum DecisionSource {
     Fallback,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 #[schemars(
     description = "What produced the final interception decision, expressed as the decisive
@@ -156,6 +151,7 @@ remains a live one-value label alongside this richer basis."
 )]
 pub enum AssessmentBasis {
     #[schemars(description = "No rule matched; the command was assessed `Safe` by fallback.")]
+    #[default]
     Fallback,
     #[schemars(
         description = "The decisive Matches — every Match at the Assessment's maximum `RiskLevel`."
@@ -164,12 +160,6 @@ pub enum AssessmentBasis {
         #[schemars(description = "IDs of every decisive Match, in `Assessment.matched` order.")]
         match_ids: Vec<String>,
     },
-}
-
-impl Default for AssessmentBasis {
-    fn default() -> Self {
-        AssessmentBasis::Fallback
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -282,11 +272,6 @@ mod basis_tests {
 
     #[test]
     fn basis_retains_every_equally_decisive_match() {
-        // Two Danger Matches plus one lower-risk Warn Match. The basis must
-        // retain BOTH decisive (Danger) IDs — this is the property the singular
-        // DecisionSource loses (it collapses to a single "builtin_pattern"
-        // label). ADR-022 §4: "all decisive Match IDs at the Assessment's
-        // maximum RiskLevel".
         let a = assessment(vec![
             matched("FS-001", RiskLevel::Danger, PatternSource::Builtin),
             matched("FS-014", RiskLevel::Warn, PatternSource::Builtin),
@@ -316,9 +301,6 @@ mod basis_tests {
 
     #[test]
     fn basis_fallback_only_when_no_rule_matched() {
-        // A rule that DID match — even at Safe — is not Fallback. ADR-022 §4:
-        // "Fallback ... when nothing matched". A custom Safe-risk rule is a
-        // legal (if unusual) user pattern; its match must surface as Decisive.
         let a = assessment(vec![matched(
             "SAFE-RULE",
             RiskLevel::Safe,
@@ -340,7 +322,6 @@ mod basis_tests {
         ]);
         match a.basis() {
             AssessmentBasis::Decisive { match_ids } => {
-                // Insertion (matched) order, not sorted — deterministic for audit.
                 assert_eq!(match_ids, vec!["AAA".to_string(), "BBB".to_string()]);
             }
             other => panic!("expected Decisive, got {other:?}"),
@@ -349,7 +330,6 @@ mod basis_tests {
 
     #[test]
     fn basis_round_trips_through_serde_for_audit_v2() {
-        // ADR-022 §10 persists Assessment basis; pin the serialized shape.
         let decisive = AssessmentBasis::Decisive {
             match_ids: vec!["FS-001".to_string(), "DB-001".to_string()],
         };

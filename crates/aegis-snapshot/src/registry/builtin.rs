@@ -1,5 +1,3 @@
-//! The built-in snapshot providers, named by a type so every `match` over them is exhaustive.
-
 use std::path::PathBuf;
 
 use crate::{
@@ -9,7 +7,6 @@ use crate::{
 
 use super::SnapshotRegistryConfig;
 
-/// The snapshot providers built into this binary, in registry order.
 #[derive(Clone, Copy)]
 pub(super) enum BuiltinProvider {
     Git,

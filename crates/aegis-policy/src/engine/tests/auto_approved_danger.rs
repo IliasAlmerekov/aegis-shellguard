@@ -1,7 +1,5 @@
 use super::*;
 
-// ── ADR-031 §1: auto-approved Danger carries a Required recovery obligation ──
-
 fn allowlisted_danger(
     mode: Mode,
     snapshot_policy: SnapshotPolicy,

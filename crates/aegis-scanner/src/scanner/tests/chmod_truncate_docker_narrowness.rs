@@ -1,6 +1,5 @@
 use super::*;
 
-// FS-019 covers literal system-root targets only; globs and prior `cd` are out of scope.
 #[test]
 fn m5_fs019_non_recursive_and_non_literal_root_targets_do_not_fire() {
     let s = scanner();
@@ -27,7 +26,6 @@ fn m5_fs019_non_recursive_and_non_literal_root_targets_do_not_fire() {
     }
 }
 
-// Bare `TRUNCATE <ident>` without a SQL-only anchor is intentionally uncovered (ADR-015).
 #[test]
 fn m5_db009_bare_truncate_ident_does_not_fire() {
     let s = scanner();
@@ -124,7 +122,6 @@ fn m5_db009_bare_comma_list_does_not_fire() {
     );
 }
 
-// Known limit: DB-009's `[^\s,]+` identifier class does not span embedded spaces.
 #[test]
 fn m5_db009_spaced_quoted_identifier_does_not_fire() {
     let s = scanner();
@@ -170,7 +167,6 @@ fn m5_docker_volume_ls_and_inspect_do_not_fire_dk007() {
 
 #[test]
 fn m5_docker_rm_v_is_not_detected_as_dk007() {
-    // `docker rm -v` removes anonymous volumes alongside a container and is outside DK-007.
     let s = scanner();
     let assessment = s.assess("docker rm -v my-container");
     assert!(

@@ -1,17 +1,3 @@
-//! Gated live release-asset verification.
-//!
-//! This test is network-bound and disabled by default so `cargo test` stays
-//! network-free. Release operators run it after publishing a tag with:
-//!
-//! ```text
-//! rtk env AEGIS_TEST_LIVE_RELEASE=1 AEGIS_TEST_RELEASE_TAG=vX.Y.Z \
-//!   cargo test --test release_assets_live -- --nocapture
-//! ```
-//!
-//! It downloads every supported binary and its `.sha256` sidecar from the
-//! GitHub Release for the selected tag and verifies each sidecar against its
-//! matching binary with `sha256sum -c` / `shasum -a 256 -c`.
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -33,11 +19,6 @@ fn run(command: &str, args: &[&str]) -> std::process::Output {
         .unwrap_or_else(|error| panic!("failed to run {command} {args:?}: {error}"))
 }
 
-/// Probes whether `command args` runs and exits successfully. Unlike `run`,
-/// this must not panic when the command is absent: on macOS `sha256sum` is
-/// typically not installed, so `Command::new("sha256sum").output()` returns
-/// `Err(NotFound)`. A panicking probe would abort before the `shasum` fallback
-/// could be selected, breaking the portable macOS path.
 fn command_succeeds(command: &str, args: &[&str]) -> bool {
     Command::new(command)
         .args(args)

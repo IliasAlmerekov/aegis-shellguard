@@ -1,10 +1,3 @@
-//! Registry HTTPS fetch and response parsing.
-//!
-//! Aegis shells out to the system `curl` binary rather than linking an HTTP
-//! or TLS client into the binary (ADR-038): `curl` owns transport, TLS, and
-//! certificate validation, and every argument here is a fixed literal — no
-//! user input reaches the command line, so there is no injection surface.
-
 use std::process::Command;
 
 use serde_json::Value;
@@ -18,15 +11,10 @@ const USER_AGENT: &str = concat!("aegis-update-check/", env!("CARGO_PKG_VERSION"
 
 fn registry_url(channel: Channel) -> &'static str {
     match channel {
-        // %2F is a literal, pre-encoded slash: the npm registry requires
-        // scoped package names URL-encoded in the path segment.
         Channel::Npm => "https://registry.npmjs.org/@iliasalmerekov%2Faegis/latest",
     }
 }
 
-/// Fetch the `latest` package manifest for `channel` over HTTPS and return
-/// its `version` field. Bounded by `--max-time` and `--max-filesize` so a
-/// hung or oversized response cannot stall or exhaust the caller.
 pub fn fetch_latest_version(channel: Channel) -> Result<String, UpdateError> {
     let output = Command::new("curl")
         .args(["--silent", "--show-error", "--fail", "--location"])
@@ -50,10 +38,6 @@ pub fn fetch_latest_version(channel: Channel) -> Result<String, UpdateError> {
     parse_latest_version(&output.stdout)
 }
 
-/// Extract the `version` field from a registry manifest body. Never reads or
-/// retains any other field — no readme text, no dependency list, no
-/// maintainer data — and rejects anything over the response size cap before
-/// attempting to parse it.
 pub(super) fn parse_latest_version(body: &[u8]) -> Result<String, UpdateError> {
     if body.len() > MAX_RESPONSE_BYTES {
         return Err(UpdateError::MalformedRegistryResponse {

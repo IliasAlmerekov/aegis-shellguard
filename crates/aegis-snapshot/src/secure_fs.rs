@@ -1,5 +1,3 @@
-//! Owner-only filesystem creation helpers for snapshot stores and artifacts.
-
 use std::fs::{self, File, OpenOptions};
 use std::path::Path;
 
@@ -14,7 +12,6 @@ thread_local! {
     static INJECTED_EFFECTIVE_UID: std::cell::Cell<Option<u32>> = const { std::cell::Cell::new(None) };
 }
 
-/// Creates or hardens the plugin-owned snapshot store before sensitive writes.
 pub(crate) fn create_store_dir(plugin: &'static str, path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
@@ -62,9 +59,7 @@ pub(crate) fn create_store_dir(plugin: &'static str, path: &Path) -> Result<()> 
 
     #[cfg(not(unix))]
     {
-        // ACL handling is deliberately outside Aegis' non-Unix platform scope.
         fs::create_dir_all(path)?;
-        // Plugin name is only used for Unix permission errors.
         let _ = plugin;
         Ok(())
     }
@@ -91,7 +86,6 @@ fn effective_uid() -> u32 {
     unsafe { libc::geteuid() }
 }
 
-/// Creates one fresh snapshot artifact with owner-readable/writable permissions.
 pub(crate) fn create_artifact_file(plugin: &'static str, path: &Path) -> Result<File> {
     #[cfg(unix)]
     {
@@ -104,7 +98,6 @@ pub(crate) fn create_artifact_file(plugin: &'static str, path: &Path) -> Result<
             .open(path)?;
         if let Err(error) = harden_artifact_file(path) {
             drop(file);
-            // Best-effort cleanup of the newly created file; preserve the primary hardening error.
             let _ = fs::remove_file(path);
             return Err(insecure(plugin, path, &error.to_string()));
         }
@@ -113,7 +106,6 @@ pub(crate) fn create_artifact_file(plugin: &'static str, path: &Path) -> Result<
 
     #[cfg(not(unix))]
     {
-        // ACL handling is deliberately outside Aegis' non-Unix platform scope.
         let _ = plugin;
         OpenOptions::new()
             .write(true)
@@ -123,7 +115,6 @@ pub(crate) fn create_artifact_file(plugin: &'static str, path: &Path) -> Result<
     }
 }
 
-/// Creates a fresh, owner-only directory for one snapshot bundle.
 pub(crate) fn create_artifact_dir(plugin: &'static str, path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
@@ -150,7 +141,6 @@ pub(crate) fn create_artifact_dir(plugin: &'static str, path: &Path) -> Result<(
 
     #[cfg(not(unix))]
     {
-        // Plugin name is only used for Unix permission errors.
         let _ = plugin;
         fs::create_dir(path)?;
         Ok(())
@@ -199,7 +189,6 @@ pub(crate) fn inject_effective_uid(uid: u32) {
     INJECTED_EFFECTIVE_UID.with(|value| value.set(Some(uid)));
 }
 
-/// Reasserts the owner-only mode after an external tool writes a reserved artifact.
 pub(crate) fn harden_existing_artifact(plugin: &'static str, path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
@@ -208,7 +197,6 @@ pub(crate) fn harden_existing_artifact(plugin: &'static str, path: &Path) -> Res
 
     #[cfg(not(unix))]
     {
-        // Mode hardening is Unix-only; non-Unix is a no-op.
         let _ = (plugin, path);
         Ok(())
     }

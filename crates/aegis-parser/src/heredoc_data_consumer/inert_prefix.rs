@@ -1,54 +1,24 @@
-//! Inert-prefix allowlist for heredoc data consumers (ADR-042).
-//!
-//! Every simple command before the heredoc marker must start with a literal
-//! word from [`INERT_PREFIX_PROGRAMS`] or [`DATA_CONSUMER_PROGRAMS`], and no
-//! expansion in the prefix may assign a variable.
-
 use super::DATA_CONSUMER_PROGRAMS;
 
-/// Programs that cannot change the invoking shell's own state: external
-/// programs run in a child process, and these builtins only print or change
-/// the working directory. A shell function, alias, hash entry, or search path
-/// can only change through a builtin or an assignment, and neither is here.
-/// [`DATA_CONSUMER_PROGRAMS`] is accepted as well.
 const INERT_PREFIX_PROGRAMS: &[&str] = &[
     "cd", "echo", "false", "gh", "git", "ls", "mkdir", "pwd", "true",
 ];
 
-/// How far the walk is into the command word of the current simple command.
 #[derive(Clone, Copy)]
 enum CommandWord {
-    /// No character of the command word yet.
     Pending,
-    /// The command word started at this byte index.
     Started(usize),
-    /// The command word is complete and passed the allowlist.
     Checked,
-    /// The command word was `set`; its arguments start at this byte index
-    /// and are checked by [`set_args_are_inert`] when the command ends.
     SetArgs(usize),
 }
 
-/// What opened a nested command list.
 #[derive(PartialEq, Eq)]
 enum Nest {
-    /// `$(`.
     Command,
-    /// A backtick.
     Backtick,
-    /// Any other `(`: a subshell, process substitution, or zsh glob qualifier.
     Paren,
 }
 
-/// `true` when every simple command in `text` starts with a literal word from
-/// [`INERT_PREFIX_PROGRAMS`] or [`DATA_CONSUMER_PROGRAMS`]. Arguments are not
-/// checked here; [`has_assigning_expansion`] and [`has_expanding_heredoc`]
-/// cover the expansions an argument can hold.
-///
-/// A command word built by an expansion (`$(echo eval) git '; x'`, `$c`) is
-/// refused, since the walk cannot know what it runs. So is a `#` comment in
-/// command position: the walk would still read quotes and separators inside
-/// it that the shell ignores.
 pub(super) fn every_command_is_inert(text: &str) -> bool {
     let mut single_quote = false;
     let mut double_quote = false;
@@ -121,9 +91,6 @@ pub(super) fn every_command_is_inert(text: &str) -> bool {
                 word = CommandWord::Checked;
             }
             '#' if matches!(word, CommandWord::Pending) => return false,
-            // `>&2`, `<&0` and `>|f` are redirections, not separators. `&>f`
-            // stays a separator: dash reads `a &>f b` as `a &` and then a
-            // second command `>f b`.
             '&' | '|' if matches!(prev, Some('>' | '<')) => {}
             ';' | '\n' | '&' | '|' => {
                 if !finish_command(text, &mut word, idx) {
@@ -131,9 +98,6 @@ pub(super) fn every_command_is_inert(text: &str) -> bool {
                 }
                 word = CommandWord::Pending;
             }
-            // A standalone `{` opens a group whose first word is a command.
-            // A standalone `}` closes one, and the next word is a command
-            // again: zsh reads `} always { ... }` as a second group.
             '{' | '}'
                 if matches!(word, CommandWord::Pending | CommandWord::Checked)
                     && chars
@@ -142,8 +106,6 @@ pub(super) fn every_command_is_inert(text: &str) -> bool {
             {
                 word = CommandWord::Pending;
             }
-            // Only a blank separates words; bash and zsh do not split on
-            // other Unicode whitespace.
             ' ' | '\t' => {
                 if !finish_word(text, &mut word, idx) {
                     return false;
@@ -157,16 +119,12 @@ pub(super) fn every_command_is_inert(text: &str) -> bool {
     finish_command(text, &mut word, text.len())
 }
 
-/// Mark the command word as started at `idx` if none has started yet.
 fn begin_word(word: &mut CommandWord, idx: usize) {
     if matches!(word, CommandWord::Pending) {
         *word = CommandWord::Started(idx);
     }
 }
 
-/// Close a started command word at `end` and check it against the allowlist.
-/// Quote characters are dropped first (`"git"` runs `git`); a backslash or a
-/// `$` stays, so an escaped or expanded word never matches.
 fn finish_word(text: &str, word: &mut CommandWord, end: usize) -> bool {
     let CommandWord::Started(start) = *word else {
         return true;
@@ -184,8 +142,6 @@ fn finish_word(text: &str, word: &mut CommandWord, end: usize) -> bool {
         || DATA_CONSUMER_PROGRAMS.contains(&literal.as_str())
 }
 
-/// Close the current simple command at `end`: finish its command word, then
-/// check the arguments of a `set` command.
 fn finish_command(text: &str, word: &mut CommandWord, end: usize) -> bool {
     if !finish_word(text, word, end) {
         return false;
@@ -197,10 +153,6 @@ fn finish_command(text: &str, word: &mut CommandWord, end: usize) -> bool {
     true
 }
 
-/// `true` when `args` is a plain error-handling option list for `set`
-/// (`-euo pipefail`, `-x`, `+e`). Every other `set` form stays refused:
-/// zsh `set -A name` assigns an array, `set -a` exports every later
-/// assignment, and `set -k` moves assignments into a command's environment.
 fn set_args_are_inert(args: &str) -> bool {
     const OPTION_NAMES: &[&str] = &["errexit", "nounset", "pipefail", "verbose", "xtrace"];
     let mut words = args.split_whitespace().peekable();
@@ -227,11 +179,6 @@ fn set_args_are_inert(args: &str) -> bool {
     true
 }
 
-/// `true` when `text` holds an expansion that can assign a variable or run
-/// arithmetic: `${...}` (`${PATH:=x}`, zsh `${path::=x}`), `$((...))`,
-/// `$[...]`, a subscript (`$a[PATH=0]` is arithmetic in zsh), or a `$"..."`
-/// locale string. `$(...)`, `$name`, and the special parameters stay allowed.
-/// Quotes are ignored, so a quoted `${` only costs a scanned body.
 pub(super) fn has_assigning_expansion(text: &str) -> bool {
     let bytes = text.as_bytes();
     bytes.iter().enumerate().any(|(idx, &b)| {
@@ -243,7 +190,6 @@ pub(super) fn has_assigning_expansion(text: &str) -> bool {
             Some(b'(') => rest.get(1) == Some(&b'('),
             Some(b'{' | b'[' | b'"' | b'\'') => true,
             Some(_) => {
-                // zsh flag characters, then the name, then a subscript.
                 let after_flags = rest
                     .iter()
                     .position(|c| !matches!(c, b'=' | b'~' | b'^' | b'+' | b'#'))
@@ -259,11 +205,6 @@ pub(super) fn has_assigning_expansion(text: &str) -> bool {
     })
 }
 
-/// `true` when `text` holds a heredoc operator whose delimiter is not quoted.
-/// Its body is left out of the prefix, and the shell expands that body: fed to
-/// a builtin (`: <<X` with `$((PATH=0))` in the body), the expansion runs in
-/// the current shell. `<<<` here-strings are skipped; their word sits on the
-/// line itself, where [`has_assigning_expansion`] sees it.
 pub(super) fn has_expanding_heredoc(text: &str) -> bool {
     text.match_indices("<<").any(|(idx, _)| {
         let before = text[..idx].chars().next_back();

@@ -1,210 +1,89 @@
-//! Language-neutral detected-operation vocabulary emitted by language adapters (ADR-022 §3).
-//!
-//! `aegis-language` is a workspace leaf and cannot depend on `aegis-types`
-//! (ADR-022 §4), so these types mirror `aegis_types::analysis` one-for-one.
-//! The root crate maps them into `aegis_types::analysis::DetectedOperation`
-//! and runs the shared classifier; adapters never assign `RiskLevel` directly
-//! (ADR-022 §3). No `serde` derives: `aegis-language` keeps minimal dependencies
-//! (ADR-022 §8).
-
 use crate::language::SourceLanguage;
 use crate::protocol::{DecodeError, EncodeError};
 
-/// The kind of destructive effect or execution sink a language adapter detected
-/// (ADR-022 §3 initial scope).
-///
-/// Mirrors `aegis_types::analysis::OperationKind` one-for-one. `#[non_exhaustive]`
-/// so adapters may surface finer-grained kinds without breaking the root mapping.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OperationKind {
-    /// Recursive or single filesystem deletion (`os.remove`, …).
     FilesystemDelete,
-    /// Overwrite or truncation of an existing file (`open('w')`, …).
     FilesystemOverwrite,
-    /// A dangerous permission or ownership change (`os.chown`, …).
     PermissionOrOwnershipChange,
-    /// A write to a device file or other critical-path target.
     DeviceOrCriticalWrite,
-    /// A destructive database operation.
     DatabaseDestructive,
-    /// A recognized process, shell, or eval sink (`subprocess.run`, `eval`, …).
     CodeExecution,
-    /// A destructive cloud-provider API call.
     CloudDestructive,
-    /// A destructive container-management operation.
     ContainerDestructive,
-    /// A destructive package-manager operation.
     PackageDestructive,
 }
 
-/// Modifiers that refine an [`OperationKind`] (ADR-022 §3). Mirrors
-/// `aegis_types::analysis::OperationModifiers`. All flags default to `false`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct OperationModifiers {
-    /// The operation is recursive (`shutil.rmtree`, …).
     pub recursive: bool,
-    /// The operation is forced.
     pub forced: bool,
-    /// The operation is in an explicitly destructive mode (e.g. a truncating
-    /// `open` flag).
     pub destructive_mode: bool,
 }
 
-/// How completely a `Detected operation`'s operand is known to static analysis
-/// (ADR-022 §3). Mirrors `aegis_types::analysis::OperandCertainty`.
-///
-/// Ordered by *decreasing* certainty: `Known < Partial < Dynamic`. A `Dynamic`
-/// operand is never evidence of safety (ADR-022 §3, §7).
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum OperandCertainty {
-    /// The operand is a literal recoverable from the source.
     Known,
-    /// The operand is partially resolved (e.g. an alias or adjacent literal).
     Partial,
-    /// The operand is computed, imported, or otherwise not statically recoverable.
     Dynamic,
 }
 
-/// A concrete byte span inside analyzed source (ADR-022 §10). Mirrors
-/// `aegis_types::analysis::ByteSpan`. Carries position only — never source text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ByteSpan {
-    /// 1-based line number.
     pub line: u32,
-    /// 1-based column number (in bytes).
     pub column: u32,
-    /// Inclusive start byte offset within the source.
     pub byte_start: usize,
-    /// Exclusive end byte offset within the source.
     pub byte_end: usize,
 }
 
-/// A literal payload statically recovered from an execution sink, to be enqueued
-/// as a bounded recursive analysis target (ADR-022 §7).
-///
-/// `language` is the payload's *own* language (cross-language: a Python `eval`
-/// of a JavaScript literal enqueues a JavaScript target). `source` is the
-/// recovered literal body; `span` locates the payload in the parent source for
-/// provenance. The root crate wraps this in a `QueueTarget` at `parent_depth+1`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NestedTarget {
-    /// The language the payload should be parsed as.
     pub language: SourceLanguage,
-    /// The recovered literal payload body.
     pub source: String,
-    /// Where the payload was recovered in the parent source.
     pub span: ByteSpan,
 }
 
-/// A language-neutral operation detected from source syntax (ADR-022 §3).
-///
-/// Mirrors `aegis_types::analysis::DetectedOperation` plus an adapter-local
-/// `span` (the `aegis-types` type is span-less; the span lives on its
-/// `AnalysisProvenance`) and an optional [`NestedTarget`] payload for execution
-/// sinks. The root mapping moves `span` into `AnalysisProvenance` and feeds
-/// `payload` to the recursive sink invariant.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DetectedOperation {
-    /// What effect or execution sink was detected.
     pub kind: OperationKind,
-    /// Modifiers refining the kind.
     pub modifiers: OperationModifiers,
-    /// How completely the operand is known to static analysis.
     pub certainty: OperandCertainty,
-    /// Where the operation appears in the source.
     pub span: ByteSpan,
-    /// For a `CodeExecution` sink: the statically recovered literal payload, if
-    /// any. `None` for non-execution ops and for dynamic/encoded payloads.
     pub payload: Option<NestedTarget>,
 }
 
-/// The output of one language adapter over one source target.
-///
-/// `operations` are the detected destructive effects / execution sinks;
-/// `parse_errors` is the count of Tree-sitter `ERROR` nodes in the parse (a
-/// nonzero count means the source was malformed, which the root mapping records
-/// as `DegradationReason::IncompleteSyntax`). `degradation` records an adapter
-/// limitation that prevented parsing without pretending that valid source had
-/// syntax errors. The parent owns status/degradation aggregation and recursive
-/// enqueueing (ADR-022 §2).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AdapterResult {
-    /// Detected operations, in source order.
     pub operations: Vec<DetectedOperation>,
-    /// Number of Tree-sitter `ERROR` nodes in the parse (0 = clean).
     pub parse_errors: u32,
-    /// A typed adapter limitation encountered before or during parsing.
     pub degradation: Option<AdapterDegradation>,
 }
 
-/// A fail-closed reason an adapter did not fully analyze a source target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AdapterDegradation {
-    /// The adapter cannot safely process this source encoding.
     UnsupportedEncoding,
 }
 
-// ── Wire codec (ADR-022 §2) ───────────────────────────────────────────────
-//
-// Hand-rolled packed little-endian codec (no `serde` dependency; ADR-022 §8):
-//
-//   AdapterResult:
-//     parse_errors: u32 LE
-//     degradation:  u8 (0 = none, 1 = unsupported encoding)
-//     op_count:     u32 LE
-//     op_count × DetectedOperation
-//
-//   DetectedOperation:
-//     kind:          u8   (OperationKind discriminant, see KIND_*)
-//     modifiers:     u8   (bitmask: bit0 recursive, bit1 forced, bit2 destructive_mode)
-//     certainty:     u8   (0 Known, 1 Partial, 2 Dynamic)
-//     span.line:     u32 LE
-//     span.column:   u32 LE
-//     span.byte_start: u32 LE
-//     span.byte_end: u32 LE
-//     has_payload:   u8   (0 or 1)
-//     [if 1:] NestedTarget { language u8, source_len u32 LE, source bytes,
-//                            span.line u32, column u32, byte_start u32, byte_end u32 }
-//
-// Offsets and lengths are u32 (bounded by the 1 MiB ceiling, ADR-022 §7;
-// fallible encoding avoids truncating casts and panics).
-
-/// The wire discriminant for [`OperationKind::FilesystemDelete`].
 pub const KIND_FS_DELETE: u8 = 0;
-/// The wire discriminant for [`OperationKind::FilesystemOverwrite`].
 pub const KIND_FS_OVERWRITE: u8 = 1;
-/// The wire discriminant for [`OperationKind::PermissionOrOwnershipChange`].
 pub const KIND_PERM_OWNER: u8 = 2;
-/// The wire discriminant for [`OperationKind::DeviceOrCriticalWrite`].
 pub const KIND_DEVICE_WRITE: u8 = 3;
-/// The wire discriminant for [`OperationKind::DatabaseDestructive`].
 pub const KIND_DB_DESTRUCTIVE: u8 = 4;
-/// The wire discriminant for [`OperationKind::CodeExecution`].
 pub const KIND_CODE_EXEC: u8 = 5;
-/// The wire discriminant for [`OperationKind::CloudDestructive`].
 pub const KIND_CLOUD_DESTRUCTIVE: u8 = 6;
-/// The wire discriminant for [`OperationKind::ContainerDestructive`].
 pub const KIND_CONTAINER_DESTRUCTIVE: u8 = 7;
-/// The wire discriminant for [`OperationKind::PackageDestructive`].
 pub const KIND_PACKAGE_DESTRUCTIVE: u8 = 8;
 
-/// The wire discriminant for [`OperandCertainty::Known`].
 pub const CERT_KNOWN: u8 = 0;
-/// The wire discriminant for [`OperandCertainty::Partial`].
 pub const CERT_PARTIAL: u8 = 1;
-/// The wire discriminant for [`OperandCertainty::Dynamic`].
 pub const CERT_DYNAMIC: u8 = 2;
 
-/// The `modifiers` bitmask: bit 0 = recursive, bit 1 = forced, bit 2 = destructive.
 pub const MOD_RECURSIVE: u8 = 1 << 0;
-/// The `modifiers` bitmask: forced.
 pub const MOD_FORCED: u8 = 1 << 1;
-/// The `modifiers` bitmask: destructive_mode.
 pub const MOD_DESTRUCTIVE: u8 = 1 << 2;
 
-/// Map an [`OperationKind`] to its wire discriminant.
 #[must_use]
 pub fn kind_to_wire(kind: OperationKind) -> u8 {
     match kind {
@@ -220,8 +99,6 @@ pub fn kind_to_wire(kind: OperationKind) -> u8 {
     }
 }
 
-/// Map a wire discriminant back to an [`OperationKind`], or `None` for an
-/// unknown code (a future/invalid value the decoder does not understand).
 #[must_use]
 pub fn kind_from_wire(code: u8) -> Option<OperationKind> {
     Some(match code {
@@ -238,7 +115,6 @@ pub fn kind_from_wire(code: u8) -> Option<OperationKind> {
     })
 }
 
-/// Map an [`OperandCertainty`] to its wire discriminant.
 #[must_use]
 pub fn certainty_to_wire(certainty: OperandCertainty) -> u8 {
     match certainty {
@@ -248,8 +124,6 @@ pub fn certainty_to_wire(certainty: OperandCertainty) -> u8 {
     }
 }
 
-/// Map a wire discriminant back to an [`OperandCertainty`], or `None` for an
-/// unknown code so decoders fail closed.
 #[must_use]
 pub fn certainty_from_wire(code: u8) -> Option<OperandCertainty> {
     Some(match code {
@@ -260,7 +134,6 @@ pub fn certainty_from_wire(code: u8) -> Option<OperandCertainty> {
     })
 }
 
-/// Pack an [`OperationModifiers`] into its wire bitmask.
 #[must_use]
 pub fn modifiers_to_wire(mods: OperationModifiers) -> u8 {
     let mut bits = 0u8;
@@ -276,9 +149,6 @@ pub fn modifiers_to_wire(mods: OperationModifiers) -> u8 {
     bits
 }
 
-/// Unpack a wire bitmask into [`OperationModifiers`]. Unknown high bits are
-/// ignored (forward-compatible: a future modifier the decoder does not know
-/// does not corrupt the known three).
 #[must_use]
 pub fn modifiers_from_wire(bits: u8) -> OperationModifiers {
     OperationModifiers {
@@ -288,10 +158,6 @@ pub fn modifiers_from_wire(bits: u8) -> OperationModifiers {
     }
 }
 
-/// Encode an [`AdapterResult`] into its packed little-endian wire form.
-///
-/// Returns [`EncodeError::FieldOverflow`] if a `usize` field exceeds `u32`
-/// (unreachable under the 1 MiB ceiling, ADR-022 §7).
 pub fn encode_adapter_result(result: &AdapterResult) -> Result<Vec<u8>, EncodeError> {
     let mut out = Vec::new();
     out.extend_from_slice(&result.parse_errors.to_le_bytes());
@@ -308,7 +174,6 @@ pub fn encode_adapter_result(result: &AdapterResult) -> Result<Vec<u8>, EncodeEr
     Ok(out)
 }
 
-/// Encode one [`DetectedOperation`] into `out`.
 fn encode_operation(out: &mut Vec<u8>, op: &DetectedOperation) -> Result<(), EncodeError> {
     out.push(kind_to_wire(op.kind));
     out.push(modifiers_to_wire(op.modifiers));
@@ -331,8 +196,6 @@ fn encode_operation(out: &mut Vec<u8>, op: &DetectedOperation) -> Result<(), Enc
     Ok(())
 }
 
-/// Encode a [`ByteSpan`] into `out`. `byte_start`/`byte_end` are `usize` on the
-/// in-memory type and `u32` on the wire.
 fn encode_span(out: &mut Vec<u8>, span: &ByteSpan) -> Result<(), EncodeError> {
     out.extend_from_slice(&span.line.to_le_bytes());
     out.extend_from_slice(&span.column.to_le_bytes());
@@ -346,12 +209,6 @@ fn encode_span(out: &mut Vec<u8>, span: &ByteSpan) -> Result<(), EncodeError> {
     Ok(())
 }
 
-/// Decode an [`AdapterResult`] from its packed little-endian wire form (see the
-/// codec section at the top of this module).
-///
-/// Returns [`DecodeError::InvalidPayload`] for a truncated frame, an unknown
-/// kind/certainty/language discriminant, or a length that exceeds the remaining
-/// bytes. The decoder never reads past `buf`.
 pub fn decode_adapter_result(buf: &[u8]) -> Result<AdapterResult, DecodeError> {
     let mut cur = Cursor::new(buf);
     let parse_errors = cur.read_u32("parse_errors")?;
@@ -361,9 +218,6 @@ pub fn decode_adapter_result(buf: &[u8]) -> Result<AdapterResult, DecodeError> {
         _ => return Err(DecodeError::InvalidPayload("unknown adapter degradation")),
     };
     let op_count = cur.read_u32("op_count")? as usize;
-    // Cap the *initial* allocation so a malformed `op_count` declaring millions
-    // of operations cannot drive a huge speculative allocation; the Vec grows
-    // as operations actually decode, so this is not a cap on operation count.
     let mut operations = Vec::with_capacity(op_count.min(512));
     for _ in 0..op_count {
         operations.push(decode_operation(&mut cur)?);
@@ -380,7 +234,6 @@ pub fn decode_adapter_result(buf: &[u8]) -> Result<AdapterResult, DecodeError> {
     })
 }
 
-/// Decode one [`DetectedOperation`] from `cur`.
 fn decode_operation(cur: &mut Cursor<'_>) -> Result<DetectedOperation, DecodeError> {
     let kind = kind_from_wire(cur.read_u8("kind")?).ok_or(DecodeError::InvalidPayload(
         "unknown operation kind discriminant",
@@ -405,7 +258,6 @@ fn decode_operation(cur: &mut Cursor<'_>) -> Result<DetectedOperation, DecodeErr
     })
 }
 
-/// Decode a [`NestedTarget`] (a literal execution-sink payload) from `cur`.
 fn decode_nested_target(cur: &mut Cursor<'_>) -> Result<NestedTarget, DecodeError> {
     let language = crate::protocol::wire_to_language(cur.read_u8("payload.language")?)
         .ok_or(DecodeError::InvalidPayload("unknown payload language tag"))?;
@@ -421,7 +273,6 @@ fn decode_nested_target(cur: &mut Cursor<'_>) -> Result<NestedTarget, DecodeErro
     })
 }
 
-/// Decode a [`ByteSpan`] from `cur`.
 fn decode_span(cur: &mut Cursor<'_>) -> Result<ByteSpan, DecodeError> {
     let line = cur.read_u32("span.line")?;
     let column = cur.read_u32("span.column")?;
@@ -435,9 +286,6 @@ fn decode_span(cur: &mut Cursor<'_>) -> Result<ByteSpan, DecodeError> {
     })
 }
 
-/// A tiny cursor over the input buffer, used by the decoder to read typed
-/// fields with bounds checking. Carries a `&'static str` field name in its
-/// errors for diagnostics.
 struct Cursor<'a> {
     buf: &'a [u8],
 }

@@ -1,5 +1,3 @@
-//! Runtime context: config, scanner, allowlist, snapshot registry wiring.
-
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -23,37 +21,22 @@ use aegis_types::{
 
 use super::user::detect_effective_user;
 
-/// Internal runtime view of the effective policy configuration.
-///
-/// This is intentionally separate from the user-facing config model so the
-/// CLI entrypoints can read the values they need without exposing config
-/// serialization details.
 #[derive(Clone, Debug)]
 pub struct RuntimeConfig {
-    /// Effective operating mode.
     pub mode: aegis_types::Mode,
-    /// Effective CI policy.
     pub ci_policy: aegis_types::CiPolicy,
-    /// Effective Protect/Strict allowlist ceiling for non-safe commands.
     pub strict_allowlist_override: AllowlistOverrideLevel,
-    /// Effective snapshot policy.
     pub snapshot_policy: SnapshotPolicy,
-    /// Effective sandbox config, or `None` in `Mode::Audit`.
     pub sandbox: Option<aegis_sandbox::SandboxConfig>,
-    /// Trusted interpreter aliases forwarded to language-aware routing.
     pub language_analysis_aliases: Vec<(String, String)>,
-    /// Effective bounded Language-aware analysis budgets.
     pub language_analysis_budget: crate::analysis::OrchestrationBudget,
 }
 
 impl From<&AegisConfig> for RuntimeConfig {
     fn from(config: &AegisConfig) -> Self {
-        // The workspace is resolved here, where the working directory is
-        // known, outside `Mode::Audit`.
         let cwd = config
             .source_current_dir()
             .map(Path::to_path_buf)
-            // Unavailable cwd falls back to an empty path so workspace detection grants no workspace root.
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_default();
         let sandbox = super::sandbox_ceiling(config, &cwd).map(|ceiling| ceiling.config);
@@ -83,7 +66,6 @@ impl From<&AegisConfig> for RuntimeConfig {
     }
 }
 
-/// Shared runtime dependencies built once per CLI invocation.
 pub struct RuntimeContext {
     auto_prune_config: AegisConfig,
     runtime_config: RuntimeConfig,
@@ -95,55 +77,35 @@ pub struct RuntimeContext {
     snapshot_registry: OnceLock<SnapshotRegistry>,
     async_handle: Handle,
     audit_logger: AuditLogger,
-    /// Typed `[[rules]]` entries from the effective config.
     policy_rules: Vec<aegis_config::PolicyRule>,
 }
 
-/// Options controlling how an audit entry is written.
 #[derive(Clone, Copy)]
 pub struct AuditWriteOptions<'a> {
-    /// Matched allowlist rule, if any.
     pub allowlist_match: Option<&'a AllowlistMatch>,
-    /// Whether the allowlist was effective for this command.
     pub allowlist_effective: bool,
-    /// Whether CI was detected for this invocation.
     pub ci_detected: bool,
-    /// Factual confinement state for this command.
     pub sandbox_status: SandboxStatus,
-    /// One element per Snapshot attempt of this command's pass; empty when no
-    /// pass ran (ADR-031 §10).
     pub snapshot_attempts: &'a [SnapshotAttempt],
 }
 
-/// Watch-mode correlation fields attached to each audit entry in watch transport.
 pub struct WatchAuditContext<'a> {
-    /// Matched allowlist rule, if any.
     pub allowlist_match: Option<&'a AllowlistMatch>,
-    /// Whether the allowlist was effective for this command.
     pub allowlist_effective: bool,
-    /// Whether CI was detected for this invocation.
     pub ci_detected: bool,
-    /// Factual Sandbox status for this Watch command.
     pub sandbox_status: SandboxStatus,
-    /// One element per Snapshot attempt of this command's pass; empty when no
-    /// pass ran (ADR-031 §10).
     pub snapshot_attempts: &'a [SnapshotAttempt],
-    /// Origin label for the watch-mode source.
     pub source: Option<String>,
-    /// Current working directory at the time of invocation.
     pub cwd: Option<String>,
-    /// Correlation ID for tracing across watch-mode frames.
     pub id: Option<String>,
 }
 
 impl RuntimeContext {
-    /// Load config, build runtime dependencies once, and keep them consistent.
     pub fn load(_verbose: bool, handle: Handle) -> Result<Self, AegisError> {
         let config = AegisConfig::load()?;
         Self::new(config, handle)
     }
 
-    /// Build a runtime context from an already resolved config.
     pub fn new(config: AegisConfig, handle: Handle) -> Result<Self, AegisError> {
         let policy_path = policy_star_path();
         Self::new_with_policy_path(config, handle, policy_path.as_deref())
@@ -160,16 +122,6 @@ impl RuntimeContext {
         Ok(context)
     }
 
-    /// Pin the snapshot registry to an explicit plugin set, bypassing
-    /// `SnapshotRegistry::from_runtime_config`.
-    ///
-    /// Test-only. Some snapshot plugins (`docker`, in particular) probe shared
-    /// host state rather than `cwd` — a real `DockerPlugin` can flip
-    /// `Recovery::Ready` on a test host that happens to be running an
-    /// unrelated, opted-in container. Tests asserting a *no applicable
-    /// plugin* degradation need a registry that cannot pick up such state.
-    /// Panics if the registry was already materialized (e.g. a prior call
-    /// already invoked `create_snapshots`).
     #[cfg(test)]
     pub(crate) fn set_snapshot_registry_for_tests(
         &self,
@@ -181,11 +133,6 @@ impl RuntimeContext {
             .expect("snapshot registry already initialized");
     }
 
-    /// Build a runtime context with an explicit policy path override.
-    ///
-    /// Prefer [`RuntimeContext::new`] for production use. This variant exists
-    /// to allow integration tests to supply a controlled path without mutating
-    /// the process environment.
     #[doc(hidden)]
     pub fn new_with_policy_path(
         config: AegisConfig,
@@ -200,25 +147,12 @@ impl RuntimeContext {
             .map(Into::into)
             .collect();
         let scanner = aegis_scanner::scanner_for(&custom_patterns).map_err(|err| {
-            // Bisection only attributes a config-file path when every custom
-            // pattern carries file provenance (`custom_pattern_layers` is
-            // stamped one-for-one by the layered file loader). A config built
-            // directly in memory — no file, no layer info — has no path to
-            // attribute; report the scanner's own error unchanged so it does
-            // not claim a config file that never contributed the pattern.
             if !config.has_full_custom_pattern_provenance() {
                 return AegisError::from(err);
             }
-            // Prefer the roots the config was actually resolved against
-            // (`AegisConfig::load_for` stamps these on every load, including
-            // ones against a non-default `current_dir`/`home_dir`, e.g. in
-            // tests). Only a config built without going through the file
-            // loader has neither, and even then it fails
-            // `has_full_custom_pattern_provenance` above.
             let current_dir = config
                 .source_current_dir()
                 .map(std::path::Path::to_path_buf)
-                // Error attribution degrades to unattributed when current_dir is unavailable.
                 .or_else(|| std::env::current_dir().ok());
             let home_dir = config
                 .source_home_dir()
@@ -233,7 +167,6 @@ impl RuntimeContext {
         })?;
         let current_user = detect_effective_user();
 
-        // policy.star is retired (ADR-028): its presence is a config error.
         if let Some(star_path) = explicit_policy_path {
             aegis_config::reject_policy_star_at(star_path)?;
         }
@@ -254,7 +187,6 @@ impl RuntimeContext {
         })
     }
 
-    /// Return the effective config used by all runtime subsystems.
     pub fn config(&self) -> &RuntimeConfig {
         &self.runtime_config
     }
@@ -263,28 +195,14 @@ impl RuntimeContext {
         &self.auto_prune_config
     }
 
-    /// Return the typed `[[rules]]` entries from the effective config.
     pub fn policy_rules(&self) -> &[aegis_config::PolicyRule] {
         &self.policy_rules
     }
 
-    /// Assess a command with the context-bound scanner.
     pub fn assess(&self, cmd: &str) -> Assessment {
         self.scanner.assess(cmd)
     }
 
-    /// Assess a command and merge bounded language-aware analysis before policy.
-    ///
-    /// The synchronous shell path calls this outside Tokio; async callers use
-    /// [`Self::assess_with_language_analysis_async`] to avoid nested blocking.
-    ///
-    /// Resolves relative language-analysis sources against the Aegis process
-    /// working directory. That is a convenience for tests and callers that have no
-    /// separate command working directory. A production caller must instead pass
-    /// its own [`crate::analysis::AnalysisCwd`], derived from
-    /// [`crate::planning::CwdState`], to
-    /// [`Self::assess_with_language_analysis_in_cwd`] — an unresolved command
-    /// working directory must degrade, not silently mean `.` (ADR-022 §6).
     pub fn assess_with_language_analysis(&self, cmd: &str) -> Assessment {
         self.assess_with_language_analysis_in_cwd(
             cmd,
@@ -292,7 +210,6 @@ impl RuntimeContext {
         )
     }
 
-    /// Assess a command with language-aware relative paths resolved from `cwd`.
     pub fn assess_with_language_analysis_in_cwd(
         &self,
         cmd: &str,
@@ -302,9 +219,6 @@ impl RuntimeContext {
             .block_on(self.assess_with_language_analysis_async_in_cwd(cmd, cwd))
     }
 
-    /// Async variant of [`Self::assess_with_language_analysis`], carrying the same
-    /// process-working-directory caveat: production callers use
-    /// [`Self::assess_with_language_analysis_async_in_cwd`].
     pub async fn assess_with_language_analysis_async(&self, cmd: &str) -> Assessment {
         self.assess_with_language_analysis_async_in_cwd(
             cmd,
@@ -313,7 +227,6 @@ impl RuntimeContext {
         .await
     }
 
-    /// Async variant of [`Self::assess_with_language_analysis_in_cwd`].
     pub async fn assess_with_language_analysis_async_in_cwd(
         &self,
         cmd: &str,
@@ -345,7 +258,6 @@ impl RuntimeContext {
         }
     }
 
-    /// Return the effective user identity captured for this runtime context.
     pub fn current_user(&self) -> Option<&str> {
         self.current_user.as_deref()
     }
@@ -355,12 +267,10 @@ impl RuntimeContext {
             .get_or_init(|| SnapshotRegistry::from_runtime_config(&self.snapshot_registry_config))
     }
 
-    /// Resolve the allowlist rule, if any, that matches the runtime context.
     pub fn allowlist_match(&self, context: &AllowlistContext<'_>) -> Option<AllowlistMatch> {
         self.allowlist.match_reason(context)
     }
 
-    /// Resolve the matching allowlist rule for one command using the runtime user.
     pub fn allowlist_match_for_command(
         &self,
         command: &str,
@@ -372,12 +282,10 @@ impl RuntimeContext {
         self.allowlist_match(&context)
     }
 
-    /// Returns `true` when any effective blocklist entry matches the context.
     pub fn is_blocked(&self, context: &AllowlistContext<'_>) -> bool {
         self.blocklist.is_blocked(context)
     }
 
-    /// Returns `true` when any effective blocklist entry matches the command.
     pub fn is_blocked_for_command(&self, command: &str, cwd: Option<&Path>) -> bool {
         let now = OffsetDateTime::now_utc();
         let context = AllowlistContext::with_optional_scope(command, cwd, self.current_user(), now);
@@ -385,35 +293,24 @@ impl RuntimeContext {
         self.is_blocked(&context)
     }
 
-    /// Create best-effort snapshots using the context-bound registry and the
-    /// persistent async handle.
     pub fn create_snapshots(&self, cwd: &Path, cmd: &str, _verbose: bool) -> SnapshotCoverage {
         self.async_handle
             .block_on(self.create_snapshots_async(cwd, cmd))
     }
 
-    /// Return the names of snapshot plugins that would be eligible for `cwd`
-    /// without creating any snapshots.
     pub fn applicable_snapshot_plugins(&self, cwd: &Path) -> Vec<&'static str> {
         self.async_handle
             .block_on(self.snapshot_registry().applicable_plugins(cwd))
     }
 
-    /// Async variant of `applicable_snapshot_plugins` — call from within an
-    /// async runtime to avoid panicking with a nested `block_on`.
     pub async fn applicable_snapshot_plugins_async(&self, cwd: &Path) -> Vec<&'static str> {
         self.snapshot_registry().applicable_plugins(cwd).await
     }
 
-    /// Return a reference to the persistent async handle.
     pub fn async_handle(&self) -> &Handle {
         &self.async_handle
     }
 
-    /// Async variant of `create_snapshots` — call from within an async runtime.
-    ///
-    /// Calls `snapshot_registry.snapshot_all()` directly without `block_on`,
-    /// which would panic if called from an already-async context.
     pub async fn create_snapshots_async(
         &self,
         cwd: &std::path::Path,
@@ -425,12 +322,6 @@ impl RuntimeContext {
         coverage
     }
 
-    /// Run the snapshot pass a plan asks for (#471).
-    ///
-    /// Every plugin but git runs at `cwd`. The git plugin runs at each
-    /// resolved Git target, and at `cwd` only when the plan says some part of
-    /// the command needs a Snapshot there. A plan with no Git targets and
-    /// `process_cwd` set is the plain [`Self::create_snapshots_async`] pass.
     pub async fn create_snapshots_for_plan_async(
         &self,
         cwd: &Path,
@@ -446,12 +337,10 @@ impl RuntimeContext {
         for path in git_targets.resolved_paths() {
             coverage.merge(registry.snapshot_plugin_at("git", path, cmd).await);
         }
-        // One check for the whole command: its 500 ms budget spans every pass.
         registry.check_readiness(&mut coverage).await;
         coverage
     }
 
-    /// Sync variant of [`Self::create_snapshots_for_plan_async`].
     pub fn create_snapshots_for_plan(
         &self,
         cwd: &Path,
@@ -462,22 +351,18 @@ impl RuntimeContext {
             .block_on(self.create_snapshots_for_plan_async(cwd, cmd, git_targets))
     }
 
-    /// Whether the git `Snapshot plugin` is enabled in this runtime.
     pub fn git_snapshot_enabled(&self) -> bool {
         self.snapshot_registry()
             .configured_provider_names()
             .contains(&"git")
     }
 
-    /// Whether the git plugin can snapshot the working tree at `dir`.
     pub async fn git_snapshot_applicable_at_async(&self, dir: &Path) -> bool {
         self.snapshot_registry()
             .plugin_applicable_at("git", dir)
             .await
     }
 
-    /// Report the `Danger` git stages of `cmd` that redirect their working
-    /// tree. Slow path only: call it once a recovery backstop applies.
     pub fn git_stage_report(
         &self,
         cmd: &str,
@@ -486,7 +371,6 @@ impl RuntimeContext {
         self.scanner.git_stage_report(cmd, assessment)
     }
 
-    /// Append one audit entry with the context-bound logger configuration.
     pub fn append_audit_entry(
         &self,
         assessment: &Assessment,
@@ -502,7 +386,6 @@ impl RuntimeContext {
         Ok(())
     }
 
-    /// Append one degraded-recovery audit entry.
     pub fn append_audit_entry_with_recovery_degradation(
         &self,
         assessment: &Assessment,
@@ -525,10 +408,6 @@ impl RuntimeContext {
         Ok(())
     }
 
-    /// Append a watch-mode audit entry with frame correlation fields.
-    ///
-    /// Identical to `append_audit_entry` but attaches `source`, `cwd`, `id`,
-    /// and sets `transport = "watch"` via `AuditEntry::with_watch_context`.
     pub fn append_watch_audit_entry(
         &self,
         assessment: &Assessment,
@@ -559,7 +438,6 @@ impl RuntimeContext {
         Ok(())
     }
 
-    /// Append a Watch audit entry for a degraded Required recovery attempt.
     pub fn append_watch_audit_entry_with_recovery_degradation(
         &self,
         assessment: &Assessment,
@@ -655,28 +533,12 @@ impl RuntimeContext {
             options.allowlist_effective,
         )
         .with_sandbox_status(options.sandbox_status)
-        // ADR-016: record the effect-opacity and recovery-backstop state
-        // captured at the decision point so the audit reflects what policy
-        // actually required — not the `Some(false)` defaults from
-        // `AuditEntry::new`. `effect_opaque` comes straight off the
-        // assessment; `snapshots_required` is the policy's recovery decision
-        // already threaded into the explanation. `confinement_required` stays
-        // `false` in v1 (the optional strict tier is reserved, never engaged by
-        // the engine today); when confinement becomes policy-driven, thread it
-        // through `PolicyExplanation` alongside `snapshots_required`.
         .with_effect_opaque(assessment.effect_opaque)
         .with_required_backstops(explanation.policy.snapshots_required, false)
-        // ADR-022 §10 (Audit v2): persist Assessment basis (always, marking this
-        // a v2 line) and the language-aware analysis summary (only when a
-        // language result was merged). Typed Match evidence + detection IDs are
-        // carried per-pattern via `From<&MatchResult>` above.
         .with_basis(assessment.basis())
         .with_analysis(assessment.analysis.clone())
-        // The Command location (#499). A watch entry overwrites it with the
-        // frame's cwd in `with_watch_context`.
         .with_cwd(
             std::env::current_dir()
-                // Unavailable working directory records None in the audit entry instead of ".".
                 .ok()
                 .map(|dir| dir.to_string_lossy().into_owned()),
         );
@@ -691,7 +553,6 @@ impl RuntimeContext {
     }
 }
 
-/// A fixed, path-free label for an [`AuditError`], safe for a `tracing` field.
 fn audit_error_category(error: &AuditError) -> &'static str {
     match error {
         AuditError::InsecureAuditArtifact { .. } => "insecure audit artifact",
@@ -705,13 +566,9 @@ async fn automatic_prune(config: AegisConfig) -> Result<(), AegisError> {
     let registry_config = SnapshotRegistryConfig::for_rollback_from_config(&config)?;
     let registry = SnapshotRegistry::from_runtime_config(&registry_config);
     let logger = AuditLogger::from_audit_config(&config.audit);
-    // A ledger that cannot be read prunes nothing: keeping a Snapshot too long
-    // is recoverable, deleting one the ledger misread is not.
     let ledger = match SnapshotLedger::load(&logger) {
         Ok(ledger) => ledger,
         Err(error) => {
-            // The error's Display carries the audit path, which may come from
-            // AEGIS_AUDIT_PATH; log only a fixed category.
             tracing::warn!(
                 reason = audit_error_category(&error),
                 "automatic snapshot prune skipped: the audit log could not be read"
@@ -748,7 +605,6 @@ fn build_audit_logger(config: &AegisConfig) -> AuditLogger {
     AuditLogger::from_audit_config(&config.audit)
 }
 
-/// Resolve `~/.aegis/policy.star`, returning `None` when `HOME` is unset.
 fn policy_star_path() -> Option<std::path::PathBuf> {
     std::env::var_os("HOME").map(|h| {
         std::path::PathBuf::from(h)

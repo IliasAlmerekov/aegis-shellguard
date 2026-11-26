@@ -1,11 +1,3 @@
-//! Landlock LSM syscalls and the inner re-exec landlock wrapper.
-//!
-//! Landlock is applied in the innermost process inside bwrap's mount namespace
-//! (see [`run_inner_landlock_wrapper`]) so the bwrap + Landlock layers compose
-//! instead of conflicting. This module owns the raw syscall wrappers, the strict
-//! ruleset application, and the thin re-exec wrapper that `main.rs` dispatches
-//! to. It is Linux-only.
-
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
@@ -13,10 +5,7 @@ use aegis_types::{EXIT_INTERNAL, SandboxStatus};
 
 use crate::{SandboxConfig, SandboxError};
 
-// ── Landlock syscalls ─────────────────────────────────────────────────────────
-
 mod syscalls {
-    // Landlock filesystem access rights (from linux/landlock.h).
     pub const ACCESS_FS_WRITE_FILE: u64 = 1 << 1;
     pub const ACCESS_FS_REMOVE_DIR: u64 = 1 << 4;
     pub const ACCESS_FS_REMOVE_FILE: u64 = 1 << 5;
@@ -27,12 +16,9 @@ mod syscalls {
     pub const ACCESS_FS_MAKE_FIFO: u64 = 1 << 10;
     pub const ACCESS_FS_MAKE_BLOCK: u64 = 1 << 11;
     pub const ACCESS_FS_MAKE_SYM: u64 = 1 << 12;
-    /// ABI 2+ only.
     pub const ACCESS_FS_REFER: u64 = 1 << 13;
-    /// ABI 3+ only.
     pub const ACCESS_FS_TRUNCATE: u64 = 1 << 14;
 
-    /// All write-related accesses supported in ABI 1 (baseline).
     pub const ALL_WRITE_V1: u64 = ACCESS_FS_WRITE_FILE
         | ACCESS_FS_REMOVE_DIR
         | ACCESS_FS_REMOVE_FILE
@@ -45,8 +31,6 @@ mod syscalls {
         | ACCESS_FS_MAKE_SYM;
 
     pub const RULE_PATH_BENEATH: u32 = 1;
-    /// Flag for `landlock_create_ruleset` that returns the ABI version instead
-    /// of creating a ruleset.
     pub const CREATE_RULESET_VERSION: u32 = 1;
 
     #[repr(C)]
@@ -61,8 +45,6 @@ mod syscalls {
         pub parent_fd: i32,
     }
 
-    /// Return the Landlock ABI version supported by this kernel, or 0 if
-    /// Landlock is not available (kernel < 5.13 or not compiled in).
     pub fn detect_abi() -> u32 {
         // SAFETY: SYS_landlock_create_ruleset with the version flag is a
         // read-only query syscall that cannot cause side effects.
@@ -142,18 +124,7 @@ mod syscalls {
     }
 }
 
-// ── Ruleset application ───────────────────────────────────────────────────────
-
-/// Apply Landlock filesystem write restrictions described by `config`.
-///
-/// When `allow_write` is empty, no restrictions are applied. When Landlock is
-/// not supported by the kernel (ENOSYS, ABI 0), the function fails closed: the
-/// caller configured a write restriction that cannot be enforced, so the
-/// command must not run unconfined. Sets `PR_SET_NO_NEW_PRIVS` before
-/// `landlock_restrict_self`, which the kernel requires for an unprivileged
-/// process.
 pub(crate) fn apply_landlock_restrictions(config: &SandboxConfig) -> Result<(), SandboxError> {
-    // Nothing to restrict if no write paths are configured.
     let roots = crate::support::resolve_allow_write(config).paths;
     if roots.is_empty() {
         return Ok(());
@@ -161,14 +132,11 @@ pub(crate) fn apply_landlock_restrictions(config: &SandboxConfig) -> Result<(), 
 
     let abi = syscalls::detect_abi();
     if abi == 0 {
-        // Kernel < 5.13 or Landlock not compiled in. Fail closed.
         return Err(SandboxError::Execution(
             "landlock unavailable (ABI 0) but allow_write is non-empty".into(),
         ));
     }
 
-    // The kernel requires no_new_privs before landlock_restrict_self for an
-    // unprivileged process. Set it first (one-way flag).
     // SAFETY: `PR_SET_NO_NEW_PRIVS` takes only scalar integer arguments (no pointers) and sets a
     // one-way kernel thread flag that cannot invalidate Rust memory.
     let nnp = unsafe { libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) };
@@ -179,7 +147,6 @@ pub(crate) fn apply_landlock_restrictions(config: &SandboxConfig) -> Result<(), 
         )));
     }
 
-    // Build handled_access_fs mask for the detected ABI.
     let mut handled_fs = syscalls::ALL_WRITE_V1;
     if abi >= 2 {
         handled_fs |= syscalls::ACCESS_FS_REFER;
@@ -211,16 +178,12 @@ pub(crate) fn apply_landlock_restrictions(config: &SandboxConfig) -> Result<(), 
     for canonical in &roots {
         add_rule(canonical, handled_fs)?;
     }
-    // `/dev/null` is a sink every tool opens for writing (git does at startup);
-    // it is not a writable root of the ceiling. A device file accepts only file
-    // rights, never directory ones. A host without it just goes without.
     let null_access = syscalls::ACCESS_FS_WRITE_FILE
         | if abi >= 3 {
             syscalls::ACCESS_FS_TRUNCATE
         } else {
             0
         };
-    // Any add_rule failure for /dev/null (open or syscall) is non-fatal; ruleset still restricts everything else.
     let _ = add_rule(std::path::Path::new("/dev/null"), null_access);
 
     syscalls::restrict_self(ruleset.as_fd())
@@ -229,24 +192,12 @@ pub(crate) fn apply_landlock_restrictions(config: &SandboxConfig) -> Result<(), 
     Ok(())
 }
 
-// ── Inner landlock wrapper (re-exec) ─────────────────────────────────────────
-
-/// Env var carrying the length-prefixed `allow_write` paths to the inner
-/// landlock wrapper.
 pub(crate) const AEGIS_LANDLOCK_ALLOW_WRITE: &str = "AEGIS_LANDLOCK_ALLOW_WRITE";
 
-/// Env var naming the fd the inner landlock wrapper writes its actual status
-/// to, so the parent can audit what actually applied at the execution seam
-/// rather than what preparation predicted.
 pub(crate) const AEGIS_LANDLOCK_STATUS_FD: &str = "AEGIS_LANDLOCK_STATUS_FD";
 
-/// Env var naming the fd the inner wrapper waits on after reporting status.
 pub(crate) const AEGIS_LANDLOCK_RELEASE_FD: &str = "AEGIS_LANDLOCK_RELEASE_FD";
 
-/// Report the actual [`SandboxStatus`] to the parent over the status fd named
-/// by [`AEGIS_LANDLOCK_STATUS_FD`]. No-op when the fd is not set (e.g. the
-/// wrapper invoked directly in a test). Closes the fd so the parent's read
-/// returns EOF.
 fn report_status(status: SandboxStatus) -> Result<(), SandboxError> {
     let fd = match std::env::var(AEGIS_LANDLOCK_STATUS_FD) {
         Ok(s) => s
@@ -274,7 +225,6 @@ fn report_status(status: SandboxStatus) -> Result<(), SandboxError> {
     Ok(())
 }
 
-/// Wait for the parent to commit Audit before execing the wrapped program.
 fn wait_for_release() -> Result<(), SandboxError> {
     let fd = match std::env::var(AEGIS_LANDLOCK_RELEASE_FD) {
         Ok(s) => s
@@ -297,14 +247,8 @@ fn wait_for_release() -> Result<(), SandboxError> {
     Ok(())
 }
 
-/// Upper bound for the serialized `allow_write` env var, matching the kernel's
-/// per-argument limit (`MAX_ARG_STRLEN` = 128 KiB). Exceeding it fails closed
-/// at prepare time rather than silently truncating.
 pub(crate) const MAX_ALLOW_WRITE_ENV_LEN: usize = 128 * 1024;
 
-/// Serialize `allow_write` paths as a length-prefixed byte string:
-/// `<len>:<bytes>` per path, using raw `OsStr` bytes so any path content
-/// (spaces, colons, non-UTF-8) round-trips losslessly.
 pub(crate) fn serialize_allow_write(paths: &[PathBuf]) -> Vec<u8> {
     use std::os::unix::ffi::OsStrExt;
     let mut out = Vec::new();
@@ -317,8 +261,6 @@ pub(crate) fn serialize_allow_write(paths: &[PathBuf]) -> Vec<u8> {
     out
 }
 
-/// Inverse of [`serialize_allow_write`]. Returns an error on malformed input so
-/// the inner wrapper can fail closed rather than run the command unconfined.
 pub(crate) fn parse_allow_write(encoded: &[u8]) -> Result<Vec<PathBuf>, SandboxError> {
     use std::os::unix::ffi::OsStringExt;
     let mut paths = Vec::new();
@@ -328,7 +270,6 @@ pub(crate) fn parse_allow_write(encoded: &[u8]) -> Result<Vec<PathBuf>, SandboxE
             .iter()
             .position(|&b| b == b':')
             .ok_or_else(|| SandboxError::Execution("malformed allow_write encoding".into()))?;
-        // Inner wrapper fails closed on any malformed length; UTF-8 and parse errors need no distinct handling.
         let len: usize = std::str::from_utf8(&rest[..colon])
             .ok()
             .and_then(|s| s.parse().ok())
@@ -347,13 +288,6 @@ pub(crate) fn parse_allow_write(encoded: &[u8]) -> Result<Vec<PathBuf>, SandboxE
     Ok(paths)
 }
 
-/// Build the inner landlock wrapper command args to append after the bwrap
-/// namespace args: `[--ro-bind <exe> <exe>, <exe>, <flag>, <program>, <args…>]`.
-///
-/// The resolved `current_exe` is bound read-only into the namespace so the
-/// re-exec'd binary is visible, then invoked with the internal flag followed by
-/// the real program and its args. The inner wrapper applies Landlock and execs
-/// the program.
 pub(crate) fn build_landlock_wrapper_args(
     program: &OsStr,
     args: &[OsString],
@@ -373,8 +307,6 @@ pub(crate) fn build_landlock_wrapper_args(
     Ok(out)
 }
 
-/// The config the inner wrapper enforces. The paths are already canonical and
-/// contained, so both sets are the resolved paths.
 fn inner_config(allow_write: Vec<PathBuf>) -> SandboxConfig {
     SandboxConfig {
         trusted_roots: allow_write.iter().map(crate::WriteRoot::new).collect(),
@@ -383,13 +315,6 @@ fn inner_config(allow_write: Vec<PathBuf>) -> SandboxConfig {
     }
 }
 
-/// Run the inner landlock wrapper (the re-exec'd innermost process inside
-/// bwrap's mount namespace). Reads the serialized `allow_write` config from
-/// the environment, applies Landlock, then execs the real program from argv.
-///
-/// Fail-closed: any error — including a malformed config or Landlock ABI 0 —
-/// exits non-zero before the target command runs. There is no branch where the
-/// inner process executes the command unconfined.
 pub(crate) fn run_inner_landlock_wrapper() -> i32 {
     use std::os::unix::ffi::OsStringExt;
 
@@ -421,7 +346,6 @@ pub(crate) fn run_inner_landlock_wrapper() -> i32 {
         return EXIT_INTERNAL;
     }
 
-    // argv after the flag: [program, args...].
     let argv: Vec<OsString> = std::env::args_os().skip(2).collect();
     let Some(program) = argv.first() else {
         eprintln!("aegis: inner landlock wrapper: no program to exec");
@@ -434,12 +358,9 @@ pub(crate) fn run_inner_landlock_wrapper() -> i32 {
     EXIT_INTERNAL
 }
 
-/// Return the Landlock ABI version supported by this kernel (0 if unavailable).
 pub(crate) fn landlock_abi() -> u32 {
     syscalls::detect_abi()
 }
-
-// ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -467,15 +388,11 @@ mod tests {
 
     #[test]
     fn apply_landlock_restrictions_ok_on_empty_allow_write() {
-        // No write paths → no Landlock ruleset created → Ok(()).
         assert!(apply_landlock_restrictions(&SandboxConfig::default()).is_ok());
     }
 
     #[test]
     fn apply_landlock_restrictions_fails_closed_when_abi_zero() {
-        // Only meaningful on hosts without Landlock (ABI 0). On ABI >= 1 hosts
-        // the ruleset would apply and permanently restrict this test process,
-        // so we skip there; the end-to-end test covers the ABI >= 1 path.
         if super::landlock_abi() != 0 {
             return;
         }
@@ -528,7 +445,6 @@ mod tests {
         )
         .expect("build_landlock_wrapper_args must succeed for /tmp");
 
-        // [--ro-bind <exe> <exe>, <exe>, <flag>, <program>, <args...>]
         assert_eq!(args[0].as_os_str(), "--ro-bind");
         assert_eq!(args[1].as_os_str(), exe.as_os_str());
         assert_eq!(args[2].as_os_str(), exe.as_os_str());
@@ -546,9 +462,7 @@ mod tests {
 
     #[test]
     fn parse_allow_write_rejects_malformed_encoding() {
-        // A length that overruns the buffer must fail closed.
         assert!(parse_allow_write(b"999:/tmp").is_err());
-        // A non-numeric length must fail closed.
         assert!(parse_allow_write(b"xx:/tmp").is_err());
     }
 

@@ -1,12 +1,3 @@
-//! The `Provenance` marker (#270, Q8).
-//!
-//! The `#[serde(skip)]` bookkeeping fields of `AegisConfig` (`*_layers`,
-//! `audit_*_source`) are not user config: they record which layer a value
-//! came from. They carry no Ratchet direction and stay out of ADR-013's
-//! table, but they still pass through the exhaustive destructure in
-//! `merge_layer` behind this marker, so a new bookkeeping field cannot be
-//! left silently unhandled.
-
 use super::partial::PartialConfig;
 use super::*;
 use crate::model::ratchet::Provenance;

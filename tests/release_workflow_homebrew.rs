@@ -1,9 +1,3 @@
-//! Regression tests for the Homebrew tap jobs of the release workflow.
-//!
-//! Split out of `tests/release_workflow.rs` to keep both files under the
-//! file-size budget. The publication tests run the workflow's real
-//! "Commit and push the formula" step against a local bare tap.
-
 mod support;
 
 use std::path::Path;
@@ -14,8 +8,6 @@ fn release_workflow() -> String {
     std::fs::read_to_string(&path).expect("release workflow should be readable")
 }
 
-/// The text of one top-level job, from its `  <name>:` line to the next job
-/// or the comment block that introduces it.
 fn job(workflow: &str, name: &str) -> String {
     let header = format!("  {name}:");
     let mut lines = workflow.lines().skip_while(|line| *line != header);
@@ -112,7 +104,6 @@ fn homebrew_deploy_key_should_only_appear_in_the_push_job() {
     );
 }
 
-// Execute the workflow's actual publication step, not a test-only copy.
 fn homebrew_publish_step() -> String {
     let workflow = release_workflow().replace("\r\n", "\n");
     let publish = job(&workflow, "publish-homebrew-tap");
@@ -140,7 +131,6 @@ fn tap_git(directory: &Path, arguments: &[&str]) -> String {
 
 const RELEASE_URL: &str = "https://github.com/IliasAlmerekov/aegis-shellguard/releases/download";
 
-/// A generated formula: the version lives only in the release URLs.
 fn formula_fixture(version: &str) -> String {
     format!(
         "class Aegis < Formula\n  \
@@ -150,7 +140,6 @@ fn formula_fixture(version: &str) -> String {
     )
 }
 
-/// The formula published up to v0.7.1: an explicit `version` line plus URLs.
 fn legacy_formula_fixture(version: &str) -> String {
     formula_fixture(version).replacen(
         "class Aegis < Formula\n",

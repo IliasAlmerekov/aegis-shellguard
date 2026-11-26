@@ -1,32 +1,15 @@
-//! Typed errors for configuration loading, validation, and amendment.
-
-/// Errors raised while loading, validating, or amending Aegis configuration.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
-    /// A configuration value was invalid (parse failure, bad field, validation
-    /// rule, scope error, …). Carries a human-readable message.
-    ///
-    /// The `config error: ` prefix lives here, not in the binary's orchestration
-    /// error type, so a transparent wrapper reproduces this message byte-for-byte.
     #[error("config error: {0}")]
     Config(String),
 
-    /// A config file's TOML failed to parse. Kept distinct from [`Self::Config`]
-    /// so a report code can be derived from the variant instead of sniffing
-    /// the message for a `"failed to parse "` prefix.
     #[error("config error: failed to parse {path}: {source}")]
     ParseFailed {
-        /// The config file that failed to parse.
         path: String,
-        /// The underlying TOML parse error. Boxed so this variant does not
-        /// bloat `ConfigError`'s size for every other, far more common,
-        /// error path (`toml::de::Error` carries a full parsed-document
-        /// span).
         #[source]
         source: Box<toml::de::Error>,
     },
 
-    /// An I/O error while reading or writing a config file.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }

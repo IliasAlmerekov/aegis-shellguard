@@ -1,10 +1,3 @@
-//! Bash language adapter (ADR-022 §3, §7).
-//!
-//! Analyzes nested shell source via `queries/bash/calls.scm` and emits
-//! language-neutral [`DetectedOperation`]s and [`NestedTarget`] payloads; never
-//! assigns `RiskLevel` directly (ADR-022 §3). Deduplication against outer
-//! shell `Scanner` matches is handled by the merge layer.
-
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::sync::LazyLock;
@@ -44,22 +37,8 @@ thread_local! {
     });
 }
 
-/// Analyze Bash `source` for destructive effects and execution sinks.
-///
-/// Pure and in-process: parses `source` with the pinned Bash grammar, runs the
-/// call-capture query, and interprets each command and redirect in Rust. No
-/// filesystem access, no subprocess (ADR-022 §2). A nonzero `parse_errors` means
-/// the source was malformed; the root mapping records
-/// `DegradationReason::IncompleteSyntax`.
 #[must_use]
 pub fn analyze(source: &str) -> AdapterResult {
-    // tree-sitter-bash 0.25.1's external scanner passes a lexer code point to
-    // C's `isdigit`, whose contract accepts only EOF or unsigned-char values.
-    // Non-ASCII source can therefore make the native grammar crash (the worker
-    // boundary contains that process failure, but this public adapter must also
-    // be safe for its direct callers and fuzz qualification). Treat it as an
-    // unsupported parse so the parent records fail-closed degradation instead
-    // of invoking the scanner until the pinned grammar fixes the defect.
     if !source.is_ascii() {
         return AdapterResult {
             operations: Vec::new(),
@@ -68,10 +47,6 @@ pub fn analyze(source: &str) -> AdapterResult {
         };
     }
 
-    // `parse` returns `None` only on a NULL C result; treat as a malformed
-    // (unrecoverable) parse. A real empty program still produces a tree. The
-    // parser is held in `PARSER` (per-thread, one-time `set_language`); the
-    // borrow is released before any node traversal below.
     let Some(tree) = PARSER.with(|cell| cell.borrow_mut().parse(source.as_bytes(), None)) else {
         return AdapterResult {
             operations: Vec::new(),
@@ -92,24 +67,12 @@ pub fn analyze(source: &str) -> AdapterResult {
     }
 }
 
-/// Run the call-capture `query` over `root` and interpret each match into a
-/// [`DetectedOperation`], returned in source (document) order.
-///
-/// Each query match is either a `command` (carries `@cmd` + `@name`) or a
-/// `file_redirect` (carries `@redirect`); the two are dispatched to
-/// [`interpret_command`] and [`interpret_redirect`] respectively. Commands and
-/// redirects nested inside command substitution `$(…)`, subshells, compound
-/// statements, and `list`/`pipeline` tails are matched recursively, so nested
-/// destructive commands and writes surface as separate operations (the
-/// foundation of recursive analysis, ADR-022 §7).
 fn collect_operations(root: Node, bytes: &[u8], query: &Query) -> Vec<DetectedOperation> {
     let mut operations = Vec::new();
     let mut cursor = QueryCursor::new();
     let capture_names = query.capture_names();
     let mut matches = cursor.matches(query, root, bytes);
     while let Some(m) = matches.next() {
-        // Resolve this match's captures by name. A `command` match carries
-        // `@cmd` + `@name`; a `file_redirect` match carries `@redirect` only.
         let mut cmd = None;
         let mut name = None;
         let mut redirect = None;
@@ -130,45 +93,26 @@ fn collect_operations(root: Node, bytes: &[u8], query: &Query) -> Vec<DetectedOp
         }
     }
 
-    // Tree-sitter yields matches in capture order; sort by source position so
-    // callers see operations in document order regardless of query internals.
     operations.sort_by_key(|op| (op.span.byte_start, op.span.byte_end));
     operations
 }
 
-/// How a recognized command is classified before operand certainty is
-/// attached; maps command names to operations without assigning `RiskLevel`
-/// (ADR-022 §3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CommandClass {
-    /// `rm` — filesystem deletion; recursive/forced modifiers come from flags.
     Rm,
-    /// `rmdir` / `unlink` — plain filesystem deletion (no modifiers).
     Rmdir,
     Unlink,
-    /// `chmod` / `chown` / `chgrp` — a permission or ownership change.
     Chmod,
     Chown,
     Chgrp,
-    /// `tee` — a file write; truncating by default, appending with `-a`.
     Tee,
-    /// `eval` — an execution sink whose literal payload is Bash source.
     Eval,
-    /// `source` / `.` — an execution sink whose operand is a path (the file's
-    /// contents are not in the source, so no inline payload is recovered).
     Source,
-    /// `bash` / `sh` / … — an execution sink whose `-c` payload is Bash source.
     ShellExec,
-    /// `python* -c` / `node -e` — an execution sink whose payload is the
-    /// interpreter's own language (cross-language, ADR-022 §7).
     InterpExec(SourceLanguage),
-    /// `./other.sh` / `/abs/tool` — a program named by path runs a file whose
-    /// contents are not in the source, like `source` (issue #383).
     PathExec,
 }
 
-/// Classify a command name into a [`CommandClass`], or `None` when the command
-/// is not a tracked destructive or execution-sink operation.
 fn classify_command(name: &str) -> Option<CommandClass> {
     Some(match name {
         "rm" => CommandClass::Rm,
@@ -188,14 +132,10 @@ fn classify_command(name: &str) -> Option<CommandClass> {
     })
 }
 
-// Kept local: aegis-language cannot depend on the root router (ADR-022 §4).
 fn is_python(name: &str) -> bool {
     if name == "python" {
         return true;
     }
-    // After `python`, accept `2`, `3`, `2.7`, `3.11` — digits and dots only —
-    // so `python3foo` is not misread as an interpreter. Symmetric with
-    // [`is_node`]'s trailing-digit guard.
     let Some(rest) = name.strip_prefix("python") else {
         return false;
     };
@@ -208,8 +148,6 @@ fn is_node(name: &str) -> bool {
         || (name.starts_with("node") && name[4..].chars().all(|c| c.is_ascii_digit()))
 }
 
-/// Build a [`DetectedOperation`] for one classified command, attaching operand
-/// certainty and (for execution sinks) a nested literal payload.
 fn interpret_command(name_node: Node, cmd_node: Node, bytes: &[u8]) -> Option<DetectedOperation> {
     let name = word_text(name_node, bytes)?;
     let class = classify_command(&name)?;
@@ -246,7 +184,6 @@ fn interpret_command(name_node: Node, cmd_node: Node, bytes: &[u8]) -> Option<De
         CommandClass::Tee => Some(DetectedOperation {
             kind: OperationKind::FilesystemOverwrite,
             modifiers: OperationModifiers {
-                // `tee` truncates by default and appends with `-a` / `--append`.
                 destructive_mode: !(has_short_flag(&args, 'a', bytes)
                     || has_long_flag(&args, "append", bytes)),
                 ..OperationModifiers::default()
@@ -256,8 +193,6 @@ fn interpret_command(name_node: Node, cmd_node: Node, bytes: &[u8]) -> Option<De
             payload: None,
         }),
         CommandClass::Eval => {
-            // `eval` joins all arguments with spaces, so only a single literal
-            // argument is safe to recover without hiding a dynamic tail (ADR-022 §3, §7).
             let payload = (args.len() == 1)
                 .then(|| args.first())
                 .flatten()
@@ -267,9 +202,6 @@ fn interpret_command(name_node: Node, cmd_node: Node, bytes: &[u8]) -> Option<De
         CommandClass::Source | CommandClass::PathExec => Some(DetectedOperation {
             kind: OperationKind::CodeExecution,
             modifiers: OperationModifiers::default(),
-            // The file's contents are not in the source, so no inline nested
-            // target is recovered (a ScriptFile recursive target is the
-            // orchestration layer's job, like Python `subprocess` on a script).
             certainty: OperandCertainty::Dynamic,
             span,
             payload: None,
@@ -292,8 +224,6 @@ fn interpret_command(name_node: Node, cmd_node: Node, bytes: &[u8]) -> Option<De
     }
 }
 
-/// Build a `CodeExecution` [`DetectedOperation`] for an execution sink, with
-/// certainty `Known` iff a literal payload was recovered (ADR-022 §3/§7).
 fn exec_op(payload: Option<NestedTarget>, span: ByteSpan) -> DetectedOperation {
     let certainty = if payload.is_some() {
         OperandCertainty::Known
@@ -309,16 +239,10 @@ fn exec_op(payload: Option<NestedTarget>, span: ByteSpan) -> DetectedOperation {
     }
 }
 
-/// Build a [`DetectedOperation`] for one `file_redirect`, classifying its
-/// operator. Truncating redirects (`>`, `>|`, `&>`) and append redirects (`>>`,
-/// `&>>`) emit a `FilesystemOverwrite` (truncating ⇒ `destructive_mode`);
-/// input redirects (`<`), file-descriptor duplicates (`>&`, `<&`), and closes
-/// (`>&-`, `<&-`) are not file writes and emit nothing.
 fn interpret_redirect(node: Node) -> Option<DetectedOperation> {
     let destructive_mode = match redirect_operator(node)? {
         ">" | ">|" | "&>" => true,
         ">>" | "&>>" => false,
-        // `<`, `<&`, `>&`, `<&-`, `>&-` — input / fd-dup / close: not a write.
         _ => return None,
     };
     let destination = node.child_by_field_name("destination")?;
@@ -339,9 +263,6 @@ fn interpret_redirect(node: Node) -> Option<DetectedOperation> {
     })
 }
 
-/// The anonymous operator token of a `file_redirect` (`>`, `>>`, `<`, …), read
-/// by walking the node's children for the first whose kind is a known operator.
-/// The operator is an anonymous token, so its node kind is the literal text.
 fn redirect_operator(node: Node) -> Option<&'static str> {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -355,10 +276,6 @@ fn redirect_operator(node: Node) -> Option<&'static str> {
     None
 }
 
-/// The `argument`-field children of a `command` node (the positional
-/// arguments), in source order. Variable assignments, redirects, and the
-/// command name live in other fields and are excluded — only `argument`-field
-/// literals are returned.
 fn command_args(cmd_node: Node) -> Vec<Node> {
     let mut cursor = cmd_node.walk();
     cmd_node
@@ -382,7 +299,6 @@ fn rm_modifiers(args: &[Node], bytes: &[u8]) -> OperationModifiers {
             continue;
         }
         if let Some(rest) = text.strip_prefix('-') {
-            // A lone `-` or a `--` long flag we did not match above is skipped.
             if rest.is_empty() || rest.starts_with('-') {
                 continue;
             }
@@ -398,7 +314,6 @@ fn rm_modifiers(args: &[Node], bytes: &[u8]) -> OperationModifiers {
     mods
 }
 
-/// Whether any argument carries a short flag containing `flag` (e.g. `tee -a`).
 fn has_short_flag(args: &[Node], flag: char, bytes: &[u8]) -> bool {
     for arg in args {
         let Some(text) = word_text(*arg, bytes) else {
@@ -414,15 +329,12 @@ fn has_short_flag(args: &[Node], flag: char, bytes: &[u8]) -> bool {
     false
 }
 
-/// Whether any argument is the long flag `--{flag}` (e.g. `tee --append`).
 fn has_long_flag(args: &[Node], flag: &str, bytes: &[u8]) -> bool {
     let needle = format!("--{flag}");
     args.iter()
         .any(|arg| word_text(*arg, bytes).is_some_and(|text| text == needle.as_str()))
 }
 
-/// The argument immediately following the first argument whose text equals one
-/// of `flags` (e.g. the payload after `bash -c` / `node -e`), or `None`.
 fn arg_after_flag<'a>(args: &[Node<'a>], flags: &[&str], bytes: &[u8]) -> Option<Node<'a>> {
     for (i, arg) in args.iter().enumerate() {
         let Some(text) = word_text(*arg, bytes) else {
@@ -435,12 +347,6 @@ fn arg_after_flag<'a>(args: &[Node<'a>], flags: &[&str], bytes: &[u8]) -> Option
     None
 }
 
-/// Operand certainty for a non-execution command: `Dynamic` if any argument
-/// carries an expansion/substitution (a variable, `$(…)`, `$((…))`, process
-/// substitution, or an expansion inside a string); otherwise `Known`. A
-/// computed operand is never evidence of safety (ADR-022 §3, §7). The
-/// "any expansion ⇒ Dynamic" rule is a safe over-approximation: it never marks
-/// a dynamic operand as `Known`.
 fn operand_certainty(args: &[Node]) -> OperandCertainty {
     if args.iter().any(|a| has_expansion(*a)) {
         OperandCertainty::Dynamic
@@ -449,10 +355,6 @@ fn operand_certainty(args: &[Node]) -> OperandCertainty {
     }
 }
 
-/// Whether `node` is or contains any shell expansion or substitution
-/// (`simple_expansion`, `expansion`, `command_substitution`,
-/// `process_substitution`, `arithmetic_expansion`). Structural — does not
-/// evaluate the expansion.
 fn has_expansion(node: Node) -> bool {
     match node.kind() {
         "simple_expansion"
@@ -466,9 +368,6 @@ fn has_expansion(node: Node) -> bool {
     node.named_children(&mut cursor).any(has_expansion)
 }
 
-/// Recover a literal execution-sink payload from `node` as a [`NestedTarget`]
-/// parsed as `lang`, or `None` when the node carries an expansion (a dynamic
-/// payload is never evaluated, ADR-022 §7) or is not a string literal.
 fn literal_payload(node: Node, bytes: &[u8], lang: SourceLanguage) -> Option<NestedTarget> {
     if has_expansion(node) {
         return None;
@@ -482,7 +381,6 @@ fn literal_payload(node: Node, bytes: &[u8], lang: SourceLanguage) -> Option<Nes
 }
 
 fn literal_content(node: Node, bytes: &[u8]) -> Option<String> {
-    // Source is valid UTF-8 (ASCII-checked at entry); non-UTF-8 cannot occur.
     let text = node.utf8_text(bytes).ok()?;
     match node.kind() {
         "raw_string" | "string" => {
@@ -490,7 +388,6 @@ fn literal_content(node: Node, bytes: &[u8]) -> Option<String> {
             Some(text.get(1..end)?.to_string())
         }
         "ansi_c_string" => {
-            // `$'…'` — strip the leading `$'` and the trailing `'`.
             let end = text.len().checked_sub(1)?;
             Some(text.get(2..end)?.to_string())
         }
@@ -499,11 +396,7 @@ fn literal_content(node: Node, bytes: &[u8]) -> Option<String> {
     }
 }
 
-/// The word bash runs for `node`: quotes removed, escapes and ANSI-C quoting
-/// decoded (`r\m`, `"rm"` and `$'\162m'` all read as `rm`). Text that does
-/// not read as exactly one word is returned as written.
 fn word_text<'a>(node: Node, bytes: &'a [u8]) -> Option<Cow<'a, str>> {
-    // Source is valid UTF-8 (ASCII-checked at entry); non-UTF-8 cannot occur.
     let text = node.utf8_text(bytes).ok()?;
     if !text.contains(['\\', '\'', '"', '$']) {
         return Some(Cow::Borrowed(text));

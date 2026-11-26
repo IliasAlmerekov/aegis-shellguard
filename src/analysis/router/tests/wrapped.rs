@@ -1,8 +1,4 @@
-//! Wrapper-routing tests (#430, #384).
-
 use super::*;
-
-// ── #430: routing sees through a wrapper ────────────────────────────────────
 
 #[test]
 fn a_subshell_wrapped_script_is_routed() {
@@ -99,8 +95,6 @@ fn else_elif_bang_and_time_prefixes_are_all_routed() {
         );
     }
 }
-
-// ── A wrapper with no routable command inside stays empty ──────────────────
 
 #[test]
 fn a_subshell_with_no_interpreter_routes_nothing() {
@@ -203,8 +197,6 @@ fn a_subshell_leading_with_a_non_literal_cd_degrades_its_own_body() {
 
 #[test]
 fn a_subshell_with_a_cd_and_the_command_separated_by_a_semicolon_degrades() {
-    // Only an unbroken `&&` chain trusts a cd's effect on what follows it,
-    // even inside a wrapper body (ADR-022 §6).
     let targets = route("(cd d1; python3 ./sub/evil.py)", &[]);
     assert_eq!(
         targets,

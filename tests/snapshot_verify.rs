@@ -1,5 +1,3 @@
-//! `aegis snapshot verify` and the `aegis rollback` liveness preflight (#215, ADR-052).
-
 mod support;
 
 use std::fs;
@@ -44,7 +42,6 @@ impl Env {
             .unwrap();
     }
 
-    /// Run `aegis <args>`; stdin is null, so there is never a terminal.
     fn run(&self, args: &[&str]) -> Output {
         self.run_with_path(args, None)
     }
@@ -87,13 +84,10 @@ fn code(output: &Output) -> i32 {
     output.status.code().unwrap()
 }
 
-/// A fake `docker` whose `image inspect` fails the way a dead daemon does.
-/// Every call is appended to the returned log.
 fn fake_dead_docker(env: &Env) -> (PathBuf, PathBuf) {
     fake_docker_failing_inspect(env, "Cannot connect to the Docker daemon")
 }
 
-/// A fake `docker` whose `image inspect` fails with `message` on stderr.
 fn fake_docker_failing_inspect(env: &Env, message: &str) -> (PathBuf, PathBuf) {
     let bin_dir = env.home.path().join("fake-bin");
     fs::create_dir(&bin_dir).unwrap();

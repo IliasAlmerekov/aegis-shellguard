@@ -20,8 +20,6 @@ pub(crate) fn validate_custom_patterns(patterns: &[UserPattern]) -> Result<()> {
     aegis_scanner::PatternSet::from_sources(&converted)
         .and_then(aegis_scanner::Scanner::try_new)
         .map(|_| ())
-        // Fold into `Config` (not a distinct variant) so the per-file path
-        // wrapping in `validate_runtime_requirements_for_path` still applies.
         .map_err(|err| ConfigError::Config(err.to_string()))
 }
 
@@ -47,9 +45,6 @@ pub use rules::{
     LanguageAnalysisConfig, PolicyPatternToken, PolicyRule, TrustedAlias, UserPattern, WhenClause,
 };
 
-// Bring submodule items into the `model` namespace so they remain reachable
-// from `model::tests` (which does `pub use super::*`) and from the merge logic
-// below. These stay private aliases — visibility is unchanged.
 use partial::PartialConfig;
 #[cfg(test)]
 use partial::{PartialSupabaseDb, PartialSupabaseSnapshotConfig};
@@ -148,11 +143,6 @@ fn integrity_mode_rank(mode: AuditIntegrityMode) -> u8 {
     }
 }
 
-// Every field's Ratchet direction lives in `model::ratchet` (ADR-013,
-// CONTEXT.md "Ratchet direction"). `merge_layer` below destructures
-// `AegisConfig` and every nested config struct exhaustively and routes each
-// field through its declared direction in one pass, producing the merged
-// config AND the project-layer weakening warnings together.
 use ratchet::SecurityRatchetWarning;
 
 #[derive(Debug, Clone)]

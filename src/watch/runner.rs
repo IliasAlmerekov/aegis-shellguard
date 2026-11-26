@@ -1,5 +1,3 @@
-//! Watch-mode runner: NDJSON stdin/stdout loop.
-
 use std::path::PathBuf;
 
 use tokio::io::{AsyncReadExt, BufReader as TokioBufReader};
@@ -34,29 +32,14 @@ use super::sandbox::{
     emit_watch_audit_error, prepare_watch_command, warn_if_sandbox_unavailable_at_startup,
 };
 
-/// mpsc channel capacity for the stdout/stderr pump tasks.
 const CHANNEL_CAPACITY: usize = 64;
 
-/// Events sent from stdout/stderr pump tasks to the emitter.
 enum WatchEvent {
     Stdout(Vec<u8>),
     Stderr(Vec<u8>),
 }
 
-/// Entry point for `aegis watch`.
-///
-/// Reads NDJSON command frames from stdin until EOF, processes each one
-/// through the full Aegis interception pipeline, and emits NDJSON event
-/// frames to stdout.
-///
-/// Returns the process exit code:
-/// - `0` on clean EOF
-/// - `4` on fatal stdout write failure (broken control channel)
-///
-/// Must be called with a multi-thread tokio runtime so that
-/// `tokio::task::block_in_place` is available for TUI dialog rendering.
 pub async fn run(prepared: &PreparedPlanner, ci_detected: bool) -> i32 {
-    // Snapshot toggle state exactly once at the command-boundary gate.
     if !ci_detected {
         match crate::toggle::status() {
             Ok(crate::toggle::ToggleState::Disabled) => return run_disabled().await,
@@ -76,8 +59,6 @@ pub async fn run(prepared: &PreparedPlanner, ci_detected: bool) -> i32 {
         }
     };
 
-    // ADR-029 §3: one startup warning before the first frame when a
-    // configured Sandbox cannot confine on this host (the WSL1 case).
     warn_if_sandbox_unavailable_at_startup(context).await;
 
     let mut reader = TokioBufReader::new(tokio::io::stdin());
@@ -91,11 +72,10 @@ pub async fn run(prepared: &PreparedPlanner, ci_detected: bool) -> i32 {
             Ok(ReadLineResult::Eof) => return 0,
             Ok(ReadLineResult::Oversized) => {
                 emit_error_or_exit(None, "frame exceeds 1 MiB limit".to_string());
-                // Not audited — no parseable command. Continue loop.
             }
             Ok(ReadLineResult::Line(line)) => {
                 if line.trim().is_empty() {
-                    continue; // skip blank separator lines
+                    continue;
                 }
                 process_frame(line, context, ci_detected).await;
             }
@@ -103,11 +83,6 @@ pub async fn run(prepared: &PreparedPlanner, ci_detected: bool) -> i32 {
     }
 }
 
-/// Entry point for disabled watch passthrough mode.
-///
-/// Frames are still parsed and cwd-validated, but they bypass planning,
-/// prompting, snapshots, and audit writes before executing and streaming the
-/// child command output.
 pub async fn run_disabled() -> i32 {
     let mut reader = TokioBufReader::new(tokio::io::stdin());
 
@@ -131,9 +106,7 @@ pub async fn run_disabled() -> i32 {
     }
 }
 
-/// Process a single input line as a watch-mode frame.
 async fn process_frame(line: String, context: &RuntimeContext, ci_detected: bool) {
-    // ── 1. Parse JSON ─────────────────────────────────────────────────────────
     let frame: InputFrame = match serde_json::from_str(&line) {
         Ok(f) => f,
         Err(e) => {
@@ -145,13 +118,11 @@ async fn process_frame(line: String, context: &RuntimeContext, ci_detected: bool
 
     let id = frame.id.clone();
 
-    // ── 2. Validate cmd ───────────────────────────────────────────────────────
     if frame.cmd.trim().is_empty() {
         emit_error_or_exit(id.clone(), "missing or empty cmd".to_string());
         return;
     }
 
-    // ── 3. Validate and resolve cwd ───────────────────────────────────────────
     let cwd_state = if let Some(ref cwd_str) = frame.cwd {
         let path = PathBuf::from(cwd_str);
         if !path.is_dir() {
@@ -254,7 +225,6 @@ async fn run_watch_plan_with_prompts<C, R>(
     .await;
 }
 
-/// Append an allow rule for `cmd` to the active config; reports, never fails.
 fn persist_allow_rule(cmd: &str, cwd: &std::path::Path) {
     let Some(config_path) = active_config_path_for_append() else {
         eprintln!("warning: cannot persist allow rule: no config file found");
@@ -280,8 +250,6 @@ fn persist_allow_rule(cmd: &str, cwd: &std::path::Path) {
     }
 }
 
-/// `persist_allow` is the seam that writes an `ApproveAlways` rule, so tests
-/// can observe it without touching the process-global config path.
 async fn run_watch_plan_with_persistence<C, R, P>(
     frame: InputFrame,
     context: &RuntimeContext,
@@ -303,8 +271,6 @@ async fn run_watch_plan_with_persistence<C, R, P>(
         ExecutionDisposition::Execute => Decision::AutoApproved,
         ExecutionDisposition::RequiresApproval => {
             let decision = confirmation_prompt(plan.assessment(), plan.explanation());
-            // ADR-031 section 4: the rule waits for the Snapshot pass, and
-            // never exists while Recovery is opted out.
             if decision == PromptDecision::ApproveAlways && cwd.is_none() {
                 eprintln!("warning: cannot persist allow rule: working directory unavailable");
             }
@@ -371,11 +337,6 @@ async fn run_watch_plan_with_persistence<C, R, P>(
         }
     };
 
-    // Snapshot creation is gated on the final approval decision: only
-    // `Approved`/`AutoApproved` commands create snapshots, and they do so
-    // before the audit append and before spawning the (optionally sandboxed)
-    // child process. `Denied`, `Blocked`, and other fail-closed variants append
-    // audit entries with an empty snapshot list.
     match runtime_decision {
         Decision::Approved | Decision::AutoApproved => {
             let coverage = if let Some(cwd) = cwd {
@@ -496,8 +457,6 @@ async fn run_watch_plan_with_persistence<C, R, P>(
             }
         }
         _ => {
-            // `Blocked`, `Pruned` (not a runtime command decision) and future unknown
-            // variants fail closed: audit with no Snapshots, answer blocked, never execute.
             if !append_watch_audit_with_empty_snapshots(
                 context,
                 &plan,
@@ -568,8 +527,6 @@ fn resolve_frame_cwd(frame: &InputFrame, id: &Option<String>) -> Result<PathBuf,
     })
 }
 
-/// The directory to record in the audit entry: absolute, so `aegis rollback
-/// --last` can match it, and `None` when it cannot be made absolute.
 pub(super) fn audit_cwd(cwd: &std::path::Path) -> Option<String> {
     std::path::absolute(cwd)
         .ok()
@@ -604,8 +561,6 @@ fn report_watch_setup_failure(plan: &SetupFailurePlan) {
     }
 }
 
-/// Spawn the child command, stream its output as NDJSON frames, and emit
-/// a final result frame.
 async fn execute_and_emit(cmd: &str, cwd: &std::path::Path, id: Option<String>) {
     let (command, _) = match prepare_watch_command(cmd, None).await {
         Ok(prepared) => prepared,
@@ -617,8 +572,6 @@ async fn execute_and_emit(cmd: &str, cwd: &std::path::Path, id: Option<String>) 
     execute_prepared_and_emit(command, Some(cwd), id).await;
 }
 
-/// Emit an `Error` frame with exit code 4. If stdout is gone, nothing can carry
-/// the error to the client, so exit with the same code.
 fn emit_error_or_exit(id: Option<String>, message: String) {
     if emit_frame(&OutputFrame::Error {
         id,
@@ -657,8 +610,6 @@ pub(super) async fn execute_prepared_and_emit(
 
     let (Some(child_stdout), Some(child_stderr)) = (child.stdout.take(), child.stderr.take())
     else {
-        // Both streams were requested as piped, so this is unreachable in
-        // practice. Fail the request instead of panicking if it ever happens.
         let message = match child.start_kill() {
             Ok(()) => "failed to capture child output".to_owned(),
             Err(e) => format!("failed to capture child output; failed to kill child: {e}"),
@@ -669,7 +620,6 @@ pub(super) async fn execute_prepared_and_emit(
 
     let (tx, mut rx) = mpsc::channel::<WatchEvent>(CHANNEL_CAPACITY);
 
-    // stdout pump task
     let tx_out = tx.clone();
     tokio::spawn(async move {
         let mut buf = vec![0u8; 4096];
@@ -690,7 +640,6 @@ pub(super) async fn execute_prepared_and_emit(
         }
     });
 
-    // stderr pump task — move last sender so channel closes when both tasks drop
     let tx_err = tx;
     tokio::spawn(async move {
         let mut buf = vec![0u8; 4096];
@@ -711,7 +660,6 @@ pub(super) async fn execute_prepared_and_emit(
         }
     });
 
-    // Drain channel and write frames until both pumps exit.
     while let Some(event) = rx.recv().await {
         use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
         let frame = match event {
@@ -725,13 +673,11 @@ pub(super) async fn execute_prepared_and_emit(
             },
         };
         if emit_frame(&frame).is_err() {
-            // Best-effort cleanup before exiting on a broken frame stream.
             let _ = child.kill().await;
             std::process::exit(EXIT_INTERNAL);
         }
     }
 
-    // Reap the child.
     let exit_code = match child.wait().await {
         Ok(status) => status.code().unwrap_or_else(|| {
             #[cfg(unix)]

@@ -1,8 +1,4 @@
-// Project `Allow` rules (top-level or `when.then`) are dropped and warned; `audit.integrity_mode` ratchets strictly (ADR-013).
 
-/// Returns the full ratchet warning list (with requested/kept) for a project
-/// layer. Inlined here so the fragment can inspect `requested`/`kept` without
-/// touching `ratchet_helpers.rs` (whose return type elides them).
 fn full_project_warnings(
     base: &AegisConfig,
     project_path: &std::path::Path,
@@ -21,7 +17,6 @@ fn project_rules_allow_dropped_and_warned() {
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
     fs::create_dir_all(&global_dir).unwrap();
 
-    // No [[rules]] in base — base is fully trusted-default.
     fs::write(global_dir.join(GLOBAL_CONFIG_FILE), "mode = \"Protect\"\n").unwrap();
     fs::write(
         workspace.path().join(PROJECT_CONFIG_FILE),
@@ -71,7 +66,6 @@ fn project_rules_allow_dropped_preserves_base_allow() {
     let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
     let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
 
-    // Base (global) Allow for "git" survives.
     assert!(
         config.rules.iter().any(|r| {
             r.decision == PolicyRuleDecision::Allow
@@ -83,7 +77,6 @@ fn project_rules_allow_dropped_preserves_base_allow() {
         "global-layer [[rules]] Allow must survive the project merge; got rules = {:?}",
         config.rules
     );
-    // Project Allow for "terraform" is dropped.
     assert!(
         !config.rules.iter().any(|r| {
             matches!(
@@ -165,7 +158,6 @@ fn global_rules_allow_honored_no_warning() {
         "[[rules]]\npattern = [\"git\"]\ndecision = \"allow\"\n",
     )
     .unwrap();
-    // Empty project file — ensures a project layer exists but requests nothing.
     fs::write(workspace.path().join(PROJECT_CONFIG_FILE), "").unwrap();
 
     let base = load_global_base(home.path());
@@ -189,7 +181,6 @@ fn project_rules_prompt_with_when_then_allow_dropped_and_warned() {
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
     fs::create_dir_all(&global_dir).unwrap();
 
-    // No [[rules]] in base — base is fully trusted-default.
     fs::write(global_dir.join(GLOBAL_CONFIG_FILE), "mode = \"Protect\"\n").unwrap();
     fs::write(
         workspace.path().join(PROJECT_CONFIG_FILE),
@@ -204,9 +195,6 @@ fn project_rules_prompt_with_when_then_allow_dropped_and_warned() {
     let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
     let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
 
-    // The rule must NOT survive into the merged config — assert no rule whose
-    // `when.then == Allow` is present (covers both `decision = "prompt"` and
-    // `decision = "block"` shapes).
     assert!(
         config.rules.iter().all(|r| {
             r.when
@@ -283,7 +271,6 @@ fn project_audit_integrity_mode_off_weakened_from_chainsha256_kept_and_warned() 
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
     fs::create_dir_all(&global_dir).unwrap();
 
-    // No [audit] in global — base defaults to ChainSha256.
     fs::write(global_dir.join(GLOBAL_CONFIG_FILE), "mode = \"Protect\"\n").unwrap();
     fs::write(
         workspace.path().join(PROJECT_CONFIG_FILE),
@@ -398,7 +385,6 @@ fn global_audit_integrity_mode_off_last_wins_no_warning() {
         "[audit]\nintegrity_mode = \"Off\"\n",
     )
     .unwrap();
-    // Empty project file so a project layer exists but requests nothing.
     fs::write(workspace.path().join(PROJECT_CONFIG_FILE), "").unwrap();
 
     let base = load_global_base(home.path());

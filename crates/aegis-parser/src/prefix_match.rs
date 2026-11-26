@@ -1,17 +1,5 @@
-//! Token-level prefix-pattern matching.
-//!
-//! The algorithm operates purely on a [`PrefixPattern`] (a sequence of
-//! [`PatternToken`]s) and a slice of command tokens. It is decoupled from any
-//! rule or scanner type so it can live at the parser layer; rule types graft
-//! their own metadata on top by delegating here.
-
 use aegis_types::{PatternToken, PrefixPattern};
 
-/// Compare two tokens for prefix-rule equality.
-///
-/// Shell flags (tokens beginning with `-`) are compared case-sensitively;
-/// everything else is compared case-insensitively so that SQL keywords and
-/// command names match regardless of casing.
 fn str_eq_maybe_case(a: &str, b: &str) -> bool {
     if a.starts_with('-') || b.starts_with('-') {
         a == b
@@ -20,15 +8,6 @@ fn str_eq_maybe_case(a: &str, b: &str) -> bool {
     }
 }
 
-/// Check whether any token in `tokens` equals one of `candidates`.
-///
-/// Token comparison follows the same rule as prefix matching: flags are
-/// compared case-sensitively, everything else case-insensitively. Position is
-/// irrelevant; a candidate anywhere in the token list counts.
-///
-/// Used for a prefix rule's negative condition: a token whose presence
-/// suppresses the rule (e.g. `--dry-run`) can appear at any position, so a
-/// positional pattern token cannot express it.
 pub fn contains_any_token(tokens: &[&str], candidates: &[&str]) -> bool {
     candidates.iter().any(|candidate| {
         tokens
@@ -37,38 +16,21 @@ pub fn contains_any_token(tokens: &[&str], candidates: &[&str]) -> bool {
     })
 }
 
-/// Check whether `tokens` matches `pattern` as a token prefix.
-///
-/// Supports [`PatternToken::Single`], [`PatternToken::Alts`],
-/// [`PatternToken::Any`], [`PatternToken::AnyStar`] and
-/// [`PatternToken::ShortFlag`]. The pattern must be a prefix of `tokens`
-/// (extra trailing tokens are allowed). Empty patterns never match.
-///
-/// A `--` token is an ordinary token here: use this on tokens whose quote
-/// boundaries are lost, where a `--` may come from a quoted argument.
 pub fn matches_prefix(pattern: &PrefixPattern, tokens: &[&str]) -> bool {
     matches_prefix_with(pattern, tokens, EndOfOptions::Ignore)
 }
 
-/// Like [`matches_prefix`], but an [`PatternToken::AnyStar`] stops at a `--`
-/// token before a flag element for the programs in [`DOUBLE_DASH_PROGRAMS`]
-/// (ADR-046). Use it only on quote-preserving tokens, where every `--` token
-/// is a word the shell passed on its own.
 #[cfg(test)]
 pub fn matches_prefix_ending_options(pattern: &PrefixPattern, tokens: &[&str]) -> bool {
     matches_prefix_with(pattern, tokens, EndOfOptions::Honor)
 }
 
-/// Whether `--` ends option parsing while matching a prefix pattern.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EndOfOptions {
-    /// Treat `--` as an ordinary token (lossy, quote-stripped tokens).
     Ignore,
-    /// Stop a wildcard at `--` (quote-preserving tokens).
     Honor,
 }
 
-/// [`matches_prefix`] with an explicit [`EndOfOptions`] mode.
 pub fn matches_prefix_with(pattern: &PrefixPattern, tokens: &[&str], mode: EndOfOptions) -> bool {
     if pattern.is_empty() {
         return false;
@@ -109,8 +71,6 @@ fn matches_from(
             matches_from(pattern, &tokens[1..], pat_idx + 1, mode)
         }
         PatternToken::AnyStar => {
-            // `--` ends option parsing, so a flag the next element looks for
-            // is an operand once the wildcard has skipped past one (#484).
             let stop_at_double_dash = mode == EndOfOptions::Honor
                 && ends_options_at_double_dash(pattern)
                 && pattern.get(pat_idx + 1).is_some_and(is_flag_element);
@@ -139,16 +99,12 @@ fn matches_from(
     }
 }
 
-/// Programs checked to treat every word after `--` as an operand (ADR-046).
-/// A program missing here keeps matching a flag after `--`, which fails safe.
 const DOUBLE_DASH_PROGRAMS: &[&str] = &["git", "rm", "rsync", "sgdisk", "wipefs"];
 
-/// Whether the program `pattern` is anchored at is in [`DOUBLE_DASH_PROGRAMS`].
 fn ends_options_at_double_dash(pattern: &PrefixPattern) -> bool {
     matches!(pattern.first(), Some(PatternToken::Single(program)) if DOUBLE_DASH_PROGRAMS.contains(&program.as_ref()))
 }
 
-/// Whether `element` only ever matches an option token such as `-f` or `--force`.
 fn is_flag_element(element: &PatternToken) -> bool {
     match element {
         PatternToken::Single(token) => token.starts_with('-'),
@@ -297,7 +253,6 @@ mod tests {
     #[test]
     fn short_flag_is_case_sensitive() {
         let pattern = vec![single("chmod"), short_flag('R', &["--recursive"])];
-        // `-r` is a mode expression (read), not the recursion flag.
         assert!(!matches_prefix(&pattern, &["chmod", "-r"]));
     }
 
@@ -358,8 +313,6 @@ mod tests {
 
     #[test]
     fn contains_any_token_requires_a_whole_token() {
-        // A candidate embedded in a longer token is not a match: suppression is
-        // token equality, not substring containment.
         assert!(!contains_any_token(
             &["npm", "publish", "--dry-run-please"],
             &["--dry-run"]

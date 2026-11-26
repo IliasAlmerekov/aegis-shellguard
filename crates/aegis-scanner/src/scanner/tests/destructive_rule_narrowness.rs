@@ -1,6 +1,5 @@
 use super::*;
 
-// `wipefs -n -a` is an accepted fail-safe FP because AnyStar lets `-a` follow `-n`.
 #[test]
 fn h3_wipefs_without_all_flag_does_not_fire_fs011() {
     let s = scanner();
@@ -26,7 +25,6 @@ fn h3_wipefs_without_all_flag_does_not_fire_fs011() {
 
 #[test]
 fn h3_wipefs_dry_run_with_all_flag_still_fires_fs011() {
-    // Accepted fail-safe false positive: `-a` after `-n` still prompts.
     assert_assessment_matches_pattern("wipefs -n -a /dev/sda", RiskLevel::Danger, "FS-011");
 }
 
@@ -78,12 +76,6 @@ fn h3_wipefs_short_flags_without_all_flag_do_not_fire_fs011() {
     }
 }
 
-// ── Cloud token-prefix narrowness (CL-011 / CL-012 / CL-013) ───────────────
-//
-// Each cloud rule keys on the destructive flag (`--force`/`--delete`/`-r`),
-// mirroring CL-005. Without that flag the command is an ordinary bucket op and
-// must not raise the rule. `aws s3 sync` and `gsutil rm <obj>` (single object)
-// stay Safe entirely.
 #[test]
 fn h3_aws_s3_rb_without_force_does_not_fire_cl011() {
     let s = scanner();
@@ -233,7 +225,6 @@ fn h3_followup_redis_cli_non_flush_commands_stay_safe() {
     }
 }
 
-// DB-006 must not fire when FLUSHALL is a key argument to GET, not the Redis command.
 #[test]
 fn test_db006_redis_cli_get_flushall_stays_safe() {
     let s = scanner();
@@ -258,12 +249,6 @@ fn test_db006_redis_cli_get_flushall_stays_safe() {
     );
 }
 
-// ── Redirect-regex narrowness (FS-013 / FS-014) ────────────────────────────
-//
-// FS-014 is single-`>` only: an append (`>>`) to a shell-rc file is recoverable
-// and must NOT fire. FS-013 requires the redirect to precede `authorized_keys`,
-// so a *read* that redirects a backup elsewhere (filename before the `>`) stays
-// clear.
 #[test]
 fn h3_rc_append_does_not_fire_fs014() {
     let s = scanner();
@@ -285,8 +270,6 @@ fn h3_rc_append_does_not_fire_fs014() {
 #[test]
 fn h3_authorized_keys_read_redirect_does_not_fire_fs013() {
     let s = scanner();
-    // The filename precedes the `>`, so this is a read/backup, not a write to
-    // authorized_keys.
     let assessment = s.assess("cat ~/.ssh/authorized_keys > /tmp/backup");
     assert!(
         !assessment
@@ -310,8 +293,6 @@ fn h3_authorized_keys_read_redirect_does_not_fire_fs013() {
 #[test]
 fn h3_tee_to_unrelated_path_does_not_fire_fs013() {
     let s = scanner();
-    // The tee branch must require the authorized_keys target; piping into tee
-    // for an ordinary log file is benign.
     let assessment = s.assess("echo line | tee -a /var/log/app.log");
     assert!(
         !assessment

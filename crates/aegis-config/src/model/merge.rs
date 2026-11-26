@@ -1,9 +1,3 @@
-//! `AegisConfig::merge_layer` — the exhaustive one-layer merge (ADR-013,
-//! CONTEXT.md "Ratchet direction"). Split out of `model.rs` to stay under the
-//! 800-line file budget; the rank comparators it uses as `Tighten` `stricter`
-//! functions (`most_restrictive_mode` and friends) stay in `model.rs`, which
-//! this module is a child of and can see them without qualification.
-
 use super::partial::PartialConfig;
 use super::ratchet::{
     self, DeprecatedSandboxFieldWarning, Ratchet, RatchetContext, RatchetSink,
@@ -15,16 +9,6 @@ use super::{
 };
 
 impl AegisConfig {
-    /// Merge one config layer into `base`.
-    ///
-    /// Both structs are destructured exhaustively, field by field, with no
-    /// `..` — adding a field to `AegisConfig` or a nested config struct
-    /// without routing it through a `Ratchet` direction is a compile error,
-    /// not a silent last-wins default. Each field's direction is declared at
-    /// its call site here or in the `ratchet::merge_*`/`ratchet::custom_*`
-    /// function it delegates to for a whole nested struct. The `#[serde(skip)]`
-    /// bookkeeping fields are the exception: a project file cannot write them,
-    /// so they carry the `ratchet::Provenance` marker instead of a direction.
     pub(super) fn merge_layer(
         base: Self,
         overlay: PartialConfig,
@@ -50,12 +34,6 @@ impl AegisConfig {
         (config, ratchet, deprecated)
     }
 
-    /// Same merge as [`Self::merge_layer`], but returns the raw
-    /// [`RatchetSink`] instead of only its warnings. Test-only: the
-    /// schema-coverage test (`model::tests::ratchet_coverage`) reads
-    /// `RatchetSink::touched` — every field path a `Ratchet` direction ran
-    /// for, whether or not it warned — and diffs it against the config's
-    /// JSON schema leaves.
     #[cfg(test)]
     pub(super) fn merge_layer_for_coverage_test(
         base: Self,
@@ -73,9 +51,6 @@ impl AegisConfig {
         location: &str,
     ) -> (Self, RatchetSink) {
         let mut sink = RatchetSink::default();
-        // Provider-target `Custom` rules need to know whether the base
-        // already enabled each provider, computed BEFORE any field below
-        // moves out of `base` (#269 C3-01).
         let ctx = RatchetContext::compute(&base);
 
         let Self {
@@ -139,9 +114,6 @@ impl AegisConfig {
             language_analysis: req_language_analysis,
         } = overlay;
 
-        // Provenance bookkeeping peeks at the raw requested retention values
-        // (both `Option<T>` and `Copy`) before `req_audit` moves into
-        // `ratchet::merge_audit` below.
         let req_max_file_size_bytes = req_audit.max_file_size_bytes;
         let req_retention_files = req_audit.retention_files;
 
@@ -149,11 +121,6 @@ impl AegisConfig {
         let allowlist_count = req_allowlist.len();
         let blocklist_count = req_blocklist.len();
 
-        // Append direction: trusted entries first, project entries after.
-        // Concatenation cannot remove a trusted entry, so there is nothing to
-        // ratchet — `touch` still records the path for the schema-coverage
-        // test. Path names follow the TOML/schema names (`allow`/`block`),
-        // not the Rust field names (`allowlist`/`blocklist`).
         sink.touch("custom_patterns");
         let custom_patterns = ratchet::append(base_custom_patterns, req_custom_patterns);
         let custom_pattern_layers =
@@ -338,8 +305,6 @@ impl AegisConfig {
             mode,
             custom_patterns,
             custom_pattern_layers,
-            // Stamped by `AegisConfig::load_for_internal` once every layer
-            // has merged, not per layer here.
             source_current_dir: None,
             source_home_dir: None,
             allowlist,

@@ -1,13 +1,7 @@
-//! Strict SemVer parsing and comparison for the update notice.
-//!
-//! Every entry point here fails closed: a version that does not parse never
-//! recommends an update, it just disables the notice for that comparison.
-
 use semver::Version;
 
 use super::error::UpdateError;
 
-/// Parse `raw` as a strict SemVer 2.0 version.
 pub fn parse_strict(raw: &str) -> Result<Version, UpdateError> {
     Version::parse(raw.trim()).map_err(|err| UpdateError::InvalidVersion {
         version: raw.to_string(),
@@ -15,9 +9,6 @@ pub fn parse_strict(raw: &str) -> Result<Version, UpdateError> {
     })
 }
 
-/// `Some(latest)` when `latest` strictly outranks `installed`; `None` when
-/// `latest` is equal to, older than, or fails to parse against `installed`
-/// (fail closed — a malformed registry version never triggers a notice).
 pub fn newer_version(installed: &str, latest: &str) -> Option<Version> {
     let installed = parse_strict(installed).ok()?;
     let latest = parse_strict(latest).ok()?;

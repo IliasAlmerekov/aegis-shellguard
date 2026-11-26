@@ -1,11 +1,7 @@
-//! Rollback under a hostile project `.aegis.toml` loaded through the real
-//! layered config loader (#269).
-
 use super::*;
 
 #[tokio::test]
 async fn hostile_project_overlay_cannot_disable_rollback_target_match_check() {
-    // Load via `AegisConfig::load_for` so the project ratchet is exercised end-to-end (#269).
     let temp_dir = TempDir::new().unwrap();
     let manifest_path = write_phase1_manifest_fixture(&temp_dir, &valid_db_dump_checksum());
     let pg_dump = stub_bin(temp_dir.path(), "pg_dump", "exit 0");
@@ -17,9 +13,6 @@ async fn hostile_project_overlay_cannot_disable_rollback_target_match_check() {
     );
 
     let home_dir = TempDir::new().unwrap();
-    // aegis-config's GLOBAL_CONFIG_DIR/GLOBAL_CONFIG_FILE are private to that
-    // crate's `model` module, so this path is spelled out by hand rather than
-    // imported.
     let global_config_dir = home_dir.path().join(".config/aegis");
     fs::create_dir_all(&global_config_dir).unwrap();
     fs::write(
@@ -50,7 +43,6 @@ async fn hostile_project_overlay_cannot_disable_rollback_target_match_check() {
     let effective_config =
         aegis_config::AegisConfig::load_for(workspace_dir.path(), Some(home_dir.path())).unwrap();
 
-    // The ratchet must keep the check on despite the hostile request.
     assert!(
         effective_config
             .supabase_snapshot

@@ -14,8 +14,6 @@ fn safe_with_empty_input_returns_approve() {
     assert_eq!(decision, PromptDecision::Approve);
 }
 
-// ── Highlighting ──────────────────────────────────────────────────────────
-
 #[test]
 fn highlighting_wraps_match_in_ansi() {
     let p = make_match_with_text("FS-001", RiskLevel::Danger, r"rm\s+-rf", "desc", "rm -rf");
@@ -111,19 +109,15 @@ fn highlighting_no_match_returns_unchanged() {
 
 #[test]
 fn highlighting_merges_overlapping_ranges() {
-    // Two patterns that overlap on "rm -rf"
     let p1 = make_match_with_text("A", RiskLevel::Danger, r"rm\s+-rf /", "desc", "rm -rf /");
     let p2 = make_match_with_text("B", RiskLevel::Danger, r"rm\s+-rf", "desc", "rm -rf");
     let result = build_highlighted_command("rm -rf /home", &[p1, p2]);
-    // Should not have double ANSI codes inside the overlap.
     let opens = result.matches("\x1b[1;31m").count();
     assert_eq!(
         opens, 1,
         "overlapping ranges must be merged into one highlight span"
     );
 }
-
-// ── /dev/tty helpers ──────────────────────────────────────────────────────
 
 #[test]
 fn tty_unavailable_safe_is_approved() {
@@ -185,8 +179,6 @@ fn tty_unavailable_block_is_denied() {
         "Block must be denied when /dev/tty is unavailable"
     );
 }
-
-// ── Justification rendering ───────────────────────────────────────────────
 
 #[test]
 fn render_dialog_shows_justification_when_present() {
@@ -362,8 +354,6 @@ fn deny_always_is_not_approved_by_show_confirmation_with_input() {
         "DenyAlways must not be treated as approved by show_confirmation_with_input"
     );
 }
-
-// ── Git target disclosure (#471) ──────────────────────────────────────────
 
 fn dialog_text_with_git_targets(targets: Vec<aegis_explanation::GitTargetExplanation>) -> String {
     let assessment = make_assessment("git -C \"$X\" filter-branch", RiskLevel::Danger, vec![]);

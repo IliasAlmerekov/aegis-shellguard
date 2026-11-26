@@ -67,7 +67,6 @@ fn effective_program_resolves_through_stacked_launcher_prefixes() {
 
 #[test]
 fn exact_registry_match_wins_over_a_conflicting_trusted_alias() {
-    // ADR-022 §6: explicit interpreter takes precedence over trusted aliases.
     let targets = route(r#"python3 -c "print(6)""#, &[("python3", "bash")]);
     assert_eq!(
         targets,
@@ -92,7 +91,6 @@ fn explicit_interpreter_with_file_argument_is_a_script_file_route() {
 
 #[test]
 fn inline_flag_wins_over_a_file_argument_on_the_same_line() {
-    // ADR-022 §6: inline form takes precedence over a trailing file arg.
     let targets = route(r#"python3 -c "print(7)" ignored.py"#, &[]);
     assert_eq!(
         targets,
@@ -105,7 +103,6 @@ fn inline_flag_wins_over_a_file_argument_on_the_same_line() {
 
 #[test]
 fn a_file_argument_before_the_inline_flag_ends_interpreter_option_parsing() {
-    // ADR-022 §6: tokens after the script file belong to the script's argv, not the interpreter.
     let targets = route(r#"python3 malicious.py -c "print(1)""#, &[]);
     assert_eq!(
         targets,
@@ -295,7 +292,6 @@ fn pipeline_into_a_non_interpreter_yields_no_targets() {
 
 #[test]
 fn heredoc_written_to_a_file_is_reused_when_the_same_command_executes_it() {
-    // ADR-022 §6: reuse the in-hand heredoc body directly.
     let command = "cat > script.py <<'EOF' && python3 script.py\nprint(1)\nEOF";
     let targets = route(command, &[]);
     assert_eq!(
@@ -514,7 +510,6 @@ fn cd_with_command_substitution_degrades_a_relative_script_file() {
 
 #[test]
 fn dynamic_cd_preserves_degradation_for_a_relative_direct_exec() {
-    // ADR-022 §6: relative DirectExec under unknown cwd must degrade untyped.
     let targets = route("cd -- $(mktemp -d) && ./script.py", &[]);
     assert_eq!(
         targets,
@@ -536,7 +531,6 @@ fn direct_exec_of_a_relative_path_is_routed_pending_shebang_verification() {
 
 #[test]
 fn route_never_touches_the_filesystem_for_a_script_file_target() {
-    // Behavioral pin only: a nonexistent path yields the same route as an existing one.
     assert_eq!(
         route("python3 /this/directory/does/not/exist/script.py", &[]),
         vec![RoutedTarget::ScriptFile {
@@ -608,7 +602,6 @@ async fn resolve_drops_a_direct_exec_target_with_no_verified_shebang() {
 
 #[tokio::test]
 async fn resolve_for_analysis_treats_an_oversized_direct_exec_target_as_not_applicable() {
-    // Compiled binaries invoked by path must not degrade (#345).
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("actionlint");
     std::fs::write(&path, vec![0xffu8; 2048]).unwrap();
@@ -663,7 +656,6 @@ async fn resolve_degrades_an_oversized_script_file() {
     );
 }
 
-/// The degradation every unclaimed-interpreter net test expects.
 fn unresolved_dynamic() -> RoutedTarget {
     RoutedTarget::Unresolved {
         reason: DegradationReason::DynamicSource,

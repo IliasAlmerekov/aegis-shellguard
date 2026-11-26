@@ -116,24 +116,15 @@ fn npm_updater_should_fetch_all_sidecars_and_fail_closed() {
         script.contains("checksums.json"),
         "npm updater must write packaging/npm/checksums.json"
     );
-    // The updater is the only producer of the staged notice, and the failure
-    // would surface in `publish-npm` — after the GitHub Release is already
-    // public. Guard the link at PR time.
     assert!(
         script.contains("stage-npm-notices.sh"),
         "npm updater must invoke the third-party notice staging script"
     );
 }
 
-/// The npm channel distributes the same statically linked Tree-sitter binary as
-/// the GitHub Release assets, so it must carry the same MIT attribution. npm
-/// cannot pack files above the package root, so the notice is staged as a
-/// generated copy. This exercises the staging script for real — it is split out
-/// of `update-npm-package.sh` precisely so it runs without network access.
 #[test]
 fn npm_notice_staging_should_copy_the_root_notice_verbatim() {
     let staged_dir = tempdir("stage-npm-notices-ok");
-    // Nested, to prove the script creates the destination directory itself.
     let staged = staged_dir.join("nested").join("THIRD_PARTY_NOTICES.md");
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("THIRD_PARTY_NOTICES.md");
 
@@ -152,14 +143,6 @@ fn npm_notice_staging_should_copy_the_root_notice_verbatim() {
     let _ = std::fs::remove_dir_all(&staged_dir);
 }
 
-/// The two cases above override both paths, so they never exercise the CWD-relative
-/// defaults that release automation actually uses. This runs the script bare from
-/// the repo root and checks it lands on `packaging/npm/`.
-///
-/// It must leave the staged file exactly as it found it. `release.yml` runs
-/// `update-npm-package.sh` (which stages the notice) *before* `cargo test --test
-/// npm_package`, and the `npm pack` verification after it — a test that deleted
-/// the staged copy would fail every release.
 #[test]
 fn npm_notice_staging_should_default_to_the_package_directory() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -185,14 +168,10 @@ fn npm_notice_staging_should_default_to_the_package_directory() {
     );
 
     if !was_staged {
-        // Only clean up what this test created; a copy staged by release
-        // automation must survive, or the pack verification after us breaks.
         let _ = std::fs::remove_file(&default_destination);
     }
 }
 
-/// Fail closed: a missing root notice must abort before publish, not warn. A
-/// fail-open staging step would publish the npm channel unattributed.
 #[test]
 fn npm_notice_staging_should_fail_closed_when_the_root_notice_is_absent() {
     let missing_dir = tempdir("stage-npm-notices-missing");
@@ -212,9 +191,6 @@ fn npm_notice_staging_should_fail_closed_when_the_root_notice_is_absent() {
     let _ = std::fs::remove_dir_all(&missing_dir);
 }
 
-/// `files` in package.json is an allowlist, so packing the staged notice needs an
-/// explicit entry; CI additionally greps `npm pack --dry-run` output to prove it
-/// reached the tarball. Both halves must stay in place.
 #[test]
 fn npm_package_and_release_workflow_should_pack_and_verify_the_notice() {
     let package_json = repo_file("packaging/npm/package.json");
@@ -235,8 +211,6 @@ fn npm_package_and_release_workflow_should_pack_and_verify_the_notice() {
 }
 
 fn tempdir(label: &str) -> std::path::PathBuf {
-    // Each label is used by exactly one test; the pid keeps concurrent
-    // `cargo test` runs on one host from colliding. Removed on success.
     let dir = std::env::temp_dir().join(format!("aegis-{label}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("temp dir should be creatable");
@@ -308,9 +282,6 @@ fn npm_installer_should_fail_closed_and_support_test_overrides() {
 fn npm_installer_should_follow_github_release_redirects() {
     let installer = repo_file("packaging/npm/scripts/install.js");
 
-    // GitHub release asset URLs respond with 302 -> release-assets.githubusercontent.com;
-    // Node's https.get does not follow redirects automatically, so the installer
-    // must follow the Location header itself to be functional on real installs.
     assert!(
         installer.contains("headers.location"),
         "installer must follow the Location header on GitHub release redirects"
@@ -348,7 +319,6 @@ fn npm_installer_should_best_effort_install_agent_hooks_without_failing_install(
         installer.contains("If you install Claude Code or Codex later, run:"),
         "npm postinstall must print actionable next steps when no agent dir exists"
     );
-    // Best-effort: never create agent dirs and never crash the install.
     assert!(
         !installer.contains("mkdirSync(claudeDir") && !installer.contains("mkdirSync(codexDir"),
         "npm postinstall must not create agent directories just to install hooks"

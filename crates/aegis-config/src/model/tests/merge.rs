@@ -2,10 +2,6 @@ use super::*;
 
 #[test]
 fn sandbox_project_overlay_does_not_reset_global_allow_network() {
-    // When global config sets [sandbox] allow_network = true (a trusted opt-in),
-    // and the project config sets a different sandbox field (even a legacy one
-    // like required = true), the per-field merge must keep allow_network = true
-    // from the global layer.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -195,14 +191,10 @@ description = "Project build dir removal"
 
     let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
 
-    // project cannot weaken global mode; Strict is kept.
     assert_eq!(config.mode, Mode::Strict);
-    // global wins for auto_snapshot_git (project didn't set it)
     assert!(!config.auto_snapshot_git);
-    // allowlists are merged: global first, then project
     assert_eq!(config.allowlist[0].pattern, "global-safe-cmd");
     assert_eq!(config.allowlist[1].pattern, "project-safe-cmd");
-    // patterns are merged: global first, then project
     assert_eq!(config.custom_patterns.len(), 2);
     assert_eq!(config.custom_patterns[0].id, "GLB-001");
     assert_eq!(config.custom_patterns[1].id, "PRJ-001");
@@ -289,14 +281,8 @@ fn deprecated_sandbox_fields_are_omitted_from_serialization() {
     assert!(!toml_str.contains("required"));
 }
 
-// --- partial override cases ---
-
 #[test]
 fn global_mode_and_snapshot_used_when_project_omits_them() {
-    // Global sets mode and auto_snapshot_docker; the project omits them. The
-    // global values must survive into the final config. (The project file is
-    // present but empty, exercising the project layer without overriding the
-    // global snapshot flags.)
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -311,8 +297,8 @@ fn global_mode_and_snapshot_used_when_project_omits_them() {
 
     let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
 
-    assert_eq!(config.mode, Mode::Strict); // from global
-    assert!(!config.auto_snapshot_docker); // from global
+    assert_eq!(config.mode, Mode::Strict);
+    assert!(!config.auto_snapshot_docker);
 }
 
 #[test]
@@ -383,10 +369,6 @@ retention_files = 0
 
 #[test]
 fn layer_with_no_new_custom_patterns_still_gets_its_own_validation() {
-    // Issue #319 change 3: the per-layer custom-pattern scanner rebuild is
-    // skipped for a layer that adds no new patterns, but that must not skip
-    // the layer's own general validation (audit, allowlist, ...) — only the
-    // now-redundant pattern rebuild.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -427,7 +409,6 @@ reason = "unscoped rule contributed by a layer with no custom patterns"
     assert!(message.contains("must declare cwd or user scope"));
 }
 
-/// Invalid custom patterns surface when `RuntimeContext` builds the scanner, not at `load_for` (#399).
 #[test]
 fn invalid_custom_pattern_config_no_longer_fails_at_load_for() {
     let workspace = TempDir::new().unwrap();
@@ -523,8 +504,6 @@ expires_at = "2030-01-01T00:00:00Z"
 
 #[test]
 fn no_home_dir_loads_project_config_only() {
-    // When HOME is unavailable there is no global config to look for; the
-    // project config and built-in defaults must still be applied correctly.
     let workspace = TempDir::new().unwrap();
     fs::write(
         workspace.path().join(PROJECT_CONFIG_FILE),
@@ -535,16 +514,10 @@ fn no_home_dir_loads_project_config_only() {
     let config = AegisConfig::load_for(workspace.path(), None).unwrap();
 
     assert_eq!(config.mode, Mode::Protect);
-    // auto_snapshot_git defaults to true; the project's `false` is a weakening
-    // attempt that the C3 ratchet ignores (no global layer to override), so the
-    // stricter default survives. `mode = "Audit"` being ratcheted back to
-    // `Protect` above already proves the project file was loaded.
     assert!(config.auto_snapshot_git);
-    assert!(!config.auto_snapshot_docker); // default is false (opt-in)
+    assert!(!config.auto_snapshot_docker);
     assert!(config.allowlist.is_empty());
 }
-
-// --- malformed project config ---
 
 #[test]
 fn allowlist_override_level_defaults_warn_and_serializes() {

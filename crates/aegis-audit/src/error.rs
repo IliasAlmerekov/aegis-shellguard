@@ -1,50 +1,27 @@
-//! Typed error for all audit I/O and serialization operations.
-
-/// Error returned by [`crate::AuditLogger`] operations.
 #[derive(thiserror::Error, Debug)]
 #[non_exhaustive]
 pub enum AuditError {
-    /// An audit artifact could not be validated or made owner-only.
     #[error("audit artifact '{path}' is insecure: {detail}")]
-    InsecureAuditArtifact {
-        /// Path whose filesystem policy check failed.
-        path: String,
-        /// Specific reason the artifact was rejected.
-        detail: String,
-    },
-    /// Wrapped I/O error.
+    InsecureAuditArtifact { path: String, detail: String },
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
-    /// The active log could not be written to at its configured path.
-    ///
-    /// Carries the path alongside the underlying I/O failure so the printed
-    /// error names the unwritable location and the override that unblocks
-    /// it, instead of a bare `io error: ...` with no path.
     #[error(
         "audit log at '{path}' could not be written: {source} (set AEGIS_AUDIT_PATH to point at a writable location)"
     )]
     WriteFailed {
-        /// Audit log path Aegis attempted to write to.
         path: String,
-        /// Underlying I/O failure.
         #[source]
         source: std::io::Error,
     },
-    /// A line in the persisted audit log could not be parsed as a valid entry.
     #[error("audit error: {}", describe_parse_failure(path, line, source))]
     Parse {
-        /// Audit log file that contains the unparsable line.
         path: String,
-        /// Line number within the file, when the caller knows it.
         line: Option<u64>,
-        /// Underlying JSON parse failure.
         #[source]
         source: serde_json::Error,
     },
-    /// An in-memory audit payload could not be serialized to JSON.
     #[error("audit error: failed to serialize audit integrity payload: {source}")]
     Serialize {
-        /// Underlying JSON serialization failure.
         #[source]
         source: serde_json::Error,
     },

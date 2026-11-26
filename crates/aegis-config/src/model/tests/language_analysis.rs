@@ -352,10 +352,6 @@ fn duplicate_trusted_alias_entries_are_rejected() {
 
 #[test]
 fn project_layer_repeating_the_identical_trusted_global_alias_set_does_not_warn() {
-    // The project's request is dropped regardless (kept = base, always) — but
-    // when it happens to match the trusted global set exactly, `kept ==
-    // requested` and the shared `push_ratchet_warning` guard correctly stays
-    // quiet, same as every other ratchet field.
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
     fs::create_dir_all(&global_dir).unwrap();

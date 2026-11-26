@@ -1,21 +1,6 @@
-//! Reading one bash word the way bash runs it: quotes removed, backslash
-//! escapes and ANSI-C quoting (`$'...'`) decoded.
-//!
-//! This crate is a leaf (ADR-022 §8) and cannot call the `aegis-parser`
-//! tokenizer, so this module carries its own copy of the tokenizer's word
-//! rules. `tests/bash_word_parity.rs` in the `aegis` crate runs both readers
-//! over a shared table and an exhaustive set of short inputs, so the copies
-//! cannot drift apart.
-
 use std::iter::Peekable;
 use std::str::Chars;
 
-/// The word bash runs for `text` (`r\m`, `"rm"` and `$'\162m'` all read as
-/// `rm`), or `None` when `text` does not read as exactly one word.
-///
-/// Matches the `aegis-parser` tokenizer: an ANSI-C piece that never closes
-/// keeps its raw spelling, a NUL ends the decoded piece, and an unquoted
-/// `$IFS` / `${IFS}` separates words.
 pub fn shell_word(text: &str) -> Option<String> {
     let mut words = Words::default();
     let mut chars = text.chars().peekable();
@@ -28,10 +13,7 @@ pub fn shell_word(text: &str) -> Option<String> {
             '\'' if !double => single = !single,
             '"' if !single => double = !double,
             '\\' if !single => match chars.next() {
-                // A backslash-newline is a line continuation: both go.
                 Some('\n') | None => {}
-                // Inside double quotes the backslash stays unless it escapes
-                // one of the characters bash gives it meaning before.
                 Some(next) if double && !matches!(next, '$' | '`' | '"' | '\\') => {
                     words.current.push('\\');
                     words.current.push(next);
@@ -43,7 +25,6 @@ pub fn shell_word(text: &str) -> Option<String> {
                 chars.next();
                 words.separator("&&");
             }
-            // `>|` / `<|` is a redirect, not a pipe.
             '|' if !quoted && ends_with_redirect(&words.current) => words.current.push(ch),
             '|' if !quoted => {
                 if chars.peek() == Some(&'|') {
@@ -58,8 +39,6 @@ pub fn shell_word(text: &str) -> Option<String> {
                 chars.next();
                 words.current.push_str(&read_ansi_c_quoted(&mut chars));
             }
-            // `$"..."` is locale translation; without a catalog bash reads it
-            // as `"..."`, so the `$` is dropped.
             '$' if !quoted && chars.peek() == Some(&'"') => {}
             '$' if !quoted => match ifs_marker_len(&chars) {
                 Some(len) => {
@@ -83,9 +62,6 @@ pub fn shell_word(text: &str) -> Option<String> {
     }
 }
 
-/// Words read so far, separators (`;`, `&&`, `|`, `||`) counted as words as
-/// the tokenizer does: only the first is kept, since the caller wants exactly
-/// one.
 #[derive(Default)]
 struct Words {
     current: String,
@@ -94,7 +70,6 @@ struct Words {
 }
 
 impl Words {
-    /// End the word being read, if any.
     fn split(&mut self) {
         if !self.current.is_empty() {
             let word = std::mem::take(&mut self.current);
@@ -102,7 +77,6 @@ impl Words {
         }
     }
 
-    /// End the word being read, then record `sep` as a word of its own.
     fn separator(&mut self, sep: &str) {
         self.split();
         self.push(sep.to_string());
@@ -116,8 +90,6 @@ impl Words {
     }
 }
 
-/// Whether `current` ends in an unescaped `>` or `<`, so a following `|`
-/// belongs to a redirect.
 fn ends_with_redirect(current: &str) -> bool {
     let mut rev = current.trim_end().chars().rev();
     match rev.next() {
@@ -126,8 +98,6 @@ fn ends_with_redirect(current: &str) -> bool {
     }
 }
 
-/// The length of a literal `$IFS` (4) or `${IFS}` (6) starting at the `$`
-/// just consumed; `chars` is not advanced.
 fn ifs_marker_len(chars: &Peekable<Chars<'_>>) -> Option<usize> {
     let mut ahead = chars.clone();
     match ahead.next()? {
@@ -145,10 +115,6 @@ fn ifs_marker_len(chars: &Peekable<Chars<'_>>) -> Option<usize> {
     }
 }
 
-/// Decode one ANSI-C quoted piece; `chars` sits just past the opening `$'`.
-/// Returns the raw spelling (`$'` included) when the piece never closes.
-/// Follows bash's `ansicstr`: a NUL ends the decoded text, and bytes that are
-/// not valid UTF-8 are replaced.
 fn read_ansi_c_quoted(chars: &mut Peekable<Chars<'_>>) -> String {
     let mut raw = String::from("$'");
     let mut bytes = Vec::new();
@@ -179,8 +145,6 @@ fn read_ansi_c_quoted(chars: &mut Peekable<Chars<'_>>) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
-/// Decode the escape after a backslash into bytes, recording consumed
-/// characters in `raw`.
 fn read_escape(chars: &mut Peekable<Chars<'_>>, raw: &mut String) -> Vec<u8> {
     let Some(esc) = chars.next() else {
         return b"\\".to_vec();
@@ -211,7 +175,6 @@ fn read_escape(chars: &mut Peekable<Chars<'_>>, raw: &mut String) -> Vec<u8> {
                 value = value * 8 + digit;
                 take_into(chars, raw);
             }
-            // `\777` keeps only the low byte, as bash does.
             vec![(value & 0xff) as u8]
         }
         'x' => match read_hex(chars, raw, 2) {
@@ -233,14 +196,12 @@ fn read_escape(chars: &mut Peekable<Chars<'_>>, raw: &mut String) -> Vec<u8> {
     }
 }
 
-/// Move the next character of `chars` into `raw`.
 fn take_into(chars: &mut Peekable<Chars<'_>>, raw: &mut String) {
     if let Some(c) = chars.next() {
         raw.push(c);
     }
 }
 
-/// Read up to `max` hex digits; `None` when none follow.
 fn read_hex(chars: &mut Peekable<Chars<'_>>, raw: &mut String, max: usize) -> Option<u32> {
     let mut value: Option<u32> = None;
     for _ in 0..max {
@@ -253,8 +214,6 @@ fn read_hex(chars: &mut Peekable<Chars<'_>>, raw: &mut String, max: usize) -> Op
     value
 }
 
-/// `\cX`: the control character for `X` (`\c?` is DEL). After `\c\` bash
-/// drops a second backslash and keeps any other character.
 fn read_control(chars: &mut Peekable<Chars<'_>>, raw: &mut String) -> Vec<u8> {
     match chars.peek().copied() {
         Some(c) if c.is_ascii() && c != '\'' => {

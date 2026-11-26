@@ -1,10 +1,7 @@
-//! Trailing redirections on wrappers and compound-command function bodies (#384).
-
 use super::*;
 
 #[test]
 fn route_does_not_panic_on_the_fuzzed_unicode_whitespace_command() {
-    // Kept byte-for-byte from `fuzz/corpus/router/unicode-next-line.txt`: U+0085 (NEL) is 2-byte UTF-8 whitespace.
     let command = concat!(
         "ca \u{85}\u{18}stiprc\u{fffd}",
         "||||||||||||||||||./scrip\n",
@@ -20,8 +17,6 @@ fn evil_py_script_file() -> RoutedTarget {
         path: PathBuf::from("./evil.py"),
     }
 }
-
-// ── a trailing redirect on a brace group or coprocess still routes the body ─
 
 #[test]
 fn a_brace_group_with_a_trailing_redirect_routes_its_body() {
@@ -46,8 +41,6 @@ fn an_unnamed_coproc_with_a_trailing_redirect_routes_its_body() {
         vec![evil_py_script_file()]
     );
 }
-
-// ── a function body may be any compound command, with or without a redirect ─
 
 #[test]
 fn a_posix_function_with_a_space_before_its_parens_routes_its_body() {
@@ -96,8 +89,6 @@ fn a_posix_function_with_a_case_body_routes_its_body() {
         vec![evil_py_script_file()]
     );
 }
-
-// ── benign variants stay auto-approved ──────────────────────────────────────
 
 #[test]
 fn a_benign_brace_group_with_a_trailing_redirect_stays_unrouted() {

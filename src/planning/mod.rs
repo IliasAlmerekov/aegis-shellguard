@@ -1,5 +1,3 @@
-//! Orchestration layer that wraps the pure policy engine.
-
 pub mod core;
 pub mod git_target;
 #[cfg(test)]

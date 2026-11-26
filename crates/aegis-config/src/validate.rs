@@ -1,5 +1,3 @@
-//! Config validation: layered merge, custom patterns, allowlist rules.
-
 use std::path::Path;
 
 use serde::Serialize;
@@ -19,29 +17,20 @@ const PROJECT_CONFIG_FILE: &str = ".aegis.toml";
 const GLOBAL_CONFIG_DIR: &str = ".config/aegis";
 const GLOBAL_CONFIG_FILE: &str = "config.toml";
 
-/// A single config validation issue.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ValidationIssue {
-    /// Stable machine-readable issue code.
     pub code: &'static str,
-    /// Human-readable issue detail.
     pub message: String,
-    /// Best-effort location of the issue.
     pub location: String,
 }
 
-/// Aggregated validation output.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ValidationReport {
-    /// True when there are no hard errors.
     pub valid: bool,
-    /// Hard validation failures.
     pub errors: Vec<ValidationIssue>,
-    /// Advisory warnings.
     pub warnings: Vec<ValidationIssue>,
 }
 
-/// Source-map metadata used to enrich issue locations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigSourceMap {
     allowlist_locations: Vec<String>,
@@ -52,13 +41,11 @@ pub struct ConfigSourceMap {
 }
 
 impl ConfigSourceMap {
-    /// Build a source map for the effective config.
     #[cfg(test)]
     pub fn for_config(config: &AegisConfig) -> Self {
         Self::for_config_with_paths(config, None, None)
     }
 
-    /// Build a source map for the effective config using resolved config paths.
     pub fn for_config_with_paths(
         config: &AegisConfig,
         current_dir: Option<&Path>,
@@ -128,8 +115,6 @@ impl ConfigSourceMap {
             .unwrap_or_else(|| format!("blocklist[{index}]"))
     }
 
-    /// Location string for `custom_patterns[index]` — which config layer
-    /// contributed it, and that layer's resolved file path when known.
     pub fn custom_pattern_location(&self, index: usize) -> String {
         self.custom_pattern_locations
             .get(index)
@@ -146,12 +131,10 @@ impl ConfigSourceMap {
     }
 }
 
-/// Path of the retired `<home>/.aegis/policy.star` file.
 fn policy_star_path(home: &Path) -> std::path::PathBuf {
     home.join(".aegis").join("policy.star")
 }
 
-/// Text of the unsupported-`policy.star` error, shared by every caller.
 fn unsupported_policy_star_message(path: &Path) -> String {
     format!(
         "policy.star at {} is no longer supported: Aegis reads Policy rules only from [[rules]] in aegis.toml. Move the rules there and delete the file.",
@@ -159,11 +142,6 @@ fn unsupported_policy_star_message(path: &Path) -> String {
     )
 }
 
-/// Fail closed when `<home>/.aegis/policy.star` exists (ADR-028).
-///
-/// The policy DSL is removed; the file is never ignored or downgraded
-/// to a warning. Runtime construction and `aegis config validate` both call
-/// this so their check and text stay identical.
 pub fn reject_policy_star(home: Option<&Path>) -> Result<(), ConfigError> {
     match home.map(policy_star_path) {
         Some(path) => reject_policy_star_at(&path),
@@ -171,7 +149,6 @@ pub fn reject_policy_star(home: Option<&Path>) -> Result<(), ConfigError> {
     }
 }
 
-/// Fail closed when the given `policy.star` path exists (ADR-028).
 pub fn reject_policy_star_at(path: &Path) -> Result<(), ConfigError> {
     if path.exists() {
         return Err(ConfigError::Config(unsupported_policy_star_message(path)));
@@ -179,7 +156,6 @@ pub fn reject_policy_star_at(path: &Path) -> Result<(), ConfigError> {
     Ok(())
 }
 
-/// Validate file-backed config using the same layer-by-layer checkpoints as runtime loading.
 pub fn validate_config_layers(current_dir: &Path, home_dir: Option<&Path>) -> ValidationReport {
     let mut report = ValidationReport {
         valid: true,
@@ -187,8 +163,6 @@ pub fn validate_config_layers(current_dir: &Path, home_dir: Option<&Path>) -> Va
         warnings: Vec::new(),
     };
 
-    // Seeded first: every later return path keeps it, and `merge_report`
-    // derives `valid` from the error list.
     if let Err(err) = reject_policy_star(home_dir) {
         report.valid = false;
         report.errors.push(ValidationIssue {
@@ -211,8 +185,6 @@ pub fn validate_config_layers(current_dir: &Path, home_dir: Option<&Path>) -> Va
         merge_report(&mut report, validate_config(&merged, &source_map));
     } else {
         for layer in layer_paths {
-            // One merge produces both the next config and the layer warnings
-            // (ratchet weakening + deprecated sandbox keys) — no separate re-parse.
             match AegisConfig::merge_layer_path_with_all_warnings(merged, &layer) {
                 Ok((next, warnings, deprecated_sandbox)) => {
                     for warning in warnings {
@@ -285,7 +257,6 @@ pub fn validate_config_layers(current_dir: &Path, home_dir: Option<&Path>) -> Va
     report
 }
 
-/// Render a typed ceiling warning as a `config validate` issue.
 pub fn ceiling_issue(warning: &CeilingWarning) -> ValidationIssue {
     match warning {
         CeilingWarning::PathOmitted(omitted) => ValidationIssue {
@@ -318,7 +289,6 @@ pub fn ceiling_issue(warning: &CeilingWarning) -> ValidationIssue {
     }
 }
 
-/// Validate an effective config.
 pub fn validate_config(config: &AegisConfig, source_map: &ConfigSourceMap) -> ValidationReport {
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
@@ -409,7 +379,6 @@ pub fn validate_config(config: &AegisConfig, source_map: &ConfigSourceMap) -> Va
     }
 }
 
-/// Convert a non-file validation failure into a structured report.
 #[cfg(test)]
 pub fn validation_load_error(err: &ConfigError) -> ValidationReport {
     ValidationReport {
@@ -423,19 +392,6 @@ pub fn validation_load_error(err: &ConfigError) -> ValidationReport {
     }
 }
 
-/// Attribute a custom-pattern set already known to fail scanner construction
-/// (`aegis_scanner::scanner_for` returned `Err`) to the config layer that
-/// caused it.
-///
-/// Bisects by growing prefix — the same technique as
-/// [`custom_pattern_validation_issue`] — to find the first index whose
-/// inclusion makes the set invalid, then reports it through the same
-/// `"invalid config {path}: {message}"` wording the layered loader used
-/// before scanner construction moved to `RuntimeContext` (issue #399).
-///
-/// Callers must only invoke this after confirming the full set fails; an
-/// already-valid set falls through to a generic message that should be
-/// unreachable in practice.
 pub fn locate_invalid_custom_pattern(
     config: &AegisConfig,
     current_dir: Option<&Path>,
@@ -454,13 +410,6 @@ pub fn locate_invalid_custom_pattern(
     }
 }
 
-/// Bisect `patterns` by growing prefix to find the first index whose
-/// inclusion makes the set invalid.
-///
-/// Shared by [`locate_invalid_custom_pattern`] and
-/// [`custom_pattern_validation_issue`] so the two callers — runtime scanner
-/// construction and `aegis config validate`'s diagnostics — agree on which
-/// pattern gets blamed.
 fn first_invalid_custom_pattern_prefix(
     patterns: &[crate::model::UserPattern],
 ) -> Option<(usize, ConfigError)> {
@@ -476,9 +425,6 @@ fn custom_pattern_validation_issue(
     source_map: &ConfigSourceMap,
 ) -> Option<ValidationIssue> {
     if config.custom_patterns.is_empty() {
-        // `validate_custom_patterns` is a no-op on an empty slice (issue
-        // #319), so the built-in-only build has to be checked here instead —
-        // this diagnostics path is the only caller of `validate_builtin_scanner`.
         return super::model::validate_builtin_scanner()
             .err()
             .map(|err| ValidationIssue {
@@ -507,12 +453,10 @@ fn first_invalid_allowlist_issue(
 ) -> Option<ValidationIssue> {
     let layered_rules = config.layered_allowlist_rules();
 
-    // Fast path: try to compile all rules at once (O(n)).
     if Allowlist::new(&layered_rules).is_ok() {
         return None;
     }
 
-    // Slow path: find the first invalid rule by compiling individually (O(n)).
     for (index, rule) in layered_rules.iter().enumerate() {
         if let Err(err) = validate_single_rule(rule.clone()) {
             return Some(ValidationIssue {
@@ -645,15 +589,6 @@ fn path_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-/// Validate typed `[[rules]]` entries: non-empty pattern, match_examples all
-/// match, not_match_examples all fail to match.
-///
-/// Returns the first error as `(rule_index, error)` so callers can build
-/// precise diagnostic locations such as `"rules[2]"`.
-///
-/// Note: examples are tokenised with `split_whitespace` because examples are
-/// expected to be simple strings (no shell quoting). The runtime path uses
-/// the quote-aware `aegis_parser::split_tokens` instead.
 pub fn validate_policy_rules(rules: &[PolicyRule]) -> Result<(), (usize, ConfigError)> {
     for (index, rule) in rules.iter().enumerate() {
         if rule.pattern.is_empty() {

@@ -4,93 +4,52 @@ use aegis_snapshot::SnapshotError;
 
 use aegis_config::error::ConfigError;
 
-/// Typed error hierarchy for all Aegis operations.
-///
-/// Each library crate already carries a precise, typed error, for example a
-/// Path containment violation, a corrupted Audit log, or a missing Docker
-/// daemon. This type wraps those lower errors transparently instead of
-/// mirroring their variants or flattening them into strings, so a Path
-/// containment violation stays matchable by variant all the way to the CLI.
-/// The binary never has to parse message text to recover information a
-/// lower crate already had.
 #[derive(thiserror::Error, Debug)]
 #[non_exhaustive]
 pub enum AegisError {
-    /// Snapshot creation, rollback, or deletion failed.
     #[error(transparent)]
     Snapshot(#[from] SnapshotError),
 
-    /// Audit log read, write, or integrity verification failed.
     #[error(transparent)]
     Audit(#[from] AuditError),
 
-    /// Command scanning or custom pattern-set construction failed.
     #[error(transparent)]
     Scanner(#[from] ScannerError),
 
-    /// Configuration loading, parsing, or validation failed.
     #[error(transparent)]
     Config(#[from] ConfigError),
 
-    /// The requested snapshot id was pruned and is no longer recoverable.
     #[error("snapshot id {snapshot_id:?} has been pruned and is no longer recoverable.")]
-    SnapshotPruned {
-        /// Snapshot id that was pruned.
-        snapshot_id: String,
-    },
+    SnapshotPruned { snapshot_id: String },
 
-    /// The requested snapshot id has no matching entry in the audit log.
     #[error(
         "snapshot id {snapshot_id:?} was not found in the audit log.\n\
          Hint: run `aegis audit --format json` or `aegis audit --last 20` \
          to find a recorded snapshot id, then retry `aegis rollback <snapshot-id>`."
     )]
-    SnapshotIdNotFound {
-        /// Snapshot id that could not be resolved.
-        snapshot_id: String,
-    },
+    SnapshotIdNotFound { snapshot_id: String },
 
-    /// One or more prune candidates could not be deleted.
     #[error(
         "prune completed with failures: {failed_count} candidate(s) could not be deleted. \
          {pruned} snapshot(s) were pruned successfully.\n{failed}"
     )]
     PrunePartialFailure {
-        /// Number of snapshots successfully pruned.
         pruned: usize,
-        /// Number of snapshots that could not be deleted.
         failed_count: usize,
-        /// Human-readable descriptions of each failed deletion.
         failed: String,
     },
 
-    /// A fault in the binary's own orchestration logic, not something a user
-    /// fixes by editing `aegis.toml`.
     #[error("internal error: {detail}")]
-    Internal {
-        /// Description of the internal fault.
-        detail: String,
-    },
+    Internal { detail: String },
 
-    /// Wrapped I/O error from the standard library.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 
-    /// Update-notice consent, cache, or registry-check failure.
     #[error(transparent)]
     Update(#[from] crate::update::UpdateError),
 }
 
 impl AegisError {
-    /// Whether this error stems from invalid or unreadable user configuration
-    /// rather than a fault in Aegis itself.
-    ///
-    /// `true` for `Config` and for `Scanner(ScannerError::InvalidPattern)`,
-    /// a custom pattern the user wrote in their config. `false` for
-    /// everything else, including `Scanner(ScannerError::Build)`,
-    /// `Internal`, a corrupted Audit log, and `Snapshot(SnapshotError::Config)`
-    /// (an unset `HOME`). None of those are fixed by editing `aegis.toml`;
-    /// an unset environment variable, for instance, is not a config problem.
     pub fn is_config_fault(&self) -> bool {
         matches!(
             self,

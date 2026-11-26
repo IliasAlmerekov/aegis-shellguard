@@ -1,16 +1,8 @@
-//! No-source commands must not start the language worker (ADR-022 §1).
-//!
-//! Pins that [`aegis_language::router::source_targets`] returns empty and
-//! [`aegis_language::worker::analyze`] returns [`Outcome::NotStarted`] for the
-//! shared `NO_SOURCE` corpus.
-
 #![cfg(feature = "grammars")]
 
 use aegis_language::router::source_targets;
 use aegis_language::worker::{Outcome, analyze};
 
-// The no-source corpus is shared verbatim with `benches/no_source_bench.rs` so
-// the test and the bench cannot drift.
 #[path = "common/no_source_corpus.rs"]
 mod no_source_corpus;
 use no_source_corpus::NO_SOURCE;
@@ -39,10 +31,6 @@ fn no_source_commands_do_not_start_the_worker() {
 
 #[test]
 fn inline_interpreter_commands_do_start_the_worker() {
-    // The positive control: commands that DO expose inline analyzable source
-    // must produce targets and must NOT report NotStarted. This keeps the
-    // no-source contract honest — it proves `NotStarted` is not the only
-    // outcome the worker can return.
     let inline: &[(&str, &str)] = &[
         ("python3 -c \"import os\"", "python"),
         ("python -c 'print(1)'", "python"),

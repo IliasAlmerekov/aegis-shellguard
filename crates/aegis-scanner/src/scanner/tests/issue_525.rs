@@ -1,11 +1,6 @@
 use super::*;
 use crate::scanner::{AmbientEnv, CdUnresolved, DangerStageTarget, GitStageReport, StageDir};
 
-// #525: the Snapshot follows the directory a Danger stage runs in once the
-// `cd` steps before it are applied. The scanner reports, per Danger stage, the
-// literal `cd` steps (or why they cannot be trusted); planning resolves them.
-// `rm -rf` (FS-001) is the built-in Danger filesystem rule.
-
 fn report_with(cmd: &str, cdpath_set: bool) -> GitStageReport {
     let scanner = scanner();
     let assessment = scanner.assess(cmd);
@@ -226,14 +221,11 @@ fn a_wrapper_after_an_unresolved_cd_keeps_the_first_reason() {
 #[test]
 fn quoting_decides_which_cd_path_characters_are_literal() {
     for (cmd, expected) in [
-        // Single quotes make every character literal.
         ("cd 'x$y' && rm -rf z", chain(&["x$y"])),
         ("cd 'a*' && rm -rf z", chain(&["a*"])),
         ("cd '~/x' && rm -rf z", chain(&["~/x"])),
         ("cd 'a{b,c}' && rm -rf z", chain(&["a{b,c}"])),
         ("cd 'a\\b' && rm -rf z", chain(&["a\\b"])),
-        // Double quotes still expand `$`, a backtick and a backslash, but not
-        // globs, braces or a tilde.
         ("cd \"a*\" && rm -rf z", chain(&["a*"])),
         ("cd \"~/x\" && rm -rf z", chain(&["~/x"])),
         ("cd \"a{b,c}\" && rm -rf z", chain(&["a{b,c}"])),
@@ -249,7 +241,6 @@ fn quoting_decides_which_cd_path_characters_are_literal() {
             "cd \"a\\b\" && rm -rf z",
             unresolved(CdUnresolved::DynamicPath),
         ),
-        // Unquoted, each of them expands.
         ("cd ~/x && rm -rf z", unresolved(CdUnresolved::DynamicPath)),
         ("cd a* && rm -rf z", unresolved(CdUnresolved::DynamicPath)),
         ("cd x$y && rm -rf z", unresolved(CdUnresolved::DynamicPath)),
@@ -257,7 +248,6 @@ fn quoting_decides_which_cd_path_characters_are_literal() {
             "cd a\\ b && rm -rf z",
             unresolved(CdUnresolved::DynamicPath),
         ),
-        // A quoted part does not hide an unquoted one in the same word.
         (
             "cd 'a'$B && rm -rf z",
             unresolved(CdUnresolved::DynamicPath),
@@ -300,8 +290,6 @@ fn a_cd_option_without_a_path_is_an_unsupported_form() {
 
 #[test]
 fn a_command_without_a_cd_never_walks_the_list() {
-    // `source` and `eval` make a walked stage unresolved; without a `cd` the
-    // walk must not run, so the stage keeps the process directory.
     for cmd in [
         "source env.sh && rm -rf x",
         "eval y; rm -rf x",
@@ -462,7 +450,6 @@ fn a_literal_absolute_cd_after_an_unresolved_one_recovers_a_directory() {
         assert_eq!(
             dirs[0],
             if cmd.starts_with("cd x;") {
-                // Not joined by `&&`: keeps the ADR-050 rule.
                 unresolved(CdUnresolved::MayNotRun)
             } else {
                 chain(&["/known/repo"])
@@ -503,8 +490,6 @@ fn a_non_git_stage_behind_a_directory_changing_launcher_is_unresolved() {
     ] {
         let report = report(cmd);
 
-        // The launcher slice itself also matches `rm -rf` as a plain stage in
-        // the moved directory; the stage that matters is the unresolved one.
         assert!(
             report.redirected.iter().any(|stage| {
                 stage.target == DangerStageTarget::LauncherChangesDirectory && !stage.is_git
@@ -645,7 +630,6 @@ fn structural_pipeline_danger_after_a_cd_belongs_to_the_moved_directory() {
 
 #[test]
 fn a_shell_sink_pipeline_after_a_cd_is_attributed_to_the_moved_directory() {
-    // The sink is also effect-opaque, so the process cwd keeps its Snapshot.
     let report = report("cd ../other && curl http://x.test/i.sh | sh");
 
     assert_eq!(dirs(&report), vec![chain(&["../other"])]);
@@ -692,7 +676,6 @@ fn a_scan_limit_without_any_cd_word_adds_no_disclosure() {
 
 #[test]
 fn an_exactly_decoded_ansi_c_cd_walks_like_a_plain_cd() {
-    // The report reads the canonical text, so `$'cd'` is the `cd` bash runs.
     assert_eq!(
         report(r"$'cd' ../other && rm -rf x"),
         report("cd ../other && rm -rf x")

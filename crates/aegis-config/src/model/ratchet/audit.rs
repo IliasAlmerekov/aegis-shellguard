@@ -1,8 +1,3 @@
-//! Field-group merge for `AuditConfig`. Rotation and both retention limits
-//! are `Tighten` (#267); `integrity_mode` is `Tighten` by rank
-//! (`most_restrictive_integrity_mode`); `compress_rotated` is `Unratcheted`
-//! — a storage-format choice, not audit coverage.
-
 use crate::allowlist::ConfigSourceLayer;
 
 use super::super::partial::PartialAuditConfig;
@@ -13,9 +8,6 @@ use super::direction::{
 };
 use super::warning::RatchetSink;
 
-/// Merge one layer's `[audit]` overlay into the trusted base. The destructure
-/// of both structs is an exhaustive tripwire — a new `AuditConfig` field
-/// breaks this until it declares a direction.
 pub(crate) fn merge_audit(
     base: AuditConfig,
     overlay: PartialAuditConfig,

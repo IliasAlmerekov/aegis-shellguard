@@ -384,30 +384,16 @@ enum ConfigValidateOutput {
 }
 
 fn main() {
-    // Short-circuit the parse-only worker before clap and Tokio startup (ADR-022 §2, ADR-054).
     #[cfg(feature = "language-analysis")]
     if std::env::args().any(|a| a == aegis::analysis::INTERNAL_LANGUAGE_WORKER_FLAG) {
         process::exit(cli_dispatch::run_internal_language_worker());
     }
 
-    // The inner landlock wrapper is a minimal, synchronous, exec-only process
-    // re-exec'd inside bwrap's mount namespace. It must not pay for clap
-    // parsing or the Tokio runtime, so it short-circuits here like the language
-    // worker. The flag literal is owned by `aegis_sandbox::INNER_LANDLOCK_FLAG`
-    // so the detector here and the wrapper builder in the sandbox crate cannot
-    // drift.
     #[cfg(target_os = "linux")]
     if std::env::args().any(|a| a == aegis_sandbox::INNER_LANDLOCK_FLAG) {
         process::exit(aegis_sandbox::run_inner_landlock_wrapper());
     }
 
-    // The background update-check child (ADR-038) the shell wrapper spawns
-    // is, like the two short-circuits above, a minimal, synchronous,
-    // fire-and-forget process: it must not pay for clap parsing or the Tokio
-    // runtime, and it must never write to stdout/stderr since nothing reads
-    // its output. The flag literal is owned by
-    // `aegis::update::INTERNAL_UPDATE_CHECK_FLAG` so the detector here and
-    // the spawner in `aegis::update` cannot drift.
     if std::env::args().any(|a| a == aegis::update::INTERNAL_UPDATE_CHECK_FLAG) {
         process::exit(aegis::update::run_internal_update_check_from_env());
     }
@@ -420,13 +406,8 @@ fn main() {
         }
     };
 
-    // Install the Diagnostic stream after the pre-clap short-circuits above
-    // (so the language worker and the inner Landlock wrapper never pay for
-    // it) and before the Tokio runtime is built. `hook` mode stays silent by
-    // default: nothing reads its stderr except byte-pinned tests (ADR-023).
     diagnostics::init(&invocation);
 
-    // Build one Tokio runtime for the entire process lifetime.
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

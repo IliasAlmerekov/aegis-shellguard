@@ -1,4 +1,3 @@
-//! Crossterm confirmation TUI for Aegis.
 #![cfg_attr(
     not(test),
     deny(

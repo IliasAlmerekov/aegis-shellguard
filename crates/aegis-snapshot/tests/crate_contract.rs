@@ -1,18 +1,3 @@
-//! Contract tests for the `aegis-snapshot` crate.
-//!
-//! These tests verify the public API surface of the extracted crate:
-//! - All expected types are publicly exported.
-//! - `SnapshotError` satisfies the `std::error::Error + Send + Sync` bounds.
-//! - `SnapshotRegistryConfig::try_new` returns `Result<_, SnapshotError>`.
-//! - `available_provider_names` returns all 6 built-in provider names.
-//! - `SnapshotRegistry::configured_provider_names` reports all 6 providers
-//!   when the policy is `Full`.
-//! - `aegis_snapshot::SnapshotPlugin` is the same type re-exported from the
-//!   root `aegis` binary crate (re-export shim).
-//!
-//! All tests MUST fail before `crates/aegis-snapshot/src/lib.rs` is created
-//! (they fail with `error[E0432]: unresolved import`).
-
 #[path = "../../../tests/support/isolated_test.rs"]
 mod isolated_test;
 
@@ -37,19 +22,8 @@ fn in_child(home: bool) -> Option<isolated_test::Completion> {
     None
 }
 
-// ── Test 1: public API compileability ────────────────────────────────────────
-//
-// If any of the four items above are not exported, this module-level `use`
-// will fail to compile, which is itself a failing test.  The four items are
-// imported at the top of the file; a dedicated function makes the intent
-// explicit in test output.
-
-/// Verify that `SnapshotPlugin`, `SnapshotRegistry`, `SnapshotRegistryConfig`,
-/// and `SnapshotError` are all publicly exported from `aegis_snapshot`.
 #[test]
 fn test_public_api_exports_all_required_types() {
-    // If the imports at the top of this file compiled, the types exist.
-    // We deliberately name them here so the test is self-documenting.
     fn _assert_imports_resolved(
         _plugin: Option<&dyn SnapshotPlugin>,
         _registry: Option<SnapshotRegistry>,
@@ -59,22 +33,12 @@ fn test_public_api_exports_all_required_types() {
     }
 }
 
-// ── Test 2: SnapshotError is Send + Sync + std::error::Error ─────────────────
-
-/// `SnapshotError` must implement `std::error::Error`, `Send`, and `Sync` so
-/// it can cross async task / thread boundaries and be used with `?` inside
-/// `async fn` without boxing.
 #[test]
 fn test_snapshot_error_implements_std_error_send_sync() {
     fn assert_bounds<E: std::error::Error + Send + Sync + 'static>() {}
     assert_bounds::<SnapshotError>();
 }
 
-// ── Test 3: SnapshotRegistryConfig::try_new returns Result<_, SnapshotError> ─
-
-/// `SnapshotRegistryConfig::try_new` must accept `&AegisConfig` and return
-/// `Result<SnapshotRegistryConfig, SnapshotError>`.  With `HOME` set (which is
-/// true in any standard CI / developer environment) it must succeed.
 #[test]
 fn test_snapshot_registry_config_try_new_succeeds_with_home_set() {
     if let Some(_completion) = in_child(true) {
@@ -85,8 +49,6 @@ fn test_snapshot_registry_config_try_new_succeeds_with_home_set() {
     }
 }
 
-/// `SnapshotRegistryConfig::try_new` must return `Err(SnapshotError)` when
-/// neither `HOME` nor `USERPROFILE` is set in the environment.
 #[test]
 fn test_snapshot_registry_config_try_new_errors_without_home() {
     if let Some(_completion) = in_child(false) {
@@ -97,11 +59,6 @@ fn test_snapshot_registry_config_try_new_errors_without_home() {
     }
 }
 
-// ── Test 4: available_provider_names returns all 6 built-in names ─────────────
-
-/// `available_provider_names()` must return exactly the 6 built-in provider
-/// names: "git", "docker", "postgres", "mysql", "sqlite", "supabase".
-/// The order is not mandated; presence of every name is.
 #[test]
 fn test_available_provider_names_contains_all_six_builtins() {
     let names = aegis_snapshot::available_provider_names();
@@ -120,11 +77,6 @@ fn test_available_provider_names_contains_all_six_builtins() {
     );
 }
 
-// ── Test 5: SnapshotRegistry with SnapshotPolicy::Full has all 6 providers ───
-
-/// When `SnapshotPolicy::Full` is active, `SnapshotRegistry::from_runtime_config`
-/// must materialise all 6 built-in providers and
-/// `configured_provider_names()` must return all 6 names.
 #[test]
 fn test_snapshot_registry_full_policy_contains_all_six_providers() {
     if let Some(_completion) = in_child(true) {
@@ -152,17 +104,7 @@ fn test_snapshot_registry_full_policy_contains_all_six_providers() {
     }
 }
 
-// ── Test 6: `aegis_snapshot::SnapshotPlugin` is the sole definition ────────────
-
-/// The root `aegis` binary crate imports `SnapshotPlugin` directly from
-/// `aegis_snapshot` (see ADR on the narrowed library surface) rather than
-/// through a re-export shim, so there is only one path to this trait.
-///
-/// This test acts as a compile-time marker: it passes only when
-/// `aegis_snapshot::SnapshotPlugin` exists and is object-safe.
 #[test]
 fn test_snapshot_plugin_trait_is_object_safe_and_exported() {
-    // Object safety: if SnapshotPlugin is not object-safe, this line will not
-    // compile.
     let _: Option<Box<dyn SnapshotPlugin>> = None;
 }

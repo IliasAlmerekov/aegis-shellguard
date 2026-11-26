@@ -1,5 +1,4 @@
 use super::*;
-/// A plugin whose liveness check never finishes.
 struct HangingLivenessPlugin;
 
 #[async_trait]
@@ -37,7 +36,6 @@ impl SnapshotPlugin for HangingLivenessPlugin {
     }
 }
 
-/// A plugin whose liveness is `Absent`, so dispatch can tell it from the succeeding double.
 struct AbsentLivenessPlugin;
 
 #[async_trait]

@@ -71,8 +71,6 @@ fn shell_wrapper_entry_records_cwd_without_becoming_a_watch_entry() {
     assert!(json.contains(r#""cwd":"/home/user/repo""#));
 }
 
-/// Hashes produced by the code before #499, with `cwd` on watch entries only
-/// and no `git_target`. Legacy lines must keep verifying (ADR-053).
 #[test]
 fn legacy_entries_keep_their_pre_499_integrity_hash() {
     let decision = entry(1, RiskLevel::Danger);

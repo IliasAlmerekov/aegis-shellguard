@@ -394,15 +394,10 @@ then  = "allow"
 pattern  = []
 decision = "block"
 "#;
-        // Either parse fails or validation must catch it.
-        // We use the validator from validate.rs.
         let result: Result<PolicyRule, _> = toml::from_str(toml);
-        // If serde succeeds, validation must reject it.
         match result {
-            Err(_) => { /* good — serde itself rejected empty pattern */ }
+            Err(_) => {}
             Ok(rule) => {
-                // The validator lives in crate::validate; once implemented it
-                // must reject a rule with an empty pattern vector.
                 use crate::validate::validate_policy_rules;
                 let validation = validate_policy_rules(&[rule]);
                 assert!(

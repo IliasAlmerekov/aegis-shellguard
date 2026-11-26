@@ -1,6 +1,3 @@
-//! Bash ANSI-C quoting (`$'...'`) and locale quoting (`$"..."`): the tokenizer
-//! hands every consumer the word bash would run, not its quoted spelling.
-
 use crate::*;
 
 fn words(cmd: &str) -> Vec<String> {

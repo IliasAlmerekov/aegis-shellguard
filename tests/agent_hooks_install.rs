@@ -1,8 +1,3 @@
-// Integration tests for install/uninstall flows, split from agent_hooks.rs to
-// keep both files within the 800-line budget. The
-// script runners and JSON probes are shared with agent_hooks.rs via
-// support::agent_hooks rather than duplicated here.
-
 mod support;
 
 use std::fs;
@@ -276,11 +271,6 @@ fn agent_setup_wrapper_delegates_to_binary_install_hooks_command() {
     assert!(output.stderr.is_empty());
 }
 
-/// A third-party `SessionStart` entry may legitimately omit `matcher` — both
-/// agents treat it as optional. Aegis must read such an entry as "not mine"
-/// and install alongside it, not refuse the install: refusing leaves the
-/// operator with no effective-state notice at all, which is the very gap M3a
-/// closes (M3a).
 #[test]
 fn codex_install_coexists_with_a_foreign_session_start_entry_without_a_matcher() {
     let home = TempDir::new().unwrap();
@@ -365,10 +355,6 @@ fn claude_install_coexists_with_a_foreign_session_start_entry_without_a_matcher(
     );
 }
 
-/// An entry registering Aegis' own command under a matcher Aegis never
-/// installs is a dead registration: the agent will not fire it. Reading it as
-/// "already present" would leave the operator unprotected while the installer
-/// reports success, so a rerun must add a correctly-matched entry.
 #[test]
 fn codex_install_repairs_its_own_pre_tool_use_entry_under_a_wrong_matcher() {
     let home = TempDir::new().unwrap();
@@ -479,9 +465,6 @@ fn install_repairs_its_own_session_start_entry_under_a_stale_matcher() {
             matchers.iter().any(|matcher| matcher == "startup|resume"),
             "{agent_dir}: a rerun must register the notice under startup|resume; matchers={matchers:?}"
         );
-        // The superseded `startup` registration is a dead one the agent no
-        // longer fires Aegis on; a rerun must prune it rather than leave it
-        // alongside the canonical entry (#175 gap 1).
         assert!(
             !matchers.iter().any(|matcher| matcher == "startup"),
             "{agent_dir}: the stale startup registration must be pruned; matchers={matchers:?}"
@@ -558,9 +541,6 @@ fn codex_session_start_hook_keeps_its_codex_identity_when_installed() {
         String::from_utf8_lossy(&install_output.stderr)
     );
 
-    // The hook ships into ~/.codex/hooks and must say so: the version marker
-    // dates hook vintages (docs/troubleshooting.md), and a Claude-flavored
-    // header in the Codex channel misdirects operators.
     let session_hook = home
         .path()
         .join(".codex")
@@ -587,8 +567,6 @@ fn codex_session_start_hook_keeps_its_codex_identity_when_installed() {
 
 const PLUGIN_SKIP_LINE: &str = "Claude Code: skipped (Claude Code plugin aegis is enabled)";
 
-/// Write a Claude settings file whose `enabledPlugins` maps `plugin` to
-/// `enabled`.
 fn write_enabled_plugin(settings: &std::path::Path, plugin: &str, enabled: bool) {
     fs::create_dir_all(settings.parent().unwrap()).unwrap();
     fs::write(
@@ -598,8 +576,6 @@ fn write_enabled_plugin(settings: &std::path::Path, plugin: &str, enabled: bool)
     .unwrap();
 }
 
-/// Run `aegis install-hooks --claude-code [extra]` with `home` as HOME and
-/// `cwd` as the working directory.
 fn install_claude_code(
     home: &std::path::Path,
     cwd: &std::path::Path,
@@ -648,9 +624,6 @@ fn install_claude_skips_when_plugin_enabled() {
 
 #[test]
 fn install_claude_respects_plugin_scope_precedence() {
-    // A `--local` install writes the shared, committed .claude/settings.json,
-    // so it decides from that file, then user settings. The personal
-    // settings.local.json must not decide what every teammate runs.
     let home = TempDir::new().unwrap();
     let project = TempDir::new().unwrap();
     write_enabled_plugin(
@@ -668,8 +641,6 @@ fn install_claude_respects_plugin_scope_precedence() {
         String::from_utf8_lossy(&output.stdout).contains("Claude Code: hook installed"),
         "project settings.json must override user settings"
     );
-    // A local install registers the shim under the canonical cwd, which on
-    // macOS is /private/var/... for a /var/folders/... temp dir.
     let shim = fs::canonicalize(project.path())
         .unwrap()
         .join(".claude/hooks/aegis-pre-tool-use.sh");
@@ -701,8 +672,6 @@ fn install_claude_respects_plugin_scope_precedence() {
 
 #[test]
 fn install_claude_global_decides_from_user_settings_only() {
-    // The global hooks cover every project, so a project scope must not
-    // switch them off or on.
     let home = TempDir::new().unwrap();
     let project = TempDir::new().unwrap();
     let user_settings = home.path().join(".claude/settings.json");

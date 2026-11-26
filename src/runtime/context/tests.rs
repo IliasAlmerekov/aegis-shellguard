@@ -18,8 +18,6 @@ use tempfile::TempDir;
 use time::OffsetDateTime;
 
 fn test_handle() -> Handle {
-    // Leak a runtime so the Handle outlives each test.
-    // This is fine for unit tests — the OS reclaims it on process exit.
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -92,12 +90,8 @@ fn invalid_custom_scanner_aborts_runtime_context_construction() {
     );
 }
 
-/// Serializes tests that measure `aegis_scanner::try_new_call_count_for_tests`
-/// deltas — the counter is process-global, so concurrent scanner builds from
-/// other custom-pattern tests in this file would make the delta flaky.
 static SCANNER_BUILD_COUNT_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Layered global + project custom patterns must build the scanner once (#399).
 #[test]
 fn layered_custom_patterns_build_the_scanner_exactly_once() {
     let _guard = SCANNER_BUILD_COUNT_MUTEX.lock().unwrap();
@@ -133,11 +127,6 @@ description = "project entry"
     )
     .unwrap();
 
-    // Warm the cached built-in scanner first: its one-time build (shared by
-    // every `assess()` call in this process) happens on first use from
-    // *any* concurrently-running test, not just this one. Forcing it here
-    // keeps that one-off build out of the measurement window below, so the
-    // delta only reflects the layered-config path this test exercises.
     let _ = aegis_scanner::scanner_for(&[]);
 
     let before = aegis_scanner::try_new_call_count_for_tests();
@@ -402,11 +391,6 @@ expires_at = "2030-01-01T00:00:00Z"
 
 #[test]
 fn runtime_context_uses_external_handle_for_snapshots() {
-    // Persistent runtime: RuntimeContext must accept an external Handle
-    // instead of owning its own Runtime. This proves:
-    // 1. RuntimeContext::new accepts a Handle parameter
-    // 2. create_snapshots works through the external handle
-    // 3. No internal SnapshotRuntime::Ready(Runtime) exists
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -420,8 +404,6 @@ fn runtime_context_uses_external_handle_for_snapshots() {
     let context = RuntimeContext::new(config, handle).unwrap();
     let snapshots = context.create_snapshots(Path::new("."), "echo test", false);
 
-    // With both snapshot plugins disabled, result is empty — but the call
-    // must succeed without panicking (proving the external handle works).
     assert!(snapshots.records.is_empty());
 }
 
@@ -455,9 +437,6 @@ fn git_snapshot_enabled_follows_the_auto_snapshot_git_setting() {
 
 #[test]
 fn runtime_context_new_requires_handle_parameter() {
-    // Verify the two-argument signature is the only way to construct.
-    // This test will fail to compile if RuntimeContext::new still accepts
-    // only Config (one argument).
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -465,7 +444,6 @@ fn runtime_context_new_requires_handle_parameter() {
     let handle = rt.handle().clone();
     let config = AegisConfig::default();
 
-    // Must compile with two arguments.
     let _context = RuntimeContext::new(config, handle).unwrap();
 }
 
@@ -616,13 +594,7 @@ fn append_audit_entry_preserves_allowlist_context_fields() {
 
 #[test]
 fn build_audit_entry_records_effect_opaque_and_backstop_state_from_runtime_facts() {
-    // ADR-016 / Standards #1: the audit entry must reflect the assessment's
-    // `effect_opaque` flag and the policy's `snapshots_required` decision —
-    // not the `Some(false)` defaults emitted by `AuditEntry::new`. Otherwise a
-    // real `sh ./cleanup.sh` execution that policy required recovery for would
-    // be logged as if no backstop was ever needed.
     let context = RuntimeContext::new(AegisConfig::default(), test_handle()).unwrap();
-    // `sh ./cleanup.sh` is Safe to the quick scan yet effect-opaque.
     let assessment = context.assess("sh ./cleanup.sh");
     assert!(
         assessment.effect_opaque,
@@ -639,7 +611,6 @@ fn build_audit_entry_records_effect_opaque_and_backstop_state_from_runtime_facts
             action: PolicyAction::AutoApprove,
             rationale: PolicyRationale::SafeCommand,
             requires_confirmation: false,
-            // Policy resolved a pre-exec recovery backstop for this command.
             snapshots_required: true,
             allowlist_effective: false,
             block_reason: None,
@@ -696,9 +667,6 @@ fn build_audit_entry_records_effect_opaque_and_backstop_state_from_runtime_facts
 
 #[test]
 fn build_audit_entry_records_plain_safe_command_without_backstops() {
-    // Orthogonal direction: a non-effect-opaque safe command whose policy did
-    // not require recovery must record `Some(false)` for both axes — the
-    // honest decision, not an unset default.
     let context = RuntimeContext::new(AegisConfig::default(), test_handle()).unwrap();
     let assessment = context.assess("echo ok");
     assert!(

@@ -1,5 +1,3 @@
-//! Alias-scan scoping when a stage name is reused before and after `alias` (#437).
-
 use super::*;
 
 fn expected_route() -> Vec<RoutedTarget> {

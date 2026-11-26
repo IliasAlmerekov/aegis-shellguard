@@ -8,8 +8,6 @@ use super::*;
 
 const NO_HOME: Option<PathBuf> = None;
 
-/// Inputs whose `st_dev` changes at `boundary`'s parent, so the upward search
-/// never leaves the temp dir regardless of what lives above it.
 fn inputs(home: Option<PathBuf>, boundary: &Path) -> ResolverInputs {
     let boundary = boundary.to_path_buf();
     ResolverInputs {
@@ -76,8 +74,6 @@ fn workspace_rooted_at_home_is_rejected() {
 
 #[test]
 fn workspace_reached_through_a_symlink_to_home_is_rejected() {
-    // Enforcement canonicalises the root, so a lexical root `/…/link` that
-    // resolves to the home would make the home writable.
     let (tmp, root) = repo_with_dot_git_dir();
     let link = canon(tmp.path()).join("link");
     std::os::unix::fs::symlink(&root, &link).unwrap();
@@ -226,8 +222,6 @@ fn forged_commondir_pointing_outside_the_worktree_layout_is_omitted() {
 
 #[test]
 fn forged_gitdir_under_a_worktrees_dir_cannot_name_an_outside_commondir() {
-    // The layout check needs both parts: a parent named `worktrees` AND that
-    // parent's parent being the commondir.
     let tmp = TempDir::new().unwrap();
     let base = canon(tmp.path());
     let ws_root = base.join("ws");

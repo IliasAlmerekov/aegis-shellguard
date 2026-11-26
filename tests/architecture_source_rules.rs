@@ -1,18 +1,3 @@
-//! Architecture source-rule tests.
-//!
-//! Source-grep checks for the rules in `CONVENTION.md` §2 and §3 that a
-//! `Cargo.toml` dependency check cannot see: edges between modules of one
-//! crate, and forbidden patterns inside a crate's production code. Crate-level
-//! edges live in `tests/architecture_boundaries.rs`.
-//!
-//! Conventions:
-//! - Every check walks production code only (see `walker`). It skips files
-//!   that a parent module declares under `#[cfg(test)]`, and `strip_test_code`
-//!   removes `#[cfg(test)]` items inside a file. Crate-level `tests/`,
-//!   `benches/` and `examples/` directories are never walked.
-//! - A walk over a missing or empty directory panics, so a moved directory
-//!   cannot turn a check into a silent no-op.
-
 use std::fs;
 
 #[path = "architecture_source_rules/walker.rs"]
@@ -24,8 +9,6 @@ fn read_file(relative: &str) -> String {
         .unwrap_or_else(|err| panic!("failed to read {relative}: {err}"))
 }
 
-/// Read a source file and strip `#[cfg(test)]`-gated items so that boundary
-/// checks only see production code.
 fn read_production(relative: &str) -> String {
     strip_test_code(&read_file(relative))
 }
@@ -37,12 +20,6 @@ fn assert_absent(source: &str, needle: &str, file: &str, rule: &str) {
     );
 }
 
-// ── Diagnostic stream — no raw command or env value in a tracing field ────────
-
-/// CONVENTION.md §2: a `tracing` field must never carry a raw command string
-/// or an environment variable value. Source-grep floor, not a proof
-/// (ADR-033) — it cannot see a path that arrives through `Display` on an
-/// error type such as `SnapshotError`.
 #[test]
 fn tracing_fields_never_carry_raw_command_or_env_value() {
     let files = production_rs_files("src")
@@ -62,11 +39,6 @@ fn tracing_fields_never_carry_raw_command_or_env_value() {
     }
 }
 
-// ── Forbidden edges — Policy engine is pure ───────────────────────────────────
-
-/// `CONVENTION.md` §3: the policy engine is a pure function. No I/O, no process
-/// spawning, no tokio, no filesystem, no logging. The engine lives in
-/// `aegis-policy`; `src/decision` only re-exports it.
 #[test]
 fn decision_engine_is_pure_no_io() {
     for (rel, src) in production_rs_files("crates/aegis-policy/src") {
@@ -90,16 +62,9 @@ fn decision_engine_is_pure_no_io() {
     }
 }
 
-// ── Forbidden edges — UI is rendering only ────────────────────────────────────
-
-/// `aegis-tui` may not write audit entries, run snapshot business logic, or
-/// depend on runtime or planning. The one allowed leak is the `SnapshotRecord`
-/// display type. Calling `SnapshotRegistry::*`, `.snapshot_all(`, or
-/// `.rollback(` is forbidden.
 #[test]
 fn ui_does_not_call_audit_or_snapshot_business_logic() {
     for (rel, src) in production_rs_files("crates/aegis-tui/src") {
-        // No audit coupling at all (binary-crate or workspace-crate form).
         assert_absent(
             &src,
             "use crate::audit",
@@ -119,7 +84,6 @@ fn ui_does_not_call_audit_or_snapshot_business_logic() {
             "CONVENTION.md §3: UI must not reference AuditLogger",
         );
 
-        // No runtime/planning orchestration leaks.
         assert_absent(
             &src,
             "use crate::runtime",
@@ -133,8 +97,6 @@ fn ui_does_not_call_audit_or_snapshot_business_logic() {
             "CONVENTION.md §3: UI must not depend on planning",
         );
 
-        // Snapshot business logic is forbidden; only SnapshotRecord
-        // (data type used for display) is allowed.
         for forbidden in [
             "SnapshotRegistry",
             ".snapshot_all(",
@@ -151,17 +113,11 @@ fn ui_does_not_call_audit_or_snapshot_business_logic() {
     }
 }
 
-// ── Forbidden edges — Transports go through planning ──────────────────────────
-
-/// Production paths allowed to name `evaluate_policy`, each with the reason.
 const EVALUATE_POLICY_ALLOWED: &[(&str, &str)] = &[(
     "src/planning/",
     "the sanctioned consumer: planning is the one caller of the policy engine",
 )];
 
-/// `CONVENTION.md` §3: no module of the root crate outside `planning` may call
-/// `evaluate_policy`; transports (`shell_flow`, `watch`, `install`) must go
-/// through `planning::*`.
 #[test]
 fn transports_route_policy_through_planning_module() {
     for (rel, src) in production_rs_files("src") {
@@ -178,11 +134,6 @@ fn transports_route_policy_through_planning_module() {
     }
 }
 
-// ── #281 Narrowed library surface — no re-forwarding of aegis-types ───────────
-
-/// #281: only `aegis-types` may hold a `pub use aegis_types` line. Every other
-/// crate imports the type it needs directly from `aegis-types`; forwarding it
-/// back out under a second name defeats the point of the narrowed surface.
 #[test]
 fn only_aegis_types_re_exports_aegis_types() {
     for (rel, src) in production_rs_files("crates") {
@@ -198,10 +149,6 @@ fn only_aegis_types_re_exports_aegis_types() {
     }
 }
 
-/// #281: the shim modules (`src/audit`, `src/config`, `src/decision`,
-/// `src/snapshot`, `src/ui`, `src/interceptor`) are gone. Nothing in `src/` or
-/// `tests/` may name them again, either as `crate::<shim>::` (inside the root
-/// crate) or `aegis::<shim>::` (from an integration test).
 #[test]
 fn former_shim_paths_do_not_reappear() {
     let files = production_rs_files("src")
@@ -230,8 +177,6 @@ fn former_shim_paths_do_not_reappear() {
     }
 }
 
-/// Watch persists across commands, so synchronous platform preparation probes
-/// must run off the Tokio worker that owns the control loop.
 #[test]
 fn watch_sandbox_preparation_does_not_block_the_async_control_loop() {
     let source = read_production("src/watch/sandbox.rs");

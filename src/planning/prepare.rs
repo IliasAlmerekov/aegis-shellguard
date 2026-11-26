@@ -1,5 +1,3 @@
-//! Planner preparation: resolve context, run scanner, build plan.
-
 use tokio::runtime::Handle;
 
 use crate::error::AegisError;
@@ -7,15 +5,11 @@ use crate::planning::types::SetupFailurePlan;
 use crate::runtime::RuntimeContext;
 use aegis_policy::ExecutionTransport;
 
-/// Prepared planning dependency state shared across multiple planning requests.
 pub enum PreparedPlanner {
-    /// Runtime preparation succeeded and planning can proceed normally.
     Ready(Box<RuntimeContext>),
-    /// Runtime preparation failed and every request must fail closed the same way.
     SetupFailure(SetupFailurePlan),
 }
 
-/// Prepare planner dependencies once and return a typed ready/fail-closed wrapper.
 pub fn prepare_planner(verbose: bool, handle: Handle) -> PreparedPlanner {
     match RuntimeContext::load(verbose, handle) {
         Ok(context) => PreparedPlanner::Ready(Box::new(context)),
@@ -27,7 +21,6 @@ pub fn prepare_planner(verbose: bool, handle: Handle) -> PreparedPlanner {
     }
 }
 
-/// Map a runtime setup failure into a typed fail-closed setup plan.
 pub fn setup_failure_from_runtime_error(
     err: &AegisError,
     _command: &str,

@@ -1,10 +1,3 @@
-//! Fallback sandbox implementation for unsupported targets.
-//!
-//! Native Windows is intentionally unsupported for Aegis 1.0. Windows users
-//! should run Aegis inside WSL2, where this crate is compiled for Linux and uses
-//! the Linux sandbox implementation. On native Windows and any other target
-//! that is not Linux or macOS, the sandbox is always unavailable.
-
 use std::ffi::{OsStr, OsString};
 
 use crate::{PreparedSandboxCommand, SandboxConfig, SandboxError};

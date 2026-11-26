@@ -1,10 +1,3 @@
-//! End-to-end tests for the computed Trusted ceiling (#242, ADR-030): an
-//! absent `[sandbox] allow_write` confines a command to the git worktree and
-//! the temporary directory.
-//!
-//! Tests that run a confined command skip, never fail, when this host has no
-//! usable confinement backend. Worktrees live under `/var/tmp` because every
-//! `TempDir` is under `/tmp`, which the default ceiling always admits.
 #![cfg(target_os = "linux")]
 
 mod support;
@@ -20,12 +13,10 @@ use support::{base_command, confinement_available, write_global_config};
 
 const ENABLED: &str = "[sandbox]\nenabled = true\n";
 
-/// A directory outside `/tmp`, or `None` when `/var/tmp` is unusable.
 fn outside_tmp() -> Option<TempDir> {
     TempDir::new_in("/var/tmp").ok()
 }
 
-/// `git` with every inherited repository variable and config removed.
 fn git_isolated(home: &Path, dir: &Path, args: &[&str]) {
     let output = support::git_command(dir)
         .env("HOME", home)
@@ -322,8 +313,6 @@ fn config_validate_reports_the_enforcement_omission_without_failing() {
     assert!(stdout.contains("outside_trusted_ceiling"), "{stdout}");
 }
 
-/// Runs a write to the worktree and to `/tmp` under `config` and returns
-/// whether each landed: `(worktree, tmp)`. `None` when there is no confinement.
 fn writes_under(config: &str, tag: &str) -> Option<(bool, bool)> {
     let base = outside_tmp()?;
     if !confinement_available() {
@@ -364,8 +353,6 @@ fn an_allow_write_list_whose_entries_are_all_omitted_leaves_nothing_writable() {
 
 #[test]
 fn ceiling_warnings_never_surface_in_the_shell_wrapper_path() {
-    // A missing entry and a cwd outside any worktree each produce a warning
-    // for `status` and `config validate`, never for `$SHELL -c`.
     let Some(base) = outside_tmp() else { return };
     if !confinement_available() {
         return;

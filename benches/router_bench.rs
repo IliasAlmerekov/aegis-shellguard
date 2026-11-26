@@ -10,10 +10,6 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
-// ADR-022 §0: `plan()` spawns no worker when `route()` yields no target; Group 4 routes to targets so only `route()` is timed.
-
-// ── Group 1: safe everyday commands, single segment ───────────────────────
-
 const SAFE_SINGLE: &[(&str, &str)] = &[
     ("git_status", "git status"),
     ("ls_la", "ls -la"),
@@ -21,8 +17,6 @@ const SAFE_SINGLE: &[(&str, &str)] = &[
     ("grep", "grep -rn foo src"),
     ("npm_build", "npm run build"),
 ];
-
-// ── Group 2: safe compound commands ────────────────────────────────────────
 
 const GH_PR_BODY: &str = "\
 Summary
@@ -72,9 +66,6 @@ fn safe_compound_commands() -> Vec<(&'static str, String)> {
     ]
 }
 
-// ── Group 3: long safe input ───────────────────────────────────────────────
-
-/// 50 `&&`-joined `echo` segments — stresses segment-splitting, not string size.
 fn long_chain_command() -> String {
     (0..50)
         .map(|i| format!("echo {i}"))
@@ -82,19 +73,14 @@ fn long_chain_command() -> String {
         .join(" && ")
 }
 
-/// A single ~4 KB command — stresses string size, not segment count.
 fn long_single_command() -> String {
     format!("echo {}", "x".repeat(4083))
 }
-
-// ── Group 4: interpreter shapes (not the fast path, for information) ──────
 
 const INTERPRETER_SHAPES: &[(&str, &str)] = &[
     ("python_inline", "python3 -c 'print(1)'"),
     ("python_script", "true; python3 ./x.py"),
 ];
-
-// ── route() benches ─────────────────────────────────────────────────────
 
 fn bench_route_safe_single(c: &mut Criterion) {
     for (name, cmd) in SAFE_SINGLE {
@@ -131,8 +117,6 @@ fn bench_route_interpreter_shapes(c: &mut Criterion) {
         });
     }
 }
-
-// Build `RuntimeContext` directly to time per-command planning without config disk I/O.
 
 fn make_prepared_planner() -> (Runtime, PreparedPlanner, TempDir) {
     let runtime = Runtime::new().expect("tokio runtime must start");

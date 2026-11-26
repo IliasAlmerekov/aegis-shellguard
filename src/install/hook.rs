@@ -6,37 +6,15 @@ use super::shell_quote;
 
 mod read_only;
 
-/// The fixed, detail-free reason used when a panic is contained at the `Hook`
-/// boundary. The payload is never interpolated into the response, so a panic
-/// carrying paths, command fragments, or internal state cannot steer the deny
-/// shape or leak into a model's context (M4).
 const CONTAINED_PANIC_REASON: &str =
     "aegis hook failed internally; refusing to run command unscanned";
 
-/// The deterministic stderr line printed when a panic is contained. Kept as a
-/// constant so stderr assertions do not drift with toolchain changes to the
-/// default panic message (M4).
 const CONTAINED_PANIC_STDERR: &str = "aegis: internal hook panic contained";
 
-/// Run the Claude Code `PreToolUse` hook and rewrite unwrapped Bash commands
-/// through `aegis --command`.
-///
-/// The `Hook` boundary is the single place a catch is installed: an unwind
-/// anywhere across the stdin-read + outcome production is converted into the
-/// ordinary deny shape rather than dying silently (M4). Rendering and writing
-/// the response happen outside the guard, so a panic in the write path cannot
-/// defeat the guard. The exit code stays 0 for allow, noop, ordinary deny, and
-/// contained panic alike — with these agent clients only exit 0 gets the JSON
-/// decision parsed, so a non-zero exit would demote a deny into a non-blocking
-/// hook error and let the command run.
 pub(crate) fn run_hook() -> i32 {
     install_hook_panic_hook();
 
     let outcome = std::panic::catch_unwind(|| {
-        // Test-only panic injection, compiled only in non-release builds so a
-        // shipped binary contains no way to induce a panic path through the
-        // environment (M4). The closure captures no mutable borrows, so no
-        // `AssertUnwindSafe` is required.
         #[cfg(debug_assertions)]
         #[expect(
             clippy::panic,
@@ -63,12 +41,6 @@ pub(crate) fn run_hook() -> i32 {
     0
 }
 
-/// Install a minimal panic hook scoped to `Hook` mode. It prints one
-/// deterministic stderr line and appends the payload/location only when the
-/// user has opted into backtrace/debug output through the environment. The
-/// hook is not restored: the process exits immediately after a contained panic.
-/// Scope is `Hook` mode only — no panic hook is installed in `main`, so the
-/// shell-proxy, `watch`, and TUI paths keep the full default panic output.
 fn install_hook_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
         write_stderr(CONTAINED_PANIC_STDERR);
@@ -84,19 +56,12 @@ fn install_hook_panic_hook() {
     }));
 }
 
-/// True when `name` is set to a truthy value — present, non-empty, and not
-/// `0`. Used for the opt-in debug/backtrace environment variables so a value
-/// that conventionally disables output (`RUST_BACKTRACE=0`) is not read as
-/// opt-in and does not leak panic details (M4).
 fn env_opt_in(name: &str) -> bool {
     std::env::var(name)
         .map(|value| !value.is_empty() && value != "0")
         .unwrap_or(false)
 }
 
-/// Render a panic payload as text for the opt-in debug stderr line. A non-string
-/// payload yields a stable placeholder — the same reason is used regardless of
-/// what the panic happens to carry (M4).
 fn panic_payload_text(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(s) = payload.downcast_ref::<&str>() {
         (*s).to_string()
@@ -107,9 +72,6 @@ fn panic_payload_text(payload: &(dyn std::any::Any + Send)) -> String {
     }
 }
 
-/// Write a line to stderr via an explicit locked write plus flush. A write
-/// error is ignored silently — a closed stderr must not itself become a double
-/// panic that aborts the process.
 fn write_stderr(line: &str) {
     let stderr = std::io::stderr();
     let mut lock = stderr.lock();
@@ -117,10 +79,6 @@ fn write_stderr(line: &str) {
     let _ = lock.flush();
 }
 
-/// Write the hook response to stdout via an explicit locked write plus flush.
-/// A write error (e.g. a closed pipe) is ignored silently and does not alter the
-/// exit code — a closed pipe must not itself become the crash that defeats the
-/// guard (M4).
 fn write_hook_output(output: &Value) {
     let stdout = std::io::stdout();
     let mut lock = stdout.lock();
@@ -182,21 +140,9 @@ fn hook_response_value(input: &str) -> HookOutcome {
         ));
     };
 
-    // A command already in canonical wrapper form must pass through untouched —
-    // re-wrapping would double-intercept. A command that merely begins with the
-    // `aegis` word but is NOT a canonical wrapper is rejected unless it only
-    // reads state: it could be a half-formed or evasive wrapper, or a command
-    // that changes Aegis itself. Fail closed with a clear reason instead of
-    // guessing.
     if is_canonical_aegis_wrapper(command) {
         return HookOutcome::Noop;
     }
-    // Read-only commands are wrapped like any other command (#333). The scanner
-    // also classifies self-management under `Category::Aegis` (ADR-035), which
-    // covers the spellings this first-word check cannot see, such as an
-    // absolute path or a launcher prefix. This deny is the fast path in front
-    // of it, and the only layer that refuses without a prompt in a
-    // non-interactive agent session.
     if starts_with_aegis_word(command) && !read_only::is_read_only_aegis_command(command) {
         let reason = if is_wrapper_attempt(command) {
             "invalid aegis wrapper syntax; issue the command unwrapped and aegis will rewrite it"
@@ -228,10 +174,6 @@ fn hook_response_value(input: &str) -> HookOutcome {
 
 fn hook_deny_output(reason: String) -> Value {
     serde_json::json!({
-        // Claude reads the top-level `reason` for the deny message while Codex
-        // reads `hookSpecificOutput.permissionDecisionReason`. Emit both so the
-        // deny reason is visible in either agent. Emit only the structured
-        // `permissionDecision` form and no top-level `decision` field.
         "reason": reason.clone(),
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -241,21 +183,14 @@ fn hook_deny_output(reason: String) -> Value {
     })
 }
 
-/// The canonical command prefix Aegis rewrites Bash commands to.
 const AEGIS_WRAPPER_PREFIX: &str = "aegis --command ";
 
-/// True when `command` begins with the bare `aegis` executable word — either
-/// exactly `aegis` or `aegis` followed by whitespace. Used to distinguish an
-/// already-aegis invocation from an unrelated command like `aegisctl`.
 fn starts_with_aegis_word(command: &str) -> bool {
     command
         .strip_prefix("aegis")
         .is_some_and(|rest| rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
 }
 
-/// True when any `aegis` argument carries the wrapper flag (`--command`, `-c`,
-/// or `-c` bundled with other short flags), so a denial is about malformed
-/// wrapper syntax rather than a self-management command.
 fn is_wrapper_attempt(command: &str) -> bool {
     command.split_whitespace().skip(1).any(|arg| {
         arg.starts_with("--command")
@@ -263,10 +198,6 @@ fn is_wrapper_attempt(command: &str) -> bool {
     })
 }
 
-/// True only when `command` is exactly `aegis --command <arg>` where `<arg>` is
-/// the POSIX single-quoted form `shell_quote` itself produces — i.e. re-quoting
-/// the decoded argument reproduces the command byte-for-byte. This rejects
-/// half-formed wrappers (`aegis --command '`) that merely share the prefix.
 fn is_canonical_aegis_wrapper(command: &str) -> bool {
     let Some(payload) = command.strip_prefix(AEGIS_WRAPPER_PREFIX) else {
         return false;
@@ -277,10 +208,6 @@ fn is_canonical_aegis_wrapper(command: &str) -> bool {
     }
 }
 
-/// Decode a single POSIX single-quoted token of the exact shape `shell_quote`
-/// emits: `'...'` with embedded single quotes encoded as the close-reopen
-/// sequence `'\''`. Returns `None` for anything that is not one well-formed
-/// single-quoted token (stray quotes, missing terminator, trailing content).
 fn decode_single_quoted(payload: &str) -> Option<String> {
     let inner = payload.strip_prefix('\'')?;
     let chars: Vec<char> = inner.chars().collect();
@@ -288,11 +215,9 @@ fn decode_single_quoted(payload: &str) -> Option<String> {
     let mut i = 0;
     while i < chars.len() {
         if chars[i] == '\'' {
-            // Final closing quote: must be the last character.
             if i == chars.len() - 1 {
                 return Some(decoded);
             }
-            // Otherwise the only legal continuation is the `'\''` escape.
             if chars.get(i + 1) == Some(&'\\')
                 && chars.get(i + 2) == Some(&'\'')
                 && chars.get(i + 3) == Some(&'\'')
@@ -382,8 +307,6 @@ mod tests {
 
     #[test]
     fn hook_denies_non_canonical_aegis_wrapper() {
-        // Begins with the `aegis` word but is not a canonical wrapper — must
-        // fail closed rather than be re-wrapped or passed through.
         match hook_response_value(r#"{"tool_input":{"command":"aegis --command '"}}"#) {
             HookOutcome::Deny(output) => {
                 assert_eq!(output["hookSpecificOutput"]["permissionDecision"], "deny");
@@ -455,8 +378,6 @@ mod tests {
 
     #[test]
     fn hook_wraps_read_only_aegis_invocations_with_redirects_pipes_and_chains() {
-        // #379: an agent rarely types a bare `aegis status`. It adds `2>&1`,
-        // pipes into `head`, or chains two read-only commands.
         for command in [
             "aegis --version 2>&1",
             "aegis status 2>/dev/null",
@@ -558,8 +479,6 @@ mod tests {
 
     #[test]
     fn hook_noops_canonical_wrapper_with_embedded_single_quotes() {
-        // Round-trip: wrap a command containing single quotes, then confirm the
-        // wrapper is recognized as canonical and passed through untouched.
         let wrapped = format!("aegis --command {}", shell_quote("echo 'oops'"));
         let input = serde_json::json!({ "tool_input": { "command": wrapped } }).to_string();
         assert!(matches!(hook_response_value(&input), HookOutcome::Noop));
@@ -593,10 +512,6 @@ mod tests {
 
     #[test]
     fn panic_payload_text_uses_stable_placeholder_for_non_string_payload() {
-        // A non-string panic payload must not steer the response shape: it
-        // renders to a stable placeholder, and the deny reason itself is the
-        // fixed `CONTAINED_PANIC_REASON` regardless of what the panic carries
-        // (M4, user story 8).
         assert_eq!(
             panic_payload_text(&42i32),
             "non-string panic payload",
@@ -611,9 +526,6 @@ mod tests {
 
     #[test]
     fn contained_panic_reason_is_fixed_and_detail_free() {
-        // The deny reason for a contained panic is one fixed string with no
-        // internal detail, so panic payloads carrying paths, command fragments,
-        // or internal state are never fed into a model's context (M4).
         assert_eq!(
             CONTAINED_PANIC_REASON,
             "aegis hook failed internally; refusing to run command unscanned"
@@ -628,9 +540,6 @@ mod tests {
 
     #[test]
     fn deny_output_includes_top_level_reason_for_claude() {
-        // Claude reads the top-level `reason` for the deny message; Codex reads
-        // `hookSpecificOutput.permissionDecisionReason`. Both must carry the
-        // reason so the deny is explained in either agent.
         let output = hook_deny_output("nope".to_string());
 
         assert_eq!(
@@ -642,8 +551,6 @@ mod tests {
             output["hookSpecificOutput"]["permissionDecisionReason"],
             "nope"
         );
-        // Emit only the structured `permissionDecision` form and no top-level
-        // `decision` field.
         assert!(
             output.get("decision").is_none(),
             "top-level `decision` must not be emitted"

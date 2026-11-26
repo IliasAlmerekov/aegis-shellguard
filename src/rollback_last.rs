@@ -1,7 +1,3 @@
-//! `aegis rollback --last` (#499, ADR-053): pick the latest command whose
-//! Snapshots are bound to the current location, confirm, restore each one
-//! through the same liveness preflight as `aegis rollback <id>`.
-
 use std::io::{BufRead, IsTerminal};
 use std::path::{Path, PathBuf};
 
@@ -15,19 +11,15 @@ use crate::{EXIT_DENIED, EXIT_INTERNAL};
 
 type Result<T> = std::result::Result<T, AegisError>;
 
-/// How many candidates "list" and the non-interactive listing show.
 const LIST_LIMIT: usize = 10;
 
-/// The directory `--last` runs in, and the git working tree around it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Location {
     cwd: PathBuf,
     repo_top: Option<PathBuf>,
-    /// The configured `sqlite_snapshot_path`, if any.
     sqlite_db: Option<PathBuf>,
 }
 
-/// A command with at least one live Snapshot bound to the [`Location`].
 #[derive(Debug)]
 pub(crate) struct Candidate<'a> {
     command: &'a RecordedCommand,
@@ -35,23 +27,17 @@ pub(crate) struct Candidate<'a> {
     unbound: Vec<&'a CommandSnapshot>,
 }
 
-/// What `--last` did.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum LastOutcome {
-    /// Nothing was restored: no candidate, or the operator declined.
     Refused { code: i32, message: String },
-    /// A chosen command's bound Snapshots were attempted.
     Attempted(LastReport),
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct LastReport {
     pub(crate) restored: Vec<RollbackTarget>,
-    /// Snapshot, exit code, reason.
     pub(crate) failed: Vec<(RollbackTarget, i32, String)>,
-    /// Restored, but the Rollback audit entry was not written: Snapshot, reason.
     pub(crate) unaudited: Vec<(RollbackTarget, String)>,
-    /// Unbound Snapshots of the chosen command; never restored.
     pub(crate) skipped: Vec<RollbackTarget>,
 }
 
@@ -60,17 +46,12 @@ enum Choice {
     Refuse { code: i32, message: String },
 }
 
-/// Canonical form of a recorded path. A path that no longer exists keeps its
-/// recorded spelling, so a Snapshot of a since-deleted directory still binds
-/// by the same string it was recorded with.
 fn canon(path: &str) -> PathBuf {
     Path::new(path)
         .canonicalize()
         .unwrap_or_else(|_| PathBuf::from(path))
 }
 
-/// Whether `snapshot`, taken by a command that ran in `command_cwd`, is bound
-/// to `location` (ADR-053).
 fn is_bound(location: &Location, command_cwd: &str, snapshot: &CommandSnapshot) -> bool {
     match snapshot.plugin.as_str() {
         "git" => match (&location.repo_top, &snapshot.git_target) {
@@ -78,8 +59,6 @@ fn is_bound(location: &Location, command_cwd: &str, snapshot: &CommandSnapshot) 
             (Some(_), None) => false,
             (None, _) => canon(command_cwd).starts_with(&location.cwd),
         },
-        // A restore goes to the configured database, so a Snapshot of any other
-        // file is not bound even when it lies under this location (#546).
         "sqlite" => SqlitePlugin::database_path(&snapshot.snapshot_id).is_some_and(|db| {
             let base = location.repo_top.as_ref().unwrap_or(&location.cwd);
             let configured = location
@@ -89,13 +68,10 @@ fn is_bound(location: &Location, command_cwd: &str, snapshot: &CommandSnapshot) 
             canon(&db.to_string_lossy()).starts_with(base)
                 && configured.is_some_and(|plugin| plugin.is_configured_database(&db))
         }),
-        // Docker scoping ignores cwd (ADR-039) and database targets have no directory.
         _ => false,
     }
 }
 
-/// Candidates for `location`, latest first. An entry without a recorded `cwd`
-/// is never a candidate.
 fn candidates<'a>(ledger: &'a SnapshotLedger, location: &Location) -> Vec<Candidate<'a>> {
     ledger
         .recent_commands()
@@ -187,7 +163,6 @@ fn no_candidate_message(location: &Location) -> String {
     )
 }
 
-/// Pick which candidate to restore. Only a question needs a terminal.
 fn choose(
     candidates: &[Candidate<'_>],
     location: &Location,
@@ -230,7 +205,6 @@ fn choose(
 fn ask(input: &mut impl BufRead, prompt: &str) -> String {
     eprint!("{prompt}");
     let mut line = String::new();
-    // A read error counts as "no", like EOF.
     let _ = input.read_line(&mut line);
     line.trim().to_ascii_lowercase()
 }
@@ -285,9 +259,6 @@ pub(crate) async fn execute(yes: bool) -> Result<LastOutcome> {
     Ok(LastOutcome::Attempted(report))
 }
 
-/// Run one Snapshot through the `aegis rollback <id>` preflight and restore.
-/// A failure is returned, not raised, so the other providers still run.
-/// `Ok(Some(reason))` means restored with no audit entry.
 async fn restore_one(
     registry: &SnapshotRegistry,
     logger: &AuditLogger,

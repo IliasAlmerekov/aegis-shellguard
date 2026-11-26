@@ -1,5 +1,3 @@
-//! Pure planning logic: build a planning outcome from a runtime context.
-
 use std::path::PathBuf;
 
 use crate::planning::git_target::{GitTargetPlan, GitTargetUnresolved};
@@ -12,24 +10,14 @@ use aegis_policy::{
     PolicyConfigFlags, PolicyExecutionContext, PolicyInput, evaluate_policy,
 };
 
-/// Typed request for pure planning against an already prepared runtime context.
 #[derive(Debug, Clone)]
 pub struct PlanningRequest<'a> {
-    /// Raw shell command to assess and plan.
     pub command: &'a str,
-    /// Working-directory resolution state for the command.
     pub cwd_state: CwdState,
-    /// Transport requesting the plan.
     pub transport: ExecutionTransport,
-    /// Whether CI was detected for this invocation.
     pub ci_detected: bool,
 }
 
-/// Build a typed planning outcome from runtime context plus one request.
-///
-/// Thin sync wrapper around [`plan_with_context_async`]; safe here because no
-/// caller of this sync path is nested inside an active `runtime.block_on(...)`
-/// (see `crate::watch::run`, which is, and therefore keeps the async path).
 pub fn plan_with_context(
     context: &RuntimeContext,
     request: PlanningRequest<'_>,
@@ -39,11 +27,6 @@ pub fn plan_with_context(
         .block_on(plan_with_context_async(context, request))
 }
 
-/// Whether a recovery (pre-exec snapshot) backstop must be considered for this
-/// command. ADR-016: recovery is the primary v1 backstop for *both* `Danger`
-/// commands and effect-opaque execution — the two axes are orthogonal, so
-/// either one warrants resolving applicable snapshot plugins.
-/// `SnapshotPolicy::None` (the trusted/global opt-out) suppresses both.
 fn recovery_backstop_applies(
     assessment: &aegis_types::Assessment,
     snapshot_policy: aegis_types::SnapshotPolicy,
@@ -52,9 +35,6 @@ fn recovery_backstop_applies(
         && snapshot_policy != aegis_types::SnapshotPolicy::None
 }
 
-/// Whether a trusted `snapshot_policy = None` is the only reason this command
-/// carries no `Required recovery` (ADR-031 section 3). `Mode::Audit` is a
-/// separate opt-out and is not marked here.
 fn recovery_opted_out(
     assessment: &aegis_types::Assessment,
     mode: aegis_types::Mode,
@@ -65,9 +45,6 @@ fn recovery_opted_out(
         && (assessment.risk == aegis_types::RiskLevel::Danger || assessment.effect_opaque)
 }
 
-/// Async variant of `plan_with_context` for callers already inside an async
-/// runtime. Avoids the nested `block_on` panic when resolving applicable
-/// snapshot plugins.
 pub async fn plan_with_context_async(
     context: &RuntimeContext,
     request: PlanningRequest<'_>,
@@ -96,22 +73,12 @@ pub async fn plan_with_context_async(
         _ => Vec::new(),
     };
 
-    // #471: the git Snapshot follows the Git target. Resolution (which
-    // canonicalizes paths) runs only here, for a command that already needs a
-    // recovery backstop and only when a git stage redirects its working tree.
     let mut git_targets = GitTargetPlan::default();
     if backstop {
-        // The target is planned even when the git provider is disabled: an
-        // unresolved Git target must still be disclosed and halt an
-        // unattended run. Disabling one provider is not the Audit opt-out.
         let report = context.git_stage_report(request.command, &assessment);
         git_targets = GitTargetPlan::resolve(&report, &request.cwd_state);
     }
     if backstop && matches!(request.cwd_state, CwdState::Resolved(_)) {
-        // A resolved target that is not a git working tree is a gap whether
-        // or not the git provider is enabled: report it as unresolved. A
-        // directory inside a repository is replaced by the repository top
-        // level, so the snapshot_id of every stage on one repository agrees.
         let mut top_levels: Vec<(PathBuf, PathBuf)> = Vec::new();
         for path in git_targets.resolved_paths() {
             if let Some(top) = aegis_snapshot::git_toplevel(path).await {
@@ -131,8 +98,6 @@ pub async fn plan_with_context_async(
             if !git_targets.process_cwd {
                 applicable_snapshot_plugins.retain(|name| *name != "git");
             }
-            // A resolved target the git plugin cannot cover is a gap, not a
-            // silent no-op.
             let mut covered: Vec<PathBuf> = Vec::new();
             for path in git_targets.resolved_paths() {
                 if context.git_snapshot_applicable_at_async(path).await {
@@ -146,11 +111,6 @@ pub async fn plan_with_context_async(
                 |path| covered.iter().any(|c| c == path),
                 GitTargetUnresolved::NotAGitRepository,
             );
-            // #525: a non-git stage moved by `cd` is snapshotted only when its
-            // directory lies in a repository the git plugin covers; anywhere
-            // else it behaves as if run there directly.
-            // The process cwd pass already snapshots its own repository, so a
-            // moved stage in that repository adds no second Snapshot of it.
             let cwd_top = match (&request.cwd_state, git_targets.process_cwd) {
                 (CwdState::Resolved(path), true) => aegis_snapshot::git_toplevel(path).await,
                 _ => None,
@@ -186,7 +146,6 @@ pub async fn plan_with_context_async(
 }
 
 impl PreparedPlanner {
-    /// Consume one planning request using an already prepared planner state.
     pub fn plan(&self, request: PlanningRequest<'_>) -> PlanningOutcome {
         match self {
             PreparedPlanner::Ready(context) => plan_with_context(context, request),
@@ -194,7 +153,6 @@ impl PreparedPlanner {
         }
     }
 
-    /// Async variant of [`Self::plan`] for callers inside an async runtime.
     pub async fn plan_async(&self, request: PlanningRequest<'_>) -> PlanningOutcome {
         match self {
             PreparedPlanner::Ready(context) => plan_with_context_async(context, request).await,
@@ -494,9 +452,6 @@ mod tests {
                 std::fs::write(workspace.join("cleanup.sh"), "echo ok\n").unwrap();
             },
             |workspace| {
-                // ADR-016 + ADR-022: recovery and language-analysis approval are
-                // orthogonal. A script that exceeds its read budget needs a one-time
-                // approval, while effect opacity still requires the recovery snapshot.
                 aegis_snapshot::testing::reset_registry_build_count();
 
                 let mut config = AegisConfig::default();
@@ -524,7 +479,6 @@ mod tests {
                     plan.execution_disposition(),
                     ExecutionDisposition::RequiresApproval
                 );
-                // Recovery backstop: a pre-exec snapshot is requested from the git plugin.
                 assert_eq!(
                     plan.snapshot_plan(),
                     SnapshotPlan::Required {

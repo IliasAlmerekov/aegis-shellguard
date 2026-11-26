@@ -1,13 +1,5 @@
-//! `env` launcher-prefix parsing: recognizing `env -S`/`--split-string` and
-//! the generic `env <assignments/flags> <program>` shape.
-
 use crate::{is_environment_assignment, program_basename};
 
-/// Split an `env -S` / `env --split-string` invocation into `split(STRING) ++ ARGS` (#384, #430).
-///
-/// Uses `split_whitespace` to borrow from `tokens` without quote-aware re-tokenization.
-/// Accepts `env FOO=1 -S "cmd"` ahead of `-S`; returns `None` for an unrecognized leading
-/// flag or a whitespace-only value so callers do not resolve to the wrong program.
 pub(crate) fn env_split_string_tokens<'a>(tokens: &[&'a str]) -> Option<Vec<&'a str>> {
     let (env, tail) = tokens.split_first()?;
     if !program_basename(env).eq_ignore_ascii_case("env") {
@@ -46,10 +38,6 @@ fn split_string_flag_value<'a>(tail: &[&'a str], index: usize) -> Option<(&'a st
     None
 }
 
-/// Number of tokens consumed by a recognized `env` option ahead of `-S`, or `None`.
-///
-/// Recognizes `-C`/`--chdir` here so `env -C d1 -S "cmd"` does not fall through to
-/// [`env_prefix_lengths`] and drop the command (#384, #430).
 fn env_split_string_leading_option_len(tail: &[&str], index: usize) -> Option<usize> {
     let token = tail[index];
     if is_environment_assignment(token) {
@@ -173,7 +161,6 @@ mod tests {
 
     #[test]
     fn effective_program_resolves_an_env_dash_s_chain_exactly_at_the_nesting_bound() {
-        // Nesting at the bound resolves; only nesting past it fails closed.
         let tokens = env_s_chain_tokens(crate::ENV_SPLIT_MAX_DEPTH as usize - 1);
         let refs: Vec<&str> = tokens.to_vec();
 
@@ -183,7 +170,6 @@ mod tests {
 
     #[test]
     fn effective_program_resolution_fails_closed_past_the_env_dash_s_nesting_bound() {
-        // Past the nesting bound, resolution records the stop so callers fail closed.
         let tokens = env_s_chain_tokens(crate::ENV_SPLIT_MAX_DEPTH as usize);
         let refs: Vec<&str> = tokens.to_vec();
 
@@ -192,7 +178,6 @@ mod tests {
 
     #[test]
     fn effective_program_resolution_of_a_deep_env_dash_s_chain_does_not_overflow_the_stack() {
-        // Run on a 256 KiB stack so a recursion-bound regression aborts this thread.
         let handle = std::thread::Builder::new()
             .stack_size(256 * 1024)
             .spawn(|| {

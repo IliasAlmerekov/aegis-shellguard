@@ -1,5 +1,3 @@
-//! The unified pattern vocabulary shared by the scanner and policy engine.
-
 use std::borrow::Cow;
 
 use serde::{Deserialize, Serialize};

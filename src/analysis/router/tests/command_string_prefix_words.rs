@@ -1,5 +1,3 @@
-//! Quoted command-string prefix words (`exec`, env assignments, `nohup`) ahead of interpreters (#384, #430).
-
 use super::*;
 
 #[test]

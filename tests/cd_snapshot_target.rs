@@ -1,7 +1,3 @@
-//! #525: an unattended auto-approved run halts when a `cd` earlier in the
-//! command line leaves the Snapshot location unknown, and does not halt when
-//! the directory is a plain one a non-git stage can run in.
-
 mod support;
 
 use std::fs;
@@ -48,8 +44,6 @@ fn commit_repo(dir: &Path) {
     }
 }
 
-/// A cwd that is a git repository with one commit, next to a plain directory
-/// and a second repository, `other`.
 fn world(mode: &str) -> World {
     let home = TempDir::new().unwrap();
     let root = TempDir::new().unwrap();
@@ -145,9 +139,6 @@ fn unresolved_cd_forms_halt_an_unattended_run_before_the_child() {
 
 #[test]
 fn a_variable_cd_path_is_disclosed_and_never_runs_unattended() {
-    // A `$` path makes the command effect-opaque, so the allowlist cannot
-    // auto-approve it (ADR-043). The run is denied before the child, and the
-    // audit entry still names the unresolved target.
     let world = world("Protect");
 
     let output = run_allowlisted(&world, "cd \"$D\" && rm -rf y", None);
@@ -227,7 +218,6 @@ fn audit_mode_does_not_halt_for_an_unresolved_cd() {
     assert!(entry["snapshots"].as_array().is_none_or(Vec::is_empty));
 }
 
-/// The snapshot ids a run recorded, by the directory they name.
 fn snapshot_ids(entry: &Value) -> Vec<String> {
     entry["snapshots"]
         .as_array()
@@ -270,12 +260,6 @@ fn a_cd_in_a_pipeline_stage_leaves_the_process_cwd_snapshot() {
 
 #[test]
 fn a_subshell_group_is_denied_for_analysis_not_for_an_unresolved_target() {
-    // A `( ... )` group is effect-opaque (ADR-043), so an allowlist cannot
-    // approve it and the run is denied before any Snapshot. The denial must
-    // come from that analysis rule: the `cd` inside or before the group is
-    // resolved, not disclosed as an unresolved Git target. The targets a
-    // group plans (`x` for `(cd x && D)`, the process cwd for `(cd x); D`)
-    // are pinned by the planning tests in `git_target_plan_tests.rs`.
     let world = world("Protect");
     for command in ["(cd ../other); rm -rf y", "(cd ../other && rm -rf y)"] {
         let output = run_allowlisted(&world, command, None);
@@ -291,9 +275,6 @@ fn a_subshell_group_is_denied_for_analysis_not_for_an_unresolved_target() {
     }
 }
 
-/// The cd target resolves to a plain directory, so the halt is not an
-/// unresolved git target. With no Snapshot provider the auto-approved Danger
-/// still halts for want of a Snapshot (ADR-031 section 1).
 fn assert_no_unresolved_git_halt(world: &World, output: &std::process::Output) {
     assert_eq!(output.status.code(), Some(2));
     assert_eq!(

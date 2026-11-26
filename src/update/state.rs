@@ -1,9 +1,3 @@
-//! Global update-check state under `~/.aegis/update.json`.
-//!
-//! Never read or written from a project `.aegis.toml` layer — consent to an
-//! outbound request is a per-machine decision, not something a project
-//! checked into a shared repository can turn on for a developer.
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -17,13 +11,9 @@ const AEGIS_DIR_NAME: &str = ".aegis";
 const STATE_FILE_NAME: &str = "update.json";
 const LOCK_FILE_NAME: &str = "update.lock";
 
-/// An installation channel Aegis can check for updates. Only `Npm` exists in
-/// v1 (ADR-038); the enum shape leaves room for a future channel without a
-/// breaking change to the state schema or CLI surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Channel {
-    /// The npm registry entry for `@iliasalmerekov/aegis`.
     Npm,
 }
 
@@ -48,32 +38,20 @@ impl std::fmt::Display for Channel {
     }
 }
 
-/// Consent, cache, and notice-throttling state persisted to
-/// `~/.aegis/update.json`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct UpdateState {
-    /// Selected installation channel. `None` when never enabled or after
-    /// `disable`.
     #[serde(default)]
     pub channel: Option<Channel>,
-    /// Whether the user opted in to update checks.
     #[serde(default)]
     pub consent: bool,
-    /// The newest version the last successful check observed.
     #[serde(default)]
     pub latest_known_version: Option<String>,
-    /// RFC 3339 timestamp of the last successful registry check.
     #[serde(default)]
     pub last_success_check_at: Option<String>,
-    /// RFC 3339 timestamp of the last automatic or explicit registry-check
-    /// attempt. This throttles automatic retries even when the request fails.
     #[serde(default)]
     pub last_check_attempt_at: Option<String>,
-    /// The version the update notice was last shown for.
     #[serde(default)]
     pub last_notice_version: Option<String>,
-    /// RFC 3339 timestamp the notice was last shown at, for
-    /// `last_notice_version`.
     #[serde(default)]
     pub last_notice_at: Option<String>,
 }
@@ -82,18 +60,14 @@ fn home_dir() -> Result<PathBuf> {
     aegis_config::home_dir().ok_or(UpdateError::NoHome)
 }
 
-/// Resolve `~/.aegis/update.json`.
 pub fn state_path() -> Result<PathBuf> {
     Ok(home_dir()?.join(AEGIS_DIR_NAME).join(STATE_FILE_NAME))
 }
 
-/// Resolve `~/.aegis/update.lock`, the background-check dedup lock.
 pub fn lock_path() -> Result<PathBuf> {
     Ok(home_dir()?.join(AEGIS_DIR_NAME).join(LOCK_FILE_NAME))
 }
 
-/// Load state from `path`. A missing file is not an error — it is the
-/// default, not-yet-configured state.
 pub fn load(path: &Path) -> Result<UpdateState> {
     match fs::read_to_string(path) {
         Ok(raw) => serde_json::from_str(&raw).map_err(|err| UpdateError::CorruptState {
@@ -105,9 +79,6 @@ pub fn load(path: &Path) -> Result<UpdateState> {
     }
 }
 
-/// Persist `state` to `path` atomically (temp file + rename), owner-only on
-/// Unix. A failure here must never corrupt the previous valid file — the
-/// rename only happens once the temp file is fully written and synced.
 pub fn save(path: &Path, state: &UpdateState) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;

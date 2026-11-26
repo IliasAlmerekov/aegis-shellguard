@@ -4,10 +4,6 @@ use super::ratchet_helpers::{
 };
 use super::*;
 
-// The ratchet test bodies live in `ratchet/` fragments below and are textually
-// inlined here via `include!` so they share this module's scope (notably the
-// `use super::*` imports and the `ratchet_helpers` re-exports). The split keeps
-// every file under the 800-line file-size budget; no test body was modified.
 include!("ratchet/snapshot_and_sandbox_flags.rs");
 include!("ratchet/provider_targets_and_sandbox.rs");
 include!("ratchet/bugs.rs");

@@ -1,7 +1,3 @@
-//! The surface `aegis-config` promises to callers outside the workspace.
-//! A refactor may reshape the internals freely, but removing or narrowing
-//! one of these is a breaking change for the crate.
-
 #[path = "../../../tests/support/isolated_test.rs"]
 mod isolated_test;
 

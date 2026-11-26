@@ -1,10 +1,3 @@
-//! Unit tests for the Supabase snapshot runtime.
-//!
-//! Covers the atomic-write, rollback eligibility, config-target-match, and
-//! snapshot-id encoding invariants. The test-only manifest write failure
-//! injection hook (`INJECT_MANIFEST_WRITE_FAILURE_FOR_TESTS`) is exercised by
-//! `snapshot_fails_when_manifest_commit_fails_and_removes_dump`.
-
 use super::manifest_io::write_manifest_atomically;
 use super::*;
 use tempfile::TempDir;
@@ -219,10 +212,6 @@ async fn snapshot_uses_pg_dump_and_writes_manifest_bundle() {
         "postgres",
     );
 
-    // Canonicalize the snapshot root so the dump path the runtime logs (built
-    // from the bundle dir) matches the canonical path encoded in the snapshot id
-    // (runtime canonicalizes the manifest path). On macOS `/var` is a symlink to
-    // `/private/var`, so without this the two paths differ.
     let snapshot_root = temp_dir.path().canonicalize().unwrap().join("snaps");
     let mut plugin = SupabasePlugin::new(config, snapshot_root);
     plugin.pg_dump_bin = pg_dump.display().to_string();
@@ -740,9 +729,6 @@ async fn rollback_uses_manifest_target_as_source_of_truth() {
             .windows(2)
             .any(|window| window[0] == "-d" && window[1] == "postgres")
     );
-    // The runtime canonicalizes the resolved artifact path before invoking
-    // pg_restore; canonicalize the expected path too so the comparison holds on
-    // macOS where `/var` is a symlink to `/private/var`.
     let expected_dump = manifest_path
         .parent()
         .unwrap()

@@ -1,7 +1,5 @@
 use super::*;
 
-// ── Always allow option ───────────────────────────────────────────────────
-
 #[test]
 fn danger_always_allow_returns_approve_always() {
     let p = make_match(
@@ -188,8 +186,6 @@ fn block_returns_deny_via_decision() {
     );
 }
 
-// ── Warn ──────────────────────────────────────────────────────────────────
-
 #[test]
 fn warn_enter_denies() {
     let p = make_match("GIT-001", RiskLevel::Warn, "reset", "Hard reset", None);
@@ -325,8 +321,6 @@ fn warn_output_contains_explicit_yes_no_prompt() {
         "Warn dialog must use the explicit yes/no/always prompt; got:\n{text}"
     );
 }
-
-// ── Dialog content ────────────────────────────────────────────────────────
 
 #[test]
 fn danger_output_contains_command() {
@@ -481,23 +475,11 @@ fn dialog_shows_snapshot_records() {
     );
 }
 
-// ── Non-interactive mode ──────────────────────────────────────────────────
-//
-// When stdin is not a TTY (CI, pipes, agent runners) Aegis must fail-closed:
-// any command that would trigger a prompt is denied without asking.
-//
-// Rule table:
-//   Safe   → auto-approved  (same as interactive)
-//   Warn   → denied         (no human present to confirm)
-//   Danger → denied         (no human present to confirm)
-//   Block  → denied         (same as interactive — always hard-stopped)
-
 #[test]
 fn noninteractive_warn_is_denied() {
     let p = make_match("GIT-001", RiskLevel::Warn, "reset", "Hard reset", None);
     let assessment = make_assessment("git reset --hard HEAD~1", RiskLevel::Warn, vec![p]);
 
-    // Even with an "approving" response on stdin, is_interactive=false must deny.
     let result = show_confirmation_with_input(
         &assessment,
         &default_explanation_for_assessment(&assessment),
@@ -587,7 +569,6 @@ fn noninteractive_output_explains_denial() {
 
 #[test]
 fn noninteractive_safe_is_still_approved() {
-    // Safe commands must never be blocked regardless of TTY state.
     let assessment = make_assessment("ls -la", RiskLevel::Safe, vec![]);
     let result = show_confirmation_with_input(
         &assessment,

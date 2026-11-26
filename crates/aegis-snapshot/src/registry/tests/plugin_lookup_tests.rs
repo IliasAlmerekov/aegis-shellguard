@@ -1,6 +1,5 @@
 use super::*;
 
-/// A plugin that records which operation reached it under its own name.
 struct RecordingPlugin {
     name: &'static str,
     calls: Arc<Mutex<Vec<String>>>,

@@ -100,9 +100,6 @@ fn h9_public_docs_distinguish_required_recovery_from_best_effort_snapshots() {
     }
 }
 
-/// The six confidentiality overclaims ADR-029 keeps banned. They survive the
-/// move from an optional add-on to a mandatory layer unchanged: the layer
-/// confines writes and network access, and no document may promise more.
 const BANNED_CONFIDENTIALITY_OVERCLAIMS: [&str; 6] = [
     "provides a confidentiality boundary",
     "guarantees confidentiality",
@@ -122,29 +119,18 @@ fn assert_no_confidentiality_overclaims(contents: &str, doc: &str) {
     }
 }
 
-/// `PRD.md` is the normative source of the Sandbox contract, so it is pinned to
-/// the mandatory-layer wording of ADR-029 and the `Trusted ceiling` wording of
-/// ADR-030. The derived-profile wording stays in the PRD as 1.x target state
-/// (ADR-030 amendment of 2026-10-06).
 #[test]
 fn prd_defines_the_mandatory_sandbox_contract() {
     let prd = fs::read_to_string(repo_path("PRD.md")).unwrap();
 
     for needle in [
-        // ADR-029: the layer is mandatory, and unavailability is one event with
-        // the block rather than a warning followed by an unconfined run.
         "mandatory Sandbox",
         "sandbox_status = \"unavailable\" accompanies Decision::Blocked",
-        // ADR-029 decision 7: the surviving honesty claim, both halves.
         "not a confidentiality boundary",
         "not a privilege boundary",
         "write/network guardrail",
-        // ADR-030: the ceiling bounds; derivation (1.x) only subtracts.
         "Trusted ceiling",
         "Confinement degradation",
-        // ADR-029 amendment (2026-08-20): the `[sandbox]` migration contract.
-        // A released config keeps loading, both runtime flags are inert, and a
-        // malformed ceiling entry narrows instead of failing the load.
         "deprecated_sandbox_field",
         "trusted_ceiling_path_omitted",
         "zero configured writable roots",
@@ -157,17 +143,9 @@ fn prd_defines_the_mandatory_sandbox_contract() {
     }
 
     for stale in [
-        // ADR-029 decision 2 removed the flag; a mandatory layer has no
-        // bypass switch to document.
         "sandbox.required = true",
-        // A mandatory layer never falls back to running unconfined.
         "optional unconfined fallback",
-        // ADR-030: the PRD must not fix an index or a per-session profile.
         "MultiMap",
-        // The §5.5 pending marker is spent: the `[sandbox]` migration contract
-        // is decided
-        // (<https://github.com/IliasAlmerekov/aegis-shellguard/issues/240>) and
-        // stated, so a normative section may not go provisional again.
         "This section is not final",
     ] {
         assert!(
@@ -180,24 +158,11 @@ fn prd_defines_the_mandatory_sandbox_contract() {
     assert_no_confidentiality_overclaims(&prd, "PRD.md");
 }
 
-/// The three documents derived from `PRD.md` §5.5. Each one describes the Sandbox
-/// to a different audience, and each must agree with the PRD about what 1.0
-/// promises.
 const DERIVED_SANDBOX_DOCS: [&str; 3] =
     ["README.md", "docs/config-schema.md", "docs/threat-model.md"];
 
-/// The marker a document must carry before it may describe the pre-ADR-029
-/// optional Sandbox. Matched case-insensitively so a sentence may open with it.
-///
-/// It exists because the shipped 0.x code still implements the optional model
-/// while `PRD.md` already promises the mandatory layer. A derived document is
-/// allowed to describe the old behaviour — that is honesty, not drift — but only
-/// where it is labelled as the current implementation rather than the contract.
 const PRE_1_0_SANDBOX_MARKER: &str = "current pre-1.0 implementation";
 
-/// Phrases that only make sense under the optional model ADR-029 replaced. They
-/// are not banned outright: a document that carries `PRE_1_0_SANDBOX_MARKER` may
-/// use them to describe what the shipped binary does today.
 const OPTIONAL_SANDBOX_PHRASES: [&str; 4] = [
     "sandbox.required = true",
     "optional unconfined fallback",
@@ -205,14 +170,6 @@ const OPTIONAL_SANDBOX_PHRASES: [&str; 4] = [
     "optional Sandbox",
 ];
 
-/// Every derived document states the ADR-029 contract: the layer is mandatory,
-/// unavailability blocks, the two runtime flags are inert, and the honesty claim
-/// keeps both of its halves.
-///
-/// `PRD.md` is the normative source (see
-/// `prd_defines_the_mandatory_sandbox_contract`); this test is the derived-doc
-/// contract that replaced the debt marker
-/// <https://github.com/IliasAlmerekov/aegis-shellguard/issues/205> carried.
 #[test]
 fn derived_docs_state_the_mandatory_sandbox_contract() {
     for doc in DERIVED_SANDBOX_DOCS {
@@ -228,7 +185,6 @@ fn derived_docs_state_the_mandatory_sandbox_contract() {
         assert_no_confidentiality_overclaims(&contents, doc);
     }
 
-    // The user-facing surfaces that describe what the layer is for.
     for doc in ["README.md", "docs/config-schema.md", "docs/threat-model.md"] {
         let contents = fs::read_to_string(repo_path(doc)).unwrap();
         assert!(
@@ -241,7 +197,6 @@ fn derived_docs_state_the_mandatory_sandbox_contract() {
         );
     }
 
-    // The surfaces that name the migration contract of the two retired flags.
     for doc in ["README.md", "docs/config-schema.md", "docs/threat-model.md"] {
         let contents = fs::read_to_string(repo_path(doc)).unwrap();
         assert!(
@@ -250,8 +205,6 @@ fn derived_docs_state_the_mandatory_sandbox_contract() {
         );
     }
 
-    // `docs/config-schema.md` enumerates the fields line by line, so it carries
-    // the per-field semantics the prose documents may summarize.
     let config_schema = fs::read_to_string(repo_path("docs/config-schema.md")).unwrap();
     for needle in [
         "trusted_ceiling_path_omitted",
@@ -266,16 +219,6 @@ fn derived_docs_state_the_mandatory_sandbox_contract() {
     }
 }
 
-/// Wherever a derived document still describes the optional Sandbox, it says so
-/// explicitly — the old behaviour may be documented, but never as the contract.
-///
-/// **This test is temporary.** It exists only while the shipped code and the PRD
-/// disagree. When
-/// <https://github.com/IliasAlmerekov/aegis-shellguard/issues/229> and
-/// <https://github.com/IliasAlmerekov/aegis-shellguard/issues/230> make the layer
-/// mandatory in the code, delete this test and the paragraphs it guards: the
-/// optional model stops being current behaviour and becomes history, which
-/// belongs in `CHANGELOG.md`, not in a contract document.
 #[test]
 fn derived_docs_label_the_optional_sandbox_as_current_behaviour() {
     for doc in DERIVED_SANDBOX_DOCS {
@@ -302,9 +245,6 @@ fn derived_docs_label_the_optional_sandbox_as_current_behaviour() {
     }
 }
 
-/// Platform reality and the execution seams, which no scope decision changes:
-/// what each OS mechanism does and does not confine, and the audited status for an
-/// unestablished layer.
 #[test]
 fn sandbox_platform_seams_stay_documented() {
     let config_schema = fs::read_to_string(repo_path("docs/config-schema.md")).unwrap();
@@ -322,9 +262,6 @@ fn sandbox_platform_seams_stay_documented() {
 
 #[test]
 fn m3a_docs_keep_disabled_passthrough_and_hook_refresh_explicit() {
-    // Prose wraps at the author's discretion, so match against a
-    // whitespace-normalized copy: reflowing a paragraph must not fail this
-    // contract, and deleting the promise must.
     fn unwrapped(path: &str) -> String {
         fs::read_to_string(repo_path(path))
             .unwrap()
@@ -336,8 +273,6 @@ fn m3a_docs_keep_disabled_passthrough_and_hook_refresh_explicit() {
     let readme = unwrapped("README.md");
     let troubleshooting = unwrapped("docs/troubleshooting.md");
 
-    // The Toggle is an operator escape hatch (ADR-005), so the docs must say
-    // plainly what an operator gets while it is off, and that a session says so.
     for needle in [
         "SessionStart effective-state notices",
         "unguarded passthrough",
@@ -349,16 +284,11 @@ fn m3a_docs_keep_disabled_passthrough_and_hook_refresh_explicit() {
         );
     }
 
-    // The CI override is the one case where the local Toggle does not decide
-    // the effective state; a doc that omits it teaches operators to trust a
-    // stale `aegis off`.
     assert!(
         readme.contains("CI keeps enforcement active even if the local disabled flag exists"),
         "README must document that CI overrides a local disabled Toggle"
     );
 
-    // `aegis status` is the authoritative effective-state surface; the notice
-    // only reports it.
     for needle in [
         "Run `aegis status` to inspect the configured and effective state.",
         "Managed hooks are updated explicitly; they never self-update while a session starts.",
@@ -369,8 +299,6 @@ fn m3a_docs_keep_disabled_passthrough_and_hook_refresh_explicit() {
         );
     }
 
-    // Visibility is informational. Promising an audit trail for session starts
-    // would exceed the contract — only Toggle transitions are auditable.
     for forbidden in [
         "session start is audited",
         "audits every session start",
@@ -395,10 +323,6 @@ fn m1_sandbox_api_docs_define_failure_and_non_return_contracts() {
         .expect("PreparedSandboxCommand::exec docs must exist");
     assert!(exec_docs.contains("does not return when process replacement succeeds"));
     assert!(exec_docs.contains("SandboxError::Io"));
-    // Issue #211: Landlock is applied in the innermost re-exec'd wrapper inside
-    // bwrap's mount namespace, so exec() no longer returns
-    // SandboxError::Execution; a Landlock failure fails closed inside the
-    // wrapper with a non-zero exit code.
     assert!(exec_docs.contains("innermost re-exec'd"));
 
     let prepare_exec_docs = source
@@ -592,10 +516,6 @@ fn docs_should_document_explicit_shell_proxy_setup() {
 
 #[test]
 fn docs_grammar_manifest_records_l1_foundation_provenance() {
-    // ADR-022 §8: the release ships a grammar manifest of versions, provenance,
-    // and licenses. This locks the human-readable manifest against silent drift
-    // from the L1 foundation set (ADR-022 §9) and the four required release
-    // targets. The machine-readable form is validated by `aegis-language`.
     let path = repo_path("docs/language-grammar-manifest.md");
     let contents = fs::read_to_string(&path).expect("docs/language-grammar-manifest.md must exist");
 
@@ -622,9 +542,6 @@ fn docs_grammar_manifest_records_l1_foundation_provenance() {
 
 #[test]
 fn m4_docs_keep_the_fail_closed_hook_panic_guarantee_and_its_non_goals_explicit() {
-    // Prose wraps at the author's discretion, so match against a
-    // whitespace-normalized copy: reflowing a paragraph must not fail this
-    // contract, and deleting the promise must.
     fn unwrapped(path: &str) -> String {
         fs::read_to_string(repo_path(path))
             .unwrap()
@@ -638,7 +555,6 @@ fn m4_docs_keep_the_fail_closed_hook_panic_guarantee_and_its_non_goals_explicit(
     let readme = unwrapped("README.md");
     let context = fs::read_to_string(repo_path("CONTEXT.md")).unwrap();
 
-    // The threat model must state plainly which failure modes are not covered.
     for needle in [
         "Hook panic or abnormal termination",
         "external SIGKILL",
@@ -651,8 +567,6 @@ fn m4_docs_keep_the_fail_closed_hook_panic_guarantee_and_its_non_goals_explicit(
         );
     }
 
-    // Existing installations must be told that refreshing the Hook scripts is
-    // required to gain the protection.
     for needle in [
         "fail-closed `Hook` layer",
         "re-run `aegis install-hooks --all`",
@@ -668,7 +582,6 @@ fn m4_docs_keep_the_fail_closed_hook_panic_guarantee_and_its_non_goals_explicit(
         "README must tell users that refreshing the hooks gains the fail-closed panic layer"
     );
 
-    // The glossary must define the concept once, cross-referenced from Hook.
     assert!(
         context.contains("**Contained Hook Panic**"),
         "CONTEXT.md must define the canonical term `Contained Hook Panic`"

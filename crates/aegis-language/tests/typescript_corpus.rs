@@ -1,6 +1,3 @@
-//! TypeScript adapter corpus under `tests/corpora/typescript/` (ADR-022 §3, §7, §11).
-//! Pins detected operations, TypeScript-only syntax, operand certainty, nested payloads, and parse errors.
-
 #![cfg(feature = "grammars")]
 
 #[path = "common/corpus_harness.rs"]
@@ -23,8 +20,6 @@ const MALFORMED: &str = include_str!("corpora/typescript/malformed.ts");
 
 #[test]
 fn fs_delete_emits_four_deletes_with_rmsync_recursive() {
-    // The first call carries an explicit type argument (`fs.unlinkSync<void>`);
-    // it still surfaces as a `FilesystemDelete` with `Known` certainty.
     let expected = [
         ExpectedOp {
             kind: OperationKind::FilesystemDelete,
@@ -103,8 +98,6 @@ fn perms_emits_two_permission_or_ownership_changes() {
 
 #[test]
 fn exec_shell_emits_three_code_executions_with_bash_payloads() {
-    // The third call carries an explicit type argument
-    // (`child_process.exec<void>`); its Bash payload is still recovered.
     let expected = [
         bash_exec("rm -rf /tmp/x"),
         bash_exec("rm /tmp/y"),
@@ -115,10 +108,6 @@ fn exec_shell_emits_three_code_executions_with_bash_payloads() {
 
 #[test]
 fn exec_js_emits_two_code_executions_with_javascript_payloads() {
-    // The shared `family` module tags `eval`/`Function` payloads as
-    // `JavaScript` (they evaluate JS regardless of the enclosing file's
-    // language). The `new Function<string>(...)` type argument does not change
-    // the recovered JavaScript body.
     let expected = [
         js_exec("fs.unlinkSync('x')"),
         js_exec("return fs.unlinkSync('y')"),
@@ -133,7 +122,6 @@ fn negatives_emit_no_operations() {
 
 #[test]
 fn dynamic_operand_emits_ops_with_dynamic_certainty_and_no_payload() {
-    // ADR-022 §3, §7: dynamic operands never lower risk and dynamic payloads are never evaluated.
     let expected = [
         ExpectedOp {
             kind: OperationKind::FilesystemDelete,
@@ -173,7 +161,6 @@ fn malformed_source_records_parse_errors() {
     assert_malformed(analyze, MALFORMED);
 }
 
-/// Build a `CodeExecution` expectation carrying a JavaScript literal payload.
 fn js_exec(payload: &'static str) -> ExpectedOp {
     ExpectedOp {
         kind: OperationKind::CodeExecution,

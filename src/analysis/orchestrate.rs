@@ -1,21 +1,3 @@
-//! Parent-side language analysis orchestration (ADR-022 §2/§6/§7, L1
-//! Iteration 6 Slice C).
-//!
-//! [`run`] routes a command's analyzable source targets, spawns the ephemeral
-//! worker, and drains the parent-owned [`AnalysisQueue`]: pop a target →
-//! analyze it via one `Request::Analyze` → map the response through the
-//! in-process [`map_adapter_result`] → push any recursive targets back onto
-//! the queue → repeat until the queue empties or a budget cap fires. Per-target
-//! [`LanguageAnalysisResult`]s are folded into the baseline [`Assessment`]
-//! via a single aggregated [`merge_analysis`] call.
-//!
-//! Iteration 9 wires this orchestration into live planning for every routed
-//! target, including bounded script-file reads, typed unresolved-source
-//! degradation, trusted aliases, and effective queue/session budgets. One
-//! worker is spawned per queue pop (≤ `max_targets` spawns per session):
-//! `Worker::analyze` closes stdin and reaps the child every session, so worker
-//! reuse across pops remains a deferred performance optimization.
-
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -41,51 +23,29 @@ use super::shell_scan::{fold_result, scan_shell_source};
 use super::worker_client::{RequestKind, TargetRequest, TargetResult, Worker, WorkerError};
 use aegis_scanner::Scanner;
 
-/// The outcome of [`run`]: distinguishes "no routed analysis targets — no
-/// subprocess spawned" from "the worker ran and results were folded in".
 #[derive(Debug, Clone)]
 pub enum Outcome {
-    /// `route` yielded no target. No subprocess was spawned;
-    /// the `baseline` is returned unchanged (`analysis` still `None`). This is
-    /// the ADR-022 §0 contract: language analysis never starts without an
-    /// analyzable source target.
     NotStarted {
-        /// The baseline `Assessment`, untouched.
         baseline: Assessment,
     },
-    /// Routing started and analysis or typed degradation was produced.
-    /// Per-target [`LanguageAnalysisResult`]s have been folded into `baseline`
-    /// via a single aggregated [`merge_analysis`] call.
     Analyzed {
-        /// The merged `Assessment` (baseline + aggregated language analysis).
         assessment: Assessment,
-        /// The number of targets analyzed, top-level + recursive (one
-        /// `Request::Analyze` each, one worker spawn each).
         target_count: usize,
     },
 }
 
-/// Effective, hard-bounded budgets for one language-analysis session.
 #[derive(Debug, Clone, Copy)]
 pub struct OrchestrationBudget {
-    /// Maximum bytes accepted from one inline source body.
     pub inline_source_limit_bytes: usize,
-    /// Maximum bytes read from one script file.
     pub script_file_limit_bytes: u64,
-    /// Maximum top-level script files inspected.
     pub max_script_files: usize,
-    /// Maximum recursive depth.
     pub max_depth: u32,
-    /// Maximum distinct top-level and recursive targets.
     pub max_targets: usize,
-    /// Maximum aggregate source bytes.
     pub max_aggregate_bytes: usize,
-    /// Total wall-clock budget for the complete command.
     pub total_timeout: Duration,
 }
 
 impl OrchestrationBudget {
-    /// ADR-022 §7 initial bounded defaults.
     pub const L1_DEFAULT: Self = Self {
         inline_source_limit_bytes: 16 * 1024,
         script_file_limit_bytes: 256 * 1024,
@@ -97,14 +57,6 @@ impl OrchestrationBudget {
     };
 }
 
-/// Run language analysis with the effective configuration budgets.
-///
-/// Resolves relative targets against the Aegis process working directory — a
-/// convenience for callers with no separate command working directory. Production
-/// callers pass their own [`AnalysisCwd`] to [`run_with_budget_in_cwd`], because an
-/// unresolved command working directory must degrade rather than silently mean `.`
-/// (ADR-022 §6). Shell/Bash targets are scanned with the built-in Scanner;
-/// production callers pass their config-aware Scanner instead.
 pub async fn run_with_budget(
     command: &str,
     baseline: &Assessment,
@@ -116,7 +68,6 @@ pub async fn run_with_budget(
         .inspect_err(|error| {
             tracing::warn!(%error, "built-in Scanner unavailable; Bash targets degrade");
         })
-        // None degrades Bash targets to GrammarUnavailable instead of trusting the narrower adapter.
         .ok();
     run_with_budget_in_cwd(
         command,
@@ -130,15 +81,6 @@ pub async fn run_with_budget(
     .await
 }
 
-/// Run language analysis with effective budgets and a command working directory.
-///
-/// Relative script-file and direct-exec targets are resolved against
-/// `command_cwd`; absolute paths and inline sources are unaffected.
-///
-/// `shell_scanner` is applied to the source of every Shell/Bash target (see
-/// [`scan_shell_source`]). With `None`, a Bash target records
-/// [`DegradationReason::GrammarUnavailable`] instead of trusting the Bash
-/// adapter's narrower view of the script.
 pub async fn run_with_budget_in_cwd(
     command: &str,
     command_cwd: AnalysisCwd<'_>,
@@ -179,7 +121,6 @@ pub async fn run_with_budget_in_cwd(
     let mut any_resolved = false;
     let mut per_target: Vec<LanguageAnalysisResult> = Vec::new();
     let mut script_files = 0usize;
-    // Speculative `LauncherOperand` candidates stay off `max_script_files`; 4x caps stat/shebang I/O (#437).
     let mut launcher_operand_candidates = 0usize;
     let max_launcher_operand_candidates = budget.max_script_files.saturating_mul(4);
 
@@ -211,7 +152,6 @@ pub async fn run_with_budget_in_cwd(
                     );
                 }
                 #[cfg(not(feature = "language-analysis"))]
-                // Path provenance is recorded only by the language-analysis worker path.
                 let _ = path;
                 (true, false)
             }
@@ -229,7 +169,6 @@ pub async fn run_with_budget_in_cwd(
                     );
                 }
                 #[cfg(not(feature = "language-analysis"))]
-                // Path provenance is recorded only by the language-analysis worker path.
                 let _ = path;
                 (false, true)
             }
@@ -277,9 +216,6 @@ pub async fn run_with_budget_in_cwd(
                 source_byte_offset,
                 ..
             } => {
-                // A launcher operand only proves itself a real script here
-                // (verified shebang); only now does it compete with
-                // ScriptFile/DirectExec for the same max_script_files budget.
                 if is_launcher_operand {
                     script_files += 1;
                     if script_files > budget.max_script_files {
@@ -305,15 +241,12 @@ pub async fn run_with_budget_in_cwd(
                 unresolved_execution |= reason == DegradationReason::DynamicSource;
                 per_target.push(degraded(reason));
             }
-            // A direct executable without a verified shebang is not an
-            // analyzable source target and does not claim safety.
             Resolution::NotApplicable => {}
         }
     }
 
     #[cfg(not(feature = "language-analysis"))]
     {
-        // Only the language-analysis worker path uses aegis_path and shell_scanner.
         let _ = (aegis_path, shell_scanner);
         if per_target.is_empty() {
             if any_resolved {
@@ -331,7 +264,6 @@ pub async fn run_with_budget_in_cwd(
         unresolved_execution |= any_resolved;
     }
 
-    // Worker::analyze closes stdin and reaps the child per session, so each pop spawns one worker.
     #[cfg(feature = "language-analysis")]
     while let Some(target) = queue.pop() {
         let Some(remaining) = session_deadline.checked_duration_since(Instant::now()) else {
@@ -346,7 +278,6 @@ pub async fn run_with_budget_in_cwd(
         };
         let results: Vec<TargetResult> = match Worker::spawn(aegis_path).await {
             Ok(mut worker) => worker.analyze(vec![request], remaining).await,
-            // Spawn failure degrades as WorkerFailure rather than claiming safety (ADR-022 §2).
             Err(_) => vec![TargetResult::Failed(WorkerError::Closed)],
         };
         let result = results
@@ -367,7 +298,6 @@ pub async fn run_with_budget_in_cwd(
         }
     }
 
-    // Merge once so earlier targets' degradation reasons are not overwritten.
     let aggregated = aggregate(&per_target);
     let mut assessment = merge_analysis(baseline, &aggregated);
     assessment.effect_opaque |= unresolved_execution;
@@ -385,11 +315,6 @@ fn degraded(reason: DegradationReason) -> LanguageAnalysisResult {
     }
 }
 
-/// Push `target` onto `queue`, recording a [`DegradationReason::LimitExceeded`]
-/// degradation into `per_target` when a budget cap rejects it (ADR-022 §7:
-/// preserve Matches already produced, record the limit). A duplicate or an
-/// acceptance records nothing — a duplicate was already analyzed, an
-/// acceptance is normal flow.
 #[cfg(feature = "language-analysis")]
 fn push_with_degradation(
     queue: &mut AnalysisQueue,
@@ -405,16 +330,6 @@ fn push_with_degradation(
     }
 }
 
-/// Map one worker [`TargetResult`] into a per-target [`LanguageAnalysisResult`]
-/// and the recursive targets its literal execution-sink payloads produced.
-///
-/// - `Responded(Analyzed{result})` → [`map_adapter_result`] with the target's
-///   own `depth` and `source_hash` so recursive targets land at `depth + 1`
-///   with correct provenance. Returns `(analysis, recursive_targets)`.
-/// - `Responded(UnsupportedLanguage)` → `Degraded` with `[GrammarUnavailable]`.
-/// - `Responded(Parsed|ParseFailed)` (defensive — unreachable when sending
-///   `Analyze`) → `Degraded` with `[WorkerFailure]`.
-/// - `Failed(WorkerError)` → `Degraded` with `[WorkerFailure]`.
 #[cfg(feature = "language-analysis")]
 fn map_target_result(
     result: TargetResult,
@@ -454,8 +369,6 @@ fn map_target_result(
             },
             Vec::new(),
         ),
-        // Defensive: Parsed/ParseFailed are unreachable when sending Analyze,
-        // since the worker routes Analyze to Analyzed/UnsupportedLanguage only.
         TargetResult::Responded(_) => (
             LanguageAnalysisResult {
                 status: AnalysisStatus::Degraded,
@@ -475,14 +388,6 @@ fn map_target_result(
     }
 }
 
-/// Aggregate per-target results into ONE [`LanguageAnalysisResult`] for a
-/// single [`merge_analysis`] call.
-///
-/// Matches are concatenated; degradation reasons are deduplicated across
-/// targets; status is `Degraded` if any target degraded, else `Complete` if
-/// any target produced a match, else `NotApplicable`. This preserves earlier
-/// targets' reasons rather than letting a per-target `merge_analysis` clobber
-/// them (D3).
 fn aggregate(per_target: &[LanguageAnalysisResult]) -> LanguageAnalysisResult {
     let mut matches = Vec::new();
     let mut reasons: Vec<DegradationReason> = Vec::new();

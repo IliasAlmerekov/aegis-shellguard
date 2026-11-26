@@ -10,7 +10,6 @@ async fn triple(plugin: &DockerPlugin, id: &str) -> (R, V, S) {
     )
 }
 
-/// Mock docker whose `image inspect <name>` succeeds only for `name == live`.
 fn mock_with_live_image(dir: &std::path::Path, live: &str) {
     write_mock_docker(
         dir,
@@ -83,7 +82,6 @@ async fn an_empty_id_is_unavailable() {
 #[tokio::test]
 async fn every_image_is_checked_in_one_docker_call() {
     let dir = TempDir::new().unwrap();
-    // Succeeds only when one call names both images; a call per image fails.
     write_mock_docker(
         dir.path(),
         r#"if [ "$*" = "image inspect snap-a snap-b" ]; then exit 0; fi

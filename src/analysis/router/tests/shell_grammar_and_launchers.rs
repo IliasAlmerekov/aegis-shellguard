@@ -1,5 +1,3 @@
-//! Heredoc-chained execs, wrap-depth bound, shell grammar wrappers, and launchers (#384, #430).
-
 use super::*;
 use std::time::Instant;
 
@@ -9,8 +7,6 @@ fn evil_py_script_file() -> RoutedTarget {
         path: PathBuf::from("./evil.py"),
     }
 }
-
-// ── A command chained on a heredoc marker's own line is routed ─────────────
 
 #[test]
 fn heredoc_and_then_chained_exec_is_routed() {
@@ -72,8 +68,6 @@ fn heredoc_write_then_exec_reuse_still_wins_over_the_generic_tail_route() {
     );
 }
 
-// ── Wrapper-peeling recursion is bounded ────────────────────────────────────
-
 #[test]
 fn deeply_nested_subshells_finish_quickly_and_degrade_past_the_bound() {
     let nested = format!("{}true{}", "(".repeat(3000), ")".repeat(3000));
@@ -97,8 +91,6 @@ fn deeply_nested_subshells_finish_quickly_and_degrade_past_the_bound() {
          treat the unexamined body as safe: {targets:?}"
     );
 }
-
-// ── Shell grammar that can hide an interpreter ──────────────────────────────
 
 #[test]
 fn a_leading_redirection_does_not_hide_the_program() {
@@ -190,8 +182,6 @@ fn a_case_fallthrough_single_ampersand_arm_is_routed() {
     );
 }
 
-// ── Launchers and aliases ────────────────────────────────────────────────────
-
 #[test]
 fn xargs_launcher_does_not_hide_the_program() {
     assert_eq!(
@@ -219,8 +209,6 @@ fn nodejs_debian_alias_routes_like_node() {
     );
 }
 
-// ── `case`/`esac` in argument position must not suspend list splitting ─────
-
 #[test]
 fn case_and_esac_as_grep_arguments_do_not_hide_a_chained_exec() {
     assert_eq!(
@@ -236,8 +224,6 @@ fn case_and_esac_as_echo_arguments_do_not_hide_a_chained_exec() {
         vec![evil_py_script_file()]
     );
 }
-
-// ── Regression: safe commands stay safe ─────────────────────────────────────
 
 #[test]
 fn known_safe_commands_stay_unrouted_or_unchanged() {

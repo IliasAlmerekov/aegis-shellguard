@@ -1,5 +1,3 @@
-// Pattern struct, Category, loading
-
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -12,54 +10,21 @@ use aegis_types::RiskLevel;
 
 use crate::error::ScannerError;
 
-// ── Token-prefix rule types (live alongside regex-based Pattern) ──────────
-
-/// A token-level prefix rule that matches the beginning of a tokenized command.
-///
-/// Replaces free-form regex for commands whose dangerous semantics are fully
-/// captured by a fixed prefix of tokens (e.g. `git push --force`).
 #[derive(Debug, Clone)]
 pub struct PrefixRule {
-    /// Unique pattern identifier.
     pub id: Cow<'static, str>,
-    /// Semantic category.
     pub category: Category,
-    /// Token prefix to match against.
     pub pattern: PrefixPattern,
-    /// Assigned risk level when this rule matches.
     pub risk: RiskLevel,
-    /// Human-readable description of what this rule detects.
     pub description: Cow<'static, str>,
-    /// Safer alternative to suggest, if any.
     pub safe_alt: Option<Cow<'static, str>>,
-    /// Optional rationale for this rule.
     pub justification: Option<Cow<'static, str>>,
-    /// Whether the rule is built-in or user-defined.
     pub source: PatternSource,
-    /// Negative condition: tokens whose presence anywhere in the command's
-    /// tokens suppresses this rule.
-    ///
-    /// A prefix rule matches a prefix and ignores the tail, so a rule on
-    /// `npm publish` also fires on `npm publish --dry-run` — a safe rehearsal.
-    /// Listing `--dry-run` here silences the rule for that form. Position is
-    /// irrelevant: the token is looked for anywhere, because a flag can be
-    /// written anywhere in the tail.
-    ///
-    /// Cost: a rule declaring this can be silenced by the presence of a token,
-    /// so the list must stay short and semantically unambiguous — every token
-    /// on it must mean "this invocation does not perform the action" on its
-    /// own, regardless of what else is on the command line.
-    ///
-    /// An empty list (the default for every rule that does not need one) leaves
-    /// matching exactly as it was.
     pub suppressed_by: &'static [&'static str],
-    /// Example commands that MUST match this prefix rule.
     pub match_examples: &'static [&'static str],
-    /// Example commands that MUST NOT match this prefix rule.
     pub not_match_examples: &'static [&'static str],
 }
 
-/// Internal helper: TOML-deserializable representation before conversion to [`Pattern`].
 #[derive(Debug, Deserialize)]
 struct RawPattern {
     id: String,
@@ -86,57 +51,30 @@ impl From<RawPattern> for Pattern {
     }
 }
 
-/// Wrapper for TOML top-level table: `[[patterns]]`.
 #[derive(Debug, Deserialize)]
 struct PatternsFile {
     patterns: Vec<RawPattern>,
 }
 
-/// Effective merged pattern set consumed when constructing a scanner.
-///
-/// This is the authoritative runtime view after combining the built-in
-/// patterns embedded in the binary with any custom patterns supplied by the
-/// resolved config layers.
 #[derive(Debug)]
 pub struct PatternSet {
     patterns: Vec<Arc<Pattern>>,
     prefix_rules: Vec<Arc<PrefixRule>>,
 }
 
-/// Built-in patterns embedded at compile time — binary stays self-contained.
 const BUILTIN_PATTERNS_TOML: &str = include_str!("../patterns.toml");
 
 impl PatternSet {
-    /// Parse and return the canonical built-in-only pattern set.
-    ///
-    /// This loads the embedded `config/patterns.toml` without any config
-    /// overlays, providing the built-in source of truth before custom patterns
-    /// are merged for runtime scanner construction.
     pub fn load() -> Result<PatternSet, ScannerError> {
         Self::from_sources(&[])
     }
 
-    /// Build the authoritative merged pattern view for scanner construction.
-    ///
-    /// Merge order is fixed and explicit:
-    /// 1) built-in patterns embedded in the binary
-    /// 2) custom patterns supplied by the caller
-    ///
-    /// Custom patterns arrive already normalized into the neutral [`Pattern`]
-    /// representation — conversion from any config-specific shape happens at the
-    /// orchestration boundary, so the scanner never sees config types. The
-    /// returned set is the effective runtime input consumed by
-    /// `Scanner::try_new`, after validation. Note: regex *syntactic* validity is
-    /// not checked here (only field presence); it is enforced when the scanner
-    /// compiles the patterns.
     pub fn from_sources(custom_patterns: &[Pattern]) -> Result<PatternSet, ScannerError> {
         let file: PatternsFile = toml::from_str(BUILTIN_PATTERNS_TOML)
             .map_err(|e| ScannerError::Build(format!("failed to parse patterns.toml: {e}")))?;
 
-        // 1) built-in
         let builtin_patterns: Vec<Pattern> = file.patterns.into_iter().map(Pattern::from).collect();
 
-        // 2) validate unified set (required fields + duplicate IDs forbidden for regex patterns).
         let mut pattern_ids: HashSet<String> =
             HashSet::with_capacity(builtin_patterns.len() + custom_patterns.len());
         let mut patterns: Vec<Arc<Pattern>> =
@@ -150,11 +88,8 @@ impl PatternSet {
             patterns.push(Arc::new(pattern));
         }
 
-        // 5) compile built-in prefix rules.
         let prefix_rules = builtin_prefix_rules();
 
-        // 5a) validate built-in prefix rules against their examples in debug builds and tests.
-        //    A rule that fails its own examples is a bug and must be fixed before the binary ships.
         #[cfg(debug_assertions)]
         for rule in &prefix_rules {
             #[expect(
@@ -169,28 +104,22 @@ impl PatternSet {
             }
         }
 
-        // 6) validate prefix rules: required fields + no conflict with regex pattern IDs.
-        //    Duplicate IDs within prefix rules are intentional: the same logical rule can
-        //    have multiple syntactic forms (e.g. "docker-compose" vs "docker compose").
         for rule in &prefix_rules {
             Self::validate_prefix_rule(rule, &pattern_ids)?;
         }
 
         let prefix_rules: Vec<Arc<PrefixRule>> = prefix_rules.into_iter().map(Arc::new).collect();
 
-        // 7) compiled into runtime PatternSet.
         Ok(PatternSet {
             patterns,
             prefix_rules,
         })
     }
 
-    /// Return the effective merged regex pattern set consumed by scanner construction.
     pub fn patterns(&self) -> &[Arc<Pattern>] {
         self.patterns.as_slice()
     }
 
-    /// Return the effective merged prefix-rule set consumed by scanner construction.
     pub fn prefix_rules(&self) -> &[Arc<PrefixRule>] {
         self.prefix_rules.as_slice()
     }
@@ -239,10 +168,6 @@ impl PatternSet {
             });
         }
 
-        // The first token must name a program (Single or Alts). A rule whose
-        // first token is a wildcard or a flag cannot be indexed by an Effective
-        // program (ADR-014) and would never fire at runtime — reject it instead
-        // of silently dropping it from the index.
         match rule.pattern.first() {
             Some(PatternToken::Single(_)) | Some(PatternToken::Alts(_)) => {}
             Some(other) => {
@@ -268,9 +193,6 @@ impl PatternSet {
             });
         }
 
-        // A blank suppressing token can never equal a real token, so it is dead
-        // data that reads as an active negative condition — reject it rather
-        // than let a rule look guarded when it is not.
         if let Some(blank) = rule
             .suppressed_by
             .iter()
@@ -282,7 +204,6 @@ impl PatternSet {
             });
         }
 
-        // Prevent a prefix rule from shadowing a regex pattern with the same ID.
         let id = rule.id.as_ref();
         if pattern_ids.contains(id) {
             return Err(ScannerError::InvalidPattern {
@@ -297,8 +218,6 @@ impl PatternSet {
 
 mod builtins_a;
 mod builtins_b;
-
-// ── Built-in prefix rules (replaces regex for token-prefixable commands) ───
 
 pub(super) fn s(s: &'static str) -> PatternToken {
     PatternToken::Single(Cow::Borrowed(s))
@@ -324,11 +243,6 @@ mod tests {
     use regex::RegexBuilder;
     use std::collections::HashSet;
 
-    /// Issue #319 tried deferring built-in regex compilation to first scan;
-    /// that path was reverted before merging (see docs/performance-baseline.md,
-    /// "Lazy built-in regex compilation reverted") and compilation stayed
-    /// eager in `Scanner::try_new`. Compile every built-in pattern here too, so
-    /// a bad regex fails the build instead of surfacing later, mid-scan.
     #[test]
     fn every_builtin_pattern_regex_compiles() {
         let set = PatternSet::load().expect("patterns.toml must load");
@@ -350,8 +264,6 @@ mod tests {
         rule.suppressed_by = &["--dry-run"];
         assert!(PatternSet::validate_prefix_rule(&rule, &ids).is_ok());
 
-        // A blank entry can never equal a real token: it reads as a guard that
-        // is not there.
         rule.suppressed_by = &["--dry-run", "  "];
         assert!(PatternSet::validate_prefix_rule(&rule, &ids).is_err());
     }
@@ -390,7 +302,6 @@ mod tests {
     fn prefix_rule_first_token_must_name_a_program() {
         let ids = HashSet::new();
 
-        // Valid: Single and Alts name a program and are accepted.
         assert!(
             PatternSet::validate_prefix_rule(
                 &rule_with_first(PatternToken::Single(Cow::Borrowed("rm"))),
@@ -406,8 +317,6 @@ mod tests {
             .is_ok()
         );
 
-        // Invalid: a wildcard or flag first token cannot be indexed by an
-        // Effective program and would never fire at runtime — reject it.
         for first in [
             PatternToken::Any,
             PatternToken::AnyStar,

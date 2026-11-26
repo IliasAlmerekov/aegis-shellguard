@@ -1,11 +1,3 @@
-//! Iteration 3 slice 4 — the parent language-worker client.
-//!
-//! Hybrid test strategy (confirmed up front): real subprocess for the modes
-//! the real worker or a substitute binary can produce (clean round-trip,
-//! crash/non-zero exit, stdout noise), and `tokio::io::duplex` mocks for the
-//! modes the well-behaved worker never produces (timeout, duplicate response,
-//! out-of-order response, unexpected id, partial prior results on early EOF).
-
 #![cfg(feature = "language-analysis")]
 
 use std::io;
@@ -22,7 +14,6 @@ use aegis_language::SourceLanguage;
 use aegis_language::protocol::{self, MAX_SOURCE_BYTES, Response};
 use aegis_types::DegradationReason;
 
-/// One Parse request with the given id.
 fn req(id: u32, language: SourceLanguage, source: &[u8]) -> TargetRequest {
     TargetRequest {
         request_id: id,
@@ -32,12 +23,10 @@ fn req(id: u32, language: SourceLanguage, source: &[u8]) -> TargetRequest {
     }
 }
 
-/// A response frame bytes for `id` carrying `resp`.
 fn resp_bytes(id: u32, resp: &Response) -> Vec<u8> {
     protocol::encode_response(id, resp).expect("test response encodes")
 }
 
-/// Spawn an arbitrary command with piped stdio and return its pipes.
 fn spawn_piped(cmd: &mut Command) -> (Child, ChildStdin, ChildStdout) {
     let mut child = cmd
         .stdin(Stdio::piped())
@@ -50,14 +39,9 @@ fn spawn_piped(cmd: &mut Command) -> (Child, ChildStdin, ChildStdout) {
     (child, stdin, stdout)
 }
 
-/// Every `WorkerError` variant must degrade as `WorkerFailure`
-/// (ADR-022 §2, §5). `WorkerError` is `Clone`, so this checks the real variant
-/// (including `Io`), not a stand-in.
 fn degrades_as_worker_failure(err: &WorkerError) -> bool {
     DegradationReason::from(err.clone()) == DegradationReason::WorkerFailure
 }
-
-// ── Real subprocess: clean round-trip ──────────────────────────────────────
 
 #[tokio::test]
 async fn analyze_round_trips_a_clean_parse_request_via_real_subprocess() {
@@ -84,14 +68,8 @@ async fn analyze_round_trips_a_clean_parse_request_via_real_subprocess() {
     assert_eq!(code, Some(0), "a clean session must exit 0");
 }
 
-// ── L7: Worker::analyze closes stdin and reaps the child ───────────────────
-
 #[tokio::test]
 async fn worker_analyze_reaps_the_child_so_exit_code_is_available_immediately() {
-    // ADR-022 §2: the worker is ephemeral. Worker::analyze must close stdin
-    // (so the worker sees end-of-session and exits) and wait for the child to
-    // be reaped — observable as a populated exit_code right after analyze,
-    // without a separate shutdown call.
     let mut worker = Worker::spawn(Some(env!("CARGO_BIN_EXE_aegis")))
         .await
         .expect("spawning the real worker must succeed");
@@ -109,7 +87,6 @@ async fn worker_analyze_reaps_the_child_so_exit_code_is_available_immediately() 
         ),
         "clean source must round-trip: {results:?}"
     );
-    // analyze reaped the child (closed stdin → worker exited → wait returned).
     assert_eq!(
         worker.exit_code(),
         Some(0),
@@ -117,10 +94,6 @@ async fn worker_analyze_reaps_the_child_so_exit_code_is_available_immediately() 
     );
 }
 
-// ── L8: a worker that responds fully then exits non-zero is not success ──────
-
-/// Render `bytes` as a POSIX `printf` octal-escape string, so a substitute
-/// shell command can emit exact binary response frames on stdout.
 fn printf_octal(bytes: &[u8]) -> String {
     let mut s = String::with_capacity(bytes.len() * 4);
     for b in bytes {
@@ -131,11 +104,6 @@ fn printf_octal(bytes: &[u8]) -> String {
 
 #[tokio::test]
 async fn worker_analyze_degrades_when_the_worker_responds_fully_then_exits_nonzero() {
-    // The substitute consumes stdin (so the parent's write succeeds and the
-    // race is closed), emits one valid Parsed response for request 1, then
-    // exits 3. The parent receives the response, then waits and sees the
-    // non-zero exit — the whole session must degrade as NonZeroExit, not be
-    // reported as success.
     let frame = resp_bytes(1, &Response::Parsed { error_count: 0 });
     let script = format!(
         "cat >/dev/null 2>&1; printf '{}'; exit 3",
@@ -214,12 +182,8 @@ async fn worker_deadline_covers_reap_after_a_valid_response() {
     ));
 }
 
-// ── Real subprocess: crash / non-zero exit ──────────────────────────────────
-
 #[tokio::test]
 async fn analyze_reports_a_worker_failure_when_the_worker_exits_nonzero_without_responding() {
-    // Reads and discards stdin, then exits 3 without writing any response.
-    // The parent's write succeeds; the read then hits EOF → a worker failure.
     let (_child, mut stdin, mut stdout) =
         spawn_piped(Command::new("sh").args(["-c", "cat >/dev/null 2>&1; exit 3"]));
 
@@ -240,12 +204,8 @@ async fn analyze_reports_a_worker_failure_when_the_worker_exits_nonzero_without_
     }
 }
 
-// ── Real subprocess: stdout noise ───────────────────────────────────────────
-
 #[tokio::test]
 async fn analyze_reports_protocol_noise_when_stdout_is_not_a_frame() {
-    // Writes 16 non-magic bytes to stdout (≥ HEADER_LEN so the decoder reaches
-    // the magic check), then consumes stdin so the parent's write succeeds.
     let (_child, mut stdin, mut stdout) = spawn_piped(
         Command::new("sh").args(["-c", "printf 'AAAAAAAAAAAAAAAA'; cat >/dev/null 2>&1"]),
     );
@@ -264,12 +224,8 @@ async fn analyze_reports_protocol_noise_when_stdout_is_not_a_frame() {
     }
 }
 
-// ── Duplex mock: timeout ────────────────────────────────────────────────────
-
 #[tokio::test]
 async fn analyze_times_out_when_the_worker_never_responds() {
-    // The server end is held open but never writes a response, so the client's
-    // read hangs until the deadline elapses.
     let (mut reader, _server_writer) = tokio::io::duplex(1024);
     let mut sink = tokio::io::sink();
 
@@ -287,11 +243,8 @@ async fn analyze_times_out_when_the_worker_never_responds() {
     }
 }
 
-// ── Duplex mock: duplicate response ─────────────────────────────────────────
-
 #[tokio::test]
 async fn analyze_detects_a_duplicate_response() {
-    // Two requests [1, 2]; the server emits resp(1) twice, then resp(2).
     let (mut reader, mut server) = tokio::io::duplex(8192);
     server
         .write_all(&resp_bytes(1, &Response::Parsed { error_count: 0 }))
@@ -332,11 +285,8 @@ async fn analyze_detects_a_duplicate_response() {
     }
 }
 
-// ── Duplex mock: out-of-order response ──────────────────────────────────────
-
 #[tokio::test]
 async fn analyze_detects_an_out_of_order_response() {
-    // Two requests [1, 2]; the server emits resp(2) before resp(1).
     let (mut reader, mut server) = tokio::io::duplex(8192);
     server
         .write_all(&resp_bytes(2, &Response::Parsed { error_count: 0 }))
@@ -373,8 +323,6 @@ async fn analyze_detects_an_out_of_order_response() {
     );
 }
 
-// ── Duplex mock: unexpected response id ─────────────────────────────────────
-
 #[tokio::test]
 async fn analyze_detects_a_response_for_an_id_that_was_never_sent() {
     let (mut reader, mut server) = tokio::io::duplex(8192);
@@ -399,11 +347,8 @@ async fn analyze_detects_a_response_for_an_id_that_was_never_sent() {
     }
 }
 
-// ── Duplex mock: partial prior results on early EOF ─────────────────────────
-
 #[tokio::test]
 async fn analyze_retains_prior_results_when_a_later_target_hits_eof() {
-    // Three requests [1, 2, 3]; the server emits resp(1) then closes.
     let (mut reader, mut server) = tokio::io::duplex(8192);
     server
         .write_all(&resp_bytes(1, &Response::Parsed { error_count: 0 }))
@@ -441,8 +386,6 @@ async fn analyze_retains_prior_results_when_a_later_target_hits_eof() {
     );
 }
 
-// ── Duplex mock: clean multi-target round-trip (no subprocess) ──────────────
-
 #[tokio::test]
 async fn analyze_correlates_a_clean_multi_target_session_by_request_id() {
     let (mut reader, mut server) = tokio::io::duplex(8192);
@@ -478,10 +421,6 @@ async fn analyze_correlates_a_clean_multi_target_session_by_request_id() {
     ));
 }
 
-// ── L1: a flush failure must surface as Io, not masquerade as Timeout ───────
-
-/// A writer whose `write_all` succeeds but `flush` always fails, to pin the
-/// flush-error propagation path in isolation from the write path.
 struct FlushErrorWriter;
 
 impl AsyncWrite for FlushErrorWriter {
@@ -505,7 +444,7 @@ impl AsyncWrite for FlushErrorWriter {
 
 #[tokio::test]
 async fn analyze_surfaces_a_flush_failure_as_io_not_timeout() {
-    let mut reader = tokio::io::empty(); // no responses will ever arrive
+    let mut reader = tokio::io::empty();
     let mut writer = FlushErrorWriter;
 
     let results = analyze(
@@ -527,12 +466,8 @@ async fn analyze_surfaces_a_flush_failure_as_io_not_timeout() {
     }
 }
 
-// ── L2 (client side): an oversized request degrades rather than panicking ──
-
 #[tokio::test]
 async fn analyze_degrades_an_oversized_request_without_panicking() {
-    // A source above MAX_SOURCE_BYTES cannot be encoded; the client must
-    // degrade the target (no panic from the encoder).
     let mut reader = tokio::io::empty();
     let mut sink = tokio::io::sink();
 

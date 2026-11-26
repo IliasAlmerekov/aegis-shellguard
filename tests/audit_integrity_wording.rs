@@ -52,8 +52,6 @@ fn tracked_files() -> Vec<String> {
         .collect()
 }
 
-/// Individually named binary files. Anything not covered by a directory rule
-/// below has to be listed here, so a stray binary still fails the guard.
 const ALLOWED_BINARY_FILES: [&str; 5] = [
     "landing/public/favicon.ico",
     "landing/public/aegis.webp",
@@ -62,11 +60,6 @@ const ALLOWED_BINARY_FILES: [&str; 5] = [
     "fuzz/corpus/language_bash/non_ascii_native_scanner_crash",
 ];
 
-/// Directories whose whole contents are binary media by construction, paired
-/// with the extension they are allowed to carry. Naming the extension keeps
-/// the rule from turning a directory into a place where any binary can hide,
-/// and spares the allowlist from enumerating asset sets no human maintains
-/// by hand (a webfont family ships several files per weight and format).
 const ALLOWED_BINARY_DIRECTORIES: [(&str, &str); 4] = [
     ("landing/public/fonts/", ".woff2"),
     ("landing/public/incidents/", ".webp"),

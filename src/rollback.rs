@@ -16,7 +16,6 @@ pub(crate) struct RollbackTarget {
     pub(crate) snapshot_id: String,
 }
 
-/// What `aegis rollback` did: restored the Snapshot, or refused before writing anything.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum RollbackOutcome {
     Restored(RollbackTarget),
@@ -24,25 +23,17 @@ pub(crate) enum RollbackOutcome {
         code: i32,
         message: String,
     },
-    /// Restored, but the Rollback audit entry could not be written.
     RestoredUnaudited {
         target: RollbackTarget,
         reason: String,
     },
 }
 
-/// The liveness preflight's verdict (ADR-052 §6, §7).
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Preflight {
     Restore,
-    Refused {
-        code: i32,
-        message: String,
-    },
-    /// Restored, but the Rollback audit entry could not be written.
-    RestoredUnaudited {
-        reason: String,
-    },
+    Refused { code: i32, message: String },
+    RestoredUnaudited { reason: String },
 }
 
 pub(crate) async fn execute(snapshot_id: String, yes: bool) -> Result<RollbackOutcome> {
@@ -72,8 +63,6 @@ pub(crate) async fn execute(snapshot_id: String, yes: bool) -> Result<RollbackOu
     }
 }
 
-/// Run one Snapshot through the liveness preflight, restore it, and record the
-/// restore. `Refused` means nothing was written.
 pub(crate) async fn restore_checked(
     registry: &SnapshotRegistry,
     logger: &AuditLogger,
@@ -99,8 +88,6 @@ pub(crate) async fn restore_checked(
     Ok(preflight)
 }
 
-/// Decide from the liveness outcome whether Rollback may write. Only a
-/// question needs a terminal: `Inconclusive` asks, everything else does not.
 pub(crate) fn decide(
     liveness: Liveness,
     yes: bool,
@@ -131,7 +118,6 @@ pub(crate) fn decide(
                 "The Snapshot liveness check could not complete ({reason}).\nAttempt the restore anyway? [y/N] "
             );
             let mut line = String::new();
-            // A read error counts as "no", like EOF.
             let _ = input.read_line(&mut line);
             if matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
                 Preflight::Restore

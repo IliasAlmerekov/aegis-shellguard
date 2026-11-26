@@ -1,9 +1,3 @@
-//! Snapshot behavior: registry config-flag regressions, supabase snapshot
-//! suppression on denial, strict-mode snapshot creation, and the `rollback`
-//! subcommand (restore, missing/malformed ids, malformed config fail-closed).
-//!
-//! Split from the original `tests/full_pipeline.rs` (behavior-preserving move).
-
 mod support;
 
 use std::fs;
@@ -14,17 +8,6 @@ use tempfile::TempDir;
 
 use support::*;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Snapshot registry config-flag regressions (Ticket 1.3)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// With `auto_snapshot_git = false` in `.aegis.toml`, the real aegis binary
-/// must never invoke the `git` stub in PATH, and the audit entry must record
-/// an empty `snapshots` array.
-///
-/// This proves the Git plugin was never *registered*, not merely skipped by
-/// `is_applicable` — the stub would catch any `git` invocation regardless of
-/// which code path triggered it.
 #[test]
 fn snapshot_registry_git_flag_false_skips_plugin_and_audit() {
     let home = TempDir::new().unwrap();
@@ -34,8 +17,6 @@ fn snapshot_registry_git_flag_false_skips_plugin_and_audit() {
 
     fs::create_dir_all(&bin_dir).unwrap();
 
-    // Stub git: append arguments to the log file so we can assert it was never
-    // called.  Use AEGIS_TEST_GIT_LOG as the log path so the test controls it.
     write_executable(
         &bin_dir.join("git"),
         r#"#!/bin/sh
@@ -44,7 +25,6 @@ exit 0
 "#,
     );
 
-    // C3 ratchet (ADR-013): the project layer cannot weaken this field.
     write_global_config(home.path(), "auto_snapshot_git = false\n");
     fs::write(
         workspace.path().join(".aegis.toml"),
@@ -58,8 +38,6 @@ exit 0
         std::env::var("PATH").unwrap_or_default()
     );
 
-    // Use a unique sentinel file in the temp workspace so the rm -rf target
-    // is fully controlled and isolated from the developer's file system.
     let sentinel = workspace.path().join("sentinel_git_off.txt");
     fs::write(&sentinel, "git-off test sentinel").unwrap();
 
@@ -78,21 +56,18 @@ exit 0
     child.stdin.as_mut().unwrap().write_all(b"no\n").unwrap();
     let output = child.wait_with_output().unwrap();
 
-    // Danger command denied → exit code 2.
     assert_eq!(
         output.status.code(),
         Some(2),
         "Danger command must be denied (exit 2)"
     );
 
-    // Git stub must never have been called.
     let git_calls = read_stub_invocations(&git_log);
     assert!(
         git_calls.is_empty(),
         "git stub must not be invoked when auto_snapshot_git = false; calls: {git_calls:?}"
     );
 
-    // Exactly one audit entry, decision Denied, risk Danger, snapshots empty.
     let entries = read_audit_entries(home.path());
     assert_eq!(entries.len(), 1, "expected exactly one audit entry");
     assert_eq!(entries[0]["decision"], "Denied");
@@ -100,13 +75,6 @@ exit 0
     assert_eq!(entries[0]["snapshots"], serde_json::json!([]));
 }
 
-/// With `auto_snapshot_docker = false` in `.aegis.toml`, the real aegis binary
-/// must never invoke the `docker` stub in PATH, and the audit entry must record
-/// an empty `snapshots` array.
-///
-/// Both snapshot flags are disabled to keep the assertions fully isolated —
-/// disabling git prevents unrelated git activity from adding noise when the
-/// workspace happens to be near a git checkout.
 #[test]
 fn snapshot_registry_docker_flag_false_skips_plugin_and_audit() {
     let home = TempDir::new().unwrap();
@@ -116,8 +84,6 @@ fn snapshot_registry_docker_flag_false_skips_plugin_and_audit() {
 
     fs::create_dir_all(&bin_dir).unwrap();
 
-    // Stub docker: append arguments to the log file so we can assert it was
-    // never called.  Use AEGIS_TEST_DOCKER_LOG as the log path.
     write_executable(
         &bin_dir.join("docker"),
         r#"#!/bin/sh
@@ -126,7 +92,6 @@ exit 0
 "#,
     );
 
-    // Docker-off is under test; git-off isolates assertions from git noise.
     fs::write(
         workspace.path().join(".aegis.toml"),
         "auto_snapshot_git = false\nauto_snapshot_docker = false\n",
@@ -157,21 +122,18 @@ exit 0
     child.stdin.as_mut().unwrap().write_all(b"no\n").unwrap();
     let output = child.wait_with_output().unwrap();
 
-    // Danger command denied → exit code 2.
     assert_eq!(
         output.status.code(),
         Some(2),
         "Danger command must be denied (exit 2)"
     );
 
-    // Docker stub must never have been called.
     let docker_calls = read_stub_invocations(&docker_log);
     assert!(
         docker_calls.is_empty(),
         "docker stub must not be invoked when auto_snapshot_docker = false; calls: {docker_calls:?}"
     );
 
-    // Exactly one audit entry, decision Denied, risk Danger, snapshots empty.
     let entries = read_audit_entries(home.path());
     assert_eq!(entries.len(), 1, "expected exactly one audit entry");
     assert_eq!(entries[0]["decision"], "Denied");
@@ -271,20 +233,6 @@ user = "postgres"
     );
 }
 
-/// A non-interactive script-file execution (`Effect-opaque execution`) with
-/// no TTY is denied before it runs, the same as
-/// `noninteractive_required_recovery_degradation_denies_before_child_execution`
-/// in `tests/recovery_degradation.rs` — except the workspace here is a git
-/// repository with no commits yet. `GitPlugin::is_applicable` still passes
-/// (`git rev-parse --git-dir` succeeds), `git status --porcelain` reports the
-/// untracked script as dirty, and `GitPlugin::snapshot` reaches `git stash
-/// push --include-untracked`, which fails with "You do not have the initial
-/// commit yet". `SnapshotRegistry::snapshot_all` logs that failure and
-/// produces zero snapshot records, so Required recovery is Degraded.
-///
-/// This is the proof that a `tracing` subscriber is actually installed on
-/// the shell-wrapper path (issue #271): the failure reaches stderr instead of
-/// being discarded.
 #[test]
 fn snapshot_failure_reaches_diagnostic_stream_and_denies_on_recovery_degradation() {
     let home = TempDir::new().unwrap();
@@ -293,8 +241,6 @@ fn snapshot_failure_reaches_diagnostic_stream_and_denies_on_recovery_degradation
     fs::write(workspace.path().join("run.sh"), "printf ran > executed\n").unwrap();
 
     run_git(workspace.path(), &["init"]);
-    // No initial commit: `git stash push` on this repo fails with "You do not
-    // have the initial commit yet", which is the failure this test drives.
 
     let output = base_command(home.path())
         .current_dir(workspace.path())
@@ -325,15 +271,10 @@ fn snapshot_failure_reaches_diagnostic_stream_and_denies_on_recovery_degradation
     assert_eq!(entries[0]["snapshots"], serde_json::json!([]));
 }
 
-/// Strict mode with allowlist_override_level = Danger and an allowlisted
-/// Danger command must auto-approve and create a git snapshot.
 #[test]
 fn strict_override_allowlisted_danger_executes_and_creates_snapshot() {
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
-    // bin_dir and log_path must be outside the workspace so that git stash
-    // (--include-untracked) does not sweep them into the stash and make
-    // terraform un-findable after the snapshot is created.
     let bin_dir = home.path().join("bin");
     let log_path = home.path().join("terraform.log");
 
@@ -503,13 +444,11 @@ reason = "rollback test allowlist"
         intercept_output.status.code(),
         String::from_utf8_lossy(&intercept_output.stderr),
     );
-    // Taking the snapshot must not be observable in the working tree (#356).
     assert_eq!(
         fs::read_to_string(workspace.path().join("tracked.txt")).unwrap(),
         "needs rollback\n"
     );
 
-    // Stand in for damage done by the command that ran after the snapshot.
     fs::write(workspace.path().join("tracked.txt"), "clobbered\n").unwrap();
 
     let entries = read_audit_entries(home.path());

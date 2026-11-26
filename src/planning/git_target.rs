@@ -1,12 +1,3 @@
-//! Git target resolution for the git Snapshot (#471, ADR-048).
-//!
-//! The git `Snapshot plugin` must capture the working tree a `git` command
-//! acts on, not the process cwd. The scanner reports, per `Danger` git stage,
-//! the raw `-C`, `--work-tree` and `--git-dir` values; this module turns them
-//! into a [`GitTarget`]: a canonical directory, or an explicit "unresolved"
-//! marker with the reason. An unresolved target is never replaced by a cwd
-//! Snapshot, and no resolution happens on the safe path.
-
 use std::path::{Path, PathBuf};
 
 use aegis_parser::GitTargetArgs;
@@ -14,42 +5,24 @@ use aegis_scanner::{CdUnresolved, DangerStage, DangerStageTarget, GitStageReport
 
 use crate::planning::types::CwdState;
 
-/// Why a Git target could not be resolved with confidence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GitTargetUnresolved {
-    /// `GIT_DIR=` or `GIT_WORK_TREE=` redirects git from the environment.
     EnvironmentRedirect,
-    /// A path holds `$`, a glob or `~`, so its value is not known statically.
     DynamicPath,
-    /// A path does not exist, so git has no tree there to act on.
     PathNotFound,
-    /// `--git-dir` is given without `--work-tree`, or does not canonicalize
-    /// to `<work tree>/.git`.
     GitDirNotInWorkTree,
-    /// `--work-tree` is given without `--git-dir`: git still finds the
-    /// repository from the `-C` directory, so the work tree is not the target.
     WorkTreeWithoutGitDir,
-    /// The resolved directory is not a git repository the git Snapshot can
-    /// cover.
     NotAGitRepository,
-    /// A relative path needs the process cwd, which is unavailable.
     CwdUnavailable,
-    /// Two readings of an unlisted global option give different targets.
     AmbiguousOptions,
-    /// More unrecognized global options than the scanner walks.
     TooManyOptions,
-    /// The git stage sits behind a launcher whose argv Aegis cannot map back.
     UnmappedLauncher,
-    /// A launcher (`env -C`, `sudo -D`) changes the directory before git runs.
     LauncherChangesDirectory,
-    /// `--bare` names a repository with no working tree to snapshot.
     BareRepository,
-    /// An earlier `cd` in the command line cannot be followed.
     Cd(CdUnresolved),
 }
 
 impl GitTargetUnresolved {
-    /// Short operator-facing reason, used by the dialog and the audit entry.
     #[must_use]
     pub fn description(self) -> &'static str {
         match self {
@@ -95,32 +68,16 @@ impl GitTargetUnresolved {
     }
 }
 
-/// The working tree one `git` stage acts on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitTarget {
-    /// A canonical directory the git Snapshot covers.
     Resolved(PathBuf),
-    /// No Snapshot covers this stage; the reason is disclosed.
     Unresolved(GitTargetUnresolved),
 }
 
-/// The git Snapshots a plan asks for.
-///
-/// `process_cwd` says whether the git plugin also runs at the process cwd:
-/// true whenever some part of the command needs a Snapshot without a git
-/// redirect. The default, used when no stage redirects git, keeps the
-/// pre-#471 behaviour.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitTargetPlan {
-    /// One entry per distinct redirected git stage.
     pub targets: Vec<GitTarget>,
-    /// Whether the git plugin runs at the process cwd.
     pub process_cwd: bool,
-    /// Directories a non-git Danger stage runs in after a `cd` (#525). Each
-    /// gets a git Snapshot only if it lies inside a working tree the git
-    /// plugin covers; otherwise the stage behaves as if run there directly:
-    /// no Snapshot and no disclosure. Planning settles these once it can
-    /// ask git, so execution never sees them.
     pub opportunistic_dirs: Vec<PathBuf>,
 }
 
@@ -135,7 +92,6 @@ impl Default for GitTargetPlan {
 }
 
 impl GitTargetPlan {
-    /// Whether some Git target could not be resolved.
     #[must_use]
     pub fn has_unresolved(&self) -> bool {
         self.targets
@@ -143,9 +99,6 @@ impl GitTargetPlan {
             .any(|target| matches!(target, GitTarget::Unresolved(_)))
     }
 
-    /// Replace each resolved target with `map(path)`, or with an unresolved
-    /// one carrying `reason` when `map` returns `None`. Targets that become
-    /// equal collapse into one.
     pub fn map_resolved(
         &mut self,
         map: impl Fn(&Path) -> Option<PathBuf>,
@@ -169,8 +122,6 @@ impl GitTargetPlan {
         });
     }
 
-    /// Replace each resolved target that `keep` rejects with an unresolved
-    /// one carrying `reason`. Used for a target the git plugin cannot cover.
     pub fn demote_resolved(&mut self, keep: impl Fn(&Path) -> bool, reason: GitTargetUnresolved) {
         for target in &mut self.targets {
             if let GitTarget::Resolved(path) = target
@@ -189,7 +140,6 @@ impl GitTargetPlan {
         });
     }
 
-    /// The canonical directories the git plugin must snapshot.
     pub fn resolved_paths(&self) -> impl Iterator<Item = &Path> {
         self.targets.iter().filter_map(|target| match target {
             GitTarget::Resolved(path) => Some(path.as_path()),
@@ -197,7 +147,6 @@ impl GitTargetPlan {
         })
     }
 
-    /// The targets as the dialog and the audit entry disclose them.
     #[must_use]
     pub fn explain(&self) -> Vec<aegis_explanation::GitTargetExplanation> {
         self.targets
@@ -215,10 +164,6 @@ impl GitTargetPlan {
             .collect()
     }
 
-    /// Resolve the targets of every redirected stage in `report`.
-    ///
-    /// Touches the filesystem (canonicalization), so callers run it only for
-    /// a command that already needs a recovery backstop.
     #[must_use]
     pub fn resolve(report: &GitStageReport, cwd: &CwdState) -> Self {
         if report.redirected.is_empty() {
@@ -229,7 +174,6 @@ impl GitTargetPlan {
         let mut opportunistic_dirs: Vec<PathBuf> = Vec::new();
         let mut process_cwd = report.needs_process_cwd;
         let canonical_cwd = match cwd {
-            // Deduplication against process cwd is skipped when cwd cannot be canonicalized.
             CwdState::Resolved(path) => path.canonicalize().ok(),
             CwdState::Unavailable => None,
         };
@@ -238,7 +182,6 @@ impl GitTargetPlan {
             let target = match resolve_stage_in_dir(stage, cwd) {
                 StageOutcome::Target(target) => target,
                 StageOutcome::Opportunistic(path) => {
-                    // A directory that is the process cwd is the cwd pass.
                     if canonical_cwd.as_deref() == Some(path.as_path()) {
                         process_cwd = true;
                     } else if !opportunistic_dirs.contains(&path) {
@@ -247,7 +190,6 @@ impl GitTargetPlan {
                     continue;
                 }
             };
-            // A target that is the process cwd is covered by the cwd pass.
             if let GitTarget::Resolved(path) = &target
                 && canonical_cwd.as_deref() == Some(path.as_path())
             {
@@ -266,13 +208,11 @@ impl GitTargetPlan {
         }
     }
 
-    /// Drop the resolved target `path`: the process cwd pass already covers it.
     pub fn drop_resolved(&mut self, path: &Path) {
         self.targets
             .retain(|target| !matches!(target, GitTarget::Resolved(p) if p == path));
     }
 
-    /// Add a resolved target unless it is already planned.
     pub fn push_resolved(&mut self, path: PathBuf) {
         let target = GitTarget::Resolved(path);
         if !self.targets.contains(&target) {
@@ -281,11 +221,8 @@ impl GitTargetPlan {
     }
 }
 
-/// What one redirected stage resolves to.
 enum StageOutcome {
-    /// A target to plan, or an unresolved one to disclose.
     Target(GitTarget),
-    /// A non-git stage's directory: planned only if it is a covered repository.
     Opportunistic(PathBuf),
 }
 
@@ -293,10 +230,6 @@ fn resolve_stage_in_dir(stage: &DangerStage, cwd: &CwdState) -> StageOutcome {
     let base = match resolve_dir(&stage.dir, cwd) {
         Ok(base) => base,
         Err(reason) => {
-            // A git stage whose options are all absolute names its tree
-            // whatever directory it started in (`cd "$X" && git -C /repo ...`).
-            // Try it with no base directory; keep the `cd` reason when the
-            // options still need one.
             if stage.is_git
                 && let target @ GitTarget::Resolved(_) =
                     resolve_stage(&stage.target, &CwdState::Unavailable)
@@ -314,9 +247,6 @@ fn resolve_stage_in_dir(stage: &DangerStage, cwd: &CwdState) -> StageOutcome {
     }
 }
 
-/// The directory `dir` names, as the cwd the stage's own options resolve
-/// against. A `cd` chain is followed lexically, as the shell does, then
-/// canonicalized.
 fn resolve_dir(dir: &StageDir, cwd: &CwdState) -> Result<CwdState, GitTargetUnresolved> {
     match dir {
         StageDir::Process => Ok(cwd.clone()),
@@ -342,16 +272,10 @@ fn resolve_dir(dir: &StageDir, cwd: &CwdState) -> Result<CwdState, GitTargetUnre
     }
 }
 
-/// The directory the launched shell starts in. Bash keeps the logical `PWD` it
-/// inherits when that names the same directory as the physical cwd, so
-/// `cd ..` from a symlinked start folds the link name, not its target. A `PWD`
-/// that is relative, holds `.` or `..`, or names another directory is ignored,
-/// as Bash ignores it.
 fn start_dir(physical: &Path, pwd: Option<&std::ffi::OsStr>) -> PathBuf {
     let Some(pwd) = pwd else {
         return physical.to_path_buf();
     };
-    // `Path::components` drops a `.` in the middle, so read the raw text.
     let text = pwd.to_string_lossy();
     let plain = text.starts_with('/') && text.split('/').all(|part| part != "." && part != "..");
     let pwd = Path::new(pwd);
@@ -367,9 +291,6 @@ fn start_dir(physical: &Path, pwd: Option<&std::ffi::OsStr>) -> PathBuf {
     }
 }
 
-/// Drop `.` and fold `..` into the path text, without touching the
-/// filesystem: `cd link && cd ..` goes to the parent of `link`, not to the
-/// parent of what `link` points at.
 fn normalize_lexically(path: &Path) -> PathBuf {
     use std::path::Component;
     let mut out = PathBuf::new();
@@ -380,10 +301,7 @@ fn normalize_lexically(path: &Path) -> PathBuf {
                 Some(Component::Normal(_)) => {
                     out.pop();
                 }
-                // `..` at the root stays at the root.
                 Some(Component::RootDir | Component::Prefix(_)) => {}
-                // A leading `..` of a relative path cannot be folded, and the
-                // next `..` must not cancel it.
                 _ => out.push(".."),
             },
             other => out.push(other),
@@ -423,7 +341,6 @@ fn resolve_stage(stage: &DangerStageTarget, cwd: &CwdState) -> GitTarget {
     }
 }
 
-/// Join `path` onto `base`, `None` when a relative path has no base.
 fn join(base: Option<&Path>, path: &str) -> Option<PathBuf> {
     let path = Path::new(path);
     if path.is_absolute() {
@@ -466,7 +383,6 @@ fn resolve_args(args: &GitTargetArgs, cwd: &CwdState) -> GitTarget {
         CwdState::Resolved(path) => Some(path.clone()),
         CwdState::Unavailable => None,
     };
-    // `git -C ""` is a no-op, so an empty value leaves the directory as is.
     for path in args.dash_c.iter().filter(|path| !path.is_empty()) {
         after_c = join(after_c.as_deref(), path);
         if after_c.is_none() {

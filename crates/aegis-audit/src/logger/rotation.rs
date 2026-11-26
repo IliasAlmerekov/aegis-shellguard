@@ -19,7 +19,6 @@ pub(crate) fn inject_gzip_failure() {
 }
 
 impl AuditRotationPolicy {
-    /// Build a rotation policy from the effective audit config, if enabled.
     pub fn from_config(config: &AuditConfig) -> Option<Self> {
         config.rotation_enabled.then_some(Self {
             max_file_size_bytes: config.max_file_size_bytes,
@@ -207,7 +206,6 @@ impl AuditLogger {
         })();
 
         if result.is_err() {
-            // Best-effort staging cleanup; preserve the primary rotation error.
             let _ = fs::remove_file(&staging);
         }
         result

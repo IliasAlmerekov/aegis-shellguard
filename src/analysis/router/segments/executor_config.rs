@@ -1,10 +1,7 @@
-//! Executor-carrying option values and env assignments scanned even for `NAME_ONLY_PROGRAMS` (#384, #430).
-
 use super::unclaimed::route_executor_value;
 use super::{HomeState, RouteContext, RoutedTarget, is_assignment_only_stage, is_shell_identifier};
 use aegis_types::DegradationReason;
 
-/// Env vars whose values are executed as commands (#384, #430).
 const EXECUTOR_ENV_VARS: &[&str] = &[
     "PAGER",
     "GIT_PAGER",
@@ -24,7 +21,6 @@ const EXECUTOR_ENV_VARS: &[&str] = &[
     "LESSCLOSE",
 ];
 
-/// Route leading `EXECUTOR_ENV_VARS` assignments (directly or after `env`), stopping at the program token (#384, #430).
 pub(super) fn env_prefix_executor_route(
     raw_tokens: &[&str],
     home: HomeState,
@@ -50,7 +46,6 @@ pub(super) fn env_prefix_executor_route(
     routes
 }
 
-/// Skip leading `env` and its non-`-S` flags so leading assignments are scanned uniformly (#384, #430).
 fn env_launcher_tail<'a>(raw_tokens: &'a [&'a str]) -> &'a [&'a str] {
     let Some((&first, rest)) = raw_tokens.split_first() else {
         return raw_tokens;
@@ -74,7 +69,6 @@ fn env_launcher_tail<'a>(raw_tokens: &'a [&'a str]) -> &'a [&'a str] {
     &rest[index..]
 }
 
-/// Strip leading assignment keywords and flags; non-exporting flags still strip to fail closed (#384, #430).
 pub(super) fn skip_assignment_keyword<'a>(tokens: &'a [&'a str]) -> &'a [&'a str] {
     match tokens {
         [keyword, rest @ ..]
@@ -90,7 +84,6 @@ pub(super) fn skip_assignment_keyword<'a>(tokens: &'a [&'a str]) -> &'a [&'a str
     }
 }
 
-/// Route assignment-only stages targeting `EXECUTOR_ENV_VARS` eagerly, since variable values are not tracked across stages (#384, #430).
 pub(super) fn assignment_stage_executor_routes(
     raw_tokens: &[&str],
     home: HomeState,
@@ -119,9 +112,6 @@ pub(super) fn assignment_stage_executor_routes(
     routes
 }
 
-/// Dispatch program-specific executor options; returns routes and consumed separate-token values
-/// so the generic operand walk does not re-read a whole multi-word option value as a literal path (#384, #430).
-/// `raw_tokens` is threaded for `git --config-env`, which resolves against leading env assignments.
 pub(super) fn option_value_executor_route<'a>(
     program: &str,
     raw_tokens: &[&str],
@@ -139,7 +129,6 @@ pub(super) fn option_value_executor_route<'a>(
     }
 }
 
-/// Scan OpenSSH `-o` options (`ProxyCommand`, `LocalCommand`, `KnownHostsCommand`), peeking without skipping so chained flags still parse.
 fn ssh_option_executor_route<'a>(
     tokens: &[&'a str],
     home: HomeState,
@@ -184,7 +173,6 @@ fn is_ssh_executor_option_key(key: &str) -> bool {
         .any(|executor_key| key.eq_ignore_ascii_case(executor_key))
 }
 
-/// Split OpenSSH `-o` into `(key, value)` on the first whitespace or `=` so `=` inside the command stays in `value`.
 fn ssh_option_key_value(option: &str) -> Option<(&str, &str)> {
     let option = option.trim_start();
     let key_end = option.find(|c: char| c == '=' || c.is_whitespace())?;
@@ -194,7 +182,6 @@ fn ssh_option_key_value(option: &str) -> Option<(&str, &str)> {
     Some((key, value))
 }
 
-/// Git config keys and wildcard families (`alias.*`, `credential.*.helper`, etc.) whose values execute commands (#384, #430).
 fn is_executor_config_key(key: &str) -> bool {
     let lower = key.to_ascii_lowercase();
     let exact = matches!(
@@ -232,7 +219,6 @@ fn family_middle_segment<'a>(key: &'a str, prefix: &str, suffix: &str) -> Option
     key.strip_prefix(prefix)?.strip_suffix(suffix)
 }
 
-/// Scan `git -c` and `--config-env`; `--config-env` resolves against leading env assignments and fails closed if unset (#384, #430).
 fn git_config_executor_route<'a>(
     raw_tokens: &[&str],
     tokens: &[&'a str],
@@ -296,7 +282,6 @@ fn assignment_prefix_value<'a>(raw_tokens: &'a [&'a str], name: &str) -> Option<
     None
 }
 
-/// Scan `man -P`/`--pager` (including glued `-P<value>`, since `man` is in `NAME_ONLY_PROGRAMS`) (#384, #430, GHSA-xj54).
 fn man_pager_executor_route<'a>(
     tokens: &[&'a str],
     home: HomeState,
@@ -326,7 +311,6 @@ fn man_pager_executor_route<'a>(
     (routes, consumed)
 }
 
-/// Scan `<flag> <value>` / `<flag>=<value>` for `NAME_ONLY_PROGRAMS` (`rg --pre`, `ag --pager`), stopping at `--` (GHSA-xj54).
 fn long_option_executor_route<'a>(
     flag: &str,
     tokens: &[&'a str],

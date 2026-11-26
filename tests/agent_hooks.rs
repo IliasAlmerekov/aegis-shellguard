@@ -1,5 +1,3 @@
-//! Integration tests for the Claude Code and Codex agent hooks.
-
 mod support;
 
 use std::fs;
@@ -209,14 +207,11 @@ fn claude_session_start_reports_ci_override_when_disabled_flag_exists() {
 fn session_start_wsl1_sandbox_warning_follows_the_proc_version_marker() {
     let home = TempDir::new().unwrap();
     let cases: &[(&str, bool)] = &[
-        // WSL1: the legacy `microsoft` marker without `microsoft-standard`,
-        // and the explicit wsl1 marker.
         (
             "Linux version 4.4.0-19041-Microsoft (Microsoft@Microsoft) ...",
             true,
         ),
         ("Linux version 5.15.90.1-microsoft-standard-WSL1 ...", true),
-        // WSL2 and native Linux must not warn.
         ("Linux version 5.15.90.1-microsoft-standard-WSL2 ...", false),
         ("Linux version 6.6.87.2 (gcc ...) #1 SMP ...", false),
     ];
@@ -277,8 +272,6 @@ fn disabled_session_start_keeps_the_passthrough_text_even_on_wsl1() {
     assert!(output.status.success());
 
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
-    // Disabled passthrough makes no confinement claim, so the WSL1 note must
-    // not be appended and the passthrough text stays exact.
     assert_eq!(
         json["hookSpecificOutput"]["additionalContext"],
         "Aegis is disabled: commands run in unguarded passthrough. Run \"aegis on\" to re-enable enforcement; \"aegis status\" shows the effective state."

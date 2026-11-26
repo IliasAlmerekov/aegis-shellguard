@@ -1,9 +1,3 @@
-//! Disabled-toggle behavior: when the `~/.aegis/disabled` toggle file is
-//! present, the shell wrapper bypasses interception/auditing while the JSON
-//! evaluation contract is preserved.
-//!
-//! Split from the original `tests/full_pipeline.rs` (behavior-preserving move).
-
 mod support;
 
 use serde_json::Value;

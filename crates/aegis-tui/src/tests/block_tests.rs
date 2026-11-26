@@ -1,5 +1,4 @@
 use super::*;
-// ── Block ─────────────────────────────────────────────────────────────────
 
 #[test]
 fn block_always_returns_false() {
@@ -12,7 +11,6 @@ fn block_always_returns_false() {
     );
     let assessment = make_assessment("rm -rf /", RiskLevel::Block, vec![p]);
 
-    // Even if the user somehow types "yes", Block must return false.
     let result = show_confirmation_with_input(
         &assessment,
         &default_explanation_for_assessment(&assessment),

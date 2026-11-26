@@ -17,16 +17,10 @@ pub(crate) use error::InstallError;
 pub(crate) use hook::run_hook;
 pub(crate) use shell::run_setup_shell;
 
-/// POSIX single-quote a value for safe interpolation into generated shell
-/// snippets or wrapper commands.
 pub(crate) fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-/// Resolve the absolute path of the currently running Aegis binary, falling
-/// back to a bare `aegis` PATH lookup if the executable path is unavailable.
-/// Shared by the Codex and Claude installers so both register a PATH-
-/// independent hook command.
 pub(crate) fn resolved_aegis_bin() -> String {
     std::env::current_exe()
         .ok()
@@ -34,18 +28,10 @@ pub(crate) fn resolved_aegis_bin() -> String {
         .unwrap_or_else(|| "aegis".to_string())
 }
 
-/// True when the on-disk executable already matches `expected_content` and is
-/// installed with the canonical `0755` mode. Used by `write_executable` to
-/// short-circuit idempotent reinstalls.
 fn executable_content_is_current(existing: &str, mode: u32, expected_content: &str) -> bool {
     existing == expected_content && mode & 0o777 == 0o755
 }
 
-/// Materialize an executable file at `path` with `content` and mode `0755`,
-/// atomic via a temp file in the same directory. Returns `AlreadyPresent` when
-/// the existing file already matches byte-for-byte and has the right mode, so
-/// reinstalls are idempotent and never touch a correct file. Shared by the
-/// Codex and Claude installers for their hook shims.
 pub(crate) fn write_executable(path: &Path, content: &str) -> Result<InstallOutcome, InstallError> {
     use std::os::unix::fs::PermissionsExt;
 
@@ -77,7 +63,6 @@ pub(crate) fn write_executable(path: &Path, content: &str) -> Result<InstallOutc
     Ok(InstallOutcome::Installed)
 }
 
-/// Install aegis hooks for the selected agent targets.
 pub(crate) fn run_install(args: &super::InstallArgs) -> i32 {
     let mut exit = 0;
     let selection = install_target_selection(args);
@@ -127,8 +112,6 @@ pub(crate) fn run_install(args: &super::InstallArgs) -> i32 {
     exit
 }
 
-/// Print the result of a Claude settings install and return the updated exit
-/// code.
 fn report_claude_settings_install(result: AgentInstallResult, exit: i32) -> i32 {
     match result {
         AgentInstallResult::Installed => println!("Claude Code: hook installed"),
@@ -164,8 +147,6 @@ impl InstallTargetSelection {
 }
 
 fn install_target_selection(args: &super::InstallArgs) -> InstallTargetSelection {
-    // Default `aegis install` behavior installs both agents, so no explicit
-    // target flag selects `All`.
     if args.all || (!args.claude_code && !args.codex) {
         InstallTargetSelection::All
     } else if args.claude_code {
@@ -179,7 +160,6 @@ fn install_target_selection(args: &super::InstallArgs) -> InstallTargetSelection
 pub(crate) enum InstallOutcome {
     Installed,
     AlreadyPresent,
-    /// Agent directory not present — nothing to install.
     Skipped,
 }
 
@@ -191,20 +171,11 @@ pub(crate) enum AgentInstallResult {
     Error(InstallError),
 }
 
-/// Result of `aegis install-hooks --claude-code`, which first asks whether the
-/// Aegis Claude Code plugin registers the `Hook`s (ADR-047).
 #[derive(Debug)]
 pub(crate) enum ClaudeInstallResult {
-    /// The plugin is enabled and installed, so the settings install is
-    /// skipped.
     SkippedClaudeCodePlugin,
-    /// The plugin is enabled but not installed, so it registers nothing and
-    /// the settings install ran instead.
     PluginNotInstalled(AgentInstallResult),
-    /// The plugin is enabled, but `installed_plugins.json` has an unknown
-    /// format, so the settings install ran instead.
     PluginFormatUnknown(AgentInstallResult),
-    /// The plugin is off; the settings install ran.
     Settings(AgentInstallResult),
 }
 
@@ -233,10 +204,6 @@ pub(crate) fn agent_dir_exists(agent_dir: &Path) -> Result<bool, InstallError> {
     })
 }
 
-/// Combine two install outcomes into one: `Installed` wins over `Skipped`/`
-/// AlreadyPresent`, `Skipped` wins over `AlreadyPresent`. Shared by the Codex
-/// and Claude installers to fold the shim-materialize outcome together with
-/// the settings-registration outcome.
 pub(crate) fn combine_outcomes(lhs: InstallOutcome, rhs: InstallOutcome) -> InstallOutcome {
     if matches!(lhs, InstallOutcome::Installed) || matches!(rhs, InstallOutcome::Installed) {
         InstallOutcome::Installed
@@ -247,11 +214,6 @@ pub(crate) fn combine_outcomes(lhs: InstallOutcome, rhs: InstallOutcome) -> Inst
     }
 }
 
-/// A Bash hook command that Aegis owns and may migrate away on install. The
-/// predicate matches by **basename** for the file-backed forms so a moved or
-/// renamed home directory still migrates; the bare two-token `aegis hook`
-/// command is matched as a whole string (it is not a path). A user hook that
-/// merely contains the substring `aegis` but is none of these is preserved.
 pub(crate) fn is_aegis_managed_bash_command(command: &str) -> bool {
     if command == "aegis hook" {
         return true;
@@ -262,10 +224,6 @@ pub(crate) fn is_aegis_managed_bash_command(command: &str) -> bool {
     basename == "aegis-rewrite.sh" || basename == "aegis-pre-tool-use.sh"
 }
 
-/// A `SessionStart` hook command that Aegis owns. Matched by **basename** so a
-/// moved home directory still migrates. Aegis has only ever installed the
-/// session-start payload as `aegis-session-start.sh`, so that is the sole
-/// managed name.
 pub(crate) fn is_aegis_managed_session_start_command(command: &str) -> bool {
     Path::new(command)
         .file_name()
@@ -273,21 +231,6 @@ pub(crate) fn is_aegis_managed_session_start_command(command: &str) -> bool {
         .is_some_and(|basename| basename == "aegis-session-start.sh")
 }
 
-/// Walk `entries` and prune every Aegis-managed hook command that is not the
-/// canonical `(canonical_matcher, canonical_command)` registration, then drop
-/// any entry the pruning emptied. Returns `(pruned_any, canonical_present)`.
-///
-/// `section_label` names the section for fail-closed error messages.
-///
-/// Under the canonical matcher Aegis owns the namespace and validates it
-/// strictly — a malformed entry fails closed rather than risking a missed
-/// stale registration or a corrupted prune. Under any other matcher a foreign
-/// shape is left untouched; Aegis still drops its own managed commands
-/// wherever it finds them, including the canonical command under a wrong
-/// matcher. `is_managed` identifies Aegis' own commands by basename.
-/// `canonical_present` is true only when the canonical command sits under the
-/// canonical matcher, so a rerun adds a fresh registration when a stale one
-/// moved matcher.
 pub(crate) fn prune_aegis_managed_hooks(
     entries: &mut Vec<Value>,
     section_label: &str,
@@ -300,15 +243,10 @@ pub(crate) fn prune_aegis_managed_hooks(
     let mut drop_indices: Vec<usize> = Vec::new();
 
     for (idx, entry) in entries.iter_mut().enumerate() {
-        // A non-object entry is not one Aegis manages — `matcher` is optional
-        // to the agent and a third-party entry may be shaped however that tool
-        // likes. Skip it rather than rejecting it: refusing to install over a
-        // foreign shape leaves the operator with no hook at all (M3a).
         let Some(entry_obj) = entry.as_object_mut() else {
             continue;
         };
 
-        // Read the matcher before borrowing `hooks` mutably.
         let matcher = entry_obj
             .get("matcher")
             .and_then(Value::as_str)
@@ -316,9 +254,6 @@ pub(crate) fn prune_aegis_managed_hooks(
         let matcher_is_canonical = matcher == canonical_matcher;
 
         let Some(hooks) = entry_obj.get_mut("hooks").and_then(Value::as_array_mut) else {
-            // Missing/non-array `hooks`: under the canonical matcher Aegis owns
-            // the namespace and fails closed; elsewhere it is a foreign shape
-            // left untouched.
             if matcher_is_canonical {
                 return Err(InstallError::InvalidStructure(format!(
                     "{section_label} matching {canonical_matcher} must contain a hooks array"
@@ -328,9 +263,6 @@ pub(crate) fn prune_aegis_managed_hooks(
         };
 
         if matcher_is_canonical {
-            // Validate every hook shape before pruning so malformed hooks fail
-            // closed exactly as the historical validation did — Aegis writes
-            // into this namespace and must be able to safely prune and add.
             for hook in hooks.iter() {
                 let hook_obj = hook.as_object().ok_or_else(|| {
                     InstallError::InvalidStructure(format!(
@@ -364,15 +296,12 @@ pub(crate) fn prune_aegis_managed_hooks(
                 .and_then(|h| h.get("command"))
                 .and_then(|c| c.as_str())
             else {
-                // A foreign hook shape under a non-canonical matcher. Keep it.
                 return true;
             };
             if matcher_is_canonical && command == canonical_command {
                 found_canonical_here = true;
                 return true;
             }
-            // Keep third-party hooks; drop only Aegis-managed commands,
-            // including the canonical command under a wrong matcher.
             !is_managed(command)
         });
 
@@ -382,14 +311,11 @@ pub(crate) fn prune_aegis_managed_hooks(
         if found_canonical_here {
             canonical_present = true;
         }
-        // Drop the entry only if pruning emptied a previously-non-empty entry,
-        // so an already-empty or foreign entry is left untouched.
         if before > 0 && hooks.is_empty() {
             drop_indices.push(idx);
         }
     }
 
-    // Remove emptied entries in reverse index order to keep indices valid.
     for idx in drop_indices.into_iter().rev() {
         entries.remove(idx);
     }
@@ -495,9 +421,6 @@ mod tests {
 
     #[test]
     fn resolved_aegis_bin_is_non_empty() {
-        // The resolved binary path must always yield a non-empty command string
-        // (falling back to the bare `aegis` name when current_exe is unavailable)
-        // so the rendered hook template always substitutes a real value.
         let bin = resolved_aegis_bin();
         assert!(!bin.is_empty(), "resolved aegis bin must never be empty");
     }
@@ -521,7 +444,6 @@ mod tests {
     fn write_executable_normalizes_mode_to_0755() {
         let dir = TempDir::new().expect("temp dir");
         let hook_path = dir.path().join("hook.sh");
-        // Seed a file with outdated content and a non-canonical mode.
         fs::write(&hook_path, "#!/bin/sh\nold\n").expect("write hook");
         fs::set_permissions(&hook_path, fs::Permissions::from_mode(0o644))
             .expect("set permissions");
@@ -540,7 +462,6 @@ mod tests {
             & 0o777;
         assert_eq!(mode, 0o755, "installed hook must normalize to 0755");
 
-        // A second run with matching content + correct mode is idempotent.
         let again = write_executable(&hook_path, "#!/bin/sh\nnew\n").expect("reinstall");
         assert_eq!(again, InstallOutcome::AlreadyPresent);
     }

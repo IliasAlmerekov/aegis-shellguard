@@ -1,5 +1,3 @@
-//! Shared CI-detection helper used by the CLI runtime entrypoints.
-
 use std::env;
 
 fn truthy_env(value: &str) -> bool {
@@ -10,11 +8,6 @@ fn falsy_env(value: &str) -> bool {
     matches!(value.to_ascii_lowercase().as_str(), "0" | "false" | "no")
 }
 
-/// Returns `true` when Aegis is running inside a CI environment.
-///
-/// Detection order:
-/// 1. `AEGIS_CI` — explicit override
-/// 2. Well-known CI env vars set by major CI providers
 pub fn is_ci_environment() -> bool {
     if let Ok(value) = env::var("AEGIS_CI") {
         if falsy_env(&value) {

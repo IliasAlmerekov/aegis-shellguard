@@ -8,21 +8,12 @@
     )
 )]
 
-//! Aegis configuration: data model, layered loader, validation, JSON schema,
-//! and decision-persistence (`amend`).
-//!
-//! Depends on `aegis-types` for the shared vocabulary and `aegis-scanner` to
-//! validate that custom patterns compile. Errors are surfaced as the crate's
-//! own [`ConfigError`]; the binary maps them onto its orchestration error type.
-
 pub mod allowlist;
 pub mod amend;
 mod atomic;
 pub mod ceiling;
-/// Typed configuration errors.
 pub mod error;
 mod home;
-/// Config data model — [`AegisConfig`] and related types.
 pub mod model;
 pub mod pattern_match;
 pub mod snapshot;

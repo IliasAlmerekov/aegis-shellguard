@@ -3,16 +3,12 @@ use std::io::{self, BufRead, Write};
 
 use aegis_types::RecoveryDegradation;
 
-/// The user's one-time response to a Recovery degradation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecoveryPromptDecision {
-    /// Run this command once without the required recovery backstop.
     RunOnceWithoutRecovery,
-    /// Deny this command.
     Deny,
 }
 
-/// Show the Shell Recovery override prompt on stderr and read stdin.
 pub fn show_recovery_override_decision(degradation: RecoveryDegradation) -> RecoveryPromptDecision {
     use std::io::IsTerminal;
     show_recovery_override_with_input(
@@ -23,11 +19,6 @@ pub fn show_recovery_override_decision(degradation: RecoveryDegradation) -> Reco
     )
 }
 
-/// The banner that names which Recovery degradation the human is deciding on.
-///
-/// Partial coverage and total failure read differently: "no Snapshot was
-/// created" would be a false statement about a partial attempt, and a human
-/// who is told it will misjudge what running anyway costs.
 fn degradation_banner(degradation: RecoveryDegradation) -> &'static str {
     match degradation {
         RecoveryDegradation::PartialSnapshotCoverage => {
@@ -51,7 +42,6 @@ fn degradation_banner(degradation: RecoveryDegradation) -> &'static str {
     }
 }
 
-/// Testable Recovery override prompt using explicit input and output streams.
 pub fn show_recovery_override_with_input<R: BufRead, W: Write>(
     degradation: RecoveryDegradation,
     is_interactive: bool,
@@ -84,7 +74,6 @@ pub fn show_recovery_override_with_input<R: BufRead, W: Write>(
     }
 }
 
-/// Show the Watch Recovery override prompt through `/dev/tty`.
 pub fn show_recovery_override_via_tty(degradation: RecoveryDegradation) -> RecoveryPromptDecision {
     if std::env::var_os("AEGIS_FORCE_NO_TTY").is_some_and(|value| value == "1") {
         return RecoveryPromptDecision::Deny;

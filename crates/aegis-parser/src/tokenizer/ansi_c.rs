@@ -1,36 +1,18 @@
-//! Decoding of bash ANSI-C quoting (`$'...'`).
-//!
-//! Bash expands the escapes inside `$'...'` before it splits words, so
-//! `$'\162m'` runs `rm`. The tokenizer decodes the quoted piece here so that
-//! every consumer of its tokens sees the word bash would run.
-
 use std::borrow::Cow;
 use std::iter::Peekable;
 use std::str::Chars;
 
-/// One `$'...'` piece read by [`read_ansi_c_quoted`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AnsiCPiece {
-    /// The decoded text, or the raw spelling (`$'` included) when the piece
-    /// never closes.
     pub(crate) text: String,
-    /// The piece as written, `$'` and the closing quote included.
     pub(crate) raw: String,
-    /// `false` when the decoded text may differ from what bash would run: the
-    /// piece never closes, holds a NUL, or decodes to bytes that are not
-    /// valid UTF-8.
     pub(crate) exact: bool,
 }
 
-/// Read one ANSI-C quoted piece. `chars` must sit just past the opening `$'`;
-/// on return it sits just past the closing `'`, or at the end of input when
-/// the piece never closes.
 pub(crate) fn read_ansi_c_quoted(chars: &mut Peekable<Chars<'_>>) -> AnsiCPiece {
     let mut raw = String::from("$'");
     let mut bytes = Vec::new();
     let mut exact = true;
-    // Bash stores the piece as a C string, so a NUL ends the decoded text
-    // while the rest of the piece is still read to find its closing quote.
     let mut truncated = false;
 
     loop {
@@ -79,25 +61,10 @@ pub(crate) fn read_ansi_c_quoted(chars: &mut Peekable<Chars<'_>>) -> AnsiCPiece 
     AnsiCPiece { text, raw, exact }
 }
 
-/// `cmd` with every ANSI-C quoted piece (`$'...'`) rewritten as the plain
-/// single-quoted word bash would run (`$'\162m'` becomes `'rm'`), and every
-/// locale-quoted piece (`$"..."`) as plain double quotes.
-///
-/// Raw-text consumers (segment splitters, substitution and heredoc walkers,
-/// regex patterns) toggle quote state on every `'`, so they misread where a
-/// piece holding `\'` ends. The rewritten text has the same words in a
-/// spelling they all read correctly. A piece that does not decode exactly
-/// (see [`crate::ansi_c_quoting_is_inexact`]) keeps its raw spelling.
-/// Borrows `cmd` unchanged unless it contains `$'` or `$"`.
 pub fn canonical_ansi_c_quoting(cmd: &str) -> Cow<'_, str> {
     canonicalize(cmd, false)
 }
 
-/// [`canonical_ansi_c_quoting`], but every rewritten ANSI-C piece keeps an
-/// empty `$''` in front of its plain single-quoted word (`$'\162m'` becomes
-/// `$'''rm'`). Bash reads both spellings as the same word. A consumer that
-/// treats any ANSI-C quoting conservatively still sees `$'` where the command
-/// used it, while raw-text walks read the quote edges correctly.
 pub fn canonical_ansi_c_quoting_marked(cmd: &str) -> Cow<'_, str> {
     canonicalize(cmd, true)
 }
@@ -109,9 +76,6 @@ fn canonicalize(cmd: &str, keep_marker: bool) -> Cow<'_, str> {
 
     let mut out = String::with_capacity(cmd.len());
     let mut chars = cmd.chars().peekable();
-    // Command substitution (`$(...)`, backticks) starts a fresh quoting
-    // context, even inside double quotes: `"$(echo $'x')"` holds a real
-    // ANSI-C piece. The bottom frame is the command itself.
     let mut frames = vec![QuoteFrame::new(FrameKind::Command)];
 
     while let Some(ch) = chars.next() {
@@ -182,8 +146,6 @@ fn canonicalize(cmd: &str, keep_marker: bool) -> Cow<'_, str> {
     Cow::Owned(out)
 }
 
-/// Where a quoting context ends: the command itself, a `$(...)` body at the
-/// given open-paren depth, or a backtick body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FrameKind {
     Command,
@@ -191,7 +153,6 @@ enum FrameKind {
     Backtick,
 }
 
-/// Quote state of one quoting context in [`canonicalize`].
 struct QuoteFrame {
     kind: FrameKind,
     single: bool,
@@ -208,8 +169,6 @@ impl QuoteFrame {
     }
 }
 
-/// Append `text` as one single-quoted shell word; an embedded `'` is spelled
-/// `'\''` (close, escaped quote, reopen).
 fn push_single_quoted(out: &mut String, text: &str) {
     out.push('\'');
     for c in text.chars() {
@@ -226,10 +185,7 @@ enum Decoded {
     Char(char),
     Byte(u8),
     Bytes(Vec<u8>),
-    /// Text bash keeps as written (an unknown escape).
     Literal(String),
-    /// An escape bash would turn into something this decoder cannot
-    /// represent faithfully; holds its raw spelling.
     Invalid(String),
 }
 
@@ -238,8 +194,6 @@ fn push_char(bytes: &mut Vec<u8>, c: char) {
     bytes.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
 }
 
-/// Decode the escape after a backslash, recording consumed characters in
-/// `raw`. Follows bash's `ansicstr`.
 fn read_escape(chars: &mut Peekable<Chars<'_>>, raw: &mut String) -> Decoded {
     let Some(esc) = chars.next() else {
         return Decoded::Literal("\\".to_string());
@@ -274,7 +228,6 @@ fn read_escape(chars: &mut Peekable<Chars<'_>>, raw: &mut String) -> Decoded {
                     None => break,
                 }
             }
-            // `\777` keeps only the low byte, as bash does.
             Decoded::Byte((value & 0xff) as u8)
         }
         'x' => match read_hex(chars, raw, 2) {
@@ -296,7 +249,6 @@ fn read_escape(chars: &mut Peekable<Chars<'_>>, raw: &mut String) -> Decoded {
     }
 }
 
-/// Read up to `max` hex digits; `None` when none follow.
 fn read_hex(chars: &mut Peekable<Chars<'_>>, raw: &mut String, max: usize) -> Option<u32> {
     let mut value: Option<u32> = None;
     for _ in 0..max {
@@ -311,10 +263,6 @@ fn read_hex(chars: &mut Peekable<Chars<'_>>, raw: &mut String, max: usize) -> Op
     value
 }
 
-/// `\cX`: the control character for `X` (`\c?` is DEL). A backslash `X`
-/// still pairs with the character after it when bash finds the closing quote,
-/// so that character is read here too: a second backslash is dropped, as bash
-/// does, and anything else is kept after the control character.
 fn read_control(chars: &mut Peekable<Chars<'_>>, raw: &mut String) -> Decoded {
     match chars.peek().copied() {
         Some(c) if c.is_ascii() && c != '\'' => {

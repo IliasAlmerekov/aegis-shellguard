@@ -1,19 +1,3 @@
-//! Supabase snapshot runtime coordinator.
-//!
-//! This module wires the `SnapshotPlugin` implementation for `SupabasePlugin`
-//! and delegates the security-critical helpers to focused submodules:
-//!
-//! - [`manifest_io`]: atomic manifest write (temp file -> sync -> rename ->
-//!   sync parent dir) plus the test-only manifest write failure injection hook.
-//! - [`manifest_state`]: manifest construction, schema validation, and strict
-//!   rollback-eligibility recomputation.
-//! - [`rollback`]: artifact path resolution (bundle-root containment) and
-//!   config-target-match checks.
-//! - [`tests`]: unit tests covering the atomic-write and rollback invariants.
-//!
-//! The trait impl lives here because Rust requires a single `impl` block for a
-//! trait; the helper logic is split out to keep every file under 800 LoC.
-
 use super::*;
 use crate::ArtifactReadiness;
 use crate::containment::contain_artifact;
@@ -30,8 +14,6 @@ mod rollback;
 #[cfg(test)]
 mod tests;
 
-/// The manifest gate `rollback`, `liveness` and `readiness` share: the schema
-/// and strict eligibility checks, then the contained dump path.
 fn eligible_dump_path(manifest: &SupabaseManifest, manifest_path: &Path) -> Result<PathBuf> {
     manifest.validate_schema_v1()?;
 
@@ -158,8 +140,6 @@ impl SnapshotPlugin for SupabasePlugin {
     }
 
     async fn readiness(&self, snapshot_id: &str) -> ArtifactReadiness {
-        // The same manifest gate `liveness` and `rollback` apply; a manifest
-        // that fails it names no artifact Rollback could use.
         let dump_path = async {
             let manifest_path = Self::parse_snapshot_id(snapshot_id)?;
             let manifest_bytes = tokio::fs::read(&manifest_path).await?;

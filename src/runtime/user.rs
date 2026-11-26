@@ -1,5 +1,3 @@
-//! User detection for scoped allowlist and audit attribution.
-
 #[cfg(not(windows))]
 use std::path::Path;
 #[cfg(not(windows))]
@@ -20,9 +18,6 @@ pub(crate) fn detect_effective_user() -> Option<String> {
     }
 }
 
-/// Search the `PATH` env var directories for the `id` executable and return
-/// the first absolute path found, or `None` when PATH is unset or `id` is
-/// not present in any of its directories.
 #[cfg(not(windows))]
 fn find_id_in_path() -> Option<PathBuf> {
     let path_var = std::env::var_os("PATH")?;
@@ -37,7 +32,6 @@ fn find_id_in_path() -> Option<PathBuf> {
 
 #[cfg(not(windows))]
 fn run_id_command(id_path: &Path) -> Option<String> {
-    // User detection is best-effort; None disables user-scoped allowlist matches.
     let output = Command::new(id_path).arg("-un").output().ok()?;
     if !output.status.success() {
         return None;
@@ -65,8 +59,6 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn detect_effective_user_resolves_id_via_path_lookup() {
-        // Verifies that detect_effective_user() resolves the id binary through
-        // PATH rather than relying on a hardcoded location like /usr/bin/id.
         let user = detect_effective_user();
         assert!(
             user.is_some(),

@@ -1,9 +1,3 @@
-//! Runner routing (#421, ADR-040) at the analysis seam. Matches, risk, and
-//! degradation live here rather than in `tests/full_pipeline_json/runner.rs`:
-//! the CLI cannot raise the 100 ms analysis deadline, so a loaded machine can
-//! turn any CLI-level Match into a fallback prompt (#458). These tests pass an
-//! explicit 5 s budget instead.
-
 use super::*;
 
 use std::path::Path;
@@ -44,7 +38,6 @@ fn has_recursive_delete(assessment: &Assessment) -> bool {
         .any(|item| item.pattern.id.as_ref() == "LANG-FS-DEL-R")
 }
 
-/// Asserts a `LANG-FS-DEL-R` Match lifted to Danger with complete analysis.
 async fn assert_complete_recursive_delete(command: &str, cwd: &Path) {
     let assessment = analyzed(command, run_in(command, cwd).await);
     assert!(
@@ -56,8 +49,6 @@ async fn assert_complete_recursive_delete(command: &str, cwd: &Path) {
     assert_eq!(summary.status, AnalysisStatus::Complete, "{command}");
 }
 
-/// Asserts a `LANG-FS-DEL-R` Match lifted to Danger that keeps `DynamicSource`
-/// degradation, because the runner may select a different executable.
 async fn assert_recursive_delete_with_dynamic_source(command: &str, cwd: &Path) {
     let assessment = analyzed(command, run_in(command, cwd).await);
     assert!(
@@ -75,7 +66,6 @@ async fn assert_recursive_delete_with_dynamic_source(command: &str, cwd: &Path) 
     );
 }
 
-/// Asserts no Match and `DynamicSource` degradation.
 async fn assert_degraded_without_match(command: &str, cwd: &Path) {
     let assessment = analyzed(command, run_in(command, cwd).await);
     assert!(assessment.matched.is_empty(), "{command}: {assessment:?}");
@@ -105,8 +95,6 @@ async fn runner_explicit_interpreter_script_uses_language_match() {
 
 #[tokio::test]
 async fn package_selecting_runner_explicit_interpreter_script_keeps_match_and_degradation() {
-    // `uvx`, `uv tool run` (the long form of `uvx`), `pipx run`, and `npx`
-    // may install a package that provides its own `python3` or `node`.
     let workspace = tempfile::tempdir().expect("temp workspace");
     std::fs::write(workspace.path().join("danger.py"), DANGER_PY).unwrap();
     std::fs::write(workspace.path().join("danger.js"), DANGER_JS).unwrap();
@@ -133,8 +121,6 @@ async fn runner_bare_python_script_uses_language_match() {
         "pipx run ./danger.py",
         "/usr/bin/pipx run ./danger.py",
     ] {
-        // A bare `.py` operand names its own source, so even `pipx run`
-        // adds no `DynamicSource` degradation here (#421, ADR-040).
         assert_complete_recursive_delete(command, workspace.path()).await;
     }
 }
@@ -183,8 +169,6 @@ async fn runner_inline_source_uses_language_match() {
 
 #[tokio::test]
 async fn direct_exec_operand_behind_package_selecting_runner_degrades_clean_script() {
-    // A harmless direct-exec operand cannot rule out a different
-    // package-provided executable actually running (#421, ADR-040).
     let workspace = tempfile::tempdir().expect("temp workspace");
     write_executable(&workspace.path().join("clean-bin"), "#!/bin/sh\necho hi\n");
 
@@ -200,11 +184,6 @@ async fn direct_exec_operand_behind_package_selecting_runner_degrades_clean_scri
 
 #[tokio::test]
 async fn direct_exec_operand_controls_add_no_dynamic_source_degradation() {
-    // A bare direct-exec operand and a runner that names its own child
-    // program (`uv run`, `poetry run`) never select a package executable, so
-    // routing must not add `DynamicSource` for them (#421, ADR-040). The
-    // `#!/bin/sh` body itself degrades with `GrammarUnavailable`, which is
-    // independent of runner routing.
     let workspace = tempfile::tempdir().expect("temp workspace");
     write_executable(&workspace.path().join("clean-bin"), "#!/bin/sh\necho hi\n");
 
@@ -238,10 +217,6 @@ async fn runner_subcommands_without_a_program_start_no_analysis() {
 
 #[tokio::test]
 async fn direct_exec_operand_behind_package_selecting_runner_keeps_match_and_degradation() {
-    // `npx`, `uvx`, `pipx run`, and `uv tool run` (the long form of `uvx`)
-    // pick their own child binary; a visible-source Match on a direct-exec
-    // operand never rules out a different package-provided executable
-    // actually running (#421, ADR-040).
     let workspace = tempfile::tempdir().expect("temp workspace");
     write_executable(
         &workspace.path().join("danger-bin"),
@@ -277,9 +252,6 @@ async fn package_selected_interpreter_inline_source_keeps_match_and_degradation(
 
 #[tokio::test]
 async fn opaque_runner_options_degrade_without_claiming_their_source() {
-    // `npx -c` takes a command string, and `uv tool run --from` is an option
-    // the parser can't see past. Neither may claim the trailing interpreter
-    // as its source (#421, ADR-040).
     let workspace = tempfile::tempdir().expect("temp workspace");
     for command in [
         "npx -c \"node -e 'fs.rmSync(\\\"artifact\\\", {recursive: true})'\"",

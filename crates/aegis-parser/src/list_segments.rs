@@ -1,13 +1,9 @@
-//! Top-level list-segment splitting with separator tracking (#384).
-
 use std::ops::Range;
 
 use crate::PipelineChain;
 use crate::embedded_scripts::heredoc_suspend_ranges;
 use crate::segmentation::{ends_with_redirect_target, finalize_segment, split_pipeline_segments};
 
-/// Walks a byte offset forward through sorted, non-overlapping opaque byte ranges
-/// (such as `case` statements or heredoc bodies).
 pub(crate) struct SuspendCursor<'a> {
     remaining: std::slice::Iter<'a, Range<usize>>,
     active: Option<&'a Range<usize>>,
@@ -20,9 +16,6 @@ impl<'a> SuspendCursor<'a> {
         Self { remaining, active }
     }
 
-    /// Advances past any ranges that have already ended by `byte_idx`, then
-    /// reports whether `byte_idx` falls inside the (possibly new) active
-    /// one. `byte_idx` must be non-decreasing across calls on one cursor.
     pub(crate) fn contains(&mut self, byte_idx: usize) -> bool {
         while self.active.is_some_and(|range| range.end <= byte_idx) {
             self.active = self.remaining.next();
@@ -31,38 +24,21 @@ impl<'a> SuspendCursor<'a> {
     }
 }
 
-/// The top-level shell list operator connecting one [`ListSegment`] to the next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListSeparator {
-    /// `&&` - logical AND.
     And,
-    /// `||` - logical OR.
     Or,
-    /// `;` - unconditional sequencing.
     Semicolon,
-    /// A standalone background `&`.
     Background,
-    /// A literal newline.
     Newline,
 }
 
-/// One top-level list segment: its full pipeline chain (a single stage when
-/// the segment has no `|`) and the list operator connecting it to the next
-/// segment, `None` for the last segment in the command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListSegment {
-    /// This segment's pipeline chain. `segments.len() == 1` for a plain
-    /// (non-piped) command.
     pub pipeline: PipelineChain,
-    /// The operator separating this segment from the next, `None` at the end.
     pub separator: Option<ListSeparator>,
 }
 
-/// Split `cmd` into top-level list segments delimited by `;`, `&&`, `||`,
-/// background `&`, and newlines, each with its pipeline chain and trailing
-/// separator (#384).
-///
-/// Unlike [`crate::top_level_pipelines`], single-stage groups are included.
 pub fn list_segments(cmd: &str) -> Vec<ListSegment> {
     split_top_level_command_groups_with_separators(cmd)
         .into_iter()
@@ -76,8 +52,6 @@ pub fn list_segments(cmd: &str) -> Vec<ListSegment> {
         .collect()
 }
 
-/// Fold a completed word into the `case`/`esac` nesting scan and report
-/// whether the next word stays in command position.
 fn note_word_boundary(
     word: &str,
     word_start: usize,
@@ -104,11 +78,6 @@ fn note_word_boundary(
     }
 }
 
-/// Byte ranges spanning outermost top-level `case ... esac` statements (#384).
-///
-/// Only `case`/`esac` in command position open or close a range so argument
-/// words like `grep case f` never suspend list splitting. Unmatched `case`
-/// produces no range.
 pub(crate) fn case_statement_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
     if !cmd.contains("case") {
         return Vec::new();
@@ -119,9 +88,6 @@ pub(crate) fn case_statement_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
     let mut in_single_quote = false;
     let mut in_double_quote = false;
     let mut in_backticks = false;
-    // `true` right before the *next* word starts means that word begins in
-    // command position. Starts `true`: the very start of `cmd` is command
-    // position, matching every other top-level list segment's own start.
     let mut command_position = true;
     let mut word_start: Option<usize> = None;
 
@@ -152,15 +118,10 @@ pub(crate) fn case_statement_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
         }
 
         if in_single_quote || in_double_quote || in_backticks {
-            // Inside a quoted/backticked span every byte — including
-            // whitespace — stays part of the current word; a quoted string
-            // is one token even when it embeds spaces.
             word_start.get_or_insert(idx);
             continue;
         }
 
-        // A separator ends the current word *and* puts the next word in
-        // command position; plain whitespace only ends the word.
         let is_separator = matches!(ch, ';' | '&' | '|' | '(' | ')' | '{') || ch == '\n';
         if ch.is_whitespace() || is_separator {
             if let Some(start) = word_start.take() {
@@ -196,8 +157,6 @@ pub(crate) fn case_statement_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
     ranges
 }
 
-/// Finalize `current` into `segments`, and if that pushed a new segment,
-/// record `kind` as the separator immediately following it.
 fn finalize_with_separator(
     kind: ListSeparator,
     current: &mut String,
@@ -211,9 +170,6 @@ fn finalize_with_separator(
     }
 }
 
-/// Split `cmd` into top-level command groups paired with their trailing [`ListSeparator`].
-///
-/// Heredoc and `case ... esac` spans stay opaque so internal separators do not split them (#384).
 pub(crate) fn split_top_level_command_groups_with_separators(
     cmd: &str,
 ) -> Vec<(String, Option<ListSeparator>)> {
@@ -239,10 +195,6 @@ pub(crate) fn split_top_level_command_groups_with_separators(
             active_suspend = suspend_ranges.next();
         }
         if active_suspend.is_some_and(|range| range.contains(&byte_idx)) {
-            // Heredoc marker, body, or terminator text: opaque data, carried
-            // through verbatim with none of the separator/quote handling
-            // below (a quoted delimiter's own quotes must not toggle outer
-            // quote state, and a `&&`/`;` here must not split the segment).
             current.push(ch);
             continue;
         }
@@ -294,8 +246,6 @@ pub(crate) fn split_top_level_command_groups_with_separators(
                 }
                 current.push(ch);
             }
-            // Track `{ ...; }` groups and `f(){ ...; }` function bodies as single
-            // units so the router sees the whole wrapper (ADR-022 §6, #384).
             '{' if !in_single_quote
                 && !in_double_quote
                 && !in_backticks
@@ -360,7 +310,6 @@ pub(crate) fn split_top_level_command_groups_with_separators(
                         &mut separators,
                     );
                 } else if next_char != Some('>') && !ends_with_redirect_target(&current) {
-                    // Standalone background `&` (excludes `&>`, `&>>`, `>&`, `<&`).
                     finalize_with_separator(
                         ListSeparator::Background,
                         &mut current,
@@ -393,7 +342,6 @@ pub(crate) fn split_top_level_command_groups_with_separators(
 
     finalize_segment(&mut current, &mut segments);
 
-    // Force the final segment's trailing separator to `None` (even for trailing `;`).
     let mut separators: Vec<Option<ListSeparator>> = separators.into_iter().map(Some).collect();
     separators.resize(segments.len(), None);
     if let Some(last) = separators.last_mut() {
@@ -425,7 +373,6 @@ mod tests {
 
     #[test]
     fn heredoc_owning_segment_keeps_a_same_line_chained_exec_glued() {
-        // Keeps the same-line `&&` chain in one segment for write-then-exec detection (#384).
         let cmd = "cat > f <<EOF && python3 f\nprint(1)\nEOF";
         assert_eq!(
             raw_segments(cmd),
@@ -477,7 +424,6 @@ mod tests {
 
     #[test]
     fn case_keyword_in_argument_position_does_not_suspend_splitting() {
-        // Only command-position `case`/`esac` suspend splitting (#384).
         let cmd = "grep case f; python3 ./evil.py; grep esac f";
         assert_eq!(
             raw_segments(cmd),

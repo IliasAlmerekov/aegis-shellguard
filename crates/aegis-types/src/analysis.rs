@@ -1,21 +1,3 @@
-//! Language-aware analysis data model (ADR-022 §4).
-//!
-//! This module holds the **zero-I/O shared types** that let the scanner model
-//! represent all detection mechanisms — regex `Pattern`, `Token-prefix rule`,
-//! and Language-aware rule — through one common contract, plus the typed
-//! evidence, status, and degradation vocabulary that language adapters emit.
-//!
-//! Constraints (ADR-022):
-//! - Pure data only. No filesystem access, no subprocess, no Tree-sitter
-//!   types, and no dependency arrow from this crate to any parser crate.
-//! - These types carry no source body, full snippet, variable value, or AST.
-//!   Provenance persists metadata only (ADR-022 §10).
-//!
-//! Behavior is unchanged by introducing this module: the existing scanner
-//! `Assessment` and `MatchResult` are not yet refactored onto this model (that
-//! is a later slice). The types here are the foundation language-aware
-//! analysis will populate.
-
 use serde::{Deserialize, Serialize};
 
 #[non_exhaustive]
@@ -466,12 +448,6 @@ pub fn merge_analysis(
         }
     }
 
-    // Risk is the max over the baseline risk, every retained Match, AND every
-    // language Match — including ones deduped away above. A same-id language
-    // Match is dropped from `matched` (the baseline Match is retained per the
-    // "Matches never disappear" invariant), but its risk must still count:
-    // otherwise a more severe language-detected risk could silently vanish
-    // behind a lower-risk baseline Match that happens to share its id.
     let risk = merged_matched
         .iter()
         .map(|m| m.pattern.risk)
@@ -493,8 +469,6 @@ pub fn merge_analysis(
     }
 }
 
-// Test modules live in `analysis/` (split out of this file to stay under the
-// 800-line file-size budget).
 #[cfg(test)]
 mod merge_tests;
 #[cfg(test)]

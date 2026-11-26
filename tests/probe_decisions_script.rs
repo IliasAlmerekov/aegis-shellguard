@@ -1,5 +1,3 @@
-//! Runs `scripts/probe-decisions.sh` against the debug binary on three fixed commands.
-
 mod support;
 
 use std::fs;
@@ -38,7 +36,6 @@ fn rows_carry_decision_risk_snapshot_and_analysis_and_leave_nothing_behind() {
 
     let rows: Vec<Vec<&str>> = stdout.lines().map(|l| l.split('\t').collect()).collect();
     assert_eq!(rows.len(), 3, "{stdout}");
-    // command, decision, risk, snapshot requested, analysis status, degradation reasons
     assert_eq!(rows[0][..4], ["ls -la", "auto_approve", "safe", "false"]);
     assert_eq!(rows[1][..3], ["$FOO bar", "prompt", "safe"]);
     assert_eq!(rows[1][4..], ["degraded", "dynamic_source"]);

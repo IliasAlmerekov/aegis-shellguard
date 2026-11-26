@@ -1,6 +1,3 @@
-//! Every library and binary crate root must deny `unwrap`, `expect`, `panic!`
-//! and `unreachable!` outside tests. A new crate or `[[bin]]` without the attribute fails here.
-
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -11,7 +8,6 @@ fn without_whitespace(text: &str) -> String {
     text.split_whitespace().collect()
 }
 
-// rustfmt wraps the attribute, so whitespace is ignored; a commented-out attribute must not count.
 fn carries_required_attribute(source: &str) -> bool {
     let code: String = source
         .lines()

@@ -1,10 +1,7 @@
-//! Unit tests for the Bash adapter (ADR-022 §3, §7).
-
 use super::*;
 use crate::language::SourceLanguage;
 use crate::operation::{DetectedOperation, OperandCertainty, OperationKind, OperationModifiers};
 
-/// Assert `source` yields exactly one operation and return it.
 fn one_op(source: &str) -> DetectedOperation {
     let result = analyze(source);
     assert_eq!(
@@ -20,7 +17,6 @@ fn one_op(source: &str) -> DetectedOperation {
     result.operations.into_iter().next().unwrap()
 }
 
-/// Assert `source` yields no operations (and parses cleanly).
 fn no_ops(source: &str) {
     let result = analyze(source);
     assert_eq!(
@@ -34,7 +30,6 @@ fn no_ops(source: &str) {
     );
 }
 
-/// Assert `source` records a nonzero parse-error count (incomplete syntax).
 fn malformed(source: &str) {
     let result = analyze(source);
     assert!(
@@ -42,8 +37,6 @@ fn malformed(source: &str) {
         "incomplete syntax must record a nonzero parse error count for {source:?}"
     );
 }
-
-// --- Filesystem deletion ------------------------------------------------
 
 #[test]
 fn rm_recursive_forced_literal_path_yields_filesystem_delete() {
@@ -111,8 +104,6 @@ fn rm_with_command_substitution_path_is_dynamic() {
     assert_eq!(op.certainty, OperandCertainty::Dynamic);
 }
 
-// --- Filesystem overwrite: redirects ------------------------------------
-
 #[test]
 fn truncate_redirect_is_destructive_overwrite() {
     let op = one_op("> f");
@@ -126,7 +117,6 @@ fn truncate_redirect_is_destructive_overwrite() {
 
 #[test]
 fn redirect_attached_to_a_command_is_overwrite() {
-    // `echo` is not tracked; the only operation is the `> f` redirect.
     let op = one_op("echo hi > f");
     assert_eq!(op.kind, OperationKind::FilesystemOverwrite);
     assert!(op.modifiers.destructive_mode);
@@ -150,7 +140,6 @@ fn append_redirect_is_overwrite_without_destructive_mode() {
 
 #[test]
 fn combined_stdout_stderr_truncate_redirect_is_destructive_overwrite() {
-    // `&>` redirects both stdout and stderr and truncates.
     let op = one_op("echo hi &> f");
     assert_eq!(op.kind, OperationKind::FilesystemOverwrite);
     assert!(op.modifiers.destructive_mode, "`&>` truncates");
@@ -158,7 +147,6 @@ fn combined_stdout_stderr_truncate_redirect_is_destructive_overwrite() {
 
 #[test]
 fn combined_stdout_stderr_append_redirect_is_overwrite_without_destructive_mode() {
-    // `&>>` redirects both stdout and stderr and appends.
     let op = one_op("echo hi &>> f");
     assert_eq!(op.kind, OperationKind::FilesystemOverwrite);
     assert!(!op.modifiers.destructive_mode, "`&>>` appends");
@@ -166,7 +154,6 @@ fn combined_stdout_stderr_append_redirect_is_overwrite_without_destructive_mode(
 
 #[test]
 fn clobber_redirect_is_destructive_overwrite() {
-    // `>|` truncates, overriding `set -o noclobber`.
     let op = one_op("echo hi >| f");
     assert_eq!(op.kind, OperationKind::FilesystemOverwrite);
     assert!(op.modifiers.destructive_mode, "`>|` truncates");
@@ -179,7 +166,6 @@ fn input_redirect_is_not_an_overwrite() {
 
 #[test]
 fn fd_dup_redirect_is_not_an_overwrite() {
-    // `>&2` duplicates a file descriptor; it is not a file write.
     no_ops("echo hi >&2");
 }
 
@@ -196,8 +182,6 @@ fn redirect_with_variable_destination_is_dynamic() {
     assert_eq!(op.kind, OperationKind::FilesystemOverwrite);
     assert_eq!(op.certainty, OperandCertainty::Dynamic);
 }
-
-// --- tee write command ---------------------------------------------------
 
 #[test]
 fn tee_literal_file_is_destructive_overwrite() {
@@ -237,8 +221,6 @@ fn tee_with_variable_file_is_dynamic() {
     assert_eq!(op.certainty, OperandCertainty::Dynamic);
 }
 
-// --- Permission / ownership ---------------------------------------------
-
 #[test]
 fn chmod_chown_chgrp_are_permission_or_ownership() {
     for src in ["chmod 777 f", "chown u f", "chgrp g f"] {
@@ -253,8 +235,6 @@ fn chmod_with_variable_mode_is_dynamic() {
     assert_eq!(op.kind, OperationKind::PermissionOrOwnershipChange);
     assert_eq!(op.certainty, OperandCertainty::Dynamic);
 }
-
-// --- Execution sinks: eval / bash -c / sh -c (Bash payload) ---------------
 
 #[test]
 fn bash_c_literal_emits_code_execution_with_bash_payload() {
@@ -281,7 +261,6 @@ fn sh_c_single_quoted_literal_emits_bash_payload() {
 
 #[test]
 fn bash_c_payload_is_the_argument_after_the_flag() {
-    // Positional parameters after the payload (`arg0`) are not the payload.
     let op = one_op("bash -c \"rm x\" arg0");
     let payload = op.payload.as_ref().expect("payload recovered");
     assert_eq!(payload.source, "rm x");
@@ -315,8 +294,6 @@ fn eval_dynamic_payload_is_code_execution_without_nested_target() {
 
 #[test]
 fn eval_with_literal_and_dynamic_args_is_dynamic_without_payload() {
-    // `eval` joins all arguments with spaces, so multi-arg `eval` degrades to
-    // Dynamic with no nested target (ADR-022 §3, §7).
     let op = one_op("eval \"rm\" \"$x\"");
     assert_eq!(op.kind, OperationKind::CodeExecution);
     assert_eq!(
@@ -329,15 +306,11 @@ fn eval_with_literal_and_dynamic_args_is_dynamic_without_payload() {
 
 #[test]
 fn eval_with_extra_literal_args_is_dynamic_without_payload() {
-    // Even with no expansion, more than one argument means the evaluated
-    // string is the join, not the single literal — degrade to Dynamic.
     let op = one_op("eval \"rm x\" extra");
     assert_eq!(op.kind, OperationKind::CodeExecution);
     assert_eq!(op.certainty, OperandCertainty::Dynamic);
     assert!(op.payload.is_none());
 }
-
-// --- Execution sinks: python -c / node -e (cross-language payload) -------
 
 #[test]
 fn python_c_literal_emits_code_execution_with_python_payload() {
@@ -363,7 +336,6 @@ fn python_c_single_quoted_literal_emits_python_payload() {
 
 #[test]
 fn versioned_python_interpreter_is_recognized() {
-    // `python3.11` is a versioned Python interpreter basename.
     let op = one_op("python3.11 -c \"os.remove(x)\"");
     assert_eq!(op.kind, OperationKind::CodeExecution);
     let payload = op.payload.as_ref().expect("payload recovered");
@@ -373,8 +345,6 @@ fn versioned_python_interpreter_is_recognized() {
 
 #[test]
 fn python_prefixed_name_is_not_an_interpreter() {
-    // `python3foo` is not a Python interpreter; it must not be classified as
-    // a cross-language execution sink.
     no_ops("python3foo -c \"os.remove(x)\"");
 }
 
@@ -408,15 +378,10 @@ fn python_c_dynamic_payload_is_code_execution_without_nested_target() {
     assert!(op.payload.is_none());
 }
 
-// --- Execution sinks: source / . (path operand, no inline payload) -------
-
 #[test]
 fn source_literal_path_emits_code_execution_without_inline_payload() {
     let op = one_op("source s.sh");
     assert_eq!(op.kind, OperationKind::CodeExecution);
-    // The file's contents are not in the source, so no inline nested target is
-    // recovered (a ScriptFile recursive target is the orchestration layer's
-    // job, like Python `subprocess` on a script).
     assert!(
         op.payload.is_none(),
         "source does not carry an inline payload"
@@ -430,12 +395,8 @@ fn dot_builtin_emits_code_execution_without_inline_payload() {
     assert!(op.payload.is_none());
 }
 
-// --- Execution sinks: a program named by path (issue #383) ---------------
-
 #[test]
 fn relative_path_program_emits_dynamic_code_execution() {
-    // `./inner.sh` runs a file whose contents are not in this source, the
-    // same unknown payload as `source inner.sh`.
     let op = one_op("./inner.sh --flag");
     assert_eq!(op.kind, OperationKind::CodeExecution);
     assert_eq!(op.certainty, OperandCertainty::Dynamic);
@@ -453,8 +414,6 @@ fn absolute_path_program_emits_dynamic_code_execution() {
 fn plain_program_name_is_not_a_path_execution() {
     no_ops("make build");
 }
-
-// --- Negatives ----------------------------------------------------------
 
 #[test]
 fn comment_mentioning_rm_is_not_an_operation() {
@@ -498,8 +457,6 @@ fn function_definition_named_rm_is_not_the_rm_command() {
     no_ops("function rm { echo hi; }");
 }
 
-// --- Composition / ordering / spans -------------------------------------
-
 #[test]
 fn multiple_rm_operations_are_emitted_in_source_order() {
     let result = analyze("rm a; rm b");
@@ -529,10 +486,6 @@ fn rm_with_redirect_emits_delete_and_overwrite_in_source_order() {
 
 #[test]
 fn destructive_inside_command_substitution_surfaces_both_operations() {
-    // The query matches commands recursively, so a destructive command nested
-    // inside `$(…)` surfaces as its own operation alongside the outer one.
-    // `rm $(rm x)` → the inner `rm x` (a delete) and the outer `rm` (a delete
-    // whose operand is the dynamic `$(rm x)`).
     let result = analyze("rm $(rm x)");
     assert_eq!(result.parse_errors, 0);
     assert_eq!(
@@ -568,8 +521,6 @@ fn command_span_covers_the_command() {
     assert_eq!(op.span.column, 1);
 }
 
-// --- Modern / quirky bash parses clean ----------------------------------
-
 #[test]
 fn array_assignment_parses_clean_with_no_ops() {
     no_ops("arr=(1 2 3); echo ${arr[0]}");
@@ -577,9 +528,6 @@ fn array_assignment_parses_clean_with_no_ops() {
 
 #[test]
 fn test_command_chained_with_rm_keeps_rm_and_drops_test() {
-    // `[[ -f x ]]` is a test_command (not matched); `rm x` is a command. The
-    // modern `[[ ]]` shape must parse clean and the chained `rm` must still
-    // surface.
     let result = analyze("[[ -f x ]] && rm x");
     assert_eq!(result.parse_errors, 0);
     assert_eq!(result.operations.len(), 1);
@@ -608,12 +556,8 @@ fn ansi_c_string_parses_clean_with_no_ops() {
 
 #[test]
 fn heredoc_body_is_not_reparsed_into_commands() {
-    // tree-sitter-bash parses a heredoc body as one `heredoc_body` node; the
-    // orchestration layer routes quoted heredoc bodies as separate Bash targets.
     no_ops("cat <<EOF\nrm -rf /tmp/x\nEOF");
 }
-
-// --- Malformed source ---------------------------------------------------
 
 #[test]
 fn unterminated_string_records_parse_errors() {
@@ -627,11 +571,6 @@ fn unterminated_bash_c_payload_records_parse_errors() {
 
 #[test]
 fn non_ascii_source_is_rejected_before_the_native_scanner() {
-    // This is the lossy-UTF-8 form of the CI fuzz artifact
-    // crash-a0ad3b80f1ab0d97e9a4964c8b67795a19b60ec6. tree-sitter-bash 0.25.1
-    // passes non-ASCII code points to C's `isdigit`, which is undefined unless
-    // the value is EOF or an unsigned char. The adapter must degrade rather
-    // than enter that native scanner.
     let result = analyze(
         "{\u{fffd}\u{fffd}\u{fffd}\u{fffd}\u{fffd}\u{fffd}\u{fffd}\0\0\u{fffd}\u{fffd}\u{fffd}\u{fffd}>\u{fffd}\u{fffd}:r",
     );
@@ -642,8 +581,6 @@ fn non_ascii_source_is_rejected_before_the_native_scanner() {
     );
     assert!(result.operations.is_empty());
 }
-
-// --- Empty source -------------------------------------------------------
 
 #[test]
 fn empty_source_records_no_operations_and_no_errors() {

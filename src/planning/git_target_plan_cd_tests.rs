@@ -1,6 +1,3 @@
-//! Snapshot plan after `cd` steps (#525, ADR-050): resolved targets,
-//! unresolved paths, and process-cwd deduplication.
-
 use super::git_target_plan_tests::{cd_plan, fixture, resolved, unresolved};
 use crate::planning::GitTargetUnresolved;
 use aegis_scanner::CdUnresolved;
@@ -48,7 +45,6 @@ fn an_absolute_git_dash_c_resolves_even_after_an_unresolved_cd() {
     let (_, plan) = cd_plan(&fx, &command);
 
     assert_eq!(plan.targets, vec![resolved(&fx.a)]);
-    // `cd "$X"` is effect-opaque, so the ADR-016 cwd pass still runs.
     assert!(plan.process_cwd);
 }
 

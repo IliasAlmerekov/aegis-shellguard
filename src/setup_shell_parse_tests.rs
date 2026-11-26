@@ -1,8 +1,3 @@
-// Clap parse tests for `aegis setup-shell`. Kept in a dedicated module (rather
-// than `main_tests.rs`) so the main test file stays under the 800-line budget.
-// `Cli`, `Commands`, and `SetupShellArgs` are crate-root items, so a same-crate
-// child module can reach them via `crate::`.
-
 use clap::Parser;
 
 use crate::{Cli, Commands};

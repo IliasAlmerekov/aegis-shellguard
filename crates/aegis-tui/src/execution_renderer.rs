@@ -5,9 +5,7 @@ use aegis_types::{Assessment, RecoveryDegradation, SnapshotRecord};
 
 use crate::{PromptDecision, RecoveryPromptDecision};
 
-/// Output and prompt boundary used by plan executors.
 pub trait ExecutionRenderer {
-    /// Ask whether a planned command should run.
     fn show_confirmation(
         &self,
         assessment: &Assessment,
@@ -15,13 +13,10 @@ pub trait ExecutionRenderer {
         snapshots: &[SnapshotRecord],
     ) -> PromptDecision;
 
-    /// Ask whether a command may run without the required recovery coverage.
     fn show_recovery_override(&self, degradation: RecoveryDegradation) -> RecoveryPromptDecision;
 
-    /// Show a policy block.
     fn show_policy_block(&self, assessment: &Assessment, explanation: &CommandExplanation);
 
-    /// Show a block caused by the command's intrinsic risk.
     fn show_intrinsic_block(
         &self,
         assessment: &Assessment,
@@ -29,14 +24,11 @@ pub trait ExecutionRenderer {
         snapshots: &[SnapshotRecord],
     );
 
-    /// Emit a non-fatal execution warning.
     fn warn(&self, message: &str);
 
-    /// Emit an execution error.
     fn report_error(&self, message: &str);
 }
 
-/// Renderer for the terminal used by the Wrapper transport.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct TerminalRenderer;
 
@@ -76,7 +68,6 @@ impl ExecutionRenderer for TerminalRenderer {
     }
 }
 
-/// A scripted renderer for execution tests.
 #[derive(Debug)]
 pub struct TestRenderer {
     confirmation: Mutex<PromptDecision>,

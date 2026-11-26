@@ -24,9 +24,6 @@ fn user_pattern(id: &str, pattern: &str) -> UserPattern {
     }
 }
 
-/// Two custom patterns that are each individually valid, but collide once
-/// both are present (duplicate id) — the shape #399 is about: a pattern set
-/// that only fails once both config layers have contributed to it.
 #[test]
 fn locate_invalid_custom_pattern_attributes_the_layer_that_completes_the_conflict() {
     let home = TempDir::new().unwrap();
@@ -66,7 +63,6 @@ fn validate_reports_warning_for_broad_rule_without_scope() {
     };
 
     let report = validate_config(&config, &ConfigSourceMap::for_config(&config));
-    // After scope enforcement, an unscoped rule is a compile-time error.
     assert!(
         report
             .errors
@@ -187,8 +183,6 @@ fn validate_config_layers_pins_the_config_error_prefix_for_a_malformed_layer() {
 
     let report = validate_config_layers(workspace.path(), Some(home.path()));
 
-    // The TOML parser's own text is a fact about the `toml` crate, not about
-    // this refactor; only the "config error: " prefix belongs to it.
     let expected_prefix = format!("config error: failed to parse {}:", config_path.display());
 
     assert_eq!(report.errors.len(), 1);
@@ -212,11 +206,6 @@ fn validate_scanner_path_runs_when_no_custom_patterns() {
     assert!(!report.errors.iter().any(|e| e.code == "scanner_init_error"));
 }
 
-// ── Phase 5.2: [[rules]] validation tests ────────────────────────────────
-// NOTE: PolicyPatternToken and PolicyRule are re-exported via `crate::*`;
-// PolicyRuleDecision lives in `aegis-types` and is imported from there directly.
-
-/// match_examples that genuinely match the pattern must pass validation.
 #[test]
 fn test_validate_match_examples_pass() {
     use super::validate_policy_rules;
@@ -242,7 +231,6 @@ fn test_validate_match_examples_pass() {
     );
 }
 
-/// not_match_examples that do NOT match the pattern must pass validation.
 #[test]
 fn test_validate_not_match_examples_pass() {
     use super::validate_policy_rules;
@@ -268,7 +256,6 @@ fn test_validate_not_match_examples_pass() {
     );
 }
 
-/// A match_example that does NOT match the rule's pattern must produce a ConfigError.
 #[test]
 fn test_validate_match_example_fails_when_no_match() {
     use super::validate_policy_rules;
@@ -300,7 +287,6 @@ fn test_validate_match_example_fails_when_no_match() {
     );
 }
 
-/// A not_match_example that DOES match the rule's pattern must produce a ConfigError.
 #[test]
 fn test_validate_not_match_example_fails_when_matches() {
     use super::validate_policy_rules;
@@ -332,8 +318,6 @@ fn test_validate_not_match_example_fails_when_matches() {
     );
 }
 
-/// A full TOML document with `[[rules]]` tables must deserialize into
-/// `AegisConfig.rules` correctly.
 #[test]
 fn test_aegisconfig_rules_field_parses_from_toml() {
     use aegis_types::PolicyRuleDecision;
@@ -507,18 +491,8 @@ required = true
     );
 }
 
-// ── C3 ratchet expansion: warning coverage for neighboring fields ──────
-// These tests pin the `project_security_ratchet` warnings that must fire when
-// a project config attempts to weaken a security-critical sibling field that
-// is currently last-wins (sandbox.enabled, auto_snapshot_*, allow_network,
-// allow_write). The effective-value ratchet is asserted in model::tests::merge;
-// here we assert the validation report surfaces an advisory warning too.
-//
 #[test]
 fn validate_warns_when_project_disables_globally_enabled_sandbox() {
-    // Under the ADR-029 amendment of 2026-08-20, `sandbox.enabled` in any
-    // layer raises `deprecated_sandbox_field` (never `project_security_ratchet`),
-    // carries layer + location, and names `mode = "Audit"` for observe-only use.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);

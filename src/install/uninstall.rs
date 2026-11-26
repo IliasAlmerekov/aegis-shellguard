@@ -6,7 +6,6 @@ use serde_json::Value;
 
 use super::{InstallError, is_aegis_managed_bash_command, is_aegis_managed_session_start_command};
 
-/// Removal channel: which package channel's binary-removal command to print. Not update consent.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub(crate) enum RemovalChannel {
     Npm,
@@ -24,7 +23,6 @@ const PAYLOADS: &[&str] = &[
     ".aegis/lib/toggle-state.sh",
 ];
 
-/// Removes managed integrations and reports the separate binary-removal step.
 pub(crate) fn run(args: &crate::UninstallArgs) -> i32 {
     match uninstall(args) {
         Ok(message) => {
@@ -51,8 +49,6 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, InstallError> {
     let (binary, detected) = removal_target(&invoked, &home);
     let channel = args.channel.or(detected);
     let data = home.join(".aegis");
-    // A kept data directory is never followed through a symlink, so payloads
-    // inside it stay with the data. A purge still refuses the link below.
     let keep_linked_data = !args.purge_data
         && fs::symlink_metadata(&data).is_ok_and(|metadata| metadata.file_type().is_symlink());
     let payloads: Vec<_> = PAYLOADS
@@ -71,13 +67,9 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, InstallError> {
         }
     }
 
-    // Validate every known target before changing any integration.
     if args.purge_data {
         reject_symlinks(&data, "Delete it by hand if you mean to purge it.")?;
     }
-    // Like startup files, a payload or settings file is checked for symlinks
-    // only when uninstall will change it, so a dotfile manager's linked
-    // `~/.claude` with nothing of Aegis inside does not block the rest.
     let payloads: Vec<_> = payloads
         .into_iter()
         .filter(|path| fs::symlink_metadata(path).is_ok())
@@ -108,8 +100,6 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, InstallError> {
             continue;
         };
         if has_managed_block(&content)? {
-            // Only a file that will be rewritten must not be a symlink, so a
-            // dotfile manager's link without an Aegis block stays usable.
             reject_symlinks(
                 path,
                 "Remove the aegis shell setup block from it by hand, then rerun `aegis uninstall`.",
@@ -157,8 +147,6 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, InstallError> {
             data.display()
         )
     };
-    // install-hooks turns this Codex flag on, but other Codex hooks may rely
-    // on it, so uninstall reports it instead of turning it off.
     let codex_message = if codex_hooks_feature_enabled(&home.join(".codex/config.toml")) {
         "\nCodex features.hooks stays enabled in ~/.codex/config.toml; turn it off there if no other hook needs it."
     } else {
@@ -171,8 +159,6 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, InstallError> {
     } else {
         "No known removal channel matches the binary path."
     };
-    // A block in a startup file uninstall did not check keeps exporting
-    // SHELL as this binary, which breaks new terminals once it is removed.
     let shell_is_aegis = std::env::var_os("SHELL")
         .is_some_and(|shell| crate::shell_compat::same_file(Path::new(&shell), Some(&binary)));
     if shell_files.is_empty() && shell_is_aegis {
@@ -188,7 +174,6 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, InstallError> {
 }
 
 fn codex_hooks_feature_enabled(config: &Path) -> bool {
-    // Dropped on purpose: returning this error changes the output and exit code of `aegis uninstall`; tracked in #655.
     fs::read_to_string(config)
         .ok()
         .and_then(|raw| raw.parse::<toml::Table>().ok())
@@ -203,10 +188,6 @@ fn display_paths<'a>(paths: impl Iterator<Item = &'a PathBuf>) -> String {
         .join(", ")
 }
 
-/// Resolves symlinks in the directories above a custom startup file, so a
-/// path through a linked directory (macOS `/var`, `/tmp`) names the real
-/// file. The file itself stays unresolved: a symlinked startup file is still
-/// refused before it is rewritten.
 fn resolve_rc_parent(path: &Path) -> Result<PathBuf, InstallError> {
     let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
         return Err(InstallError::RcFileUnnamed {
@@ -215,14 +196,11 @@ fn resolve_rc_parent(path: &Path) -> Result<PathBuf, InstallError> {
     };
     match fs::canonicalize(parent) {
         Ok(parent) => Ok(parent.join(name)),
-        // A missing directory holds no startup file to clean.
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(path.to_path_buf()),
         Err(error) => Err(InstallError::io("cannot resolve", parent)(error)),
     }
 }
 
-/// Refuses `path` when it or a directory above it is a symlink. `hint` tells
-/// the operator how to finish that cleanup by hand.
 fn reject_symlinks(path: &Path, hint: &str) -> Result<(), InstallError> {
     for ancestor in path.ancestors() {
         match fs::symlink_metadata(ancestor) {
@@ -271,8 +249,6 @@ fn has_managed_block(content: &str) -> Result<bool, InstallError> {
     Ok(found)
 }
 
-/// Drops managed shell blocks and keeps every other line byte for byte,
-/// including its CRLF or LF ending. Callers validate the markers first.
 fn strip_managed_blocks(content: &str) -> String {
     let mut output = String::with_capacity(content.len());
     let mut inside = false;
@@ -345,7 +321,6 @@ fn write_existing_file(path: &Path, content: &str) -> Result<(), InstallError> {
         .map_err(InstallError::io("cannot replace", path))
 }
 
-/// Removes `path`, treating a file that is already gone as removed.
 fn remove_if_present(path: &Path) -> std::io::Result<()> {
     match fs::remove_file(path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -353,11 +328,7 @@ fn remove_if_present(path: &Path) -> std::io::Result<()> {
     }
 }
 
-/// Returns the canonical binary path and the Removal channel inferred from it.
 fn removal_target(invoked: &Path, home: &Path) -> (PathBuf, Option<RemovalChannel>) {
-    // Resolve symlinks first: a Homebrew link in the curl bindir must match
-    // the Cellar path, not the bindir. The canonical path is also the file
-    // that a curl removal command has to delete.
     let binary = fs::canonicalize(invoked).unwrap_or_else(|_| invoked.to_path_buf());
     let channel = detect_channel(&binary, home);
     (binary, channel)
@@ -476,7 +447,6 @@ mod tests {
     #[test]
     fn reject_symlinks_accepts_a_missing_path() {
         let temp = tempfile::TempDir::new().unwrap();
-        // macOS puts the temp dir under the `/var` symlink.
         let root = fs::canonicalize(temp.path()).unwrap();
 
         assert!(reject_symlinks(&root.join("missing"), "hint").is_ok());

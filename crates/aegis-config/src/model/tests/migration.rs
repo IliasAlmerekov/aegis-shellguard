@@ -37,8 +37,6 @@ fn malformed_project_config_is_fatal() {
     );
 }
 
-// ── Snapshot policy tests ───────────────────────────────────────
-
 #[test]
 fn snapshot_policy_defaults_to_selective() {
     let config = AegisConfig::defaults();
@@ -114,12 +112,6 @@ fn project_snapshot_policy_cannot_weaken_global_full_to_none() {
 
 #[test]
 fn project_cannot_disable_effect_opaque_recovery_over_default_selective() {
-    // ADR-016 / H9: recovery is the primary v1 backstop for effect-opaque
-    // execution, and it keys off `snapshot_policy != None`. The C3 ratchet must
-    // keep that requirement intact: a project `.aegis.toml` cannot disable
-    // recovery by lowering `snapshot_policy` to `None`. Over the default
-    // `Selective` base, a project `None` is rejected and the base is kept — so
-    // an effect-opaque command still earns a pre-exec snapshot.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
 
@@ -166,7 +158,6 @@ fn snapshot_policy_absent_in_overlay_keeps_base() {
         "snapshot_policy = \"None\"\n",
     )
     .unwrap();
-    // Project sets only mode, not snapshot_policy.
     fs::write(
         workspace.path().join(PROJECT_CONFIG_FILE),
         "mode = \"Audit\"\n",

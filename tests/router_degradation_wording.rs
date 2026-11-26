@@ -1,5 +1,3 @@
-//! End-to-end CLI tests for router-degradation wording (#691).
-
 mod support;
 
 use std::io::Write;

@@ -1,5 +1,3 @@
-//! CLI implementation for `aegis snapshot prune`.
-
 use aegis::error::AegisError;
 use aegis_audit::{AuditEntry, AuditLogger, AuditSnapshot, SnapshotLedger};
 use aegis_config::{AegisConfig, PruneConfig};
@@ -7,11 +5,6 @@ use aegis_snapshot::{Clock, PrunableRecord, RetentionPolicy, SnapshotRegistry, S
 use aegis_types::Decision;
 use aegis_types::RiskLevel;
 
-/// Execute the prune command and return the records that were actually removed.
-///
-/// When `--yes` is not given, this prints a dry-run preview and returns an
-/// empty vector. When `--yes` is given, it deletes the retention-policy
-/// candidates and appends a `Decision::Pruned` audit entry for each one.
 pub(crate) async fn execute(args: crate::PruneArgs) -> Result<Vec<PrunableRecord>, AegisError> {
     let config = AegisConfig::load().map_err(AegisError::from)?;
     let registry = SnapshotRegistry::for_rollback().map_err(AegisError::from)?;

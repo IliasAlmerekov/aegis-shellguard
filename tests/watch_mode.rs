@@ -1,5 +1,3 @@
-//! Integration tests for `aegis watch` — end-to-end via child process.
-
 mod support;
 
 use std::fs;
@@ -45,17 +43,13 @@ fn aegis_watch_in_env(
     {
         panic!("failed to write to aegis watch stdin: {err}");
     }
-    drop(child.stdin.take()); // close stdin to send EOF
+    drop(child.stdin.take());
 
     child
         .wait_with_output()
         .expect("failed to wait for aegis watch")
 }
 
-/// Runs one Watch frame in a fresh home until its audit records completed
-/// analysis. The CLI clamps the analysis deadline to 100 ms, and a loaded
-/// test run can miss it (#458). Callers pass frames that Watch denies without
-/// a TTY, so a repeat executes nothing.
 #[cfg(feature = "language-analysis")]
 fn watch_until_analysis_completes(cwd: &Path, input: &[u8]) -> (TempDir, std::process::Output) {
     support::until_analysis_completes(
@@ -133,8 +127,6 @@ fn watch_without_tty_denies_safe_language_degradation_before_recovery() {
     let home = TempDir::new().unwrap();
     let cwd = TempDir::new().unwrap();
     let marker = cwd.path().join("executed");
-    // The Bash adapter degrades non-ASCII source (UnsupportedEncoding), which
-    // keeps the analysis degraded now that shell scripts are analyzed (#383).
     fs::write(cwd.path().join("run.sh"), "printf ran > executed # café\n").unwrap();
 
     let output = aegis_watch_in(
@@ -261,8 +253,6 @@ fn watch_resolves_relative_script_file_against_frame_cwd() {
 
     let contents = fs::read_to_string(home.path().join(".aegis").join("audit.jsonl")).unwrap();
     let entry: serde_json::Value = serde_json::from_str(contents.trim()).unwrap();
-    // A missing file also denies, so the analysis status is the proof that
-    // `frame.cwd`, not the process cwd, resolved `run.py`.
     assert_eq!(entry["analysis"]["status"], "complete");
     assert!(target.exists(), "Watch must not execute without a TTY");
 }
@@ -312,7 +302,6 @@ fn invalid_json_emits_error_frame_and_continues() {
 
 #[test]
 fn empty_cmd_emits_error_frame() {
-    // Exercises the explicit `cmd.trim().is_empty()` guard in process_frame.
     let output = aegis_watch(b"{\"cmd\":\"\"}\n");
     let frames = parse_frames(&output.stdout);
     let error = frames
@@ -325,7 +314,6 @@ fn empty_cmd_emits_error_frame() {
 
 #[test]
 fn missing_cmd_field_emits_error_frame() {
-    // JSON parse failure: `cmd` is required (no #[serde(default)]).
     let output = aegis_watch(b"{\"source\":\"test\"}\n");
     let frames = parse_frames(&output.stdout);
     let error = frames
@@ -475,9 +463,6 @@ fn watch_exits_zero_on_clean_eof() {
 fn malformed_audit_dir_emits_protocol_error_and_does_not_execute_command() {
     let home = TempDir::new().unwrap();
     let cwd = TempDir::new().unwrap();
-    // Place a file at ~/.aegis so create_dir_all(~/.aegis) fails — audit write
-    // is impossible. Aegis must fail-closed: emit a protocol-level error and
-    // not execute the command.
     fs::write(home.path().join(".aegis"), "not a directory").unwrap();
 
     let output = aegis_watch_in(home.path(), cwd.path(), b"{\"cmd\":\"echo hi\"}\n");

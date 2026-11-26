@@ -1,9 +1,3 @@
-//! Block behavior and policy: danger denial, intrinsic Block bypass
-//! prevention, custom-pattern classification, fail-closed config regressions,
-//! non-interactive denial, and mode/CI-policy block semantics.
-//!
-//! Split from the original `tests/full_pipeline.rs` (behavior-preserving move).
-
 mod support;
 
 use std::fs;
@@ -23,10 +17,6 @@ fn dangerous_command_denied_preserves_directory() {
     fs::create_dir_all(&target_dir).unwrap();
     fs::write(target_dir.join("sentinel.txt"), "still here").unwrap();
 
-    // Use home as CWD (not the project root) so the GitPlugin does not
-    // git-stash the developer's uncommitted changes as a "snapshot".
-    // AEGIS_FORCE_INTERACTIVE=1 lets the test pipe "no\n" as if a human
-    // were at the keyboard, so the full interactive dialog is exercised.
     let mut child = base_command(home.path())
         .current_dir(home.path())
         .env("AEGIS_FORCE_INTERACTIVE", "1")
@@ -59,18 +49,11 @@ fn dangerous_command_denied_preserves_directory() {
     let _ = fs::remove_dir_all(&target_dir);
 }
 
-/// Block-level commands must never be silently auto-approved by an allowlist
-/// entry — even when the glob pattern explicitly covers the command.
-///
-/// Rationale: Block = catastrophic irreversible harm (rm -rf /, fork bomb,
-/// mkfs). No config entry should be able to bypass these without the operator
-/// seeing the Block dialog.
 #[test]
 fn block_command_is_never_allowlisted() {
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
 
-    // Allowlist entry that would match `rm -rf /` if the guard were absent.
     fs::write(
         workspace.path().join(".aegis.toml"),
         r#"
@@ -85,13 +68,12 @@ reason = "test block allowlist"
     let output = base_command(home.path())
         .current_dir(workspace.path())
         .args(["-c", "rm -rf /"])
-        .stdin(Stdio::null()) // EOF stdin → Block dialog auto-closes
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
         .unwrap();
 
-    // Must be blocked (exit 3), never auto-approved.
     assert_eq!(
         output.status.code(),
         Some(3),
@@ -119,8 +101,6 @@ reason = "test block allowlist"
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["decision"], "Blocked");
     assert_eq!(entries[0]["risk"], "Block");
-    // Blocked commands must not be annotated as allowlisted, even if they
-    // matched a rule before the hard block decision.
     assert!(entries[0].get("allowlist_pattern").is_none());
     assert!(entries[0].get("allowlist_reason").is_none());
 }
@@ -143,8 +123,6 @@ description = "Treat hello echo as suspicious in this project"
     )
     .unwrap();
 
-    // AEGIS_FORCE_INTERACTIVE=1 ensures the full dialog is rendered so we can
-    // assert UI diagnostics (`source: custom`).
     let mut child = base_command(home.path())
         .current_dir(workspace.path())
         .env("AEGIS_FORCE_INTERACTIVE", "1")
@@ -173,13 +151,6 @@ description = "Treat hello echo as suspicious in this project"
     assert_eq!(entries[0]["matched_patterns"][0]["source"], "custom");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Regression tests: security-critical failure modes
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Config parse failure ─────────────────────────────────────────────────────
-
-/// A malformed `.aegis.toml` must fail closed with an internal error.
 #[test]
 fn broken_project_config_aborts_shell_wrapper_with_clear_error() {
     let home = TempDir::new().unwrap();
@@ -220,7 +191,6 @@ fn broken_project_config_aborts_shell_wrapper_with_clear_error() {
     );
 }
 
-/// Invalid custom patterns from config must abort startup instead of degrading to Warn.
 #[test]
 fn invalid_custom_pattern_config_aborts_shell_wrapper() {
     let home = TempDir::new().unwrap();
@@ -268,8 +238,6 @@ description = "Conflicts with built-in pattern id"
     );
 }
 
-/// A project-layer pattern over the 256-byte Pattern length limit fails closed
-/// on the command path (issue #217).
 #[test]
 fn oversized_project_custom_pattern_aborts_shell_wrapper() {
     let home = TempDir::new().unwrap();
@@ -305,10 +273,6 @@ description = "One byte over the pattern length limit"
     assert!(stderr.contains("256"), "{stderr}");
 }
 
-/// A custom pattern that is valid alone in each layer, but conflicts once
-/// both layers are merged, must still abort startup and attribute the
-/// failure to the project config file — the layer that completed the
-/// conflict (issue #399).
 #[test]
 fn invalid_custom_pattern_completed_by_project_layer_aborts_shell_wrapper() {
     let home = TempDir::new().unwrap();
@@ -367,7 +331,6 @@ description = "project entry, duplicates the global id"
     );
 }
 
-/// Project audit reductions must not override the trusted global retention policy.
 #[test]
 fn project_audit_reduction_does_not_abort_shell_wrapper() {
     let home = TempDir::new().unwrap();
@@ -400,19 +363,12 @@ max_file_size_bytes = 0
     );
 }
 
-// Confirmation UI failure (stdin EOF) ────────────────────────────────────
-
-/// A Danger-level command with stdin closed (EOF) must be DENIED.
-/// `prompt_danger` reads empty string on EOF; `"" != "yes"` → denied.
-/// Prevents silent auto-approval when stdin is /dev/null.
 #[test]
 fn danger_command_with_eof_stdin_is_denied() {
     let home = TempDir::new().unwrap();
     let target = home.path().join("sentinel_eof_test");
     fs::create_dir_all(&target).unwrap();
 
-    // current_dir = home (not the project root git repo) so the GitPlugin
-    // does not stash the developer's working tree when creating a snapshot.
     let output = base_command(home.path())
         .current_dir(home.path())
         .args(["-c", &format!("rm -rf {}", target.display())])
@@ -430,14 +386,13 @@ fn danger_command_with_eof_stdin_is_denied() {
     assert!(target.exists(), "target must still exist after denial");
 }
 
-/// A Warn-level command with no TTY must be denied automatically (fail-closed).
 #[test]
 fn warn_command_non_interactive_is_denied() {
     let home = TempDir::new().unwrap();
 
     let output = base_command(home.path())
         .args(["-c", "git stash clear"])
-        .stdin(Stdio::null()) // no TTY → non-interactive
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -468,8 +423,6 @@ fn warn_command_non_interactive_is_denied() {
     );
 }
 
-/// Audit mode must block intrinsic Block-level commands — RiskLevel::Block is
-/// never bypassable, not even in Audit mode with ci_policy = Block.
 #[test]
 fn audit_mode_blocks_intrinsic_block_classification() {
     let home = TempDir::new().unwrap();
@@ -515,7 +468,6 @@ reason = "allowlist should not bypass intrinsic block"
         .output()
         .unwrap();
 
-    // Command must be blocked — the process exits non-zero and rm is not invoked.
     assert!(!output.status.success());
     assert!(!log_path.exists());
 
@@ -525,8 +477,6 @@ reason = "allowlist should not bypass intrinsic block"
     assert_eq!(entries[0]["risk"], "Block");
 }
 
-/// Strict mode must block Warn commands even when ci_policy = Allow.
-/// CI policy cannot weaken Strict mode's non-safe default.
 #[test]
 fn strict_mode_blocks_warn_even_when_ci_policy_allows() {
     let home = TempDir::new().unwrap();
@@ -656,8 +606,6 @@ auto_snapshot_docker = false
     );
 }
 
-/// Strict mode must treat indirect execution wrappers as blocked-by-default
-/// policy forms even when their payload looks otherwise safe.
 #[test]
 fn strict_mode_blocks_nested_shell_execution_profile() {
     let home = TempDir::new().unwrap();
@@ -755,8 +703,6 @@ fn strict_analysis_override_approves_exactly_once_from_shell() {
     let workspace = TempDir::new().unwrap();
     let target = workspace.path().join("artifact.txt");
     fs::write(&target, "delete").unwrap();
-    // This test isolates the one-time Analysis override. Dynamic stdin now
-    // requests recovery, so opt out of Snapshot separately for this case.
     write_global_config(
         home.path(),
         "mode = \"Strict\"\nsnapshot_policy = \"None\"\n",

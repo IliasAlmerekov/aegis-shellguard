@@ -1,10 +1,3 @@
-//! Per-grammar parse latency benchmark (ADR-022 §8).
-//!
-//! Each `parse_latency_per_grammar/parse/<lang>` mean is gated by
-//! `perf/scanner_bench_baseline.toml`; editing a `SNIPPETS` entry moves its
-//! baseline, so rebaseline that row in the same change. See
-//! `docs/performance-baseline.md`.
-
 use aegis_language::{SourceLanguage, parse};
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;

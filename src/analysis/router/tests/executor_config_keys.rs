@@ -1,5 +1,3 @@
-//! Executor-carrying git `-c`/`--config-env` key families, env vars, and SSH `-o` options (#384, #430).
-
 use super::*;
 
 #[test]
@@ -21,7 +19,6 @@ fn git_dash_c_new_top_level_executor_keys_running_a_script_are_routed() {
 
 #[test]
 fn git_dash_c_executor_key_behind_a_leading_git_global_option_is_still_routed() {
-    // GHSA-7564: leading git global options must not hide `-c` from the router.
     for command in [
         r#"git -C . -c core.pager='python x.py' log"#,
         r#"git --no-pager -c core.pager='python x.py' log"#,
@@ -87,9 +84,6 @@ fn config_env_resolving_to_a_benign_value_is_not_routed() {
     );
 }
 
-// ── An environment variable git or another executor reads for a command to
-// run is degraded (issue #384/#430) ─────────────────────────────────────
-
 #[test]
 fn new_executor_env_vars_running_a_script_are_routed() {
     for command in [
@@ -105,10 +99,6 @@ fn new_executor_env_vars_running_a_script_are_routed() {
         assert_eq!(route(command, &[]), vec![unresolved_dynamic()], "{command}");
     }
 }
-
-// ── An executor assignment past the stage's own leading-assignment prefix
-// is still degraded: through the `env` launcher, or as its own assignment
-// stage earlier on the same line (issue #384/#430) ──────────────────────
 
 #[test]
 fn env_launcher_wrapped_pager_assignment_running_a_script_is_routed() {
@@ -195,8 +185,6 @@ fn export_assignment_stage_naming_no_interpreter_is_not_routed() {
 fn env_launcher_wrapped_plain_assignment_is_not_routed() {
     assert_eq!(route("env LANG=C ls", &[]), Vec::new());
 }
-
-// ── SSH-family `-o` command-valued options are routed ──────────────────
 
 #[test]
 fn ssh_command_options_running_an_interpreter_are_routed() {

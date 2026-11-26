@@ -1,17 +1,11 @@
-//! Stage-wide checks for shell words whose value is known only at execution.
-
 use super::*;
 use std::borrow::Cow;
 
-// ADR-043: read-only output/inspection utilities; `file` is excluded (`-C` writes magic files),
-// and `printf`/`rg` have dedicated option checks below.
 const READ_ONLY: &[&str] = &[
     "echo", "printf", "ls", "cat", "head", "tail", "grep", "rg", "wc", "stat", "basename",
     "dirname", "readlink", "realpath", "pwd",
 ];
 
-/// An unresolved program or state-bearing argv needs approval even when
-/// another routing path found a nested source in the same stage.
 pub(super) fn dynamic_stage_net(stage_raw: &str, ctx: &RouteContext<'_>) -> Option<RoutedTarget> {
     if !stage_raw.contains('$')
         && !stage_raw.contains('`')
@@ -21,8 +15,6 @@ pub(super) fn dynamic_stage_net(stage_raw: &str, ctx: &RouteContext<'_>) -> Opti
         return None;
     }
     let without_comments = if let Some(marker) = stage_raw.find("<<") {
-        // Strip comments up to the marker's physical line, including a
-        // continued header. Later lines may be heredoc data, not shell code.
         let header_end = stage_raw[marker..]
             .find('\n')
             .map_or(stage_raw.len(), |end| marker + end + 1);
@@ -64,14 +56,8 @@ pub(super) fn dynamic_stage_net(stage_raw: &str, ctx: &RouteContext<'_>) -> Opti
         return Some(unresolved());
     }
     let shell_expansion = has_active_expansion(stage_raw);
-    // ADR-043: an argument written with ANSI-C quoting (`$'...'`) degrades
-    // like a dynamic one for every program whose argv this net checks. The
-    // decoded word is known, but the router stays conservative here.
     let ansi_c_quoting = contains_unquoted_ansi_c_quote(stage_raw);
     for slice in aegis_parser::effective_token_slices(words) {
-        // env -S also expands ${VAR} when its value was single-quoted by
-        // the outer shell. Limit the search to this candidate's launcher
-        // prefix; a later literal operand named env is not a launcher.
         let split_string_expansion = env_split_string_expands_variable(words, slice.program);
         let active_expansion = shell_expansion || split_string_expansion;
         if ifs_in_launcher_prefix(words, slice.program) {
@@ -213,7 +199,6 @@ fn env_split_string_expands_variable(words: &[&str], program: &str) -> bool {
 }
 
 fn interactive_program_exception_allowed(program: &str, command: &str) -> bool {
-    // ADR-043: do not infer shell state writes from earlier words or stages.
     matches!(program, "$EDITOR" | "$VISUAL" | "$PAGER") && command.trim() == program
 }
 
@@ -281,7 +266,6 @@ fn dynamic_output_redirect_target(stage_raw: &str) -> bool {
                     target_start += 1;
                 }
                 if bytes.get(target_start) == Some(&b'&') {
-                    // Bash can interpret a non-fd target after >& as a filename.
                     target_start += 1;
                 }
                 while bytes
@@ -474,7 +458,6 @@ fn printf_writes_variable(format: &str) -> bool {
 }
 
 fn ifs_in_launcher_prefix(words: &[&str], program: &str) -> bool {
-    // Identity avoids mistaking an equal launcher option value for the program.
     let Some(program_index) = words.iter().position(|word| {
         word.rsplit('/')
             .next()

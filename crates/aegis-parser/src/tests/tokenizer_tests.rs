@@ -441,7 +441,6 @@ fn heredoc_file_write_followed_by_another_command_is_not_flagged() {
     assert!(!bodies[0].is_data_consumer_target);
 }
 
-// An open quote or substitution on the marker line delays the body in bash.
 #[test]
 fn heredoc_open_construct_on_marker_line_is_not_flagged() {
     for cmd in [
@@ -534,8 +533,6 @@ fn eval_payload_with_env_prefix() {
     assert_eq!(payloads, vec![r#"$DEPLOY_CMD"#]);
 }
 
-// Unquoted literal `$IFS` and `${IFS}` act as shell word-separators; quoted,
-// escaped, and non-IFS variables stay untouched.
 mod ifs_obfuscation {
     use super::*;
 
@@ -604,25 +601,20 @@ mod ifs_obfuscation {
 
     #[test]
     fn split_tokens_does_not_split_ifs_prefixed_identifier() {
-        // `$IFSHOME` references a different variable, not `$IFS`.
         assert_eq!(split_tokens("echo$IFSHOME"), vec!["echo$IFSHOME"]);
     }
 
     #[test]
     fn split_tokens_does_not_split_ifs_prefixed_by_digit() {
-        // `$IFS2` is the identifier `IFS2`, so the digit extends the name.
         assert_eq!(split_tokens("echo$IFS2"), vec!["echo$IFS2"]);
     }
 
     #[test]
     fn split_tokens_splits_bare_ifs_before_punctuation() {
-        // A `.` ends the variable name, so `$IFS` is a separator before `.txt`.
         assert_eq!(split_tokens("cat$IFS.txt"), vec!["cat", ".txt"]);
     }
 }
 
-// Inside double quotes bash removes a backslash only before `$`, backtick,
-// `"`, `\` and newline; before any other character the backslash stays.
 #[test]
 fn backslash_before_ordinary_char_in_double_quotes_is_kept() {
     assert_eq!(
@@ -639,8 +631,6 @@ fn backslash_before_special_char_in_double_quotes_is_removed() {
     );
 }
 
-// A backslash-newline is a line continuation: bash removes both characters,
-// outside quotes and inside double quotes alike.
 #[test]
 fn line_continuation_joins_the_word_outside_quotes() {
     assert_eq!(split_tokens("r\\\nm -rf x"), vec!["rm", "-rf", "x"]);

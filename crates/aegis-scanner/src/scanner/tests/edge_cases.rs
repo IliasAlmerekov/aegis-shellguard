@@ -185,8 +185,6 @@ fn recursive_depth_limit_returns_uncertain_warn() {
     );
 }
 
-// ── performance ──────────────────────────────────────────────────────────
-
 #[test]
 fn ten_thousand_safe_commands_under_25ms() {
     let s = scanner();
@@ -206,17 +204,9 @@ fn ten_thousand_safe_commands_under_25ms() {
     );
 }
 
-// ── Phase 1.2: program-indexed pattern lookup ────────────────────────────
-//
-// All program-specific patterns (`^prog\s+…`) are indexed in `by_program` and
-// skipped for commands with a different leading program.  Patterns that must run
-// for any leading program (FS-*, DB-*, PS-*, PKG-*, EXEC-001/003/004/…) live in
-// `universal`.
-
 #[test]
 fn scanner_indexes_anchored_patterns_for_bash() {
     let s = scanner();
-    // EXEC-006: `^bash\s+...-c\b|^sh\s+...|...` — all alternatives start with `^`
     assert!(
         s.indexed_program_count("bash") > 0,
         "scanner must have ^-anchored patterns indexed for 'bash'"
@@ -226,7 +216,6 @@ fn scanner_indexes_anchored_patterns_for_bash() {
 #[test]
 fn scanner_indexes_anchored_patterns_for_eval() {
     let s = scanner();
-    // Pattern `^eval\b` is ^-anchored → indexed
     assert!(
         s.indexed_program_count("eval") > 0,
         "scanner must have ^-anchored patterns indexed for 'eval'"
@@ -236,7 +225,6 @@ fn scanner_indexes_anchored_patterns_for_eval() {
 #[test]
 fn scanner_indexes_anchored_patterns_for_ruby() {
     let s = scanner();
-    // Pattern `^ruby\s+-e\b` is ^-anchored → indexed
     assert!(
         s.indexed_program_count("ruby") > 0,
         "scanner must have ^-anchored patterns indexed for 'ruby'"
@@ -246,8 +234,6 @@ fn scanner_indexes_anchored_patterns_for_ruby() {
 #[test]
 fn scanner_indexes_git_patterns_by_program() {
     let s = scanner();
-    // GIT-001..GIT-008 are now token-prefix rules in prefix_by_program["git"],
-    // replacing the regex ^git\s+… entries in patterns.toml.
     assert!(
         s.prefix_indexed_program_count("git") > 0,
         "scanner must have git prefix rules indexed under 'git'"
@@ -257,7 +243,6 @@ fn scanner_indexes_git_patterns_by_program() {
 #[test]
 fn prefix_scan_with_git_tokens_returns_git_patterns() {
     let s = scanner();
-    // GIT-001: git reset --hard — token-prefix rule, not regex.
     let tokens = ["git", "reset", "--hard", "HEAD~1"];
     let matches = s.prefix_scan(&tokens);
     let ids: Vec<&str> = matches.iter().map(|m| m.pattern.id.as_ref()).collect();
@@ -270,7 +255,6 @@ fn prefix_scan_with_git_tokens_returns_git_patterns() {
 #[test]
 fn full_scan_with_none_program_still_catches_rm_patterns() {
     let s = scanner();
-    // FS-001 is universal — fires even when no program hint is given.
     let matches = s.full_scan("rm -rf /home/user", None);
     let ids: Vec<&str> = matches.iter().map(|m| m.pattern.id.as_ref()).collect();
     assert!(
@@ -282,7 +266,6 @@ fn full_scan_with_none_program_still_catches_rm_patterns() {
 #[test]
 fn full_scan_universal_patterns_run_for_any_program() {
     let s = scanner();
-    // FS-009 is universal (no `^`) — fires regardless of program token.
     let matches = s.full_scan("echo data > /dev/sda", Some("echo"));
     let ids: Vec<&str> = matches.iter().map(|m| m.pattern.id.as_ref()).collect();
     assert!(
@@ -294,7 +277,6 @@ fn full_scan_universal_patterns_run_for_any_program() {
 #[test]
 fn full_scan_universal_pattern_fork_bomb_fires_for_any_program() {
     let s = scanner();
-    // PS-004 (fork bomb) is universal — no `^` anchor.
     let matches = s.full_scan(":(){ :|:& };:", None);
     let ids: Vec<&str> = matches.iter().map(|m| m.pattern.id.as_ref()).collect();
     assert!(
@@ -306,8 +288,6 @@ fn full_scan_universal_pattern_fork_bomb_fires_for_any_program() {
 #[test]
 fn full_scan_anchored_bash_pattern_does_not_fire_for_ls_command() {
     let s = scanner();
-    // EXEC-006 (^bash\s+-c...) is ^-anchored → indexed only under bash/sh/etc.
-    // It must NOT fire when scanning an unrelated "ls" command.
     let matches = s.full_scan("ls -la /home/user", Some("ls"));
     let ids: Vec<&str> = matches.iter().map(|m| m.pattern.id.as_ref()).collect();
     assert!(
@@ -319,7 +299,6 @@ fn full_scan_anchored_bash_pattern_does_not_fire_for_ls_command() {
 #[test]
 fn git_patterns_skipped_for_non_git_program() {
     let s = scanner();
-    // Prefix rules for git are looked up by the first token; "ls" must not find them.
     let matches = s.prefix_scan(&["ls", "-la", "/home/user"]);
     let ids: Vec<&str> = matches.iter().map(|m| m.pattern.id.as_ref()).collect();
     assert!(
@@ -331,8 +310,6 @@ fn git_patterns_skipped_for_non_git_program() {
 #[test]
 fn cloud_prefix_rules_fire_on_tokenized_inline_script_bodies() {
     let s = scanner();
-    // CL-001 is now a token-prefix rule.  When the inline script body is tokenised,
-    // prefix_scan must still find it.
     let tokens = ["terraform", "destroy"];
     let matches = s.prefix_scan(&tokens);
     let ids: Vec<&str> = matches.iter().map(|m| m.pattern.id.as_ref()).collect();
@@ -341,8 +318,6 @@ fn cloud_prefix_rules_fire_on_tokenized_inline_script_bodies() {
         "CL-001 must fire via prefix_scan on tokenised 'terraform destroy': {ids:?}"
     );
 }
-
-// ── Phase 1.3: PrefixRule regression tests ────────────────────────────────
 
 #[test]
 fn prefix_rule_git_push_force_matches_via_any_star() {
@@ -371,8 +346,6 @@ fn prefix_rule_git_push_force_with_lease_matches() {
 #[test]
 fn prefix_rule_quoted_git_push_not_flagged() {
     let s = scanner();
-    // "git push --force" inside quotes is ONE token; it does not tokenise as
-    // ["git", "push", "--force"] → prefix rules must NOT match.
     let assessment = s.assess("echo \"git push --force\"");
     assert_eq!(
         assessment.risk,
@@ -407,7 +380,6 @@ fn ampersand_does_not_bypass_git_prefix_rule() {
     );
 }
 
-// An escaped `\>` is literal, so a following `&` still splits the segment for GIT-003.
 #[test]
 fn ampersand_escaped_redirect_char_does_not_bypass_git_prefix_rule() {
     let s = scanner();
@@ -460,7 +432,6 @@ fn prefix_rule_git_log_not_flagged() {
 #[test]
 fn prefix_rule_git_checkout_file_not_flagged() {
     let s = scanner();
-    // git checkout -- file.txt is NOT git checkout -- .
     let assessment = s.assess("git checkout -- file.txt");
     assert_eq!(
         assessment.risk,
@@ -472,7 +443,6 @@ fn prefix_rule_git_checkout_file_not_flagged() {
 #[test]
 fn prefix_rule_git_clean_split_flags_matches() {
     let s = scanner();
-    // GIT-002: split flags -d -f and -f -d must both match via AnyStar.
     let assessment = s.assess("git clean -d -f");
     assert_eq!(assessment.risk, RiskLevel::Warn);
     assert!(
@@ -497,7 +467,6 @@ fn prefix_rule_git_clean_split_flags_matches() {
 #[test]
 fn prefix_rule_git_branch_delete_force_matches() {
     let s = scanner();
-    // GIT-006B: --delete --force (two tokens) must match.
     let assessment = s.assess("git branch --delete --force old");
     assert_eq!(assessment.risk, RiskLevel::Warn);
     assert!(
@@ -508,7 +477,6 @@ fn prefix_rule_git_branch_delete_force_matches() {
         "GIT-006B must match 'git branch --delete --force old'"
     );
 
-    // GIT-006C: -d --force must match.
     let assessment = s.assess("git branch -d --force old");
     assert_eq!(assessment.risk, RiskLevel::Warn);
     assert!(
@@ -523,7 +491,6 @@ fn prefix_rule_git_branch_delete_force_matches() {
 #[test]
 fn prefix_rule_git_branch_normal_delete_not_flagged() {
     let s = scanner();
-    // Normal delete (not force) must stay Safe.
     let assessment = s.assess("git branch -d old");
     assert_eq!(
         assessment.risk,
@@ -538,12 +505,6 @@ fn prefix_rule_git_branch_normal_delete_not_flagged() {
         "'git branch --delete old' must be Safe (not force delete)"
     );
 }
-
-// ── C2: `$IFS` obfuscation bypass regressions ─────────────────────────────
-//
-// Unquoted literal `$IFS` / `${IFS}` separators must not hide destructive
-// commands. These cover the exact C2 examples plus nested shell,
-// heredoc, process substitution, and additional destructive pattern families.
 
 fn assert_command_matches_pattern(cmd: &str, expected_risk: RiskLevel, expected_id: &str) {
     let s = scanner();
@@ -623,7 +584,6 @@ fn scanner_blocks_ifs_obfuscated_mkfs() {
     assert_command_matches_pattern("mkfs.ext4${IFS}/dev/sdb1", RiskLevel::Block, "FS-006");
 }
 
-// Destructive-SQL narrowness guards (ADR-015).
 #[test]
 fn destructive_sql_does_not_match_identifier_containing_drop_table() {
     let s = scanner();
@@ -657,7 +617,6 @@ fn destructive_sql_does_not_match_uncovered_drop_index() {
     );
 }
 
-// DB-008 must match spaced table identifiers, bare or quoted via `psql -c` (ADR-015).
 #[test]
 fn destructive_sql_alter_drop_column_matches_spaced_table_identifier() {
     let s = scanner();
@@ -687,7 +646,6 @@ fn destructive_sql_alter_drop_column_matches_spaced_table_identifier() {
     }
 }
 
-// Heredoc and stdin-pipe delivery of destructive SQL must fire (ADR-015).
 #[test]
 fn destructive_sql_detected_via_heredoc_body() {
     let s = scanner();

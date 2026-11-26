@@ -1,5 +1,3 @@
-//! Compilation helpers for allowlist and blocklist rules.
-
 use time::OffsetDateTime;
 
 use super::{CompiledRule, ConfigSourceLayer, LayeredAllowlistRule, LayeredBlocklistRule};

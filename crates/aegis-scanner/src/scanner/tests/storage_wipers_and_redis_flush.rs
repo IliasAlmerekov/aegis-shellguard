@@ -64,7 +64,6 @@ fn assess_h3_followup_device_wiper_rules() {
     }
 }
 
-// `rsync --delete-missing-args` triggers destination-side deletion and must fire FS-015.
 #[test]
 fn test_fs015_rsync_delete_missing_args_fires() {
     assert_assessment_matches_pattern(

@@ -79,9 +79,6 @@ fn push_semantic_match(
         }),
         matched_text: matched_text.to_string(),
         highlight_range: None,
-        // Pipeline-semantic matches are `Pattern`-family detections (not
-        // `Token-prefix rule`s, not Language-aware rules), so the common
-        // Detection mechanism they map to is `RegexPattern`.
         evidence: MatchEvidence::RegexPattern {
             source: DetectionSource::Builtin,
         },

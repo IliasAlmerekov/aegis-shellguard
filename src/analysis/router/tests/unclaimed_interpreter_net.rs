@@ -1,8 +1,4 @@
-//! Fail-closed net for unclaimed stages (#384, #430, ADR-022 §6).
-
 use super::*;
-
-// ── An unenumerated wrapper hiding an interpreter is degraded ──────────────
 
 #[test]
 fn setsid_wrapped_interpreter_is_routed() {
@@ -100,8 +96,6 @@ fn wrapped_interpreter_inside_a_subshell_is_routed() {
     );
 }
 
-// ── A program that only names a command as data stays unclaimed ────────────
-
 #[test]
 fn echo_naming_an_interpreter_is_not_routed() {
     assert_eq!(route("echo python3", &[]), Vec::new());
@@ -160,8 +154,6 @@ fn find_piped_into_xargs_grep_is_not_routed() {
     );
 }
 
-// ── An interpreter named inside a quoted multi-word token is routed ────────
-
 #[test]
 fn script_dash_c_quoted_interpreter_command_is_routed() {
     assert_eq!(
@@ -182,8 +174,6 @@ fn script_dash_qc_quoted_interpreter_command_is_routed() {
 fn quoted_multiword_token_naming_a_benign_command_is_not_routed() {
     assert_eq!(route(r#"ssh host "echo hello""#, &[]), Vec::new());
 }
-
-// ── A program that never executes its operands stays unclaimed ─────────────
 
 #[test]
 fn mkdir_naming_an_interpreter_is_not_routed() {
@@ -209,8 +199,6 @@ fn cp_naming_an_interpreter_is_not_routed() {
 fn mv_naming_an_interpreter_is_not_routed() {
     assert_eq!(route("mv node node.bak", &[]), Vec::new());
 }
-
-// ── A path-like operand after an unenumerated launcher is a launcher-operand candidate ──
 
 #[test]
 fn setsid_launcher_operand_is_routed() {
@@ -261,8 +249,6 @@ async fn setsid_launcher_operand_without_a_shebang_stays_auto_approved() {
     let results = resolve(targets, 1024).await;
     assert_eq!(results, Vec::new());
 }
-
-// ── A launcher operand that is missing or a directory stays speculative ────
 
 #[tokio::test]
 async fn vim_missing_file_operand_is_not_degraded() {
@@ -415,7 +401,6 @@ async fn pytest_directory_operand_is_not_degraded() {
 #[tokio::test]
 #[cfg(unix)]
 async fn setsid_launcher_operand_naming_a_symlink_still_degrades() {
-    // Symlinks are rejected without following by `source_reader::read_script_file`.
     let dir = tempfile::tempdir().unwrap();
     let target = dir.path().join("real.py");
     std::fs::write(&target, "print(1)\n").unwrap();
@@ -440,9 +425,6 @@ async fn setsid_launcher_operand_naming_a_symlink_still_degrades() {
         Resolution::Degraded(DegradationReason::UnsafeSource)
     ));
 }
-
-// ── A path-like flag value does not shadow a real later target
-// (issue #384/#430) ─────────────────────────────────────────────────
 
 #[tokio::test]
 async fn flag_value_operand_does_not_shadow_the_real_script_that_follows() {
@@ -507,8 +489,6 @@ async fn missing_flag_value_operand_does_not_shadow_the_real_script_that_follows
     );
 }
 
-// ── Everyday multi-operand shapes stay unrouted (issue #384/#430) ──
-
 #[test]
 fn cp_of_two_plain_files_is_not_routed() {
     assert_eq!(route("cp ./a.txt ./b.txt", &[]), Vec::new());
@@ -541,9 +521,6 @@ async fn tar_create_of_a_plain_directory_is_not_degraded() {
     let results = resolve(targets, 1024).await;
     assert_eq!(results, Vec::new());
 }
-
-// ── A program word reached only through expansion the router does not
-// perform still degrades when it carries an operand (issue #384/#430) ──────
 
 #[test]
 fn variable_holding_an_interpreter_name_is_routed() {
@@ -633,10 +610,6 @@ fn a_redefined_alias_resolves_to_its_latest_definition() {
     );
 }
 
-// ── An alias standing in for an ordinary (non-interpreter) command is left
-// to the rest of routing, not degraded by name alone (issue #384/#430)
-// ──────────────────────────────────────────────────────────────
-
 #[tokio::test]
 async fn alias_for_a_plain_command_naming_a_directory_operand_is_not_degraded() {
     let dir = tempfile::tempdir().unwrap();
@@ -658,7 +631,6 @@ fn alias_for_a_plain_command_with_no_path_like_operand_is_not_routed() {
 
 #[test]
 fn a_redefined_alias_naming_a_plain_command_last_is_degraded() {
-    // The router does not expand aliases, so an earlier interpreter alias still degrades.
     assert_eq!(
         route("alias run=python3; alias run=git; run status", &[]),
         vec![unresolved_dynamic()]
@@ -692,12 +664,8 @@ fn ls_of_a_brace_list_operand_is_not_routed() {
 
 #[test]
 fn bare_variable_with_no_operand_is_not_routed() {
-    // ADR-043: bare `$EDITOR` with no operands is an interactive exception (#384, #430).
     assert_eq!(route("$EDITOR", &[]), Vec::new());
 }
-
-// ── A second unenumerated wrapper word is walked past to reach the real
-// operand (issue #384/#430) ─────────────────────────────────────────────────
 
 #[tokio::test]
 async fn double_wrapped_interpreter_is_routed() {

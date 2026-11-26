@@ -1,8 +1,5 @@
 use super::*;
 
-// Bash decodes ANSI-C quoting (`$'...'`) before it runs a word, so a quoted
-// spelling must classify exactly like the word it decodes to.
-
 #[test]
 fn assess_ansi_c_program_word_matches_the_decoded_program() {
     for cmd in [

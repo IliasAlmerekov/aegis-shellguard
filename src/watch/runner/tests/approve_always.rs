@@ -1,6 +1,3 @@
-//! ADR-031 section 4: `ApproveAlways` persists only after Ready Recovery, and
-//! `snapshot_policy = None` offers no persistent approval (#559).
-
 use std::cell::RefCell;
 
 use super::super::run_watch_plan_with_persistence;
@@ -12,7 +9,6 @@ const WARN: &str = "git stash clear";
 
 #[tokio::test(flavor = "multi_thread")]
 async fn watch_approve_always_writes_the_active_config() {
-    // Config selection reads process-global HOME and cwd; isolate them in a child.
     const CHILD: &str = "AEGIS_TEST_WATCH_PERSISTENCE_CHILD";
     if std::env::var_os(CHILD).is_none() {
         let home = TempDir::new().unwrap();
@@ -75,8 +71,6 @@ fn context_with_snapshot_policy(
     context
 }
 
-/// Run `command` with a human who always answers `ApproveAlways`; returns the
-/// ordered `override:` and `persist:` events.
 async fn run_approve_always(
     context: &RuntimeContext,
     workspace: &TempDir,

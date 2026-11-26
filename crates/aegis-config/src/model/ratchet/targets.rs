@@ -1,24 +1,8 @@
-//! `Custom` direction for the scalar/whole-struct database provider targets:
-//! `sqlite_snapshot_path`, `postgres_snapshot`, `mysql_snapshot`. Supabase
-//! has its own module (`supabase.rs`) because
-//! `require_config_target_match_on_rollback` ratchets on a separate axis from
-//! its database-target fields (#269).
-
 use crate::allowlist::ConfigSourceLayer;
 
 use super::super::{MysqlSnapshotConfig, PostgresSnapshotConfig};
 use super::warning::{RatchetSink, is_project};
 
-/// Core ratchet for a provider's target config (`sqlite_snapshot_path`,
-/// `postgres_snapshot`, `mysql_snapshot`). Under the Project layer, once the
-/// provider is ENABLED in the trusted base AND the base target itself is
-/// enabled (non-no-op), the project may not change ANY target field — host,
-/// port, user, database, or path all stay pinned to the trusted base, because
-/// a project that could repoint even one field (say, only `host`) could still
-/// aim a later Rollback at a decoy database (#269). A project overlay is only
-/// honored when the base left the provider off or the base target itself is
-/// a no-op — then the project is free to enable and configure its own target.
-/// Global stays last-wins.
 fn ratchet_provider_target<T: Clone>(
     base: &T,
     overlay: Option<&T>,
@@ -38,7 +22,6 @@ fn ratchet_provider_target<T: Clone>(
     }
 }
 
-/// Ratchet the SQLite snapshot path. Target enabled = non-empty path.
 pub(crate) fn custom_sqlite_snapshot(
     base: String,
     overlay: Option<String>,
@@ -69,10 +52,6 @@ pub(crate) fn custom_sqlite_snapshot(
     kept
 }
 
-/// Ratchet the PostgreSQL snapshot config. Target enabled = non-empty
-/// `database`. The destructure below is a compile-time tripwire: a new leaf
-/// field on `PostgresSnapshotConfig` breaks this match until it is added to
-/// the per-field warning list.
 pub(crate) fn custom_postgres_snapshot(
     base: PostgresSnapshotConfig,
     overlay: Option<PostgresSnapshotConfig>,
@@ -116,8 +95,6 @@ pub(crate) fn custom_postgres_snapshot(
     kept
 }
 
-/// MySQL counterpart of [`custom_postgres_snapshot`]. Target enabled =
-/// non-empty `database`.
 pub(crate) fn custom_mysql_snapshot(
     base: MysqlSnapshotConfig,
     overlay: Option<MysqlSnapshotConfig>,

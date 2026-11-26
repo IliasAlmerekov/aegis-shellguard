@@ -1,10 +1,3 @@
-//! Runner routing (#421, ADR-040) at the CLI JSON seam. The CLI clamps the
-//! language-analysis deadline to 100 ms, so under load a worker can miss it and
-//! the command falls back to a prompt with no language Match (#458). These
-//! tests only assert what holds either way: exit code 2, `decision = prompt`,
-//! and no `auto_approve`. Matches, risk, and degradation are asserted in
-//! `tests/analysis_orchestrate/runner.rs`, which passes an explicit deadline.
-
 use super::*;
 
 const DANGER_PY: &str = "import shutil\nshutil.rmtree('artifact')\n";
@@ -23,7 +16,6 @@ fn assert_prompts(home: &TempDir, cwd: &std::path::Path, command: &str) {
 
 #[test]
 fn uv_run_harmless_inline_python_uses_exec_002() {
-    // EXEC-002 is a scanner Match, so it survives an analysis fallback.
     let home = TempDir::new().unwrap();
     let output = base_command(home.path())
         .args(["-c", "uv run python -c 'print(1)'", "--output", "json"])
@@ -123,10 +115,6 @@ fn reported_runner_inline_source_prompts() {
 
 #[test]
 fn direct_exec_operand_behind_package_selecting_runner_prompts() {
-    // `npx`, `uvx`, `pipx run`, and `uv tool run` (the long form of `uvx`)
-    // pick their own child binary; a harmless direct-exec operand cannot
-    // rule out a different package-provided executable actually running
-    // (#421, ADR-040).
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
     write_executable(&workspace.path().join("clean-bin"), "#!/bin/sh\necho hi\n");
@@ -144,9 +132,6 @@ fn direct_exec_operand_behind_package_selecting_runner_prompts() {
 
 #[test]
 fn runner_subcommands_without_a_program_stay_auto_approved() {
-    // These start no language analysis (see
-    // `runner_subcommands_without_a_program_start_no_analysis`), so no worker
-    // deadline can turn them into a fallback prompt.
     let home = TempDir::new().unwrap();
     let workspace = TempDir::new().unwrap();
 

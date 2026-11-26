@@ -1,6 +1,3 @@
-//! The command view of the Snapshot ledger (#499, ADR-053): which commands
-//! still have a live Snapshot, with the Command location of each.
-
 use std::collections::HashMap;
 
 use aegis_types::Decision;
@@ -8,44 +5,28 @@ use aegis_types::Decision;
 use super::is_rollback_entry;
 use crate::logger::{AuditEntry, AuditTimestamp};
 
-/// One live Snapshot of a [`RecordedCommand`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandSnapshot {
-    /// Name of the plugin that created the Snapshot.
     pub plugin: String,
-    /// Opaque identifier used to restore the Snapshot.
     pub snapshot_id: String,
-    /// The git working tree a git Snapshot covers, when recorded.
     pub git_target: Option<String>,
-    /// When `aegis rollback` last restored it, if ever.
     pub restored_at: Option<AuditTimestamp>,
 }
 
-/// A command that still has at least one live Snapshot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordedCommand {
-    /// The command as intercepted.
     pub command: String,
-    /// What was decided for it.
     pub decision: Decision,
-    /// When the entry was recorded.
     pub recorded_at: AuditTimestamp,
-    /// Agent identity of a watch-mode entry.
     pub source: Option<String>,
-    /// The directory it ran in; `None` on lines that predate the field.
     pub cwd: Option<String>,
-    /// Its live Snapshots, in the order they were taken.
     pub snapshots: Vec<CommandSnapshot>,
 }
 
-/// Build the command view, latest first. `is_live` says whether the pair
-/// (plugin, `snapshot_id`) escaped every prune.
 pub(super) fn build(
     entries: &[AuditEntry],
     is_live: impl Fn(&str, &str) -> bool,
 ) -> Vec<RecordedCommand> {
-    // A pair recorded twice belongs to its latest entry only, like the ledger's
-    // own records.
     let mut owner: HashMap<(&str, &str), usize> = HashMap::new();
     let mut restored: HashMap<(&str, &str), AuditTimestamp> = HashMap::new();
     for (index, entry) in entries.iter().enumerate() {
@@ -59,8 +40,6 @@ pub(super) fn build(
                 restored.insert(key, base.timestamp);
             } else {
                 owner.insert(key, index);
-                // A stable id such as git's `clean` is recorded again by a later
-                // command; an earlier restore says nothing about that one.
                 restored.remove(&key);
             }
         }
@@ -72,8 +51,6 @@ pub(super) fn build(
         .rev()
         .filter_map(|(index, entry)| {
             let base = entry.as_base();
-            // Only a command that ran can be undone; a Denied entry may still
-            // carry Snapshots from the recovery-degradation path.
             let ran = matches!(base.decision, Decision::Approved | Decision::AutoApproved);
             if !ran || is_rollback_entry(base) {
                 return None;

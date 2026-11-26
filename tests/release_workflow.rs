@@ -1,10 +1,3 @@
-//! Regression tests for static-musl release targets.
-//!
-//! These tests encode the release-workflow target matrix contract: both Linux
-//! musl targets build through `cross`, and static-binary verification runs
-//! before checksum generation. The asset-name test preserves the installer
-//! asset contract.
-
 use std::path::Path;
 
 fn release_workflow() -> String {
@@ -58,19 +51,10 @@ fn npm_publish_recovery_should_checkout_and_validate_the_released_tag() {
     );
 }
 
-/// Extracts the single matrix entry for `target` from `.github/build-targets.json`.
-/// The entry spans from its `"target": "<triple>"` marker up to the closing
-/// brace of that object, so callers can assert on per-target fields like
-/// `use_cross` without a JSON dependency.
-///
-/// Panics if the target is absent. That is a test-fixture failure, not a
-/// runtime failure, so `panic!`/`expect` is acceptable here.
 fn matrix_entry(targets: &str, target: &str) -> String {
     let marker = format!("\"target\": \"{target}\"");
     let entry = targets
         .split_once(marker.as_str())
-        // The entry ends at the closing brace of its JSON object, so `entry`
-        // is exactly this target's remaining fields.
         .and_then(|(_, rest)| rest.split_once('}'))
         .map(|(entry, _)| entry.to_owned())
         .unwrap_or_else(|| panic!("release workflow matrix should define target {target}"));
@@ -78,21 +62,11 @@ fn matrix_entry(targets: &str, target: &str) -> String {
     format!("{marker}{entry}")
 }
 
-/// The release target matrix. `release.yml` (`build`) and `ci.yml`
-/// (`cross-matrix`) both expand this file into `strategy.matrix.include`, so
-/// it is where the target list, the runner labels, and the asset names live.
 fn build_targets() -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/build-targets.json");
     std::fs::read_to_string(&path).expect("build-targets.json should be readable")
 }
 
-/// The asset paths the GitHub Release publishes.
-///
-/// The workflow derives them from `build-targets.json` with jq instead of
-/// listing them a second time, so this derives them the same way. Every
-/// resulting line is a glob pattern that `softprops/action-gh-release` matches
-/// with `fail_on_unmatched_files: true`, so a line that is not a bare path
-/// aborts the release.
 fn release_files_patterns() -> Vec<String> {
     let mut patterns: Vec<String> = build_targets()
         .split("\"asset_name\": \"")
@@ -232,8 +206,6 @@ fn release_workflow_should_build_linux_musl_targets_via_cross() {
     );
 }
 
-/// The four installer-facing release assets required by the release-asset gate. Every supported
-/// target must produce a binary and a matching `.sha256` sidecar.
 fn expected_release_assets() -> [&'static str; 4] {
     [
         "aegis-linux-x86_64",
@@ -297,11 +269,6 @@ fn release_workflow_should_publish_each_binary_and_matching_sha256_sidecar() {
 fn release_workflow_should_publish_the_grammar_license_notice() {
     let wf = release_workflow().replace("\r\n", "\n");
 
-    // Asserted against the derived `files:` patterns so a passing mention in a
-    // comment or another job cannot satisfy the contract. Unlike its siblings
-    // this entry is repo-relative rather than `artifacts/`-prefixed: the notice
-    // is checked into the repo, not produced by the build matrix, so the step
-    // that derives the list appends it rather than reading it from the matrix.
     assert!(
         release_files_patterns()
             .iter()
@@ -318,14 +285,6 @@ fn release_workflow_should_publish_the_grammar_license_notice() {
     );
 }
 
-/// The major version of every pin of `action` in the workflow, read from the
-/// `# vX.Y.Z` comment that follows the SHA.
-///
-/// Third-party actions are pinned by commit SHA, so the trailing tag comment is
-/// the only readable version in the file. Dependabot rewrites the SHA and the
-/// comment together, which is why the version floor below is asserted against
-/// the comment instead of against a literal SHA: a patch bump stays green while
-/// a downgrade across the major boundary still fails.
 fn pinned_action_majors(wf: &str, action: &str) -> Vec<u32> {
     wf.split(&format!("{action}@"))
         .skip(1)
@@ -340,9 +299,6 @@ fn pinned_action_majors(wf: &str, action: &str) -> Vec<u32> {
 fn release_workflow_should_use_node24_actions_for_release_publication() {
     let wf = release_workflow();
 
-    // Each floor is the major that replaced a Node.js 20 pin in #128. Dropping
-    // below it brings the Node.js 20 runtime back, so the floor is the
-    // contract and the exact patch release is Dependabot's business.
     for (action, node24_major) in [
         ("actions/download-artifact", 8),
         ("softprops/action-gh-release", 3),
@@ -405,8 +361,6 @@ fn release_workflow_should_publish_the_changelog_section_as_the_release_body() {
     );
 }
 
-/// The Release body is extracted by tag, so a tag can only be cut once its
-/// version owns a section in `CHANGELOG.md`.
 #[test]
 fn changelog_should_carry_a_section_for_the_current_crate_version() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));

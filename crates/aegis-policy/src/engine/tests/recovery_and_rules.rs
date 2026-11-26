@@ -1,10 +1,5 @@
 use super::*;
 
-// ── ADR-016 / H9: effect-opaque recovery backstop ──────────────────────────
-
-/// Evaluate policy for an effect-opaque command (`sh ./cleanup.sh` shape)
-/// under the given snapshot posture. Risk stays orthogonal to the recovery
-/// requirement — the assessment is built with `effect_opaque = true`.
 fn evaluate_effect_opaque(
     risk: RiskLevel,
     snapshot_policy: SnapshotPolicy,
@@ -32,10 +27,6 @@ fn evaluate_effect_opaque(
 
 #[test]
 fn effect_opaque_safe_command_requires_recovery_under_selective_policy() {
-    // ADR-016: `sh ./cleanup.sh` is Safe to the quick scan yet effect-opaque.
-    // Recovery (`snapshots_required`) is the primary v1 backstop — orthogonal
-    // to risk — so a Safe effect-opaque command still requests a pre-exec
-    // snapshot when a snapshot policy and applicable plugins exist.
     let decision = evaluate_effect_opaque(RiskLevel::Safe, SnapshotPolicy::Selective, &["git"]);
 
     assert_eq!(decision.decision, PolicyAction::AutoApprove);
@@ -49,9 +40,6 @@ fn effect_opaque_safe_command_requires_recovery_under_selective_policy() {
 
 #[test]
 fn effect_opaque_recovery_respects_snapshot_policy_none_opt_out() {
-    // `SnapshotPolicy::None` is the trusted/global opt-out: effect opacity
-    // does not override it. Project config cannot reach `None` (C3 ratchet),
-    // but the engine must honour a global `None` without forcing snapshots.
     let decision = evaluate_effect_opaque(RiskLevel::Safe, SnapshotPolicy::None, &["git"]);
 
     assert!(
@@ -168,11 +156,6 @@ fn protect_warn_allowlist_cannot_waive_effect_opaque_recovery() {
 
 #[test]
 fn policy_decision_carries_confinement_required_axis_defaulting_false() {
-    // ADR-016: `confinement_required` is a plumbed axis beside
-    // `snapshots_required`. It stays false by default in v1 — sandbox
-    // confinement is an optional stricter tier, not the primary backstop
-    // for effect opacity — but the field must exist so the audit trail and
-    // a future strict tier can populate it.
     let decision = evaluate(EvalInput {
         risk: RiskLevel::Danger,
         mode: Mode::Protect,
@@ -667,8 +650,6 @@ fn audit_mode_precedes_blocklist_for_safe_commands() {
     );
 }
 
-// ── Phase 5.2: [[rules]] policy engine tests ─────────────────────────────
-
 fn evaluate_with_rules(
     risk: RiskLevel,
     mode: Mode,
@@ -699,8 +680,6 @@ fn evaluate_with_rules(
     })
 }
 
-/// A matched rule with `Allow` decision must auto-approve even a Warn
-/// command in Protect mode (bypasses normal mode evaluation).
 #[test]
 fn test_rules_allow_overrides_protect_mode_warn() {
     let decision = evaluate_with_rules(
@@ -714,7 +693,6 @@ fn test_rules_allow_overrides_protect_mode_warn() {
     assert_eq!(decision.rationale, PolicyRationale::PolicyRulesOverride);
 }
 
-/// A matched rule with `Block` decision must hard-block even a Safe command.
 #[test]
 fn test_rules_block_overrides_safe_command() {
     let decision = evaluate_with_rules(
@@ -732,7 +710,6 @@ fn test_rules_block_overrides_safe_command() {
     );
 }
 
-/// A matched rule with `Prompt` decision must prompt even a Safe command.
 #[test]
 fn test_rules_prompt_overrides_safe_command() {
     let decision = evaluate_with_rules(
@@ -746,7 +723,6 @@ fn test_rules_prompt_overrides_safe_command() {
     assert_eq!(decision.rationale, PolicyRationale::PolicyRulesOverride);
 }
 
-/// When `matched = false`, normal policy must apply (Safe → AutoApprove in Protect).
 #[test]
 fn test_rules_not_matched_falls_through_to_normal_policy() {
     let decision = evaluate_with_rules(RiskLevel::Safe, Mode::Protect, false, None);
@@ -755,8 +731,6 @@ fn test_rules_not_matched_falls_through_to_normal_policy() {
     assert_eq!(decision.rationale, PolicyRationale::SafeCommand);
 }
 
-/// A `[[rules]]` entry with `decision = "allow"` must NOT bypass a
-/// `RiskLevel::Block` command — intrinsic block takes precedence over rules.
 #[test]
 fn rules_allow_cannot_bypass_block_risk_level() {
     let decision = evaluate_with_rules(

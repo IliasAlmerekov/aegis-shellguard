@@ -129,11 +129,6 @@ fn setup_shell_rejects_unsupported_shell_without_rc_override() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("supports bash and zsh"));
 }
 
-// If $SHELL already points at the Aegis binary itself, setup must NOT use it as
-// the real shell — that would make Aegis exec itself recursively. With no
-// explicit --shell and no AEGIS_REAL_SHELL, detect_real_shell must fail closed
-// instead of producing a self-referential managed block. This guards a
-// security-critical recursion path that has no other dedicated test.
 #[test]
 fn setup_shell_fails_closed_when_shell_points_at_aegis_binary() {
     let temp = tempfile::TempDir::new().expect("temp dir");
@@ -155,10 +150,6 @@ fn setup_shell_fails_closed_when_shell_points_at_aegis_binary() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("cannot determine the real shell"));
 }
 
-// The recursion guard must canonicalize paths: a $SHELL that is a symlink to
-// the Aegis binary is lexically different but resolves to the same file. A
-// purely lexical compare would let it through and write Aegis as the real
-// shell — infinite recursion. `same_file` (which canonicalizes) must catch it.
 #[cfg(unix)]
 #[test]
 fn setup_shell_fails_closed_when_shell_is_symlink_to_aegis_binary() {
@@ -166,8 +157,6 @@ fn setup_shell_fails_closed_when_shell_is_symlink_to_aegis_binary() {
 
     let temp = tempfile::TempDir::new().expect("temp dir");
     let aegis = aegis_bin();
-    // A symlink with a lexically different path that resolves to the Aegis
-    // binary — the exact case a lexical-only guard misses.
     let symlink_path = temp.path().join("aegis-link");
     symlink(&aegis, &symlink_path).expect("create symlink to aegis binary");
 
@@ -193,12 +182,6 @@ fn setup_shell_fails_closed_when_shell_is_symlink_to_aegis_binary() {
     );
 }
 
-// `--aegis-bin` is interpolated into `export SHELL='...'`. A payload with
-// quotes/semicolons must be made inert by POSIX single-quote escaping rather
-// than rejected — the value is written verbatim inside single quotes, so the
-// embedded `"; export EVIL=1; #` cannot start a new statement. This is the
-// robust replacement for the old reject-on-unsafe-chars approach, which also
-// blocked legitimate scoped npm paths.
 #[test]
 fn setup_shell_escapes_injection_payload_in_aegis_bin() {
     let temp = tempfile::TempDir::new().expect("temp dir");
@@ -227,17 +210,12 @@ fn setup_shell_escapes_injection_payload_in_aegis_bin() {
         rc.contains("export SHELL='/tmp/aegis\"; export EVIL=1; #'"),
         "payload must be single-quoted verbatim, got: {rc}"
     );
-    // The injected assignment must not appear as its own statement.
     assert!(
         !rc.contains("\nexport EVIL=1"),
         "injected statement must not escape the single-quoted value: {rc}"
     );
 }
 
-// The reported root cause: a scoped npm install path contains `@`, which the
-// old strict validator rejected with `real shell path contains unsafe
-// characters`. The scoped binary path must now be accepted and written
-// verbatim inside single quotes.
 #[test]
 fn setup_shell_accepts_scoped_npm_aegis_binary_path() {
     let temp = tempfile::TempDir::new().expect("temp dir");
@@ -271,9 +249,6 @@ fn setup_shell_accepts_scoped_npm_aegis_binary_path() {
     );
 }
 
-// When the aegis binary path is the invalid one, the error must name the aegis
-// binary path, not the real shell path — the old shared validator always said
-// "real shell path", which misdirected debugging of npm installs.
 #[test]
 fn setup_shell_reports_aegis_binary_path_when_aegis_bin_is_invalid() {
     let temp = tempfile::TempDir::new().expect("temp dir");
@@ -307,10 +282,6 @@ fn setup_shell_reports_aegis_binary_path_when_aegis_bin_is_invalid() {
     );
 }
 
-// The recursion invariant — the final real shell must never resolve to the
-// Aegis binary — must hold for EVERY source of the real shell, not only $SHELL.
-// AEGIS_REAL_SHELL "wins outright", so a value pointing at the Aegis binary
-// (directly or via symlink) must be rejected before any rc file is written.
 #[test]
 fn setup_shell_rejects_aegis_real_shell_pointing_at_aegis_binary() {
     let temp = tempfile::TempDir::new().expect("temp dir");
@@ -382,8 +353,6 @@ fn setup_shell_rejects_aegis_real_shell_symlink_to_aegis_binary() {
     );
 }
 
-// The explicit `--shell` flag is taken directly with no recursion check. It
-// must be subject to the same invariant as every other real-shell source.
 #[test]
 fn setup_shell_rejects_explicit_shell_pointing_at_aegis_binary() {
     let temp = tempfile::TempDir::new().expect("temp dir");

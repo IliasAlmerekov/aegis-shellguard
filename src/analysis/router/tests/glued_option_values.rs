@@ -1,5 +1,3 @@
-//! Glued short-flag executor values (GHSA-xj54).
-
 use super::*;
 
 #[test]
@@ -24,7 +22,6 @@ fn tar_glued_compress_program_after_other_flags_routes() {
 
 #[test]
 fn tar_glued_compress_program_bundled_with_another_short_flag_routes() {
-    // Assert presence because every split of `-cI` is tried and extra nonexistent splits resolve to nothing.
     let targets = route("tar -cI./pyx -f out.tar dir", &[]);
     assert!(
         targets.contains(&RoutedTarget::LauncherOperand {
@@ -78,9 +75,6 @@ fn man_glued_pager_naming_an_interpreter_degrades() {
     );
 }
 
-// ── A nested `NAME=value` executor value unwraps again when the value
-// itself still carries a `NAME=` prefix ────────────────────────────────────
-
 #[test]
 fn tar_checkpoint_action_exec_value_routes_its_unwrapped_path() {
     assert_eq!(
@@ -104,9 +98,6 @@ fn tar_checkpoint_action_exec_value_naming_an_interpreter_degrades() {
         vec![unresolved_dynamic()]
     );
 }
-
-// ── A glued value that is a regular file with no shebang gives no target,
-// same as the equivalent bare operand ──────────────────────────────────────
 
 #[tokio::test]
 async fn a_glued_value_naming_a_shebang_less_file_yields_no_target() {

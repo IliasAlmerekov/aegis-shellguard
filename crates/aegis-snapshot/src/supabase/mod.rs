@@ -1,5 +1,3 @@
-//! Supabase snapshot provider.
-
 use std::fs;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -107,7 +105,6 @@ struct SupabaseManifest {
     overall_status: SupabaseOverallStatus,
 }
 
-/// Snapshot plugin for Supabase project snapshots.
 pub struct SupabasePlugin {
     config: SupabaseSnapshotConfig,
     snapshots_dir: PathBuf,
@@ -118,7 +115,6 @@ pub struct SupabasePlugin {
 }
 
 impl SupabasePlugin {
-    /// Create a new Supabase snapshot plugin.
     pub fn new(config: SupabaseSnapshotConfig, snapshots_dir: PathBuf) -> Self {
         Self {
             config,
@@ -362,7 +358,6 @@ fn sha256_hex(path: &Path) -> Result<String> {
     let mut checksum = String::with_capacity(digest.len() * 2);
     for byte in digest {
         use std::fmt::Write as _;
-        // Writing to a String is infallible.
         let _ = write!(checksum, "{byte:02x}");
     }
     Ok(checksum)
@@ -378,8 +373,6 @@ fn sync_parent_directory(path: &Path) -> Result<()> {
 
     #[cfg(any(not(unix), target_os = "macos"))]
     {
-        // macOS does not support fsync on directory file descriptors and
-        // returns EINVAL. The manifest file itself is synced before rename.
         let _ = path;
         Ok(())
     }

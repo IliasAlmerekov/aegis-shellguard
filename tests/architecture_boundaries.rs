@@ -1,13 +1,3 @@
-//! Architecture boundary tests.
-//!
-//! These tests enforce the workspace crate dependency DAG (`CONVENTION.md`
-//! §3) and the public API surface. A PR that breaks one of these fails CI.
-//!
-//! Crate-to-crate edges are checked against each crate's `Cargo.toml`: a crate
-//! cannot `use` another crate that is missing from its manifest. Source-grep
-//! rules (tracing fields, engine purity, interceptor, UI, transport routing)
-//! live in `tests/architecture_source_rules.rs`.
-
 use std::collections::BTreeSet;
 use std::fs;
 
@@ -19,11 +9,6 @@ fn read_file(relative: &str) -> String {
         .unwrap_or_else(|err| panic!("failed to read {relative}: {err}"))
 }
 
-// ── Public API surface ───────────────────────────────────────────────────────
-
-/// `CONVENTION.md` §3: `src/lib.rs` exports a fixed set of modules. Adding or
-/// removing a top-level module is a public-API change and requires updating
-/// `CONVENTION.md` §3 and this test together.
 #[test]
 fn public_api_surface_is_stable() {
     let src = read_file("src/lib.rs");
@@ -63,11 +48,6 @@ fn public_api_surface_is_stable() {
          added modules: {added:?}\nremoved modules: {removed:?}"
     );
 }
-
-// ── Workspace crate dependency DAG ───────────────────────────────────────────
-//
-// `assert_no_dep` / `crate_deps_section` / `repo_root` live in `tests/support`
-// and are shared with `tests/aegis_language_boundary.rs`.
 
 #[test]
 fn aegis_parser_must_not_depend_on_aegis_audit() {
@@ -144,8 +124,6 @@ fn aegis_types_must_not_depend_on_aegis_snapshot() {
     assert_no_dep("aegis-types", "aegis-snapshot");
 }
 
-// ── Missing edges for parser (scanner and policy are downstream) ──────────────
-
 #[test]
 fn aegis_parser_must_not_depend_on_aegis_scanner() {
     assert_no_dep("aegis-parser", "aegis-scanner");
@@ -156,14 +134,10 @@ fn aegis_parser_must_not_depend_on_aegis_policy() {
     assert_no_dep("aegis-parser", "aegis-policy");
 }
 
-// ── Missing edges for scanner (policy is downstream) ─────────────────────────
-
 #[test]
 fn aegis_scanner_must_not_depend_on_aegis_policy() {
     assert_no_dep("aegis-scanner", "aegis-policy");
 }
-
-// ── Missing edges for types (all other crates are downstream) ────────────────
 
 #[test]
 fn aegis_types_must_not_depend_on_aegis_parser() {
@@ -179,8 +153,6 @@ fn aegis_types_must_not_depend_on_aegis_scanner() {
 fn aegis_types_must_not_depend_on_aegis_policy() {
     assert_no_dep("aegis-types", "aegis-policy");
 }
-
-// ── DAG boundaries for policy (config/explanation/tui/audit/snapshot are downstream) ──
 
 #[test]
 fn aegis_policy_must_not_depend_on_aegis_config() {
@@ -207,8 +179,6 @@ fn aegis_policy_must_not_depend_on_aegis_snapshot() {
     assert_no_dep("aegis-policy", "aegis-snapshot");
 }
 
-// ── DAG boundaries for config (explanation/tui/audit are downstream) ─────────
-
 #[test]
 fn aegis_config_must_not_depend_on_aegis_explanation() {
     assert_no_dep("aegis-config", "aegis-explanation");
@@ -234,8 +204,6 @@ fn aegis_config_must_not_depend_on_aegis_policy() {
     assert_no_dep("aegis-config", "aegis-policy");
 }
 
-// ── DAG boundaries for explanation (tui/audit are downstream) ────────────────
-
 #[test]
 fn aegis_explanation_must_not_depend_on_aegis_tui() {
     assert_no_dep("aegis-explanation", "aegis-tui");
@@ -245,8 +213,6 @@ fn aegis_explanation_must_not_depend_on_aegis_tui() {
 fn aegis_explanation_must_not_depend_on_aegis_audit() {
     assert_no_dep("aegis-explanation", "aegis-audit");
 }
-
-// ── DAG boundaries for snapshot (explanation/tui/audit/policy are downstream) ─
 
 #[test]
 fn aegis_snapshot_must_not_depend_on_aegis_explanation() {
@@ -267,8 +233,6 @@ fn aegis_snapshot_must_not_depend_on_aegis_audit() {
 fn aegis_snapshot_must_not_depend_on_aegis_policy() {
     assert_no_dep("aegis-snapshot", "aegis-policy");
 }
-
-// ── DAG boundaries for tui (audit is downstream) ─────────────────────────────
 
 #[test]
 fn aegis_tui_must_not_depend_on_aegis_audit() {

@@ -1,8 +1,3 @@
-//! `RuntimeContext::new` built from a config loaded through
-//! `AegisConfig::load_for` must attribute a scanner failure to the roots that
-//! config was actually resolved against, not the process's real `cwd`/`HOME`
-//! (issue #400).
-
 use std::fs;
 
 use tempfile::TempDir;

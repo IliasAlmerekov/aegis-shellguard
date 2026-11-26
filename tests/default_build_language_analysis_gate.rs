@@ -1,13 +1,3 @@
-//! Default-build contract tests for the opt-in `language-analysis` feature (ADR-024, ADR-054, #212).
-//!
-//! Pins that on the default build (without `--features language-analysis`):
-//! - an existing `.aegis.toml` carrying `[language_analysis]` parses and keeps
-//!   the project-config tightening rule;
-//! - audit entries omit `analysis` for resolved script targets while marking
-//!   `effect_opaque = true`;
-//! - audit entries record `analysis.status = "degraded"` for `DynamicSource`
-//!   targets and never emit `complete` or grammar `LANG-*` matches.
-
 #![cfg(not(feature = "language-analysis"))]
 
 mod support;

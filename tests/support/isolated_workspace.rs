@@ -1,11 +1,8 @@
-//! Run a test with its workspace as the child process's working directory.
-
 #[path = "isolated_test.rs"]
 mod isolated_test;
 
 use std::path::Path;
 
-/// Set up a temporary workspace and run the current test in a child there.
 pub fn run(setup: impl FnOnce(&Path), test: impl FnOnce(&Path)) {
     const CHILD: &str = "AEGIS_PROCESS_STATE_TEST_CHILD";
     if std::env::var_os(CHILD).is_some() {

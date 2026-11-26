@@ -22,8 +22,6 @@ fn fixture_checksum(index: usize) -> String {
 }
 
 fn tempdir(label: &str) -> PathBuf {
-    // The pid keeps concurrent `cargo test` runs on one host apart and the
-    // counter keeps tests in this binary apart, since many call `formula()`.
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!("aegis-{label}-{}-{id}", std::process::id()));
@@ -32,9 +30,6 @@ fn tempdir(label: &str) -> PathBuf {
     dir
 }
 
-/// Writes the release fixtures the updater downloads: four `.sha256`
-/// sidecars and `THIRD_PARTY_NOTICES.md`. `skip` leaves one file out and
-/// `override_sidecar` replaces one sidecar body.
 fn write_release_fixtures(dir: &Path, skip: Option<&str>, override_sidecar: Option<(&str, &str)>) {
     for (index, asset) in SIDECAR_ASSETS.iter().enumerate() {
         let name = format!("{asset}.sha256");
@@ -70,7 +65,6 @@ impl UpdaterRun {
     }
 }
 
-/// Runs the updater against `file://` fixtures, never the network.
 fn run_updater(
     label: &str,
     tag: &str,
@@ -107,8 +101,6 @@ fn formula() -> String {
 
 #[test]
 fn homebrew_updater_should_fail_without_an_output_path() {
-    // The in-repo formula is gone, so the updater has no default output.
-    // Run it from a temp dir so a regression cannot write into the repo.
     let dir = tempdir("formula-no-output");
     let release_dir = dir.join("release");
     std::fs::create_dir_all(&release_dir).expect("release fixture dir should be creatable");

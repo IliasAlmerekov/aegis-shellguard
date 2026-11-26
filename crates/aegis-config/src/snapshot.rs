@@ -1,5 +1,3 @@
-//! Snapshot provider configuration types.
-
 use serde::{Deserialize, Serialize};
 
 #[derive(

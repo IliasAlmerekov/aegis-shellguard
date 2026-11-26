@@ -1,6 +1,3 @@
-//! `snapshot_attempts` in the audit schema and the integrity chain
-//! (ADR-031 §8, §10, §11; #234).
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -15,7 +12,6 @@ use tempfile::TempDir;
 
 const LEGACY_LINE: &str = r#"{"timestamp":"2023-11-14T22:13:19Z","sequence":1,"command":"printf one","risk":"Safe","matched_patterns":[],"pattern_ids":[],"decision":"AutoApproved","snapshots":[],"sandbox_status":"not_configured"}"#;
 
-/// Exact line the base code wrote for `LEGACY_LINE` before `snapshot_attempts` existed.
 const LEGACY_WRITTEN: &str = r#"{"timestamp":"2023-11-14T22:13:19Z","sequence":1,"command":"printf one","risk":"Safe","matched_patterns":[],"pattern_ids":[],"decision":"AutoApproved","snapshots":[],"allowlist_matched":false,"allowlist_effective":false,"chain_alg":"sha256","entry_hash":"bc322500ad8eb9775e4bbfe9b7a53296bdbb2afad3f9c66ca451a657ebb2d34c","sandbox_status":"not_configured"}"#;
 
 fn chained_logger(dir: &TempDir) -> (AuditLogger, PathBuf) {
@@ -54,14 +50,12 @@ fn entry_with_attempts() -> AuditEntry {
     .with_snapshot_attempts(attempts())
 }
 
-/// Write one chained entry carrying attempts, return the logger and its file.
 fn written_with_attempts(dir: &TempDir) -> (AuditLogger, PathBuf) {
     let (logger, path) = chained_logger(dir);
     logger.append(entry_with_attempts()).unwrap();
     (logger, path)
 }
 
-/// Rewrite the single on-disk line after `edit` changed its `snapshot_attempts`.
 fn tamper_attempts(path: &Path, edit: impl FnOnce(&mut Vec<Value>)) {
     let mut line: Value = serde_json::from_str(fs::read_to_string(path).unwrap().trim()).unwrap();
     edit(line["snapshot_attempts"].as_array_mut().unwrap());

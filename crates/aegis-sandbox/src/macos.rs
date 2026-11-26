@@ -1,21 +1,9 @@
-//! macOS sandbox implementation: Seatbelt (`sandbox-exec`).
-
 use std::ffi::{OsStr, OsString};
 
 use crate::support::is_forced_sandbox_unavailable;
 use crate::{PreparedSandboxCommand, SandboxConfig, SandboxError};
 
-// ── Public-to-crate entry points ──────────────────────────────────────────────
-
 pub(crate) fn sandbox_available_for(config: &SandboxConfig) -> bool {
-    // This is the single canonical availability check — it must run every
-    // validation that prepare_for_exec() would run, so the audit field and
-    // the actual execution path always agree. Specifically:
-    //   1. is_sandbox_exec_available(): binary exists + minimal probe works
-    //   2. build_seatbelt_profile(config): paths exist, are valid UTF-8
-    //   3. exec_true_in_profile(&profile): the actual per-command profile
-    //      is accepted by Seatbelt (not just a generic minimal profile)
-    // prepare_for_exec() trusts this result and does not re-probe.
     !is_forced_sandbox_unavailable()
         && is_sandbox_exec_available()
         && build_seatbelt_profile(config)
@@ -56,8 +44,6 @@ fn prepare(
             "sandbox-exec rejected the configured profile".to_string(),
         ));
     }
-    // sandbox-exec execs the program itself and exits 71 when it is missing,
-    // which hides the cause; report a missing explicit path as an I/O error.
     let path = std::path::Path::new(program);
     if path.components().count() > 1 && !path.exists() {
         return Err(SandboxError::Io(std::io::Error::new(
@@ -70,24 +56,11 @@ fn prepare(
     Ok(PreparedSandboxCommand::active(cmd))
 }
 
-// ── macOS Seatbelt profile builder ───────────────────────────────────────────
-
-/// Generate a Seatbelt SBPL profile string from `config`.
-///
-/// Canonicalizes each path in `allow_write` to prevent relative-path or
-/// symlink confusion (mirrors the bwrap builder on Linux). A root that does
-/// not exist or escapes the trusted roots is left out, not an error.
-///
-/// The profile always denies by default, allows file reads (needed for system
-/// libraries), process execution, sysctl reads, and writes to `/dev/null`.
-/// Network access is allowed or denied based on `config.allow_network`. Each
-/// path in `config.allow_write` gets a `(allow file-write* (subpath "…"))` rule.
 pub(crate) fn build_seatbelt_profile(config: &SandboxConfig) -> Result<String, SandboxError> {
     let mut profile = String::from("(version 1)\n");
     profile.push_str("(deny default)\n");
     profile.push_str("(allow file-read*)\n");
     profile.push_str("(allow process*)\n");
-    // zsh exits silently without sysctl reads; commands redirect to /dev/null.
     profile.push_str("(allow sysctl-read)\n");
     profile.push_str("(allow file-write-data (literal \"/dev/null\"))\n");
     if config.allow_network {
@@ -102,12 +75,6 @@ pub(crate) fn build_seatbelt_profile(config: &SandboxConfig) -> Result<String, S
     Ok(profile)
 }
 
-/// Escape a path for safe embedding in an SBPL string literal.
-///
-/// Returns a typed error when the path contains non-UTF-8 bytes — `to_string_lossy`
-/// would silently substitute `\u{FFFD}`, potentially allowing a different path than
-/// the one in `allow_write`. Replaces `\` with `\\` and `"` with `\"` in that order
-/// to prevent SBPL string literal injection.
 fn escape_sbpl_path(path: &std::path::Path) -> Result<String, SandboxError> {
     let s = path.to_str().ok_or_else(|| {
         SandboxError::Execution(format!(
@@ -118,13 +85,6 @@ fn escape_sbpl_path(path: &std::path::Path) -> Result<String, SandboxError> {
     Ok(s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-/// Return `true` if `/usr/bin/sandbox-exec` is present and the Seatbelt
-/// machinery actually works on this system (probed via a dry-run).
-///
-/// The probe runs `sandbox-exec -p <minimal profile> /usr/bin/true`. It
-/// matches the pattern of the Linux `probe_sandbox_works` to catch runtime
-/// issues (e.g. SIP-stripped environments where the binary exists but
-/// the kernel policy engine is absent).
 pub(crate) fn is_sandbox_exec_available() -> bool {
     if !std::path::Path::new("/usr/bin/sandbox-exec").exists() {
         return false;
@@ -132,11 +92,6 @@ pub(crate) fn is_sandbox_exec_available() -> bool {
     probe_seatbelt_works()
 }
 
-/// Run `/usr/bin/true` inside a given SBPL profile to check whether the profile
-/// is accepted by the kernel's Seatbelt policy engine.
-///
-/// Used both as an initial availability probe (with a minimal profile) and to
-/// validate the actual per-command profile before committing to exec.
 fn exec_true_in_profile(profile: &str) -> bool {
     std::process::Command::new("/usr/bin/sandbox-exec")
         .args(["-p", profile, "/usr/bin/true"])
@@ -147,36 +102,13 @@ fn exec_true_in_profile(profile: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Minimal SBPL profile shared by [`probe_seatbelt_works`] and
-/// [`seatbelt_unavailable_is_nested_refusal`] — both must run the exact same
-/// profile, since the latter only re-probes to capture stderr from the
-/// former's failure. A single shared constant makes that identity structural
-/// rather than two literals that happen to agree.
 const MINIMAL_SEATBELT_PROBE_PROFILE: &str =
     "(version 1)\n(deny default)\n(allow process*)\n(allow file-read*)\n";
 
-/// Run a minimal sandbox-exec probe to verify the Seatbelt policy engine
-/// is functional on this system.
 fn probe_seatbelt_works() -> bool {
     exec_true_in_profile(MINIMAL_SEATBELT_PROBE_PROFILE)
 }
 
-/// Return `true` if the reason `sandbox-exec` is unavailable is that this
-/// process is already nested under an active outer Seatbelt profile, rather
-/// than a generic missing/broken installation.
-///
-/// Only called once [`is_sandbox_exec_available`] has already established the
-/// binary exists and the minimal probe failed — this re-runs that same probe
-/// capturing stderr, since a nested refusal has a distinct kernel-reported
-/// signature (`sandbox_apply: Operation not permitted`, measured on macOS
-/// 26.5.1 arm64 — see ADR-029 §8/amendment). It must use the same minimal
-/// profile as [`probe_seatbelt_works`]: the signature was measured only on
-/// profiles with no `file-write*` clause (#256's bare-Terminal control passed
-/// even where the nested outcome fired), so re-probing with the actual
-/// per-command profile would misattribute an ordinary profile rejection to
-/// nesting. A capture failure or unrecognized stderr conservatively reports
-/// `false` (the generic message), since this only ever selects which
-/// diagnostic text to show, never whether the sandbox blocks.
 fn seatbelt_unavailable_is_nested_refusal() -> bool {
     let Ok(output) = std::process::Command::new("/usr/bin/sandbox-exec")
         .args(["-p", MINIMAL_SEATBELT_PROBE_PROFILE, "/usr/bin/true"])
@@ -190,14 +122,9 @@ fn seatbelt_unavailable_is_nested_refusal() -> bool {
     stderr_indicates_nested_refusal(&String::from_utf8_lossy(&output.stderr))
 }
 
-/// Pure predicate over `sandbox-exec` stderr text, split out from
-/// [`seatbelt_unavailable_is_nested_refusal`] so the recognition logic is
-/// testable without a live Seatbelt nesting scenario.
 fn stderr_indicates_nested_refusal(stderr: &str) -> bool {
     stderr.contains("sandbox_apply") && stderr.contains("Operation not permitted")
 }
-
-// ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -206,8 +133,6 @@ mod tests {
     use crate::support::set_force_sandbox_unavailable;
     use crate::support::test_helpers::ForceUnavailableGuard;
     use crate::{SandboxConfig, SandboxError, SandboxStatus, sandbox_available_for};
-
-    // ── macOS: Seatbelt profile generation ───────────────────────────────────
 
     #[cfg(target_os = "macos")]
     #[test]
@@ -243,7 +168,6 @@ mod tests {
         };
         let profile =
             super::build_seatbelt_profile(&cfg).expect("/tmp must exist and be canonicalizable");
-        // On macOS /tmp is a symlink to /private/tmp — use the canonical form.
         let canonical_tmp = PathBuf::from("/tmp")
             .canonicalize()
             .expect("/tmp must exist");
@@ -317,32 +241,18 @@ mod tests {
         );
     }
 
-    // ── macOS: sandbox_available_for with forced-unavailable ─────────────────
-
-    /// `sandbox_available_for` on macOS must delegate to `is_sandbox_exec_available()`
-    /// and respect the forced-unavailable flag.  Before Phase 6.2 the function
-    /// hard-returns `false` without consulting the force flag OR the binary probe,
-    /// so the forced-unavailable result is coincidentally correct but the positive
-    /// case (when sandbox-exec IS present and force IS false) would be wrong.
-    ///
-    /// This test drives that: it calls `is_sandbox_exec_available()` directly,
-    /// which does not exist yet → compile error on macOS.
     #[cfg(target_os = "macos")]
     #[test]
     fn test_sandbox_available_for_returns_false_when_forced_unavailable_macos() {
         set_force_sandbox_unavailable(true);
         let _guard = ForceUnavailableGuard;
 
-        // Calling is_sandbox_exec_available() will fail to compile until
-        // Phase 6.2 adds the function.
         let _exec_present = super::is_sandbox_exec_available();
         assert!(
             !sandbox_available_for(&SandboxConfig::default()),
             "sandbox_available_for must return false when FORCE_SANDBOX_UNAVAILABLE is set"
         );
     }
-
-    // ── macOS: prepare_for_exec with forced-unavailable ───────────────────────
 
     #[cfg(target_os = "macos")]
     #[test]
@@ -362,11 +272,6 @@ mod tests {
             "prepare_for_exec must return Err(SandboxError::Required) when forced-unavailable, got: {result:?}"
         );
     }
-
-    // ── macOS: SBPL path escaping ────────────────────────────────────────────
-    // Test escape_sbpl_path directly — build_seatbelt_profile canonicalizes
-    // paths, so paths with special chars that don't exist on disk would fail
-    // before reaching the escaping logic.
 
     #[cfg(target_os = "macos")]
     #[test]
@@ -393,20 +298,14 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn escape_sbpl_path_escapes_backslash_before_quote_to_avoid_double_escaping() {
-        // Input: one backslash + one quote → correct output: \\ (escaped \) + \" (escaped ") = 3 chars.
-        // Wrong order (escape " first) would produce \\\\" (4 backslashes + quote).
         let path = std::path::Path::new("/tmp/fo\\\"o");
         let escaped = super::escape_sbpl_path(path).expect("ASCII path must not fail");
         assert_eq!(escaped, r#"/tmp/fo\\\"o"#);
     }
 
-    // ── macOS: static profile drift detection ────────────────────────────────
-
     #[cfg(target_os = "macos")]
     #[test]
     fn static_default_profile_matches_dynamic_output() {
-        // `include_str!` observes the working-tree EOL convention; profiles are
-        // text files, so their semantic drift check must be EOL-independent.
         let static_profile = include_str!("../profiles/default.sbpl").replace("\r\n", "\n");
         let dynamic = super::build_seatbelt_profile(&SandboxConfig::default())
             .expect("default config must build cleanly");
@@ -432,10 +331,6 @@ mod tests {
             "profiles/network.sbpl has drifted from build_seatbelt_profile output"
         );
     }
-
-    // ── macOS: runtime sandbox execution tests ───────────────────────────────
-    // These tests require a real sandbox-exec binary and kernel Seatbelt support.
-    // They skip gracefully when the sandbox is unavailable (e.g. stripped macOS).
 
     #[cfg(target_os = "macos")]
     #[test]
@@ -473,7 +368,6 @@ mod tests {
             ..Default::default()
         };
         if super::sandbox_available_for(&cfg) {
-            // ping needs a network socket; the blocked sandbox makes it exit non-zero.
             let args = vec![
                 OsString::from("-c"),
                 OsString::from("ping -c 1 -t 1 127.0.0.1 2>/dev/null"),
@@ -487,10 +381,6 @@ mod tests {
             );
         }
     }
-
-    // ── macOS: prepare_for_exec production-path tests ────────────────────────
-    // These cover the actual shell flow path (prepare_for_exec → Command → exec).
-    // In tests we spawn instead of exec() so the test process is not replaced.
 
     #[cfg(target_os = "macos")]
     #[test]
@@ -554,7 +444,6 @@ mod tests {
         let mut cmd =
             super::prepare_for_exec(&SandboxConfig::default(), OsStr::new("/usr/bin/true"), &[])
                 .expect("prepare_for_exec must succeed");
-        // Use spawn+wait instead of exec() so the test process is not replaced.
         let status = cmd.command.status().expect("spawned command must run");
         assert!(status.success(), "sandboxed /usr/bin/true must exit 0");
     }
@@ -563,8 +452,6 @@ mod tests {
     #[test]
     fn prepare_for_exec_runs_zsh_with_a_dev_null_redirect() {
         use std::ffi::{OsStr, OsString};
-        // zsh exits 1 silently when sysctl reads are denied, and every
-        // `>/dev/null` fails when /dev/null is not writable.
         if super::sandbox_available_for(&SandboxConfig::default()) {
             let args = vec![OsString::from("-c"), OsString::from("print ok >/dev/null")];
             let mut cmd =
@@ -585,7 +472,6 @@ mod tests {
         if !super::sandbox_available_for(&SandboxConfig::default()) {
             return;
         }
-        // Empty allow_write: (deny default) blocks all writes.
         let args = vec![
             OsString::from("-c"),
             OsString::from("touch /tmp/aegis_pfe_blocked.tmp"),
@@ -616,8 +502,6 @@ mod tests {
         );
     }
 
-    // ── macOS: nested-refusal cause recognition ───────────────────────────────
-
     #[test]
     fn stderr_indicates_nested_refusal_matches_the_measured_kernel_message() {
         assert!(super::stderr_indicates_nested_refusal(
@@ -631,7 +515,6 @@ mod tests {
             "sandbox-exec: unknown profile syntax\n"
         ));
         assert!(!super::stderr_indicates_nested_refusal(""));
-        // Either phrase alone is not the measured signature — both must be present.
         assert!(!super::stderr_indicates_nested_refusal(
             "Operation not permitted"
         ));
@@ -652,8 +535,6 @@ mod tests {
         let program = OsStr::new("echo");
         let args: Vec<OsString> = vec![OsString::from("hello")];
 
-        // A test-forced unavailability is not a real nested-Seatbelt refusal,
-        // so it must still surface as the generic `Required` cause.
         assert!(
             matches!(
                 super::prepare_for_exec(&cfg, program, &args),

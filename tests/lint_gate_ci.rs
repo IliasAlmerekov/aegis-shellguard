@@ -1,9 +1,3 @@
-//! `scripts/lint.sh` is the only place the rustfmt and clippy invocations are
-//! written (#276). CI, the pre-push hook and `just lint` call the script, and
-//! the contributor docs point at it. Before this, the three callers carried
-//! their own copies of the command, the copies drifted apart, and CI stopped
-//! linting tests without anyone noticing.
-
 mod support;
 
 use std::fs;
@@ -12,14 +6,12 @@ use support::repo_path;
 
 const LINT_SCRIPT: &str = "scripts/lint.sh";
 
-/// Files that run the lint checks. Each one must go through the script.
 const CALLERS: &[&str] = &[
     ".github/actions/quality-gate/action.yml",
     ".githooks/pre-push",
     "justfile",
 ];
 
-/// Files that tell a person or an agent how to run the lint checks.
 const DOCS: &[&str] = &[
     "CONTRIBUTING.md",
     "CONVENTION.md",

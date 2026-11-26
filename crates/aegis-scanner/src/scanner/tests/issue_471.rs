@@ -2,11 +2,6 @@ use super::*;
 use crate::scanner::{AmbientEnv, DangerStageTarget, GitStageReport};
 use aegis_parser::GitTargetArgs;
 
-// #471: the git Snapshot must cover the working tree git acts on. The scanner
-// reports, for each Danger git stage, the raw `-C`/`--work-tree`/`--git-dir`
-// values (or why they cannot be trusted) so planning can resolve a Git target.
-// `git filter-branch` (GIT-004) is the built-in Danger git rule.
-
 fn report(cmd: &str) -> GitStageReport {
     let scanner = scanner();
     let assessment = scanner.assess(cmd);
@@ -119,8 +114,6 @@ fn quoted_dynamic_path_is_reported_as_written() {
 fn environment_redirect_in_the_prefix_is_flagged_even_without_options() {
     let report = report("GIT_DIR=elsewhere git filter-branch");
 
-    // The normalized segment target drops the assignment and reads as a plain
-    // stage, so the process cwd is also reported: an accepted extra Snapshot.
     assert_eq!(report.redirected.len(), 1);
     assert_eq!(
         report.redirected[0].target,
@@ -205,8 +198,6 @@ fn environment_redirect_deep_in_a_launcher_prefix_is_flagged() {
 
 #[test]
 fn danger_id_in_a_redirected_stage_does_not_hide_the_same_id_in_a_plain_stage() {
-    // `rm -rf` inside the `git log` argument matches FS-001 in the redirected
-    // stage; the real `rm -rf actual` still needs the process cwd Snapshot.
     let report = report("git -C other log --format='rm -rf decoy'; rm -rf actual");
 
     assert!(report.needs_process_cwd);
@@ -239,9 +230,6 @@ fn ambient_git_dir_redirects_a_plain_danger_stage() {
 
 #[test]
 fn process_environment_report_flags_a_plain_danger_stage_for_the_process_cwd() {
-    // The environment-reading entry point must run the real analysis, not
-    // return an empty report. A plain Danger stage needs the cwd Snapshot
-    // whether or not the test process has GIT_DIR/GIT_WORK_TREE set.
     let scanner = scanner();
     let cmd = "git filter-branch --index-filter true";
     let assessment = scanner.assess(cmd);

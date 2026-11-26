@@ -1,26 +1,16 @@
-// Shared corpus-test harness for language adapters (ADR-022 §11).
-// Lives in `tests/common/` so Cargo does not compile it as a standalone test target.
-
 use aegis_language::SourceLanguage;
 use aegis_language::operation::{
     AdapterResult, OperandCertainty, OperationKind, OperationModifiers,
 };
 
-/// One expected [`aegis_language::operation::DetectedOperation`]; spans are pinned by unit tests.
 #[derive(Debug, Clone, Copy)]
 pub struct ExpectedOp {
     pub kind: OperationKind,
     pub modifiers: OperationModifiers,
     pub certainty: OperandCertainty,
-    /// For a `CodeExecution` sink: the nested payload's language and recovered
-    /// literal source. `None` for non-execution ops and for dynamic payloads.
     pub payload: Option<(SourceLanguage, &'static str)>,
 }
 
-/// Assert `analyze(source)` parses cleanly and yields exactly `expected`, in
-/// source order, matching each operation's kind, modifiers, certainty, and (for
-/// execution sinks) the nested payload `(language, source)`. The caller passes
-/// its adapter's `analyze` seam so this helper stays adapter-agnostic.
 pub fn assert_ops<F: Fn(&str) -> AdapterResult>(analyze: F, source: &str, expected: &[ExpectedOp]) {
     let result = analyze(source);
     assert_eq!(
@@ -61,7 +51,6 @@ pub fn assert_ops<F: Fn(&str) -> AdapterResult>(analyze: F, source: &str, expect
     }
 }
 
-/// Assert a corpus source parses cleanly and yields no operations.
 pub fn assert_clean_no_ops<F: Fn(&str) -> AdapterResult>(analyze: F, source: &str) {
     let result = analyze(source);
     assert_eq!(result.parse_errors, 0, "expected clean parse:\n{source}");
@@ -72,7 +61,6 @@ pub fn assert_clean_no_ops<F: Fn(&str) -> AdapterResult>(analyze: F, source: &st
     );
 }
 
-/// Assert a corpus source is reported as malformed (nonzero parse errors).
 pub fn assert_malformed<F: Fn(&str) -> AdapterResult>(analyze: F, source: &str) {
     let result = analyze(source);
     assert!(
@@ -81,7 +69,6 @@ pub fn assert_malformed<F: Fn(&str) -> AdapterResult>(analyze: F, source: &str) 
     );
 }
 
-/// Build a `CodeExecution` expectation carrying a Bash literal payload.
 pub fn bash_exec(payload: &'static str) -> ExpectedOp {
     ExpectedOp {
         kind: OperationKind::CodeExecution,

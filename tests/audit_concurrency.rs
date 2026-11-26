@@ -92,9 +92,6 @@ fn assert_audit_integrity_verified(home: &Path, workspace: &Path) {
     );
 }
 
-/// Marks the writer thread finished when dropped, even if it panics, so a
-/// polling reader stops instead of spinning forever. A panic also sets
-/// `failed` so the reader does not wait for data that will never arrive.
 struct WriterDone {
     done: Arc<AtomicBool>,
     failed: Arc<AtomicBool>,
@@ -151,8 +148,6 @@ fn concurrent_writers_do_not_corrupt_audit_log() {
         .collect::<BTreeSet<_>>();
     assert_eq!(commands, expected);
 
-    // The flock-serialized appends must leave the SHA-256 hash chain intact:
-    // `aegis audit --verify-integrity` exits 0 only on `Verified`.
     assert_audit_integrity_verified(home.path(), workspace.path());
 }
 
@@ -290,7 +285,6 @@ fn concurrent_multi_process_bursts_do_not_lose_or_duplicate_entries() {
         .collect::<BTreeSet<_>>();
     assert_eq!(commands, expected);
 
-    // Parallel Aegis *processes* must not break the hash chain (PRD §5.6 done-when).
     assert_audit_integrity_verified(home.path(), workspace.path());
 }
 
@@ -370,9 +364,6 @@ fn concurrent_reader_during_compressed_rotation_never_observes_data_loss() {
     let reader_failed_signal = Arc::clone(&writer_failed);
     let reader = thread::spawn(move || {
         let mut saw_nonempty_read = false;
-        // Once the writer is done, entries that exist are already on disk, so
-        // a bounded number of further reads is enough. Without the bound a
-        // writer that wrote nothing would leave this loop spinning forever.
         let mut reads_after_done = 0usize;
         while !reader_done_signal.load(Ordering::Acquire)
             || (!saw_nonempty_read

@@ -5,7 +5,6 @@ use super::*;
 use crate::error::AuditError;
 
 impl AuditLogger {
-    /// Verify the integrity of the entire audit log.
     #[must_use = "integrity check result must be inspected"]
     pub fn verify_integrity(&self) -> Result<AuditIntegrityReport> {
         let entries = self.read_all()?;
@@ -48,19 +47,6 @@ impl AuditLogger {
     }
 }
 
-/// Fields covered by the audit integrity chain.
-///
-/// NOTE — `sandbox_status` (and its legacy `sandbox_active` mirror) are
-/// deliberately **not** part of this payload. The hash format predates the
-/// sandbox fields, and existing logs were chained without them: adding the
-/// field here would recompute every legacy entry's hash with a defaulted
-/// `NotConfigured`, breaking verification of all logs written before this
-/// change. The consequence is that the recorded sandbox status — including a
-/// bypass (`Unavailable`) — is not covered by the chain on its own. Closing that
-/// gap requires versioning `chain_alg` so new
-/// entries opt into a payload that includes `sandbox_status` while old entries
-/// keep verifying under the original layout. Tracked as a known limitation in
-/// `docs/threat-model.md`.
 #[derive(Serialize)]
 pub(super) struct AuditIntegrityPayload<'a> {
     pub(super) timestamp: AuditTimestamp,
@@ -85,15 +71,6 @@ pub(super) struct AuditIntegrityPayload<'a> {
     pub(super) cwd: Option<&'a str>,
     pub(super) id: Option<&'a str>,
     pub(super) transport: Option<&'a str>,
-    // ADR-022 §10 Audit v2 fields. `skip_serializing_if = "Option::is_none"`
-    // means a legacy v1 entry (basis/analysis `None`) serializes the payload
-    // byte-for-byte identical to the pre-v2 form, so its hash is unchanged and
-    // mixed v1/v2 logs verify. A v2 entry includes them, so tampering basis or
-    // analysis breaks the chain. Typed Match evidence and detection IDs are
-    // covered transitively via `matched_patterns` above. `snapshot_attempts`
-    // follows the same rule (ADR-031 §11): no historical line carries it, so old
-    // chains keep verifying, and on a new line its elements and their order are
-    // covered.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) basis: Option<&'a aegis_types::AssessmentBasis>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -146,7 +123,6 @@ fn hex_encode(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
         use std::fmt::Write as _;
-        // Writing to a String is infallible.
         let _ = write!(&mut out, "{byte:02x}");
     }
     out

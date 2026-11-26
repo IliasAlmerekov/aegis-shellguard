@@ -1,21 +1,3 @@
-//! Shared language-aware operation classifier (ADR-022 §3, plan Iteration 5).
-//!
-//! This is the single place that maps a [`DetectedOperation`] — emitted by any
-//! language adapter — into the existing Aegis `Category` / `RiskLevel` /
-//! `Match` vocabulary. No adapter assigns a final `RiskLevel` directly or keeps
-//! a private copy of this semantics (ADR-022 §3); every adapter routes through
-//! [`classify`].
-//!
-//! Invariants pinned by `classifier_tests`:
-//! - The risk mapping is **certainty-independent**. A `Dynamic` operand never
-//!   lowers risk below a `Known` one (ADR-022 §3/§7); certainty governs
-//!   recursive enqueueing and degradation, which are the queue's concern.
-//! - [`classify`] never returns [`RiskLevel::Block`]. Language-aware Matches are
-//!   non-`Block` by ADR-022 §5; `Block` is reserved for intrinsic shell-level
-//!   denials and remains unbypassable.
-//! - [`OperationKind`] is matched exhaustively so adding a variant forces a
-//!   classification here rather than silently falling through.
-
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -24,35 +6,15 @@ use crate::pattern::{Pattern, PatternSource};
 use crate::risk::RiskLevel;
 use crate::{Category, DetectionSource, HighlightRange, MatchResult};
 
-/// The shared classification of a [`DetectedOperation`] into the existing
-/// Aegis vocabulary (ADR-022 §3).
-///
-/// `rule_id` is a stable detection rule identifier (ADR-022 §10) in the
-/// `LANG-*` namespace, distinct from the shell scanner's `FS-001`-style ids.
-/// `description` and `safe_alt` are built-in static strings: language-aware
-/// rules are always built in (ADR-022 §4 — project config cannot define custom
-/// Tree-sitter queries), so they never carry runtime strings.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Classification {
-    /// The semantic category the detected operation maps to.
     pub category: Category,
-    /// The risk level the detected operation maps to.
     pub risk: RiskLevel,
-    /// Stable detection rule id (`LANG-*`).
     pub rule_id: &'static str,
-    /// Human-readable description of what was detected.
     pub description: &'static str,
-    /// A safer alternative to suggest, if any.
     pub safe_alt: Option<&'static str>,
 }
 
-/// Classify a [`DetectedOperation`] into the shared Aegis vocabulary.
-///
-/// The risk mapping is **certainty-independent**: a `Dynamic` operand never
-/// lowers risk below a `Known` one (ADR-022 §3/§7). Certainty governs whether a
-/// recursive target is enqueued and whether degradation is recorded — that is
-/// the queue's job, not this function's. This function never returns
-/// [`RiskLevel::Block`]; language-aware Matches are non-`Block` (ADR-022 §5).
 #[must_use]
 pub fn classify(op: &DetectedOperation) -> Classification {
     use crate::analysis::OperationKind;
@@ -168,15 +130,6 @@ pub fn classify(op: &DetectedOperation) -> Classification {
     }
 }
 
-/// Build a [`MatchResult`] carrying [`MatchEvidence::LanguageRule`] for a
-/// detected operation and its metadata-only provenance.
-///
-/// The resulting [`Pattern`] is always built in ([`PatternSource::Builtin`])
-/// with the stable `LANG-*` rule id, the classified category and risk, and an
-/// empty pattern string (language rules have no regex). The evidence carries
-/// the detected operation and provenance. Language-aware source bytes are
-/// never accepted by this public constructor; the stable label prevents them
-/// from entering a public [`MatchResult`].
 #[must_use]
 pub fn language_match(
     op: &DetectedOperation,

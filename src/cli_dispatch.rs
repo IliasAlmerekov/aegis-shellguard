@@ -9,23 +9,6 @@ use crate::shell_compat::ShellLaunchOptions;
 use crate::shell_wrapper::run_shell_wrapper;
 use crate::{Cli, Commands};
 
-/// Run the undocumented internal language-worker mode (ADR-022 §2).
-///
-/// The process delegates immediately to [`aegis_language::worker::run`] over
-/// stdin/stdout: it reads length-bounded request frames, parses the supplied
-/// source bytes with the pinned Tree-sitter grammars, and writes one response
-/// frame per request. There is no Tokio runtime, no filesystem access, no
-/// subprocess, and no shell handling here — the worker is a minimal,
-/// synchronous, parse-only process. Business logic stays in `aegis-language`;
-/// this function only wires stdio and maps the worker's stop reason to an exit
-/// code.
-///
-/// A clean session end ([`aegis_language::RunOutcome::EndOfInput`] or
-/// [`aegis_language::RunOutcome::MaxRequestsReached`]) exits 0. Any worker
-/// failure (malformed frame, truncated trailing frame, read/write error) exits
-/// non-zero so the parent client can detect abnormal termination; the parent
-/// also detects this via EOF and timeout, so the exit code is a hint, not the
-/// primary signal.
 #[cfg(feature = "language-analysis")]
 pub(crate) fn run_internal_language_worker() -> i32 {
     let stdin = std::io::stdin();

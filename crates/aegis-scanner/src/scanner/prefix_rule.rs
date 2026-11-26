@@ -7,19 +7,11 @@ use aegis_parser::EndOfOptions;
 use aegis_types::{DetectionSource, MatchEvidence, Pattern};
 
 impl PrefixRule {
-    /// Check whether `tokens` matches this rule's prefix pattern.
-    /// Delegates to [`aegis_parser::matches_prefix`] (`Single`/`Alts`/`Any`/`AnyStar`);
-    /// extra trailing tokens are allowed and empty patterns never match.
-    ///
-    /// The rule's negative condition ([`PrefixRule::suppressed_by`]) is checked
-    /// first: a rule listing suppressing tokens never fires when any of them is
-    /// present, at any position. A rule listing none is unaffected.
     #[cfg(test)]
     pub fn matches_tokens(&self, tokens: &[&str]) -> bool {
         self.matches_tokens_with(tokens, EndOfOptions::Ignore)
     }
 
-    /// Match `tokens` against this rule; `Honor` only for quote-preserving tokens (#484).
     pub(crate) fn matches_tokens_with(&self, tokens: &[&str], mode: EndOfOptions) -> bool {
         if aegis_parser::contains_any_token(tokens, self.suppressed_by) {
             return false;
@@ -53,10 +45,6 @@ impl PrefixRule {
         aegis_parser::matches_prefix_with(&self.pattern, tokens, mode)
     }
 
-    /// Produce a [`MatchResult`] for this rule when it matched `tokens`.
-    ///
-    /// `matched_text` joins the consumed tokens (up to the pattern length, ignoring
-    /// wildcards for span purposes).
     pub fn to_match_result(&self, tokens: &[&str]) -> MatchResult {
         let consumed = tokens.join(" ");
         MatchResult {
@@ -84,10 +72,6 @@ impl PrefixRule {
         }
     }
 
-    /// Validate that [`match_examples`] all match and [`not_match_examples`] all do not.
-    ///
-    /// Called at startup in debug builds and tests. A rule that fails its own
-    /// examples is treated as a bug and must be fixed before the binary ships.
     #[cfg(any(debug_assertions, test))]
     pub(crate) fn validate_examples(&self) -> Result<(), String> {
         for example in self.match_examples {
@@ -133,9 +117,6 @@ fn wipefs_all_flag_present(tokens: &[&str]) -> bool {
     })
 }
 
-/// Returns `true` when `tokens` is an `rm` invocation with a recursive flag
-/// anywhere before a bare `--` (GHSA-7gcj-4f7x-7fxj / #415). Replaces the
-/// generic prefix matcher entirely — that would ignore `--` and match `rm -- -r`.
 fn rm_recursive_flag_present(tokens: &[&str]) -> bool {
     if !tokens
         .first()
@@ -151,17 +132,10 @@ fn rm_recursive_flag_present(tokens: &[&str]) -> bool {
         .any(|token| is_rm_recursive_flag(token))
 }
 
-/// Whether `tokens` carries an operand that names the root directory — a
-/// non-flag token before `--`, or any token after one. A root operand starts
-/// with `/`, so it never starts with `-`, and a plain scan already respects
-/// that split.
 fn rm_root_operand_present(tokens: &[&str]) -> bool {
     tokens.iter().skip(1).any(|&token| is_root_path(token))
 }
 
-/// Whether `path` resolves to `/` lexically: an absolute path whose every
-/// component is empty, `.`, or `..` (`/`, `//`, `/.`, `/..`, `//./`). The
-/// parent of `/` is `/`, so `..` cannot climb out of it.
 fn is_root_path(path: &str) -> bool {
     path.starts_with('/')
         && path
@@ -169,8 +143,6 @@ fn is_root_path(path: &str) -> bool {
             .all(|component| matches!(component, "" | "." | ".."))
 }
 
-/// Whether `token` is `rm`'s recursive flag: a short-option bundle
-/// containing `r`/`R`, or an unambiguous prefix of `--recursive`.
 fn is_rm_recursive_flag(token: &str) -> bool {
     if let Some(long) = token.strip_prefix("--") {
         return !long.is_empty() && "recursive".starts_with(long);
@@ -181,18 +153,6 @@ fn is_rm_recursive_flag(token: &str) -> bool {
         .is_some_and(|short_flags| short_flags.contains('r') || short_flags.contains('R'))
 }
 
-/// Whether the arguments after `git push` delete refs on the remote (#431):
-/// `--delete`/`-d`, `--prune`, `--mirror`, or a refspec with an empty source
-/// such as `:old-branch`.
-///
-/// Git accepts unambiguous prefixes of long options, so `--del` is `--delete`.
-/// A lone `:` is the "matching branches" refspec and deletes nothing. A dry
-/// run (`--dry-run`/`-n`, unless a later `--no-dry-run` undoes it) deletes
-/// nothing either, and the value of an option such as `-o <value>` is data.
-///
-/// Recognition leans toward the warning: a spelling that suppresses the rule
-/// (a dry-run flag, an option whose value is skipped) must be exact, while a
-/// spelling that triggers it may be any prefix git accepts.
 fn git_push_deletes_remote_refs(tokens: &[&str]) -> bool {
     let mut deletes = false;
     let mut dry_run = false;
@@ -213,8 +173,6 @@ fn git_push_deletes_remote_refs(tokens: &[&str]) -> bool {
                 deletes = true;
             }
         } else if let Some(short_flags) = token.strip_prefix('-') {
-            // `-o` takes the rest of the bundle as its value, or the next
-            // token when nothing follows it in the bundle.
             let (flags, push_option) = match short_flags.split_once('o') {
                 Some((flags, value)) => (flags, Some(value)),
                 None => (short_flags, None),
@@ -233,8 +191,6 @@ fn git_push_deletes_remote_refs(tokens: &[&str]) -> bool {
     deletes && !dry_run
 }
 
-/// `git push` long options whose value may be the next token
-/// (`git push -h`, git 2.43).
 const GIT_PUSH_OPTIONS_WITH_VALUE: &[&str] = &[
     "exec",
     "push-option",
@@ -243,16 +199,10 @@ const GIT_PUSH_OPTIONS_WITH_VALUE: &[&str] = &[
     "repo",
 ];
 
-/// Whether `given` names the `git push` long option `full`, allowing any
-/// prefix at least `min_len` long (the shortest one git does not reject as
-/// ambiguous).
 fn is_git_long_option(given: &str, full: &str, min_len: usize) -> bool {
     given.len() >= min_len && full.starts_with(given)
 }
 
-/// redis-cli flags that consume one following value token.
-///
-/// Missing an unlisted value flag is preferred over false-firing on `redis-cli GET FLUSHALL`.
 const REDIS_CLI_FLAGS_WITH_VALUE: &[&str] = &[
     "-h",
     "-p",
@@ -275,16 +225,6 @@ const REDIS_CLI_FLAGS_WITH_VALUE: &[&str] = &[
     "--cluster",
 ];
 
-/// Returns `true` when `tokens` represents a `redis-cli` invocation whose
-/// first non-option token is `FLUSHALL` or `FLUSHDB`.
-///
-/// redis-cli flags (tokens starting with `-`) are skipped; flags in
-/// `REDIS_CLI_FLAGS_WITH_VALUE` also consume the following value token.
-/// The first remaining non-flag token is the Redis command — only when it is
-/// `FLUSHALL` or `FLUSHDB` does the predicate fire.
-///
-/// This prevents `redis-cli GET FLUSHALL` from matching DB-006: `GET` is the
-/// Redis command, and `FLUSHALL` is its key argument.
 fn redis_cli_flush_is_command(tokens: &[&str]) -> bool {
     debug_assert!(
         tokens
@@ -302,7 +242,6 @@ fn redis_cli_flush_is_command(tokens: &[&str]) -> bool {
                 i += 1;
             }
         } else {
-            // First non-flag token — this is the Redis command.
             return token.eq_ignore_ascii_case("FLUSHALL") || token.eq_ignore_ascii_case("FLUSHDB");
         }
     }
@@ -485,7 +424,7 @@ mod tests {
             match_examples: &[],
             not_match_examples: &[],
         };
-        assert!(rule.matches_tokens(&["git"])); // case-insensitive for non-flag tokens
+        assert!(rule.matches_tokens(&["git"]));
         assert!(rule.matches_tokens(&["Git"]));
     }
 
@@ -505,7 +444,7 @@ mod tests {
             not_match_examples: &[],
         };
         assert!(rule.matches_tokens(&["git", "branch", "-D"]));
-        assert!(!rule.matches_tokens(&["git", "branch", "-d"])); // flags are case-sensitive
+        assert!(!rule.matches_tokens(&["git", "branch", "-d"]));
     }
 
     #[test]
@@ -569,8 +508,8 @@ mod tests {
             not_match_examples: &[],
         };
         assert!(rule.matches_tokens(&["git", "log", "status"]));
-        assert!(!rule.matches_tokens(&["git", "status"])); // Any needs one token
-        assert!(!rule.matches_tokens(&["git", "a", "b", "status"])); // Any matches exactly one
+        assert!(!rule.matches_tokens(&["git", "status"]));
+        assert!(!rule.matches_tokens(&["git", "a", "b", "status"]));
     }
 
     #[test]
@@ -646,10 +585,6 @@ mod tests {
         assert!(!rule.matches_tokens(&["wipefs", "--almost", "/dev/sda"]));
     }
 
-    // ── Negative condition (suppressed_by) ────────────────────────────────
-
-    /// A rule shaped like the `npm publish` case the field exists for: a prefix
-    /// that a safe rehearsal flag appears *after*.
     fn rule_suppressed_by(suppressed_by: &'static [&'static str]) -> PrefixRule {
         PrefixRule {
             id: Cow::Borrowed("T-014"),
@@ -685,7 +620,6 @@ mod tests {
         let rule = rule_suppressed_by(&["--dry-run"]);
         assert!(!rule.matches_tokens(&["npm", "publish", "--dry-run"]));
         assert!(!rule.matches_tokens(&["npm", "publish", "--access", "public", "--dry-run"]));
-        // Even inside the matched prefix's own span.
         assert!(!rule.matches_tokens(&["npm", "--dry-run", "publish"]));
     }
 
@@ -705,9 +639,6 @@ mod tests {
 
     #[test]
     fn prefix_rule_suppression_outranks_a_matcher_side_predicate() {
-        // FS-011's wipefs short-flag predicate short-circuits to `true`; the
-        // negative condition is checked first, so a rule declaring one is not
-        // silently overridden by a predicate.
         let rule = PrefixRule {
             id: Cow::Borrowed("FS-011"),
             category: Category::Filesystem,
@@ -752,8 +683,6 @@ mod tests {
 
     #[test]
     fn prefix_rule_example_validation_catches_a_dropped_negative_condition() {
-        // Same examples, condition removed: validation must now fail, so the
-        // rule's own examples are what pins the condition.
         let rule = PrefixRule {
             id: Cow::Borrowed("T-016"),
             category: Category::Process,

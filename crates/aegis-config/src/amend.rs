@@ -1,5 +1,3 @@
-//! Helpers for appending rules to config files interactively.
-
 use std::fs;
 use std::path::Path;
 
@@ -17,35 +15,23 @@ mod validation;
 use formatting::{allow_reason_for_date, append_config_table_entry, block_reason_for_date};
 use validation::{check_dedup_and_conflict, config_layer_from_path};
 
-/// Which table an append targets.
 #[derive(Clone, Copy)]
 enum TableKind {
     Allow,
     Blocklist,
 }
 
-/// Outcome of appending an allowlist or blocklist rule.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppendOutcome {
-    /// The rule was appended to the config file.
     Appended,
-    /// An exact duplicate was already present in the same table; append was skipped.
     SkippedDuplicate,
-    /// A conflicting rule exists in the opposite table.
     Conflict {
-        /// The pattern that caused the conflict.
         pattern: String,
-        /// Config layer where the existing conflicting rule was found.
         existing_location: ConfigSourceLayer,
     },
 }
 
-/// Determine the active config file path for appending an allow rule.
-///
-/// Checks for a project-level `.aegis.toml` in the current directory first.
-/// Falls back to the global config at `~/.config/aegis/config.toml`.
 pub fn active_config_path_for_append() -> Option<std::path::PathBuf> {
-    // Unavailable cwd returns None so approve-always does not target an unknown config.
     let current_dir = std::env::current_dir().ok()?;
     let home = crate::home_dir()?;
     let project = current_dir.join(".aegis.toml");
@@ -124,7 +110,6 @@ fn append_rule(
     Ok(AppendOutcome::Appended)
 }
 
-/// Append an `[[allow]]` rule to the config file at `config_path`.
 pub fn append_allow_rule(
     config_path: &Path,
     prefix: &[String],
@@ -133,7 +118,6 @@ pub fn append_allow_rule(
     append_rule(config_path, prefix, cwd, TableKind::Allow)
 }
 
-/// Append a `[[block]]` rule to the config file at `config_path`.
 pub fn append_block_rule(
     config_path: &Path,
     prefix: &[String],

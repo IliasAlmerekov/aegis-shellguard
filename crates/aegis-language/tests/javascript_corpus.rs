@@ -1,6 +1,3 @@
-//! JavaScript adapter corpus under `tests/corpora/javascript/` (ADR-022 §3, §7, §11).
-//! Pins detected operations, modifiers, operand certainty, nested payloads, and parse errors.
-
 #![cfg(feature = "grammars")]
 
 #[path = "common/corpus_harness.rs"]
@@ -125,7 +122,6 @@ fn negatives_emit_no_operations() {
 
 #[test]
 fn dynamic_operand_emits_ops_with_dynamic_certainty_and_no_payload() {
-    // ADR-022 §3, §7: dynamic operands never lower risk and dynamic payloads are never evaluated.
     let expected = [
         ExpectedOp {
             kind: OperationKind::FilesystemDelete,
@@ -165,7 +161,6 @@ fn malformed_source_records_parse_errors() {
     assert_malformed(analyze, MALFORMED);
 }
 
-/// Build a `CodeExecution` expectation carrying a JavaScript literal payload.
 fn js_exec(payload: &'static str) -> ExpectedOp {
     ExpectedOp {
         kind: OperationKind::CodeExecution,

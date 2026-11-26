@@ -1,15 +1,10 @@
 use super::*;
 
-// The Analyzed response wraps an `AdapterResult`, so the Analyzed tests build
-// one from the operation vocabulary. These are the leaf types this crate owns
-// (the root crate maps them into `aegis_types`); importing them here does not
-// cross the workspace boundary.
 use crate::operation::{
     AdapterDegradation, AdapterResult, ByteSpan, DetectedOperation, NestedTarget, OperandCertainty,
     OperationKind, OperationModifiers,
 };
 
-/// A known-good `Request::Parse` used across the framing tests.
 fn sample_request() -> Request {
     Request::Parse {
         language: SourceLanguage::Python,
@@ -19,10 +14,6 @@ fn sample_request() -> Request {
 
 #[test]
 fn encode_request_emits_the_specified_wire_format() {
-    // Independent source of truth: the expected bytes are hand-derived
-    // from the wire-format spec in this module's docs, NOT by running
-    // `encode_request`. Magic `AELW`, version 2 (LE), request_id 0x0A,
-    // kind 0x01 (Parse), payload = [lang 0x00 = Python] + source bytes.
     let source = b"import os; os.remove('x')";
     let request_id: u32 = 0x0A;
     let mut expected = Vec::new();
@@ -32,7 +23,7 @@ fn encode_request_emits_the_specified_wire_format() {
     expected.push(Request::KIND_PARSE);
     let payload_len = u32::try_from(1 + source.len()).expect("source fits in u32");
     expected.extend_from_slice(&payload_len.to_le_bytes());
-    expected.push(0x00); // Python
+    expected.push(0x00);
     expected.extend_from_slice(source);
 
     let got = encode_request(request_id, &sample_request()).expect("small source encodes");
@@ -51,17 +42,11 @@ fn decode_request_round_trips_an_encoded_request() {
     assert_eq!(decoded.message, sample_request());
 }
 
-/// Build a raw frame with explicit header fields, for error-path tests
-/// that need to violate one field while keeping the rest well-formed.
 fn raw_frame(magic: &[u8; 4], version: u16, request_id: u32, kind: u8, payload: &[u8]) -> Vec<u8> {
     let len = u32::try_from(payload.len()).expect("test payload fits in u32");
     raw_frame_with_declared_len(magic, version, request_id, kind, len, payload)
 }
 
-/// Build a raw frame whose header declares `declared_len` payload bytes,
-/// independent of how many `payload` bytes are actually appended. Used to
-/// craft oversized (declared > MAX, short body) and truncated (declared >
-/// body) frames.
 fn raw_frame_with_declared_len(
     magic: &[u8; 4],
     version: u16,
@@ -80,9 +65,8 @@ fn raw_frame_with_declared_len(
     out
 }
 
-/// A well-formed Parse payload (Python + a small source body).
 fn parse_payload() -> Vec<u8> {
-    let mut p = vec![0x00]; // Python
+    let mut p = vec![0x00];
     p.extend_from_slice(b"print(1)");
     p
 }
@@ -105,8 +89,6 @@ fn decode_request_rejects_a_frame_with_wrong_magic() {
 
 #[test]
 fn decode_request_rejects_a_frame_with_unsupported_version() {
-    // A future/unknown version the decoder does not speak. The frame is
-    // otherwise well-formed (correct magic, kind, payload).
     let unsupported: u16 = 999;
     let buf = raw_frame(
         &MAGIC,
@@ -126,9 +108,6 @@ fn decode_request_rejects_a_frame_with_unsupported_version() {
 
 #[test]
 fn decode_request_rejects_a_frame_declaring_an_oversized_payload() {
-    // The header claims a payload larger than MAX_FRAME_PAYLOAD, but only a
-    // few body bytes are present. The decoder must reject it from the
-    // header alone — without allocating or waiting for the body.
     let declared: u32 = u32::try_from(MAX_FRAME_PAYLOAD + 1).unwrap();
     let buf = raw_frame_with_declared_len(
         &MAGIC,
@@ -168,16 +147,14 @@ fn decode_request_rejects_a_response_kind_tag_sent_as_a_request() {
 
 #[test]
 fn encode_response_parsed_emits_the_specified_wire_format() {
-    // Hand-derived: magic AELW, version 2, request_id 0x0B, kind 0x81
-    // (Parsed), payload = error_count u32 LE = 2.
     let request_id: u32 = 0x0B;
     let mut expected = Vec::new();
     expected.extend_from_slice(&MAGIC);
     expected.extend_from_slice(&2u16.to_le_bytes());
     expected.extend_from_slice(&request_id.to_le_bytes());
     expected.push(Response::KIND_PARSED);
-    expected.extend_from_slice(&4u32.to_le_bytes()); // payload_len
-    expected.extend_from_slice(&2u32.to_le_bytes()); // error_count
+    expected.extend_from_slice(&4u32.to_le_bytes());
+    expected.extend_from_slice(&2u32.to_le_bytes());
 
     let got = encode_response(request_id, &Response::Parsed { error_count: 2 })
         .expect("Parsed response encodes");
@@ -212,8 +189,6 @@ fn decode_response_round_trips_parsed_and_parse_failed() {
 
 #[test]
 fn decode_response_rejects_a_request_kind_tag_sent_as_a_response() {
-    // Symmetric to the request-side check: a request kind tag (0x01 =
-    // Parse) must not be accepted as a response.
     let buf = raw_frame(
         &MAGIC,
         PROTOCOL_VERSION,
@@ -232,9 +207,7 @@ fn decode_response_rejects_a_request_kind_tag_sent_as_a_response() {
 
 #[test]
 fn decode_request_reports_a_short_header_as_incomplete_not_malformed() {
-    // Fewer bytes than a full header: the caller may still be waiting for
-    // the rest of the frame, so this is `Ok(None)`, not an error.
-    let short = b"AELW\x01\x00\x00"; // 7 bytes < HEADER_LEN
+    let short = b"AELW\x01\x00\x00";
     assert_eq!(
         decode_request(short),
         Ok(None),
@@ -244,15 +217,13 @@ fn decode_request_reports_a_short_header_as_incomplete_not_malformed() {
 
 #[test]
 fn decode_request_reports_a_truncated_payload_as_incomplete_not_malformed() {
-    // The header declares 100 payload bytes but only 10 are present. The
-    // frame is incomplete, not corrupted — the caller can wait for more.
     let buf = raw_frame_with_declared_len(
         &MAGIC,
         PROTOCOL_VERSION,
         1,
         Request::KIND_PARSE,
         100,
-        &parse_payload(), // only ~9 bytes, not 100
+        &parse_payload(),
     );
     assert_eq!(
         decode_request(&buf),
@@ -263,7 +234,6 @@ fn decode_request_reports_a_truncated_payload_as_incomplete_not_malformed() {
 
 #[test]
 fn decode_request_rejects_a_parse_payload_with_an_unknown_language_tag() {
-    // Language tag 0x42 names no foundation language.
     let mut payload = vec![0x42];
     payload.extend_from_slice(b"x");
     let buf = raw_frame(&MAGIC, PROTOCOL_VERSION, 1, Request::KIND_PARSE, &payload);
@@ -278,7 +248,6 @@ fn decode_request_rejects_a_parse_payload_with_an_unknown_language_tag() {
 
 #[test]
 fn decode_response_rejects_a_parsed_payload_of_the_wrong_length() {
-    // Parsed requires exactly 4 bytes (error_count); 2 bytes is malformed.
     let buf = raw_frame(
         &MAGIC,
         PROTOCOL_VERSION,
@@ -297,11 +266,6 @@ fn decode_response_rejects_a_parsed_payload_of_the_wrong_length() {
 
 #[test]
 fn decode_request_accepts_only_the_parse_and_analyze_kind_tags() {
-    // The "no path read / no subprocess" property, pinned at the wire
-    // level: the only accepted request kinds are Parse (0x01) and Analyze
-    // (0x02). Every other kind byte — including any a future "read path" or
-    // "run subprocess" request would use — is rejected as InvalidKind.
-    // There is no way to ask the worker for either through this protocol.
     let payload = parse_payload();
     for tag in 0u8..=255 {
         let buf = raw_frame(&MAGIC, PROTOCOL_VERSION, 1, tag, &payload);
@@ -323,12 +287,6 @@ fn decode_request_accepts_only_the_parse_and_analyze_kind_tags() {
 
 #[test]
 fn decode_response_accepts_only_the_known_response_kind_tags() {
-    // Parsed carries a 4-byte error_count; Analyzed carries a packed
-    // AdapterResult; ParseFailed and UnsupportedLanguage declare an empty
-    // payload. The probe payload below is 4 bytes, which is valid for Parsed,
-    // a wrong-but-decidable length for the empty-payload kinds (rejected as
-    // InvalidPayload), and an invalid AdapterResult for Analyzed (rejected as
-    // InvalidPayload by the codec).
     let parsed_payload = 4u32.to_le_bytes();
     for tag in 0u8..=255 {
         let buf = raw_frame(&MAGIC, PROTOCOL_VERSION, 1, tag, &parsed_payload);
@@ -339,17 +297,11 @@ fn decode_response_accepts_only_the_known_response_kind_tags() {
                 "Parsed kind tag {tag:#04x} must be accepted"
             );
         } else if tag == Response::KIND_PARSE_FAILED || tag == Response::KIND_UNSUPPORTED {
-            // These kinds declare an empty payload; the 4-byte body here is a
-            // wrong length, so they are rejected as InvalidPayload, not
-            // accepted — which is the correct outcome for this buffer.
             assert!(
                 matches!(outcome, Err(DecodeError::InvalidPayload(_))),
                 "empty-payload kind {tag:#04x} with a non-empty payload must be rejected"
             );
         } else if tag == Response::KIND_ANALYZED {
-            // A 4-byte body cannot be a valid AdapterResult (which needs at
-            // least parse_errors u32 + op_count u32 = 8 bytes), so the codec
-            // rejects it as InvalidPayload.
             assert!(
                 matches!(outcome, Err(DecodeError::InvalidPayload(_))),
                 "Analyzed with a malformed AdapterResult payload must be rejected"
@@ -366,8 +318,6 @@ fn decode_response_accepts_only_the_known_response_kind_tags() {
 
 #[test]
 fn encode_request_rejects_an_oversized_source_as_oversized() {
-    // A source larger than MAX_SOURCE_BYTES must not panic the encoder
-    // (no .expect() in production); it returns Err(EncodeError::Oversized).
     let oversized = Request::Parse {
         language: SourceLanguage::Python,
         source: vec![b'x'; MAX_SOURCE_BYTES + 1],
@@ -375,7 +325,7 @@ fn encode_request_rejects_an_oversized_source_as_oversized() {
     assert_eq!(
         encode_request(1, &oversized),
         Err(EncodeError::Oversized {
-            actual: MAX_SOURCE_BYTES + 2, // lang tag + source
+            actual: MAX_SOURCE_BYTES + 2,
             max: MAX_FRAME_PAYLOAD,
         }),
         "an oversized source must encode to an Oversized error, not panic"
@@ -395,9 +345,6 @@ fn encode_request_accepts_a_small_source() {
 
 #[test]
 fn encode_request_accepts_a_source_at_the_one_mebibyte_ceiling() {
-    // ADR-022 §7 hard per-file source ceiling is 1 MiB. A 1 MiB source is
-    // legal and must round-trip — the frame payload budgets the 1-byte
-    // language tag on top of MAX_SOURCE_BYTES.
     let at_ceiling = Request::Parse {
         language: SourceLanguage::Python,
         source: vec![b'x'; MAX_SOURCE_BYTES],
@@ -449,16 +396,13 @@ fn decode_request_round_trips_an_analyze_request() {
 
 #[test]
 fn encode_response_unsupported_language_emits_the_specified_wire_format() {
-    // Independent source of truth: magic AELW, version 2, request_id 0x0C,
-    // kind 0x84 (UnsupportedLanguage), empty payload (payload_len = 0).
     let request_id: u32 = 0x0C;
     let mut expected = Vec::new();
     expected.extend_from_slice(&MAGIC);
     expected.extend_from_slice(&2u16.to_le_bytes());
     expected.extend_from_slice(&request_id.to_le_bytes());
     expected.push(Response::KIND_UNSUPPORTED);
-    expected.extend_from_slice(&0u32.to_le_bytes()); // payload_len
-    // No payload bytes follow.
+    expected.extend_from_slice(&0u32.to_le_bytes());
 
     let got = encode_response(request_id, &Response::UnsupportedLanguage)
         .expect("UnsupportedLanguage encodes");
@@ -481,9 +425,6 @@ fn decode_response_round_trips_unsupported_language() {
     assert_eq!(decoded.message, Response::UnsupportedLanguage);
 }
 
-/// A minimal `AdapterResult` with one operation carrying a payload, used to
-/// exercise the Analyzed frame round-trip. Built directly from the operation
-/// vocabulary — an independent construction, not produced by the codec.
 fn sample_adapter_result() -> AdapterResult {
     AdapterResult {
         parse_errors: 0,
@@ -550,9 +491,6 @@ fn decode_response_round_trips_an_analyzed_encoding_degradation() {
 
 #[test]
 fn decode_response_rejects_a_truncated_analyzed_payload() {
-    // A body too short to hold even the AdapterResult header (parse_errors +
-    // degradation + op_count = 9 bytes) must be rejected by the codec, surfaced as
-    // InvalidPayload with the codec's own reason.
     let buf = raw_frame(
         &MAGIC,
         PROTOCOL_VERSION,

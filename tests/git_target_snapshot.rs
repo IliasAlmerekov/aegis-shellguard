@@ -1,9 +1,3 @@
-//! #471: the git Snapshot covers the Git target, not the process cwd.
-//!
-//! Plans a Danger git command with real temp repositories, takes the Snapshot
-//! the plan asks for, destroys the target, and restores it through the rollback
-//! registry.
-
 mod support;
 
 use std::path::{Path, PathBuf};
@@ -19,7 +13,6 @@ use aegis_types::{Mode, SnapshotPolicy};
 use support::git;
 use tempfile::TempDir;
 
-/// A repository with one commit holding `tracked.txt`.
 fn repo(path: &Path) {
     std::fs::create_dir_all(path).unwrap();
     git(path, &["init", "-q"]);
@@ -72,8 +65,6 @@ fn context(rt: &tokio::runtime::Runtime) -> RuntimeContext {
     RuntimeContext::new(config, rt.handle().clone()).unwrap()
 }
 
-/// Plan `command` from `cwd`, take the planned Snapshots, and return the
-/// git records' ids.
 fn snapshot(rt: &tokio::runtime::Runtime, cwd: &Path, command: &str) -> Vec<String> {
     git_records(rt, cwd, command)
         .into_iter()
@@ -157,7 +148,6 @@ fn dash_c_snapshot_restores_the_other_repository_and_leaves_the_cwd_alone() {
     assert_untouched(&world.cwd);
 }
 
-/// `aegis rollback --last` binds a git Snapshot by this record (#499, ADR-053).
 #[test]
 fn the_git_record_names_its_git_target() {
     let rt = runtime();
@@ -258,8 +248,6 @@ fn an_unresolved_target_takes_no_substitute_snapshot_of_the_cwd() {
 
     assert!(ids.is_empty());
 }
-
-// #525: the Snapshot follows a `cd` earlier in the command line.
 
 #[test]
 fn cd_snapshot_restores_the_other_repository_and_leaves_the_cwd_alone() {

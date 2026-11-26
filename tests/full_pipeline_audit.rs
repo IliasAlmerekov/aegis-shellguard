@@ -1,8 +1,3 @@
-//! Audit projection: shell audit-log fields, audit-logger failure modes,
-//! rotation, and the `aegis audit` subcommand (export/filter/summary).
-//!
-//! Split from the original `tests/full_pipeline.rs` (behavior-preserving move).
-
 mod support;
 
 use std::fs;
@@ -31,8 +26,6 @@ fn planner_migration_keeps_shell_audit_projection_fields() {
     assert_eq!(entries[0]["allowlist_effective"], serde_json::json!(false));
 }
 
-/// The shell wrapper records the directory it ran in, so `aegis rollback --last`
-/// can tie the entry to a place (#499, ADR-053).
 #[test]
 fn shell_wrapper_audit_entry_records_the_cwd() {
     let home = TempDir::new().unwrap();
@@ -46,7 +39,6 @@ fn shell_wrapper_audit_entry_records_the_cwd() {
 
     assert!(output.status.success());
     let entries = read_audit_entries(home.path());
-    // macOS temp dirs sit behind the /var -> /private/var symlink.
     let work_dir = work.path().canonicalize().unwrap();
     assert_eq!(
         entries[0]["cwd"],
@@ -54,11 +46,6 @@ fn shell_wrapper_audit_entry_records_the_cwd() {
     );
 }
 
-// Audit logger failure ──────────────────────────────────────────────────────
-
-/// If `~/.aegis` is a file instead of a directory, audit append fails.
-/// The binary must exit non-zero and print an error — audit is a security
-/// artifact; silently dropping write failures defeats integrity checking.
 #[test]
 fn audit_logger_failure_exits_nonzero_with_error() {
     let home = TempDir::new().unwrap();
@@ -79,9 +66,6 @@ fn audit_logger_failure_exits_nonzero_with_error() {
     );
 }
 
-/// A read-only `~/.aegis` directory must name the audit path and the
-/// `AEGIS_AUDIT_PATH` override in the printed error, not a bare `io error:`
-/// with no way for the operator to unblock themselves.
 #[cfg(unix)]
 #[test]
 fn audit_logger_write_failure_names_path_and_override_hint() {
@@ -112,7 +96,6 @@ fn audit_logger_write_failure_names_path_and_override_hint() {
     );
 }
 
-/// Audit write failures must always be reported — not gated on --verbose.
 #[test]
 fn audit_logger_failure_always_prints_error() {
     let home = TempDir::new().unwrap();
