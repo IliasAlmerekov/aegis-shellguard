@@ -39,16 +39,18 @@ mod verify;
     about = "A terminal proxy that intercepts AI agent commands"
 )]
 struct Cli {
-    /// Command to intercept (shell wrapper mode)
-    #[arg(short = 'c', long = "command")]
+    #[arg(
+        help = "Command to intercept (shell wrapper mode)",
+        short = 'c',
+        long = "command"
+    )]
     command: Option<String>,
 
-    /// Shell-wrapper output format: text (default) or evaluation-only json.
-    #[arg(long, value_enum, default_value_t = CommandOutputFormat::Text)]
+    #[arg(help = "Shell-wrapper output format: text (default) or evaluation-only json", long, value_enum, default_value_t = CommandOutputFormat::Text)]
     output: CommandOutputFormat,
 
-    /// Control Aegis text output detail: quiet, standard, or verbose.
     #[arg(
+        help = "Control Aegis text output detail: quiet, standard, or verbose",
         long,
         value_enum,
         default_value_t = OutputVerbosity::Standard,
@@ -56,12 +58,19 @@ struct Cli {
     )]
     verbosity: OutputVerbosity,
 
-    /// Shorthand for `--verbosity quiet`.
-    #[arg(long, conflicts_with = "verbose")]
+    #[arg(
+        help = "Shorthand for `--verbosity quiet`",
+        long,
+        conflicts_with = "verbose"
+    )]
     quiet: bool,
 
-    /// Shorthand for `--verbosity verbose`.
-    #[arg(short = 'v', long = "verbose", conflicts_with = "quiet")]
+    #[arg(
+        help = "Shorthand for `--verbosity verbose`",
+        short = 'v',
+        long = "verbose",
+        conflicts_with = "quiet"
+    )]
     verbose: bool,
 
     #[command(subcommand)]
@@ -70,32 +79,38 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Read NDJSON command frames from stdin and stream results to stdout
+    #[command(about = "Read NDJSON command frames from stdin and stream results to stdout")]
     Watch,
-    /// View the audit log
+    #[command(about = "View the audit log")]
     Audit(AuditArgs),
-    /// Enable Aegis by removing ~/.aegis/disabled
+    #[command(about = "Enable Aegis by removing ~/.aegis/disabled")]
     On,
-    /// Disable Aegis by creating ~/.aegis/disabled
+    #[command(about = "Disable Aegis by creating ~/.aegis/disabled")]
     Off,
-    /// Show the current toggle state and active config path
+    #[command(about = "Show the current toggle state and active config path")]
     Status,
-    /// Roll back a previously recorded snapshot
+    #[command(about = "Roll back a previously recorded snapshot")]
     Rollback(RollbackArgs),
-    /// Inspect recorded snapshots
+    #[command(about = "Inspect recorded snapshots")]
     Snapshot(SnapshotArgs),
-    /// Manage aegis configuration
+    #[command(about = "Manage aegis configuration")]
     Config(ConfigArgs),
-    /// Run as a Claude Code PreToolUse hook — rewrites Bash commands through aegis
+    #[command(
+        about = "Run as a Claude Code PreToolUse hook — rewrites Bash commands through aegis"
+    )]
     Hook,
-    /// Install aegis hooks into Claude Code and Codex
-    #[command(alias = "install")]
+    #[command(
+        about = "Install aegis hooks into Claude Code and Codex",
+        alias = "install"
+    )]
     InstallHooks(InstallArgs),
-    /// Configure Aegis as an explicit opt-in $SHELL proxy for new terminal sessions
+    #[command(
+        about = "Configure Aegis as an explicit opt-in $SHELL proxy for new terminal sessions"
+    )]
     SetupShell(SetupShellArgs),
-    /// Remove managed integrations and show the command to remove the binary
+    #[command(about = "Remove managed integrations and show the command to remove the binary")]
     Uninstall(UninstallArgs),
-    /// Manage the opt-in npm update notice
+    #[command(about = "Manage the opt-in npm update notice")]
     Update(UpdateArgs),
 }
 
@@ -130,57 +145,62 @@ impl OutputVerbosity {
 
 #[derive(Args)]
 struct AuditArgs {
-    /// Show only the last N audit entries.
-    #[arg(long)]
+    #[arg(help = "Show only the last N audit entries", long)]
     last: Option<usize>,
 
-    /// Filter entries by risk level: safe, warn, danger, block.
-    #[arg(long, value_parser = parse_risk_level)]
+    #[arg(help = "Filter entries by risk level: safe, warn, danger, block", long, value_parser = parse_risk_level)]
     risk: Option<RiskLevel>,
 
-    /// Show only entries at or after this RFC 3339 timestamp.
-    #[arg(long, value_parser = parse_audit_timestamp)]
+    #[arg(help = "Show only entries at or after this RFC 3339 timestamp", long, value_parser = parse_audit_timestamp)]
     since: Option<AuditTimestamp>,
 
-    /// Show only entries at or before this RFC 3339 timestamp.
-    #[arg(long, value_parser = parse_audit_timestamp)]
+    #[arg(help = "Show only entries at or before this RFC 3339 timestamp", long, value_parser = parse_audit_timestamp)]
     until: Option<AuditTimestamp>,
 
-    /// Filter to commands containing this case-sensitive substring.
-    #[arg(long)]
+    #[arg(
+        help = "Filter to commands containing this case-sensitive substring",
+        long
+    )]
     command_contains: Option<String>,
 
-    /// Filter entries by decision: approved, denied, auto-approved, blocked, pruned.
-    #[arg(long, value_parser = parse_decision)]
+    #[arg(help = "Filter entries by decision: approved, denied, auto-approved, blocked, pruned", long, value_parser = parse_decision)]
     decision: Option<Decision>,
 
-    /// Output format: text (default), json, ndjson.
-    #[arg(long, value_enum, default_value_t = AuditOutputFormat::Text)]
+    #[arg(help = "Output format: text (default), json, ndjson", long, value_enum, default_value_t = AuditOutputFormat::Text)]
     format: AuditOutputFormat,
 
-    /// Show an aggregated summary instead of individual entries.
-    #[arg(long)]
+    #[arg(
+        help = "Show an aggregated summary instead of individual entries",
+        long
+    )]
     summary: bool,
 
-    /// Verify the audit integrity chain across all audit segments.
-    #[arg(long)]
+    #[arg(
+        help = "Verify the audit integrity chain across all audit segments",
+        long
+    )]
     verify_integrity: bool,
 }
 
 #[derive(Args)]
 struct RollbackArgs {
-    /// Snapshot ID copied from `aegis audit`
-    #[arg(required_unless_present = "last", conflicts_with = "last")]
+    #[arg(
+        help = "Snapshot ID copied from `aegis audit`",
+        required_unless_present = "last",
+        conflicts_with = "last"
+    )]
     snapshot_id: Option<String>,
 
-    /// Restore the Snapshots of the latest command recorded at this location
-    #[arg(long)]
+    #[arg(
+        help = "Restore the Snapshots of the latest command recorded at this location",
+        long
+    )]
     last: bool,
 
-    /// Attempt the restore without asking: with `--last`, skip the confirmation
-    /// and restore the latest command; otherwise attempt it when the liveness
-    /// check is inconclusive. It has no effect when a Snapshot is confirmed gone.
-    #[arg(long)]
+    #[arg(
+        help = "Attempt the restore without asking: with `--last`, skip the confirmation and restore the latest command; otherwise attempt it when the liveness check is inconclusive. It has no effect when a Snapshot is confirmed gone",
+        long
+    )]
     yes: bool,
 }
 
@@ -199,32 +219,37 @@ struct SnapshotArgs {
 
 #[derive(Subcommand)]
 enum SnapshotCommand {
-    /// List recoverable snapshots recorded in the audit log
+    #[command(about = "List recoverable snapshots recorded in the audit log")]
     List,
-    /// Remove snapshot artifacts outside the configured retention policy
+    #[command(about = "Remove snapshot artifacts outside the configured retention policy")]
     Prune(PruneArgs),
-    /// Check that each recorded snapshot's artifact still exists
+    #[command(about = "Check that each recorded snapshot's artifact still exists")]
     Verify(VerifyArgs),
 }
 
 #[derive(Args)]
 struct VerifyArgs {
-    /// Check only this snapshot ID; without it, every recorded snapshot.
+    #[arg(help = "Check only this snapshot ID; without it, every recorded snapshot")]
     snapshot_id: Option<String>,
 
-    /// Output format: text (default) or json.
-    #[arg(long, value_enum, default_value_t = CommandOutputFormat::Text)]
+    #[arg(help = "Output format: text (default) or json", long, value_enum, default_value_t = CommandOutputFormat::Text)]
     format: CommandOutputFormat,
 }
 
 #[derive(Args)]
 struct PruneArgs {
-    /// Actually delete artifacts. Without this flag, prune shows a dry-run preview.
-    #[arg(long, conflicts_with = "dry_run")]
+    #[arg(
+        help = "Actually delete artifacts. Without this flag, prune shows a dry-run preview",
+        long,
+        conflicts_with = "dry_run"
+    )]
     yes: bool,
 
-    /// Show what would be pruned without deleting anything.
-    #[arg(long, conflicts_with = "yes")]
+    #[arg(
+        help = "Show what would be pruned without deleting anything",
+        long,
+        conflicts_with = "yes"
+    )]
     dry_run: bool,
 }
 
@@ -236,55 +261,66 @@ struct ConfigArgs {
 
 #[derive(Args)]
 struct InstallArgs {
-    /// Patch ./.claude/settings.json instead of ~/.claude/settings.json when
-    /// installing Claude Code hooks.
-    #[arg(long, conflicts_with = "codex")]
+    #[arg(
+        help = "Patch ./.claude/settings.json instead of ~/.claude/settings.json when installing Claude Code hooks",
+        long,
+        conflicts_with = "codex"
+    )]
     local: bool,
 
-    /// Install hooks for Claude Code and Codex.
-    #[arg(long, conflicts_with_all = ["claude_code", "codex"])]
+    #[arg(help = "Install hooks for Claude Code and Codex", long, conflicts_with_all = ["claude_code", "codex"])]
     all: bool,
 
-    /// Install only Claude Code hooks.
-    #[arg(long = "claude-code", conflicts_with_all = ["all", "codex"])]
+    #[arg(help = "Install only Claude Code hooks", long = "claude-code", conflicts_with_all = ["all", "codex"])]
     claude_code: bool,
 
-    /// Install only Codex hooks.
-    #[arg(long, conflicts_with_all = ["all", "claude_code"])]
+    #[arg(help = "Install only Codex hooks", long, conflicts_with_all = ["all", "claude_code"])]
     codex: bool,
 }
 
 #[derive(Args)]
 struct SetupShellArgs {
-    /// Remove the managed Aegis shell setup block instead of installing it.
-    #[arg(long)]
+    #[arg(
+        help = "Remove the managed Aegis shell setup block instead of installing it",
+        long
+    )]
     remove: bool,
 
-    /// Real shell to execute after Aegis approves a command, for example /bin/zsh.
-    #[arg(long)]
+    #[arg(
+        help = "Real shell to execute after Aegis approves a command, for example /bin/zsh",
+        long
+    )]
     shell: Option<std::path::PathBuf>,
 
-    /// Shell startup file to modify, for example ~/.zshrc or ~/.bashrc.
-    #[arg(long = "rc-file")]
+    #[arg(
+        help = "Shell startup file to modify, for example ~/.zshrc or ~/.bashrc",
+        long = "rc-file"
+    )]
     rc_file: Option<std::path::PathBuf>,
 
-    /// Path to the Aegis binary that SHELL should point to.
-    #[arg(long = "aegis-bin")]
+    #[arg(
+        help = "Path to the Aegis binary that SHELL should point to",
+        long = "aegis-bin"
+    )]
     aegis_bin: Option<std::path::PathBuf>,
 }
 
 #[derive(Args)]
 struct UninstallArgs {
-    /// Also delete ~/.aegis, including audit logs and snapshots.
-    #[arg(long)]
+    #[arg(
+        help = "Also delete ~/.aegis, including audit logs and snapshots",
+        long
+    )]
     purge_data: bool,
 
-    /// Override removal-channel detection for the printed binary-removal command.
-    #[arg(long, value_enum)]
+    #[arg(
+        help = "Override removal-channel detection for the printed binary-removal command",
+        long,
+        value_enum
+    )]
     channel: Option<install::uninstall::RemovalChannel>,
 
-    /// Also clean a custom shell startup file.
-    #[arg(long = "rc-file")]
+    #[arg(help = "Also clean a custom shell startup file", long = "rc-file")]
     rc_file: Option<std::path::PathBuf>,
 }
 
@@ -296,20 +332,19 @@ struct UpdateArgs {
 
 #[derive(Subcommand)]
 enum UpdateCommand {
-    /// Opt in to periodic update checks for an installation channel
+    #[command(about = "Opt in to periodic update checks for an installation channel")]
     Enable(UpdateEnableArgs),
-    /// Opt out; the last known cache is kept but goes inert
+    #[command(about = "Opt out; the last known cache is kept but goes inert")]
     Disable,
-    /// Show consent, channel, and cache state
+    #[command(about = "Show consent, channel, and cache state")]
     Status,
-    /// Check the registry now and print the result
+    #[command(about = "Check the registry now and print the result")]
     Check,
 }
 
 #[derive(Args)]
 struct UpdateEnableArgs {
-    /// Installation channel to check for updates
-    #[arg(long, value_enum, default_value_t = UpdateChannelArg::Npm)]
+    #[arg(help = "Installation channel to check for updates", long, value_enum, default_value_t = UpdateChannelArg::Npm)]
     channel: UpdateChannelArg,
 }
 
@@ -328,18 +363,17 @@ impl From<UpdateChannelArg> for aegis::update::Channel {
 
 #[derive(Subcommand)]
 enum ConfigCommand {
-    /// Create a project-local .aegis.toml in the current directory
+    #[command(about = "Create a project-local .aegis.toml in the current directory")]
     Init,
-    /// Print the active config after applying search order and defaults
+    #[command(about = "Print the active config after applying search order and defaults")]
     Show,
-    /// Validate the active config and report errors/warnings
+    #[command(about = "Validate the active config and report errors/warnings")]
     Validate(ConfigValidateArgs),
 }
 
 #[derive(Args)]
 struct ConfigValidateArgs {
-    /// Validation output format.
-    #[arg(long, value_enum, default_value_t = ConfigValidateOutput::Text)]
+    #[arg(help = "Validation output format", long, value_enum, default_value_t = ConfigValidateOutput::Text)]
     output: ConfigValidateOutput,
 }
 

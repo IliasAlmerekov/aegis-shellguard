@@ -1,4 +1,3 @@
-#![deny(missing_docs)]
 #![cfg_attr(
     not(test),
     deny(

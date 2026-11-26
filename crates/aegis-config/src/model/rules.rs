@@ -10,79 +10,82 @@ use crate::error::ConfigError;
 
 type Result<T> = std::result::Result<T, ConfigError>;
 
-/// A single token in a typed policy rule pattern.
-///
-/// - `Single(s)` matches exactly the literal string `s`.
-/// - `Alts(v)` matches any one of the strings in `v`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
+#[schemars(description = "A single token in a typed policy rule pattern.
+
+- `Single(s)` matches exactly the literal string `s`.
+- `Alts(v)` matches any one of the strings in `v`.")]
 pub enum PolicyPatternToken {
-    /// A single literal token.
+    #[schemars(description = "A single literal token.")]
     Single(String),
-    /// A set of alternative tokens (any one must match).
+    #[schemars(description = "A set of alternative tokens (any one must match).")]
     Alts(Vec<String>),
 }
 
-/// Conditional override: when environment variable `env` equals `value`, use
-/// `then` as the decision instead of the rule's default `decision`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(
+    description = "Conditional override: when environment variable `env` equals `value`, use
+`then` as the decision instead of the rule's default `decision`."
+)]
 pub struct WhenClause {
-    /// Environment variable name to check.
+    #[schemars(description = "Environment variable name to check.")]
     pub env: String,
-    /// Expected value of the environment variable.
+    #[schemars(description = "Expected value of the environment variable.")]
     pub value: String,
-    /// Decision to use when the condition is met.
+    #[schemars(description = "Decision to use when the condition is met.")]
     pub then: PolicyRuleDecision,
 }
 
-/// A typed `[[rules]]` entry in `aegis.toml`.
-///
-/// Each rule defines a token-sequence pattern and the decision to apply when a
-/// command matches.  Optional `match_examples` / `not_match_examples` let you
-/// embed self-documenting test cases that are verified at config-load time.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(description = "A typed `[[rules]]` entry in `aegis.toml`.
+
+Each rule defines a token-sequence pattern and the decision to apply when a
+command matches.  Optional `match_examples` / `not_match_examples` let you
+embed self-documenting test cases that are verified at config-load time.")]
 pub struct PolicyRule {
-    /// Ordered list of tokens the command must start with.
+    #[schemars(description = "Ordered list of tokens the command must start with.")]
     pub pattern: Vec<PolicyPatternToken>,
-    /// Decision when this rule fires and no `when` clause overrides it.
+    #[schemars(description = "Decision when this rule fires and no `when` clause overrides it.")]
     pub decision: PolicyRuleDecision,
-    /// Human-readable rationale stored in audit logs and shown in the UI.
+    #[schemars(description = "Human-readable rationale stored in audit logs and shown in the UI.")]
     pub justification: Option<String>,
-    /// Example commands that MUST match this rule (validated at load time).
+    #[schemars(
+        description = "Example commands that MUST match this rule (validated at load time)."
+    )]
     #[serde(default)]
     pub match_examples: Vec<String>,
-    /// Example commands that must NOT match this rule (validated at load time).
+    #[schemars(
+        description = "Example commands that must NOT match this rule (validated at load time)."
+    )]
     #[serde(default)]
     pub not_match_examples: Vec<String>,
-    /// Optional conditional override.
+    #[schemars(description = "Optional conditional override.")]
     pub when: Option<WhenClause>,
 }
 
-/// A user-defined pattern loaded from `aegis.toml`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(description = "A user-defined pattern loaded from `aegis.toml`.")]
 pub struct UserPattern {
-    /// Unique identifier for this pattern.
+    #[schemars(description = "Unique identifier for this pattern.")]
     pub id: String,
-    /// Semantic category (e.g. Filesystem, Database).
+    #[schemars(description = "Semantic category (e.g. Filesystem, Database).")]
     pub category: Category,
-    /// Risk level assigned when this pattern matches.
+    #[schemars(description = "Risk level assigned when this pattern matches.")]
     pub risk: RiskLevel,
-    /// Regex or literal pattern string.
+    #[schemars(description = "Regex or literal pattern string.")]
     pub pattern: String,
-    /// Human-readable explanation of what this pattern detects.
+    #[schemars(description = "Human-readable explanation of what this pattern detects.")]
     pub description: String,
-    /// Safer alternative command to suggest, if any.
+    #[schemars(description = "Safer alternative command to suggest, if any.")]
     pub safe_alt: Option<String>,
-    /// Optional rationale for adding this pattern.
+    #[schemars(description = "Optional rationale for adding this pattern.")]
     pub justification: Option<String>,
 }
 
-/// Convert a config-layer [`UserPattern`] into the neutral [`Pattern`] consumed
-/// by the scanner. This conversion lives at the config/orchestration boundary so
-/// the scanner crate never depends on config-specific types.
 impl From<UserPattern> for Pattern {
     fn from(user: UserPattern) -> Self {
         Pattern {
@@ -128,19 +131,19 @@ mod offset_datetime_option {
     }
 }
 
-/// A structured allowlist rule with optional scope, expiry, and rationale.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(description = "A structured allowlist rule with optional scope, expiry, and rationale.")]
 pub struct AllowlistRule {
-    /// Command pattern to allow.
+    #[schemars(description = "Command pattern to allow.")]
     pub pattern: String,
-    /// Optional working-directory scope.
+    #[schemars(description = "Optional working-directory scope.")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
-    /// Optional user scope.
+    #[schemars(description = "Optional user scope.")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
-    /// Optional expiry timestamp (RFC 3339).
+    #[schemars(description = "Optional expiry timestamp (RFC 3339).")]
     #[serde(
         default,
         with = "offset_datetime_option",
@@ -148,23 +151,23 @@ pub struct AllowlistRule {
     )]
     #[schemars(with = "Option<String>")]
     pub expires_at: Option<OffsetDateTime>,
-    /// Human-readable reason for allowing this pattern.
+    #[schemars(description = "Human-readable reason for allowing this pattern.")]
     pub reason: String,
 }
 
-/// A structured block rule with optional scope, expiry, and rationale.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(description = "A structured block rule with optional scope, expiry, and rationale.")]
 pub struct BlockRule {
-    /// Command pattern to block.
+    #[schemars(description = "Command pattern to block.")]
     pub pattern: String,
-    /// Optional working-directory scope.
+    #[schemars(description = "Optional working-directory scope.")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
-    /// Optional user scope.
+    #[schemars(description = "Optional user scope.")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
-    /// Optional expiry timestamp (RFC 3339).
+    #[schemars(description = "Optional expiry timestamp (RFC 3339).")]
     #[serde(
         default,
         with = "offset_datetime_option",
@@ -172,23 +175,25 @@ pub struct BlockRule {
     )]
     #[schemars(with = "Option<String>")]
     pub expires_at: Option<OffsetDateTime>,
-    /// Human-readable reason for blocking this pattern.
+    #[schemars(description = "Human-readable reason for blocking this pattern.")]
     pub reason: String,
 }
 
-/// Audit log rotation and integrity configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
+#[schemars(description = "Audit log rotation and integrity configuration.")]
 pub struct AuditConfig {
-    /// Enable automatic audit log rotation.
+    #[schemars(description = "Enable automatic audit log rotation.")]
     pub rotation_enabled: bool,
-    /// Max audit file size in bytes before rotation.
+    #[schemars(description = "Max audit file size in bytes before rotation.")]
     pub max_file_size_bytes: u64,
-    /// Number of rotated audit files to retain.
+    #[schemars(description = "Number of rotated audit files to retain.")]
     pub retention_files: usize,
-    /// Compress rotated audit files with gzip.
+    #[schemars(description = "Compress rotated audit files with gzip.")]
     pub compress_rotated: bool,
-    /// Integrity chaining mode for corruption and inconsistent-edit checks.
+    #[schemars(
+        description = "Integrity chaining mode for corruption and inconsistent-edit checks."
+    )]
     pub integrity_mode: AuditIntegrityMode,
 }
 
@@ -204,65 +209,63 @@ impl Default for AuditConfig {
     }
 }
 
-/// A trusted global alias for the Language-aware analysis interpreter
-/// registry (ADR-022 §6) — e.g. a wrapper script name that should be treated
-/// as a stand-in for a canonical registry interpreter.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(
+    description = "A trusted global alias for the Language-aware analysis interpreter
+registry (ADR-022 §6) — e.g. a wrapper script name that should be treated
+as a stand-in for a canonical registry interpreter."
+)]
 pub struct TrustedAlias {
-    /// The alias program name as it appears in a command (e.g. `"py"`).
+    #[schemars(description = "The alias program name as it appears in a command (e.g. `\"py\"`).")]
     pub alias: String,
-    /// The canonical registry program name it stands in for (e.g. `"python3"`).
+    #[schemars(
+        description = "The canonical registry program name it stands in for (e.g. `\"python3\"`)."
+    )]
     pub canonical: String,
 }
 
-/// Non-configurable hard ceiling for
-/// `language_analysis.script_file_limit_bytes` (ADR-022 §6) — 1 MiB, enforced
-/// at every config layer.
 pub const LANGUAGE_ANALYSIS_SCRIPT_FILE_HARD_CEILING_BYTES: u64 = 1024 * 1024;
 
-/// Default `language_analysis.script_file_limit_bytes` (ADR-022 §6) — 256 KiB.
 const LANGUAGE_ANALYSIS_SCRIPT_FILE_DEFAULT_BYTES: u64 = 256 * 1024;
-/// Hard ceiling and default for one inline source body.
 pub const LANGUAGE_ANALYSIS_INLINE_SOURCE_MAX_BYTES: u64 = 16 * 1024;
-/// Hard ceiling for top-level script files inspected per command.
 pub const LANGUAGE_ANALYSIS_MAX_SCRIPT_FILES: u64 = 8;
-/// Hard ceiling for recursive analysis depth.
 pub const LANGUAGE_ANALYSIS_MAX_DEPTH: u64 = 8;
-/// Hard ceiling for all top-level and recursive targets.
 pub const LANGUAGE_ANALYSIS_MAX_TARGETS: u64 = 16;
-/// Hard ceiling for aggregate source bytes in one analysis session.
 pub const LANGUAGE_ANALYSIS_MAX_AGGREGATE_BYTES: u64 = 1024 * 1024;
-/// Hard ceiling for one command's complete language-analysis session.
 pub const LANGUAGE_ANALYSIS_TIMEOUT_MS: u64 = 100;
 
-/// Language-aware analysis script-file and trusted-alias budgets (ADR-022 §6).
-///
-/// `script_file_limit_bytes` is bounded by
-/// [`LANGUAGE_ANALYSIS_SCRIPT_FILE_HARD_CEILING_BYTES`] at every layer; project
-/// config may additionally only lower it, never raise it. `trusted_aliases` is
-/// a Global-layer-only concept ("trusted global aliases only", ADR-022 §6) —
-/// project-layer entries are dropped entirely rather than merged, since a
-/// project must never be able to introduce a new trusted interpreter alias.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
+#[schemars(
+    description = "Language-aware analysis script-file and trusted-alias budgets (ADR-022 §6).
+
+`script_file_limit_bytes` is bounded by
+[`LANGUAGE_ANALYSIS_SCRIPT_FILE_HARD_CEILING_BYTES`] at every layer; project
+config may additionally only lower it, never raise it. `trusted_aliases` is
+a Global-layer-only concept (\"trusted global aliases only\", ADR-022 §6) —
+project-layer entries are dropped entirely rather than merged, since a
+project must never be able to introduce a new trusted interpreter alias."
+)]
 pub struct LanguageAnalysisConfig {
-    /// Maximum bytes accepted from one inline source body.
+    #[schemars(description = "Maximum bytes accepted from one inline source body.")]
     pub inline_source_limit_bytes: u64,
-    /// Maximum bytes read from a routed script file.
+    #[schemars(description = "Maximum bytes read from a routed script file.")]
     pub script_file_limit_bytes: u64,
-    /// Maximum top-level script files inspected for one command.
+    #[schemars(description = "Maximum top-level script files inspected for one command.")]
     pub max_script_files: u64,
-    /// Maximum recursive analysis depth.
+    #[schemars(description = "Maximum recursive analysis depth.")]
     pub max_depth: u64,
-    /// Maximum distinct top-level and recursive analysis targets.
+    #[schemars(description = "Maximum distinct top-level and recursive analysis targets.")]
     pub max_targets: u64,
-    /// Maximum aggregate source bytes across all accepted targets.
+    #[schemars(description = "Maximum aggregate source bytes across all accepted targets.")]
     pub max_aggregate_bytes: u64,
-    /// Total wall-clock budget for language analysis of one command.
+    #[schemars(description = "Total wall-clock budget for language analysis of one command.")]
     pub timeout_ms: u64,
-    /// Trusted global aliases mapping a wrapper program name to the canonical
-    /// registry interpreter it stands in for.
+    #[schemars(
+        description = "Trusted global aliases mapping a wrapper program name to the canonical
+registry interpreter it stands in for."
+    )]
     pub trusted_aliases: Vec<TrustedAlias>,
 }
 
@@ -281,9 +284,6 @@ impl Default for LanguageAnalysisConfig {
     }
 }
 
-/// Validate `language_analysis.trusted_aliases` entries: neither field may be
-/// empty or whitespace-only, an alias must not map a program to itself, and
-/// no two entries may share the same `alias` (ADR-022 §6).
 pub(super) fn validate_trusted_aliases(aliases: &[TrustedAlias]) -> Result<()> {
     let mut seen_aliases = std::collections::HashSet::with_capacity(aliases.len());
     for entry in aliases {
@@ -314,8 +314,6 @@ pub(super) fn validate_trusted_aliases(aliases: &[TrustedAlias]) -> Result<()> {
 mod tests {
     use super::{PolicyPatternToken, PolicyRule, PolicyRuleDecision, WhenClause};
 
-    /// A single-token pattern like `["git", "push"]` must deserialize into
-    /// `Single` variants and the overall `PolicyRule` must round-trip.
     #[test]
     fn test_policy_rule_deserializes_with_single_tokens() {
         let toml = r#"
@@ -337,8 +335,6 @@ decision = "prompt"
         assert_eq!(rule.decision, PolicyRuleDecision::Prompt);
     }
 
-    /// A pattern that includes an alternatives array like `["--force", "-f"]`
-    /// must deserialize into the `Alts` variant.
     #[test]
     fn test_policy_rule_deserializes_with_alts() {
         let toml = r#"
@@ -364,7 +360,6 @@ decision = "block"
         assert_eq!(rule.decision, PolicyRuleDecision::Block);
     }
 
-    /// All three `decision` variants must deserialize from their snake_case names.
     #[test]
     fn test_policy_rule_decision_variants() {
         let allow: PolicyRuleDecision =
@@ -379,7 +374,6 @@ decision = "block"
         assert_eq!(block, PolicyRuleDecision::Block);
     }
 
-    /// An inline `when` table with env/value/then must deserialize correctly.
     #[test]
     fn test_when_clause_deserializes() {
         let toml = r#"
@@ -394,8 +388,6 @@ then  = "allow"
         assert_eq!(when.then, PolicyRuleDecision::Allow);
     }
 
-    /// A `PolicyRule` with an empty `pattern` array must either fail serde
-    /// deserialization or be caught by validation (the type must enforce it).
     #[test]
     fn test_policy_rule_requires_nonempty_pattern() {
         let toml = r#"

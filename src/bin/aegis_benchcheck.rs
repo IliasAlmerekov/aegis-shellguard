@@ -21,12 +21,18 @@ use serde::Deserialize;
     about = "Validate Criterion benchmark output against the checked-in Aegis baseline policy"
 )]
 struct Args {
-    /// Path to the checked-in benchmark baseline policy.
-    #[arg(long, default_value = "perf/scanner_bench_baseline.toml")]
+    #[arg(
+        help = "Path to the checked-in benchmark baseline policy",
+        long,
+        default_value = "perf/scanner_bench_baseline.toml"
+    )]
     baseline: PathBuf,
 
-    /// Criterion output root directory containing benchmark subdirectories.
-    #[arg(long, default_value = "target/criterion")]
+    #[arg(
+        help = "Criterion output root directory containing benchmark subdirectories",
+        long,
+        default_value = "target/criterion"
+    )]
     criterion_root: PathBuf,
 }
 

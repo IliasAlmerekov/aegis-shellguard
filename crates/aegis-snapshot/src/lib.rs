@@ -12,7 +12,6 @@
         clippy::unreachable
     )
 )]
-#![deny(missing_docs)]
 
 use std::path::Path;
 

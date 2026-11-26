@@ -6,92 +6,57 @@ use serde::{Deserialize, Serialize};
 
 use crate::RiskLevel;
 
-/// Whether a pattern was compiled into the binary or loaded from user config.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PatternSource {
-    /// Shipped with Aegis.
     Builtin,
-    /// Loaded from `aegis.toml`.
     Custom,
 }
 
-/// Which class of operation the pattern guards against.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "PascalCase")]
+#[schemars(description = "Which class of operation the pattern guards against.")]
 pub enum Category {
-    /// File system operations (delete, overwrite, chmod, etc.).
+    #[schemars(description = "File system operations (delete, overwrite, chmod, etc.).")]
     Filesystem,
-    /// Git history rewrite operations.
+    #[schemars(description = "Git history rewrite operations.")]
     Git,
-    /// Database DDL/DML operations.
+    #[schemars(description = "Database DDL/DML operations.")]
     Database,
-    /// Cloud-provider resource mutations.
+    #[schemars(description = "Cloud-provider resource mutations.")]
     Cloud,
-    /// Docker container and image management.
+    #[schemars(description = "Docker container and image management.")]
     Docker,
-    /// Process and system-level operations.
+    #[schemars(description = "Process and system-level operations.")]
     Process,
-    /// Package manager operations.
+    #[schemars(description = "Package manager operations.")]
     Package,
-    /// Aegis' own enforcement state and installed integration points.
+    #[schemars(description = "Aegis' own enforcement state and installed integration points.")]
     Aegis,
 }
 
-/// A sequence of pattern tokens to match against command tokens.
 pub type PrefixPattern = Vec<PatternToken>;
 
-/// One position in a prefix pattern.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PatternToken {
-    /// Exact single token match.
     Single(Cow<'static, str>),
-    /// One of several alternative tokens.
     Alts(Vec<Cow<'static, str>>),
-    /// Matches exactly one arbitrary token (like `.` in regex).
     Any,
-    /// Matches zero or more arbitrary tokens (like `.*` in regex).
     AnyStar,
-    /// Matches one short flag whether it stands alone or is bundled into a
-    /// cluster, plus that flag's long-form synonyms.
-    ///
-    /// A token matches when it equals one of `long`, or when it begins with a
-    /// single `-` (i.e. is a short-flag cluster, not a `--` long flag) and
-    /// contains `short`. Flags compare case-sensitively, so `-r` does not
-    /// satisfy `ShortFlag { short: 'R', .. }` — load-bearing for `chmod -r`
-    /// (a mode expression, not a recursion flag).
     ShortFlag {
-        /// The short flag character, e.g. `'R'` for `-R`.
         short: char,
-        /// Long-form synonyms, e.g. `&["--recursive"]`.
         long: &'static [&'static str],
     },
 }
 
-/// Unified runtime pattern.
-///
-/// Both built-in and user-defined patterns are normalized into the same
-/// `Cow<'static, str>`-backed runtime representation.
-///
-/// This type can carry either borrowed static strings or owned runtime
-/// strings, allowing scanner consumers to operate on one normalized shape
-/// without depending on how a given pattern was materialized.
 #[derive(Debug, Clone)]
 pub struct Pattern {
-    /// Unique pattern identifier (e.g. `"FS-001"`).
     pub id: Cow<'static, str>,
-    /// Semantic category.
     pub category: Category,
-    /// Assigned risk level when this pattern matches.
     pub risk: RiskLevel,
-    /// Regex or literal pattern string.
     pub pattern: Cow<'static, str>,
-    /// Human-readable description of what this pattern detects.
     pub description: Cow<'static, str>,
-    /// Safer alternative to suggest, if any.
     pub safe_alt: Option<Cow<'static, str>>,
-    /// Optional rationale for this pattern.
     pub justification: Option<Cow<'static, str>>,
-    /// Whether the pattern is built-in or user-defined.
     pub source: PatternSource,
 }
