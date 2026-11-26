@@ -3,35 +3,33 @@ use std::future::Future;
 use aegis_types::{EXIT_BLOCKED, EXIT_INTERNAL, RecoveryDegradation, SandboxStatus};
 
 use crate::planning::InterceptionPlan;
-use crate::runtime::{RuntimeContext, WatchAuditContext};
+use crate::runtime::RuntimeContext;
+use crate::runtime::disposition::{
+    AuditRecord, SandboxFailure, WatchOrigin, append_audit, setup_failed_message,
+};
 use aegis_types::Decision;
 use aegis_types::{SnapshotAttempt, SnapshotRecord};
 
-use super::protocol::{InputFrame, OutputDecision, OutputFrame, emit_frame, exit_internal};
+use super::exec::execute_prepared_and_emit;
+use super::protocol::{
+    InputFrame, OutputDecision, OutputFrame, emit_error_or_exit, emit_frame, exit_internal,
+};
 
 pub(super) struct WatchExecution<'a> {
     pub(super) frame: &'a InputFrame,
     pub(super) context: &'a RuntimeContext,
     pub(super) plan: &'a InterceptionPlan,
-    pub(super) ci_detected: bool,
     pub(super) cwd: Option<&'a std::path::Path>,
     pub(super) snapshots: &'a [SnapshotRecord],
     pub(super) attempts: &'a [SnapshotAttempt],
     pub(super) recovery_degradation: Option<RecoveryDegradation>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum WatchSandboxEvent {
-    RequiredBlocked,
-    RequiredBlockedNested,
-    SetupFailed(String),
-}
-
 async fn complete_watch_sandbox_lifecycle<C, AuditError, SpawnFuture>(
     decision: Decision,
     preparation: Result<(C, SandboxStatus), aegis_sandbox::SandboxError>,
-    mut append_audit: impl FnMut(Decision, SandboxStatus) -> Result<(), AuditError>,
-    mut emit_event: impl FnMut(WatchSandboxEvent),
+    append_audit: impl FnOnce(Decision, SandboxStatus) -> Result<(), AuditError>,
+    emit_event: impl FnOnce(SandboxFailure),
     spawn: impl FnOnce(C) -> SpawnFuture,
     report_audit_error: impl FnOnce(&AuditError),
 ) where
@@ -45,27 +43,10 @@ async fn complete_watch_sandbox_lifecycle<C, AuditError, SpawnFuture>(
             }
             spawn(command).await;
         }
-        Err(aegis_sandbox::SandboxError::Required) => {
-            if let Err(err) = append_audit(Decision::Blocked, SandboxStatus::Unavailable) {
-                report_audit_error(&err);
-                return;
-            }
-            emit_event(WatchSandboxEvent::RequiredBlocked);
-        }
-        Err(aegis_sandbox::SandboxError::RequiredNestedUnderOuterSandbox) => {
-            if let Err(err) = append_audit(Decision::Blocked, SandboxStatus::Unavailable) {
-                report_audit_error(&err);
-                return;
-            }
-            emit_event(WatchSandboxEvent::RequiredBlockedNested);
-        }
-        Err(err) => {
-            if let Err(audit_err) = append_audit(Decision::Blocked, SandboxStatus::NotAttempted) {
-                report_audit_error(&audit_err);
-                return;
-            }
-            emit_event(WatchSandboxEvent::SetupFailed(err.to_string()));
-        }
+        Err(err) => match SandboxFailure::record(&err, append_audit) {
+            Ok(failure) => emit_event(failure),
+            Err(audit_err) => report_audit_error(&audit_err),
+        },
     }
 }
 
@@ -99,7 +80,7 @@ pub(super) async fn complete_watch_approved_execution(
             append_watch_execution_audit(&execution, final_decision, sandbox_status)
         },
         |event| emit_watch_sandbox_event(event, &event_id),
-        |command| super::runner::execute_prepared_and_emit(command, cwd, spawn_id),
+        |command| execute_prepared_and_emit(command, cwd, spawn_id),
         |err| emit_watch_audit_error(&audit_id, err),
     )
     .await;
@@ -163,9 +144,9 @@ pub(super) async fn warn_if_sandbox_unavailable_at_startup(context: &RuntimeCont
     }
 }
 
-fn emit_watch_sandbox_event(event: WatchSandboxEvent, id: &Option<String>) {
+fn emit_watch_sandbox_event(event: SandboxFailure, id: &Option<String>) {
     let result = match event {
-        WatchSandboxEvent::RequiredBlocked => emit_frame(&OutputFrame::SandboxResult {
+        SandboxFailure::RequiredBlocked => emit_frame(&OutputFrame::SandboxResult {
             id: id.clone(),
             decision: OutputDecision::Blocked,
             exit_code: EXIT_BLOCKED,
@@ -173,7 +154,7 @@ fn emit_watch_sandbox_event(event: WatchSandboxEvent, id: &Option<String>) {
             sandbox_status: SandboxStatus::Unavailable,
             message: crate::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
         }),
-        WatchSandboxEvent::RequiredBlockedNested => emit_frame(&OutputFrame::SandboxResult {
+        SandboxFailure::RequiredBlockedNested => emit_frame(&OutputFrame::SandboxResult {
             id: id.clone(),
             decision: OutputDecision::Blocked,
             exit_code: EXIT_BLOCKED,
@@ -181,10 +162,10 @@ fn emit_watch_sandbox_event(event: WatchSandboxEvent, id: &Option<String>) {
             sandbox_status: SandboxStatus::Unavailable,
             message: crate::runtime::SANDBOX_REQUIRED_NESTED_UNAVAILABLE_MESSAGE,
         }),
-        WatchSandboxEvent::SetupFailed(err) => emit_frame(&OutputFrame::Error {
+        SandboxFailure::SetupFailed(err) => emit_frame(&OutputFrame::Error {
             id: id.clone(),
             exit_code: EXIT_INTERNAL,
-            message: format!("Sandbox setup failed; command not executed: {err}"),
+            message: setup_failed_message(&err),
         }),
     };
     if result.is_err() {
@@ -197,47 +178,32 @@ pub(super) fn append_watch_execution_audit(
     decision: Decision,
     sandbox_status: SandboxStatus,
 ) -> Result<(), crate::error::AegisError> {
-    let watch = WatchAuditContext {
-        allowlist_match: execution.plan.decision_context().allowlist_match(),
-        allowlist_effective: execution.plan.policy_decision().allowlist_effective,
-        ci_detected: execution.ci_detected,
-        sandbox_status,
-        snapshot_attempts: execution.attempts,
-        source: execution.frame.source.clone(),
-        cwd: execution.cwd.and_then(super::runner::audit_cwd),
-        id: execution.frame.id.clone(),
-    };
-    match execution.recovery_degradation {
-        Some(degradation) => execution
-            .context
-            .append_watch_audit_entry_with_recovery_degradation(
-                execution.plan.assessment(),
-                decision,
-                execution.snapshots,
-                execution.plan.explanation(),
-                watch,
-                degradation,
-            ),
-        None => execution.context.append_watch_audit_entry(
-            execution.plan.assessment(),
+    append_audit(
+        execution.context,
+        execution.plan,
+        &AuditRecord {
             decision,
-            execution.snapshots,
-            execution.plan.explanation(),
-            watch,
-        ),
-    }
+            sandbox_status,
+            snapshots: execution.snapshots,
+            attempts: execution.attempts,
+            recovery_degradation: execution.recovery_degradation,
+        },
+        Some(WatchOrigin {
+            source: execution.frame.source.clone(),
+            cwd: execution.cwd.and_then(audit_cwd),
+            id: execution.frame.id.clone(),
+        }),
+    )
+}
+
+pub(super) fn audit_cwd(cwd: &std::path::Path) -> Option<String> {
+    std::path::absolute(cwd)
+        .ok()
+        .map(|path| path.to_string_lossy().into_owned())
 }
 
 pub(super) fn emit_watch_audit_error(id: &Option<String>, err: &crate::error::AegisError) {
-    if emit_frame(&OutputFrame::Error {
-        id: id.clone(),
-        exit_code: EXIT_INTERNAL,
-        message: format!("audit log write failed: {err}"),
-    })
-    .is_err()
-    {
-        exit_internal();
-    }
+    emit_error_or_exit(id.clone(), format!("audit log write failed: {err}"));
 }
 
 fn frame_sandbox(

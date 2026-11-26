@@ -167,6 +167,30 @@ pub fn emit_frame(frame: &OutputFrame) -> std::io::Result<()> {
     lock.flush()
 }
 
+pub(super) fn emit_error_or_exit(id: Option<String>, message: String) {
+    if emit_frame(&OutputFrame::Error {
+        id,
+        exit_code: aegis_types::EXIT_INTERNAL,
+        message,
+    })
+    .is_err()
+    {
+        exit_internal();
+    }
+}
+
+pub(super) fn emit_result_or_exit(id: Option<String>, decision: OutputDecision, exit_code: i32) {
+    if emit_frame(&OutputFrame::Result {
+        id,
+        decision,
+        exit_code,
+    })
+    .is_err()
+    {
+        exit_internal();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

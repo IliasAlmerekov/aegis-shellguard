@@ -28,16 +28,16 @@ The library (`src/lib.rs`) exports these modules:
 
 - `analysis` runs language-aware analysis on the parent side: it finds analyzable source in a command (`router`), spawns the ephemeral worker (`worker_client`), enforces deadlines, and turns worker failures into typed degradations.
 - `planning` wraps the pure policy engine. It builds the `InterceptionPlan` for a command: the decision, the snapshot plan, and the git targets resolved from the working directory.
-- `runtime` builds the `RuntimeContext` once: loaded config, audit logger, snapshot registry, sandbox settings, and recovery state.
+- `runtime` builds the `RuntimeContext` once: loaded config, audit logger, snapshot registry, sandbox settings, and recovery state. Its `disposition` module holds the flow after the policy disposition is known, shared by the shell path and watch: prompt and rule persistence, the approve-always and Recovery gate, block display, the audit record, and the `SandboxError` mapping. Each path implements `DispositionOutput` for its own prompts and keeps its own execution step.
 - `explanation` formats a `CommandExplanation` for humans.
-- `watch` implements the NDJSON watch protocol and its runner.
+- `watch` implements the NDJSON watch protocol and its runner. `exec` streams the child's output as frames, and `sandbox` prepares the confined child for a frame.
 - `update` is the opt-in npm update notice. Its consent and cache state live under `~/.aegis/`, never in a project file.
 - `toggle` turns interception on and off. `runtime_gate` detects CI. `error` holds the top-level error type.
 
 The binary (`src/main.rs`) adds the entry points:
 
 - `cli_dispatch` and `cli_commands` parse arguments and route subcommands.
-- `shell_wrapper`, `shell_flow`, and `shell_compat` handle the `$SHELL` mode: parse `-c`, plan, then run.
+- `shell_wrapper` and `shell_compat` handle the `$SHELL` mode: parse `-c`, plan, then run.
 - `execution` carries out a plan: confirmation, snapshots, sandbox preparation, audit write, then exec.
 - `install` registers the hook for Claude and Codex and installs the shell wrapper.
 - `rollback`, `rollback_last`, `verify`, `prune`, `diagnostics`, and `policy_output` back the matching subcommands.

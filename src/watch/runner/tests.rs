@@ -5,10 +5,11 @@ use std::path::PathBuf;
 use serde_json::Value;
 use tempfile::TempDir;
 
-use super::{audit_cwd, run_watch_plan_with_prompts, watch_execution_cwd};
+use super::{run_watch_plan_with_prompts, watch_execution_cwd};
 use crate::planning::{CwdState, PlanningOutcome, PlanningRequest, plan_with_context_async};
 use crate::runtime::RuntimeContext;
 use crate::watch::protocol::InputFrame;
+use crate::watch::sandbox::audit_cwd;
 use aegis_config::AegisConfig;
 use aegis_policy::ExecutionTransport;
 use aegis_snapshot::{GitPlugin, SnapshotRegistry};
@@ -204,7 +205,6 @@ async fn watch_recovery_prompt_deny_prevents_execution_and_audits_degradation() 
         frame,
         &context,
         plan,
-        false,
         |_, _| PromptDecision::Approve,
         |degradation| {
             prompted.set(Some(degradation));
@@ -237,7 +237,6 @@ async fn watch_recovery_prompt_run_once_executes_and_audits_degradation() {
         frame,
         &context,
         plan,
-        false,
         |_, _| PromptDecision::Approve,
         |degradation| {
             prompted.set(Some(degradation));
@@ -270,7 +269,6 @@ async fn watch_partial_snapshot_coverage_prompts_and_audits_its_own_reason() {
         frame,
         &context,
         plan,
-        false,
         |_, _| PromptDecision::Approve,
         |degradation| {
             prompted.set(Some(degradation));
@@ -303,7 +301,6 @@ async fn watch_recovery_deny_records_enabled_sandbox_as_not_attempted() {
         frame,
         &context,
         plan,
-        false,
         |_, _| PromptDecision::Approve,
         |_| RecoveryPromptDecision::Deny,
     )
@@ -331,7 +328,6 @@ async fn watch_confirmed_run_with_an_unresolved_git_target_skips_the_recovery_pr
         frame,
         &context,
         plan,
-        false,
         |_, _| PromptDecision::Approve,
         |_| {
             prompted.set(true);
@@ -359,7 +355,6 @@ async fn watch_audit_records_the_resolved_cwd_when_the_frame_has_none() {
         frame,
         &context,
         plan,
-        false,
         |_, _| PromptDecision::Approve,
         |_| RecoveryPromptDecision::Deny,
     )
@@ -382,7 +377,6 @@ async fn watch_denied_entry_records_the_resolved_cwd_when_the_frame_has_none() {
         frame,
         &context,
         plan,
-        false,
         |_, _| PromptDecision::Deny,
         |_| RecoveryPromptDecision::Deny,
     )
@@ -404,7 +398,6 @@ async fn watch_blocked_command_is_audited_as_blocked_with_no_snapshots() {
         frame,
         &context,
         plan,
-        false,
         |_, _| panic!("a blocked command is never confirmed"),
         |_| panic!("a blocked command takes no Snapshot"),
     )
@@ -461,7 +454,6 @@ async fn watch_allowlisted_danger_without_a_snapshot_provider_halts_with_no_snap
         frame,
         &context,
         plan,
-        false,
         |_, _| PromptDecision::Approve,
         |degradation| {
             prompted.set(Some(degradation));
@@ -496,7 +488,6 @@ async fn watch_allowlisted_danger_with_a_ready_snapshot_runs_without_a_recovery_
         frame,
         &context,
         plan,
-        false,
         |_, _| PromptDecision::Approve,
         |_| {
             prompted.set(true);
@@ -524,7 +515,6 @@ async fn watch_confirmed_danger_without_a_snapshot_provider_skips_the_recovery_p
         frame,
         &context,
         plan,
-        false,
         |_, _| PromptDecision::Approve,
         |_| {
             prompted.set(true);
@@ -554,7 +544,6 @@ async fn watch_confirmed_danger_with_a_failed_snapshot_skips_the_recovery_prompt
         frame,
         &context,
         plan,
-        false,
         |_, _| PromptDecision::Approve,
         |_| {
             prompted.set(true);
@@ -619,7 +608,6 @@ async fn watch_recovery_deny_audits_the_attempts_of_its_snapshot_pass() {
         frame,
         &context,
         plan,
-        false,
         |_, _| PromptDecision::Approve,
         |_| RecoveryPromptDecision::Deny,
     )
@@ -642,7 +630,6 @@ async fn watch_recovery_run_once_audits_the_attempts_of_its_snapshot_pass() {
         frame,
         &context,
         plan,
-        false,
         |_, _| PromptDecision::Approve,
         |_| RecoveryPromptDecision::RunOnceWithoutRecovery,
     )
@@ -664,7 +651,6 @@ async fn watch_approved_run_without_recovery_obligation_audits_the_attempts_of_i
         frame,
         &context,
         plan,
-        false,
         |_, _| PromptDecision::Approve,
         |_| panic!("a non-effect-opaque command has no recovery obligation"),
     )

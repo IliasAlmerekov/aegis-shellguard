@@ -96,7 +96,6 @@ async fn unavailable_cwd_denies_watch_and_audits_recovery_degradation() {
         },
         &context,
         plan,
-        false,
         |_, _| PromptDecision::Approve,
         |degradation| {
             prompted.set(Some(degradation));
