@@ -194,6 +194,9 @@ fn snapshot_id_from_prune_command(command: &str) -> Option<&str> {
 }
 
 #[cfg(test)]
+mod listing_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::logger::AuditSnapshot;
