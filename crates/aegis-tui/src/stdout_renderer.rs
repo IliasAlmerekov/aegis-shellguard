@@ -8,14 +8,7 @@ use super::block_screen::{
     render_policy_block,
 };
 use super::confirm_screen::render_dialog;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PromptDecision {
-    Approve,
-    ApproveAlways,
-    Deny,
-    DenyAlways,
-}
+use super::shared::PromptDecision;
 
 pub fn show_confirmation(
     assessment: &Assessment,

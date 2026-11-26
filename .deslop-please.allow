@@ -10,7 +10,6 @@ module-cycle aegis_parser::embedded_scripts,aegis_parser::heredoc_data_consumer,
 module-cycle aegis_scanner::patterns,aegis_scanner::scanner
 module-cycle aegis_scanner::scanner::assessment,aegis_scanner::scanner::quote_split
 module-cycle aegis_scanner::scanner::cd_walk,aegis_scanner::scanner::git_stages
-module-cycle aegis_tui::confirm_screen,aegis_tui::stdout_renderer
 module-cycle aegis_types::analysis,aegis_types::assessment
 tangle aegis_config::model::AegisConfig,aegis_config::model::ratchet::context::RatchetContext,aegis_config::model::ratchet::context::provider_enabled_in_base
 tangle aegis_scanner::scanner::Scanner,aegis_scanner::scanner::git_stages::StageEvidence

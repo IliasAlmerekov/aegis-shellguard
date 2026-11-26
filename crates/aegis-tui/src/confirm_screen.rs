@@ -9,10 +9,9 @@ use aegis_explanation::{CommandExplanation, GitTargetExplanation, PolicyRational
 use aegis_types::{Assessment, MatchEvidence, RiskLevel, SnapshotRecord};
 
 use super::shared::{
-    confirmation_reason_text, decision_source_label, pattern_source_label, print_analysis_reasons,
-    print_command_line, print_dangerous_action,
+    PromptDecision, confirmation_reason_text, decision_source_label, pattern_source_label,
+    print_analysis_reasons, print_command_line, print_dangerous_action,
 };
-use super::stdout_renderer::PromptDecision;
 
 pub(super) fn render_dialog<W: Write>(
     assessment: &Assessment,

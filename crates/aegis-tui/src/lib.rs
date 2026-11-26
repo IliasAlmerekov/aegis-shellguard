@@ -14,8 +14,9 @@ pub use recovery_screen::{
     RecoveryPromptDecision, show_recovery_override_decision, show_recovery_override_via_tty,
     show_recovery_override_with_input,
 };
+pub use shared::PromptDecision;
 pub use stdout_renderer::{
-    PromptDecision, show_confirmation, show_confirmation_decision, show_confirmation_with_decision,
+    show_confirmation, show_confirmation_decision, show_confirmation_with_decision,
     show_confirmation_with_input, show_policy_block,
 };
 pub use tty_renderer::{

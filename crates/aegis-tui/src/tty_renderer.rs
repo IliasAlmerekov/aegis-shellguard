@@ -5,7 +5,8 @@ use aegis_explanation::CommandExplanation;
 use aegis_types::{Assessment, RiskLevel, SnapshotRecord};
 
 use super::block_screen::{render_block, render_policy_block};
-use super::stdout_renderer::{PromptDecision, show_confirmation_with_decision};
+use super::shared::PromptDecision;
+use super::stdout_renderer::show_confirmation_with_decision;
 
 pub fn tty_unavailable_decision(assessment: &Assessment) -> bool {
     matches!(assessment.risk, RiskLevel::Safe)

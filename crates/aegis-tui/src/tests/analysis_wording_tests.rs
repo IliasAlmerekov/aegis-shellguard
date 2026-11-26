@@ -2,7 +2,8 @@ use aegis_explanation::PolicyRationale;
 use aegis_types::{AnalysisStatus, AnalysisSummary, Assessment, DegradationReason, RiskLevel};
 
 use super::{make_assessment, make_explanation, make_language_match, strip_ansi};
-use crate::stdout_renderer::{PromptDecision, show_confirmation_with_decision};
+use crate::shared::PromptDecision;
+use crate::stdout_renderer::show_confirmation_with_decision;
 
 fn degraded_assessment(cmd: &str, reasons: Vec<DegradationReason>) -> Assessment {
     let mut assessment = make_assessment(cmd, RiskLevel::Safe, vec![]);
