@@ -11,10 +11,11 @@
 
 </div>
 
-Aegis sits between an AI agent and your shell. Safe commands run at once.
-Destructive ones, like `rm -rf` or `git reset --hard`, wait for your approval,
-and Aegis saves your work first where it can. If the agent deletes the wrong
-thing, one command brings it back.
+Your AI agent runs `rm -rf src` or `git reset --hard`. Aegis took a Snapshot
+of your working tree a moment before, so `aegis rollback --last` puts the files
+back.
+
+![Aegis asks before rm -rf src runs, then aegis rollback --last restores the deleted files](src/assets/rollback.gif)
 
 Install the binary, then add the Claude Code plugin:
 
@@ -27,27 +28,65 @@ npm i -g @iliasalmerekov/aegis
 /plugin install aegis@aegis-shellguard
 ```
 
-![Aegis asks before rm -rf src runs, then aegis rollback --last restores the deleted files](src/assets/rollback.gif)
-
-Claude Code and Codex share one policy and one Audit log (`~/.aegis/audit.jsonl`).
-Other agents go through `$SHELL` on a best-effort basis.
+Claude Code and Codex connect through their hooks and share one policy and one
+Audit log (`~/.aegis/audit.jsonl`). Other agents go through `$SHELL` on a
+best-effort basis.
 
 ---
 
-## Why Aegis
+## What happens when your agent runs `rm -rf src`
 
-AI agents delete files and directories, rewrite git history, drop databases, and
-push things you did not intend to push. Blocking everything makes the agent useless. Blocking too little
-leaves you restoring from backups. Aegis does three things:
+1. The Claude Code or Codex hook passes the command to Aegis before it runs.
+2. Aegis rates it `Danger` and pauses it. You approve, deny, or inspect it.
+3. You approve. Aegis takes a git Snapshot of the working tree, untracked files
+   included, and leaves the tree exactly as it found it.
+4. The command runs. The Audit log records the command, your decision, and the
+   Snapshot id.
+5. You realize it was the wrong directory. From the same directory, run
+   `aegis rollback --last` and the files come back.
 
-- It asks first. A destructive command pauses for your decision: approve, deny, or inspect.
-- It takes a Snapshot before damage. Dangerous commands trigger best-effort Snapshots (git, Docker, databases) before they run. `aegis rollback --last` restores the git Snapshot, and the sqlite one when it is the configured database. For Docker and the other database Snapshots it prints the `aegis rollback <id>` line to run.
-- It records everything. An append-only Audit log holds every command and every decision.
+Safe commands such as `ls` or `cargo test` skip the dialog. Classifying a
+typical safe command takes about 2.6 µs, and a whole Aegis process from start
+to decision takes about 22 ms
+([performance baseline](docs/performance-baseline.md)).
 
-Aegis decides by heuristics, not by understanding your command. It is not a
-privilege boundary, so it does not stop code that already runs as you. See the
-[threat model](docs/threat-model.md), and [how it works](docs/how-it-works.md)
-for risk levels, effect opacity, and the Sandbox.
+## Why the agent's own checkpoints are not enough
+
+The Claude Code docs say its checkpointing "does not track files modified by
+Bash commands". After a shell command deletes files, resets a repository, or
+drops a database, the agent has nothing to restore from. Aegis snapshots that
+state before the command runs.
+
+## What Aegis can restore
+
+| Snapshot plugin | On by default | How to restore |
+|-----------------|---------------|----------------|
+| git (tracked and untracked files) | yes | `aegis rollback --last` |
+| SQLite | no | `aegis rollback --last` when SQLite is the configured database |
+| Docker | no | `aegis rollback <id>` |
+| PostgreSQL, MySQL/MariaDB, Supabase | no | `aegis rollback <id>` |
+
+`aegis rollback --last` prints the `aegis rollback <id>` line for every Snapshot
+it does not restore itself. The [config schema](docs/config-schema.md) shows how
+to turn on the database and Docker plugins.
+
+When no Snapshot plugin applies, Aegis tells you instead of implying an undo it
+cannot perform.
+
+## Safety limits
+
+Read these before you decide how far to trust Aegis. The full text is in
+[how it works](docs/how-it-works.md) and the [threat model](docs/threat-model.md).
+
+- A Snapshot is not a complete backup. The git plugin uses
+  `git stash --include-untracked`, so gitignored files such as `.env` or
+  `node_modules` are not captured.
+- Aegis decides by heuristics over the parsed command, not by understanding it.
+  It is not a privilege boundary and does not stop code that already runs as you.
+- Effect-opaque execution, such as `sh ./cleanup.sh`, and auto-approved `Danger` commands need a Snapshot before they run. A `Danger` command you confirm yourself stays best-effort. If a required Snapshot is not created, unattended runs are denied, and in a terminal you can type `yes` to "Run once without recovery" or deny. Aegis does not inspect the referenced script.
+- The Sandbox is a write/network guardrail. It is not a confidentiality boundary and not a privilege boundary.
+- In Aegis 1.0 the Sandbox layer is mandatory ([ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md)). `sandbox.enabled` and `sandbox.required` stay accepted and ignored, each reported as a `deprecated_sandbox_field`.
+- Current pre-1.0 implementation: the 0.x binary still records `sandbox_status = "unavailable"` and warns before running unconfined when confinement is missing.
 
 ---
 
@@ -168,17 +207,6 @@ override at session start.
 > [!TIP]
 > Other agents: for tools that respect `$SHELL`, run `aegis setup-shell`. For an agent with a `shell` config field, find the `shell` field and set it to the output of `command -v aegis`.
 
----
-
-## Safety limits
-
-These limits matter when you decide how far to trust Aegis. The full text is in
-[how it works](docs/how-it-works.md).
-
-- Effect-opaque execution, such as `sh ./cleanup.sh`, and auto-approved `Danger` commands need a Snapshot before they run. A `Danger` command you confirm yourself stays best-effort. If a required Snapshot is not created, unattended runs are denied, and in a terminal you can type `yes` to "Run once without recovery" or deny. Aegis does not inspect the referenced script, and a Snapshot is not a complete backup.
-- The Sandbox is a write/network guardrail. It is not a confidentiality boundary and not a privilege boundary.
-- In Aegis 1.0 the Sandbox layer is mandatory ([ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md)). `sandbox.enabled` and `sandbox.required` stay accepted and ignored, each reported as a `deprecated_sandbox_field`.
-- Current pre-1.0 implementation: the 0.x binary still records `sandbox_status = "unavailable"` and warns before running unconfined when confinement is missing.
 
 ---
 
@@ -258,3 +286,5 @@ Neither path touches project-local hooks. Projects where you ran
 What still blocks 1.0 is the
 [`1.0` milestone](https://github.com/IliasAlmerekov/aegis-shellguard/milestone/1),
 the only release gate.
+
+If Aegis brought back something your agent deleted, a GitHub star helps other developers find it.
