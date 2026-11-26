@@ -465,7 +465,7 @@ fn handle_snapshot_list_command() -> i32 {
     let logger = AuditLogger::default();
     match SnapshotLedger::load(&logger) {
         Ok(ledger) => {
-            out_raw!("{}", format_snapshot_listing(&ledger));
+            out_raw!("{}", ledger.format_listing());
             0
         }
         Err(err) => {
@@ -473,33 +473,6 @@ fn handle_snapshot_list_command() -> i32 {
             EXIT_INTERNAL
         }
     }
-}
-
-pub(crate) fn format_snapshot_listing(ledger: &SnapshotLedger) -> String {
-    let pruned = ledger.pruned_count();
-    let records = ledger.live_records();
-
-    if records.is_empty() {
-        if pruned == 0 {
-            return "No snapshots recorded.\n".to_string();
-        }
-        return format!("No snapshots recorded. ({pruned} pruned snapshot(s) hidden.)\n");
-    }
-
-    let mut out = String::from("Recorded snapshots (newest first):\n");
-    for record in records.iter().rev() {
-        let recorded = time::OffsetDateTime::from(record.recorded_at)
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap_or_else(|_| "unknown".to_string());
-        out.push('\n');
-        out.push_str(&format!("  provider: {}\n", record.plugin));
-        out.push_str(&format!("  recorded: {recorded}\n"));
-        out.push_str(&format!("  id:       {}\n", record.snapshot_id));
-    }
-    if pruned != 0 {
-        out.push_str(&format!("\n  ({pruned} pruned snapshot(s) hidden.)\n"));
-    }
-    out
 }
 
 pub(crate) fn handle_config_validate_command(args: ConfigValidateArgs) -> i32 {
@@ -632,109 +605,5 @@ fn format_audit_summary(
         AuditOutputFormat::Ndjson => {
             Err("--summary cannot be used with --format ndjson".to_string())
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::format_snapshot_listing as format_ledger;
-    use aegis_audit::{AuditEntry, AuditSnapshot, SnapshotLedger};
-    use aegis_types::Decision;
-    use aegis_types::RiskLevel;
-
-    fn entry_with_snapshot(command: &str, plugin: &str, snapshot_id: &str) -> AuditEntry {
-        AuditEntry::new(
-            command,
-            RiskLevel::Danger,
-            Vec::new(),
-            Decision::Approved,
-            vec![AuditSnapshot {
-                plugin: plugin.to_string(),
-                snapshot_id: snapshot_id.to_string(),
-                git_target: None,
-            }],
-            None,
-            None,
-        )
-    }
-
-    fn format_snapshot_listing(entries: &[AuditEntry]) -> String {
-        format_ledger(&SnapshotLedger::from_entries(entries))
-    }
-
-    #[test]
-    fn lists_id_and_provider_for_each_snapshot() {
-        let entries = vec![
-            entry_with_snapshot("rm -rf src", "git", "snap-git-001"),
-            entry_with_snapshot("docker rm db", "docker", "snap-docker-001"),
-        ];
-
-        let output = format_snapshot_listing(&entries);
-
-        assert!(output.contains("snap-git-001"), "missing git id: {output}");
-        assert!(output.contains("git"), "missing git provider: {output}");
-        assert!(
-            output.contains("snap-docker-001"),
-            "missing docker id: {output}"
-        );
-        assert!(
-            output.contains("docker"),
-            "missing docker provider: {output}"
-        );
-    }
-
-    #[test]
-    fn deduplicates_repeated_snapshot_id() {
-        let entries = vec![
-            entry_with_snapshot("rm -rf src", "git", "snap-001"),
-            entry_with_snapshot("aegis rollback snap-001", "git", "snap-001"),
-        ];
-
-        let output = format_snapshot_listing(&entries);
-
-        assert_eq!(
-            output.matches("snap-001").count(),
-            1,
-            "snap-001 must be listed exactly once: {output}"
-        );
-    }
-
-    #[test]
-    fn same_id_under_two_providers_lists_one_row_per_pair_newest_first() {
-        let entries = vec![
-            entry_with_snapshot("first", "git", "dup-id"),
-            entry_with_snapshot("second", "docker", "dup-id"),
-        ];
-
-        let output = format_snapshot_listing(&entries);
-
-        assert_eq!(output.matches("dup-id").count(), 2, "{output}");
-        let docker = output.find("provider: docker").expect("docker row");
-        let git = output.find("provider: git").expect("git row");
-        assert!(docker < git, "newest first: {output}");
-    }
-
-    #[test]
-    fn empty_log_yields_friendly_message() {
-        let output = format_snapshot_listing(&[]);
-
-        assert!(!output.is_empty());
-        assert!(
-            output.to_lowercase().contains("no snapshot"),
-            "expected a friendly empty message: {output}"
-        );
-    }
-
-    #[test]
-    fn preserves_tab_in_git_style_id() {
-        let id = "/home/user/project\tabc123def456";
-        let entries = vec![entry_with_snapshot("rm -rf .", "git", id)];
-
-        let output = format_snapshot_listing(&entries);
-
-        assert!(
-            output.contains(id),
-            "tab-bearing id not preserved: {output:?}"
-        );
     }
 }

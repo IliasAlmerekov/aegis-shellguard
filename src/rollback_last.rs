@@ -2,7 +2,7 @@ use std::io::{BufRead, IsTerminal};
 use std::path::{Path, PathBuf};
 
 use aegis::error::AegisError;
-use aegis_audit::{AuditLogger, CommandSnapshot, RecordedCommand, SnapshotLedger};
+use aegis_audit::{AuditLogger, BoundCommand, CommandSnapshot, SnapshotLedger};
 use aegis_config::AegisConfig;
 use aegis_snapshot::{SnapshotRegistry, SnapshotRegistryConfig, SqlitePlugin, git_toplevel};
 
@@ -18,13 +18,6 @@ pub(crate) struct Location {
     cwd: PathBuf,
     repo_top: Option<PathBuf>,
     sqlite_db: Option<PathBuf>,
-}
-
-#[derive(Debug)]
-pub(crate) struct Candidate<'a> {
-    command: &'a RecordedCommand,
-    bound: Vec<&'a CommandSnapshot>,
-    unbound: Vec<&'a CommandSnapshot>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -72,23 +65,8 @@ fn is_bound(location: &Location, command_cwd: &str, snapshot: &CommandSnapshot) 
     }
 }
 
-fn candidates<'a>(ledger: &'a SnapshotLedger, location: &Location) -> Vec<Candidate<'a>> {
-    ledger
-        .recent_commands()
-        .iter()
-        .filter_map(|command| {
-            let cwd = command.cwd.as_deref()?;
-            let (bound, unbound): (Vec<_>, Vec<_>) = command
-                .snapshots
-                .iter()
-                .partition(|snapshot| is_bound(location, cwd, snapshot));
-            (!bound.is_empty()).then_some(Candidate {
-                command,
-                bound,
-                unbound,
-            })
-        })
-        .collect()
+fn candidates<'a>(ledger: &'a SnapshotLedger, location: &Location) -> Vec<BoundCommand<'a>> {
+    ledger.bound_commands(|cwd, snapshot| is_bound(location, cwd, snapshot))
 }
 
 fn target_of(snapshot: &CommandSnapshot) -> RollbackTarget {
@@ -98,7 +76,7 @@ fn target_of(snapshot: &CommandSnapshot) -> RollbackTarget {
     }
 }
 
-fn describe(candidate: &Candidate<'_>) -> String {
+fn describe(candidate: &BoundCommand<'_>) -> String {
     let command = candidate.command;
     let source = command
         .source
@@ -111,7 +89,7 @@ fn describe(candidate: &Candidate<'_>) -> String {
     )
 }
 
-fn summary(candidate: &Candidate<'_>, location: &Location) -> String {
+fn summary(candidate: &BoundCommand<'_>, location: &Location) -> String {
     let mut text = format!(
         "Latest command with Snapshots for {}:\n  {}\n",
         location_label(location),
@@ -141,7 +119,7 @@ fn summary(candidate: &Candidate<'_>, location: &Location) -> String {
     text
 }
 
-fn listing(candidates: &[Candidate<'_>]) -> String {
+fn listing(candidates: &[BoundCommand<'_>]) -> String {
     let mut text = String::from("Recent commands with Snapshots for this location:\n");
     for (index, candidate) in candidates.iter().take(LIST_LIMIT).enumerate() {
         text.push_str(&format!("  {}. {}\n", index + 1, describe(candidate)));
@@ -164,7 +142,7 @@ fn no_candidate_message(location: &Location) -> String {
 }
 
 fn choose(
-    candidates: &[Candidate<'_>],
+    candidates: &[BoundCommand<'_>],
     location: &Location,
     yes: bool,
     is_tty: bool,

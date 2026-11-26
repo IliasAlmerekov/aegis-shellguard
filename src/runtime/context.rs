@@ -507,7 +507,7 @@ async fn automatic_prune(config: AegisConfig) -> Result<(), AegisError> {
             return Ok(());
         }
     };
-    let records = registry.resolve_prunable_records(ledger.live_records());
+    let records = registry.resolve_prunable_records(&ledger.into_live_snapshots());
     let candidates = RetentionPolicy::from_config(&config.prune).apply(&records, SystemClock.now());
     for record in candidates {
         if let Err(error) = registry.delete(&record.plugin, &record.snapshot_id).await {

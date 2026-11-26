@@ -17,6 +17,13 @@ pub enum SnapshotLookupError {
     NotFound,
 }
 
+#[derive(Debug)]
+pub struct BoundCommand<'a> {
+    pub command: &'a RecordedCommand,
+    pub bound: Vec<&'a CommandSnapshot>,
+    pub unbound: Vec<&'a CommandSnapshot>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct SnapshotLedger {
     live: Vec<RecordedSnapshot>,
@@ -92,12 +99,59 @@ impl SnapshotLedger {
         }
     }
 
-    pub fn recent_commands(&self) -> &[RecordedCommand] {
+    fn recent_commands(&self) -> &[RecordedCommand] {
         &self.commands
     }
 
-    pub fn live_records(&self) -> &[RecordedSnapshot] {
-        &self.live
+    pub fn into_live_snapshots(self) -> Vec<RecordedSnapshot> {
+        self.live
+    }
+
+    pub fn bound_commands<'a>(
+        &'a self,
+        is_bound: impl Fn(&str, &CommandSnapshot) -> bool,
+    ) -> Vec<BoundCommand<'a>> {
+        self.recent_commands()
+            .iter()
+            .filter_map(|command| {
+                let cwd = command.cwd.as_deref()?;
+                let (bound, unbound): (Vec<_>, Vec<_>) = command
+                    .snapshots
+                    .iter()
+                    .partition(|snapshot| is_bound(cwd, snapshot));
+                (!bound.is_empty()).then_some(BoundCommand {
+                    command,
+                    bound,
+                    unbound,
+                })
+            })
+            .collect()
+    }
+
+    pub fn format_listing(&self) -> String {
+        let pruned = self.pruned_count;
+
+        if self.live.is_empty() {
+            if pruned == 0 {
+                return "No snapshots recorded.\n".to_string();
+            }
+            return format!("No snapshots recorded. ({pruned} pruned snapshot(s) hidden.)\n");
+        }
+
+        let mut out = String::from("Recorded snapshots (newest first):\n");
+        for record in self.live.iter().rev() {
+            let recorded = time::OffsetDateTime::from(record.recorded_at)
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_else(|_| "unknown".to_string());
+            out.push('\n');
+            out.push_str(&format!("  provider: {}\n", record.plugin));
+            out.push_str(&format!("  recorded: {recorded}\n"));
+            out.push_str(&format!("  id:       {}\n", record.snapshot_id));
+        }
+        if pruned != 0 {
+            out.push_str(&format!("\n  ({pruned} pruned snapshot(s) hidden.)\n"));
+        }
+        out
     }
 
     pub fn pruned_count(&self) -> usize {
@@ -140,6 +194,9 @@ fn snapshot_id_from_prune_command(command: &str) -> Option<&str> {
 }
 
 #[cfg(test)]
+mod listing_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::logger::AuditSnapshot;
@@ -174,7 +231,7 @@ mod tests {
 
     fn live_pairs(ledger: &SnapshotLedger) -> Vec<(&str, &str)> {
         ledger
-            .live_records()
+            .live
             .iter()
             .map(|record| (record.plugin.as_str(), record.snapshot_id.as_str()))
             .collect()
@@ -368,7 +425,7 @@ mod tests {
         let started = std::time::Instant::now();
         let ledger = SnapshotLedger::from_entries(&entries);
 
-        assert_eq!(ledger.live_records().len(), 40_000);
+        assert_eq!(ledger.into_live_snapshots().len(), 40_000);
         assert!(
             started.elapsed() < std::time::Duration::from_secs(2),
             "ledger construction took {:?}",

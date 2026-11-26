@@ -27,8 +27,8 @@ fn append_normalizes_legacy_fields_only_once() {
         .expect("append function must exist");
     let append_source = &source[append_start..];
     let next_fn = append_source
-        .find("\n    pub(super) fn lock_path(&self) -> PathBuf {")
-        .expect("append must be followed by read_all");
+        .find("\n}\n")
+        .expect("append must sit inside the AuditLogger impl block");
     let append_body = &append_source[..next_fn];
 
     let normalize_calls = append_body.matches("normalize_legacy_fields()").count();
