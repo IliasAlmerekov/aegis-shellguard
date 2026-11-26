@@ -215,15 +215,16 @@ export function Hero() {
               data-enter
               className="font-inter-variable text-[40px] font-bold leading-[1.02] tracking-[-0.9px] text-cloud-mute sm:text-heading sm:tracking-heading md:text-heading-lg md:tracking-heading-lg lg:text-display lg:tracking-display"
             >
-              A shell guardrail for <span className="text-cloud">AI coding agents.</span>
+              Roll back what <span className="text-cloud">your AI agent broke.</span>
             </h1>
 
             <p
               data-enter
               className="mt-5 max-w-[520px] font-inter-variable text-body-sm leading-body-sm tracking-body-sm text-cloud-dim md:mt-6 md:text-body-lg md:leading-body-lg md:tracking-body-lg"
             >
-              Aegis checks every command before it runs. Safe commands pass; risky
-              ones wait for you; catastrophic ones are blocked.
+              Aegis asks before a destructive command runs and snapshots your git
+              tree or database first. If the agent breaks something anyway, one
+              command brings it back.
             </p>
 
             <a

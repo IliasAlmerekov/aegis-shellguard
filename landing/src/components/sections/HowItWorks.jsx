@@ -217,7 +217,7 @@ function TerminalChrome({ held, children }) {
             className="transition-colors duration-300"
             style={{ color: held ? 'var(--color-cloud)' : 'var(--color-cloud-dim)' }}
           >
-            {held ? 'waiting for you' : 'shell guarded'}
+            {held ? 'waiting for you' : 'watching'}
           </span>
         </div>
       </div>

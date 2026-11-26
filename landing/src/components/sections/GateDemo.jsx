@@ -292,7 +292,7 @@ export function GateDemo() {
                   color: frame.held ? 'var(--color-cloud)' : 'var(--color-cloud-dim)',
                 }}
               >
-                {frame.held ? 'waiting for you' : 'shell guarded'}
+                {frame.held ? 'waiting for you' : frame.snapshot ? 'snapshot saved' : 'watching'}
               </span>
             </div>
 

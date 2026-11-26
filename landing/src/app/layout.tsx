@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Aegis ShellGuard — stop your AI agent from deleting your work',
+  title: 'Aegis — roll back what your AI agent broke',
   description:
-    'Aegis ShellGuard is a Rust shell guardrail for AI coding agents. rm -rf, git reset --hard and DROP TABLE wait for your approval; safe commands pass through in under 2 ms.',
+    'Aegis snapshots your git tree or database before an AI coding agent runs rm -rf, git reset --hard or DROP TABLE, and waits for your approval. If the yes was a mistake, aegis rollback brings the work back. Open source, written in Rust.',
   icons: { icon: '/favicon.ico' },
 }
 
