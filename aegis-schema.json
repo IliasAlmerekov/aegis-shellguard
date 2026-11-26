@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "AegisConfig",
-  "description": "Top-level Aegis runtime configuration.\n\nLoaded in order: built-in defaults → `~/.config/aegis/config.toml` (user-global)\n→ `.aegis.toml` (project). Every field's Ratchet direction — how far the\nproject layer may change it, if at all — is declared in `model::merge_layer`\nand listed field-by-field in ADR-013's normative table.",
+  "description": "Top-level Aegis runtime configuration.\n\nLoaded in order: built-in defaults → `~/.config/aegis/config.toml` (user-global)\n→ `.aegis.toml` (project). Every field's Ratchet direction — how far the\nproject layer may change it, if at all — is declared in `model::merge_layer`.",
   "type": "object",
   "properties": {
     "allow": {
@@ -382,7 +382,7 @@
       ]
     },
     "CiPolicy": {
-      "description": "What aegis does when it detects a CI environment.\n\n`Block` is the safe default: no interactive TTY is available in CI, so\nprompting would hang the pipeline.  Instead, non-safe commands are\nhard-blocked and the pipeline fails fast with a clear error message.\n\n`Allow` is an explicit opt-in override for cases where a project has\naudited its CI pipeline and is confident that destructive commands are\nintentional (e.g., a release script that runs `terraform destroy` in a\ntear-down job).  Because a project-local `.aegis.toml` is untrusted, `Allow`\nis only honored from the trusted global config\n(`~/.config/aegis/config.toml`); a project cannot weaken an inherited\n`Block` to `Allow` (see ADR-013).",
+      "description": "What aegis does when it detects a CI environment.\n\n`Block` is the safe default: no interactive TTY is available in CI, so\nprompting would hang the pipeline.  Instead, non-safe commands are\nhard-blocked and the pipeline fails fast with a clear error message.\n\n`Allow` is an explicit opt-in override for cases where a project has\naudited its CI pipeline and is confident that destructive commands are\nintentional (e.g., a release script that runs `terraform destroy` in a\ntear-down job).  Because a project-local `.aegis.toml` is untrusted, `Allow`\nis only honored from the trusted global config\n(`~/.config/aegis/config.toml`); a project cannot weaken an inherited\n`Block` to `Allow`.",
       "oneOf": [
         {
           "description": "Hard-block all non-safe commands. No dialog. Pipeline fails fast.",
@@ -442,7 +442,7 @@
       ]
     },
     "LanguageAnalysisConfig": {
-      "description": "Language-aware analysis script-file and trusted-alias budgets (ADR-022 §6).\n\n`script_file_limit_bytes` is bounded by\n[`LANGUAGE_ANALYSIS_SCRIPT_FILE_HARD_CEILING_BYTES`] at every layer; project\nconfig may additionally only lower it, never raise it. `trusted_aliases` is\na Global-layer-only concept (\"trusted global aliases only\", ADR-022 §6) —\nproject-layer entries are dropped entirely rather than merged, since a\nproject must never be able to introduce a new trusted interpreter alias.",
+      "description": "Language-aware analysis script-file and trusted-alias budgets.\n\n`script_file_limit_bytes` is bounded by\n[`LANGUAGE_ANALYSIS_SCRIPT_FILE_HARD_CEILING_BYTES`] at every layer; project\nconfig may additionally only lower it, never raise it. `trusted_aliases` is\na Global-layer-only concept (\"trusted global aliases only\") —\nproject-layer entries are dropped entirely rather than merged, since a\nproject must never be able to introduce a new trusted interpreter alias.",
       "type": "object",
       "properties": {
         "inline_source_limit_bytes": {
@@ -682,7 +682,7 @@
       "type": "object",
       "properties": {
         "enabled": {
-          "description": "Whether prune is enabled. Currently advisory; manual `--yes` is still required.",
+          "description": "Whether Aegis automatically prunes Snapshots after each recorded Snapshot, using the retention limits below. Manual `aegis snapshot prune` still needs `--yes` to delete.",
           "type": "boolean",
           "default": false
         },
@@ -804,7 +804,7 @@
       "additionalProperties": false
     },
     "TrustedAlias": {
-      "description": "A trusted global alias for the Language-aware analysis interpreter\nregistry (ADR-022 §6) — e.g. a wrapper script name that should be treated\nas a stand-in for a canonical registry interpreter.",
+      "description": "A trusted global alias for the Language-aware analysis interpreter\nregistry — e.g. a wrapper script name that should be treated\nas a stand-in for a canonical registry interpreter.",
       "type": "object",
       "properties": {
         "alias": {

@@ -139,14 +139,14 @@ pub enum DecisionSource {
 #[serde(rename_all = "snake_case", tag = "kind")]
 #[schemars(
     description = "What produced the final interception decision, expressed as the decisive
-Matches (ADR-022 §4).
+Matches.
 
 Replaces the singular [`DecisionSource`] concept: the decisive Matches are
 *every* Match at the [`Assessment`]'s maximum [`RiskLevel`], not a single
 label. `Fallback` is used only when no rule matched. The built-in vs custom
 distinction lives per-Match (via detection evidence), not in the basis.
 
-This is the audit-persistable shape (ADR-022 §10); [`DecisionSource`]
+This is the audit-persistable shape; [`DecisionSource`]
 remains a live one-value label alongside this richer basis."
 )]
 pub enum AssessmentBasis {

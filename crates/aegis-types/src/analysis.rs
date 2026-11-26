@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 #[schemars(description = "Which detection mechanism produced a `Match`.
 
-The three concrete mechanisms of the common Detection rule contract
-(ADR-022 §4): regex `Pattern`, `Token-prefix rule`, and Language-aware
+The three concrete mechanisms of the common Detection rule contract:
+regex `Pattern`, `Token-prefix rule`, and Language-aware
 rule. A `Match` always identifies exactly one mechanism.")]
 pub enum DetectionMechanism {
     #[schemars(description = "A regex `Pattern` matched anywhere in the normalized command.")]
@@ -28,8 +28,8 @@ pub enum DetectionMechanism {
     description = "Whether a detection rule is built into Aegis or came from user config.
 
 Distinct from `crate::PatternSource` (which lives on the legacy `Pattern`
-struct): this is the common per-`Match` \"built in or custom\" flag ADR-022 §4
-requires every `Match` to carry."
+struct): this is the common per-`Match` \"built in or custom\" flag every
+`Match` must carry."
 )]
 pub enum DetectionSource {
     #[schemars(description = "Shipped with Aegis.")]
@@ -63,12 +63,11 @@ impl From<crate::PatternSource> for DetectionSource {
 )]
 #[serde(rename_all = "snake_case")]
 #[schemars(
-    description = "How completely a `Detected operation`'s operand is known to static analysis
-(ADR-022 §3).
+    description = "How completely a `Detected operation`'s operand is known to static analysis.
 
 Ordered by *decreasing* certainty: `Known < Partial < Dynamic`. A `Dynamic`
 operand is never treated as evidence of safety — it records Analysis
-degradation in addition to the visible operation (ADR-022 §3, §7)."
+degradation in addition to the visible operation."
 )]
 pub enum OperandCertainty {
     #[schemars(description = "The operand is a literal recoverable from the source.")]
@@ -98,13 +97,11 @@ pub enum OperandCertainty {
     schemars::JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
-#[schemars(
-    description = "The state of language-aware analysis for one target (ADR-022 §4).
+#[schemars(description = "The state of language-aware analysis for one target.
 
 Ordered by *increasing* degradation: `NotApplicable < Complete < Degraded`,
 so `max` of a set of statuses is the worst (most degraded) one, as required
-by monotonic merge."
-)]
+by monotonic merge.")]
 pub enum AnalysisStatus {
     #[schemars(
         description = "No language-aware analysis applies to this target (no analyzable source)."
@@ -121,13 +118,11 @@ pub enum AnalysisStatus {
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[schemars(
-    description = "Why language-aware analysis degraded for a target (ADR-022 §4).
+#[schemars(description = "Why language-aware analysis degraded for a target.
 
-Variants mirror the seven degradation buckets ADR-022 §4 enumerates. The
+Variants mirror the seven degradation buckets. The
 enum is `#[non_exhaustive]` so adapters may surface finer-grained reasons
-without breaking serialization consumers."
-)]
+without breaking serialization consumers.")]
 pub enum DegradationReason {
     #[schemars(description = "The grammar for the target language is unsupported or unavailable.")]
     GrammarUnavailable,
@@ -175,11 +170,11 @@ impl DegradationReason {
 #[serde(rename_all = "snake_case")]
 #[schemars(
     description = "The kind of destructive effect or execution sink a language-aware rule
-detected (ADR-022 §3 initial scope).
+detected.
 
 `CodeExecution` is the canonical kind for a recognized process, shell, or
 eval sink: it always emits a `CodeExecution` Match regardless of payload
-certainty (ADR-022 §3, §5). The enum is `#[non_exhaustive]` so adapters may
+certainty. The enum is `#[non_exhaustive]` so adapters may
 add operation kinds without breaking serialization consumers. It carries
 no inherent severity ordering — the shared classifier maps kind + modifiers
 + certainty to `Category`/`RiskLevel`, not this enum's declaration order."
@@ -218,12 +213,10 @@ pub enum OperationKind {
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Deserialize, Serialize, schemars::JsonSchema,
 )]
-#[schemars(
-    description = "Modifiers that refine an [`OperationKind`] (ADR-022 §3).
+#[schemars(description = "Modifiers that refine an [`OperationKind`].
 
 All flags default to `false`; an operation carries only the modifiers that
-apply to it."
-)]
+apply to it.")]
 pub struct OperationModifiers {
     #[schemars(description = "The operation is recursive (`rm -r`, `shutil.rmtree`, …).")]
     pub recursive: bool,
@@ -238,13 +231,13 @@ open flag or overwrite mode)."
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize, schemars::JsonSchema)]
 #[schemars(
-    description = "A language-neutral operation detected from source syntax (ADR-022 §3).
+    description = "A language-neutral operation detected from source syntax.
 
 Each adapter emits `DetectedOperation`s rather than assigning `RiskLevel`
 directly from an API spelling. A shared classifier maps `kind`, `modifiers`,
 and `certainty` into the existing `Category`, `RiskLevel`, explanation,
 safer alternative, and `Match` vocabulary. A `Dynamic` operand never
-authorizes treating the operation as safe (ADR-022 §3, §7)."
+authorizes treating the operation as safe."
 )]
 pub struct DetectedOperation {
     #[schemars(description = "What effect or execution sink was detected.")]
@@ -259,7 +252,7 @@ pub struct DetectedOperation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(
-    description = "Where a language-aware analysis target's source came from (ADR-022 §6).
+    description = "Where a language-aware analysis target's source came from.
 
 Drives routing and recovery: only `Inline` / `Heredoc` / `ScriptFile` / `Stdin`
 / `Pipe` shapes can become analysis targets, and each carries different
@@ -279,13 +272,11 @@ pub enum SourceOrigin {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize, schemars::JsonSchema)]
-#[schemars(
-    description = "A concrete byte span inside analyzed source (ADR-022 §10).
+#[schemars(description = "A concrete byte span inside analyzed source.
 
 Carries line/column for human display and byte offsets for mapping back to
 the original bytes. It references position only — it never carries the
-source text itself."
-)]
+source text itself.")]
 pub struct ByteSpan {
     #[schemars(description = "1-based line number.")]
     pub line: u32,
@@ -299,11 +290,11 @@ pub struct ByteSpan {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, schemars::JsonSchema)]
 #[schemars(
-    description = "Metadata recording where a language-aware result came from (ADR-022 §10).
+    description = "Metadata recording where a language-aware result came from.
 
 Provenance persists metadata only. It MUST NOT carry script contents, full
 snippets, imported source, variable values, or syntax trees — the TUI may
-render a short in-memory snippet, but provenance never does (ADR-022 §10).
+render a short in-memory snippet, but provenance never does.
 The `privacy_test_*` tests below pin that invariant at the serialization
 boundary so a later field addition cannot silently leak source."
 )]
@@ -331,7 +322,7 @@ pub struct AnalysisProvenance {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, schemars::JsonSchema)]
-#[schemars(description = "Per-target language-aware analysis result (ADR-022 §4).
+#[schemars(description = "Per-target language-aware analysis result.
 
 One `TargetAnalysis` per analysis target. `status` is ordered by increasing
 degradation (`NotApplicable < Complete < Degraded`), so the worst target
@@ -350,7 +341,7 @@ pub struct TargetAnalysis {
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case", tag = "kind")]
-#[schemars(description = "Typed evidence carried by every `Match` (ADR-022 §4).
+#[schemars(description = "Typed evidence carried by every `Match`.
 
 The variant encodes the detection mechanism, so an impossible combination
 (e.g. a regex `Pattern` carrying a `DetectedOperation`) is unconstructable.
@@ -380,8 +371,8 @@ pub enum MatchEvidence {
     LanguageRule {
         #[schemars(
             description = "Whether the rule is built in (Language-aware rules are always built
-in — project config cannot define custom Tree-sitter queries,
-ADR-022 §4 — but the field is retained so the common per-Match
+in — project config cannot define custom Tree-sitter queries —
+but the field is retained so the common per-Match
 \"built in or custom\" contract is uniform)."
         )]
         source: DetectionSource,
@@ -419,10 +410,9 @@ pub struct LanguageAnalysisResult {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[schemars(
-    description = "Summary of language-aware analysis carried on a merged `Assessment`
-(ADR-022 §1: \"merges all analysis results into one Assessment\").
+    description = "Summary of language-aware analysis carried on a merged `Assessment`.
 
-`status` + `degradation_reasons` are orthogonal to `RiskLevel` (ADR-022 §5):
+`status` + `degradation_reasons` are orthogonal to `RiskLevel`:
 degradation may coexist with `Safe` and never authorizes auto-execution."
 )]
 pub struct AnalysisSummary {

@@ -188,7 +188,7 @@ a present trusted list. Not part of the wire format."
 #[schemars(description = "Prune configuration for `aegis snapshot prune`.")]
 pub struct PruneConfig {
     #[schemars(
-        description = "Whether prune is enabled. Currently advisory; manual `--yes` is still required."
+        description = "Whether Aegis automatically prunes Snapshots after each recorded Snapshot, using the retention limits below. Manual `aegis snapshot prune` still needs `--yes` to delete."
     )]
     pub enabled: bool,
     #[schemars(
@@ -207,8 +207,7 @@ pub struct PruneConfig {
 
 Loaded in order: built-in defaults → `~/.config/aegis/config.toml` (user-global)
 → `.aegis.toml` (project). Every field's Ratchet direction — how far the
-project layer may change it, if at all — is declared in `model::merge_layer`
-and listed field-by-field in ADR-013's normative table.")]
+project layer may change it, if at all — is declared in `model::merge_layer`.")]
 pub struct AegisConfig {
     #[schemars(description = "Schema version. Must equal [`CURRENT_CONFIG_VERSION`].")]
     #[serde(
