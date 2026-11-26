@@ -55,13 +55,38 @@ fn find_system_bwrap_in_paths(
     None
 }
 
+pub(crate) fn build_bwrap_args(config: &SandboxConfig) -> Result<Vec<OsString>, SandboxError> {
+    let mut args: Vec<OsString> = vec![
+        "--ro-bind".into(),
+        "/".into(),
+        "/".into(),
+        "--proc".into(),
+        "/proc".into(),
+        "--dev".into(),
+        "/dev".into(),
+        "--unshare-all".into(),
+    ];
+
+    if config.allow_network {
+        args.push("--share-net".into());
+    }
+
+    for canonical in crate::support::resolve_allow_write(config).paths {
+        args.push("--bind".into());
+        args.push(canonical.as_os_str().to_owned());
+        args.push(canonical.as_os_str().to_owned());
+    }
+
+    Ok(args)
+}
+
 fn production_bwrap_options() -> Vec<OsString> {
     let maximal = SandboxConfig {
         allow_network: true,
         allow_write: vec![crate::WriteRoot::new("/tmp")],
         trusted_roots: vec![crate::WriteRoot::new("/tmp")],
     };
-    let mut args = crate::platform::build_bwrap_args(&maximal).unwrap_or_default();
+    let mut args = build_bwrap_args(&maximal).unwrap_or_default();
     if let Ok(wrapper) = crate::landlock::build_landlock_wrapper_args(OsStr::new("/bin/true"), &[])
     {
         args.extend(wrapper);

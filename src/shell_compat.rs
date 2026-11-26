@@ -229,11 +229,7 @@ pub(crate) fn prepare_command(
 
     if let Some(config) = sandbox {
         let mut prepared = aegis_sandbox::prepare_for_exec(config, shell.as_os_str(), &shell_args)?;
-        prepared
-            .command
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
+        prepared.inherit_stdio();
         let status = prepared.status;
         return Ok((PreparedShellCommand::Sandboxed(prepared), status));
     }
@@ -286,7 +282,7 @@ pub(crate) fn exec_prepared_command(
         #[cfg(not(windows))]
         let mut command = match prepared {
             PreparedShellCommand::Direct(command) => command,
-            PreparedShellCommand::Sandboxed(prepared) => prepared.command,
+            PreparedShellCommand::Sandboxed(prepared) => prepared.into_command(),
         };
         #[cfg(not(windows))]
         let child = command.spawn().map_err(aegis_sandbox::SandboxError::Io)?;

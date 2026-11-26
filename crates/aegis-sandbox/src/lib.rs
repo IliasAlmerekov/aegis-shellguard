@@ -85,7 +85,7 @@ pub struct SandboxConfig {
 
 #[derive(Debug)]
 pub struct PreparedSandboxCommand {
-    pub command: std::process::Command,
+    command: std::process::Command,
     pub status: SandboxStatus,
     #[cfg(target_os = "linux")]
     reports_status: bool,
@@ -152,6 +152,18 @@ impl PreparedSandboxCommand {
             #[cfg(target_os = "linux")]
             reports_status,
         }
+    }
+
+    pub fn inherit_stdio(&mut self) {
+        use std::process::Stdio;
+        self.command
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+    }
+
+    pub fn into_command(self) -> std::process::Command {
+        self.command
     }
 
     #[cfg(unix)]

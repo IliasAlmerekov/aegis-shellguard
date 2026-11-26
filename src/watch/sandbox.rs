@@ -271,7 +271,8 @@ fn prepare_watch_command_blocking(
 
     if let Some(config) = sandbox {
         let prepared = aegis_sandbox::prepare_for_spawn(config, shell.as_os_str(), &args)?;
-        return Ok((prepared.command, prepared.status));
+        let status = prepared.status;
+        return Ok((prepared.into_command(), status));
     }
 
     let mut command = std::process::Command::new(shell);

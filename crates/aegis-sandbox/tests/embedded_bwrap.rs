@@ -59,7 +59,7 @@ fn embedded_bwrap_confines_when_no_system_bwrap_on_path() {
                 OsString::from(format!("echo x > '{}'", probe.display())),
             ];
             let prepared = aegis_sandbox::prepare_for_spawn(&config, OsStr::new("sh"), &args);
-            let status = prepared.map(|mut p| p.command.status());
+            let status = prepared.map(|p| p.into_command().status());
             let probe_written = probe.exists();
 
             let status = status

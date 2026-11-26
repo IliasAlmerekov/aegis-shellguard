@@ -28,7 +28,7 @@ fn prepare(
     args: &[OsString],
     apply_exec_restrictions: bool,
 ) -> Result<PreparedSandboxCommand, SandboxError> {
-    let mut bwrap_args = build_bwrap_args(config)?;
+    let mut bwrap_args = crate::bwrap::build_bwrap_args(config)?;
     let Some(bwrap_program) = crate::bwrap::available_bwrap_program(config) else {
         return Err(SandboxError::Required);
     };
@@ -61,31 +61,6 @@ fn prepare(
     Ok(PreparedSandboxCommand::active(cmd, use_landlock_wrapper))
 }
 
-pub(crate) fn build_bwrap_args(config: &SandboxConfig) -> Result<Vec<OsString>, SandboxError> {
-    let mut args: Vec<OsString> = vec![
-        "--ro-bind".into(),
-        "/".into(),
-        "/".into(),
-        "--proc".into(),
-        "/proc".into(),
-        "--dev".into(),
-        "/dev".into(),
-        "--unshare-all".into(),
-    ];
-
-    if config.allow_network {
-        args.push("--share-net".into());
-    }
-
-    for canonical in crate::support::resolve_allow_write(config).paths {
-        args.push("--bind".into());
-        args.push(canonical.as_os_str().to_owned());
-        args.push(canonical.as_os_str().to_owned());
-    }
-
-    Ok(args)
-}
-
 #[cfg(test)]
 mod tests {
 
@@ -93,7 +68,8 @@ mod tests {
     use crate::support::test_helpers::ForceUnavailableGuard;
     use crate::{SandboxConfig, SandboxError, sandbox_available_for};
 
-    use super::{build_bwrap_args, prepare_for_exec};
+    use super::prepare_for_exec;
+    use crate::bwrap::build_bwrap_args;
     use crate::bwrap::sysctl_userns_available;
 
     #[cfg(target_os = "linux")]
