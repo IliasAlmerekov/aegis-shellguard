@@ -158,4 +158,4 @@ pub(super) fn language_match(
 }
 
 #[cfg(test)]
-mod tests;
+pub(super) mod tests;

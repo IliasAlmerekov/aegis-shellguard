@@ -1,10 +1,10 @@
 use super::{SinkDecision, handle_sink};
+use crate::analysis::classifier::tests::provenance;
 use crate::analysis::queue::{AnalysisQueue, PushOutcome, QueueBudget, QueueTarget};
 use aegis_language::SourceLanguage;
 use aegis_types::{
-    AnalysisProvenance, AnalysisStatus, ByteSpan, Category, DegradationReason, DetectedOperation,
-    DetectionMechanism, OperandCertainty, OperationKind, OperationModifiers, RiskLevel,
-    SourceOrigin,
+    Category, DegradationReason, DetectedOperation, DetectionMechanism, OperandCertainty,
+    OperationKind, OperationModifiers, RiskLevel,
 };
 
 fn code_exec(certainty: OperandCertainty) -> DetectedOperation {
@@ -12,26 +12,6 @@ fn code_exec(certainty: OperandCertainty) -> DetectedOperation {
         kind: OperationKind::CodeExecution,
         modifiers: OperationModifiers::default(),
         certainty,
-    }
-}
-
-fn provenance(op: &DetectedOperation) -> AnalysisProvenance {
-    AnalysisProvenance {
-        language: Some("python".to_string()),
-        source_origin: SourceOrigin::Inline,
-        rule_id: None,
-        operation: Some(op.clone()),
-        file_path: None,
-        source_hash: Some("0".repeat(64)),
-        span: Some(ByteSpan {
-            line: 1,
-            column: 1,
-            byte_start: 0,
-            byte_end: 4,
-        }),
-        certainty: op.certainty,
-        status: AnalysisStatus::Complete,
-        degradation_reason: None,
     }
 }
 

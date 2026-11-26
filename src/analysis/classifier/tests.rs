@@ -22,7 +22,7 @@ fn op_with(kind: OperationKind, modifiers: OperationModifiers) -> DetectedOperat
     }
 }
 
-fn provenance(op: &DetectedOperation) -> AnalysisProvenance {
+pub(in crate::analysis) fn provenance(op: &DetectedOperation) -> AnalysisProvenance {
     AnalysisProvenance {
         language: Some("python".to_string()),
         source_origin: SourceOrigin::Inline,
