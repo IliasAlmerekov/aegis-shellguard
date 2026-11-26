@@ -712,4 +712,5 @@ fn strict_policy_rule_allow_cannot_autoapprove_scanner_warn_with_analysis_degrad
 }
 
 mod auto_approved_danger;
+mod ci_and_allowlist;
 mod recovery_and_rules;

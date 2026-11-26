@@ -176,15 +176,6 @@ enum RuleKind {
     Block,
 }
 
-impl RuleKind {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Allow => "allow",
-            Self::Block => "block",
-        }
-    }
-}
-
 pub fn persist_allow_rule(cmd: &str, cwd: &Path) {
     persist_rule(RuleKind::Allow, cmd, cwd);
 }
@@ -198,9 +189,11 @@ fn persist_block_rule(cmd: &str, plan: &InterceptionPlan) {
 }
 
 fn persist_rule(kind: RuleKind, cmd: &str, cwd: &Path) {
-    let label = kind.label();
     let Some(config_path) = active_config_path_for_append() else {
-        err!("warning: cannot persist {label} rule: no config file found");
+        match kind {
+            RuleKind::Allow => err!("warning: cannot persist allow rule: no config file found"),
+            RuleKind::Block => err!("warning: cannot persist block rule: no config file found"),
+        }
         return;
     };
     let tokens = split_tokens(cmd);
@@ -221,7 +214,10 @@ fn persist_rule(kind: RuleKind, cmd: &str, cwd: &Path) {
             err!("warning: conflicting rule for '{pattern}' already exists in {location} config");
         }
         Ok(AppendOutcome::SkippedDuplicate | AppendOutcome::Appended) => {}
-        Err(err) => err!("error: failed to append {label} rule: {err}"),
+        Err(err) => match kind {
+            RuleKind::Allow => err!("error: failed to append allow rule: {err}"),
+            RuleKind::Block => err!("error: failed to append block rule: {err}"),
+        },
     }
 }
 
