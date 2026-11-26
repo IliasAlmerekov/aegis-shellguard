@@ -9,21 +9,13 @@ fn sandbox_project_overlay_does_not_reset_global_allow_network() {
 
     fs::write(
         global_dir.join(GLOBAL_CONFIG_FILE),
-        "[sandbox]\nenabled = true\nallow_network = true\n",
+        "[sandbox]\nallow_network = true\n",
     )
     .unwrap();
-    fs::write(
-        workspace.path().join(PROJECT_CONFIG_FILE),
-        "[sandbox]\nrequired = true\n",
-    )
-    .unwrap();
+    fs::write(workspace.path().join(PROJECT_CONFIG_FILE), "[sandbox]\n").unwrap();
 
     let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
 
-    assert!(
-        !config.sandbox.enabled && !config.sandbox.required,
-        "deprecated sandbox.enabled and sandbox.required must be ignored"
-    );
     assert!(
         config.sandbox.allow_network,
         "global sandbox.allow_network (trusted opt-in) must survive a project overlay"
@@ -249,36 +241,6 @@ fn project_ci_policy_cannot_weaken_default_block_to_allow() {
     let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
 
     assert_eq!(config.ci_policy, CiPolicy::Block);
-}
-
-#[test]
-fn project_sandbox_required_cannot_weaken_global_required_true() {
-    let workspace = TempDir::new().unwrap();
-    let home = TempDir::new().unwrap();
-    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
-    fs::create_dir_all(&global_dir).unwrap();
-
-    let global_file = global_dir.join(GLOBAL_CONFIG_FILE);
-    let project_file = workspace.path().join(PROJECT_CONFIG_FILE);
-    let global_bytes = b"[sandbox]\nenabled = false\nrequired = true\n";
-    let project_bytes = b"[sandbox]\nenabled = true\nrequired = false\n";
-    fs::write(&global_file, global_bytes).unwrap();
-    fs::write(&project_file, project_bytes).unwrap();
-
-    let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
-
-    assert!(!config.sandbox.enabled);
-    assert!(!config.sandbox.required);
-    assert_eq!(fs::read(&global_file).unwrap(), global_bytes);
-    assert_eq!(fs::read(&project_file).unwrap(), project_bytes);
-}
-
-#[test]
-fn deprecated_sandbox_fields_are_omitted_from_serialization() {
-    let config = AegisConfig::defaults();
-    let toml_str = toml::to_string_pretty(&config.sandbox).unwrap();
-    assert!(!toml_str.contains("enabled"));
-    assert!(!toml_str.contains("required"));
 }
 
 #[test]

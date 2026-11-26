@@ -23,6 +23,9 @@ outputs:
   cargo_fuzz_version:
     description: "Pinned cargo-fuzz version"
     value: ${{ steps.load.outputs.cargo_fuzz_version }}
+  cargo_machete_version:
+    description: "Pinned cargo-machete version"
+    value: ${{ steps.load.outputs.cargo_machete_version }}
   cross_version:
     description: "Pinned cross version used for the musl targets"
     value: ${{ steps.load.outputs.cross_version }}
@@ -91,7 +94,7 @@ runs:
         # --version`, and the job would install something unpinned instead of
         # stopping.
         for required in RUST_TOOLCHAIN FUZZ_NIGHTLY_TOOLCHAIN CARGO_AUDIT_VERSION \
-                        CARGO_DENY_VERSION CARGO_FUZZ_VERSION CROSS_VERSION \
+                        CARGO_DENY_VERSION CARGO_FUZZ_VERSION CARGO_MACHETE_VERSION CROSS_VERSION \
                         CARGO_LLVM_COV_VERSION CARGO_MUTANTS_VERSION \
                         NODE_VERSION NPM_CLI_VERSION FUZZ_RUNS FUZZ_MAX_LEN; do
           if ! grep -q "^${required}=..*$" .github/versions.env; then

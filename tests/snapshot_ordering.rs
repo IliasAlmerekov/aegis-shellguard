@@ -486,8 +486,6 @@ cwd = "{}"
 reason = "approved sandbox before-exec test"
 
 [sandbox]
-enabled = true
-required = false
 allow_write = ["{}"]
 allow_network = false
             "#,

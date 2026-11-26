@@ -42,8 +42,6 @@ pub(super) struct PartialSupabaseSnapshotConfig {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct PartialSandboxSettings {
-    pub(super) enabled: Option<bool>,
-    pub(super) required: Option<bool>,
     pub(super) allow_write: Option<Vec<PathBuf>>,
     pub(super) allow_network: Option<bool>,
 }

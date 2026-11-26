@@ -50,7 +50,7 @@ fn write_config(home: &Path, repo: &Path, prune_enabled: bool, sandbox_enabled: 
 
     let sandbox = sandbox_enabled.then(|| {
         format!(
-            "\n[sandbox]\nenabled = true\nrequired = false\nallow_write = [\"{}\"]\nallow_network = false\n",
+            "\n[sandbox]\nallow_write = [\"{}\"]\nallow_network = false\n",
             repo.display()
         )
     });

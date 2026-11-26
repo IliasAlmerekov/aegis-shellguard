@@ -139,15 +139,13 @@ mandatory: confinement is attempted for every executed command outside
 recorded `sandbox_status = "unavailable"` accompanies `Decision::Blocked` as one
 event rather than a warning followed by an unconfined run. Invalid profiles and
 unexpected setup errors fail closed. There is no flag that trades the block for an
-unconfined run: `sandbox.enabled` and `sandbox.required` are accepted by exact name
-and ignored at any value — each reported as a `deprecated_sandbox_field` — for the
-life of config schema v1.
+unconfined run: `sandbox.enabled` and `sandbox.required` are removed, and a config
+that still sets either fails to load.
 
-**Current pre-1.0 implementation (0.x):** the shipped code still implements the
-optional model. Shell warns on stderr and Watch emits a protocol warning before an
+**Current pre-1.0 implementation (0.x):** the shipped code still warns and falls
+back. Shell warns on stderr and Watch emits a protocol warning before an
 unconfined fallback; the same command Audit entry records
-`sandbox_status = "unavailable"`, and `sandbox.required = true` is what turns
-unavailability into a block. Until
+`sandbox_status = "unavailable"`. Until
 [#229](https://github.com/IliasAlmerekov/aegis-shellguard/issues/229) and
 [#230](https://github.com/IliasAlmerekov/aegis-shellguard/issues/230) land, treat
 the mandatory-layer paragraph above as the promise and this one as the behaviour.

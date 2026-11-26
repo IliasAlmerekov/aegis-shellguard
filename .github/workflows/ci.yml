@@ -60,6 +60,7 @@ jobs:
       cargo_audit_version: ${{ steps.versions.outputs.cargo_audit_version }}
       cargo_deny_version: ${{ steps.versions.outputs.cargo_deny_version }}
       cargo_fuzz_version: ${{ steps.versions.outputs.cargo_fuzz_version }}
+      cargo_machete_version: ${{ steps.versions.outputs.cargo_machete_version }}
       cross_version: ${{ steps.versions.outputs.cross_version }}
       node_version: ${{ steps.versions.outputs.node_version }}
       fuzz_runs: ${{ steps.versions.outputs.fuzz_runs }}
@@ -155,6 +156,29 @@ jobs:
   # someone building it by hand. Cheap enough (~1 min) to run unconditionally
   # rather than behind a path filter — a filter would also have to be kept in
   # step with which files the build actually reads.
+  machete:
+    name: Unused dependencies (machete)
+    runs-on: ${{ needs.gate.outputs.linux_runner }}
+    timeout-minutes: 10
+    needs: gate
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ needs.gate.outputs.rust_toolchain }}
+          cache-key-prefix: machete-
+
+      - uses: ./.github/actions/install-cargo-tool
+        with:
+          tool: cargo-machete
+          version: ${{ needs.gate.outputs.cargo_machete_version }}
+
+      - name: cargo machete
+        run: cargo machete
+
   landing:
     name: Landing (test, build)
     runs-on: ${{ needs.gate.outputs.linux_runner }}
@@ -649,6 +673,7 @@ jobs:
       - gate
       - quality
       - language-analysis
+      - machete
       - landing
       - security
       - build

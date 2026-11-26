@@ -11,7 +11,7 @@ use tempfile::TempDir;
 
 use support::{base_command, confinement_available, write_global_config};
 
-const ENABLED: &str = "[sandbox]\nenabled = true\n";
+const ENABLED: &str = "[sandbox]\n";
 
 fn outside_tmp() -> Option<TempDir> {
     TempDir::new_in("/var/tmp").ok()
@@ -257,10 +257,7 @@ fn status_reports_a_project_root_that_resolves_outside_the_trusted_roots() {
     std::os::unix::fs::symlink(&outside, ws.join("link")).unwrap();
     write_global_config(
         home.path(),
-        &format!(
-            "[sandbox]\nenabled = true\nallow_write = [\"{}\"]\n",
-            ws.display()
-        ),
+        &format!("[sandbox]\nallow_write = [\"{}\"]\n", ws.display()),
     );
     let project = ws.join(".aegis.toml");
     fs::write(
@@ -291,10 +288,7 @@ fn config_validate_reports_the_enforcement_omission_without_failing() {
     std::os::unix::fs::symlink(&outside, ws.join("link")).unwrap();
     write_global_config(
         home.path(),
-        &format!(
-            "[sandbox]\nenabled = true\nallow_write = [\"{}\"]\n",
-            ws.display()
-        ),
+        &format!("[sandbox]\nallow_write = [\"{}\"]\n", ws.display()),
     );
     fs::write(
         ws.join(".aegis.toml"),
@@ -336,7 +330,7 @@ fn writes_under(config: &str, tag: &str) -> Option<(bool, bool)> {
 
 #[test]
 fn an_explicit_empty_allow_write_leaves_nothing_writable() {
-    let config = "[sandbox]\nenabled = true\nallow_write = []\n";
+    let config = "[sandbox]\nallow_write = []\n";
     if let Some(landed) = writes_under(config, "empty") {
         assert_eq!(landed, (false, false), "worktree, tmp");
     }
@@ -344,7 +338,7 @@ fn an_explicit_empty_allow_write_leaves_nothing_writable() {
 
 #[test]
 fn an_allow_write_list_whose_entries_are_all_omitted_leaves_nothing_writable() {
-    let config = "[sandbox]\nenabled = true\n\
+    let config = "[sandbox]\n\
                   allow_write = [\"relative/dir\", \"/var/tmp/aegis-no-such-dir-242\", \"/tmp/../var\"]\n";
     if let Some(landed) = writes_under(config, "omitted") {
         assert_eq!(landed, (false, false), "worktree, tmp");
@@ -357,8 +351,7 @@ fn ceiling_warnings_never_surface_in_the_shell_wrapper_path() {
     if !confinement_available() {
         return;
     }
-    let missing =
-        "[sandbox]\nenabled = true\nallow_write = [\"/tmp\", \"/var/tmp/aegis-no-such-dir-242\"]\n";
+    let missing = "[sandbox]\nallow_write = [\"/tmp\", \"/var/tmp/aegis-no-such-dir-242\"]\n";
     for config in [missing, ENABLED] {
         let home = TempDir::new().unwrap();
         write_global_config(home.path(), config);

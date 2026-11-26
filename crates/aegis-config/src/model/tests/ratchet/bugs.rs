@@ -298,7 +298,7 @@ fn project_sandbox_allow_write_reordered_subset_no_warning() {
 
     fs::write(
         global_dir.join(GLOBAL_CONFIG_FILE),
-        "[sandbox]\nenabled = true\nallow_write = [\"/opt\", \"/tmp\"]\n",
+        "[sandbox]\nallow_write = [\"/opt\", \"/tmp\"]\n",
     )
     .unwrap();
     fs::write(

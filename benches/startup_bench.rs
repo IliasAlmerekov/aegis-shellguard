@@ -64,8 +64,7 @@ fn bench_sandbox_ceiling_nested_worktree(c: &mut Criterion) {
     std::fs::create_dir(repo.path().join(".git")).expect(".git must be created");
     let cwd = repo.path().join("a/b/c/d/e/f");
     std::fs::create_dir_all(&cwd).expect("nested dir must be created");
-    let mut config = AegisConfig::default();
-    config.sandbox.enabled = true;
+    let config = AegisConfig::default();
 
     c.bench_function("sandbox_ceiling_nested_worktree", |b| {
         b.iter(|| black_box(aegis::runtime::sandbox_ceiling(&config, black_box(&cwd))))

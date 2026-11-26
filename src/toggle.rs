@@ -72,11 +72,7 @@ fn ceiling_issues_here() -> Vec<aegis_config::validate::ValidationIssue> {
         return Vec::new();
     };
     let home = aegis_config::home_dir();
-    let mut issues: Vec<_> = aegis_config::validate_config_layers(&cwd, home.as_deref())
-        .warnings
-        .into_iter()
-        .filter(|w| w.code == "deprecated_sandbox_field")
-        .collect();
+    let mut issues = Vec::new();
     if let Ok(config) = AegisConfig::load_for_inspection(&cwd, home.as_deref())
         && let Some(ceiling) = crate::runtime::sandbox_ceiling(&config, &cwd)
     {

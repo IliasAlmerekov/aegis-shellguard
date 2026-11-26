@@ -158,20 +158,6 @@ pub struct ConfigLayerPath {
 )]
 pub struct SandboxSettings {
     #[schemars(
-        description = "Deprecated: Aegis ignores this value; the Sandbox is always applied
-outside `Mode::Audit` (ADR-029). Kept for schema v1 compatibility."
-    )]
-    #[serde(default, skip_serializing)]
-    #[schemars(extend("deprecated" = true))]
-    pub enabled: bool,
-    #[schemars(
-        description = "Deprecated: Aegis ignores this value; Sandbox unavailability always
-blocks outside `Mode::Audit` (ADR-029). Kept for schema v1 compatibility."
-    )]
-    #[serde(default, skip_serializing)]
-    #[schemars(extend("deprecated" = true))]
-    pub required: bool,
-    #[schemars(
         description = "Writable roots of the Trusted ceiling. Absent means the computed
 default (workspace plus temporary directory); a present list replaces
 that default, and an explicit `[]` means zero writable roots."
@@ -202,7 +188,7 @@ a present trusted list. Not part of the wire format."
 #[schemars(description = "Prune configuration for `aegis snapshot prune`.")]
 pub struct PruneConfig {
     #[schemars(
-        description = "Whether prune is enabled. Currently advisory; manual `--yes` is still required."
+        description = "Whether Aegis automatically prunes Snapshots after each recorded Snapshot, using the retention limits below. Manual `aegis snapshot prune` still needs `--yes` to delete."
     )]
     pub enabled: bool,
     #[schemars(
@@ -221,8 +207,7 @@ pub struct PruneConfig {
 
 Loaded in order: built-in defaults → `~/.config/aegis/config.toml` (user-global)
 → `.aegis.toml` (project). Every field's Ratchet direction — how far the
-project layer may change it, if at all — is declared in `model::merge_layer`
-and listed field-by-field in ADR-013's normative table.")]
+project layer may change it, if at all — is declared in `model::merge_layer`.")]
 pub struct AegisConfig {
     #[schemars(description = "Schema version. Must equal [`CURRENT_CONFIG_VERSION`].")]
     #[serde(
@@ -454,26 +439,13 @@ impl AegisConfig {
         base: Self,
         layer: &ConfigLayerPath,
     ) -> Result<(Self, Vec<SecurityRatchetWarning>)> {
-        let (config, warnings, _) = Self::merge_layer_path_with_all_warnings(base, layer)?;
-        Ok((config, warnings))
-    }
-
-    pub(crate) fn merge_layer_path_with_all_warnings(
-        base: Self,
-        layer: &ConfigLayerPath,
-    ) -> Result<(
-        Self,
-        Vec<SecurityRatchetWarning>,
-        Vec<ratchet::DeprecatedSandboxFieldWarning>,
-    )> {
         let overlay = PartialConfig::from_path(&layer.path)?;
-        let (config, ratchet, deprecated) = Self::merge_layer_all_warnings(
+        Ok(Self::merge_layer(
             base,
             overlay,
             layer.source_layer,
             &layer.path.to_string_lossy(),
-        );
-        Ok((config, ratchet, deprecated))
+        ))
     }
 
     fn load_for_internal(

@@ -17,9 +17,8 @@ fn no_source_does_not_start_worker(c: &mut Criterion) {
                     outcome,
                     Outcome::NotStarted,
                     "no-source command `{cmd}` started the language worker — \
-                     regression of ADR-022 Iteration 0 RED #3 (the no-source \
-                     path must not spawn a worker or perform filesystem metadata \
-                     calls)"
+                     the no-source path must not spawn \
+                     a worker or perform filesystem metadata calls"
                 );
             }
         })

@@ -8,17 +8,9 @@ pub(crate) struct SecurityRatchetWarning {
     pub(crate) location: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DeprecatedSandboxFieldWarning {
-    pub(crate) field: &'static str,
-    pub(crate) layer: ConfigSourceLayer,
-    pub(crate) location: String,
-}
-
 #[derive(Debug, Default)]
 pub(crate) struct RatchetSink {
     warnings: Vec<SecurityRatchetWarning>,
-    deprecated_sandbox_fields: Vec<DeprecatedSandboxFieldWarning>,
     #[cfg(test)]
     pub(crate) touched: Vec<&'static str>,
 }
@@ -49,31 +41,8 @@ impl RatchetSink {
         }
     }
 
-    pub(crate) fn warn_deprecated_sandbox(
-        &mut self,
-        field: &'static str,
-        layer: ConfigSourceLayer,
-        location: &str,
-    ) {
-        self.deprecated_sandbox_fields
-            .push(DeprecatedSandboxFieldWarning {
-                field,
-                layer,
-                location: location.to_string(),
-            });
-    }
-
     pub(crate) fn into_warnings(self) -> Vec<SecurityRatchetWarning> {
         self.warnings
-    }
-
-    pub(crate) fn into_all_warnings(
-        self,
-    ) -> (
-        Vec<SecurityRatchetWarning>,
-        Vec<DeprecatedSandboxFieldWarning>,
-    ) {
-        (self.warnings, self.deprecated_sandbox_fields)
     }
 }
 

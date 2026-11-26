@@ -213,7 +213,7 @@ impl Default for AuditConfig {
 #[serde(deny_unknown_fields)]
 #[schemars(
     description = "A trusted global alias for the Language-aware analysis interpreter
-registry (ADR-022 §6) — e.g. a wrapper script name that should be treated
+registry — e.g. a wrapper script name that should be treated
 as a stand-in for a canonical registry interpreter."
 )]
 pub struct TrustedAlias {
@@ -238,12 +238,12 @@ pub const LANGUAGE_ANALYSIS_TIMEOUT_MS: u64 = 100;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 #[schemars(
-    description = "Language-aware analysis script-file and trusted-alias budgets (ADR-022 §6).
+    description = "Language-aware analysis script-file and trusted-alias budgets.
 
 `script_file_limit_bytes` is bounded by
 [`LANGUAGE_ANALYSIS_SCRIPT_FILE_HARD_CEILING_BYTES`] at every layer; project
 config may additionally only lower it, never raise it. `trusted_aliases` is
-a Global-layer-only concept (\"trusted global aliases only\", ADR-022 §6) —
+a Global-layer-only concept (\"trusted global aliases only\") —
 project-layer entries are dropped entirely rather than merged, since a
 project must never be able to introduce a new trusted interpreter alias."
 )]

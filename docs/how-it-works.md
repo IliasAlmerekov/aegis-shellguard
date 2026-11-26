@@ -71,14 +71,12 @@ doing anything your own user could do within the paths it is allowed to write.
 
 In Aegis 1.0 this layer is mandatory. Confinement is attempted for every
 executed command, and failure to establish it blocks the command instead of
-running it unconfined (`PRD.md` §5.5). `sandbox.enabled` and `sandbox.required` leave the contract there: they
-stay accepted by exact name and ignored at any value, each reported as a
-`deprecated_sandbox_field`, and Aegis never rewrites your config to remove them.
+running it unconfined (`PRD.md` §5.5). `sandbox.enabled` and `sandbox.required` are removed: a config
+that still sets either fails to load, and Aegis never rewrites your config to remove them.
 
 Current pre-1.0 implementation (0.x): the shipped binary still implements
 the optional model. If confinement is unavailable it records
 `sandbox_status = "unavailable"` and warns on the active Shell or Watch channel
-before running unconfined, and `sandbox.required = true` is what turns that into a
-block. Closing that gap is
+before running unconfined. Closing that gap is
 [#229](https://github.com/IliasAlmerekov/aegis-shellguard/issues/229) and
 [#230](https://github.com/IliasAlmerekov/aegis-shellguard/issues/230).

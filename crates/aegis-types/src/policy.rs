@@ -113,7 +113,7 @@ intentional (e.g., a release script that runs `terraform destroy` in a
 tear-down job).  Because a project-local `.aegis.toml` is untrusted, `Allow`
 is only honored from the trusted global config
 (`~/.config/aegis/config.toml`); a project cannot weaken an inherited
-`Block` to `Allow` (see ADR-013).")]
+`Block` to `Allow`.")]
 pub enum CiPolicy {
     #[schemars(description = "Hard-block all non-safe commands. No dialog. Pipeline fails fast.")]
     #[default]

@@ -85,7 +85,7 @@ Read these before you decide how far to trust Aegis. The full text is in
   It is not a privilege boundary and does not stop code that already runs as you.
 - Effect-opaque execution, such as `sh ./cleanup.sh`, and auto-approved `Danger` commands need a Snapshot before they run. A `Danger` command you confirm yourself stays best-effort. If a required Snapshot is not created, unattended runs are denied, and in a terminal you can type `yes` to "Run once without recovery" or deny. Aegis does not inspect the referenced script.
 - The Sandbox is a write/network guardrail. It is not a confidentiality boundary and not a privilege boundary.
-- In Aegis 1.0 the Sandbox layer is mandatory. `sandbox.enabled` and `sandbox.required` stay accepted and ignored, each reported as a `deprecated_sandbox_field`.
+- In Aegis 1.0 the Sandbox layer is mandatory. `sandbox.enabled` and `sandbox.required` are removed; a config that still sets either fails to load, so delete those lines.
 - Current pre-1.0 implementation: the 0.x binary still records `sandbox_status = "unavailable"` and warns before running unconfined when confinement is missing.
 
 ---
