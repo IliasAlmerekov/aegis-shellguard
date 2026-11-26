@@ -1,3 +1,8 @@
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "benchcheck is a CLI whose job is to print"
+)]
 use std::fs;
 use std::path::{Path, PathBuf};
 

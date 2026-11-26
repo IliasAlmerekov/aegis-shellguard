@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate aegis;
+
 use std::process;
 
 use aegis_audit::AuditTimestamp;
@@ -391,7 +394,7 @@ fn main() {
     let invocation = match shell_compat::parse_invocation_mode() {
         Ok(invocation) => invocation,
         Err(message) => {
-            eprintln!("error: {message}");
+            err!("error: {message}");
             process::exit(EXIT_USAGE);
         }
     };
@@ -404,7 +407,7 @@ fn main() {
     {
         Ok(rt) => rt,
         Err(err) => {
-            eprintln!("error: failed to build tokio runtime: {err}");
+            err!("error: failed to build tokio runtime: {err}");
             process::exit(EXIT_INTERNAL);
         }
     };

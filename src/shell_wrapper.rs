@@ -29,7 +29,7 @@ pub(crate) fn run_shell_wrapper(
         let toggle_state = match toggle::status() {
             Ok(state) => state,
             Err(err) => {
-                eprintln!("error: failed to read toggle state: {err}");
+                err!("error: failed to read toggle state: {err}");
                 return EXIT_INTERNAL;
             }
         };
@@ -59,7 +59,7 @@ pub(crate) fn run_shell_wrapper(
 
     if verbosity.is_verbose() && matches!(output, CommandOutputFormat::Text) {
         if in_ci && let PreparedPlanner::Ready(context) = &prepared {
-            eprintln!(
+            err!(
                 "ci: detected CI environment, ci_policy={:?}",
                 context.config().ci_policy
             );
@@ -77,9 +77,9 @@ pub(crate) fn run_shell_wrapper(
 }
 
 fn report_setup_failure(plan: &SetupFailurePlan) -> i32 {
-    eprintln!("{}", plan.user_message());
+    err!("{}", plan.user_message());
     if plan.is_config_fault() {
-        eprintln!("error: Fix or remove the invalid config file and try again.");
+        err!("error: Fix or remove the invalid config file and try again.");
     }
     EXIT_INTERNAL
 }
@@ -134,7 +134,7 @@ fn log_assessment(assessment: &Assessment, allowlist_match: Option<&AllowlistMat
         DecisionSource::Fallback => "fallback",
     };
 
-    eprintln!(
+    err!(
         "scan: risk={:?}, executable={}, matched={}, source={}",
         assessment.risk,
         assessment.command.program.as_deref().unwrap_or("<none>"),
@@ -143,7 +143,7 @@ fn log_assessment(assessment: &Assessment, allowlist_match: Option<&AllowlistMat
     );
 
     for m in &assessment.matched {
-        eprintln!(
+        err!(
             "match: id={}, category={:?}, risk={:?}, matched={:?}, description={}",
             m.pattern.id,
             m.pattern.category,
@@ -153,23 +153,23 @@ fn log_assessment(assessment: &Assessment, allowlist_match: Option<&AllowlistMat
         );
 
         if let Some(safe_alt) = &m.pattern.safe_alt {
-            eprintln!("safe alternative: {safe_alt}");
+            err!("safe alternative: {safe_alt}");
         }
     }
 
     if let Some(rule) = allowlist_match {
-        eprintln!("allowlist: matched rule {:?}", rule.pattern);
+        err!("allowlist: matched rule {:?}", rule.pattern);
     }
 }
 
 fn emit_policy_evaluation_json(plan: &InterceptionPlan, ci_policy: aegis_types::CiPolicy) -> i32 {
     match policy_output::render_planned(plan, ci_policy) {
         Ok(json) => {
-            println!("{json}");
+            out!("{json}");
             policy_output::exit_code_for(plan.policy_decision().decision)
         }
         Err(err) => {
-            eprintln!("error: failed to serialize policy evaluation output: {err}");
+            err!("error: failed to serialize policy evaluation output: {err}");
             EXIT_INTERNAL
         }
     }

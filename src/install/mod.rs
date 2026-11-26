@@ -70,12 +70,12 @@ pub(crate) fn run_install(args: &super::InstallArgs) -> i32 {
     if selection.includes_claude() {
         exit = match claude::run_claude_install(!args.local) {
             ClaudeInstallResult::SkippedClaudeCodePlugin => {
-                println!("Claude Code: skipped (Claude Code plugin aegis is enabled)");
+                out!("Claude Code: skipped (Claude Code plugin aegis is enabled)");
                 exit
             }
             ClaudeInstallResult::PluginNotInstalled(result) => {
                 let exit = report_claude_settings_install(result, exit);
-                println!(
+                out!(
                     "Claude Code: plugin aegis is enabled but not installed; \
                      installed settings hooks instead"
                 );
@@ -83,7 +83,7 @@ pub(crate) fn run_install(args: &super::InstallArgs) -> i32 {
             }
             ClaudeInstallResult::PluginFormatUnknown(result) => {
                 let exit = report_claude_settings_install(result, exit);
-                println!(
+                out!(
                     "Claude Code: plugin aegis is enabled but installed_plugins.json has an \
                      unknown format; installed settings hooks instead"
                 );
@@ -95,15 +95,15 @@ pub(crate) fn run_install(args: &super::InstallArgs) -> i32 {
 
     if selection.includes_codex() {
         match codex::run_codex_install() {
-            AgentInstallResult::Installed => println!("Codex: hooks installed"),
+            AgentInstallResult::Installed => out!("Codex: hooks installed"),
             AgentInstallResult::AlreadyPresent => {
-                println!("Codex: hooks already present, skipping")
+                out!("Codex: hooks already present, skipping")
             }
             AgentInstallResult::Skipped => {
-                println!("Codex: skipped (agent directory not present)")
+                out!("Codex: skipped (agent directory not present)")
             }
             AgentInstallResult::Error(err) => {
-                eprintln!("error: failed to install Codex hooks: {err}");
+                err!("error: failed to install Codex hooks: {err}");
                 exit = super::EXIT_INTERNAL;
             }
         }
@@ -114,15 +114,15 @@ pub(crate) fn run_install(args: &super::InstallArgs) -> i32 {
 
 fn report_claude_settings_install(result: AgentInstallResult, exit: i32) -> i32 {
     match result {
-        AgentInstallResult::Installed => println!("Claude Code: hook installed"),
+        AgentInstallResult::Installed => out!("Claude Code: hook installed"),
         AgentInstallResult::AlreadyPresent => {
-            println!("Claude Code: hook already present, skipping")
+            out!("Claude Code: hook already present, skipping")
         }
         AgentInstallResult::Skipped => {
-            println!("Claude Code: skipped (agent directory not present)")
+            out!("Claude Code: skipped (agent directory not present)")
         }
         AgentInstallResult::Error(err) => {
-            eprintln!("error: failed to install Claude Code hook: {err}");
+            err!("error: failed to install Claude Code hook: {err}");
             return super::EXIT_INTERNAL;
         }
     }

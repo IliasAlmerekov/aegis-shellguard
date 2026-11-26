@@ -64,22 +64,22 @@ pub(crate) async fn execute(args: crate::PruneArgs) -> Result<Vec<PrunableRecord
         });
     }
 
-    println!("Pruned {} snapshot(s).", pruned.len());
+    out!("Pruned {} snapshot(s).", pruned.len());
     Ok(pruned)
 }
 
 fn preview_candidates(candidates: &[PrunableRecord], prune_config: &PruneConfig) {
     if candidates.is_empty() {
-        println!("No snapshots are eligible for pruning.");
+        out!("No snapshots are eligible for pruning.");
         return;
     }
 
     if !prune_config.enabled {
-        println!("Note: prune is currently disabled in config; this is a dry-run preview.");
+        out!("Note: prune is currently disabled in config; this is a dry-run preview.");
     }
 
-    println!("Would prune {} snapshot(s):", candidates.len());
+    out!("Would prune {} snapshot(s):", candidates.len());
     for record in candidates {
-        println!("  provider: {}  id: {}", record.plugin, record.snapshot_id);
+        out!("  provider: {}  id: {}", record.plugin, record.snapshot_id);
     }
 }

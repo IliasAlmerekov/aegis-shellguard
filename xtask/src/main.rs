@@ -1,3 +1,8 @@
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "xtask is a dev CLI whose job is to print"
+)]
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};

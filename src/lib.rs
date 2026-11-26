@@ -1,3 +1,8 @@
+#[macro_use]
+mod output;
+#[doc(hidden)]
+pub use output::{err_line, err_raw, out_line, out_raw};
+
 pub mod analysis;
 pub mod error;
 pub mod explanation;

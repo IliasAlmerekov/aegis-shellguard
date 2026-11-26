@@ -1,4 +1,5 @@
 #![expect(
+    clippy::print_stderr,
     clippy::unwrap_used,
     clippy::panic,
     reason = "test helpers fail loudly"

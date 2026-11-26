@@ -1,4 +1,5 @@
 #![expect(
+    clippy::print_stderr,
     dead_code,
     reason = "shared by many test crates that each use a subset"
 )]

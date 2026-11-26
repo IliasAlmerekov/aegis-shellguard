@@ -80,6 +80,11 @@ fn metadata_is_runnable_file(metadata: std::fs::Metadata) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::print_stderr,
+        reason = "test child process reports failure on stderr"
+    )]
+
     use std::ffi::OsStr;
     use std::fs;
     #[cfg(unix)]

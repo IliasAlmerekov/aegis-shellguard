@@ -1,3 +1,7 @@
+#![expect(
+    clippy::print_stderr,
+    reason = "test output goes to the captured test stream"
+)]
 #![cfg(target_os = "linux")]
 #![expect(
     clippy::unwrap_used,

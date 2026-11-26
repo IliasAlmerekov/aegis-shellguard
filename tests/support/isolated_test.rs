@@ -1,3 +1,7 @@
+#![expect(
+    clippy::print_stdout,
+    reason = "test output goes to the captured test stream"
+)]
 use std::process::{Command, Output};
 
 const MARKER: &str = "AEGIS_ISOLATED_TEST_COMPLETED";

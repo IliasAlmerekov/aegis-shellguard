@@ -8,11 +8,11 @@ pub(super) const END_MARKER: &str = "# <<< aegis shell setup <<<";
 pub(crate) fn run_setup_shell(args: &crate::SetupShellArgs) -> i32 {
     match run_setup_shell_inner(args) {
         Ok(message) => {
-            println!("{message}");
+            out!("{message}");
             0
         }
         Err(err) => {
-            eprintln!("error: {err}");
+            err!("error: {err}");
             crate::EXIT_INTERNAL
         }
     }

@@ -59,10 +59,18 @@ impl ExecutionRenderer for TerminalRenderer {
         crate::show_confirmation(assessment, explanation, snapshots);
     }
 
+    #[expect(
+        clippy::print_stderr,
+        reason = "rendering module writes diagnostics to stderr"
+    )]
     fn warn(&self, message: &str) {
         eprintln!("warning: {message}");
     }
 
+    #[expect(
+        clippy::print_stderr,
+        reason = "rendering module writes diagnostics to stderr"
+    )]
     fn report_error(&self, message: &str) {
         eprintln!("error: {message}");
     }

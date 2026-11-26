@@ -1,3 +1,7 @@
+#![expect(
+    clippy::print_stdout,
+    reason = "schema generator reports success on stdout"
+)]
 use std::fs;
 
 use anyhow::Context as _;

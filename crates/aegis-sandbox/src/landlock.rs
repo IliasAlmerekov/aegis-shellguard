@@ -315,6 +315,10 @@ fn inner_config(allow_write: Vec<PathBuf>) -> SandboxConfig {
     }
 }
 
+#[expect(
+    clippy::print_stderr,
+    reason = "the exec'd wrapper child reports failures on stderr"
+)]
 pub(crate) fn run_inner_landlock_wrapper() -> i32 {
     use std::os::unix::ffi::OsStringExt;
 
