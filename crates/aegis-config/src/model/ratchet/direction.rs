@@ -3,7 +3,6 @@ use crate::allowlist::ConfigSourceLayer;
 use super::warning::{RatchetSink, is_project};
 
 pub(crate) trait Ratchet<T> {
-    #[allow(clippy::too_many_arguments)]
     fn merge(
         &self,
         path: &'static str,

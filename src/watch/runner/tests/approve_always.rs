@@ -1,3 +1,7 @@
+#![expect(
+    clippy::print_stderr,
+    reason = "test output goes to the captured test stream"
+)]
 use std::cell::RefCell;
 
 use super::super::run_watch_plan_with_persistence;

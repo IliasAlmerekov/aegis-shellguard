@@ -7,7 +7,7 @@ use crate::runtime::{RuntimeContext, WatchAuditContext};
 use aegis_types::Decision;
 use aegis_types::{SnapshotAttempt, SnapshotRecord};
 
-use super::protocol::{InputFrame, OutputDecision, OutputFrame, emit_frame};
+use super::protocol::{InputFrame, OutputDecision, OutputFrame, emit_frame, exit_internal};
 
 pub(super) struct WatchExecution<'a> {
     pub(super) frame: &'a InputFrame,
@@ -159,7 +159,7 @@ pub(super) async fn warn_if_sandbox_unavailable_at_startup(context: &RuntimeCont
     })
     .is_err()
     {
-        std::process::exit(EXIT_INTERNAL);
+        exit_internal();
     }
 }
 
@@ -188,7 +188,7 @@ fn emit_watch_sandbox_event(event: WatchSandboxEvent, id: &Option<String>) {
         }),
     };
     if result.is_err() {
-        std::process::exit(EXIT_INTERNAL);
+        exit_internal();
     }
 }
 
@@ -236,7 +236,7 @@ pub(super) fn emit_watch_audit_error(id: &Option<String>, err: &crate::error::Ae
     })
     .is_err()
     {
-        std::process::exit(EXIT_INTERNAL);
+        exit_internal();
     }
 }
 

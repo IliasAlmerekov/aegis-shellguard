@@ -13,7 +13,7 @@ use crate::{
 
 pub(crate) fn handle_audit_command(args: AuditArgs) -> i32 {
     if args.summary && matches!(args.format, AuditOutputFormat::Ndjson) {
-        eprintln!("error: --summary cannot be used with --format ndjson");
+        err!("error: --summary cannot be used with --format ndjson");
         EXIT_DENIED
     } else if args.verify_integrity {
         if args.summary
@@ -25,7 +25,7 @@ pub(crate) fn handle_audit_command(args: AuditArgs) -> i32 {
             || args.decision.is_some()
             || !matches!(args.format, AuditOutputFormat::Text)
         {
-            eprintln!(
+            err!(
                 "error: --verify-integrity cannot be combined with filters, --summary, or non-text formats"
             );
             EXIT_DENIED
@@ -34,22 +34,22 @@ pub(crate) fn handle_audit_command(args: AuditArgs) -> i32 {
             match logger.verify_integrity() {
                 Ok(report) => match report.status {
                     AuditIntegrityStatus::Verified => {
-                        println!(
+                        out!(
                             "Audit integrity chain OK ({} chained entries checked).",
                             report.chained_entries
                         );
-                        println!(
+                        out!(
                             "This integrity chain detects corruption and inconsistent edits; not a keyed or remote anchor."
                         );
                         0
                     }
                     AuditIntegrityStatus::NoIntegrityData | AuditIntegrityStatus::Corrupt => {
-                        eprintln!("Audit integrity check FAILED: {}", report.message);
+                        err!("Audit integrity check FAILED: {}", report.message);
                         EXIT_INTERNAL
                     }
                 },
                 Err(err) => {
-                    eprintln!("error: failed to verify audit integrity: {err}");
+                    err!("error: failed to verify audit integrity: {err}");
                     EXIT_INTERNAL
                 }
             }
@@ -71,16 +71,16 @@ pub(crate) fn handle_audit_command(args: AuditArgs) -> i32 {
                 format_audit_entries(&entries, args.format)
             } {
                 Ok(output) => {
-                    print!("{output}");
+                    out_raw!("{output}");
                     0
                 }
                 Err(err) => {
-                    eprintln!("error: failed to serialize audit output: {err}");
+                    err!("error: failed to serialize audit output: {err}");
                     EXIT_INTERNAL
                 }
             },
             Err(err) => {
-                eprintln!("error: failed to read audit log: {err}");
+                err!("error: failed to read audit log: {err}");
                 EXIT_INTERNAL
             }
         }
@@ -92,27 +92,27 @@ pub(crate) fn handle_config_command(args: ConfigArgs) -> i32 {
         ConfigCommand::Init => match env::current_dir() {
             Ok(current_dir) => match AegisConfig::init_in(&current_dir) {
                 Ok(path) => {
-                    println!("{}", path.display());
+                    out!("{}", path.display());
                     0
                 }
                 Err(err) => {
-                    eprintln!("error: failed to initialize config: {err}");
+                    err!("error: failed to initialize config: {err}");
                     EXIT_INTERNAL
                 }
             },
             Err(err) => {
-                eprintln!("error: failed to resolve current directory: {err}");
+                err!("error: failed to resolve current directory: {err}");
                 EXIT_INTERNAL
             }
         },
         ConfigCommand::Show => match AegisConfig::load_inspection() {
             Ok(config) => match config.to_toml_string() {
                 Ok(toml) => {
-                    print!("{toml}");
+                    out_raw!("{toml}");
                     0
                 }
                 Err(err) => {
-                    eprintln!("error: failed to serialize config: {err}");
+                    err!("error: failed to serialize config: {err}");
                     EXIT_INTERNAL
                 }
             },
@@ -124,31 +124,31 @@ pub(crate) fn handle_config_command(args: ConfigArgs) -> i32 {
 
 pub(crate) fn handle_toggle_on_command() -> i32 {
     if let Err(err) = toggle::enable() {
-        eprintln!("error: failed to enable Aegis: {err}");
+        err!("error: failed to enable Aegis: {err}");
         return EXIT_INTERNAL;
     }
 
     if let Err(err) = toggle::append_toggle_audit_entry("aegis on") {
-        eprintln!("error: toggle state changed, but audit entry could not be recorded: {err}");
+        err!("error: toggle state changed, but audit entry could not be recorded: {err}");
         return EXIT_INTERNAL;
     }
 
-    println!("Aegis is enabled.");
+    out!("Aegis is enabled.");
     0
 }
 
 pub(crate) fn handle_toggle_off_command() -> i32 {
     if let Err(err) = toggle::disable() {
-        eprintln!("error: failed to disable Aegis: {err}");
+        err!("error: failed to disable Aegis: {err}");
         return EXIT_INTERNAL;
     }
 
     if let Err(err) = toggle::append_toggle_audit_entry("aegis off") {
-        eprintln!("error: toggle state changed, but audit entry could not be recorded: {err}");
+        err!("error: toggle state changed, but audit entry could not be recorded: {err}");
         return EXIT_INTERNAL;
     }
 
-    println!("Aegis is disabled until `aegis on`.");
+    out!("Aegis is disabled until `aegis on`.");
     0
 }
 
@@ -156,7 +156,7 @@ pub(crate) fn handle_toggle_status_command() -> i32 {
     let view = match toggle::status_view(aegis::runtime_gate::is_ci_environment()) {
         Ok(view) => view,
         Err(err) => {
-            eprintln!("error: failed to read toggle status: {err}");
+            err!("error: failed to read toggle status: {err}");
             return EXIT_INTERNAL;
         }
     };
@@ -166,12 +166,12 @@ pub(crate) fn handle_toggle_status_command() -> i32 {
         toggle::ToggleState::Enabled => "enabled",
     };
 
-    println!("toggle: {toggle_label}");
-    println!("flag: {}", view.flag_path.display());
+    out!("toggle: {toggle_label}");
+    out!("flag: {}", view.flag_path.display());
     if view.ci_override_active && matches!(view.state, toggle::ToggleState::Disabled) {
-        println!("effective mode: enforcing (CI override)");
+        out!("effective mode: enforcing (CI override)");
     } else {
-        println!(
+        out!(
             "effective mode: {}",
             if matches!(view.state, toggle::ToggleState::Disabled) {
                 "disabled passthrough"
@@ -180,18 +180,18 @@ pub(crate) fn handle_toggle_status_command() -> i32 {
             }
         );
     }
-    println!("config: {}", view.config_status);
-    println!("claude code hooks: {}", claude_hook_registration_label());
+    out!("config: {}", view.config_status);
+    out!("claude code hooks: {}", claude_hook_registration_label());
     if claude_plugin_enabled_but_not_installed() {
-        println!(
+        out!(
             "claude code plugin: aegis is enabled but not installed; \
              only settings hooks guard Bash"
         );
     }
     if !view.ceiling_issues.is_empty() {
-        println!("sandbox warnings:");
+        out!("sandbox warnings:");
         for issue in &view.ceiling_issues {
-            println!("- [{}] {}: {}", issue.code, issue.location, issue.message);
+            out!("- [{}] {}: {}", issue.code, issue.location, issue.message);
         }
     }
     0
@@ -246,17 +246,17 @@ pub(crate) fn handle_update_command(args: crate::UpdateArgs) -> i32 {
 fn handle_update_enable_command(args: crate::UpdateEnableArgs) -> i32 {
     match aegis::update::enable(args.channel.into()) {
         Ok(state) => {
-            println!(
+            out!(
                 "Update checks enabled for channel {}.",
                 state.channel.map(|c| c.to_string()).unwrap_or_default()
             );
-            println!(
+            out!(
                 "Aegis checks at most once a day, from the shell wrapper only, and never runs npm."
             );
             0
         }
         Err(err) => {
-            eprintln!("error: failed to enable update checks: {err}");
+            err!("error: failed to enable update checks: {err}");
             EXIT_INTERNAL
         }
     }
@@ -265,11 +265,11 @@ fn handle_update_enable_command(args: crate::UpdateEnableArgs) -> i32 {
 fn handle_update_disable_command() -> i32 {
     match aegis::update::disable() {
         Ok(_) => {
-            println!("Update checks disabled.");
+            out!("Update checks disabled.");
             0
         }
         Err(err) => {
-            eprintln!("error: failed to disable update checks: {err}");
+            err!("error: failed to disable update checks: {err}");
             EXIT_INTERNAL
         }
     }
@@ -278,26 +278,26 @@ fn handle_update_disable_command() -> i32 {
 fn handle_update_status_command() -> i32 {
     match aegis::update::status() {
         Ok(state) => {
-            println!("consent: {}", state.consent);
-            println!(
+            out!("consent: {}", state.consent);
+            out!(
                 "channel: {}",
                 state
                     .channel
                     .map(|c| c.to_string())
                     .unwrap_or_else(|| "none".to_string())
             );
-            println!(
+            out!(
                 "latest known version: {}",
                 state.latest_known_version.as_deref().unwrap_or("unknown")
             );
-            println!(
+            out!(
                 "last successful check: {}",
                 state.last_success_check_at.as_deref().unwrap_or("never")
             );
             0
         }
         Err(err) => {
-            eprintln!("error: failed to read update status: {err}");
+            err!("error: failed to read update status: {err}");
             EXIT_INTERNAL
         }
     }
@@ -311,15 +311,15 @@ fn handle_update_check_command() -> i32 {
 
     match aegis::update::check_now(channel) {
         Ok(aegis::update::CheckOutcome::Fetched { latest }) => {
-            println!("latest available: {latest}");
+            out!("latest available: {latest}");
             0
         }
         Ok(aegis::update::CheckOutcome::Failed { error }) => {
-            eprintln!("error: update check failed: {error}");
+            err!("error: update check failed: {error}");
             EXIT_INTERNAL
         }
         Err(err) => {
-            eprintln!("error: update check failed: {err}");
+            err!("error: update check failed: {err}");
             EXIT_INTERNAL
         }
     }
@@ -334,27 +334,29 @@ pub(crate) fn handle_rollback_command(
     };
     match runtime.block_on(rollback::execute(snapshot_id, args.yes)) {
         Ok(rollback::RollbackOutcome::Refused { code, message }) => {
-            eprintln!("error: rollback refused: {message}");
+            err!("error: rollback refused: {message}");
             code
         }
         Ok(rollback::RollbackOutcome::Restored(target)) => {
-            println!(
+            out!(
                 "rollback complete: plugin={} snapshot_id={}",
-                target.plugin, target.snapshot_id
+                target.plugin,
+                target.snapshot_id
             );
             0
         }
         Ok(rollback::RollbackOutcome::RestoredUnaudited { target, reason }) => {
-            println!(
+            out!(
                 "rollback complete: plugin={} snapshot_id={}",
-                target.plugin, target.snapshot_id
+                target.plugin,
+                target.snapshot_id
             );
-            eprintln!("error: restored, but the audit entry was not written: {reason}");
+            err!("error: restored, but the audit entry was not written: {reason}");
             EXIT_INTERNAL
         }
         Err(err) if err.is_config_fault() => report_config_load_error(&err),
         Err(err) => {
-            eprintln!("error: rollback failed: {err}");
+            err!("error: rollback failed: {err}");
             EXIT_INTERNAL
         }
     }
@@ -363,36 +365,40 @@ pub(crate) fn handle_rollback_command(
 fn handle_rollback_last_command(yes: bool, runtime: &tokio::runtime::Runtime) -> i32 {
     match runtime.block_on(rollback_last::execute(yes)) {
         Ok(rollback_last::LastOutcome::Refused { code, message }) => {
-            eprintln!("error: rollback refused: {message}");
+            err!("error: rollback refused: {message}");
             code
         }
         Ok(rollback_last::LastOutcome::Attempted(report)) => {
             for target in &report.restored {
-                println!(
+                out!(
                     "rollback complete: plugin={} snapshot_id={}",
-                    target.plugin, target.snapshot_id
+                    target.plugin,
+                    target.snapshot_id
                 );
             }
             for (target, reason) in &report.unaudited {
-                println!(
+                out!(
                     "rollback complete: plugin={} snapshot_id={}",
-                    target.plugin, target.snapshot_id
+                    target.plugin,
+                    target.snapshot_id
                 );
-                eprintln!(
+                err!(
                     "error: restored, but the audit entry was not written: plugin={} snapshot_id={}: {reason}",
-                    target.plugin, target.snapshot_id
+                    target.plugin,
+                    target.snapshot_id
                 );
             }
             for target in &report.skipped {
-                println!(
+                out!(
                     "not restored, not bound to this location: aegis rollback {}",
                     target.snapshot_id
                 );
             }
             for (target, _, reason) in &report.failed {
-                eprintln!(
+                err!(
                     "error: rollback failed: plugin={} snapshot_id={}: {reason}",
-                    target.plugin, target.snapshot_id
+                    target.plugin,
+                    target.snapshot_id
                 );
             }
             report.failed.first().map_or(
@@ -406,7 +412,7 @@ fn handle_rollback_last_command(yes: bool, runtime: &tokio::runtime::Runtime) ->
         }
         Err(err) if err.is_config_fault() => report_config_load_error(&err),
         Err(err) => {
-            eprintln!("error: rollback failed: {err}");
+            err!("error: rollback failed: {err}");
             EXIT_INTERNAL
         }
     }
@@ -425,7 +431,7 @@ pub(crate) fn handle_snapshot_command(
             match runtime.block_on(crate::prune::execute(prune_args)) {
                 Ok(_) => 0,
                 Err(err) => {
-                    eprintln!("error: prune failed: {err}");
+                    err!("error: prune failed: {err}");
                     EXIT_INTERNAL
                 }
             }
@@ -438,16 +444,16 @@ fn handle_snapshot_verify_command(args: VerifyArgs, runtime: &tokio::runtime::Ru
         Ok(rows) => rows,
         Err(err) if err.is_config_fault() => return report_config_load_error(&err),
         Err(err) => {
-            eprintln!("error: snapshot verify failed: {err}");
+            err!("error: snapshot verify failed: {err}");
             return EXIT_INTERNAL;
         }
     };
     match args.format {
-        CommandOutputFormat::Text => print!("{}", crate::verify::render_text(&rows)),
+        CommandOutputFormat::Text => out_raw!("{}", crate::verify::render_text(&rows)),
         CommandOutputFormat::Json => match serde_json::to_string_pretty(&rows) {
-            Ok(json) => println!("{json}"),
+            Ok(json) => out!("{json}"),
             Err(err) => {
-                eprintln!("error: failed to serialize verify output: {err}");
+                err!("error: failed to serialize verify output: {err}");
                 return EXIT_INTERNAL;
             }
         },
@@ -459,11 +465,11 @@ fn handle_snapshot_list_command() -> i32 {
     let logger = AuditLogger::default();
     match SnapshotLedger::load(&logger) {
         Ok(ledger) => {
-            print!("{}", format_snapshot_listing(&ledger));
+            out_raw!("{}", format_snapshot_listing(&ledger));
             0
         }
         Err(err) => {
-            eprintln!("error: failed to read audit log: {err}");
+            err!("error: failed to read audit log: {err}");
             EXIT_INTERNAL
         }
     }
@@ -500,7 +506,7 @@ pub(crate) fn handle_config_validate_command(args: ConfigValidateArgs) -> i32 {
     let current_dir = match env::current_dir() {
         Ok(path) => path,
         Err(err) => {
-            eprintln!("error: failed to resolve current directory: {err}");
+            err!("error: failed to resolve current directory: {err}");
             return EXIT_INTERNAL;
         }
     };
@@ -519,18 +525,18 @@ pub(crate) fn handle_config_validate_command(args: ConfigValidateArgs) -> i32 {
 
     let render_result = match args.output {
         ConfigValidateOutput::Text => {
-            print!("{}", format_validation_report_text(&report));
+            out_raw!("{}", format_validation_report_text(&report));
             Ok(())
         }
         ConfigValidateOutput::Json => serde_json::to_string_pretty(&report)
             .map(|json| {
-                println!("{json}");
+                out!("{json}");
             })
             .map_err(|err| err.to_string()),
     };
 
     if let Err(err) = render_result {
-        eprintln!("error: failed to serialize validation output: {err}");
+        err!("error: failed to serialize validation output: {err}");
         return EXIT_INTERNAL;
     }
 
@@ -586,7 +592,7 @@ pub(crate) fn config_load_error_lines(err: &AegisError) -> Vec<String> {
 
 pub(crate) fn report_config_load_error(err: &AegisError) -> i32 {
     for line in config_load_error_lines(err) {
-        eprintln!("{line}");
+        err!("{line}");
     }
     EXIT_INTERNAL
 }

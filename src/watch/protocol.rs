@@ -150,6 +150,14 @@ where
     }
 }
 
+#[expect(
+    clippy::exit,
+    reason = "watch stdout is gone; no caller can report the failure, and unwinding would keep serving frames"
+)]
+pub fn exit_internal() -> ! {
+    std::process::exit(aegis_types::EXIT_INTERNAL)
+}
+
 pub fn emit_frame(frame: &OutputFrame) -> std::io::Result<()> {
     let line = serde_json::to_string(frame).map_err(std::io::Error::other)?;
     let stdout = std::io::stdout();

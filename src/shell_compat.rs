@@ -175,12 +175,12 @@ pub(crate) fn exec_command(
         Ok((prepared, _)) => match exec_prepared_command(prepared) {
             Ok((child, _status)) => wait_for_child(child),
             Err(err) => {
-                eprintln!("error: sandbox setup failed: {err}");
+                err!("error: sandbox setup failed: {err}");
                 EXIT_INTERNAL
             }
         },
         Err(err) => {
-            eprintln!("error: sandbox setup failed: {err}");
+            err!("error: sandbox setup failed: {err}");
             EXIT_INTERNAL
         }
     }
@@ -190,7 +190,7 @@ pub(crate) fn wait_for_child(child: aegis_sandbox::ReportedSandboxChild) -> i32 
     let mut child = match child.release() {
         Ok(child) => child,
         Err(err) => {
-            eprintln!("error: failed to release sandboxed shell: {err}");
+            err!("error: failed to release sandboxed shell: {err}");
             return EXIT_INTERNAL;
         }
     };
@@ -313,7 +313,7 @@ pub(crate) fn exec_shell_session(launch: &ShellLaunchOptions) -> i32 {
             .stderr(Stdio::inherit());
         let err = command.exec();
 
-        eprintln!("error: failed to exec shell {}: {err}", shell.display());
+        err!("error: failed to exec shell {}: {err}", shell.display());
         EXIT_INTERNAL
     }
 
@@ -329,7 +329,7 @@ pub(crate) fn exec_shell_session(launch: &ShellLaunchOptions) -> i32 {
         match command.status() {
             Ok(status) => status.code().unwrap_or(EXIT_INTERNAL),
             Err(err) => {
-                eprintln!("error: failed to spawn shell {}: {err}", shell.display());
+                err!("error: failed to spawn shell {}: {err}", shell.display());
                 EXIT_INTERNAL
             }
         }

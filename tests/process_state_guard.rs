@@ -1,3 +1,10 @@
+#![expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test helpers fail loudly"
+)]
+#![expect(unsafe_code, reason = "FFI calls, each documented by a SAFETY comment")]
+
 #[path = "support/process_state.rs"]
 mod process_state;
 

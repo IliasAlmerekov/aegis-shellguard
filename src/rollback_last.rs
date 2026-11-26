@@ -170,12 +170,12 @@ fn choose(
     is_tty: bool,
     input: &mut impl BufRead,
 ) -> Choice {
-    eprint!("{}", summary(&candidates[0], location));
+    err_raw!("{}", summary(&candidates[0], location));
     if yes {
         return Choice::Restore(0);
     }
     if !is_tty {
-        eprint!("{}", listing(candidates));
+        err_raw!("{}", listing(candidates));
         return Choice::Refuse {
             code: EXIT_DENIED,
             message: "there is no terminal to confirm; pass --yes to restore the latest command, or use `aegis rollback <snapshot_id>`".to_string(),
@@ -188,11 +188,11 @@ fn choose(
     match ask(input, "Restore these Snapshots? [y/N/list] ").as_str() {
         "y" | "yes" => Choice::Restore(0),
         "l" | "list" => {
-            eprint!("{}", listing(candidates));
+            err_raw!("{}", listing(candidates));
             let shown = candidates.len().min(LIST_LIMIT);
             match ask(input, "Pick a number (anything else cancels): ").parse::<usize>() {
                 Ok(n) if (1..=shown).contains(&n) => {
-                    eprint!("{}", summary(&candidates[n - 1], location));
+                    err_raw!("{}", summary(&candidates[n - 1], location));
                     Choice::Restore(n - 1)
                 }
                 _ => cancelled(),
@@ -203,7 +203,7 @@ fn choose(
 }
 
 fn ask(input: &mut impl BufRead, prompt: &str) -> String {
-    eprint!("{prompt}");
+    err_raw!("{prompt}");
     let mut line = String::new();
     let _ = input.read_line(&mut line);
     line.trim().to_ascii_lowercase()

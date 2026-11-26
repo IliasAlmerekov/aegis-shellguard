@@ -1,4 +1,8 @@
-#![allow(dead_code)]
+#![expect(
+    clippy::print_stderr,
+    dead_code,
+    reason = "shared by many test crates that each use a subset"
+)]
 
 pub mod agent_hooks;
 pub mod installer;

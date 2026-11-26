@@ -83,7 +83,7 @@ fn project_auto_snapshot_flags_can_tighten_default_false_to_true() {
             "mysql" => config.auto_snapshot_mysql,
             "supabase" => config.auto_snapshot_supabase,
             "sqlite" => config.auto_snapshot_sqlite,
-            _ => unreachable!("unknown auto_snapshot flag {label}"),
+            _ => panic!("unknown auto_snapshot flag {label}"),
         };
 
         assert!(

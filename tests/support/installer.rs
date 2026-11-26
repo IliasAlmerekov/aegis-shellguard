@@ -1,4 +1,7 @@
-#![allow(dead_code)]
+#![expect(
+    dead_code,
+    reason = "shared by many test crates that each use a subset"
+)]
 
 use std::fs;
 use std::io::Write;

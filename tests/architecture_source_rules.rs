@@ -1,3 +1,8 @@
+#![expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test helpers fail loudly"
+)]
 use std::fs;
 
 #[path = "architecture_source_rules/walker.rs"]

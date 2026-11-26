@@ -1,19 +1,33 @@
+#![expect(clippy::expect_used, reason = "test helpers fail loudly")]
+
 use std::fs;
-use std::path::Path;
 use std::process::Command;
 
-const REQUIRED_ATTRIBUTE: &str = "#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable))]";
+const DENIED_LINTS: [&str; 5] = [
+    "unwrap_used",
+    "expect_used",
+    "panic",
+    "unreachable",
+    "allow_attributes",
+];
 
 fn without_whitespace(text: &str) -> String {
     text.split_whitespace().collect()
 }
 
-fn carries_required_attribute(source: &str) -> bool {
-    let code: String = source
+fn inherits_workspace_lints(manifest: &str) -> bool {
+    let code: String = manifest
         .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .collect();
-    without_whitespace(&code).contains(&without_whitespace(REQUIRED_ATTRIBUTE))
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+    without_whitespace(&code).contains("[lints]workspace=true")
+}
+
+fn denies_lint(manifest: &str, lint: &str) -> bool {
+    manifest
+        .lines()
+        .any(|line| without_whitespace(line) == format!("{lint}=\"deny\""))
 }
 
 fn cargo_metadata() -> serde_json::Value {
@@ -36,43 +50,33 @@ fn cargo_metadata() -> serde_json::Value {
     serde_json::from_slice(&output.stdout).expect("cargo metadata should print JSON")
 }
 
-fn lib_and_bin_roots(metadata: &serde_json::Value) -> Vec<String> {
-    let mut roots = Vec::new();
-    for package in metadata["packages"].as_array().expect("packages array") {
-        for target in package["targets"].as_array().expect("targets array") {
-            let is_lib_or_bin = target["kind"]
-                .as_array()
-                .expect("kind array")
-                .iter()
-                .any(|kind| matches!(kind.as_str(), Some("lib" | "bin")));
-            if is_lib_or_bin {
-                roots.push(
-                    target["src_path"]
-                        .as_str()
-                        .expect("src_path string")
-                        .to_owned(),
-                );
-            }
-        }
-    }
-    roots.sort();
-    roots.dedup();
-    roots
+fn manifest_paths(metadata: &serde_json::Value) -> Vec<String> {
+    let mut paths: Vec<String> = metadata["packages"]
+        .as_array()
+        .expect("packages array")
+        .iter()
+        .map(|package| {
+            package["manifest_path"]
+                .as_str()
+                .expect("manifest_path string")
+                .to_owned()
+        })
+        .collect();
+    paths.sort();
+    paths.dedup();
+    paths
 }
 
 #[test]
-fn every_lib_and_bin_root_denies_unwrap_expect_panic_and_unreachable() {
-    let roots = lib_and_bin_roots(&cargo_metadata());
-    assert!(
-        !roots.is_empty(),
-        "cargo metadata listed no lib or bin targets"
-    );
+fn every_workspace_package_inherits_the_workspace_lints() {
+    let paths = manifest_paths(&cargo_metadata());
+    assert!(!paths.is_empty(), "cargo metadata listed no packages");
 
-    let missing: Vec<&str> = roots
+    let missing: Vec<&str> = paths
         .iter()
-        .filter(|root| {
-            !carries_required_attribute(
-                &fs::read_to_string(Path::new(root)).expect("crate root should be readable"),
+        .filter(|path| {
+            !inherits_workspace_lints(
+                &fs::read_to_string(path).expect("package manifest should be readable"),
             )
         })
         .map(String::as_str)
@@ -80,20 +84,30 @@ fn every_lib_and_bin_root_denies_unwrap_expect_panic_and_unreachable() {
 
     assert!(
         missing.is_empty(),
-        "crate roots missing `{REQUIRED_ATTRIBUTE}`:\n{}",
+        "manifests missing `[lints] workspace = true`:\n{}",
         missing.join("\n")
     );
 }
 
 #[test]
-fn an_attribute_inside_a_comment_does_not_count() {
-    assert!(carries_required_attribute(&format!(
-        "{REQUIRED_ATTRIBUTE}\n"
-    )));
-    assert!(!carries_required_attribute(&format!(
-        "// {REQUIRED_ATTRIBUTE}\n"
-    )));
-    assert!(!carries_required_attribute(&format!(
-        "//! {REQUIRED_ATTRIBUTE}\n"
-    )));
+fn the_workspace_denies_unwrap_expect_panic_unreachable_and_allow_attributes() {
+    let manifest = fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
+        .expect("root manifest should be readable");
+
+    let missing: Vec<&str> = DENIED_LINTS
+        .into_iter()
+        .filter(|lint| !denies_lint(&manifest, lint))
+        .collect();
+
+    assert!(
+        missing.is_empty(),
+        "root Cargo.toml does not deny: {missing:?}"
+    );
+}
+
+#[test]
+fn a_commented_out_lints_table_does_not_count() {
+    assert!(inherits_workspace_lints("[lints]\nworkspace = true\n"));
+    assert!(!inherits_workspace_lints("# [lints]\n# workspace = true\n"));
+    assert!(!inherits_workspace_lints("[package]\nname = \"x\"\n"));
 }

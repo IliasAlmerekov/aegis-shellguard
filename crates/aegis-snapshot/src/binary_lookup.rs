@@ -80,6 +80,11 @@ fn metadata_is_runnable_file(metadata: std::fs::Metadata) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::print_stderr,
+        reason = "test child process reports failure on stderr"
+    )]
+
     use std::ffi::OsStr;
     use std::fs;
     #[cfg(unix)]
@@ -181,6 +186,10 @@ mod tests {
         }
     }
 
+    #[expect(
+        clippy::exit,
+        reason = "child process of a self-spawning test reports its result by exit status"
+    )]
     #[tokio::test]
     async fn binary_available_in_resolves_relative_path_with_separator_without_path_env() {
         if env::var_os("AEGIS_RELATIVE_PATH_CHILD").is_some() {
@@ -206,6 +215,10 @@ mod tests {
         );
     }
 
+    #[expect(
+        clippy::exit,
+        reason = "child process of a self-spawning test reports its result by exit status"
+    )]
     #[tokio::test]
     async fn providers_find_dump_binaries_on_path_without_which() {
         if env::var_os("AEGIS_BINARY_LOOKUP_CHILD").is_some() {

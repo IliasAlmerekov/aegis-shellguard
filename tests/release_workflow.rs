@@ -1,3 +1,8 @@
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test helpers fail loudly"
+)]
 use std::path::Path;
 
 fn release_workflow() -> String {

@@ -92,16 +92,12 @@ impl PatternSet {
 
         #[cfg(debug_assertions)]
         for rule in &prefix_rules {
-            #[expect(
-                clippy::panic,
-                reason = "debug-only self-check: a built-in rule that fails its own examples must not ship"
-            )]
-            if let Err(e) = rule.validate_examples() {
-                panic!(
+            rule.validate_examples().map_err(|e| {
+                ScannerError::Build(format!(
                     "built-in prefix rule {} failed example validation: {e}",
                     rule.id
-                );
-            }
+                ))
+            })?;
         }
 
         for rule in &prefix_rules {

@@ -25,7 +25,7 @@ use aegis_types::{Decision, EXIT_BLOCKED, EXIT_DENIED, EXIT_INTERNAL};
 
 use super::protocol::{
     InputFrame, MAX_FRAME_BYTES, OutputDecision, OutputFrame, ReadLineResult, emit_frame,
-    read_bounded_line,
+    exit_internal, read_bounded_line,
 };
 use super::sandbox::{
     WatchExecution, append_watch_execution_audit, complete_watch_approved_execution,
@@ -45,7 +45,7 @@ pub async fn run(prepared: &PreparedPlanner, ci_detected: bool) -> i32 {
             Ok(crate::toggle::ToggleState::Disabled) => return run_disabled().await,
             Ok(crate::toggle::ToggleState::Enabled) => {}
             Err(err) => {
-                eprintln!("error: failed to read toggle state: {err}");
+                err!("error: failed to read toggle state: {err}");
                 return EXIT_INTERNAL;
             }
         }
@@ -66,7 +66,7 @@ pub async fn run(prepared: &PreparedPlanner, ci_detected: bool) -> i32 {
     loop {
         match read_bounded_line(&mut reader, MAX_FRAME_BYTES).await {
             Err(e) => {
-                eprintln!("aegis: stdin read error: {e}");
+                err!("aegis: stdin read error: {e}");
                 return EXIT_INTERNAL;
             }
             Ok(ReadLineResult::Eof) => return 0,
@@ -89,7 +89,7 @@ pub async fn run_disabled() -> i32 {
     loop {
         match read_bounded_line(&mut reader, MAX_FRAME_BYTES).await {
             Err(e) => {
-                eprintln!("aegis: stdin read error: {e}");
+                err!("aegis: stdin read error: {e}");
                 return EXIT_INTERNAL;
             }
             Ok(ReadLineResult::Eof) => return 0,
@@ -150,7 +150,7 @@ async fn process_frame(line: String, context: &RuntimeContext, ci_detected: bool
     match outcome {
         PlanningOutcome::SetupFailure(plan) => {
             report_watch_setup_failure(&plan);
-            std::process::exit(EXIT_INTERNAL);
+            exit_internal();
         }
         PlanningOutcome::Planned(plan) => run_watch_plan(frame, context, plan, ci_detected).await,
     }
@@ -227,7 +227,7 @@ async fn run_watch_plan_with_prompts<C, R>(
 
 fn persist_allow_rule(cmd: &str, cwd: &std::path::Path) {
     let Some(config_path) = active_config_path_for_append() else {
-        eprintln!("warning: cannot persist allow rule: no config file found");
+        err!("warning: cannot persist allow rule: no config file found");
         return;
     };
     let tokens = split_tokens(cmd);
@@ -241,12 +241,10 @@ fn persist_allow_rule(cmd: &str, cwd: &std::path::Path) {
                 aegis_config::allowlist::ConfigSourceLayer::Project => "project",
                 aegis_config::allowlist::ConfigSourceLayer::Global => "global",
             };
-            eprintln!(
-                "warning: conflicting rule for '{pattern}' already exists in {location} config"
-            );
+            err!("warning: conflicting rule for '{pattern}' already exists in {location} config");
         }
         Ok(AppendOutcome::SkippedDuplicate | AppendOutcome::Appended) => {}
-        Err(err) => eprintln!("error: failed to append allow rule: {err}"),
+        Err(err) => err!("error: failed to append allow rule: {err}"),
     }
 }
 
@@ -272,14 +270,14 @@ async fn run_watch_plan_with_persistence<C, R, P>(
         ExecutionDisposition::RequiresApproval => {
             let decision = confirmation_prompt(plan.assessment(), plan.explanation());
             if decision == PromptDecision::ApproveAlways && cwd.is_none() {
-                eprintln!("warning: cannot persist allow rule: working directory unavailable");
+                err!("warning: cannot persist allow rule: working directory unavailable");
             }
             approve_always = decision == PromptDecision::ApproveAlways
                 && cwd.is_some()
                 && !plan.explanation().context.recovery_opt_out;
             if decision == PromptDecision::DenyAlways {
                 if cwd.is_none() {
-                    eprintln!("warning: cannot persist block rule: working directory unavailable");
+                    err!("warning: cannot persist block rule: working directory unavailable");
                 } else if let (Some(cwd), Some(config_path)) =
                     (cwd, active_config_path_for_append())
                 {
@@ -294,15 +292,15 @@ async fn run_watch_plan_with_persistence<C, R, P>(
                                 aegis_config::allowlist::ConfigSourceLayer::Project => "project",
                                 aegis_config::allowlist::ConfigSourceLayer::Global => "global",
                             };
-                            eprintln!(
+                            err!(
                                 "warning: conflicting rule for '{pattern}' already exists in {location} config"
                             );
                         }
                         Ok(AppendOutcome::SkippedDuplicate | AppendOutcome::Appended) => {}
-                        Err(err) => eprintln!("error: failed to append block rule: {err}"),
+                        Err(err) => err!("error: failed to append block rule: {err}"),
                     }
                 } else {
-                    eprintln!("warning: cannot persist block rule: no config file found");
+                    err!("warning: cannot persist block rule: no config file found");
                 }
             }
             if matches!(
@@ -353,7 +351,7 @@ async fn run_watch_plan_with_persistence<C, R, P>(
                 None
             };
             if persistence_block.is_some() {
-                eprintln!("warning: allow rule not saved: Recovery is not ready for this run");
+                err!("warning: allow rule not saved: Recovery is not ready for this run");
             }
             let degradation = plan_recovery_degradation(
                 &plan,
@@ -413,7 +411,7 @@ async fn run_watch_plan_with_persistence<C, R, P>(
                         })
                         .is_err()
                         {
-                            std::process::exit(EXIT_INTERNAL);
+                            exit_internal();
                         }
                         return;
                     }
@@ -453,7 +451,7 @@ async fn run_watch_plan_with_persistence<C, R, P>(
             })
             .is_err()
             {
-                std::process::exit(EXIT_INTERNAL);
+                exit_internal();
             }
         }
         _ => {
@@ -475,7 +473,7 @@ async fn run_watch_plan_with_persistence<C, R, P>(
             })
             .is_err()
             {
-                std::process::exit(EXIT_INTERNAL);
+                exit_internal();
             }
         }
     }
@@ -555,9 +553,9 @@ async fn create_watch_snapshots(
 }
 
 fn report_watch_setup_failure(plan: &SetupFailurePlan) {
-    eprintln!("{}", plan.user_message());
+    err!("{}", plan.user_message());
     if plan.is_config_fault() {
-        eprintln!("error: Fix or remove the invalid config file and try again.");
+        err!("error: Fix or remove the invalid config file and try again.");
     }
 }
 
@@ -580,7 +578,7 @@ fn emit_error_or_exit(id: Option<String>, message: String) {
     })
     .is_err()
     {
-        std::process::exit(EXIT_INTERNAL);
+        exit_internal();
     }
 }
 
@@ -674,7 +672,7 @@ pub(super) async fn execute_prepared_and_emit(
         };
         if emit_frame(&frame).is_err() {
             let _ = child.kill().await;
-            std::process::exit(EXIT_INTERNAL);
+            exit_internal();
         }
     }
 
@@ -699,7 +697,7 @@ pub(super) async fn execute_prepared_and_emit(
     })
     .is_err()
     {
-        std::process::exit(EXIT_INTERNAL);
+        exit_internal();
     }
 }
 

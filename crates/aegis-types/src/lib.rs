@@ -1,13 +1,3 @@
-#![cfg_attr(
-    not(test),
-    deny(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::unreachable
-    )
-)]
-
 mod exits {
     pub const EXIT_DENIED: i32 = 2;
     pub const EXIT_BLOCKED: i32 = 3;

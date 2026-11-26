@@ -1,13 +1,8 @@
-#![cfg_attr(
-    not(test),
-    deny(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::unreachable
-    )
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "xtask is a dev CLI whose job is to print"
 )]
-
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};

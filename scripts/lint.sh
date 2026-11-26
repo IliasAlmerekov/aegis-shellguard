@@ -5,7 +5,7 @@
 # (#276). CI, the pre-push hook and `just lint` all call it, and
 # `tests/lint_gate_ci.rs` fails if any of them grows its own copy again.
 #
-# Usage: scripts/lint.sh [fmt|clippy|comments|text|machete|all]
+# Usage: scripts/lint.sh [fmt|clippy|comments|text|machete|deslop|all]
 #   fmt     check formatting
 #   clippy  lint every target and feature, warnings are errors
 #   comments  no comment in any tracked `.rs` file except `// SAFETY:`, found with
@@ -20,6 +20,8 @@
 #           scripts/test-tamper-check.test.sh passes
 #   machete no unused dependency in any Cargo.toml (`cargo machete`, needs the
 #           pinned cargo-machete from .github/versions.env; not part of `all`)
+#   deslop  architecture lints (`deslop-please`, needs the pinned binary from
+#           .github/versions.env on PATH and rust-analyzer; not part of `all`)
 #   all     fmt, clippy, comments, then text (also the default with no argument)
 #
 # LINT_TEXT_ROOT points the text checks at another directory than the
@@ -244,6 +246,11 @@ run_machete() {
     cargo machete
 }
 
+run_deslop() {
+    echo "lint: deslop-please"
+    RUSTUP_TOOLCHAIN=$toolchain deslop-please --features language-analysis --allow .deslop-please.allow
+}
+
 run_text() {
     echo "lint: text checks"
     root=${LINT_TEXT_ROOT:-.}
@@ -287,6 +294,7 @@ case "${1:-all}" in
     comments) run_comments ;;
     text) run_text ;;
     machete) run_machete ;;
+    deslop) run_deslop ;;
     all)
         run_fmt
         run_clippy
@@ -294,7 +302,7 @@ case "${1:-all}" in
         run_text
         ;;
     *)
-        echo "usage: scripts/lint.sh [fmt|clippy|comments|text|machete|all]" >&2
+        echo "usage: scripts/lint.sh [fmt|clippy|comments|text|machete|deslop|all]" >&2
         exit 2
         ;;
 esac

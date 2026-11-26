@@ -1,14 +1,7 @@
-#![cfg_attr(
-    not(test),
-    deny(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::unreachable
-    )
-)]
+#[macro_use]
+extern crate aegis;
 
-use std::process;
+use std::process::ExitCode;
 
 use aegis_audit::AuditTimestamp;
 use aegis_types::Decision;
@@ -383,26 +376,30 @@ enum ConfigValidateOutput {
     Json,
 }
 
-fn main() {
+fn exit_code(code: i32) -> ExitCode {
+    u8::try_from(code & 0xff).map_or(ExitCode::FAILURE, ExitCode::from)
+}
+
+fn main() -> ExitCode {
     #[cfg(feature = "language-analysis")]
     if std::env::args().any(|a| a == aegis::analysis::INTERNAL_LANGUAGE_WORKER_FLAG) {
-        process::exit(cli_dispatch::run_internal_language_worker());
+        return exit_code(cli_dispatch::run_internal_language_worker());
     }
 
     #[cfg(target_os = "linux")]
     if std::env::args().any(|a| a == aegis_sandbox::INNER_LANDLOCK_FLAG) {
-        process::exit(aegis_sandbox::run_inner_landlock_wrapper());
+        return exit_code(aegis_sandbox::run_inner_landlock_wrapper());
     }
 
     if std::env::args().any(|a| a == aegis::update::INTERNAL_UPDATE_CHECK_FLAG) {
-        process::exit(aegis::update::run_internal_update_check_from_env());
+        return exit_code(aegis::update::run_internal_update_check_from_env());
     }
 
     let invocation = match shell_compat::parse_invocation_mode() {
         Ok(invocation) => invocation,
         Err(message) => {
-            eprintln!("error: {message}");
-            process::exit(EXIT_USAGE);
+            err!("error: {message}");
+            return exit_code(EXIT_USAGE);
         }
     };
 
@@ -414,13 +411,13 @@ fn main() {
     {
         Ok(rt) => rt,
         Err(err) => {
-            eprintln!("error: failed to build tokio runtime: {err}");
-            process::exit(EXIT_INTERNAL);
+            err!("error: failed to build tokio runtime: {err}");
+            return exit_code(EXIT_INTERNAL);
         }
     };
     let handle = rt.handle().clone();
 
-    let exit_code = match invocation {
+    let code = match invocation {
         shell_compat::InvocationMode::Cli(cli) => cli_dispatch::run_cli(cli, &rt, handle),
         shell_compat::InvocationMode::ShellCompatCommand { command, launch } => {
             shell_wrapper::run_shell_wrapper(
@@ -436,7 +433,8 @@ fn main() {
         }
     };
 
-    process::exit(exit_code);
+    rt.shutdown_background();
+    exit_code(code)
 }
 
 fn parse_risk_level(value: &str) -> Result<RiskLevel, String> {

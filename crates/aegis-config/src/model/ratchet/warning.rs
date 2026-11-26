@@ -16,13 +16,13 @@ pub(crate) struct RatchetSink {
 }
 
 impl RatchetSink {
-    pub(crate) fn touch(
-        &mut self,
-        #[cfg_attr(not(test), allow(unused_variables))] path: &'static str,
-    ) {
-        #[cfg(test)]
+    #[cfg(test)]
+    pub(crate) fn touch(&mut self, path: &'static str) {
         self.touched.push(path);
     }
+
+    #[cfg(not(test))]
+    pub(crate) fn touch(&mut self, _path: &'static str) {}
 
     pub(crate) fn warn(
         &mut self,

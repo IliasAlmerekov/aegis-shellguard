@@ -150,14 +150,20 @@ Architectural constraints:
 - `anyhow` is allowed only in CLI glue or top-level application wiring when it simplifies propagation.
 - Production code returns an error or makes the failing case unrepresentable (an enum with an
   exhaustive `match`, a value matched once and passed on) instead of calling `unwrap()`,
-  `expect()`, `panic!` or `unreachable!`. Every library and binary crate root enforces this with
-  `#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable))]`,
-  and `tests/panic_lint_guard.rs` fails when a crate root lacks the attribute. An exception is an
-  explicit, documented startup-time panic where panic is the intended contract, or a
-  `cfg(debug_assertions)` check. It carries `#[expect(clippy::expect_used, reason = "...")]` or
-  `#[expect(clippy::panic, reason = "...")]` on the smallest item or statement. Use `expect`, not
-  `allow`, so a stale marker fails the build. Build scripts are not crate roots and stay outside
-  the lint.
+  `expect()`, `panic!` or `unreachable!`. The lints live in the root `Cargo.toml` under
+  `[workspace.lints]` and every package inherits them with `[lints] workspace = true`;
+  `tests/panic_lint_guard.rs` fails when a package does not. `clippy.toml` lets tests unwrap,
+  expect and panic inside test code; a test crate whose helpers outside `#[test]` functions trip
+  these lints carries one crate-level `#![expect(..., reason = "...")]` naming only the lints it
+  trips.
+- The `aegis` binary prints only through `src/output.rs` (`out!` and `err!`); `print_stdout` and `print_stderr` are denied. `std::process::exit` is denied (`clippy::exit`): return an `ExitCode` and pass exit codes up as values.
+- `#[allow(...)]` is banned (`clippy::allow_attributes`, `clippy::allow_attributes_without_reason`).
+  Fix the code, or suppress with `#[expect(lint, reason = "...")]` on the smallest item. An
+  `#[expect]` that no longer fires is itself a warning, so a stale marker fails the build. Modules
+  that need `unsafe` carry `#[expect(unsafe_code, reason = "...")]`; `unsafe_code` is denied.
+  A real startup-time panic, or a `cfg(debug_assertions)` check, carries
+  `#[expect(clippy::panic, reason = "...")]`. A build script returns `Err` from `main` instead of
+  panicking.
 - Errors must not be silently discarded in production logic.
 - Do not convert actionable errors into `None` or a silent fallback unless that behavior is
   intentional, documented, and tested.

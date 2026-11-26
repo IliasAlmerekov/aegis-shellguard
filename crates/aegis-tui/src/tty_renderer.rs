@@ -24,6 +24,10 @@ pub(crate) fn tty_unavailable_prompt_decision(
     }
 }
 
+#[expect(
+    clippy::print_stderr,
+    reason = "rendering module writes diagnostics to stderr"
+)]
 pub fn show_confirmation_via_tty_with_decision(
     assessment: &Assessment,
     explanation: &CommandExplanation,

@@ -13,7 +13,6 @@ pub struct SinkDecision {
     pub degradation: Option<DegradationReason>,
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn handle_sink(
     op: &DetectedOperation,
     payload_language: SourceLanguage,

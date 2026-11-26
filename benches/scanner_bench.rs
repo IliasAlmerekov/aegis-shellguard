@@ -1,3 +1,4 @@
+#![expect(clippy::expect_used, reason = "test helpers fail loudly")]
 use aegis_scanner::{PatternSet, Scanner};
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;

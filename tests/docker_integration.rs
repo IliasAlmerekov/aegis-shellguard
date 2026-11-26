@@ -1,3 +1,4 @@
+#![expect(clippy::expect_used, reason = "test helpers fail loudly")]
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 

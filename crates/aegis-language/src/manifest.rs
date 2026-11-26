@@ -120,7 +120,8 @@ pub const BUILTIN_MANIFEST: &[GrammarEntry] = &[
     },
 ];
 
-#[cfg(all(test, feature = "grammars"))]
+#[cfg(test)]
+#[cfg(feature = "grammars")]
 mod tests {
     use super::*;
 

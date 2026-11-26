@@ -1,3 +1,4 @@
+#![expect(clippy::panic_in_result_fn, reason = "test helpers fail loudly")]
 use aegis_audit::{
     AuditEntry, AuditError, AuditLogger, AuditQuery, AuditRotationPolicy, AuditTimestamp,
     MatchedPattern,

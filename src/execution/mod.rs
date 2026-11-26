@@ -27,7 +27,7 @@ fn persist_rule(
     label: &str,
 ) -> Result<(), String> {
     let CwdState::Resolved(cwd) = plan.decision_context().cwd_state() else {
-        eprintln!("warning: cannot persist {label} rule: working directory unavailable");
+        err!("warning: cannot persist {label} rule: working directory unavailable");
         return Ok(());
     };
     match active_config_path_for_append() {
@@ -43,7 +43,7 @@ fn persist_rule(
                         aegis_config::allowlist::ConfigSourceLayer::Project => "project",
                         aegis_config::allowlist::ConfigSourceLayer::Global => "global",
                     };
-                    eprintln!(
+                    err!(
                         "warning: conflicting rule for '{pattern}' already exists in {location} config"
                     );
                 }
@@ -52,7 +52,7 @@ fn persist_rule(
             }
         }
         None => {
-            eprintln!("warning: cannot persist {label} rule: no config file found");
+            err!("warning: cannot persist {label} rule: no config file found");
         }
     }
     Ok(())
@@ -118,7 +118,7 @@ fn run_planned_shell_command_with_sandbox<R: ExecutionRenderer>(
             if prompt_decision == PromptDecision::DenyAlways
                 && let Err(err) = persist_rule(cmd, plan, append_block_rule, "block")
             {
-                eprintln!("error: failed to append block rule: {err}");
+                err!("error: failed to append block rule: {err}");
             }
             let approved = matches!(
                 prompt_decision,
@@ -145,7 +145,7 @@ fn run_planned_shell_command_with_sandbox<R: ExecutionRenderer>(
                     &[],
                     aegis::runtime::sandbox_status_before_preparation(sandbox_config),
                 ) {
-                    eprintln!("error: failed to write audit log: {err}");
+                    err!("error: failed to write audit log: {err}");
                     return EXIT_INTERNAL;
                 }
                 EXIT_DENIED
@@ -161,7 +161,7 @@ fn run_planned_shell_command_with_sandbox<R: ExecutionRenderer>(
                 &[],
                 aegis::runtime::sandbox_status_before_preparation(sandbox_config),
             ) {
-                eprintln!("error: failed to write audit log: {err}");
+                err!("error: failed to write audit log: {err}");
                 return EXIT_INTERNAL;
             }
             EXIT_BLOCKED
@@ -190,7 +190,7 @@ fn execute_with_snapshots<R: ExecutionRenderer>(
     let attempts = attempts.as_slice();
     let unavailable = matches!(plan.decision_context().cwd_state(), CwdState::Unavailable);
     if approve_always && unavailable {
-        eprintln!("warning: cannot persist allow rule: working directory unavailable");
+        err!("warning: cannot persist allow rule: working directory unavailable");
     }
     let approve_always =
         approve_always && !unavailable && !plan.explanation().context.recovery_opt_out;
@@ -209,7 +209,7 @@ fn execute_with_snapshots<R: ExecutionRenderer>(
         && degradation.is_none()
         && let Err(err) = persist_rule(cmd, plan, append_allow_rule, "allow")
     {
-        eprintln!("error: failed to append allow rule: {err}");
+        err!("error: failed to append allow rule: {err}");
     }
     if let Some(degradation) = degradation {
         return match renderer.show_recovery_override(degradation) {
@@ -237,7 +237,7 @@ fn execute_with_snapshots<R: ExecutionRenderer>(
                     aegis::runtime::sandbox_status_before_preparation(sandbox_config),
                     degradation,
                 ) {
-                    eprintln!("error: failed to write audit log: {err}");
+                    err!("error: failed to write audit log: {err}");
                     return EXIT_INTERNAL;
                 }
                 EXIT_DENIED

@@ -222,7 +222,8 @@ impl SnapshotPlugin for SqlitePlugin {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
+#[cfg(unix)]
 mod tests {
     use super::*;
     use crate::secure_fs::{inject_effective_uid, inject_store_metadata_failure};

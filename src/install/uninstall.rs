@@ -26,11 +26,11 @@ const PAYLOADS: &[&str] = &[
 pub(crate) fn run(args: &crate::UninstallArgs) -> i32 {
     match uninstall(args) {
         Ok(message) => {
-            println!("{message}");
+            out!("{message}");
             0
         }
         Err(error) => {
-            eprintln!("error: uninstall incomplete: {error}");
+            err!("error: uninstall incomplete: {error}");
             crate::EXIT_INTERNAL
         }
     }
@@ -162,7 +162,7 @@ fn uninstall(args: &crate::UninstallArgs) -> Result<String, InstallError> {
     let shell_is_aegis = std::env::var_os("SHELL")
         .is_some_and(|shell| crate::shell_compat::same_file(Path::new(&shell), Some(&binary)));
     if shell_files.is_empty() && shell_is_aegis {
-        eprintln!(
+        err!(
             "warning: $SHELL is this Aegis binary, but no checked startup file holds a managed shell block. If you ran `aegis setup-shell --rc-file <path>`, rerun `aegis uninstall --rc-file <path>`."
         );
     }
@@ -398,7 +398,8 @@ fn removal_command(channel: Option<RemovalChannel>, binary: &Path) -> String {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
+#[cfg(unix)]
 mod tests {
     use super::*;
 

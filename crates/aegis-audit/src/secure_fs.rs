@@ -1,3 +1,5 @@
+#![expect(unsafe_code, reason = "FFI calls, each documented by a SAFETY comment")]
+
 use std::fs::{self, File, OpenOptions};
 use std::path::Path;
 
@@ -307,7 +309,8 @@ fn insecure(path: &Path, detail: &str) -> AuditError {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
+#[cfg(unix)]
 mod tests {
     use super::*;
 

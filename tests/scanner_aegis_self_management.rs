@@ -1,3 +1,4 @@
+#![expect(clippy::panic, reason = "test helpers fail loudly")]
 use aegis_scanner::assess;
 use aegis_types::RiskLevel;
 

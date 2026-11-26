@@ -26,6 +26,12 @@ outputs:
   cargo_machete_version:
     description: "Pinned cargo-machete version"
     value: ${{ steps.load.outputs.cargo_machete_version }}
+  deslop_please_version:
+    description: "Pinned deslop-please version"
+    value: ${{ steps.load.outputs.deslop_please_version }}
+  deslop_please_sha256:
+    description: "SHA-256 of the pinned deslop-please musl archive"
+    value: ${{ steps.load.outputs.deslop_please_sha256 }}
   cross_version:
     description: "Pinned cross version used for the musl targets"
     value: ${{ steps.load.outputs.cross_version }}
@@ -95,6 +101,7 @@ runs:
         # stopping.
         for required in RUST_TOOLCHAIN FUZZ_NIGHTLY_TOOLCHAIN CARGO_AUDIT_VERSION \
                         CARGO_DENY_VERSION CARGO_FUZZ_VERSION CARGO_MACHETE_VERSION CROSS_VERSION \
+                        DESLOP_PLEASE_VERSION DESLOP_PLEASE_SHA256 \
                         CARGO_LLVM_COV_VERSION CARGO_MUTANTS_VERSION \
                         NODE_VERSION NPM_CLI_VERSION FUZZ_RUNS FUZZ_MAX_LEN; do
           if ! grep -q "^${required}=..*$" .github/versions.env; then

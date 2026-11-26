@@ -1,3 +1,9 @@
+#![expect(
+    clippy::print_stderr,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test helpers fail loudly"
+)]
 #[path = "../../../tests/support/isolated_test.rs"]
 mod isolated_test;
 

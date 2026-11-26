@@ -1,13 +1,7 @@
-#![cfg_attr(
-    not(test),
-    deny(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::unreachable
-    )
+#![expect(
+    clippy::print_stdout,
+    reason = "schema generator reports success on stdout"
 )]
-
 use std::fs;
 
 use anyhow::Context as _;

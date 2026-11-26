@@ -1,12 +1,7 @@
-#![cfg_attr(
-    not(test),
-    deny(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::unreachable
-    )
-)]
+#[macro_use]
+mod output;
+#[doc(hidden)]
+pub use output::{err_line, err_raw, out_line, out_raw};
 
 pub mod analysis;
 pub mod error;

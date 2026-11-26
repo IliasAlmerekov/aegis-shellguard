@@ -1,3 +1,9 @@
+#![expect(
+    clippy::print_stderr,
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "test helpers fail loudly"
+)]
 use std::process::Command;
 
 use aegis_config::{PostgresSnapshotConfig, SupabaseSnapshotConfig};

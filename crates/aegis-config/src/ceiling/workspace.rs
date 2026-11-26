@@ -1,3 +1,8 @@
+#![expect(
+    unsafe_code,
+    reason = "libc calls are sandbox/system boundaries, each documented by a SAFETY comment"
+)]
+
 use std::fs::{self, Metadata};
 use std::io::Read;
 use std::os::unix::ffi::OsStrExt;
@@ -242,10 +247,14 @@ pub(super) fn passwd_home() -> Option<PathBuf> {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 fn system_temp_dirs() -> Vec<PathBuf> {
-    #[allow(unused_mut)]
+    vec![PathBuf::from("/tmp")]
+}
+
+#[cfg(target_os = "macos")]
+fn system_temp_dirs() -> Vec<PathBuf> {
     let mut dirs = vec![PathBuf::from("/tmp")];
-    #[cfg(target_os = "macos")]
     {
         let mut buf = vec![0u8; libc::PATH_MAX as usize];
         // SAFETY: `buf` is valid for `buf.len()` bytes.

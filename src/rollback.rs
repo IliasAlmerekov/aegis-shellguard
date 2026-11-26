@@ -114,7 +114,7 @@ pub(crate) fn decide(
                     ),
                 };
             }
-            eprint!(
+            err_raw!(
                 "The Snapshot liveness check could not complete ({reason}).\nAttempt the restore anyway? [y/N] "
             );
             let mut line = String::new();

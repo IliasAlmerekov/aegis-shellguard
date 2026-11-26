@@ -3,3 +3,9 @@ disallowed-methods = [
     "std::env::remove_var",
     "std::env::set_current_dir",
 ]
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+cognitive-complexity-threshold = 15
+too-many-lines-threshold = 100
+type-complexity-threshold = 200

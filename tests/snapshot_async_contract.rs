@@ -1,3 +1,4 @@
+#![expect(clippy::panic_in_result_fn, reason = "test helpers fail loudly")]
 use std::fs;
 use std::path::Path;
 
