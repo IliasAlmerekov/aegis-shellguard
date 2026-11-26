@@ -71,9 +71,7 @@ doing anything your own user could do within the paths it is allowed to write.
 
 In Aegis 1.0 this layer is mandatory. Confinement is attempted for every
 executed command, and failure to establish it blocks the command instead of
-running it unconfined
-([ADR-029](adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md), `PRD.md`
-§5.5). `sandbox.enabled` and `sandbox.required` leave the contract there: they
+running it unconfined (`PRD.md` §5.5). `sandbox.enabled` and `sandbox.required` leave the contract there: they
 stay accepted by exact name and ignored at any value, each reported as a
 `deprecated_sandbox_field`, and Aegis never rewrites your config to remove them.
 

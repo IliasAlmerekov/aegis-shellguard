@@ -188,11 +188,11 @@ fn cap_exceeded_outcomes_map_to_limit_exceeded_degradation() {
 fn l1_default_budget_matches_adr_022_ceilings() {
     let b = QueueBudget::L1_DEFAULT;
     // Explicit ADR-022 §7 ceilings.
-    assert_eq!(b.max_depth, 8, "ADR-022 §7 recursion-depth ceiling is 8");
+    assert_eq!(b.max_depth, 8, "recursion-depth ceiling is 8");
     assert_eq!(
         b.max_aggregate_bytes,
         1024 * 1024,
-        "ADR-022 §7 aggregate-source ceiling is 1 MiB",
+        "aggregate-source ceiling is 1 MiB",
     );
     assert!(
         b.deadline.is_none(),

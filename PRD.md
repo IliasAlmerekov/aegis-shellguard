@@ -5,8 +5,8 @@
 **Last updated:** 2026-10-22
 
 This PRD is the single normative source of the Aegis 1.0 product promise.
-The `1.0` milestone is the live release gate under
-[ADR-027](docs/adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md).
+The `1.0` milestone is the live release gate under the
+rule that it is the only release gate.
 `docs/release-readiness.md` holds release evidence, and the historical registry
 of security findings lives at the
 [TASKS.md permalink](https://github.com/IliasAlmerekov/aegis-shellguard/blob/500aaf5a808b5083ec8b9bdb85f76c398c646302/TASKS.md).
@@ -42,8 +42,7 @@ Aegis 1.0 is a **rule-driven guardrail for AI-agent shell commands**. It is buil
 from three layers, and their 1.0 status is not uniform:
 
 - **Snapshot / Rollback — mandatory in 1.0.** All six providers are part of the
-  promise and are proven by a CI snapshot → rollback cycle
-  ([ADR-026](docs/adr/adr-026-snapshot-rollback-contract-for-1-0.md)). Recovery is
+  promise and are proven by a CI snapshot → rollback cycle. Recovery is
   an obligation, not a convenience, wherever no human made the decision (§5.10).
 - **Heuristic decision layer — the core of 1.0.** A fast rule corpus over parsed
   commands decides `Safe` / `Warn` / `Danger` / `Block` and drives the
@@ -51,8 +50,7 @@ from three layers, and their 1.0 status is not uniform:
   command runs.
 - **Sandbox — a mandatory 1.0 layer.** Confinement is attempted for every
   executed command; failure to establish it blocks execution rather than
-  downgrading to an unconfined run
-  ([ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md)).
+  downgrading to an unconfined run.
 - **Language-aware analysis — not in 1.0.** It ships after 1.0 behind an opt-in
   cargo feature and is an explicit 1.0 Non-Goal; see §5.11 and §11.
 
@@ -62,8 +60,7 @@ inside that region is granted wholesale. Aegis confines what the agent does
 *inside* that permitted region. In 1.0 its profile is the `Trusted ceiling`
 intersected with project tightening and with the outer sandbox. Narrowing each
 individual command by the rules that matched it, driven by a rule corpus that
-knows which commands destroy what, is 1.x target state
-([ADR-030 amendment]). The two layers are complementary rather than
+knows which commands destroy what, is 1.x target state. The two layers are complementary rather than
 duplicative: the outer one decides where the agent may act at all, the inner one
 bounds what a command may write and reach inside it. Nesting was measured on
 Linux and can only ever tighten authority, never widen it
@@ -124,7 +121,7 @@ path, but team features are not shipped in 1.0.
 6. **Confined execution.** Every executed command runs inside an OS confinement
    whose write and network authority is bounded by the `Trusted ceiling`.
    Narrowing it further by whichever rules matched the command is 1.x target
-   state ([ADR-030 amendment]).
+   state.
 7. **Audit.** Every decision and every execution is written to an append-only
    JSONL log; the user reviews history and verifies the chain integrity
    (`aegis audit --verify-integrity`).
@@ -152,15 +149,13 @@ path, but team features are not shipped in 1.0.
 ### 5.2 Policy DSL
 
 - **The typed TOML DSL is the only way to declare a Policy rule in 1.0.** There is
-  no second, scripted authoring path
-  ([ADR-028](docs/adr/adr-028-the-starlark-policy-dsl-is-removed-before-1-0.md)).
+  no second, scripted authoring path.
   A `~/.aegis/policy.star` left over from a pre-1.0 installation is a permanent
   startup error — never a warning, never a silent ignore.
 - `[[rules]]` fields: `pattern` with `Alts`, `decision`
   (`allow`/`prompt`/`block`), `justification`, `match_examples`,
   `not_match_examples`, and a `when` clause (environment-conditional decision).
-  The optional `Confinement restriction` field (§5.5) is 1.x target state
-  ([ADR-030 amendment]).
+  The optional `Confinement restriction` field (§5.5) is 1.x target state.
 - Rules are validated at load time. Invalid rules fail configuration loading with
   a human-readable validation error.
 
@@ -185,8 +180,7 @@ invariant; nothing here overrides it.
   PostgreSQL, MySQL/MariaDB, SQLite, Supabase. **There is no provider tiering** —
   all six are part of the 1.0 promise and each must be proven by a CI
   snapshot → rollback cycle, Supabase through its Postgres compatibility plus one
-  live pre-release run
-  ([ADR-026](docs/adr/adr-026-snapshot-rollback-contract-for-1-0.md)).
+  live pre-release run.
 - A Snapshot is taken **only when the command is approved (`Allow`)** — never for
   `Block`ed commands — and runs **before** confined execution, so a rollback
   target exists independently of the confinement layer.
@@ -213,12 +207,10 @@ invariant; nothing here overrides it.
 
 ### 5.5 Sandbox
 
-The Sandbox is a **mandatory Sandbox** layer of Aegis 1.0, not an add-on
-([ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md)). In 1.0 the
+The Sandbox is a **mandatory Sandbox** layer of Aegis 1.0, not an add-on. In 1.0 the
 profile it applies is the `Trusted ceiling` with project tightening and any outer
 agent sandbox. Deriving the profile per command from the matched rules
-([ADR-030](docs/adr/adr-030-the-confinement-profile-is-derived-from-the-assessment.md))
-is 1.x target state ([ADR-030 amendment]).
+is 1.x target state.
 
 **Obligation.** Confinement is applied to every command Aegis executes outside
 `Mode::Audit`. Failure to establish the required confinement **blocks execution**;
@@ -242,8 +234,7 @@ working one, because a mandatory layer whose default forbids all writes is
 unusable: writes within the workspace tree and `/tmp`, with network access
 disabled. The workspace is the root of the git worktree enclosing the working
 directory; outside a worktree, or when that root is `/`, the home, or an ancestor
-of the home, there is no workspace and only the temporary directory is writable
-(ADR-030 refinement of 2026-11-12). The project
+of the home, there is no workspace and only the temporary directory is writable. The project
 config layer may only narrow the ceiling, never widen it.
 
 **The 1.0 effective profile.** The effective profile is the `Trusted ceiling`
@@ -251,7 +242,7 @@ intersected with the project tightening and with any outer agent sandbox. No
 effective profile may grant a path, a network permission, or any other authority
 the ceiling withholds.
 
-**Per-rule derivation is 1.x target state** ([ADR-030 amendment]). Nothing
+**Per-rule derivation is 1.x target state**. Nothing
 in this paragraph or its list is a 1.0 promise. Derivation only ever subtracts,
 and only where a rule fired: the 1.x effective profile also intersects the
 restrictions carried by the rules that matched. Consequences of that shape:
@@ -268,8 +259,7 @@ restrictions carried by the rules that matched. Consequences of that shape:
   and it never blocks: blocking would turn a parser gap into an outage.
 
 **Observability.** Showing the effective profile in the confirmation dialog and
-recording it in the Audit log as a new field is 1.x target state
-([ADR-030 amendment]); in 1.0 the profile does not vary per command. When the
+recording it in the Audit log as a new field is 1.x target state; in 1.0 the profile does not vary per command. When the
 layer cannot be established the Audit records
 `sandbox_status = "unavailable" accompanies Decision::Blocked`, because under a
 mandatory layer those two facts are one event rather than two.
@@ -287,7 +277,7 @@ mandatory layer, and the two flags that could switch the layer off leave the 1.0
 configuration contract. One invariant governs every field below: migration may
 only ever reduce authority, never grant it, with one recorded exception: a
 pre-1.0 config with `enabled = true` and no `allow_write` gains the computed
-default ceiling (ADR-030 refinement of 2026-11-12).
+default ceiling.
 
 - **`sandbox.enabled` and `sandbox.required` are not part of the 1.0
   configuration contract.** A mandatory layer cannot also be skippable, so no
@@ -397,8 +387,7 @@ provenance.
 Recovery is the ability to restore, through Rollback, the state a Snapshot
 captured before a destructive command ran. It is not a general undo of the
 command. The **obligation**
-to have it attaches to the absence of a human decision, not to `RiskLevel`
-([ADR-031](docs/adr/adr-031-unattended-destructive-execution-requires-recovery.md)).
+to have it attaches to the absence of a human decision, not to `RiskLevel`.
 This section holds that invariant; §5.4 holds the machinery.
 
 #### Attended `Danger`
@@ -438,9 +427,7 @@ a precondition of execution:
 ### 5.11 Language-aware analysis is a 1.0 Non-Goal
 
 Language-aware analysis — parsing the *contents* of scripts and source files to
-reason about what they do — is **explicitly not part of 1.0**
-([ADR-022](docs/adr/adr-022-language-aware-analysis-is-an-additive-isolated-stage.md),
-[ADR-024](docs/adr/adr-024-language-aware-analysis-ships-opt-in-and-is-not-a-1-0-release-gate.md)).
+reason about what they do — is **explicitly not part of 1.0**.
 It ships after 1.0 behind the `language-analysis` cargo feature, default off, and
 the Tree-sitter grammars are absent from the 1.0 release binaries. The target is
 "after 1.0" with no version number attached; finishing the qualification matrix
@@ -460,7 +447,7 @@ contents anywhere in §5, §9, or §10. That silence is correct and must not be
 ## 6. Non-Functional Requirements
 
 - **Performance:** two budgets, both stated as means because the benchmark gate
-  compares means and Criterion records no percentiles (ADR-034).
+  compares means and Criterion records no percentiles.
   - _Assessment budget:_ one `assess` call stays under 2 ms on any input,
     including the worst inline-script body. A typical safe command measures
     about 2.6 µs.
@@ -480,11 +467,8 @@ contents anywhere in §5, §9, or §10. That silence is correct and must not be
 - **Portability:** no dependencies with a C build step; a statically portable
   binary. There are exactly **two named exceptions**, both narrowly scoped: the
   pinned Tree-sitter runtime and its production-qualified generated grammars,
-  confined to `aegis-language`
-  ([ADR-022](docs/adr/adr-022-language-aware-analysis-is-an-additive-isolated-stage.md)
-  §8), and **bubblewrap**, built from vendored C sources at a pinned version and
-  confined to `aegis-sandbox`
-  ([ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md)). The
+  confined to `aegis-language`, and **bubblewrap**, built from vendored C sources at a pinned version and
+  confined to `aegis-sandbox`. The
   general prohibition stands; neither exception is permission for further native
   dependencies.
 - **Third-party licence obligations:** bubblewrap is `LGPL-2.0-or-later`, which
@@ -537,7 +521,7 @@ Officially supported 1.0 channels:
   supported platform.
 - macOS nesting under an outer agent sandbox is not yet measured. Should a nested
   inner profile turn out to be able to *widen* authority,
-  [ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md) reopens —
+  the mandatory-sandbox decision reopens —
   that would make the inner layer a privilege-escalation vector rather than a
   guardrail.
 
@@ -551,8 +535,7 @@ Officially supported 1.0 channels:
   (`tests/fixtures/security_bypass_corpus.toml`): no dangerous command from the
   corpus is classified as `Safe`.
 - **Assessment under 2 ms (mean)** on any input, confirmed by `cargo criterion`.
-  Startup cost is measured and gated too, but it is not a 1.0 release gate
-  (ADR-034).
+  Startup cost is measured and gated too, but it is not a 1.0 release gate.
 - **0 CVEs** in dependencies (`cargo audit`) and a clean `cargo deny check`.
 - **Green CI on all supported platforms:** Linux (x86_64/aarch64) and macOS
   (arm64/x86_64). Windows is covered transitively via the Linux target (WSL2).
@@ -571,7 +554,7 @@ Officially supported 1.0 channels:
   commands that fell back to the `Trusted ceiling` because a declared
   restriction's extractor resolved no target (§5.5). Non-zero is expected; a
   rising trend indicates extractor gaps. It is not a 1.0 metric, because 1.0
-  ships no per-rule derivation ([ADR-030 amendment]).
+  ships no per-rule derivation.
 - **Prevented incidents:** the count of `Block` and `Deny` on `Danger` commands
   in the audit log as an indicator of real protection.
 
@@ -586,8 +569,7 @@ release weight, and neither does the phase a finding was discovered in.
 **The live gate is the `1.0` milestone on the issue tracker.** Every blocking item
 is an issue in that milestone; implementation order is expressed as native
 blocked-by relationships between those issues. The gate is passed when the
-milestone holds no open issues
-([ADR-027](docs/adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)).
+milestone holds no open issues.
 
 This section deliberately carries **no checklist**. The promises 1.0 must satisfy
 are stated normatively in §5 through §8; restating them here would create a second
@@ -612,11 +594,9 @@ release checklist elsewhere in the repository is evidence of work done, not a ga
 - **Confidentiality and privilege guarantees.** The Sandbox confines writes and
   network access; it does not hide readable files or secrets, and it is not a
   privilege boundary (§5.5).
-- Full shell evaluation and deferred execution
-  ([ADR-010](docs/adr/adr-010-full-shell-evaluation-and-deferred-execution-remain-non-goals.md)).
+- Full shell evaluation and deferred execution.
 - SBOM, provenance metadata, and attestations in the release workflow.
 - A guarantee of byte-for-byte reproducible builds across all environments.
 - First-class integration with agents other than Claude Code and Codex (others
   go through `$SHELL`, best-effort).
 
-[ADR-030 amendment]: docs/adr/adr-030-the-confinement-profile-is-derived-from-the-assessment.md#amendment--2026-10-06-10-ships-the-trusted-ceiling-only

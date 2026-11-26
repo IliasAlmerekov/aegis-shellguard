@@ -556,7 +556,7 @@ pub(super) fn rules() -> Vec<PrefixRule> {
                 "Read the active configuration first: 'aegis config show'",
             )),
             justification: Some(Cow::Borrowed(
-                "A project config overwrites an existing .aegis.toml and then takes part in every later assessment. The project layer can only tighten security fields (ADR-013), so this is Warn rather than Danger.",
+                "A project config overwrites an existing .aegis.toml and then takes part in every later assessment. The project layer can only tighten security fields, so this is Warn rather than Danger.",
             )),
             source: PatternSource::Builtin,
             suppressed_by: &[],

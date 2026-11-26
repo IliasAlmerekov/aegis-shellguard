@@ -78,7 +78,6 @@ fn platform_support_doc_states_confinement_per_platform() {
         "blocks every command",
         "sandbox_required_nested_unavailable",
         "/sandbox",
-        "ADR-029",
         // Build prerequisites per platform.
         "## Build prerequisites",
         "libcap",

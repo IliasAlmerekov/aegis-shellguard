@@ -18,7 +18,7 @@ fn language_analysis_feature_stays_opt_in_and_out_of_default() {
         .expect("root Cargo.toml must define [features]");
     assert!(
         features.contains_key("language-analysis"),
-        "root Cargo.toml must declare the `language-analysis` feature (ADR-024, ADR-054)"
+        "root Cargo.toml must declare the `language-analysis` feature"
     );
     let default_features: Vec<&str> = features
         .get("default")
@@ -83,7 +83,7 @@ fn every_release_target_builds_the_shipping_binary_in_release_mode() {
 
     assert!(
         !action.contains("--features language-analysis"),
-        "default release targets must stay opt-in and not enable `--features language-analysis` (ADR-024, ADR-054)"
+        "default release targets must stay opt-in and not enable `--features language-analysis`"
     );
 
     let workflow = repo_file(".github/workflows/ci.yml");
@@ -96,7 +96,7 @@ fn every_release_target_builds_the_shipping_binary_in_release_mode() {
             && workflow
                 .contains("cargo clippy --workspace --all-targets --features language-analysis")
             && workflow.contains("cargo deny --features language-analysis check"),
-        "CI must still exercise the opt-in `language-analysis` feature in a dedicated job (ADR-024 §7)"
+        "CI must still exercise the opt-in `language-analysis` feature in a dedicated job"
     );
     assert!(
         workflow.contains("include: ${{ fromJSON(needs.gate.outputs.build_targets) }}"),
@@ -113,7 +113,7 @@ fn every_release_target_builds_the_shipping_binary_in_release_mode() {
     ] {
         assert!(
             targets.contains(target),
-            "release CI must retain ADR-022 target `{target}`"
+            "release CI must retain target `{target}`"
         );
     }
 }

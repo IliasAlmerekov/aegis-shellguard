@@ -1,7 +1,7 @@
 # L1 language-adapter qualification record
 
 This is the checked-in qualification record required by the Iteration 10 plan
-and ADR-022 §11. It records the four L1 adapters separately, but it is **not**
+and the language-analysis design. It records the four L1 adapters separately, but it is **not**
 release enablement: an adapter remains unsupported until a release candidate
 containing this exact evidence passes the required CI contexts.
 
@@ -45,7 +45,7 @@ the Iteration 10 review and re-review gates, and satisfy every condition below.
 
 Language-aware analysis is an opt-in 1.x feature, not a 1.0 launch blocker.
 These items remain unchecked until runtime implementation and qualification are
-verified; the ADR and implementation plan alone do not satisfy the conditions
+verified; the design and implementation plan alone do not satisfy the conditions
 for enabling it by default in a later release.
 
 - [ ] The additive analysis foundation preserves existing Scanner results,
