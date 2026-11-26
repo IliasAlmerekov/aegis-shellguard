@@ -1,4 +1,9 @@
 use crate::language::SourceLanguage;
+use crate::operation::{
+    AdapterDegradation, AdapterResult, ByteSpan, DetectedOperation, NestedTarget,
+    certainty_from_wire, certainty_to_wire, kind_from_wire, kind_to_wire, modifiers_from_wire,
+    modifiers_to_wire,
+};
 
 pub const MAGIC: [u8; 4] = *b"AELW";
 
@@ -33,13 +38,9 @@ impl Request {
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Response {
-    Parsed {
-        error_count: u32,
-    },
+    Parsed { error_count: u32 },
     ParseFailed,
-    Analyzed {
-        result: crate::operation::AdapterResult,
-    },
+    Analyzed { result: AdapterResult },
     UnsupportedLanguage,
 }
 
@@ -123,10 +124,7 @@ pub fn encode_response(request_id: u32, response: &Response) -> Result<Vec<u8>, 
             (Response::KIND_PARSED, error_count.to_le_bytes().to_vec())
         }
         Response::ParseFailed => (Response::KIND_PARSE_FAILED, Vec::new()),
-        Response::Analyzed { result } => (
-            Response::KIND_ANALYZED,
-            crate::operation::encode_adapter_result(result)?,
-        ),
+        Response::Analyzed { result } => (Response::KIND_ANALYZED, encode_adapter_result(result)?),
         Response::UnsupportedLanguage => (Response::KIND_UNSUPPORTED, Vec::new()),
     };
     encode_frame(request_id, kind, &payload)
@@ -154,7 +152,7 @@ pub fn decode_response(buf: &[u8]) -> Result<Option<DecodedFrame<Response>>, Dec
             Response::ParseFailed
         }
         Response::KIND_ANALYZED => {
-            let result = crate::operation::decode_adapter_result(payload)?;
+            let result = decode_adapter_result(payload)?;
             Response::Analyzed { result }
         }
         Response::KIND_UNSUPPORTED => {
@@ -253,6 +251,179 @@ pub(crate) fn wire_to_language(tag: u8) -> Option<SourceLanguage> {
     }
 }
 
+fn encode_adapter_result(result: &AdapterResult) -> Result<Vec<u8>, EncodeError> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&result.parse_errors.to_le_bytes());
+    out.push(match result.degradation {
+        None => 0,
+        Some(AdapterDegradation::UnsupportedEncoding) => 1,
+    });
+    let op_count = u32::try_from(result.operations.len())
+        .map_err(|_| EncodeError::FieldOverflow { field: "op_count" })?;
+    out.extend_from_slice(&op_count.to_le_bytes());
+    for op in &result.operations {
+        encode_operation(&mut out, op)?;
+    }
+    Ok(out)
+}
+
+fn encode_operation(out: &mut Vec<u8>, op: &DetectedOperation) -> Result<(), EncodeError> {
+    out.push(kind_to_wire(op.kind));
+    out.push(modifiers_to_wire(op.modifiers));
+    out.push(certainty_to_wire(op.certainty));
+    encode_span(out, &op.span)?;
+    match &op.payload {
+        Some(target) => {
+            out.push(1);
+            out.push(language_to_wire(target.language));
+            let len =
+                u32::try_from(target.source.len()).map_err(|_| EncodeError::FieldOverflow {
+                    field: "payload.source.len",
+                })?;
+            out.extend_from_slice(&len.to_le_bytes());
+            out.extend_from_slice(target.source.as_bytes());
+            encode_span(out, &target.span)?;
+        }
+        None => out.push(0),
+    }
+    Ok(())
+}
+
+fn encode_span(out: &mut Vec<u8>, span: &ByteSpan) -> Result<(), EncodeError> {
+    out.extend_from_slice(&span.line.to_le_bytes());
+    out.extend_from_slice(&span.column.to_le_bytes());
+    let start = u32::try_from(span.byte_start).map_err(|_| EncodeError::FieldOverflow {
+        field: "byte_start",
+    })?;
+    out.extend_from_slice(&start.to_le_bytes());
+    let end = u32::try_from(span.byte_end)
+        .map_err(|_| EncodeError::FieldOverflow { field: "byte_end" })?;
+    out.extend_from_slice(&end.to_le_bytes());
+    Ok(())
+}
+
+fn decode_adapter_result(buf: &[u8]) -> Result<AdapterResult, DecodeError> {
+    let mut cur = Cursor::new(buf);
+    let parse_errors = cur.read_u32("parse_errors")?;
+    let degradation = match cur.read_u8("degradation")? {
+        0 => None,
+        1 => Some(AdapterDegradation::UnsupportedEncoding),
+        _ => return Err(DecodeError::InvalidPayload("unknown adapter degradation")),
+    };
+    let op_count = cur.read_u32("op_count")? as usize;
+    let mut operations = Vec::with_capacity(op_count.min(512));
+    for _ in 0..op_count {
+        operations.push(decode_operation(&mut cur)?);
+    }
+    if !cur.is_empty() {
+        return Err(DecodeError::InvalidPayload(
+            "trailing bytes after AdapterResult",
+        ));
+    }
+    Ok(AdapterResult {
+        operations,
+        parse_errors,
+        degradation,
+    })
+}
+
+fn decode_operation(cur: &mut Cursor<'_>) -> Result<DetectedOperation, DecodeError> {
+    let kind = kind_from_wire(cur.read_u8("kind")?).ok_or(DecodeError::InvalidPayload(
+        "unknown operation kind discriminant",
+    ))?;
+    let modifiers = modifiers_from_wire(cur.read_u8("modifiers")?);
+    let certainty = certainty_from_wire(cur.read_u8("certainty")?).ok_or(
+        DecodeError::InvalidPayload("unknown certainty discriminant"),
+    )?;
+    let span = decode_span(cur)?;
+    let has_payload = cur.read_u8("has_payload")?;
+    let payload = match has_payload {
+        0 => None,
+        1 => Some(decode_nested_target(cur)?),
+        _ => return Err(DecodeError::InvalidPayload("has_payload must be 0 or 1")),
+    };
+    Ok(DetectedOperation {
+        kind,
+        modifiers,
+        certainty,
+        span,
+        payload,
+    })
+}
+
+fn decode_nested_target(cur: &mut Cursor<'_>) -> Result<NestedTarget, DecodeError> {
+    let language = wire_to_language(cur.read_u8("payload.language")?)
+        .ok_or(DecodeError::InvalidPayload("unknown payload language tag"))?;
+    let len = cur.read_u32("payload.source.len")? as usize;
+    let source_bytes = cur.read_bytes(len, "payload.source")?;
+    let source = String::from_utf8(source_bytes.to_vec())
+        .map_err(|_| DecodeError::InvalidPayload("payload source is not valid UTF-8"))?;
+    let span = decode_span(cur)?;
+    Ok(NestedTarget {
+        language,
+        source,
+        span,
+    })
+}
+
+fn decode_span(cur: &mut Cursor<'_>) -> Result<ByteSpan, DecodeError> {
+    let line = cur.read_u32("span.line")?;
+    let column = cur.read_u32("span.column")?;
+    let byte_start = cur.read_u32("span.byte_start")? as usize;
+    let byte_end = cur.read_u32("span.byte_end")? as usize;
+    Ok(ByteSpan {
+        line,
+        column,
+        byte_start,
+        byte_end,
+    })
+}
+
+struct Cursor<'a> {
+    buf: &'a [u8],
+}
+
+impl<'a> Cursor<'a> {
+    fn new(buf: &'a [u8]) -> Self {
+        Self { buf }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.buf.is_empty()
+    }
+
+    fn read_u8(&mut self, field: &'static str) -> Result<u8, DecodeError> {
+        let (head, rest) = self
+            .buf
+            .split_first()
+            .ok_or(DecodeError::InvalidPayload(field))?;
+        *self = Self::new(rest);
+        Ok(*head)
+    }
+
+    fn read_u32(&mut self, field: &'static str) -> Result<u32, DecodeError> {
+        let Some((&bytes, rest)) = self.buf.split_first_chunk::<4>() else {
+            return Err(DecodeError::InvalidPayload(field));
+        };
+        let value = u32::from_le_bytes(bytes);
+        *self = Self::new(rest);
+        Ok(value)
+    }
+
+    fn read_bytes(&mut self, len: usize, field: &'static str) -> Result<&'a [u8], DecodeError> {
+        if self.buf.len() < len {
+            return Err(DecodeError::InvalidPayload(field));
+        }
+        let (head, rest) = self.buf.split_at(len);
+        *self = Self::new(rest);
+        Ok(head)
+    }
+}
+
 #[cfg(test)]
 #[path = "protocol_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "protocol_adapter_tests.rs"]
+mod adapter_tests;

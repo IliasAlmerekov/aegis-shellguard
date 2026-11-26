@@ -1,5 +1,10 @@
 use super::*;
 
+use crate::operation::{
+    CERT_KNOWN, KIND_CODE_EXEC, KIND_FS_DELETE, MOD_RECURSIVE, OperandCertainty, OperationKind,
+    OperationModifiers,
+};
+
 fn sample_result() -> AdapterResult {
     AdapterResult {
         parse_errors: 0,
