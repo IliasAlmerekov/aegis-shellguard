@@ -1,12 +1,13 @@
 use std::env;
 use std::ffi::{OsStr, OsString};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 use aegis_types::SandboxStatus;
 use clap::Parser;
 
 use crate::{Cli, EXIT_INTERNAL};
+pub(crate) use aegis::runtime::shell::{resolve_shell, same_file};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ShellLaunchOptions {
@@ -342,49 +343,4 @@ pub(crate) fn shell_supports_login_flag(shell: &Path) -> bool {
         .and_then(|name| name.to_str())
         .map(|name| !matches!(name, "sh" | "dash"))
         .unwrap_or(true)
-}
-
-pub(crate) fn resolve_shell() -> PathBuf {
-    let aegis_real_shell = env::var_os("AEGIS_REAL_SHELL");
-    let shell_env = env::var_os("SHELL");
-    let current_exe = env::current_exe().ok();
-    resolve_shell_inner(
-        aegis_real_shell.as_deref(),
-        shell_env.as_deref(),
-        current_exe.as_deref(),
-    )
-}
-
-pub(crate) fn resolve_shell_inner(
-    aegis_real_shell: Option<&OsStr>,
-    shell_env: Option<&OsStr>,
-    current_exe: Option<&Path>,
-) -> PathBuf {
-    if let Some(shell) = aegis_real_shell.filter(|s| !s.is_empty()) {
-        return PathBuf::from(shell);
-    }
-
-    if let Some(shell) = shell_env.filter(|s| !s.is_empty()) {
-        let shell_path = PathBuf::from(shell);
-        if !same_file(&shell_path, current_exe) {
-            return shell_path;
-        }
-    }
-
-    PathBuf::from("/bin/sh")
-}
-
-pub(crate) fn same_file(path: &Path, other: Option<&Path>) -> bool {
-    let Some(other) = other else {
-        return false;
-    };
-
-    if path == other {
-        return true;
-    }
-
-    match (std::fs::canonicalize(path), std::fs::canonicalize(other)) {
-        (Ok(left), Ok(right)) => left == right,
-        _ => false,
-    }
 }
