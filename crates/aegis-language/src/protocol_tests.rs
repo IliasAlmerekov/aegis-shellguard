@@ -425,7 +425,7 @@ fn decode_response_round_trips_unsupported_language() {
     assert_eq!(decoded.message, Response::UnsupportedLanguage);
 }
 
-fn sample_adapter_result() -> AdapterResult {
+pub(super) fn sample_adapter_result() -> AdapterResult {
     AdapterResult {
         parse_errors: 0,
         degradation: None,
