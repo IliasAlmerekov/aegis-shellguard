@@ -85,7 +85,7 @@ Read these before you decide how far to trust Aegis. The full text is in
   It is not a privilege boundary and does not stop code that already runs as you.
 - Effect-opaque execution, such as `sh ./cleanup.sh`, and auto-approved `Danger` commands need a Snapshot before they run. A `Danger` command you confirm yourself stays best-effort. If a required Snapshot is not created, unattended runs are denied, and in a terminal you can type `yes` to "Run once without recovery" or deny. Aegis does not inspect the referenced script.
 - The Sandbox is a write/network guardrail. It is not a confidentiality boundary and not a privilege boundary.
-- In Aegis 1.0 the Sandbox layer is mandatory ([ADR-029](docs/adr/adr-029-the-sandbox-is-a-mandatory-1-0-layer.md)). `sandbox.enabled` and `sandbox.required` stay accepted and ignored, each reported as a `deprecated_sandbox_field`.
+- In Aegis 1.0 the Sandbox layer is mandatory. `sandbox.enabled` and `sandbox.required` stay accepted and ignored, each reported as a `deprecated_sandbox_field`.
 - Current pre-1.0 implementation: the 0.x binary still records `sandbox_status = "unavailable"` and warns before running unconfined when confinement is missing.
 
 ---
@@ -128,8 +128,7 @@ aegis update disable                # opt out
 With this on, the shell proxy checks for a newer release at most once a day
 and prints a one-line notice, only on an interactive terminal, never in
 `aegis watch`, `--output json`, or an agent hook. Aegis never runs `npm`
-itself. It only tells you the version and the exact command to run
-(ADR-038).
+itself. It only tells you the version and the exact command to run.
 
 ### Homebrew
 
@@ -197,7 +196,7 @@ aegis install-hooks --all
 ```
 
 Re-run after upgrading to refresh the managed hooks, including SessionStart
-effective-state notices, the fail-closed panic layer (ADR-023), and to migrate
+effective-state notices, the fail-closed panic layer, and to migrate
 any older `aegis hook` / `aegis-rewrite.sh` registration to the current shim.
 If `aegis off` is active, each new Claude Code or Codex session visibly reports
 that commands use unguarded passthrough; `aegis on` re-enables enforcement. CI
@@ -206,7 +205,6 @@ override at session start.
 
 > [!TIP]
 > Other agents: for tools that respect `$SHELL`, run `aegis setup-shell`. For an agent with a `shell` config field, find the `shell` field and set it to the output of `command -v aegis`.
-
 
 ---
 
@@ -274,7 +272,7 @@ Neither path touches project-local hooks. Projects where you ran
 |----------|-------------|
 | [How it works](docs/how-it-works.md) | Risk levels, effect opacity, Required recovery, and the Sandbox |
 | [Product requirements](PRD.md) | The normative Aegis 1.0 promise |
-| [Architecture decisions](docs/adr/README.md) | The ADR index, every accepted decision |
+| [Architecture](ARCHITECTURE.md) | Crate map, fail-closed rule, and the project config ratchet |
 | [Threat model](docs/threat-model.md) | Security scope and assumptions |
 | [Config schema](docs/config-schema.md) | `aegis.toml` reference |
 | [Platform support](docs/platform-support.md) | Linux, macOS, WSL2 details |

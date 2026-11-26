@@ -208,7 +208,7 @@ user = ""
 - `postgres_snapshot.host` and `postgres_snapshot.port` select the database endpoint
 - `postgres_snapshot.user` may be left empty to use `PGUSER` or the current OS user
 - credentials must come from `PGPASSWORD` or `~/.pgpass`; never store passwords in config
-- Project-layer ratchet (ADR-013): once the global layer enables PostgreSQL with
+- Project-layer ratchet: once the global layer enables PostgreSQL with
   a non-empty `database`, a project config cannot change `database`, `host`,
   `port`, or `user` — every field stays at the global value and `aegis config
   validate` reports a `project_security_ratchet` warning per changed field. A
@@ -232,7 +232,7 @@ user = ""
 - `mysql_snapshot.host` and `mysql_snapshot.port` select the database endpoint
 - `mysql_snapshot.user` may be left empty to use `MYSQL_USER` or `~/.my.cnf`
 - credentials must come from `MYSQL_PWD` or `~/.my.cnf`; never store passwords in config
-- Project-layer ratchet (ADR-013): the same rule as PostgreSQL — once the
+- Project-layer ratchet: the same rule as PostgreSQL — once the
   global layer enables MySQL with a non-empty `database`, a project config
   cannot change `database`, `host`, `port`, or `user`. (#269)
 
@@ -246,7 +246,7 @@ sqlite_snapshot_path = ""
 - `auto_snapshot_sqlite` enables SQLite when a command's Snapshot plan requests it
 - `sqlite_snapshot_path` must point to the `.db` file, either relative to the current working directory or absolute
 - SQLite snapshots do not use a username/password block; the database file path is the only required setting
-- Project-layer ratchet (ADR-013): once the global layer enables SQLite with a
+- Project-layer ratchet: once the global layer enables SQLite with a
   non-empty path, a project config cannot repoint `sqlite_snapshot_path` to a
   different path. (#269)
 
@@ -272,7 +272,7 @@ user = ""
 - `require_config_target_match_on_rollback` fail-closes rollback if current config disagrees with the manifest target
 - `supabase_snapshot.db` configures the direct PostgreSQL transport used by Phase 1
 - credentials must come from `PGPASSWORD` or `~/.pgpass`; never store passwords in config
-- Project-layer ratchet (ADR-013): once the global layer enables Supabase with
+- Project-layer ratchet: once the global layer enables Supabase with
   a non-empty `db.database`, a project config cannot change `project_ref`,
   `db.database`, `db.host`, `db.port`, or `db.user` — a project that could
   repoint any of them could aim Rollback at a database it controls. A project
@@ -320,13 +320,13 @@ allow_write = []
   empty (no writes outside the sandbox's own scope).
 - `sandbox.allow_network` permits network access from the sandboxed process.
   Default `false`.
-- Project-layer ratchet (ADR-013): `enabled` / `required` may only tighten (a
+- Project-layer ratchet: `enabled` / `required` may only tighten (a
   project can force them on, never off); `allow_network` can only be turned off
   at the project layer, never on; and project `allow_write` is intersected with
   the base list — a project `.aegis.toml` can never widen the sandbox.
 - These fields also appear in `aegis-schema.json` under `SandboxSettings`.
 
-### The 1.0 contract (ADR-029 and its 2026-08-20 amendment, ADR-030)
+### The 1.0 contract
 
 - **The layer is mandatory.** Confinement is attempted for every executed command
   outside `Mode::Audit`; when it cannot be established the command is blocked, and
@@ -337,7 +337,7 @@ allow_write = []
   `deprecated_sandbox_field` diagnostic, for the whole support life of config
   schema v1. `enabled = false` is not fail-open: the layer applies regardless.
   Aegis **never rewrites a config file** to remove them.
-- **Both leave the ADR-013 ratcheted set** along with the contract — there is
+- **Both leave the ratcheted set** along with the contract — there is
   nothing left to tighten once neither field affects behaviour.
 - **`allow_write` becomes an explicit override** of a computed `Trusted ceiling`
   default rather than an addition to an empty base. A "full set" is unexpressible
@@ -360,7 +360,7 @@ allow_write = []
   only.
 - Warnings for all of the above are typed diagnostics surfaced by
   `aegis config validate` and `aegis status`, never a per-`$SHELL -c` log line.
-  Once Audit records the effective profile (1.x, ADR-030 amendment), it records
+  Once Audit records the effective profile (1.x), it records
   that profile, not the causal diagnostics of how it was built.
 - macOS permits `file-read*` in the generated Seatbelt profile; it restricts
   writes and network access but does not hide readable files or secrets. On
@@ -374,7 +374,7 @@ allow_write = []
 ## Language-aware analysis
 
 Budgets and trusted aliases consumed by the Language-aware analysis source
-router (ADR-022 §6). This section does not enable or disable the feature
+router. This section does not enable or disable the feature
 itself — there is deliberately no `language_analysis.enabled` toggle; the
 built-in Language-aware rules cannot be disabled or lowered by any config
 layer.
@@ -414,7 +414,7 @@ canonical = "python3"
   project config may only tighten the effective values.
 - `trusted_aliases` maps a wrapper program name (e.g. a `py` shim) to the
   canonical registry interpreter it stands in for (e.g. `python3`). This is a
-  Global-layer-only concept ("trusted global aliases only", ADR-022 §6): a
+  Global-layer-only concept ("trusted global aliases only"): a
   project `.aegis.toml` can never add a new trusted interpreter alias —
   project-layer entries are dropped entirely rather than merged.
 - These fields also appear in `aegis-schema.json` under `LanguageAnalysisConfig`.
@@ -457,7 +457,7 @@ integrity_mode = "Off"
 Guidance:
 
 - `Off` disables integrity chaining.
-- A confirmation without an applicable Snapshot provider records the uncoloured disclosure in `explanation.context.no_rollback_disclosure`; older entries omit this optional field (#251, ADR-026).
+- A confirmation without an applicable Snapshot provider records the uncoloured disclosure in `explanation.context.no_rollback_disclosure`; older entries omit this optional field (#251).
 - `ChainSha256` links audit entries and rotated segments to detect corruption
   and inconsistent edits; it is not a keyed or remote anchor.
 - verify the active and rotated logs with `aegis audit --verify-integrity`.
@@ -578,7 +578,7 @@ Current mapping:
 - `5` — `aegis snapshot verify` only: a Snapshot liveness check was inconclusive and none was absent
 - `1..=255` (except 2, 3, 4, 5) — propagated exit code from the wrapped command
 
-`aegis snapshot verify` and `aegis rollback` reuse `1` and `2` with their own meaning (ADR-052):
+`aegis snapshot verify` and `aegis rollback` reuse `1` and `2` with their own meaning:
 
 - `aegis snapshot verify`: `0` every Snapshot is present or had nothing captured, `1` any is absent,
   `5` any is inconclusive and none is absent, `4` unknown or pruned id, a liveness error, or an internal error
@@ -587,7 +587,7 @@ Current mapping:
   `4` unknown or pruned id, a liveness error, or a rollback failure
 - `aegis rollback --last`: the same codes per Snapshot (the first failure decides when several fail),
   `2` also when no terminal is available without `--yes` or the operator declines, and `4` when no
-  command with a Snapshot is recorded for the current location (ADR-053)
+  command with a Snapshot is recorded for the current location
 
 These values are also reflected in JSON output:
 

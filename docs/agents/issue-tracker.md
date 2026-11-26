@@ -5,7 +5,7 @@
 - Pass `-R IliasAlmerekov/aegis-shellguard` to every `gh issue` and `gh pr` call. The clone also has a `ghsa` remote (a private advisory fork), so `gh` can resolve the wrong repo from `git remote`.
 - Write issue titles, bodies, and comments in English.
 - A command that gets past Aegis analysis (a bypass) is a security report. File it as a private GitHub Security Advisory, never as a public issue.
-- The `1.0` milestone is the release gate (ADR-027). Put an issue in it only when it falsifies a promise in `PRD.md`.
+- The `1.0` milestone is the only release gate. Put an issue in it only when it falsifies a promise in `PRD.md`.
 - **Milestone status**: one call lists the open `1.0` issues with labels, open blockers, and linked PRs:
 
   ```sh

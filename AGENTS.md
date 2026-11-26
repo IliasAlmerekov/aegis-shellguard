@@ -12,7 +12,7 @@ Before writing code or running commands, read these documents in order:
 
 1. [`CONVENTION.md`](CONVENTION.md) — authoritative rules (precedence: security invariants → CI gates → architecture → style)
 2. The current issue — the task at hand and its acceptance criteria
-3. For a task from an issue, the [`1.0` milestone](https://github.com/IliasAlmerekov/aegis-shellguard/milestone/1) — the live release gate: what still blocks 1.0, and in what order (native blocked-by relationships between its issues). It is the only gate ([ADR-027](docs/adr/adr-027-one-1-0-release-gate-lives-in-the-issue-tracker.md)); [`PRD.md`](PRD.md) is the normative promise it is measured against.
+3. For a task from an issue, the [`1.0` milestone](https://github.com/IliasAlmerekov/aegis-shellguard/milestone/1) — the live release gate: what still blocks 1.0, and in what order (native blocked-by relationships between its issues). It is the only gate; [`PRD.md`](PRD.md) is the normative promise it is measured against.
 
 Read [`CONTEXT.md`](CONTEXT.md), the domain glossary, when you name a domain concept in code, tests, commits or issues, or meet a term you do not know. Use its canonical terms.
 
@@ -25,7 +25,7 @@ Read [`CONTEXT.md`](CONTEXT.md), the domain glossary, when you name a domain con
 Before starting any code task, use global skills from `~/.agents/skills/` in this order:
 
 1. **`triage`** — for a task from an issue: its triage role, category, and an agent-ready brief
-2. **`grill-with-docs`** — interview the task against `CONTEXT.md` and the ADRs (**`grill-me`** when no domain doc applies)
+2. **`grill-with-docs`** — interview the task against `CONTEXT.md` and `ARCHITECTURE.md` (**`grill-me`** when no domain doc applies)
 3. **`tdd`** — red-green implementation; write every green step by the Ponytail rules below (load **`rust-best-practices`** before writing Rust)
 4. **`code-review`** — Standards and Spec axes on the local branch; the Ponytail rules are part of the Standards axis
 5. **`review-pr <N>`** — adversarial pre-merge review of the opened PR
@@ -81,13 +81,11 @@ After code passes all gates, update in this order:
 
 1. **Verification gates:** follow [`CONVENTION.md` §9](CONVENTION.md#9-testing-and-verification); CI runs the full gates, locally you run only `scripts/lint.sh fmt` and the targeted test. Push, then wait for every CI check to go green (`gh pr checks`, `gh run watch`). Benchmark if a hot path was touched.
 
-2. **Update `CHANGELOG.md`:** After every feature, fix, or breaking change, prepend one line under `## [Unreleased]` (category: Added/Changed/Fixed/Removed/Security; reference the issue and any architectural ADR).
+2. **Update `CHANGELOG.md`:** After every feature, fix, or breaking change, prepend one line under `## [Unreleased]` (category: Added/Changed/Fixed/Removed/Security; reference the issue and explain an architecture change in the PR body).
 
 3. **Update `CONTEXT.md`** (if needed): If the task introduces or sharpens a domain term, update glossary in the same change.
 
 4. **Close the issue** (if applicable): when the work satisfies its acceptance criteria and verification is linked, close the issue. Write the PR description from `.github/pull_request_template.md` by the PR body rule in `CONVENTION.md`. Session notes and follow-ups go in an issue comment.
-
-5. **Write ADR** (if needed): For significant architecture, API, or security model changes, write `docs/adr/adr-NNN-slug.md` (required sections: Status, Context, Decision, Consequences; update `docs/adr/README.md` index).
 
 **Completion criterion:** All verifications green and all affected docs updated.
 

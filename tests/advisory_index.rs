@@ -52,13 +52,9 @@ fn security_advisory_index_names_a_real_regression_test_per_advisory() {
         let row = rows.iter().find(|row| row[0] == id).unwrap_or_else(|| {
             panic!("{id} has no row in the SECURITY.md advisory index: {ADVISORY_INDEX_WHY}")
         });
-        assert_eq!(
-            row.len(),
-            5,
-            "{id} row needs GHSA, patched, ADR, layer, test"
-        );
+        assert_eq!(row.len(), 4, "{id} row needs GHSA, patched, layer, test");
 
-        for test in row[4].split(", ").map(|cell| cell.trim_matches('`')) {
+        for test in row[3].split(", ").map(|cell| cell.trim_matches('`')) {
             let (file, name) = test.split_once("::").unwrap_or_else(|| {
                 panic!("{id} test cell must list `path::function` entries, got `{test}`")
             });
@@ -68,17 +64,6 @@ fn security_advisory_index_names_a_real_regression_test_per_advisory() {
                 source.contains(&format!("fn {name}(")),
                 "{id} names test function `{name}` that does not exist in `{file}`: {ADVISORY_INDEX_WHY}"
             );
-        }
-
-        if row[2].starts_with("ADR-") {
-            let prefix = format!("{}-", row[2].to_lowercase());
-            let found = fs::read_dir(repo_path("docs/adr")).unwrap().any(|e| {
-                e.unwrap()
-                    .file_name()
-                    .to_string_lossy()
-                    .starts_with(&prefix)
-            });
-            assert!(found, "{id} names {} but docs/adr has no such file", row[2]);
         }
     }
 

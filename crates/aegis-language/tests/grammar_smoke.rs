@@ -257,14 +257,14 @@ fn builtin_manifest_versions_match_cargo_lock_pins() {
         assert!(
             !locked.is_empty(),
             "Cargo.lock has no `[[package]]` entry for `{}` — the grammar crate is \
-             not actually pinned in the lockfile (ADR-022 §8)",
+             not actually pinned in the lockfile",
             entry.crate_name,
         );
         assert_eq!(
             locked.len(),
             1,
             "Cargo.lock pins `{}` to {} versions ({:?}); cargo-deny should ban the \
-             duplicate — the manifest records a single pin (ADR-022 §8)",
+             duplicate — the manifest records a single pin",
             entry.crate_name,
             locked.len(),
             locked,
@@ -345,7 +345,7 @@ fn builtin_manifest_provenance_is_complete() {
         );
         assert!(
             entry.upstream.starts_with("https://"),
-            "grammar `{}` upstream `{}` must be an https URL (ADR-022 §8 inventory)",
+            "grammar `{}` upstream `{}` must be an https URL",
             entry.language,
             entry.upstream,
         );

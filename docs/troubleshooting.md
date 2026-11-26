@@ -121,7 +121,7 @@ agent directory does not exist yet.
 
 **Why:** Building the workspace on Linux requires the `libcap` headers: the
 `aegis-sandbox` build script compiles the vendored bubblewrap C sources and
-pkg-config-probes `libcap` (ADR-029 §3–§4). A host with only the runtime
+pkg-config-probes `libcap`. A host with only the runtime
 `libcap.so.2` (no `libcap-dev`, no `libcap.pc`) fails here by design — a
 missing capability library must not produce a silently weaker `bwrap`.
 
@@ -162,7 +162,7 @@ Codex expects `additionalContext`.
 
 ### Hook scripts are not fail-closed on a panic or crash
 
-The fail-closed `Hook` layer (ADR-023) lives in the installed per-agent `Hook`
+The fail-closed `Hook` layer lives in the installed per-agent `Hook`
 scripts. If you installed Aegis before this protection shipped, your installed
 scripts still `exec` the binary and would go silent if it crashed. Refresh them
 to the current content:
@@ -340,8 +340,7 @@ For these cases:
 
 A rollback restores the state the git Snapshot captured. When the working tree
 holds uncommitted work at that moment, Aegis parks it in a stash entry named
-`aegis-pre-rollback-<timestamp>` before restoring, rather than overwriting it
-(ADR-037). That entry is the only copy of what the rollback replaced, and Aegis
+`aegis-pre-rollback-<timestamp>` before restoring, rather than overwriting it. That entry is the only copy of what the rollback replaced, and Aegis
 never drops it. List it with `git stash list` and recover it with
 `git stash apply --index <ref>`, or drop it once you are sure you do not want it back.
 
@@ -349,7 +348,7 @@ never drops it. List it with `git stash list` and recover it with
 
 Each git Snapshot leaves an `aegis-snap-<timestamp>` stash entry behind on
 purpose. It is the artifact `aegis rollback` restores from, so the success
-path never deletes it (ADR-037 §3). Because any effect-opaque command (an
+path never deletes it. Because any effect-opaque command (an
 interpreter run against a script, e.g. `python3 script.py`) requires a Snapshot
 before its risk level is even read, this list grows on far more than `Danger`
 commands.
@@ -394,7 +393,6 @@ process whose stdout is a framed protocol that stray output would corrupt.
    wording may change between releases. The `Audit log`
    (`~/.aegis/audit.jsonl`) is the persisted, versioned record; check it, not
    the Diagnostic stream, for anything you need to keep or automate against.
-   See [ADR-033](adr/adr-033-the-diagnostic-stream-goes-to-stderr-and-is-not-a-contract.md).
 
 ## References
 

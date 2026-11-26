@@ -38,7 +38,7 @@ fn script_file_execution_marks_effect_opaque_without_raising_risk() {
         assert_eq!(
             assessment.risk,
             RiskLevel::Safe,
-            "{cmd:?} must not raise RiskLevel by itself (ADR-016 orthogonality)"
+            "{cmd:?} must not raise RiskLevel by itself (effect opacity is orthogonal to risk)"
         );
     }
 }

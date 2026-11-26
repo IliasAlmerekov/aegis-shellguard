@@ -461,7 +461,7 @@ fn production_qualification_record_covers_all_remaining_iteration_10_measurement
         "| Worker warm-session latency | Not applicable to the production orchestration | no reusable session | `orchestrate` deliberately spawns, closes, and reaps one ephemeral worker per queued target. The protocol can carry a bounded sequence, but production does not reuse a warm worker; a future reuse optimization needs its own benchmark and review. |",
         "| Peak worker RSS | five cold worker samples with `/usr/bin/time` | 4.1–4.3 MiB | The direct worker process stayed within this observed host range; it is evidence only, not a cross-platform memory promise. |",
         "| Aggregate-timeout boundary | `tests/analysis_orchestrate_runtime.rs::run_records_target_aggregate_and_total_time_budget_exhaustion` | enforced at the configured total deadline | The default is 100 ms. The regression asserts typed `LimitExceeded` while retaining prior target results; no timer-derived throughput claim is made. |",
-        "| Per-target release-binary size | native `target/release/aegis` | 6.9 MiB (default); 9.7 MiB (`--features language-analysis`) | Local native size is recorded for drift detection. Default build (6.87 MiB) excludes Tree-sitter and the four grammars (ADR-024, ADR-054, #212); `--features language-analysis` is 9.7 MiB (up from 9.5 MiB when the ~116 KiB embedded bubblewrap fallback from ADR-029 §3 was added). Exact sizes for Linux musl x86_64/aarch64 and macOS x86_64/aarch64 must come from the required CI contexts; local cross-target sizes are not substituted for release artifacts. |",
+        "| Per-target release-binary size | native `target/release/aegis` | 6.9 MiB (default); 9.7 MiB (`--features language-analysis`) | Local native size is recorded for drift detection. Default build (6.87 MiB) excludes Tree-sitter and the four grammars (#212); `--features language-analysis` is 9.7 MiB (up from 9.5 MiB when the ~116 KiB embedded bubblewrap fallback was added). Exact sizes for Linux musl x86_64/aarch64 and macOS x86_64/aarch64 must come from the required CI contexts; local cross-target sizes are not substituted for release artifacts. |",
     ] {
         assert!(
             performance.contains(row),
@@ -713,7 +713,7 @@ fn deny_toml_keeps_the_cargo_graph_strict_and_declares_the_vendored_lgpl_excepti
     assert!(
         deny.contains("LGPL-2.0-or-later"),
         "deny.toml must still declare the vendored bubblewrap LGPL-2.0-or-later exception \
-         (ADR-029 §3–§4) in its comments"
+         in its comments"
     );
 }
 
@@ -752,7 +752,7 @@ fn convention_documents_lgpl_exception_and_sandbox_build_dependencies() {
     );
     assert!(
         convention.contains("bubblewrap") && convention.contains("LGPL-2.0-or-later"),
-        "CONVENTION.md §6 must document bubblewrap's LGPL-2.0-or-later exception (ADR-029 §3–§4)"
+        "CONVENTION.md §6 must document bubblewrap's LGPL-2.0-or-later exception"
     );
 
     // The `cc` and `pkg-config` build-dependencies are scoped to aegis-sandbox

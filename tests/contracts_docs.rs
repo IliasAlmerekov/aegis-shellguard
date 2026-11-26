@@ -172,7 +172,7 @@ fn prd_defines_the_mandatory_sandbox_contract() {
     ] {
         assert!(
             !prd.contains(stale),
-            "PRD.md must not retain the pre-ADR-029 claim `{stale}`"
+            "PRD.md must not retain the pre-1.0 claim `{stale}`"
         );
     }
 
@@ -222,12 +222,8 @@ fn derived_docs_state_the_mandatory_sandbox_contract() {
             "{doc} must state that the 1.0 Sandbox layer is mandatory"
         );
         assert!(
-            contents.contains("ADR-029") || contents.contains("adr-029"),
-            "{doc} must cite ADR-029 for the mandatory-layer contract"
-        );
-        assert!(
             contents.contains("not a privilege boundary"),
-            "{doc} must keep the privilege half of the ADR-029 honesty claim"
+            "{doc} must keep the privilege half of the honesty claim"
         );
         assert_no_confidentiality_overclaims(&contents, doc);
     }
@@ -292,7 +288,7 @@ fn derived_docs_label_the_optional_sandbox_as_current_behaviour() {
             if contents.contains(phrase) {
                 assert!(
                     marked,
-                    "{doc} uses `{phrase}`, which only holds under the pre-ADR-029 \
+                    "{doc} uses `{phrase}`, which only holds under the pre-1.0 \
                      optional model, without labelling it `{PRE_1_0_SANDBOX_MARKER}`"
                 );
             }
@@ -436,8 +432,8 @@ fn m1_sandbox_api_docs_define_failure_and_non_return_contracts() {
 fn readme_links_to_contract_docs() {
     let readme = fs::read_to_string(repo_path("README.md")).expect("README.md must exist");
     assert!(
-        readme.contains("[Architecture decisions](docs/adr/README.md)"),
-        "README must link to ADR index document"
+        readme.contains("[Architecture](ARCHITECTURE.md)"),
+        "README must link to the architecture document"
     );
     assert!(
         readme.contains("[Config schema](docs/config-schema.md)"),
@@ -475,35 +471,25 @@ fn readme_links_to_contract_docs() {
 }
 
 #[test]
-fn adr_index_split_is_present_and_active_docs_reference_it() {
-    let adr_index =
-        fs::read_to_string(repo_path("docs/adr/README.md")).expect("docs/adr/README.md must exist");
-
+fn architecture_doc_is_present_and_active_docs_reference_it() {
+    let architecture =
+        fs::read_to_string(repo_path("ARCHITECTURE.md")).expect("ARCHITECTURE.md must exist");
     for needle in [
-        "## Current architecture snapshot",
-        "## ADR index",
-        "## Verification guidance",
+        "## Workspace layout",
+        "## Security invariants",
+        "## Config schema",
     ] {
         assert!(
-            adr_index.contains(needle),
-            "ADR index must include `{needle}`"
+            architecture.contains(needle),
+            "ARCHITECTURE.md must include `{needle}`"
         );
     }
 
     let contributing =
         fs::read_to_string(repo_path("CONTRIBUTING.md")).expect("CONTRIBUTING.md must exist");
     assert!(
-        contributing.contains("docs/adr/README.md"),
-        "CONTRIBUTING.md must point contributors at the ADR index"
-    );
-
-    let threat_model = fs::read_to_string(repo_path("docs/threat-model.md"))
-        .expect("docs/threat-model.md must exist");
-    assert!(
-        threat_model.contains(
-            "docs/adr/adr-010-full-shell-evaluation-and-deferred-execution-remain-non-goals.md"
-        ),
-        "threat-model doc must link to the ADR-010 non-goals record"
+        contributing.contains("ARCHITECTURE.md"),
+        "CONTRIBUTING.md must point contributors at ARCHITECTURE.md"
     );
 }
 
@@ -635,23 +621,6 @@ fn docs_grammar_manifest_records_l1_foundation_provenance() {
 }
 
 #[test]
-fn adr022_records_the_iteration10_direct_exec_degradation_closure() {
-    let path =
-        repo_path("docs/adr/adr-022-language-aware-analysis-is-an-additive-isolated-stage.md");
-    let contents = fs::read_to_string(&path).expect("ADR-022 must exist");
-
-    assert!(
-        contents
-            .contains("relative `Direct exec` target under a dynamic cwd records `Dynamic source`"),
-        "ADR-022 must record the Iteration 10 P7 degradation behavior"
-    );
-    assert!(
-        !contents.contains("is dropped\nduring routing instead of degrading"),
-        "ADR-022 must not retain the closed P7 waiver as a current gap"
-    );
-}
-
-#[test]
 fn m4_docs_keep_the_fail_closed_hook_panic_guarantee_and_its_non_goals_explicit() {
     // Prose wraps at the author's discretion, so match against a
     // whitespace-normalized copy: reflowing a paragraph must not fail this
@@ -664,28 +633,10 @@ fn m4_docs_keep_the_fail_closed_hook_panic_guarantee_and_its_non_goals_explicit(
             .join(" ")
     }
 
-    let adr = unwrapped("docs/adr/adr-023-hook-panic-fails-closed-in-two-layers.md");
     let threat_model = unwrapped("docs/threat-model.md");
     let troubleshooting = unwrapped("docs/troubleshooting.md");
     let readme = unwrapped("README.md");
     let context = fs::read_to_string(repo_path("CONTEXT.md")).unwrap();
-
-    // The ADR must record the two-layer decision and the honest non-goals, so a
-    // future contributor does not "simplify" the script back to `exec`.
-    for needle in [
-        "catch_unwind",
-        "aegis hook failed internally; refusing to run command unscanned",
-        "aegis hook terminated abnormally; refusing to run command unscanned",
-        "non-zero exit status only",
-        "external SIGKILL",
-        "OOM-kill of the agent process itself",
-        "corrupted `Hook` script",
-    ] {
-        assert!(
-            adr.contains(needle),
-            "ADR-023 must document the fail-closed guarantee `{needle}`"
-        );
-    }
 
     // The threat model must state plainly which failure modes are not covered.
     for needle in [
