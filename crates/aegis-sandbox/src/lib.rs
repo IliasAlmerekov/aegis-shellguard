@@ -1,6 +1,9 @@
-#![expect(
-    unsafe_code,
-    reason = "libc calls are sandbox/system boundaries, each documented by a SAFETY comment"
+#![cfg_attr(
+    target_os = "linux",
+    expect(
+        unsafe_code,
+        reason = "libc calls are sandbox/system boundaries, each documented by a SAFETY comment"
+    )
 )]
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
