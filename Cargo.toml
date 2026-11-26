@@ -30,6 +30,7 @@ members = [
     "crates/aegis-snapshot",
     "crates/aegis-sandbox",
     "crates/aegis-language",
+    "xtask",
 ]
 # The cargo-fuzz crate is built standalone by `cargo fuzz` with its own
 # sanitizer flags; it must not be pulled into the main workspace.
@@ -46,6 +47,8 @@ homepage = "https://github.com/IliasAlmerekov/aegis-shellguard"
 [workspace.lints.clippy]
 undocumented_unsafe_blocks = "deny"
 disallowed_methods = "deny"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
 
 [lints]
 workspace = true
