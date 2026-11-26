@@ -128,7 +128,6 @@ fn unavailable_cwd_cannot_persist_shell_rules() {
             renderer.set_confirmation_decision(decision);
             let exit = super::run_planned_shell_command_with_sandbox(
                 "git stash clear",
-                false,
                 &prepared,
                 &plan,
                 &crate::shell_compat::ShellLaunchOptions::default(),
@@ -202,7 +201,6 @@ fn unavailable_cwd_denies_unattended_shell_without_snapshot_plugin() {
         let renderer = aegis_tui::TestRenderer::new();
         let exit = super::run_planned_shell_command_with_renderer(
             &command,
-            false,
             &prepared,
             &plan,
             &crate::shell_compat::ShellLaunchOptions::default(),

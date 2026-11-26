@@ -7,20 +7,16 @@ use std::path::Path;
 use aegis::planning::{CwdState, PlanningOutcome, PreparedPlanner};
 use aegis::runtime::RuntimeContext;
 use aegis_config::AegisConfig;
-use aegis_parser::Parser as CommandParser;
 use aegis_policy::ExecutionTransport;
-use aegis_types::Assessment;
 use tempfile::TempDir;
 use tokio::runtime::Handle;
 
 use super::*;
 use crate::cli_commands::config_load_error_lines;
 use crate::shell_compat::{InvocationMode, ShellLaunchOptions, parse_shell_compat_invocation};
-use crate::shell_flow::decide_command;
 use crate::test_git::git_init;
 use aegis::error::AegisError;
-use aegis_config::{AllowlistMatch, ConfigSourceLayer};
-use aegis_types::{AllowlistOverrideLevel, CiPolicy, Mode, SnapshotPolicy};
+use aegis_types::{AllowlistOverrideLevel, Mode, SnapshotPolicy};
 
 #[test]
 fn shell_compat_parser_handles_dash_lc_command() {
@@ -297,17 +293,6 @@ fn cli_parses_install_subcommand_with_local_flag() {
     assert!(!args.codex);
 }
 
-fn make_assessment(risk: RiskLevel) -> Assessment {
-    Assessment {
-        risk,
-        effect_opaque: false,
-        matched: Vec::new(),
-        highlight_ranges: Vec::new(),
-        command: CommandParser::parse("rm -rf /"),
-        analysis: None,
-    }
-}
-
 fn test_handle() -> Handle {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -318,61 +303,8 @@ fn test_handle() -> Handle {
     handle
 }
 
-fn context() -> RuntimeContext {
-    RuntimeContext::new(AegisConfig::default(), test_handle()).unwrap()
-}
-
 fn config_from_toml(src: &str) -> AegisConfig {
     toml::from_str(src).unwrap()
-}
-
-fn context_with_ci_policy(ci_policy: CiPolicy) -> RuntimeContext {
-    let config = match ci_policy {
-        CiPolicy::Allow => config_from_toml(r#"ci_policy = "Allow""#),
-        CiPolicy::Block => config_from_toml(r#"ci_policy = "Block""#),
-    };
-    RuntimeContext::new(config, test_handle()).unwrap()
-}
-
-fn context_with_mode(mode: Mode) -> RuntimeContext {
-    let config = match mode {
-        Mode::Audit => config_from_toml(r#"mode = "Audit""#),
-        Mode::Protect => config_from_toml(r#"mode = "Protect""#),
-        Mode::Strict => config_from_toml(r#"mode = "Strict""#),
-    };
-    RuntimeContext::new(config, test_handle()).unwrap()
-}
-
-fn context_with_allowlist_override_level(
-    allowlist_override_level: AllowlistOverrideLevel,
-) -> RuntimeContext {
-    let config = match allowlist_override_level {
-        AllowlistOverrideLevel::Never => config_from_toml(
-            r#"
-mode = "Strict"
-auto_snapshot_git = false
-auto_snapshot_docker = false
-allowlist_override_level = "Never"
-"#,
-        ),
-        AllowlistOverrideLevel::Warn => config_from_toml(
-            r#"
-mode = "Strict"
-auto_snapshot_git = false
-auto_snapshot_docker = false
-allowlist_override_level = "Warn"
-"#,
-        ),
-        AllowlistOverrideLevel::Danger => config_from_toml(
-            r#"
-mode = "Strict"
-auto_snapshot_git = false
-auto_snapshot_docker = false
-allowlist_override_level = "Danger"
-"#,
-        ),
-    };
-    RuntimeContext::new(config, test_handle()).unwrap()
 }
 
 #[test]
@@ -406,206 +338,6 @@ auto_snapshot_docker = false
             }
         );
     });
-}
-
-#[test]
-fn ci_policy_block_blocks_warn_in_ci() {
-    let assessment = make_assessment(RiskLevel::Warn);
-    let (decision, snapshots, _) = decide_command(
-        &context_with_ci_policy(CiPolicy::Block),
-        &assessment,
-        Path::new("."),
-        false,
-        None,
-        true,
-    );
-    assert_eq!(decision, Decision::Blocked);
-    assert!(snapshots.is_empty());
-}
-
-#[test]
-fn ci_policy_block_blocks_danger_in_ci() {
-    let assessment = make_assessment(RiskLevel::Danger);
-    let (decision, snapshots, _) = decide_command(
-        &context_with_ci_policy(CiPolicy::Block),
-        &assessment,
-        Path::new("."),
-        false,
-        None,
-        true,
-    );
-    assert_eq!(decision, Decision::Blocked);
-    assert!(snapshots.is_empty());
-}
-
-#[test]
-fn ci_policy_block_blocks_block_in_ci() {
-    let assessment = make_assessment(RiskLevel::Block);
-    let (decision, snapshots, _) = decide_command(
-        &context_with_ci_policy(CiPolicy::Block),
-        &assessment,
-        Path::new("."),
-        false,
-        None,
-        true,
-    );
-    assert_eq!(decision, Decision::Blocked);
-    assert!(snapshots.is_empty());
-}
-
-#[test]
-fn ci_policy_block_allows_safe_in_ci() {
-    let assessment = Assessment {
-        risk: RiskLevel::Safe,
-        effect_opaque: false,
-        matched: Vec::new(),
-        highlight_ranges: Vec::new(),
-        command: CommandParser::parse("echo hello"),
-        analysis: None,
-    };
-    let (decision, _, _) = decide_command(
-        &context_with_ci_policy(CiPolicy::Block),
-        &assessment,
-        Path::new("."),
-        false,
-        None,
-        true,
-    );
-    assert_eq!(decision, Decision::AutoApproved);
-}
-
-#[test]
-fn ci_policy_allow_does_not_short_circuit_in_ci() {
-    let assessment = Assessment {
-        risk: RiskLevel::Safe,
-        effect_opaque: false,
-        matched: Vec::new(),
-        highlight_ranges: Vec::new(),
-        command: CommandParser::parse("echo hello"),
-        analysis: None,
-    };
-    let (decision, _, _) = decide_command(
-        &context_with_ci_policy(CiPolicy::Allow),
-        &assessment,
-        Path::new("."),
-        false,
-        None,
-        true,
-    );
-    assert_eq!(decision, Decision::AutoApproved);
-}
-
-#[test]
-fn not_in_ci_does_not_trigger_ci_policy() {
-    let assessment = Assessment {
-        risk: RiskLevel::Safe,
-        effect_opaque: false,
-        matched: Vec::new(),
-        highlight_ranges: Vec::new(),
-        command: CommandParser::parse("echo hello"),
-        analysis: None,
-    };
-    let (decision, _, _) =
-        decide_command(&context(), &assessment, Path::new("."), false, None, false);
-    assert_eq!(decision, Decision::AutoApproved);
-}
-
-#[test]
-fn audit_mode_blocks_intrinsic_block_risk_level() {
-    let assessment = make_assessment(RiskLevel::Block);
-    let (decision, snapshots, _) = decide_command(
-        &context_with_mode(Mode::Audit),
-        &assessment,
-        Path::new("."),
-        false,
-        None,
-        true,
-    );
-
-    assert_eq!(decision, Decision::Blocked);
-    assert!(snapshots.is_empty());
-}
-
-#[test]
-fn strict_mode_blocks_warn_without_prompt_path() {
-    let assessment = make_assessment(RiskLevel::Warn);
-    let (decision, snapshots, _) = decide_command(
-        &context_with_mode(Mode::Strict),
-        &assessment,
-        Path::new("."),
-        false,
-        None,
-        false,
-    );
-
-    assert_eq!(decision, Decision::Blocked);
-    assert!(snapshots.is_empty());
-}
-
-#[test]
-fn strict_mode_allowlisted_danger_respects_allowlist_override_level() {
-    let assessment = make_assessment(RiskLevel::Danger);
-    let allowlist_match = AllowlistMatch {
-        pattern: "terraform destroy -target=module.test.*".to_string(),
-        reason: "test allowlist".to_string(),
-        source_layer: ConfigSourceLayer::Project,
-    };
-
-    let (decision, snapshots, _) = decide_command(
-        &context_with_allowlist_override_level(AllowlistOverrideLevel::Danger),
-        &assessment,
-        Path::new("."),
-        false,
-        Some(&allowlist_match),
-        false,
-    );
-
-    assert_eq!(decision, Decision::AutoApproved);
-    assert!(snapshots.is_empty());
-}
-
-#[test]
-fn strict_mode_allowlisted_warn_respects_warn_override_level() {
-    let assessment = make_assessment(RiskLevel::Warn);
-    let allowlist_match = AllowlistMatch {
-        pattern: "git stash clear".to_string(),
-        reason: "test allowlist".to_string(),
-        source_layer: ConfigSourceLayer::Project,
-    };
-
-    let (decision, snapshots, _) = decide_command(
-        &context_with_allowlist_override_level(AllowlistOverrideLevel::Warn),
-        &assessment,
-        Path::new("."),
-        false,
-        Some(&allowlist_match),
-        false,
-    );
-
-    assert_eq!(decision, Decision::AutoApproved);
-    assert!(snapshots.is_empty());
-}
-
-#[test]
-fn strict_mode_allowlisted_warn_still_blocks_with_never_override_level() {
-    let assessment = make_assessment(RiskLevel::Warn);
-    let allowlist_match = AllowlistMatch {
-        pattern: "git stash clear".to_string(),
-        reason: "test allowlist".to_string(),
-        source_layer: ConfigSourceLayer::Project,
-    };
-
-    let (decision, snapshots, _) = decide_command(
-        &context_with_allowlist_override_level(AllowlistOverrideLevel::Never),
-        &assessment,
-        Path::new("."),
-        false,
-        Some(&allowlist_match),
-        false,
-    );
-
-    assert_eq!(decision, Decision::Blocked);
-    assert!(snapshots.is_empty());
 }
 
 #[test]

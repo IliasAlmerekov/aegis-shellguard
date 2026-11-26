@@ -284,11 +284,9 @@ fn frame_sandbox(
 
 pub(super) async fn prepare_watch_command(
     cmd: &str,
-    sandbox: Option<&aegis_sandbox::SandboxConfig>,
 ) -> Result<(std::process::Command, SandboxStatus), aegis_sandbox::SandboxError> {
     let cmd = cmd.to_owned();
-    let sandbox = sandbox.cloned();
-    tokio::task::spawn_blocking(move || prepare_watch_command_blocking(&cmd, sandbox.as_ref()))
+    tokio::task::spawn_blocking(move || prepare_watch_command_blocking(&cmd, None))
         .await
         .map_err(|err| {
             aegis_sandbox::SandboxError::Execution(format!(

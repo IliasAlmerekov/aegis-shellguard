@@ -21,7 +21,6 @@ mod prune;
 mod rollback;
 mod rollback_last;
 mod shell_compat;
-mod shell_flow;
 mod shell_wrapper;
 mod verify;
 

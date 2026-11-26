@@ -560,7 +560,7 @@ fn report_watch_setup_failure(plan: &SetupFailurePlan) {
 }
 
 async fn execute_and_emit(cmd: &str, cwd: &std::path::Path, id: Option<String>) {
-    let (command, _) = match prepare_watch_command(cmd, None).await {
+    let (command, _) = match prepare_watch_command(cmd).await {
         Ok(prepared) => prepared,
         Err(err) => {
             emit_error_or_exit(id, format!("failed to prepare child: {err}"));

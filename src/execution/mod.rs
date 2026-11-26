@@ -60,17 +60,15 @@ fn persist_rule(
 
 pub(crate) fn run_planned_shell_command(
     cmd: &str,
-    verbose: bool,
     prepared: &PreparedPlanner,
     plan: &InterceptionPlan,
     launch: &ShellLaunchOptions,
 ) -> i32 {
-    run_planned_shell_command_with_renderer(cmd, verbose, prepared, plan, launch, &TerminalRenderer)
+    run_planned_shell_command_with_renderer(cmd, prepared, plan, launch, &TerminalRenderer)
 }
 
 pub(crate) fn run_planned_shell_command_with_renderer<R: ExecutionRenderer>(
     cmd: &str,
-    verbose: bool,
     prepared: &PreparedPlanner,
     plan: &InterceptionPlan,
     launch: &ShellLaunchOptions,
@@ -80,20 +78,11 @@ pub(crate) fn run_planned_shell_command_with_renderer<R: ExecutionRenderer>(
         PreparedPlanner::Ready(context) => context.config().sandbox.as_ref(),
         PreparedPlanner::SetupFailure(_) => None,
     };
-    run_planned_shell_command_with_sandbox(
-        cmd,
-        verbose,
-        prepared,
-        plan,
-        launch,
-        sandbox_config,
-        renderer,
-    )
+    run_planned_shell_command_with_sandbox(cmd, prepared, plan, launch, sandbox_config, renderer)
 }
 
 fn run_planned_shell_command_with_sandbox<R: ExecutionRenderer>(
     cmd: &str,
-    verbose: bool,
     prepared: &PreparedPlanner,
     plan: &InterceptionPlan,
     launch: &ShellLaunchOptions,
@@ -103,7 +92,6 @@ fn run_planned_shell_command_with_sandbox<R: ExecutionRenderer>(
     match plan.execution_disposition() {
         ExecutionDisposition::Execute => execute_with_snapshots(
             cmd,
-            verbose,
             prepared,
             plan,
             launch,
@@ -127,7 +115,6 @@ fn run_planned_shell_command_with_sandbox<R: ExecutionRenderer>(
             if approved {
                 execute_with_snapshots(
                     cmd,
-                    verbose,
                     prepared,
                     plan,
                     launch,
@@ -175,7 +162,6 @@ fn run_planned_shell_command_with_sandbox<R: ExecutionRenderer>(
 )]
 fn execute_with_snapshots<R: ExecutionRenderer>(
     cmd: &str,
-    _verbose: bool,
     prepared: &PreparedPlanner,
     plan: &InterceptionPlan,
     launch: &ShellLaunchOptions,
