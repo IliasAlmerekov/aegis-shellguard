@@ -105,24 +105,29 @@ fn both_audit_writers_record_the_same_attempts_slice() {
                 ci_detected: false,
                 sandbox_status: SandboxStatus::NotConfigured,
                 snapshot_attempts: &attempts,
+                recovery_degradation: None,
+                watch: None,
             },
         )
         .unwrap();
     context
-        .append_watch_audit_entry(
+        .append_audit_entry(
             &assessment,
             Decision::Approved,
             &coverage.records,
             &explanation,
-            WatchAuditContext {
+            AuditWriteOptions {
                 allowlist_match: None,
                 allowlist_effective: false,
                 ci_detected: false,
                 sandbox_status: SandboxStatus::NotConfigured,
                 snapshot_attempts: &attempts,
-                source: None,
-                cwd: None,
-                id: None,
+                recovery_degradation: None,
+                watch: Some(WatchAuditContext {
+                    source: None,
+                    cwd: None,
+                    id: None,
+                }),
             },
         )
         .unwrap();
@@ -172,6 +177,8 @@ fn an_entry_written_without_a_snapshot_pass_has_no_snapshot_attempts() {
                 ci_detected: false,
                 sandbox_status: SandboxStatus::NotConfigured,
                 snapshot_attempts: &[],
+                recovery_degradation: None,
+                watch: None,
             },
         )
         .unwrap();

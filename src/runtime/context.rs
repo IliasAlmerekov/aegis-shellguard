@@ -8,6 +8,7 @@ use tokio::runtime::{Handle, RuntimeFlavor};
 use crate::error::AegisError;
 use crate::explanation::CommandExplanation;
 use crate::explanation::formatter::{CommandExplanationExt, build_outcome_explanation};
+use crate::planning::InterceptionPlan;
 use aegis_audit::{AuditEntry, AuditError, AuditLogger, AuditSnapshot, SnapshotLedger};
 use aegis_config::{AegisConfig, Allowlist, AllowlistContext, AllowlistMatch, Blocklist};
 use aegis_scanner::Scanner;
@@ -80,21 +81,31 @@ pub struct RuntimeContext {
     policy_rules: Vec<aegis_config::PolicyRule>,
 }
 
-#[derive(Clone, Copy)]
 pub struct AuditWriteOptions<'a> {
     pub allowlist_match: Option<&'a AllowlistMatch>,
     pub allowlist_effective: bool,
     pub ci_detected: bool,
     pub sandbox_status: SandboxStatus,
     pub snapshot_attempts: &'a [SnapshotAttempt],
+    pub recovery_degradation: Option<RecoveryDegradation>,
+    pub watch: Option<WatchAuditContext>,
 }
 
-pub struct WatchAuditContext<'a> {
-    pub allowlist_match: Option<&'a AllowlistMatch>,
-    pub allowlist_effective: bool,
-    pub ci_detected: bool,
-    pub sandbox_status: SandboxStatus,
-    pub snapshot_attempts: &'a [SnapshotAttempt],
+impl<'a> AuditWriteOptions<'a> {
+    pub fn for_plan(plan: &'a InterceptionPlan, sandbox_status: SandboxStatus) -> Self {
+        Self {
+            allowlist_match: plan.decision_context().allowlist_match(),
+            allowlist_effective: plan.policy_decision().allowlist_effective,
+            ci_detected: plan.decision_context().ci_detected(),
+            sandbox_status,
+            snapshot_attempts: &[],
+            recovery_degradation: None,
+            watch: None,
+        }
+    }
+}
+
+pub struct WatchAuditContext {
     pub source: Option<String>,
     pub cwd: Option<String>,
     pub id: Option<String>,
@@ -377,93 +388,14 @@ impl RuntimeContext {
         decision: Decision,
         snapshots: &[SnapshotRecord],
         explanation: &CommandExplanation,
-        options: AuditWriteOptions<'_>,
+        mut options: AuditWriteOptions<'_>,
     ) -> Result<(), AegisError> {
-        let entry =
-            self.build_audit_entry(assessment, decision, snapshots, explanation, options, None);
-        self.audit_logger.append(entry)?;
-        self.complete_automatic_prune(snapshots)?;
-        Ok(())
-    }
-
-    pub fn append_audit_entry_with_recovery_degradation(
-        &self,
-        assessment: &Assessment,
-        decision: Decision,
-        snapshots: &[SnapshotRecord],
-        explanation: &CommandExplanation,
-        options: AuditWriteOptions<'_>,
-        degradation: RecoveryDegradation,
-    ) -> Result<(), AegisError> {
-        let entry = self.build_audit_entry(
-            assessment,
-            decision,
-            snapshots,
-            explanation,
-            options,
-            Some(degradation),
-        );
-        self.audit_logger.append(entry)?;
-        self.complete_automatic_prune(snapshots)?;
-        Ok(())
-    }
-
-    pub fn append_watch_audit_entry(
-        &self,
-        assessment: &Assessment,
-        decision: Decision,
-        snapshots: &[SnapshotRecord],
-        explanation: &CommandExplanation,
-        watch: WatchAuditContext<'_>,
-    ) -> Result<(), AegisError> {
-        let entry = self
-            .build_audit_entry(
-                assessment,
-                decision,
-                snapshots,
-                explanation,
-                AuditWriteOptions {
-                    allowlist_match: watch.allowlist_match,
-                    allowlist_effective: watch.allowlist_effective,
-                    ci_detected: watch.ci_detected,
-                    sandbox_status: watch.sandbox_status,
-                    snapshot_attempts: watch.snapshot_attempts,
-                },
-                None,
-            )
-            .with_watch_context(watch.source, watch.cwd, watch.id);
-
-        self.audit_logger.append(entry)?;
-        self.complete_automatic_prune(snapshots)?;
-        Ok(())
-    }
-
-    pub fn append_watch_audit_entry_with_recovery_degradation(
-        &self,
-        assessment: &Assessment,
-        decision: Decision,
-        snapshots: &[SnapshotRecord],
-        explanation: &CommandExplanation,
-        watch: WatchAuditContext<'_>,
-        degradation: RecoveryDegradation,
-    ) -> Result<(), AegisError> {
-        let entry = self
-            .build_audit_entry(
-                assessment,
-                decision,
-                snapshots,
-                explanation,
-                AuditWriteOptions {
-                    allowlist_match: watch.allowlist_match,
-                    allowlist_effective: watch.allowlist_effective,
-                    ci_detected: watch.ci_detected,
-                    sandbox_status: watch.sandbox_status,
-                    snapshot_attempts: watch.snapshot_attempts,
-                },
-                Some(degradation),
-            )
-            .with_watch_context(watch.source, watch.cwd, watch.id);
-
+        let watch = options.watch.take();
+        let mut entry =
+            self.build_audit_entry(assessment, decision, snapshots, explanation, &options);
+        if let Some(watch) = watch {
+            entry = entry.with_watch_context(watch.source, watch.cwd, watch.id);
+        }
         self.audit_logger.append(entry)?;
         self.complete_automatic_prune(snapshots)?;
         Ok(())
@@ -502,8 +434,7 @@ impl RuntimeContext {
         decision: Decision,
         snapshots: &[SnapshotRecord],
         explanation: &CommandExplanation,
-        options: AuditWriteOptions<'_>,
-        recovery_degradation: Option<RecoveryDegradation>,
+        options: &AuditWriteOptions<'_>,
     ) -> AuditEntry {
         let allowlist_pattern = (options.allowlist_effective)
             .then(|| options.allowlist_match.map(|m| m.pattern.clone()))
@@ -546,7 +477,7 @@ impl RuntimeContext {
         if !options.snapshot_attempts.is_empty() {
             entry = entry.with_snapshot_attempts(options.snapshot_attempts.to_vec());
         }
-        match recovery_degradation {
+        match options.recovery_degradation {
             Some(degradation) => entry.with_recovery_degradation(degradation),
             None => entry,
         }

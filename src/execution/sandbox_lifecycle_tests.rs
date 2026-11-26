@@ -10,17 +10,19 @@ fn required_unavailability_is_audited_as_blocked_and_never_executes() {
 
     let exit_code = complete_shell_execution(
         Decision::Approved,
-        || Err::<((), SandboxStatus), _>(aegis_sandbox::SandboxError::Required),
-        |decision, status| {
-            events
-                .borrow_mut()
-                .push(format!("audit:{decision:?}:{status:?}"));
-            Ok::<_, String>(())
+        ShellLifecycle {
+            prepare: || Err::<((), SandboxStatus), _>(aegis_sandbox::SandboxError::Required),
+            append_audit: |decision, status| {
+                events
+                    .borrow_mut()
+                    .push(format!("audit:{decision:?}:{status:?}"));
+                Ok::<_, String>(())
+            },
+            execute: |_: ()| panic!("required preparation must not execute"),
+            wait: |_: ()| panic!("required preparation must not wait"),
+            report_error: |message: &str| events.borrow_mut().push(format!("error:{message}")),
+            unavailable_message: || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
         },
-        |_: ()| panic!("required preparation must not execute"),
-        |_: ()| panic!("required preparation must not wait"),
-        |message| events.borrow_mut().push(format!("error:{message}")),
-        || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
     );
 
     assert_eq!(exit_code, EXIT_BLOCKED);
@@ -41,17 +43,21 @@ fn apparmor_unavailability_blocks_and_audits() {
     let events = RefCell::new(Vec::new());
     let exit = complete_shell_execution(
         Decision::Approved,
-        || Err::<((), SandboxStatus), _>(aegis_sandbox::SandboxError::Required),
-        |decision, status| {
-            events
-                .borrow_mut()
-                .push(format!("audit:{decision:?}:{status:?}"));
-            Ok::<_, String>(())
+        ShellLifecycle {
+            prepare: || Err::<((), SandboxStatus), _>(aegis_sandbox::SandboxError::Required),
+            append_audit: |decision, status| {
+                events
+                    .borrow_mut()
+                    .push(format!("audit:{decision:?}:{status:?}"));
+                Ok::<_, String>(())
+            },
+            execute: |_: ()| panic!(),
+            wait: |_: ()| panic!(),
+            report_error: |message: &str| events.borrow_mut().push(format!("error:{message}")),
+            unavailable_message: || {
+                aegis::runtime::sandbox_unavailable_code_and_message(false, true).1
+            },
         },
-        |_: ()| panic!(),
-        |_: ()| panic!(),
-        |message| events.borrow_mut().push(format!("error:{message}")),
-        || aegis::runtime::sandbox_unavailable_code_and_message(false, true).1,
     );
     assert_eq!(exit, EXIT_BLOCKED);
     assert_eq!(
@@ -72,21 +78,23 @@ fn required_nested_unavailability_names_the_cause_and_never_executes() {
 
     let exit_code = complete_shell_execution(
         Decision::Approved,
-        || {
-            Err::<((), SandboxStatus), _>(
-                aegis_sandbox::SandboxError::RequiredNestedUnderOuterSandbox,
-            )
+        ShellLifecycle {
+            prepare: || {
+                Err::<((), SandboxStatus), _>(
+                    aegis_sandbox::SandboxError::RequiredNestedUnderOuterSandbox,
+                )
+            },
+            append_audit: |decision, status| {
+                events
+                    .borrow_mut()
+                    .push(format!("audit:{decision:?}:{status:?}"));
+                Ok::<_, String>(())
+            },
+            execute: |_: ()| panic!("required preparation must not execute"),
+            wait: |_: ()| panic!("required preparation must not wait"),
+            report_error: |message: &str| events.borrow_mut().push(format!("error:{message}")),
+            unavailable_message: || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
         },
-        |decision, status| {
-            events
-                .borrow_mut()
-                .push(format!("audit:{decision:?}:{status:?}"));
-            Ok::<_, String>(())
-        },
-        |_: ()| panic!("required preparation must not execute"),
-        |_: ()| panic!("required preparation must not wait"),
-        |message| events.borrow_mut().push(format!("error:{message}")),
-        || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
     );
 
     assert_eq!(exit_code, EXIT_BLOCKED);
@@ -108,21 +116,23 @@ fn setup_failure_is_audited_as_not_attempted_and_never_executes() {
 
     let exit_code = complete_shell_execution(
         Decision::Approved,
-        || {
-            Err::<((), SandboxStatus), _>(aegis_sandbox::SandboxError::SetupFailed(
-                "invalid profile".to_string(),
-            ))
+        ShellLifecycle {
+            prepare: || {
+                Err::<((), SandboxStatus), _>(aegis_sandbox::SandboxError::SetupFailed(
+                    "invalid profile".to_string(),
+                ))
+            },
+            append_audit: |decision, status| {
+                events
+                    .borrow_mut()
+                    .push(format!("audit:{decision:?}:{status:?}"));
+                Ok::<_, String>(())
+            },
+            execute: |_: ()| panic!("failed preparation must not execute"),
+            wait: |_: ()| panic!("failed preparation must not wait"),
+            report_error: |message: &str| events.borrow_mut().push(format!("error:{message}")),
+            unavailable_message: || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
         },
-        |decision, status| {
-            events
-                .borrow_mut()
-                .push(format!("audit:{decision:?}:{status:?}"));
-            Ok::<_, String>(())
-        },
-        |_: ()| panic!("failed preparation must not execute"),
-        |_: ()| panic!("failed preparation must not wait"),
-        |message| events.borrow_mut().push(format!("error:{message}")),
-        || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
     );
 
     assert_eq!(exit_code, EXIT_INTERNAL);
@@ -142,18 +152,20 @@ fn audit_failure_prevents_child_spawn() {
 
     let exit_code = complete_shell_execution(
         Decision::AutoApproved,
-        || Ok(((), SandboxStatus::NotConfigured)),
-        |_decision, _status| Err::<(), _>("permission denied".to_string()),
-        |()| {
-            events.borrow_mut().push("spawn".to_string());
-            Ok(((), SandboxStatus::NotConfigured))
+        ShellLifecycle {
+            prepare: || Ok(((), SandboxStatus::NotConfigured)),
+            append_audit: |_decision, _status| Err::<(), _>("permission denied".to_string()),
+            execute: |()| {
+                events.borrow_mut().push("spawn".to_string());
+                Ok(((), SandboxStatus::NotConfigured))
+            },
+            wait: |()| {
+                events.borrow_mut().push("wait".to_string());
+                0
+            },
+            report_error: |message: &str| events.borrow_mut().push(format!("error:{message}")),
+            unavailable_message: || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
         },
-        |()| {
-            events.borrow_mut().push("wait".to_string());
-            0
-        },
-        |message| events.borrow_mut().push(format!("error:{message}")),
-        || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
     );
 
     assert_eq!(exit_code, EXIT_INTERNAL);
@@ -170,23 +182,25 @@ fn missing_inner_wrapper_report_is_audited_as_blocked_before_reaping_the_child()
 
     let exit_code = complete_shell_execution(
         Decision::AutoApproved,
-        || Ok(((), SandboxStatus::Active)),
-        |decision, status| {
-            events
-                .borrow_mut()
-                .push(format!("audit:{decision:?}:{status:?}"));
-            Ok::<_, String>(())
+        ShellLifecycle {
+            prepare: || Ok(((), SandboxStatus::Active)),
+            append_audit: |decision, status| {
+                events
+                    .borrow_mut()
+                    .push(format!("audit:{decision:?}:{status:?}"));
+                Ok::<_, String>(())
+            },
+            execute: |()| {
+                events.borrow_mut().push("spawn".to_string());
+                Ok(((), SandboxStatus::NotAttempted))
+            },
+            wait: |()| {
+                events.borrow_mut().push("reap".to_string());
+                0
+            },
+            report_error: |message: &str| events.borrow_mut().push(format!("error:{message}")),
+            unavailable_message: || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
         },
-        |()| {
-            events.borrow_mut().push("spawn".to_string());
-            Ok(((), SandboxStatus::NotAttempted))
-        },
-        |()| {
-            events.borrow_mut().push("reap".to_string());
-            0
-        },
-        |message| events.borrow_mut().push(format!("error:{message}")),
-        || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
     );
 
     assert_eq!(exit_code, EXIT_INTERNAL);
@@ -208,18 +222,20 @@ fn unconfigured_sandbox_is_silent() {
 
     let exit_code = complete_shell_execution(
         Decision::AutoApproved,
-        || Ok(((), SandboxStatus::NotConfigured)),
-        |_decision, _status| Ok::<_, String>(()),
-        |()| {
-            events.borrow_mut().push("spawn".to_string());
-            Ok(((), SandboxStatus::NotConfigured))
+        ShellLifecycle {
+            prepare: || Ok(((), SandboxStatus::NotConfigured)),
+            append_audit: |_decision, _status| Ok::<_, String>(()),
+            execute: |()| {
+                events.borrow_mut().push("spawn".to_string());
+                Ok(((), SandboxStatus::NotConfigured))
+            },
+            wait: |()| {
+                events.borrow_mut().push("wait".to_string());
+                0
+            },
+            report_error: |message: &str| events.borrow_mut().push(format!("error:{message}")),
+            unavailable_message: || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
         },
-        |()| {
-            events.borrow_mut().push("wait".to_string());
-            0
-        },
-        |message| events.borrow_mut().push(format!("error:{message}")),
-        || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
     );
 
     assert_eq!(exit_code, 0);
@@ -236,23 +252,25 @@ fn execution_audits_the_inner_wrapper_status_before_waiting_for_the_child() {
 
     let exit_code = complete_shell_execution(
         Decision::AutoApproved,
-        || Ok(((), SandboxStatus::Active)),
-        |decision, status| {
-            events
-                .borrow_mut()
-                .push(format!("audit:{decision:?}:{status:?}"));
-            Ok::<_, String>(())
+        ShellLifecycle {
+            prepare: || Ok(((), SandboxStatus::Active)),
+            append_audit: |decision, status| {
+                events
+                    .borrow_mut()
+                    .push(format!("audit:{decision:?}:{status:?}"));
+                Ok::<_, String>(())
+            },
+            execute: |()| {
+                events.borrow_mut().push("spawn".to_string());
+                Ok(((), SandboxStatus::Active))
+            },
+            wait: |()| {
+                events.borrow_mut().push("wait".to_string());
+                17
+            },
+            report_error: |message: &str| events.borrow_mut().push(format!("error:{message}")),
+            unavailable_message: || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
         },
-        |()| {
-            events.borrow_mut().push("spawn".to_string());
-            Ok(((), SandboxStatus::Active))
-        },
-        |()| {
-            events.borrow_mut().push("wait".to_string());
-            17
-        },
-        |message| events.borrow_mut().push(format!("error:{message}")),
-        || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
     );
 
     assert_eq!(exit_code, 17);
@@ -282,17 +300,19 @@ fn unavailable_sandbox_blocks_for_default_and_empty_sandbox_section() {
         let events = RefCell::new(Vec::new());
         let exit_code = complete_shell_execution(
             Decision::Approved,
-            || Err::<((), SandboxStatus), _>(aegis_sandbox::SandboxError::Required),
-            |decision, status| {
-                events
-                    .borrow_mut()
-                    .push(format!("audit:{decision:?}:{status:?}"));
-                Ok::<_, String>(())
+            ShellLifecycle {
+                prepare: || Err::<((), SandboxStatus), _>(aegis_sandbox::SandboxError::Required),
+                append_audit: |decision, status| {
+                    events
+                        .borrow_mut()
+                        .push(format!("audit:{decision:?}:{status:?}"));
+                    Ok::<_, String>(())
+                },
+                execute: |_: ()| panic!("unavailable sandbox must not execute"),
+                wait: |_: ()| panic!("unavailable sandbox must not wait"),
+                report_error: |message: &str| events.borrow_mut().push(format!("error:{message}")),
+                unavailable_message: || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
             },
-            |_: ()| panic!("unavailable sandbox must not execute"),
-            |_: ()| panic!("unavailable sandbox must not wait"),
-            |message| events.borrow_mut().push(format!("error:{message}")),
-            || aegis::runtime::SANDBOX_REQUIRED_UNAVAILABLE_MESSAGE,
         );
         assert_eq!(exit_code, EXIT_BLOCKED, "failed for {body:?}");
         assert_eq!(

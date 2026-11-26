@@ -495,14 +495,15 @@ fn append_audit_entry_enriches_explanation_with_runtime_outcome() {
         Decision::Approved,
         &snapshots,
         &explanation,
-        AuditWriteOptions {
+        &AuditWriteOptions {
             allowlist_match: None,
             allowlist_effective: false,
             ci_detected: false,
             sandbox_status: SandboxStatus::NotConfigured,
             snapshot_attempts: &[],
+            recovery_degradation: None,
+            watch: None,
         },
-        None,
     );
 
     let outcome = entry
@@ -575,14 +576,15 @@ fn append_audit_entry_preserves_allowlist_context_fields() {
         Decision::AutoApproved,
         &[],
         &explanation,
-        AuditWriteOptions {
+        &AuditWriteOptions {
             allowlist_match: allowlist_match.as_ref(),
             allowlist_effective: true,
             ci_detected: false,
             sandbox_status: SandboxStatus::NotConfigured,
             snapshot_attempts: &[],
+            recovery_degradation: None,
+            watch: None,
         },
-        None,
     );
 
     let base = entry.as_base();
@@ -633,14 +635,15 @@ fn build_audit_entry_records_effect_opaque_and_backstop_state_from_runtime_facts
         Decision::AutoApproved,
         &[],
         &explanation,
-        AuditWriteOptions {
+        &AuditWriteOptions {
             allowlist_match: None,
             allowlist_effective: false,
             ci_detected: false,
             sandbox_status: SandboxStatus::NotConfigured,
             snapshot_attempts: &[],
+            recovery_degradation: Some(aegis_types::RecoveryDegradation::NoSnapshotAvailable),
+            watch: None,
         },
-        Some(aegis_types::RecoveryDegradation::NoSnapshotAvailable),
     );
 
     let base = entry.as_base();
@@ -706,14 +709,15 @@ fn build_audit_entry_records_plain_safe_command_without_backstops() {
         Decision::AutoApproved,
         &[],
         &explanation,
-        AuditWriteOptions {
+        &AuditWriteOptions {
             allowlist_match: None,
             allowlist_effective: false,
             ci_detected: false,
             sandbox_status: SandboxStatus::NotConfigured,
             snapshot_attempts: &[],
+            recovery_degradation: None,
+            watch: None,
         },
-        None,
     );
 
     let base = entry.as_base();

@@ -126,14 +126,15 @@ fn unavailable_cwd_cannot_persist_shell_rules() {
                 panic!("expected plan")
             };
             renderer.set_confirmation_decision(decision);
-            let exit = super::run_planned_shell_command_with_sandbox(
-                "git stash clear",
-                &prepared,
-                &plan,
-                &crate::shell_compat::ShellLaunchOptions::default(),
-                None,
-                &renderer,
-            );
+            let exit = super::ShellRun {
+                cmd: "git stash clear",
+                prepared: &prepared,
+                plan: &plan,
+                launch: &crate::shell_compat::ShellLaunchOptions::default(),
+                sandbox_config: None,
+                renderer: &renderer,
+            }
+            .run();
             assert_eq!(
                 exit,
                 if decision == aegis_tui::PromptDecision::DenyAlways {

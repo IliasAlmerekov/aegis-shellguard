@@ -3,10 +3,8 @@ use std::future::Future;
 use aegis_types::{EXIT_BLOCKED, EXIT_INTERNAL, RecoveryDegradation, SandboxStatus};
 
 use crate::planning::InterceptionPlan;
-use crate::runtime::RuntimeContext;
-use crate::runtime::disposition::{
-    AuditRecord, SandboxFailure, WatchOrigin, append_audit, setup_failed_message,
-};
+use crate::runtime::disposition::{SandboxFailure, setup_failed_message};
+use crate::runtime::{AuditWriteOptions, RuntimeContext, WatchAuditContext};
 use aegis_types::Decision;
 use aegis_types::{SnapshotAttempt, SnapshotRecord};
 
@@ -178,21 +176,21 @@ pub(super) fn append_watch_execution_audit(
     decision: Decision,
     sandbox_status: SandboxStatus,
 ) -> Result<(), crate::error::AegisError> {
-    append_audit(
-        execution.context,
-        execution.plan,
-        &AuditRecord {
-            decision,
-            sandbox_status,
-            snapshots: execution.snapshots,
-            attempts: execution.attempts,
+    execution.context.append_audit_entry(
+        execution.plan.assessment(),
+        decision,
+        execution.snapshots,
+        execution.plan.explanation(),
+        AuditWriteOptions {
+            snapshot_attempts: execution.attempts,
             recovery_degradation: execution.recovery_degradation,
+            watch: Some(WatchAuditContext {
+                source: execution.frame.source.clone(),
+                cwd: execution.cwd.and_then(audit_cwd),
+                id: execution.frame.id.clone(),
+            }),
+            ..AuditWriteOptions::for_plan(execution.plan, sandbox_status)
         },
-        Some(WatchOrigin {
-            source: execution.frame.source.clone(),
-            cwd: execution.cwd.and_then(audit_cwd),
-            id: execution.frame.id.clone(),
-        }),
     )
 }
 
