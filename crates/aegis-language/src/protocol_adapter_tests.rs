@@ -1,36 +1,9 @@
 use super::*;
 
-fn sample_result() -> AdapterResult {
-    AdapterResult {
-        parse_errors: 0,
-        degradation: None,
-        operations: vec![DetectedOperation {
-            kind: OperationKind::FilesystemDelete,
-            modifiers: OperationModifiers {
-                recursive: true,
-                forced: false,
-                destructive_mode: false,
-            },
-            certainty: OperandCertainty::Known,
-            span: ByteSpan {
-                line: 3,
-                column: 5,
-                byte_start: 12,
-                byte_end: 28,
-            },
-            payload: Some(NestedTarget {
-                language: SourceLanguage::Python,
-                source: "rm".to_string(),
-                span: ByteSpan {
-                    line: 3,
-                    column: 10,
-                    byte_start: 18,
-                    byte_end: 20,
-                },
-            }),
-        }],
-    }
-}
+use crate::operation::{
+    CERT_KNOWN, KIND_CODE_EXEC, KIND_FS_DELETE, MOD_RECURSIVE, OperandCertainty, OperationKind,
+    OperationModifiers,
+};
 
 fn sample_result_bytes() -> Vec<u8> {
     let mut v = Vec::new();
@@ -57,7 +30,7 @@ fn sample_result_bytes() -> Vec<u8> {
 
 #[test]
 fn encode_adapter_result_emits_the_specified_wire_format() {
-    let got = encode_adapter_result(&sample_result()).expect("sample encodes");
+    let got = encode_adapter_result(&tests::sample_adapter_result()).expect("sample encodes");
     assert_eq!(
         got,
         sample_result_bytes(),
@@ -70,7 +43,7 @@ fn decode_adapter_result_recovers_the_hand_derived_bytes() {
     let got = decode_adapter_result(&sample_result_bytes()).expect("hand-derived bytes decode");
     assert_eq!(
         got,
-        sample_result(),
+        tests::sample_adapter_result(),
         "decoded AdapterResult must match the hand-built literal"
     );
 }
@@ -360,7 +333,8 @@ fn decode_adapter_result_rejects_a_payload_source_len_exceeding_remaining_bytes(
 
 #[test]
 fn decode_adapter_result_rejects_trailing_bytes() {
-    let mut encoded = encode_adapter_result(&sample_result()).expect("sample encodes");
+    let mut encoded =
+        encode_adapter_result(&tests::sample_adapter_result()).expect("sample encodes");
     encoded.push(0xFF);
     assert_eq!(
         decode_adapter_result(&encoded),
