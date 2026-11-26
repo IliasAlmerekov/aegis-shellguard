@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Removed: the unused `regex` dependency of the root crate, and added a required `Unused dependencies (machete)` CI job that runs `cargo machete` at a pinned version (#703).
 - Changed: deleted every comment from the Rust code; only `// SAFETY:` stays. `scripts/lint.sh comments` runs a lexer-based `xtask check-comments` in CI, and user-visible doc text moved into clap and schemars attributes (#702).
 - Changed: landing copy leads with rollback instead of "ShellGuard": the page title, meta description, hero, Why Aegis lines, and closing call to action say Aegis snapshots your work and rolls back what the agent broke, and the demo status reads "snapshot saved" once the snapshot is taken.
 - Changed: README leads with Snapshot and rollback, walks through what happens when an agent runs `rm -rf src`, and lists each Snapshot plugin with its default and its restore command.
