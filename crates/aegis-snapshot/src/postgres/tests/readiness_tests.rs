@@ -9,8 +9,6 @@ fn triple(outcome: ArtifactReadiness) -> (R, V, S) {
     )
 }
 
-/// A plugin whose `pg_restore` is `pg_restore_body` (`None`: a missing binary),
-/// and the id of a dump it holds with `dump_contents`.
 fn setup(
     pg_restore_body: Option<&str>,
     dump_contents: Option<&[u8]>,

@@ -1,7 +1,5 @@
 use super::*;
 
-// ── Recovery opt-out: no persistent approval (ADR-031 section 4) ──────────
-
 fn opted_out_danger() -> (Assessment, CommandExplanation) {
     let p = make_match(
         "FS-001",

@@ -1,8 +1,3 @@
-//! The result of assessing a shell command through the scanner pipeline.
-//!
-//! These are the *data* types produced by the scanner. The scanning logic that
-//! builds them lives in the scanner layer; only the shapes live here.
-
 use std::fmt;
 use std::sync::Arc;
 
@@ -13,39 +8,19 @@ use crate::command::ParsedCommand;
 use crate::pattern::{Pattern, PatternSource};
 use crate::risk::RiskLevel;
 
-/// A concrete byte range inside the original command for confirmation UI highlighting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HighlightRange {
-    /// Inclusive start byte offset.
     pub start: usize,
-    /// Exclusive end byte offset.
     pub end: usize,
 }
 
-/// The stable, source-free label used for production-created language-aware
-/// [`MatchResult`] values in place of inspected source bytes (ADR-022 §10). Shared by
-/// [`crate::analysis::language_match`], which stamps it at construction, and
-/// [`MatchResult::public_matched_text`], which projects it as defense in depth
-/// for manually constructed matches — kept in one place so the two never
-/// drift apart.
 pub const LANGUAGE_AWARE_MATCH_LABEL: &str = "language-aware operation";
 
-/// A single pattern match with the actual text fragment that triggered it.
 #[derive(Clone)]
 pub struct MatchResult {
-    /// The pattern that matched.
     pub pattern: Arc<Pattern>,
-    /// A human-readable description of what matched.
-    ///
-    /// Production language-aware matches use a stable source-free label.
-    /// [`MatchResult::public_matched_text`] and [`fmt::Debug`] also project that
-    /// label if a caller manually constructs a language-aware match.
     pub matched_text: String,
-    /// The concrete span in the original command suitable for confirmation UI highlighting.
     pub highlight_range: Option<HighlightRange>,
-    /// Typed evidence identifying this match's detection mechanism and source
-    /// (ADR-022 §4). Populated by the scanner at construction; not projected
-    /// into the v1 JSON / audit output, which keep their existing field shapes.
     pub evidence: MatchEvidence,
 }
 
@@ -62,13 +37,6 @@ impl fmt::Debug for MatchResult {
 }
 
 impl MatchResult {
-    /// Return the match text safe to expose outside the assessment.
-    ///
-    /// Production language-aware matches are source-free at construction. This
-    /// projection is a defense in depth for manually constructed matches;
-    /// rendered, persisted, and machine-readable surfaces expose the operation,
-    /// provenance metadata, and stable rule identifier instead of inspected
-    /// source bytes (ADR-022 §10).
     #[must_use]
     pub fn public_matched_text(&self) -> &str {
         match &self.evidence {
@@ -104,10 +72,6 @@ mod public_matched_text_tests {
         })
     }
 
-    /// Defense-in-depth regression: a hand-built `LanguageRule` match must be
-    /// projected to the stable label even if its `matched_text` field somehow
-    /// carries inspected source bytes (`language_match` itself never lets this
-    /// happen — this test pins the second, independent safety net).
     #[test]
     fn hand_built_language_rule_match_is_projected_to_the_stable_label_even_if_matched_text_carries_source()
      {
@@ -164,80 +128,51 @@ mod public_matched_text_tests {
     }
 }
 
-/// What ultimately caused the final interception decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DecisionSource {
-    /// Matched one or more built-in patterns compiled into the binary.
     BuiltinPattern,
-    /// Matched one or more user-defined patterns from aegis.toml.
     CustomPattern,
-    /// No patterns matched; the command was assessed Safe by default.
     Fallback,
 }
 
-/// What produced the final interception decision, expressed as the decisive
-/// Matches (ADR-022 §4).
-///
-/// Replaces the singular [`DecisionSource`] concept: the decisive Matches are
-/// *every* Match at the [`Assessment`]'s maximum [`RiskLevel`], not a single
-/// label. `Fallback` is used only when no rule matched. The built-in vs custom
-/// distinction lives per-Match (via detection evidence), not in the basis.
-///
-/// This is the audit-persistable shape (ADR-022 §10); [`DecisionSource`]
-/// remains a live one-value label alongside this richer basis.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case", tag = "kind")]
+#[schemars(
+    description = "What produced the final interception decision, expressed as the decisive
+Matches (ADR-022 §4).
+
+Replaces the singular [`DecisionSource`] concept: the decisive Matches are
+*every* Match at the [`Assessment`]'s maximum [`RiskLevel`], not a single
+label. `Fallback` is used only when no rule matched. The built-in vs custom
+distinction lives per-Match (via detection evidence), not in the basis.
+
+This is the audit-persistable shape (ADR-022 §10); [`DecisionSource`]
+remains a live one-value label alongside this richer basis."
+)]
 pub enum AssessmentBasis {
-    /// No rule matched; the command was assessed `Safe` by fallback.
+    #[schemars(description = "No rule matched; the command was assessed `Safe` by fallback.")]
+    #[default]
     Fallback,
-    /// The decisive Matches — every Match at the Assessment's maximum `RiskLevel`.
+    #[schemars(
+        description = "The decisive Matches — every Match at the Assessment's maximum `RiskLevel`."
+    )]
     Decisive {
-        /// IDs of every decisive Match, in `Assessment.matched` order.
+        #[schemars(description = "IDs of every decisive Match, in `Assessment.matched` order.")]
         match_ids: Vec<String>,
     },
 }
 
-/// The default `AssessmentBasis` is `Fallback` — the conservative projection
-/// for a v1 audit entry that predates the basis field (ADR-022 §10: interpret
-/// absent v2 fields as legacy v1). `ScanExplanation::basis` is `#[serde(skip)]`,
-/// so deserializing a v1 explanation fills `Fallback` here.
-impl Default for AssessmentBasis {
-    fn default() -> Self {
-        AssessmentBasis::Fallback
-    }
-}
-
-/// The result of assessing a shell command through the full scanner pipeline.
 #[derive(Debug, Clone)]
 pub struct Assessment {
-    /// The highest `RiskLevel` among all matched patterns (`Safe` when none matched).
     pub risk: RiskLevel,
-    /// Whether the command shape is `Effect-opaque execution` — it hands control
-    /// to another execution layer (a script file, interpreter stdin, or a
-    /// pipe-to-shell sink) whose eventual filesystem/database/network effect
-    /// is not visible in argv. Orthogonal to `risk`: an effect-opaque command
-    /// does not raise `RiskLevel` by itself; it only requests a recovery
-    /// backstop downstream (ADR-016).
     pub effect_opaque: bool,
-    /// Every pattern that matched the command (raw + inline scripts).
     pub matched: Vec<MatchResult>,
-    /// Sorted, merged highlight spans for the original raw command.
     pub highlight_ranges: Vec<HighlightRange>,
-    /// The parsed representation of the original command string.
     pub command: ParsedCommand,
-    /// Language-aware analysis summary, set by [`crate::merge_analysis`] when a
-    /// language result is merged into this `Assessment` (ADR-022 §1, §5). `None`
-    /// on a baseline-only scanner `Assessment`. Orthogonal to `risk`:
-    /// degradation may coexist with `Safe` and never authorizes auto-execution.
-    /// `Assessment` itself does not derive `Serialize`/`Deserialize` (it holds
-    /// `MatchResult`, which carries a non-serializable `Arc<Pattern>`); v1/v2
-    /// audit projection is a separate explicit mapping (Iteration 2), so this
-    /// field needs no `#[serde(skip)]`.
     pub analysis: Option<crate::analysis::AnalysisSummary>,
 }
 
 impl Assessment {
-    /// Determine what caused this assessment, ignoring allowlist (handled by the caller).
     pub fn decision_source(&self) -> DecisionSource {
         if self.matched.is_empty() {
             return DecisionSource::Fallback;
@@ -253,16 +188,6 @@ impl Assessment {
         }
     }
 
-    /// Return the [`AssessmentBasis`] — every decisive Match at this
-    /// Assessment's maximum [`RiskLevel`], or [`AssessmentBasis::Fallback`] when
-    /// no rule matched (ADR-022 §4).
-    ///
-    /// Decisive Matches are those whose `pattern.risk` equals `self.risk` (the
-    /// scanner guarantees `self.risk` is the maximum matched risk, so this never
-    /// drops a max-risk Match or includes a lower-risk one). IDs preserve
-    /// `self.matched` order for deterministic output. This is the basis the audit
-    /// v2 schema and the monotonic merge build on; [`Self::decision_source`]
-    /// provides the live one-value label alongside this richer basis.
     pub fn basis(&self) -> AssessmentBasis {
         if self.matched.is_empty() {
             return AssessmentBasis::Fallback;
@@ -323,8 +248,6 @@ mod basis_tests {
         }
     }
 
-    /// Build an Assessment whose `risk` is the max of `matches`' risks, mirroring
-    /// the scanner invariant (`risk == max(matched.risk)` or `Safe` when empty).
     fn assessment(matches: Vec<MatchResult>) -> Assessment {
         let risk = matches
             .iter()
@@ -349,11 +272,6 @@ mod basis_tests {
 
     #[test]
     fn basis_retains_every_equally_decisive_match() {
-        // Two Danger Matches plus one lower-risk Warn Match. The basis must
-        // retain BOTH decisive (Danger) IDs — this is the property the singular
-        // DecisionSource loses (it collapses to a single "builtin_pattern"
-        // label). ADR-022 §4: "all decisive Match IDs at the Assessment's
-        // maximum RiskLevel".
         let a = assessment(vec![
             matched("FS-001", RiskLevel::Danger, PatternSource::Builtin),
             matched("FS-014", RiskLevel::Warn, PatternSource::Builtin),
@@ -383,9 +301,6 @@ mod basis_tests {
 
     #[test]
     fn basis_fallback_only_when_no_rule_matched() {
-        // A rule that DID match — even at Safe — is not Fallback. ADR-022 §4:
-        // "Fallback ... when nothing matched". A custom Safe-risk rule is a
-        // legal (if unusual) user pattern; its match must surface as Decisive.
         let a = assessment(vec![matched(
             "SAFE-RULE",
             RiskLevel::Safe,
@@ -407,7 +322,6 @@ mod basis_tests {
         ]);
         match a.basis() {
             AssessmentBasis::Decisive { match_ids } => {
-                // Insertion (matched) order, not sorted — deterministic for audit.
                 assert_eq!(match_ids, vec!["AAA".to_string(), "BBB".to_string()]);
             }
             other => panic!("expected Decisive, got {other:?}"),
@@ -416,7 +330,6 @@ mod basis_tests {
 
     #[test]
     fn basis_round_trips_through_serde_for_audit_v2() {
-        // ADR-022 §10 persists Assessment basis; pin the serialized shape.
         let decisive = AssessmentBasis::Decisive {
             match_ids: vec!["FS-001".to_string(), "DB-001".to_string()],
         };

@@ -1,5 +1,3 @@
-//! Integration test for the inner landlock wrapper's status and release fds.
-
 #[cfg(not(target_os = "linux"))]
 fn main() {}
 

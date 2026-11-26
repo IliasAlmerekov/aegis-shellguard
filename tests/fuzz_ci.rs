@@ -18,11 +18,6 @@ fn assert_fuzz_target_declared(manifest: &str, target: &str) {
     );
 }
 
-/// The target list the CI fuzz step loops over, i.e. the words between
-/// `for target in` and the `; do` that closes the list. Line continuations are
-/// dropped so a wrapped list reads the same as a single-line one.
-///
-/// Panics if the loop is absent — a test-fixture failure, not a runtime one.
 fn ci_fuzz_targets(ci: &str) -> Vec<String> {
     let list = ci
         .split_once("for target in ")
@@ -36,8 +31,6 @@ fn ci_fuzz_targets(ci: &str) -> Vec<String> {
         .collect()
 }
 
-/// The iteration count the fuzz step passes to libFuzzer, pinned in
-/// `.github/versions.env` rather than in the workflow.
 fn ci_fuzz_runs() -> u64 {
     read_repo_file(".github/versions.env")
         .lines()

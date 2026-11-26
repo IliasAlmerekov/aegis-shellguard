@@ -32,8 +32,6 @@ fn effective_token_slices_strip_uv_run_option_terminator() {
 
 #[test]
 fn effective_token_slices_strip_uv_tool_run_prefix() {
-    // `uv tool run` is the long form of `uvx` (#421, ADR-040): it must strip
-    // the same three-token prefix as `uv run` strips two.
     let tokens = ["uv", "tool", "run", "python3", "./script.py"];
     let slices = effective_token_slices(&tokens);
 

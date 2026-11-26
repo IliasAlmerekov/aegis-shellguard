@@ -26,9 +26,6 @@ fn seed_snapshot_record(home: &Path, snapshot_id: &str, timestamp: &str) {
         timestamp
     );
 
-    // The seeded JSON is an audit record with snapshots outside the JSON body, because
-    // `snapshot_id` may contain a tab and a fully escaped JSON string is easier to
-    // compose by inserting the snapshot list after the initial serialization.
     let snapshots = format!(
         "{{\"plugin\":\"git\",\"snapshot_id\":\"{}\"}}",
         snapshot_id.replace('\t', "\\t")
@@ -74,7 +71,6 @@ fn test_git_prune_retention_deletes_outside_window() {
     let old_snapshot_id = create_tracked_stash_snapshot_id(&repo, "old-file");
     let new_snapshot_id = create_tracked_stash_snapshot_id(&repo, "new-file");
 
-    // Seed audit records so prune can resolve the real snapshot ids.
     seed_snapshot_record(home.path(), &old_snapshot_id, "2024-01-01T00:00:00Z");
     seed_snapshot_record(home.path(), &new_snapshot_id, "2026-01-01T00:00:00Z");
 

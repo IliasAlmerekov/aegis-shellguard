@@ -1,12 +1,3 @@
-// Gated live Homebrew smoke test. Default `cargo test` is network-free: this
-// test is a no-op unless `AEGIS_TEST_LIVE_HOMEBREW=1` is set, in which case it
-// taps the published tap, audits the formula, installs it, runs `brew test`,
-// and checks that `aegis --version` prints `AEGIS_TEST_EXPECTED_VERSION`. The
-// release workflow's `smoke-install` job runs it; run it by hand where
-// Homebrew is available:
-//   AEGIS_TEST_LIVE_HOMEBREW=1 AEGIS_TEST_EXPECTED_VERSION=0.7.0 \
-//     cargo test --test homebrew_live -- --nocapture
-
 mod support;
 
 use std::process::Command;
@@ -55,7 +46,6 @@ fn live_homebrew_tap_installs_and_tests_aegis() {
     assert_brew_ok("brew install", &run_brew(&["install", FORMULA]));
     assert_brew_ok("brew test", &run_brew(&["test", FORMULA]));
 
-    // Run the binary the formula installed, not whatever else is on PATH.
     let prefix = run_brew(&["--prefix"]);
     assert_brew_ok("brew --prefix", &prefix);
     let prefix = String::from_utf8_lossy(&prefix.stdout).trim().to_string();

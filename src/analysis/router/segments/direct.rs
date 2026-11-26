@@ -1,6 +1,5 @@
 use super::*;
 
-/// Route a single pipeline stage without looking through grammar wrappers (#421, ADR-040).
 pub(super) fn route_direct_stage(
     stage: &str,
     trusted_aliases: &[(&str, &str)],
@@ -15,10 +14,8 @@ pub(super) fn route_direct_stage(
     if owned_tokens.is_empty() {
         return Vec::new();
     }
-    // The shell strips redirections before resolving argv[0], so routing strips them too (#384).
     let (tokens, slice, truncated) = effective_stage_slice(&owned_tokens);
     if truncated {
-        // Fail closed when `env -S` nesting hits the parser's depth bound (`CONVENTION.md` §2).
         return vec![RoutedTarget::Unresolved {
             reason: DegradationReason::LimitExceeded,
         }];
@@ -27,34 +24,29 @@ pub(super) fn route_direct_stage(
         return Vec::new();
     };
 
-    // Options before a runner's `run` subcommand can alter cwd/config (#421, ADR-040).
     if opaque_runner_before_run(&slice.tokens) {
         return vec![RoutedTarget::Unresolved {
             reason: DegradationReason::DynamicSource,
         }];
     }
 
-    // `env -S` can expand into more tokens than `tokens`; fail closed if the prefix index cannot be recovered (`CONVENTION.md` §2).
     let Some(effective_start) = tokens.len().checked_sub(slice.tokens.len()) else {
         return vec![RoutedTarget::Unresolved {
             reason: DegradationReason::DynamicSource,
         }];
     };
-    // `env -C`/`--chdir` changes only the child cwd, so relative targets degrade (#384).
     let env_cwd = if env_chdir_prefix(&tokens[..effective_start]) {
         CwdState::Degraded
     } else {
         CwdState::Unset
     };
 
-    // Runner option hides the real child argv (#421, ADR-040).
     if opaque_runner_option(&tokens[..effective_start], slice.program) {
         return vec![RoutedTarget::Unresolved {
             reason: DegradationReason::DynamicSource,
         }];
     }
 
-    // `uv run`/`pipx run` execute bare `.py` operands as Python without a shebang (#421, ADR-040).
     if let Some(target) =
         bare_python_script_route(&tokens[..effective_start], tokens[effective_start])
     {
@@ -98,7 +90,6 @@ pub(super) fn route_direct_stage(
         .collect()
 }
 
-/// Package-selecting runners pick their own child binary, so a visible target still degrades (#421, ADR-040).
 fn degrade_package_uncertain(mut routed: Vec<RoutedTarget>, prefix: &[&str]) -> Vec<RoutedTarget> {
     if !routed.is_empty() && package_executable_uncertain(prefix) {
         routed.push(RoutedTarget::Unresolved {

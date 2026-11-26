@@ -1,5 +1,3 @@
-//! End-to-end tests for mandatory Sandbox confinement (#229, ADR-029).
-
 mod support;
 
 use std::fs;
@@ -18,8 +16,6 @@ fn default_config_confines_shell_and_watch_with_active_sandbox_status() {
     let home = TempDir::new().unwrap();
     let cwd = TempDir::new().unwrap();
 
-    // Shell `-c` with default config (no config file at all) must confine
-    // and record SandboxStatus::Active in audit.jsonl.
     let shell_out = base_command(home.path())
         .current_dir(cwd.path())
         .args(["-c", "echo ok"])
@@ -31,7 +27,6 @@ fn default_config_confines_shell_and_watch_with_active_sandbox_status() {
         String::from_utf8_lossy(&shell_out.stderr)
     );
 
-    // Watch mode with default config must also confine and record Active.
     let mut watch_child = base_command(home.path())
         .current_dir(cwd.path())
         .arg("watch")
@@ -142,7 +137,6 @@ fn deprecated_sandbox_fields_warn_only_in_validate_and_status_and_preserve_files
     );
     assert!(status_out.contains("mode = \"Audit\""), "{status_out}");
 
-    // `-c` must NOT surface deprecated_sandbox_field on stdout or stderr.
     let shell_out = base_command(home.path())
         .current_dir(cwd.path())
         .args(["-c", "echo ok"])
@@ -159,11 +153,9 @@ fn deprecated_sandbox_fields_warn_only_in_validate_and_status_and_preserve_files
         "-c must not surface deprecated_sandbox_field: {shell_combined}"
     );
 
-    // Config files must remain byte-for-byte unchanged.
     assert_eq!(fs::read_to_string(&global_path).unwrap(), global_body);
     assert_eq!(fs::read_to_string(&project_path).unwrap(), project_body);
 
-    // Misspelled key under [sandbox] still fails load via deny_unknown_fields.
     fs::write(&project_path, "[sandbox]\nenable = true\n").unwrap();
     let bad = base_command(home.path())
         .current_dir(cwd.path())

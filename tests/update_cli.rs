@@ -1,9 +1,3 @@
-//! CLI-level coverage for `aegis update` and the shell wrapper's notice gate
-//! (ADR-038). Unit coverage for the pure eligibility/version/lock logic lives
-//! in `src/update/`; this file exercises the compiled binary end to end,
-//! including the interactive-TTY-only notice gate via a `script`(1) pty,
-//! mirroring the pattern `tests/installer_tty.rs` already uses.
-
 mod support;
 
 use std::fs;
@@ -13,9 +7,6 @@ use std::process::Command;
 use support::{aegis_bin, write_executable};
 use tempfile::TempDir;
 
-/// A `curl` stand-in on `PATH` so these tests never touch the real network.
-/// Its response is controlled entirely by `AEGIS_TEST_STUB_MODE` /
-/// `AEGIS_TEST_STUB_VERSION` env vars, set per invocation.
 fn write_curl_stub(dir: &Path) {
     let script = "#!/bin/sh\n\
 case \"$AEGIS_TEST_STUB_MODE\" in\n\
@@ -35,10 +26,6 @@ fn stubbed_path(stub_dir: &Path) -> String {
     )
 }
 
-/// Run the compiled `aegis` binary against a fake `HOME` and a stubbed `curl`
-/// on `PATH`, forcing the non-CI path regardless of the ambient CI env (the
-/// outer test runner may itself be `CI=true`) — the convention already used
-/// by `tests/cli_integration.rs` and friends.
 fn run(
     home: &Path,
     path: &str,
@@ -206,9 +193,6 @@ fn check_with_a_malformed_response_fails_closed_and_keeps_the_previous_cache() {
     );
 }
 
-/// The shell wrapper's non-interactive text path (default when stdout is
-/// piped, as it always is under `Command::output()`) must never print the
-/// notice, even with consent on and a strictly newer cached version.
 #[test]
 fn notice_never_prints_on_a_non_interactive_wrapper_invocation() {
     let home = TempDir::new().unwrap();
@@ -246,9 +230,6 @@ fn script_bin() -> Option<std::path::PathBuf> {
         .find(|candidate| candidate.is_file())
 }
 
-/// On a genuine interactive TTY (via `script`(1), as `tests/installer_tty.rs`
-/// already does for the installers), a strictly newer cached version prints
-/// the notice; an older cached version stays silent.
 #[test]
 fn notice_prints_on_a_real_tty_only_for_a_strictly_newer_version() {
     let Some(script) = script_bin() else {

@@ -1,9 +1,3 @@
-//! Slice B — parent-side language analysis orchestration (ADR-022 §2/§6, L1
-//! Iteration 6). Real-subprocess seam: these tests spawn the actual
-//! `aegis --internal-language-worker` binary and exercise the full
-//! route → spawn → Analyze → map → merge composition through the public
-//! `aegis::analysis::run_with_budget` boundary.
-
 #![cfg(feature = "language-analysis")]
 
 mod support;
@@ -92,7 +86,6 @@ async fn run_analyzes_inline_python_and_merges_a_recursive_delete_match() {
 
 #[tokio::test]
 async fn run_analyzes_inline_python_after_a_semicolon_the_same_as_leading() {
-    // Multi-stage commands route every stage, not only the leading token (#384).
     let baseline = safe_baseline();
     let outcome = run_with_budget(
         "true; python3 -c \"shutil.rmtree('x')\"",
@@ -133,9 +126,6 @@ async fn run_analyzes_inline_python_after_a_semicolon_the_same_as_leading() {
 
 #[tokio::test]
 async fn run_analyzes_a_safe_inline_bash_body_without_degradation() {
-    // A `bash -c` inline body routes to Bash. Iteration 8 wires the Bash
-    // adapter into the worker (issue #383), so a body with no destructive
-    // command analyzes cleanly instead of degrading as GrammarUnavailable.
     let baseline = safe_baseline();
     let outcome = run_with_budget(
         "bash -c \"echo 1\"",
@@ -161,10 +151,6 @@ async fn run_analyzes_a_safe_inline_bash_body_without_degradation() {
 
 #[tokio::test]
 async fn run_analyzes_inline_javascript_and_merges_a_filesystem_delete_match() {
-    // `node -e "fs.unlinkSync('data.txt')"` routes to JavaScript. The adapter
-    // emits FilesystemDelete (non-recursive, non-forced), which classifies as
-    // LANG-FS-DEL at Warn. The real worker subprocess analyzes the inline body
-    // and the merged Assessment must carry that match and lift to at least Warn.
     let baseline = safe_baseline();
     let outcome = run_with_budget(
         "node -e \"fs.unlinkSync('data.txt')\"",
@@ -211,14 +197,6 @@ async fn run_analyzes_inline_javascript_and_merges_a_filesystem_delete_match() {
 
 #[tokio::test]
 async fn run_analyzes_a_javascript_exec_payload_and_its_recursive_bash_target() {
-    // `node -e "child_process.exec('rm -rf /tmp/x')"` — the inline body is a
-    // JavaScript `child_process.exec` of a literal shell string. The top-level
-    // sink is CodeExecution (LANG-EXEC at Danger); its literal payload is Bash
-    // shell source, enqueued as a recursive target. The Bash adapter (Iteration
-    // 8, issue #383) analyzes that target, so its recursive delete surfaces as
-    // LANG-FS-DEL-RF, the shell Scanner pass adds FS-001, target_count covers
-    // the top-level AND the recursive target (>= 2), and no GrammarUnavailable
-    // degradation is recorded.
     let baseline = safe_baseline();
     let outcome = run_with_budget(
         "node -e \"child_process.exec('rm -rf /tmp/x')\"",
@@ -275,13 +253,6 @@ async fn run_analyzes_a_javascript_exec_payload_and_its_recursive_bash_target() 
 
 #[tokio::test]
 async fn run_analyzes_a_recursive_exec_payload_and_surfaces_the_nested_match() {
-    // `python3 -c "exec('shutil.rmtree(x)')"` — the inline body is a Python
-    // `exec` of a literal `shutil.rmtree(x)`. The top-level `exec` is a
-    // CodeExecution sink (LANG-EXEC); its literal payload is itself analyzable
-    // Python that recursively deletes a directory tree (LANG-FS-DEL-R). Slice C
-    // drains the recursive queue, so BOTH matches must surface and `target_count`
-    // must cover the top-level AND the recursive target (>= 2). Under Slice B the
-    // recursive target was discarded, so only LANG-EXEC surfaced with count 1.
     let baseline = safe_baseline();
     let outcome = run_with_budget(
         "python3 -c \"exec('shutil.rmtree(x)')\"",
@@ -326,9 +297,6 @@ async fn run_analyzes_a_recursive_exec_payload_and_surfaces_the_nested_match() {
 
 #[tokio::test]
 async fn run_analyzes_inline_chmod_and_lifts_to_danger() {
-    // `python3 -c "os.chmod('x', 0o777)"` — a permission change. The Python
-    // adapter emits PermissionOrOwnershipChange, which classifies as
-    // LANG-FS-CHMOD at Danger. No execution sink → no recursive target.
     let baseline = safe_baseline();
     let outcome = run_with_budget(
         "python3 -c \"os.chmod('x', 0o777)\"",
@@ -375,10 +343,6 @@ async fn run_analyzes_inline_chmod_and_lifts_to_danger() {
 
 #[tokio::test]
 async fn run_analyzes_inline_open_write_and_lifts_to_warn() {
-    // `python3 -c "open('x','w')"` — a truncating write. The Python adapter
-    // emits FilesystemOverwrite{destructive_mode}, which classifies as
-    // LANG-FS-OVR-W at Warn (the highest risk an overwrite carries). No
-    // execution sink → no recursive target.
     let baseline = safe_baseline();
     let outcome = run_with_budget(
         "python3 -c \"open('x','w')\"",
@@ -425,13 +389,6 @@ async fn run_analyzes_inline_open_write_and_lifts_to_warn() {
 
 #[tokio::test]
 async fn run_scans_a_cross_language_shell_payload_like_a_typed_command() {
-    // `python3 -c "os.system('git push --force origin main')"` is a Python
-    // execution sink whose literal payload is shell source. The top-level emits
-    // LANG-EXEC (Danger) and enqueues a recursive Bash target (ADR-022 §7). The
-    // Bash adapter models no git operation, so the GIT-003 Match can only come
-    // from the shell Scanner pass over the Bash target (issue #383): a command
-    // inside analyzed shell source gets the Match it gets when typed. The
-    // baseline is empty, so the outer command scan cannot supply it.
     let baseline = safe_baseline();
     let outcome = run_with_budget(
         "python3 -c \"os.system('git push --force origin main')\"",
@@ -479,11 +436,6 @@ async fn run_scans_a_cross_language_shell_payload_like_a_typed_command() {
 
 #[tokio::test]
 async fn run_analyzes_inline_javascript_chmod_and_lifts_to_danger() {
-    // `node -e "fs.chmodSync('x', 0o777)"` routes to JavaScript. The adapter
-    // emits PermissionOrOwnershipChange, which classifies as LANG-FS-CHMOD at
-    // Danger. No execution sink → no recursive target. (The Python analog
-    // covers `os.chmod`; this pins the same contract at the JS orchestration
-    // seam, which Slice 2 did not cover.)
     let baseline = safe_baseline();
     let outcome = run_with_budget(
         "node -e \"fs.chmodSync('x', 0o777)\"",
@@ -530,12 +482,6 @@ async fn run_analyzes_inline_javascript_chmod_and_lifts_to_danger() {
 
 #[tokio::test]
 async fn run_analyzes_inline_javascript_writefilesync_and_lifts_to_warn() {
-    // `node -e "fs.writeFileSync('x', 'y')"` routes to JavaScript. The adapter
-    // emits FilesystemOverwrite{destructive_mode} (writeFileSync truncates),
-    // which classifies as LANG-FS-OVR-W at Warn. No execution sink → no
-    // recursive target. (The Python analog covers `open('x','w')`; this pins
-    // the same contract at the JS orchestration seam, which Slice 2 did not
-    // cover.)
     let baseline = safe_baseline();
     let outcome = run_with_budget(
         "node -e \"fs.writeFileSync('x', 'y')\"",
@@ -582,7 +528,6 @@ async fn run_analyzes_inline_javascript_writefilesync_and_lifts_to_warn() {
 
 #[tokio::test]
 async fn run_analyzes_javascript_exec_and_surfaces_the_recursive_javascript_target() {
-    // JS `eval` of a literal JS string surfaces outer LANG-EXEC and recursive LANG-FS-DEL with `Complete` status.
     let baseline = safe_baseline();
     let outcome = run_with_budget(
         "node -e \"eval('fs.unlinkSync(x)')\"",
@@ -639,8 +584,6 @@ async fn run_analyzes_javascript_exec_and_surfaces_the_recursive_javascript_targ
     );
 }
 
-// ── #430: routing sees through a grammar wrapper ────────────────────────────
-
 async fn assert_recursive_delete_found(command: &str) {
     let baseline = safe_baseline();
     let outcome = run_with_budget(
@@ -691,10 +634,6 @@ async fn run_finds_an_inline_python_delete_inside_a_command_substitution() {
 
 #[tokio::test]
 async fn run_finds_an_open_write_inside_a_subshell_with_a_trailing_redirect() {
-    // Issue #430 acceptance: a subshell around an inline Python write, with a
-    // trailing redirect on the subshell itself, must still reach the Python
-    // adapter and match LANG-FS-OVR-W — the same as the unwrapped command in
-    // `run_analyzes_inline_open_write_and_lifts_to_warn` above.
     let baseline = safe_baseline();
     let outcome = run_with_budget(
         "(python3 -c \"open('x','w')\") > out.txt",

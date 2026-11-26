@@ -6,7 +6,6 @@ use std::process::Command as StdCommand;
 use std::time::Duration;
 use tempfile::TempDir;
 
-/// Write a shell script to `dir/docker` and make it executable.
 fn write_mock_docker(dir: &std::path::Path, script: &str) -> std::path::PathBuf {
     let path = dir.join("docker");
     let temp_path = dir.join("docker.tmp");
@@ -53,8 +52,6 @@ fn single_quote_for_shell(path: &std::path::Path) -> String {
     path.to_string_lossy().replace('\'', r"'\''")
 }
 
-/// Helper that creates a plugin with `All` scope — no filtering.
-/// Use `plugin_with_scope` to test specific scope behaviour.
 fn plugin(bin: &std::path::Path) -> DockerPlugin {
     DockerPlugin {
         docker_bin: bin.to_string_lossy().into_owned(),
@@ -72,13 +69,10 @@ fn plugin_with_scope(bin: &std::path::Path, scope: DockerScope) -> DockerPlugin 
     }
 }
 
-/// Minimal `docker inspect` JSON for a container with no special config.
 const MINIMAL_INSPECT: &str = r#"[{"Name":"/test-ctr","Config":{"Labels":{}},"HostConfig":{"Binds":null,"PortBindings":{},"NetworkMode":"bridge","RestartPolicy":{"Name":"no"}}}]"#;
 
-/// Richer inspect JSON covering ports, binds, network, restart, and labels.
 const RICH_INSPECT: &str = r#"[{"Name":"/web","Config":{"Labels":{"app":"frontend"}},"HostConfig":{"Binds":["/data:/app/data"],"PortBindings":{"80/tcp":[{"HostIp":"","HostPort":"8080"}]},"NetworkMode":"my-net","RestartPolicy":{"Name":"always"}}}]"#;
 
-/// Build a minimal ContainerRecord JSON string suitable for use as a snapshot_id line.
 fn minimal_record(container_id: &str, image: &str) -> String {
     serde_json::to_string(&ContainerRecord {
         container_id: container_id.to_string(),
@@ -94,8 +88,6 @@ fn minimal_record(container_id: &str, image: &str) -> String {
     })
     .unwrap()
 }
-
-// ── is_applicable ──────────────────────────────────────────────────────────
 
 mod delete_tests;
 mod liveness_tests;

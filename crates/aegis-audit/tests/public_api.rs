@@ -1,15 +1,9 @@
-//! Public-API contract tests for `aegis-audit`.
-
 use aegis_audit::{
     AuditEntry, AuditError, AuditLogger, AuditQuery, AuditRotationPolicy, AuditTimestamp,
     MatchedPattern,
 };
 use aegis_config::AuditConfig;
 use aegis_types::{Decision, RiskLevel};
-
-// ---------------------------------------------------------------------------
-// 1. AuditError — public type with Io and Parse variants (thiserror-based)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn test_audit_error_io_variant_is_public() {
@@ -71,10 +65,6 @@ fn test_audit_error_implements_std_error() {
     assert_std_error::<AuditError>();
 }
 
-// ---------------------------------------------------------------------------
-// 2. AuditLogger::new(path) constructs without panicking
-// ---------------------------------------------------------------------------
-
 #[test]
 fn test_audit_logger_new_does_not_panic() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -83,15 +73,10 @@ fn test_audit_logger_new_does_not_panic() {
     assert_eq!(logger.path(), path.as_path());
 }
 
-// ---------------------------------------------------------------------------
-// 3. AuditLogger::from_audit_config(config) constructs from AuditConfig
-// ---------------------------------------------------------------------------
-
 #[test]
 fn test_audit_logger_from_audit_config_default() {
     let config = AuditConfig::default();
     let logger = AuditLogger::from_audit_config(&config);
-    // path() must return something non-empty (the default audit path)
     assert!(
         !logger.path().as_os_str().is_empty(),
         "AuditLogger::from_audit_config must set a non-empty default path"
@@ -105,19 +90,11 @@ fn test_audit_logger_from_audit_config_rotation_disabled_has_no_rotation() {
         ..AuditConfig::default()
     };
     let logger = AuditLogger::from_audit_config(&config);
-    // When rotation is disabled the logger must expose that state.
-    // We verify indirectly: rotating a fresh (non-existent) log with no policy
-    // must succeed without errors.
     let tmp = tempfile::tempdir().expect("tempdir");
     let path = tmp.path().join("audit.jsonl");
     let logger = logger.with_path(path);
-    // Simply ensure constructing this logger does not panic.
     let _ = logger;
 }
-
-// ---------------------------------------------------------------------------
-// 4. AuditEntry::new(...) returns AuditEntry::Decision(_)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn test_audit_entry_new_returns_decision_variant() {
@@ -154,10 +131,6 @@ fn test_audit_entry_new_stores_command() {
         "AuditEntry::new must preserve the command string"
     );
 }
-
-// ---------------------------------------------------------------------------
-// 5. AuditEntry serializes to JSON and deserializes back (round-trip)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn test_audit_entry_json_round_trip() -> Result<(), Box<dyn std::error::Error>> {
@@ -202,15 +175,10 @@ fn test_audit_entry_json_round_trip() -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// 6. AuditTimestamp formats as RFC 3339
-// ---------------------------------------------------------------------------
-
 #[test]
 fn test_audit_timestamp_displays_as_rfc3339() {
     let ts = AuditTimestamp::from_unix_seconds(0).expect("epoch must be a valid timestamp");
     let display = ts.to_string();
-    // RFC 3339 starts with the year and contains 'T' and 'Z' (or an offset).
     assert!(
         display.starts_with("1970"),
         "timestamp display should start with the year; got: {display}"
@@ -226,7 +194,6 @@ fn test_audit_timestamp_parse_rfc3339_round_trip() {
     let original = "2024-01-15T12:34:56Z";
     let ts = AuditTimestamp::parse_rfc3339(original).expect("valid RFC 3339 string must parse");
     let formatted = ts.to_string();
-    // The formatted output must represent the same instant.
     let reparsed =
         AuditTimestamp::parse_rfc3339(&formatted).expect("formatted timestamp must re-parse");
     assert_eq!(
@@ -234,10 +201,6 @@ fn test_audit_timestamp_parse_rfc3339_round_trip() {
         "round-tripped timestamp must equal the original"
     );
 }
-
-// ---------------------------------------------------------------------------
-// 7. AuditQuery::default() works
-// ---------------------------------------------------------------------------
 
 #[test]
 fn test_audit_query_default_all_none() {
@@ -255,10 +218,6 @@ fn test_audit_query_default_all_none() {
         "default AuditQuery.command_contains must be None"
     );
 }
-
-// ---------------------------------------------------------------------------
-// 8. AuditRotationPolicy::from_config returns None when rotation is disabled
-// ---------------------------------------------------------------------------
 
 #[test]
 fn test_audit_rotation_policy_from_config_disabled_returns_none() {

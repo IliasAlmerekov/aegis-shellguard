@@ -110,9 +110,6 @@ fn regression_docker_compose_down_with_volume_flag_is_flagged() {
     );
 }
 
-// GHSA-7gcj-4f7x-7fxj / #415: FS-001's regex only fired when the recursive
-// flag was the very first token after `rm`, so a flag trailing the operand
-// went undetected end to end. FS-020 (a token-prefix rule) closes this gap.
 #[test]
 fn regression_rm_recursive_flag_after_operand_is_flagged() {
     let command = "rm /tmp/aegis-recursive-regression -r";
@@ -132,9 +129,6 @@ fn regression_rm_recursive_flag_after_operand_is_flagged() {
     );
 }
 
-// Same gap, root case: PS-006's regex has the same first-token-only shape,
-// so a recursive rm of `/` with a leading unrelated flag was Danger (via
-// FS-020) instead of Block. PS-008 closes it.
 #[test]
 fn regression_rm_recursive_root_with_leading_flag_is_blocked() {
     let command = "rm -v -rf /";

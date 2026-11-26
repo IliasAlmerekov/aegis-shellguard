@@ -1,6 +1,3 @@
-//! The Snapshot ledger: `snapshot list`, `snapshot prune`, `rollback` and
-//! automatic prune all read the Audit log the same way.
-
 mod support;
 
 use std::fs;
@@ -16,7 +13,6 @@ fn default_audit_path(home: &Path) -> PathBuf {
     home.join(".aegis").join("audit.jsonl")
 }
 
-/// Run `aegis <args>` with `HOME` at `home` and the Audit log at `audit_path`.
 fn run_aegis(home: &Path, audit_path: &Path, args: &[&str]) -> Output {
     Command::new(aegis_bin())
         .env("HOME", home)
@@ -79,7 +75,6 @@ fn record_prune(logger: &AuditLogger, plugin: &str, snapshot_id: &str) {
         .unwrap();
 }
 
-/// Write a global config whose prune policy is `max_age_days = <days>`.
 fn write_max_age_policy(home: &Path, days: u32) {
     let config_dir = home.join(".config/aegis");
     fs::create_dir_all(&config_dir).unwrap();
@@ -90,7 +85,6 @@ fn write_max_age_policy(home: &Path, days: u32) {
     .unwrap();
 }
 
-/// `(plugin, snapshot_id)` of every `Pruned` entry in the Audit log, all segments.
 fn pruned_pairs(audit_path: &Path) -> Vec<(String, String)> {
     AuditLogger::new(audit_path)
         .read_all()
@@ -107,8 +101,6 @@ fn list_rollback_and_prune_agree_on_plugin_pairs() {
     let home = TempDir::new().unwrap();
     let audit_path = default_audit_path(home.path());
     let logger = AuditLogger::new(&audit_path);
-    // `none` is the docker id of a Snapshot with no containers: restoring and
-    // deleting it needs no docker daemon.
     let shared_id = "none";
     record_creation(&logger, "git", shared_id);
     record_creation(&logger, "docker", shared_id);
@@ -147,13 +139,10 @@ fn list_rollback_and_prune_agree_on_plugin_pairs() {
     );
 }
 
-/// A git Snapshot id whose repository does not exist, so deleting it is a no-op.
 fn missing_repo_git_id(home: &Path, hash: &str) -> String {
     format!("{}\t{hash}", home.join("missing-repo").display())
 }
 
-/// Append `entry` through a logger that rotates on every append, so whatever
-/// the live log held moves to the gzip archive `<audit_path>.1.gz` first.
 fn append_after_rotating_into_gzip_archive(audit_path: &Path, entry: AuditEntry) {
     let rotation = aegis_config::AuditConfig {
         rotation_enabled: true,
@@ -307,7 +296,6 @@ fn rollback_does_not_refresh_recorded_at() {
     });
     fs::create_dir_all(audit_path.parent().unwrap()).unwrap();
     fs::write(&audit_path, format!("{creation}\n")).unwrap();
-    // The entry `aegis rollback` writes after a restore: Safe, one Snapshot.
     AuditLogger::new(&audit_path)
         .append(AuditEntry::new(
             format!("aegis rollback {snapshot_id}"),

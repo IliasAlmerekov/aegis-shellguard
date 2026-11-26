@@ -1,11 +1,7 @@
-//! A Shell entry and a Watch entry for one Snapshot pass carry the same
-//! `snapshot_attempts` (ADR-031 §10).
-
 use super::*;
 use aegis_snapshot::{ArtifactReadiness, Liveness, SnapshotError, SnapshotPlugin};
 use aegis_types::SnapshotAttemptReadiness;
 
-/// A plugin that applies, snapshots on demand, and judges its artifact `Invalid`.
 struct Fake {
     name: &'static str,
     snapshot_ok: bool,

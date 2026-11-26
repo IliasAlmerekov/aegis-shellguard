@@ -1,5 +1,3 @@
-//! `scripts/lint.sh text` run against fixture trees, never the checkout.
-
 mod support;
 
 use std::fs;
@@ -108,7 +106,6 @@ fn text_passes_an_empty_rust_file() {
     assert!(output.status.success(), "{}", stdout(&output));
 }
 
-// shortcut: root ignores mode bits, so these fail when run as root; add a skip if CI ever runs tests as root.
 #[cfg(unix)]
 mod unreadable {
     use super::*;
@@ -292,7 +289,6 @@ fn text_passes_when_tamper_check_self_test_passes() {
     assert!(output.status.success(), "{}", stdout(&output));
 }
 
-/// A git spawn, assembled so this file does not trip the check it tests.
 const GIT_SPAWN: &str = concat!("let _ = std::process::Command::new(", "\"git\");\n");
 
 #[test]

@@ -1,6 +1,5 @@
 use super::*;
 
-/// A plugin that snapshots fine and reports a fixed target.
 struct TargetedPlugin;
 
 #[async_trait]

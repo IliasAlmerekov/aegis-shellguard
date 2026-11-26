@@ -1,5 +1,3 @@
-//! Multi-word executor values route their leading path word (GHSA-xj54).
-
 use super::*;
 
 #[test]

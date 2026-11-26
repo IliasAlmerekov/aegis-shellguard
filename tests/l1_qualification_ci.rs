@@ -67,9 +67,6 @@ fn language_analysis_feature_stays_opt_in_and_out_of_default() {
 
 #[test]
 fn every_release_target_builds_the_shipping_binary_in_release_mode() {
-    // The build commands live in the `build-target` composite action, which
-    // ci.yml and release.yml both call, so CI compiles the same binary a
-    // release ships rather than a second copy of the command line.
     let action = repo_file(".github/actions/build-target/action.yml");
 
     assert!(

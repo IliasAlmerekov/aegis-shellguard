@@ -1,9 +1,3 @@
-//! Tests for the shared language-aware operation classifier (ADR-022 §3).
-//!
-//! Pins the language-neutral matrix, certainty-independence (ADR-022 §3/§7),
-//! non-`Block` language Matches (ADR-022 §5), and `MatchEvidence::LanguageRule`
-//! provenance.
-
 use super::classifier::{classify, language_match};
 use super::{
     AnalysisProvenance, AnalysisStatus, ByteSpan, DetectedOperation, DetectionMechanism,
@@ -12,8 +6,6 @@ use super::{
 };
 use crate::{Category, HighlightRange, MatchResult, PatternSource, RiskLevel};
 
-/// Shorthand: a `DetectedOperation` with the given kind, no modifiers, and
-/// `Known` certainty.
 fn op(kind: OperationKind) -> DetectedOperation {
     DetectedOperation {
         kind,
@@ -49,8 +41,6 @@ fn provenance(op: &DetectedOperation) -> AnalysisProvenance {
         degradation_reason: None,
     }
 }
-
-// ── Language-neutral matrix: kind + modifiers → (Category, RiskLevel, id) ──
 
 #[test]
 fn classify_filesystem_delete_single_is_warn() {
@@ -177,8 +167,6 @@ fn classify_package_destructive_is_warn() {
     assert_eq!(c.rule_id, "LANG-PKG-DEST");
 }
 
-// ADR-022 §5: language-aware rules never classify to `Block` (reserved for intrinsic shell denials).
-
 #[test]
 fn classify_never_returns_block_over_all_kinds_and_modifiers() {
     let kinds = [
@@ -227,8 +215,6 @@ fn classify_never_returns_block_over_all_kinds_and_modifiers() {
         }
     }
 }
-
-// ADR-022 §3/§7: risk classification is certainty-independent; a `Dynamic` operand never lowers risk.
 
 #[test]
 fn classify_risk_is_identical_across_known_partial_dynamic() {
@@ -296,8 +282,6 @@ fn classify_is_deterministic() {
     assert_eq!(a, b);
 }
 
-// ── safe_alt guidance is present for the high-impact operations ───────────
-
 #[test]
 fn classify_offers_safe_alt_for_recursive_delete_and_code_execution() {
     let del = classify(&op_with(
@@ -318,8 +302,6 @@ fn classify_offers_safe_alt_for_recursive_delete_and_code_execution() {
         "code execution needs a safer alternative"
     );
 }
-
-// ── Match builder: language_match → MatchResult with LanguageRule evidence ─
 
 #[test]
 fn language_match_builds_matchresult_with_language_rule_evidence() {
@@ -374,9 +356,6 @@ fn language_match_pattern_is_builtin_and_carries_classification() {
 
 #[test]
 fn language_match_rule_id_is_stable_across_calls() {
-    // The detection rule id is a stable identifier (ADR-022 §10) — two matches
-    // for the same operation kind + modifiers carry the same id, so audit and
-    // override logic can key on it.
     let a = language_match(
         &op(OperationKind::CodeExecution),
         provenance(&op(OperationKind::CodeExecution)),

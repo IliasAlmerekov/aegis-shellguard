@@ -3,14 +3,10 @@ use aegis_parser::logical_scan_segments;
 use aegis_types::ParsedCommand;
 
 pub(super) fn scan_targets(cmd: &str, parsed: &ParsedCommand) -> RecursiveScanReport {
-    // Heredoc / process-substitution / eval detection requires the raw string.
     if requires_recursive_scan(cmd) {
         return recursive_scan_targets(cmd);
     }
 
-    // Token-level prefix rules (Git, Database, Cloud) are already in place via
-    // prefix_scan, but regex patterns (Filesystem, Docker, Process, Package, etc.)
-    // still require the raw string as the primary scan target.
     let mut targets = vec![cmd.to_string()];
 
     let segments = logical_scan_segments(cmd);

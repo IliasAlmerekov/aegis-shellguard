@@ -1,8 +1,5 @@
 use super::*;
 
-// #484: a flag that a token-prefix rule looks for after `any_star()` matched
-// when it appeared only inside a quoted argument, or as an operand after `--`.
-
 #[test]
 fn assess_flag_only_inside_quoted_argument_stays_safe() {
     let s = scanner();
@@ -23,9 +20,6 @@ fn assess_flag_after_end_of_options_stays_safe() {
     );
 }
 
-// Both segments normalize to `git push x --force`, but only the second one
-// passes a standalone `--force`, so its tokens must not be swapped for the
-// first segment's quoted ones.
 #[test]
 fn assess_same_normalized_segment_with_a_real_flag_warns() {
     assert_assessment_matches_pattern(
@@ -35,8 +29,6 @@ fn assess_same_normalized_segment_with_a_real_flag_warns() {
     );
 }
 
-// The filter runs once per scan target and must leave the matches of earlier
-// targets alone: CL-001 from the first line survived the second line's pass.
 #[test]
 fn assess_later_quoted_segment_keeps_earlier_segment_match() {
     assert_assessment_matches_pattern(
@@ -54,10 +46,6 @@ fn assess_flag_inside_quoted_argument_behind_launcher_stays_safe() {
     );
 }
 
-// The filter only removes matches the quoted tokens contradict. A quoted flag
-// is still a flag, a quoted git global option still shifts the subcommand, an
-// alias body that names the program keeps its match, and `--` does not hide
-// an operand rule such as PS-006.
 #[test]
 fn assess_quoted_or_end_of_options_forms_that_still_warn() {
     for (cmd, risk, id) in [
@@ -75,9 +63,6 @@ fn assess_quoted_or_end_of_options_forms_that_still_warn() {
     }
 }
 
-// A `--` inside a quoted or escaped argument is an operand, not end-of-options.
-// Later segments reach the prefix rules as lossy re-split tokens, where that
-// operand looks like a standalone `--` and would hide the real flag after it.
 #[test]
 fn assess_real_flag_after_a_quoted_double_dash_operand_still_warns() {
     for (cmd, id) in [

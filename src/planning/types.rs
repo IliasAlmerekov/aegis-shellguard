@@ -1,5 +1,3 @@
-//! Planning types: requests, outcomes, dispositions, and contexts.
-
 use std::path::PathBuf;
 
 use crate::explanation::CommandExplanation;
@@ -9,15 +7,11 @@ use aegis_config::AllowlistMatch;
 use aegis_policy::{ExecutionTransport, PolicyAction, PolicyDecision};
 use aegis_types::{Assessment, Mode};
 
-/// Canonical planning result shared by interception surfaces.
 pub enum PlanningOutcome {
-    /// A normal command plan produced from scanner + policy inputs.
     Planned(InterceptionPlan),
-    /// A fail-closed setup outcome produced before normal planning could finish.
     SetupFailure(SetupFailurePlan),
 }
 
-/// Canonical typed plan for one intercepted command.
 pub struct InterceptionPlan {
     assessment: Box<Assessment>,
     decision_context: Box<DecisionContext>,
@@ -28,17 +22,11 @@ pub struct InterceptionPlan {
 }
 
 impl InterceptionPlan {
-    /// Build a canonical interception plan from a pure policy result.
     pub(crate) fn from_policy(
         assessment: Assessment,
         decision_context: DecisionContext,
         policy_decision: PolicyDecision,
     ) -> Self {
-        // An unresolved Git target keeps the plan `Required`: nothing covers
-        // it, and that gap must reach the dialog, the audit entry and the
-        // unattended halt even when policy asked for no Snapshot.
-        // `Mode::Audit` observes only and never takes a Snapshot; the gap
-        // stays in the explanation.
         let unresolved_gap =
             decision_context.git_targets.has_unresolved() && decision_context.mode != Mode::Audit;
         let unavailable_gap = matches!(decision_context.cwd_state, CwdState::Unavailable)
@@ -94,38 +82,31 @@ impl InterceptionPlan {
         }
     }
 
-    /// Return the scanner assessment used to build the plan.
     pub fn assessment(&self) -> &Assessment {
         self.assessment.as_ref()
     }
 
-    /// Return the resolved decision context used to evaluate policy.
     pub fn decision_context(&self) -> &DecisionContext {
         &self.decision_context
     }
 
-    /// Return the pure policy decision embedded in the plan.
     pub fn policy_decision(&self) -> PolicyDecision {
         self.policy_decision
     }
 
-    /// Return the pre-execution snapshot requirements for this plan.
     pub fn snapshot_plan(&self) -> SnapshotPlan {
         self.snapshot_plan.clone()
     }
 
-    /// Return what the caller must do next with this command.
     pub fn execution_disposition(&self) -> ExecutionDisposition {
         self.execution_disposition
     }
 
-    /// Return the descriptive explanation assembled during planning.
     pub fn explanation(&self) -> &CommandExplanation {
         self.explanation.as_ref()
     }
 }
 
-/// Typed fail-closed planning result for setup failures.
 #[derive(Debug, Clone)]
 pub struct SetupFailurePlan {
     user_message: String,
@@ -133,7 +114,6 @@ pub struct SetupFailurePlan {
 }
 
 impl SetupFailurePlan {
-    /// Create a fail-closed setup failure plan.
     pub(crate) fn new(user_message: String, is_config_fault: bool) -> Self {
         Self {
             user_message,
@@ -141,21 +121,15 @@ impl SetupFailurePlan {
         }
     }
 
-    /// Whether the underlying failure stems from invalid user configuration.
-    ///
-    /// Mirrors [`crate::error::AegisError::is_config_fault`], computed once
-    /// when the plan was built from the originating error.
     pub fn is_config_fault(&self) -> bool {
         self.is_config_fault
     }
 
-    /// Return the user-facing setup failure message.
     pub fn user_message(&self) -> &str {
         &self.user_message
     }
 }
 
-/// Typed planning context resolved before pure policy evaluation.
 #[derive(Debug, Clone)]
 pub struct DecisionContext {
     mode: Mode,
@@ -169,7 +143,6 @@ pub struct DecisionContext {
 }
 
 impl DecisionContext {
-    /// Construct a decision context with all policy-relevant inputs resolved.
     pub(crate) fn new(
         mode: Mode,
         transport: ExecutionTransport,
@@ -190,87 +163,64 @@ impl DecisionContext {
         }
     }
 
-    /// Attach the resolved Git targets of the command's git stages.
     pub(crate) fn with_git_targets(mut self, git_targets: GitTargetPlan) -> Self {
         self.git_targets = git_targets;
         self
     }
 
-    /// Mark the command as carrying a `Recovery opt-out` (ADR-031 section 3).
     pub(crate) fn with_recovery_opt_out(mut self, recovery_opt_out: bool) -> Self {
         self.recovery_opt_out = recovery_opt_out;
         self
     }
 
-    /// Return the git Snapshot targets resolved for this command.
     pub fn git_targets(&self) -> &GitTargetPlan {
         &self.git_targets
     }
 
-    /// Return the effective execution mode.
     pub fn mode(&self) -> Mode {
         self.mode
     }
 
-    /// Return the caller transport requesting the decision.
     pub fn transport(&self) -> ExecutionTransport {
         self.transport
     }
 
-    /// Return whether CI was detected for this invocation.
     pub fn ci_detected(&self) -> bool {
         self.ci_detected
     }
 
-    /// Return the working-directory resolution state.
     pub fn cwd_state(&self) -> &CwdState {
         &self.cwd_state
     }
 
-    /// Return the matching allowlist entry for the command in this context, if any.
     pub fn allowlist_match(&self) -> Option<&AllowlistMatch> {
         self.allowlist_match.as_ref()
     }
 
-    /// Return the snapshot plugins applicable to the resolved cwd.
     pub fn applicable_snapshot_plugins(&self) -> &[&'static str] {
         self.applicable_snapshot_plugins.as_slice()
     }
 }
 
-/// Working-directory resolution state visible to planning.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CwdState {
-    /// The command cwd was resolved successfully.
     Resolved(PathBuf),
-    /// The command cwd could not be resolved.
     Unavailable,
 }
 
-/// Snapshot requirement derived from policy and cwd context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SnapshotPlan {
-    /// No snapshots are required before execution.
     NotRequired,
-    /// Snapshots are required, with the applicable plugin set already resolved.
     Required {
-        /// Names of snapshot plugins applicable to this command.
         applicable_plugins: Vec<&'static str>,
-        /// The git Snapshots to take: the Git targets the command acts on,
-        /// and whether the process cwd also needs one (#471). Execution runs
-        /// this plan and derives nothing from the command itself.
         git_targets: GitTargetPlan,
     },
 }
 
-/// Next-step execution handling required by the plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecutionDisposition {
-    /// Execute immediately.
     Execute,
-    /// Require approval before execution.
     RequiresApproval,
-    /// Hard-block execution.
     Block,
 }
 

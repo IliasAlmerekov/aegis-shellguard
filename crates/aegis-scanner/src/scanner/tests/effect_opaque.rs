@@ -1,10 +1,3 @@
-//! ADR-016 — bounded shape detection for `Effect-opaque execution`.
-//!
-//! These tests pin the v1 contract: script-file interpreter invocations,
-//! shell stdin forms, and pipe-to-shell sinks set `effect_opaque = true`
-//! *without* raising `RiskLevel`. Inline bodies (`-c` / `-e`), package
-//! runners, and bare interpreter flags do not.
-
 use super::*;
 
 fn assess(cmd: &str) -> Assessment {
@@ -124,7 +117,6 @@ fn ordinary_commands_are_not_effect_opaque() {
 
 #[test]
 fn effect_opaque_script_file_survives_in_a_compound_command() {
-    // The interpreter sits in a later logical segment, not the first token.
     let assessment = assess("echo hi; sh ./cleanup.sh");
     assert!(
         assessment.effect_opaque,
@@ -134,11 +126,6 @@ fn effect_opaque_script_file_survives_in_a_compound_command() {
 
 #[test]
 fn inline_flag_after_script_file_still_marks_effect_opaque() {
-    // `-c` / `-e` only means "inline body" when it is the
-    // interpreter's execution flag *before* the first positional argument.
-    // Once a script file is the payload, a later `-c` is a script argument, so
-    // the command stays effect-opaque — the file's effect is not visible in the
-    // command text.
     let cases = [
         r#"python ./x.py -c"#,
         r#"bash ./x.sh -c"#,
@@ -157,10 +144,6 @@ fn inline_flag_after_script_file_still_marks_effect_opaque() {
 
 #[test]
 fn inline_body_with_later_script_token_stays_inline() {
-    // Orthogonal direction: when the inline flag precedes the first positional,
-    // the interpreter runs the inline body and any later script-file-looking
-    // token is just `sys.argv` — the effect IS visible in the command text, so
-    // the command is NOT effect-opaque.
     let cases = [
         r#"python -c "print(1)" ./x.py"#,
         r#"sh -c "echo hi" ./x.sh"#,
@@ -176,12 +159,6 @@ fn inline_body_with_later_script_token_stays_inline() {
 
 #[test]
 fn value_consuming_option_does_not_spoof_script_file_slot() {
-    // An interpreter option that takes a separate
-    // argument (`--require <path>`, `-r <lib>`) must not let that argument
-    // spoof the first-positional slot. `node --require ./preload.js -e "code"`
-    // is a real Node idiom (preload + inline eval): the executed payload is the
-    // inline body, which the scanner already sees — so it must NOT be
-    // effect-opaque, even though `./preload.js` ends in `.js`.
     let cases = [
         r#"node --require ./preload.js -e "code""#,
         r#"node -r ./preload.js -e "code""#,
@@ -199,10 +176,6 @@ fn value_consuming_option_does_not_spoof_script_file_slot() {
 
 #[test]
 fn value_consuming_option_value_skipped_so_real_script_file_is_detected() {
-    // Orthogonal direction: skipping a value-consuming option's argument must
-    // not hide a real script file that follows it. `python -W ignore ./x.py`
-    // runs `./x.py` (the `-W` value `ignore` is not a positional), so the
-    // command IS effect-opaque.
     let cases = [
         r#"python -W ignore ./x.py"#,
         r#"ruby -r ./lib.rb ./script.rb"#,

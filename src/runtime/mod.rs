@@ -1,5 +1,3 @@
-//! Runtime context and dependency wiring.
-
 pub mod context;
 pub mod recovery;
 mod sandbox;

@@ -1,7 +1,3 @@
-//! Production-code walker for the architecture source rules: strips
-//! `#[cfg(test)]` items and resolves which files a parent module declares
-//! under `#[cfg(test)]`.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,14 +6,6 @@ pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-/// Strip `#[cfg(test)]`-gated items and `mod tests { … }` blocks.
-///
-/// Not a full Rust parser — it operates line-by-line and is good enough for
-/// the idioms used in this repo:
-/// - `#[cfg(test)] use …;` → single-line use
-/// - `#[cfg(test)] fn … { … }` / `impl … { … }` / `mod tests { … }` → brace-balanced
-/// - `mod tests {` at column 0 without a preceding `#[cfg(test)]` → still stripped
-///   because the convention in this repo is that `mod tests` is always test-only.
 pub fn strip_test_code(content: &str) -> String {
     let lines: Vec<&str> = content.lines().collect();
     let mut out = String::with_capacity(content.len());
@@ -40,7 +28,6 @@ pub fn strip_test_code(content: &str) -> String {
         }
 
         if is_cfg_test {
-            // Skip the attribute (and any following attribute lines).
             i += 1;
             while i < lines.len() && lines[i].trim_start().starts_with("#[") {
                 i += 1;
@@ -50,10 +37,6 @@ pub fn strip_test_code(content: &str) -> String {
             }
         }
 
-        // Look ahead to decide mode: does this item have a body (`{…}`) or is
-        // it a declaration ending at `;`? Multi-line function signatures put
-        // the opening `{` several lines below the `fn` keyword, so we cannot
-        // decide from the first line alone.
         let mut look = i;
         let mut has_brace = false;
         while look < lines.len() {
@@ -73,10 +56,6 @@ pub fn strip_test_code(content: &str) -> String {
         }
 
         if has_brace {
-            // Brace-balanced skip. Naive: does not ignore braces in strings or
-            // comments, but acceptable for this repo's code. `seen_open`
-            // avoids the false exit when the `fn` signature spans multiple
-            // lines and the opening `{` is not on the first line.
             let mut depth: i32 = 0;
             let mut seen_open = false;
             loop {
@@ -99,7 +78,6 @@ pub fn strip_test_code(content: &str) -> String {
             continue;
         }
 
-        // Single-line item ending at ';'.
         while i < lines.len() && !lines[i].contains(';') {
             i += 1;
         }
@@ -109,20 +87,12 @@ pub fn strip_test_code(content: &str) -> String {
     out
 }
 
-/// A `mod name;` declaration: the files it may resolve to, and whether it sits
-/// under `#[cfg(test)]`.
 #[derive(Debug, PartialEq, Eq)]
 struct ModDecl {
     candidates: Vec<PathBuf>,
     test_gated: bool,
 }
 
-/// Parse the out-of-line `mod name;` and `include!("path");` declarations of
-/// `parent`.
-///
-/// Line-based, like `strip_test_code`. It does not track inline `mod x { … }`
-/// nesting, so a `mod y;` inside an inline module resolves as if it were at
-/// file level.
 fn mod_declarations(parent: &Path, content: &str) -> Vec<ModDecl> {
     let dir = parent.parent().unwrap_or_else(|| Path::new(""));
     let is_module_root = matches!(
@@ -185,13 +155,11 @@ fn mod_declarations(parent: &Path, content: &str) -> Vec<ModDecl> {
     decls
 }
 
-/// `include!("path");` → `path`, relative to the including file's directory.
 fn include_target(line: &str) -> Option<&str> {
     let rest = line.strip_prefix("include!(")?;
     rest.strip_prefix('"')?.split('"').next()
 }
 
-/// `mod name;` (optionally `pub`, `pub(crate)`, …) → `name`.
 fn mod_decl_name(line: &str) -> Option<String> {
     let mut rest = line;
     if let Some(after) = rest.strip_prefix("pub") {
@@ -205,8 +173,6 @@ fn mod_decl_name(line: &str) -> Option<String> {
     is_ident.then(|| name.to_string())
 }
 
-/// Files that only compile under `#[cfg(test)]`: declared under it by a parent
-/// module, or reachable only through such a file.
 fn test_only_files(files: &[(PathBuf, String)]) -> BTreeSet<PathBuf> {
     let known: BTreeSet<&PathBuf> = files.iter().map(|(p, _)| p).collect();
     let mut declared_by: BTreeMap<&PathBuf, Vec<(&PathBuf, bool)>> = BTreeMap::new();
@@ -257,9 +223,6 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Production `.rs` files under `relative`, as repo-relative `/`-separated
-/// paths paired with their production-only content. Panics when the directory
-/// is missing or holds no production file.
 pub fn production_rs_files(relative: &str) -> Vec<(String, String)> {
     let root = repo_root().join(relative);
     assert!(root.is_dir(), "{relative}: directory does not exist");
@@ -290,8 +253,6 @@ pub fn production_rs_files(relative: &str) -> Vec<(String, String)> {
     production
 }
 
-/// True when `ident` appears in `source` as a whole identifier, so
-/// `evaluate_policy_rules` does not match `evaluate_policy`.
 pub fn contains_ident(source: &str, ident: &str) -> bool {
     let is_ident_char = |c: char| c.is_alphanumeric() || c == '_';
     source.match_indices(ident).any(|(start, _)| {
@@ -300,8 +261,6 @@ pub fn contains_ident(source: &str, ident: &str) -> bool {
         !before.is_some_and(is_ident_char) && !after.is_some_and(is_ident_char)
     })
 }
-
-// ── Self-tests for the resolver and the walker ────────────────────────────────
 
 #[cfg(test)]
 mod resolver_self_tests {

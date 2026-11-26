@@ -1,9 +1,6 @@
-//! Unit tests for the JavaScript adapter.
-
 use super::*;
 use crate::operation::{DetectedOperation, OperandCertainty, OperationKind, OperationModifiers};
 
-/// Assert `source` yields exactly one operation and return it.
 fn one_op(source: &str) -> DetectedOperation {
     let result = analyze(source);
     assert_eq!(
@@ -19,7 +16,6 @@ fn one_op(source: &str) -> DetectedOperation {
     result.operations.into_iter().next().unwrap()
 }
 
-/// Assert `source` yields no operations (and parses cleanly).
 fn no_ops(source: &str) {
     let result = analyze(source);
     assert_eq!(
@@ -32,8 +28,6 @@ fn no_ops(source: &str) {
         result.operations
     );
 }
-
-// --- Filesystem deletion ------------------------------------------------
 
 #[test]
 fn fs_unlinksync_literal_path_yields_filesystem_delete_known() {
@@ -61,8 +55,6 @@ fn fs_rmsync_recursive_option_sets_recursive_modifier() {
 
 #[test]
 fn fs_rmsync_string_key_recursive_option_sets_recursive_modifier() {
-    // A string-keyed `{"recursive": true}` pair is the same literal shape as the
-    // identifier-keyed form and must also set the recursive modifier.
     let op = one_op("fs.rmSync(\"d\", {\"recursive\": true})");
     assert_eq!(op.kind, OperationKind::FilesystemDelete);
     assert!(
@@ -104,8 +96,6 @@ fn fs_unlinksync_with_template_interpolation_is_dynamic() {
     );
 }
 
-// --- Filesystem overwrite ------------------------------------------------
-
 #[test]
 fn fs_writesync_is_destructive_overwrite() {
     let op = one_op("fs.writeFileSync(\"f\", \"x\")");
@@ -127,8 +117,6 @@ fn fs_appendsync_is_overwrite_without_destructive_mode() {
     );
 }
 
-// --- Permission / ownership ---------------------------------------------
-
 #[test]
 fn fs_chmodsync_and_chownsync_are_permission_or_ownership() {
     for src in ["fs.chmodSync(\"f\", 0o000)", "fs.chownSync(\"f\", 0, 0)"] {
@@ -136,8 +124,6 @@ fn fs_chmodsync_and_chownsync_are_permission_or_ownership() {
         assert_eq!(op.kind, OperationKind::PermissionOrOwnershipChange, "{src}");
     }
 }
-
-// --- Execution sinks: eval / Function (JavaScript payload) --------------
 
 #[test]
 fn eval_literal_emits_code_execution_with_javascript_payload() {
@@ -151,7 +137,6 @@ fn eval_literal_emits_code_execution_with_javascript_payload() {
 
 #[test]
 fn new_function_literal_emits_code_execution_with_javascript_payload() {
-    // The Function constructor's final string argument is the body.
     let op = one_op("new Function(\"return fs.unlinkSync('x')\")");
     assert_eq!(op.kind, OperationKind::CodeExecution);
     assert_eq!(op.certainty, OperandCertainty::Known);
@@ -183,8 +168,6 @@ fn new_function_dynamic_body_is_dynamic_without_payload() {
     assert_eq!(op.certainty, OperandCertainty::Dynamic);
     assert!(op.payload.is_none());
 }
-
-// --- Execution sinks: child_process (Bash payload / argv) ---------------
 
 #[test]
 fn child_process_exec_literal_emits_code_execution_with_bash_payload() {
@@ -218,8 +201,6 @@ fn child_process_exec_dynamic_payload_is_dynamic_without_nested_target() {
 
 #[test]
 fn child_process_spawn_argv_form_is_dynamic_without_payload() {
-    // spawn takes a program name + argv, not shell source; the visible sink
-    // still fires as CodeExecution but no nested target is recovered.
     let op = one_op("child_process.spawn(\"rm\", [\"-rf\", \"x\"])");
     assert_eq!(op.kind, OperationKind::CodeExecution);
     assert_eq!(op.certainty, OperandCertainty::Dynamic);
@@ -241,14 +222,8 @@ fn child_process_spawn_execfile_fork_are_code_execution_argv() {
     }
 }
 
-// --- Execution-sink payloads: template literals & escape sequences -------
-// `string_literal_content`'s `template_string`/`escape_sequence` arms are only
-// reached from the Exec path, so exercised here, not via the FS tests above.
-
 #[test]
 fn eval_template_literal_without_interpolation_emits_javascript_payload() {
-    // Template with no interpolation → known payload, raw text between
-    // backticks (exercises `string_literal_content`'s `template_string` arm).
     let op = one_op("eval(`fs.unlinkSync(\"x\")`)");
     assert_eq!(op.kind, OperationKind::CodeExecution);
     assert_eq!(op.certainty, OperandCertainty::Known);
@@ -259,7 +234,6 @@ fn eval_template_literal_without_interpolation_emits_javascript_payload() {
 
 #[test]
 fn child_process_exec_template_with_interpolation_is_dynamic() {
-    // `${}` template → Dynamic, no payload (`template_substitution => None`).
     let op = one_op("child_process.exec(`rm -rf ${dir}`)");
     assert_eq!(op.kind, OperationKind::CodeExecution);
     assert_eq!(op.certainty, OperandCertainty::Dynamic);
@@ -278,9 +252,6 @@ fn eval_payload_with_escape_sequence_recovers_raw_text() {
 
 #[test]
 fn eval_template_literal_with_escape_sequence_recovers_raw_text() {
-    // A template literal containing an escape sequence exercises the
-    // `escape_sequence` sub-arm of the `template_string` arm; the raw text
-    // between the backticks is recovered with escapes as-written.
     let op = one_op("eval(`a\\tb`)");
     assert_eq!(op.kind, OperationKind::CodeExecution);
     assert_eq!(op.certainty, OperandCertainty::Known);
@@ -288,8 +259,6 @@ fn eval_template_literal_with_escape_sequence_recovers_raw_text() {
     assert_eq!(payload.language, SourceLanguage::JavaScript);
     assert_eq!(payload.source, "a\\tb");
 }
-
-// --- Negatives ----------------------------------------------------------
 
 #[test]
 fn comment_mentioning_fs_unlinksync_is_not_an_operation() {
@@ -311,8 +280,6 @@ fn unrelated_call_is_not_an_operation() {
     no_ops("console.log(\"hello\")");
 }
 
-// --- Composition / ordering / spans -------------------------------------
-
 #[test]
 fn multiple_operations_are_emitted_in_source_order() {
     let result = analyze("fs.unlinkSync(\"a\")\nchild_process.exec(\"rm b\")\n");
@@ -327,9 +294,6 @@ fn multiple_operations_are_emitted_in_source_order() {
 
 #[test]
 fn nested_calls_detect_both_inner_and_outer() {
-    // child_process.exec(eval("x")): the outer sink takes a non-literal
-    // (the eval call), so it is Dynamic; the inner eval has a literal
-    // payload.
     let result = analyze("child_process.exec(eval(\"x\"))");
     assert_eq!(result.operations.len(), 2);
     let kinds: Vec<_> = result.operations.iter().map(|o| o.kind).collect();
@@ -362,8 +326,6 @@ fn operation_span_covers_the_call() {
     assert_eq!(op.span.line, 1);
     assert_eq!(op.span.column, 1);
 }
-
-// --- Malformed source ---------------------------------------------------
 
 #[test]
 fn malformed_source_records_parse_errors() {

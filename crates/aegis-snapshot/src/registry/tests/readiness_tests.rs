@@ -2,8 +2,6 @@ use super::*;
 use aegis_types::{SnapshotAttempt, SnapshotAttemptReadiness, StructuralCheck, ValidationLevel};
 use std::time::{Duration, Instant};
 
-/// A plugin whose snapshot succeeds or fails on demand and whose readiness
-/// answers `verdict` after `delay` (`None`: never answers).
 struct ScriptedPlugin {
     name: &'static str,
     snapshot_ok: bool,
@@ -47,7 +45,6 @@ impl SnapshotPlugin for ScriptedPlugin {
 
     async fn readiness(&self, _snapshot_id: &str) -> ArtifactReadiness {
         match self.delay {
-            // Answer on the first poll, so even a zero timeout would let it through.
             Some(Duration::ZERO) => {}
             Some(delay) => tokio::time::sleep(delay).await,
             None => std::future::pending().await,
@@ -185,7 +182,6 @@ async fn all_checks_of_one_command_share_a_500ms_budget_and_fail_closed() {
         scripted("instant", ArtifactReadiness::PRESENT_UNCHECKED),
     ]);
     let mut records = vec![record("hanging"); 20];
-    // Checked after the budget is spent: even an instant answer is not trusted.
     records.push(record("instant"));
     let mut coverage = SnapshotCoverage {
         records,

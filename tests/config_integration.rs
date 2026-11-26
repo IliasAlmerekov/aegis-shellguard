@@ -120,7 +120,6 @@ reason = "cwd-scoped allowlist"
 "#,
         allowed_cwd.display()
     );
-    // C3 ratchet (ADR-013): the project layer cannot weaken this field.
     let global_config_dir = home.path().join(".config/aegis");
     fs::create_dir_all(&global_config_dir).unwrap();
     fs::write(
@@ -195,7 +194,6 @@ exit 0
     fs::write(enabled_workspace.path().join("dirty.txt"), "enabled\n").unwrap();
     fs::write(disabled_workspace.path().join("dirty.txt"), "disabled\n").unwrap();
 
-    // C3 ratchet (ADR-013): the project layer cannot weaken this field.
     let global_config_dir = home.path().join(".config/aegis");
     fs::create_dir_all(&global_config_dir).unwrap();
     fs::write(
@@ -262,7 +260,6 @@ reason = "snapshot disabled"
         .unwrap();
 
     assert!(enabled_output.status.success());
-    // No provider applies, so the auto-approved Danger halts (ADR-031 section 1).
     assert_eq!(disabled_output.status.code(), Some(2));
 
     let entries = read_audit_entries(home.path());

@@ -1,35 +1,16 @@
-//! Sandbox application status recorded in the audit log.
-
 use serde::{Deserialize, Serialize};
 
-/// Factual confinement state for an intercepted command's execution path.
-///
-/// Recorded in every audit entry so optional unconfined fallback, required
-/// blocking, disabled configuration, and pre-preparation stops stay distinct.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SandboxStatus {
-    /// A configured confined launch path was prepared.
     Active,
-    /// Sandbox infrastructure was unavailable. An optional command may use an
-    /// unconfined fallback; a required command is blocked.
     Unavailable,
-    /// A sandbox was configured, but no confined or fallback launch path was
-    /// prepared for this invocation.
     NotAttempted,
-    /// No sandbox was configured for this invocation.
     #[default]
     NotConfigured,
 }
 
 impl SandboxStatus {
-    /// Legacy `sandbox_active` boolean projection, written alongside the
-    /// canonical `sandbox_status` field so that older audit-log readers that
-    /// only understand the boolean keep working.
-    ///
-    /// `Active` → `Some(true)`, `Unavailable` → `Some(false)`,
-    /// `NotAttempted` / `NotConfigured` → `None` because the legacy field
-    /// cannot distinguish those states.
     pub fn as_legacy_active(self) -> Option<bool> {
         match self {
             SandboxStatus::Active => Some(true),
@@ -40,10 +21,6 @@ impl SandboxStatus {
 }
 
 impl From<Option<bool>> for SandboxStatus {
-    /// Maps the legacy availability tri-state to a status:
-    /// `None` (no sandbox configured) → `NotConfigured`,
-    /// `Some(true)` (available) → `Active`,
-    /// `Some(false)` (configured but unavailable) → `Unavailable`.
     fn from(available: Option<bool>) -> Self {
         match available {
             None => SandboxStatus::NotConfigured,
@@ -106,21 +83,15 @@ mod tests {
     }
 }
 
-/// Where a writable root of the `Trusted ceiling` came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CeilingLayer {
-    /// Entry of the global config file.
     Global,
-    /// Entry of the project config file.
     Project,
-    /// Root computed by Aegis (worktree root, verified gitdir, temporary
-    /// directory), not read from any config file.
     Computed,
 }
 
 impl CeilingLayer {
-    /// Stable machine-readable name.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Global => "global",

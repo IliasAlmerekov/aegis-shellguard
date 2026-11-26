@@ -5,13 +5,9 @@ use aegis_types::RiskLevel;
 use super::{Category, PatternSource, PatternToken, PrefixRule, a, any_star, s};
 pub(super) fn rules() -> Vec<PrefixRule> {
     vec![
-        // ── Git (continued from builtins_a) ───────────────────────────────────
         PrefixRule {
             id: Cow::Borrowed("GIT-009"),
             category: Category::Git,
-            // The prefix only admits `git push`; `matches_tokens` then looks for
-            // a deleting flag or a `:<ref>` refspec, which no prefix token can
-            // express (#431).
             pattern: vec![s("git"), s("push")],
             risk: RiskLevel::Warn,
             description: Cow::Borrowed(
@@ -41,8 +37,6 @@ pub(super) fn rules() -> Vec<PrefixRule> {
         PrefixRule {
             id: Cow::Borrowed("GIT-010"),
             category: Category::Git,
-            // git accepts any unambiguous prefix of a long option, and `--am`
-            // is already unambiguous among `git commit` options (#424).
             pattern: vec![
                 s("git"),
                 s("commit"),
@@ -67,7 +61,6 @@ pub(super) fn rules() -> Vec<PrefixRule> {
             ],
             not_match_examples: &["git commit -m 'fix typo'", "git commit -am x"],
         },
-        // ── Docker ────────────────────────────────────────────────────────────
         PrefixRule {
             id: Cow::Borrowed("DK-001"),
             category: Category::Docker,
@@ -231,7 +224,6 @@ pub(super) fn rules() -> Vec<PrefixRule> {
             match_examples: &["docker volume rm pgdata", "docker volume rm -f pgdata"],
             not_match_examples: &["docker volume ls", "docker volume inspect pgdata"],
         },
-        // ── Process ───────────────────────────────────────────────────────────
         PrefixRule {
             id: Cow::Borrowed("PS-001"),
             category: Category::Process,
@@ -278,10 +270,6 @@ pub(super) fn rules() -> Vec<PrefixRule> {
             match_examples: &["pkill -9 nginx"],
             not_match_examples: &["pkill -15 nginx"],
         },
-        // PS-008 is to PS-006 what FS-020 is to FS-001: it finds a recursive
-        // delete of `/` in any flag order (GHSA-7gcj-4f7x-7fxj). It also takes
-        // `//`, `/.`, and `/..`, which PS-006 misses. The pattern only feeds
-        // the program index; `matches_tokens` decides the match.
         PrefixRule {
             id: Cow::Borrowed("PS-008"),
             category: Category::Process,
@@ -338,10 +326,6 @@ pub(super) fn rules() -> Vec<PrefixRule> {
             match_examples: &["chmod 777 /"],
             not_match_examples: &["chmod 755 /"],
         },
-        // FS-019 keys on the recursive target rather than the mode: a
-        // recursive chmod of a system root can break the machine even when the
-        // requested mode is not 000 or 777. Trailing-slash spellings remain
-        // explicit to this rule rather than changing shared token equality.
         PrefixRule {
             id: Cow::Borrowed("FS-019"),
             category: Category::Filesystem,
@@ -402,7 +386,6 @@ pub(super) fn rules() -> Vec<PrefixRule> {
                 "cd /usr && chmod -R 000 .",
             ],
         },
-        // ── Package ───────────────────────────────────────────────────────────
         PrefixRule {
             id: Cow::Borrowed("PKG-005"),
             category: Category::Package,
@@ -427,11 +410,6 @@ pub(super) fn rules() -> Vec<PrefixRule> {
             match_examples: &["pip install requests --trusted-host pypi.org"],
             not_match_examples: &["pip install requests"],
         },
-        // ── Outbound irreversible actions ────────────────────────────────────
-        // PKG-006/007 guard outbound irreversible actions: they destroy nothing
-        // locally but cannot be undone once directed outward. PKG-006 carries
-        // the negative condition --dry-run so the rehearsal an agent runs first
-        // stays Safe (issue #194, ADR-025's sibling for the outbound class).
         PrefixRule {
             id: Cow::Borrowed("PKG-006"),
             category: Category::Package,
@@ -470,17 +448,6 @@ pub(super) fn rules() -> Vec<PrefixRule> {
             match_examples: &["npm unpublish", "npm unpublish --force pkg"],
             not_match_examples: &["npm publish"],
         },
-        // ── Aegis self-management (ADR-035) ───────────────────────────────────
-        //
-        // The agent hook denies a command whose first word is literally
-        // `aegis`, which leaves `/usr/bin/aegis off`, `env aegis off` and
-        // `echo hi && aegis off` to the scanner. These rules classify the
-        // command itself, so launcher and absolute-path normalization
-        // (ADR-014) covers every spelling in every position.
-        //
-        // Commands that only tighten enforcement (`aegis on`) or only read
-        // state (`status`, `audit`, `snapshot list`, `config show`,
-        // `config validate`) carry no rule and stay Safe.
         PrefixRule {
             id: Cow::Borrowed("AEG-001"),
             category: Category::Aegis,

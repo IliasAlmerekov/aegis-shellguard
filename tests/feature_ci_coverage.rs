@@ -16,7 +16,6 @@ fn root_features() -> Vec<String> {
         .unwrap_or_default()
 }
 
-// PRD 5.2 / ADR-028: the Starlark policy DSL is gone, so no feature may bring it back.
 #[test]
 fn root_manifest_declares_no_starlark_policy_feature() {
     assert!(
@@ -25,8 +24,6 @@ fn root_manifest_declares_no_starlark_policy_feature() {
     );
 }
 
-// Ratchet for #212: a new feature turns this red until CI tests, lints and
-// audits it, so the CI job cannot be shaped around a feature that already exists.
 #[test]
 fn every_non_default_feature_is_tested_linted_and_denied_in_ci() {
     let ci = repo_file(".github/workflows/ci.yml");

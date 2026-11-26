@@ -1,12 +1,3 @@
-//! `Custom` direction for the Supabase Snapshot target.
-//!
-//! `PartialSupabaseSnapshotConfig` needs field-level `Option`s, unlike
-//! Postgres/MySQL, which stay whole structs, because
-//! `require_config_target_match_on_rollback` must ratchet independently of
-//! the database-target fields: a project must never disable the rollback
-//! target-match check, even for a Supabase target it is otherwise free to
-//! configure itself (#269).
-
 use crate::allowlist::ConfigSourceLayer;
 
 use super::super::partial::PartialSupabaseSnapshotConfig;
@@ -14,8 +5,6 @@ use super::super::{PostgresSnapshotConfig, SupabaseSnapshotConfig};
 use super::direction::bool_true_is_stricter;
 use super::warning::{RatchetSink, is_project};
 
-/// Whether a Project-layer overlay must keep every Supabase database-target
-/// field pinned to `base`.
 fn target_protected(
     base: &SupabaseSnapshotConfig,
     layer: ConfigSourceLayer,
@@ -24,17 +13,6 @@ fn target_protected(
     is_project(layer) && provider_enabled_in_base && !base.db.database.is_empty()
 }
 
-/// Merge a project/global Supabase overlay into the trusted `base`, and
-/// record every per-field weakening attempt. Under the Project layer, once
-/// `provider_enabled_in_base` is true AND the base already has a non-empty
-/// `db.database`, the database-target fields (`project_ref`, `db.database`,
-/// `db.host`, `db.port`, `db.user`) stay pinned to `base` regardless of what
-/// the overlay requests. `require_config_target_match_on_rollback` ratchets
-/// on its own axis, unconditionally: it is protected even when the project is
-/// free to configure its own target. Global stays last-wins for every field.
-///
-/// The destructure of `overlay.db` is an exhaustive tripwire — a new leaf
-/// field on `PostgresSnapshotConfig` breaks this until it is added here.
 pub(crate) fn custom_supabase_snapshot(
     base: SupabaseSnapshotConfig,
     overlay: PartialSupabaseSnapshotConfig,

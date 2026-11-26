@@ -1,7 +1,6 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-/// Resolve HOME or USERPROFILE, ignoring an empty selected value.
 pub fn home_dir() -> Option<PathBuf> {
     home_dir_from(std::env::var_os("HOME"), std::env::var_os("USERPROFILE"))
 }

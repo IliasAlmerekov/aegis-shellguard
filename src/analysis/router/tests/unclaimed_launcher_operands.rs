@@ -1,5 +1,3 @@
-//! Launcher operands that need home expansion or cannot be routed literally.
-
 use super::*;
 
 #[test]
@@ -129,7 +127,6 @@ fn tilde_launcher_operand_does_not_follow_a_later_cd() {
     );
 }
 
-// GHSA-xj54: an earlier HOME mutation or opaque segment invalidates tilde resolution for later operands.
 #[test]
 fn a_home_change_or_opaque_earlier_segment_degrades_a_later_tilde_operand() {
     for command in [
@@ -168,7 +165,6 @@ fn any_earlier_variable_writing_stage_degrades_a_later_tilde_operand() {
         "for HOME in /tmp/e; do :; done; setsid ~/pyx",
         "select HOME in /tmp/e; do break; done; setsid ~/pyx",
         r#"a=HO; b=ME; printf -v "$a$b" /tmp/e; setsid ~/pyx"#,
-        // Accepted false positive (GHSA-xj54 Rule A): any variable write withholds HOME trust.
         "export PATH=/x; setsid ~/pyx",
     ] {
         assert_eq!(
@@ -230,7 +226,6 @@ fn a_select_loop_header_routes_its_own_path_like_list_entries() {
 
 #[test]
 fn a_for_loop_header_routes_its_list_whatever_the_body_does_with_the_variable() {
-    // GHSA-xj54: loop header lists route regardless of how the body uses the variable.
     for command in [
         r#"for x in ./pyx; do echo "$x"; "$_"; done"#,
         r#"for x in ./pyx; do printf -v y %s "$x"; "$y"; done"#,
@@ -259,7 +254,6 @@ fn an_unterminated_for_loop_header_still_routes_its_list() {
 
 #[test]
 fn a_list_only_for_loop_that_never_reads_its_variable_still_prompts() {
-    // Accepted false positive (ADR-022): loop lists route unconditionally.
     assert_eq!(
         route(r#"for f in dir/*; do echo "$f"; done"#, &[]),
         vec![unresolved_dynamic()]
@@ -293,8 +287,6 @@ fn name_only_programs_and_urls_keep_their_existing_operand_behavior() {
         "wc -l src/*.rs",
         "rm -f ./build/*.o",
         "wget -O out http://x/y*",
-        // Known gap: a slash-less dynamic launcher operand cannot be
-        // distinguished from data without changing ordinary shell commands.
     ] {
         assert_eq!(route(command, &[]), Vec::new(), "{command}");
     }

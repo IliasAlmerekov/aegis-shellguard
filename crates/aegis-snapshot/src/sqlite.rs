@@ -1,5 +1,3 @@
-//! SQLite snapshot provider.
-
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -16,14 +14,12 @@ use crate::{ArtifactReadiness, Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
-/// Snapshot plugin for SQLite database files.
 pub struct SqlitePlugin {
     db_path: PathBuf,
     snapshots_dir: PathBuf,
 }
 
 impl SqlitePlugin {
-    /// Create a new SQLite snapshot plugin.
     pub fn new(db_path: PathBuf, snapshots_dir: PathBuf) -> Self {
         Self {
             db_path,
@@ -39,8 +35,6 @@ impl SqlitePlugin {
         }
     }
 
-    /// Restores the Snapshot. The id's original path wins when it is the
-    /// configured database, wherever `cwd` is; otherwise `cwd` resolves it.
     fn rollback_from(&self, snapshot_id: &str, cwd: &Path) -> Result<()> {
         let (original_path, dump_path) = Self::parse_snapshot_id(snapshot_id)?;
         let dump_path = contain_artifact("sqlite", &self.snapshots_dir, &dump_path)?;
@@ -61,8 +55,6 @@ impl SqlitePlugin {
         Ok(())
     }
 
-    /// Whether `original` is the configured database. A relative path matches
-    /// on its components after the last `..`: ids hold canonical paths.
     pub fn is_configured_database(&self, original: &Path) -> bool {
         if self.db_path.is_absolute() {
             return original == self.db_path;
@@ -90,8 +82,6 @@ impl SqlitePlugin {
         ])
     }
 
-    /// The database file a Snapshot was taken of, or `None` for a malformed id.
-    /// `aegis rollback --last` uses it to bind a sqlite Snapshot to a place.
     pub fn database_path(snapshot_id: &str) -> Option<PathBuf> {
         Self::parse_snapshot_id(snapshot_id)
             .ok()
@@ -208,7 +198,6 @@ impl SnapshotPlugin for SqlitePlugin {
     async fn readiness(&self, snapshot_id: &str) -> ArtifactReadiness {
         let dump = Self::parse_snapshot_id(snapshot_id)
             .and_then(|(_, dump)| contain_artifact("sqlite", &self.snapshots_dir, &dump));
-        // Malformed or uncontained dump path maps to None, which sqlite_readiness reports as Unavailable.
         sqlite_readiness(dump.ok().as_deref()).await
     }
 

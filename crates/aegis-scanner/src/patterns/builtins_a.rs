@@ -5,23 +5,10 @@ use aegis_types::RiskLevel;
 use super::{Category, PatternSource, PatternToken, PrefixRule, a, any_star, s};
 pub(super) fn rules() -> Vec<PrefixRule> {
     vec![
-        // ── Filesystem ───────────────────────────────────────────────────
-        // First Filesystem-category token-prefix rules: unlike `rm` (regex
-        // FS-001), `wipefs`/`unlink` have no match-anywhere delivery variety —
-        // the dangerous verb is always the effective program token (ADR-014).
         PrefixRule {
             id: Cow::Borrowed("FS-011"),
             category: Category::Filesystem,
-            // AnyStar lets `-a` follow other flags (e.g. `wipefs -n -a`), an
-            // accepted fail-safe FP. `FS-011` also has a local matcher-side predicate
-            // for wipefs short flag bundles containing `a` (`-af`, `-fa`, `-fav`);
-            // this is intentionally not a generic prefix-rule feature.
             pattern: vec![s("wipefs"), any_star(), a(&["-a", "--all"])],
-            // Danger, not Block like mkfs (FS-006): wipefs erases filesystem /
-            // partition *signatures* only — the underlying data blocks survive
-            // and are often recoverable, so it is strictly less final than a
-            // format. A prompt + snapshot is the right checkpoint for its
-            // legitimate interactive disk-prep use.
             risk: RiskLevel::Danger,
             description: Cow::Borrowed(
                 "wipefs -a — erases all filesystem/partition signatures from a device, making its volumes unmountable",
@@ -65,8 +52,6 @@ pub(super) fn rules() -> Vec<PrefixRule> {
             match_examples: &["unlink important.txt"],
             not_match_examples: &["readlink mylink", "ln -s a b"],
         },
-        // FS-020 finds `rm -r` at any position, which FS-001's regex misses
-        // (GHSA-7gcj-4f7x-7fxj / #415). `matches_tokens` decides the match.
         PrefixRule {
             id: Cow::Borrowed("FS-020"),
             category: Category::Filesystem,
@@ -203,7 +188,6 @@ pub(super) fn rules() -> Vec<PrefixRule> {
             ],
             not_match_examples: &["parted /dev/sda print", "parted -l"],
         },
-        // ── Git ──────────────────────────────────────────────────────────
         PrefixRule {
             id: Cow::Borrowed("GIT-001"),
             category: Category::Git,
@@ -407,13 +391,6 @@ pub(super) fn rules() -> Vec<PrefixRule> {
             match_examples: &["git stash drop stash@{0}"],
             not_match_examples: &["git stash list"],
         },
-        // ── Database ───────────────────────────────────────────────────────
-        // DB-001 (DROP TABLE), DB-002 (DROP DATABASE), DB-007 (DROP SCHEMA), and
-        // DB-008 (ALTER TABLE … DROP COLUMN) are regex patterns in patterns.toml,
-        // not token-prefix rules: their SQL verbs arrive embedded in `psql -c` /
-        // `mysql -e` / heredoc / stdin, never as the leading program token
-        // (ADR-015). Only DB-006 (Redis FLUSHALL/FLUSHDB), whose verb *is* the
-        // command, stays a prefix rule here.
         PrefixRule {
             id: Cow::Borrowed("DB-006"),
             category: Category::Database,
@@ -460,7 +437,6 @@ pub(super) fn rules() -> Vec<PrefixRule> {
                 "redis-cli GET FLUSHALL",
             ],
         },
-        // ── Cloud ──────────────────────────────────────────────────────────
         PrefixRule {
             id: Cow::Borrowed("CL-001"),
             category: Category::Cloud,
@@ -538,8 +514,6 @@ pub(super) fn rules() -> Vec<PrefixRule> {
         PrefixRule {
             id: Cow::Borrowed("CL-005"),
             category: Category::Cloud,
-            // Leading AnyStar admits global flags before the service token
-            // (`aws --profile prod s3 rm …`, `aws --region … s3 rm …`).
             pattern: vec![
                 s("aws"),
                 any_star(),
@@ -677,8 +651,6 @@ pub(super) fn rules() -> Vec<PrefixRule> {
         PrefixRule {
             id: Cow::Borrowed("CL-011"),
             category: Category::Cloud,
-            // Mirrors CL-005. The leading AnyStar admits global flags before the
-            // service token (`aws --profile … s3 rb`, `aws --region … s3 rb`).
             pattern: vec![
                 s("aws"),
                 any_star(),
@@ -708,8 +680,6 @@ pub(super) fn rules() -> Vec<PrefixRule> {
         PrefixRule {
             id: Cow::Borrowed("CL-012"),
             category: Category::Cloud,
-            // Leading AnyStar admits global flags before the service token
-            // (`aws --profile … s3 sync`, `aws --region … s3 sync`).
             pattern: vec![
                 s("aws"),
                 any_star(),
@@ -739,7 +709,6 @@ pub(super) fn rules() -> Vec<PrefixRule> {
         PrefixRule {
             id: Cow::Borrowed("CL-013"),
             category: Category::Cloud,
-            // Leading AnyStar catches the idiomatic `gsutil -m rm -r gs://b`.
             pattern: vec![
                 s("gsutil"),
                 any_star(),

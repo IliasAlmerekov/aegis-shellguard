@@ -1,8 +1,6 @@
 use super::*;
 use crate::scanner::{AmbientEnv, CdUnresolved, DangerStageTarget, GitStageReport, StageDir};
 
-// Directory walk under Bash must never name a directory Bash would not enter (#525).
-
 fn report_in(cmd: &str, ambient: AmbientEnv) -> GitStageReport {
     let scanner = scanner();
     let assessment = scanner.assess(cmd);
@@ -123,8 +121,6 @@ fn sudo_login_mode_changes_the_directory_after_a_cd() {
     }
 }
 
-/// The assessment of `cmd` plus a language-aware Danger match, as the
-/// analysis stage adds one. The scanner cannot reproduce its id from tokens.
 fn report_with_language_match(cmd: &str) -> GitStageReport {
     let scanner = scanner();
     let mut assessment = scanner.assess(cmd);

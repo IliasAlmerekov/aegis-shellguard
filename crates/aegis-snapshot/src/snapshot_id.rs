@@ -1,24 +1,12 @@
-//! The one owner of `snapshot_id` encoding and parsing (ADR-026 §2).
-//!
-//! New ids are `v3:<component>:<component>...`. Path and name components are
-//! lowercase hex of their bytes, so a path holding `:` or a tab cannot break
-//! the split. Providers keep their own component layout and semantic checks.
-//! Ids written before `v3` (tab separated) stay readable forever, because the
-//! audit log is append-only.
-
 use std::path::{Path, PathBuf};
 
 use crate::error::SnapshotError;
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
-/// Version prefix of every id written today.
 pub(crate) const V3_VERSION: &str = "v3";
-/// Separator between the components of a `v3` id.
 pub(crate) const V3_SEP: char = ':';
-/// Separator of every id written before `v3`.
 pub(crate) const LEGACY_SEP: char = '\t';
-/// Version prefix of the tab separated `v2` ids.
 const V2_VERSION: &str = "v2";
 
 fn malformed_encoding(label: &str, encoded: &str) -> SnapshotError {
@@ -28,12 +16,10 @@ fn malformed_encoding(label: &str, encoded: &str) -> SnapshotError {
     }
 }
 
-/// Lowercase hex of `bytes`.
 pub(crate) fn encode_bytes(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-/// Hex of a path: raw OS bytes on Unix, the UTF-8 form elsewhere.
 pub(crate) fn encode_path(path: &Path) -> String {
     #[cfg(unix)]
     {
@@ -67,7 +53,6 @@ fn decode_bytes(encoded: &str, label: &str) -> Result<Vec<u8>> {
         .collect()
 }
 
-/// Inverse of [`encode_path`].
 pub(crate) fn decode_path(encoded: &str, label: &str) -> Result<PathBuf> {
     let bytes = decode_bytes(encoded, label)?;
 
@@ -85,20 +70,16 @@ pub(crate) fn decode_path(encoded: &str, label: &str) -> Result<PathBuf> {
     }
 }
 
-/// Hex decode to UTF-8 text.
 pub(crate) fn decode_string(encoded: &str, label: &str) -> Result<String> {
     String::from_utf8(decode_bytes(encoded, label)?).map_err(|_| malformed_encoding(label, encoded))
 }
 
-/// True when `snapshot_id` carries the `v3` prefix. A `v3:` id never falls
-/// through to a legacy parser.
 pub(crate) fn is_v3(snapshot_id: &str) -> bool {
     snapshot_id
         .strip_prefix(V3_VERSION)
         .is_some_and(|rest| rest.starts_with(V3_SEP))
 }
 
-/// Join already encoded components into a `v3` id.
 pub(crate) fn join_v3(components: &[&str]) -> String {
     let mut id = String::from(V3_VERSION);
     for component in components {
@@ -130,19 +111,16 @@ fn split_versioned<'a>(
     Ok(parts)
 }
 
-/// Split a `v3` id into exactly `components` parts after the version.
 pub(crate) fn split_v3(snapshot_id: &str, components: usize) -> Result<Vec<&str>> {
     split_versioned(snapshot_id, V3_SEP, V3_VERSION, components)
 }
 
-/// True when `snapshot_id` carries the tab separated `v2` prefix.
 pub(crate) fn is_v2(snapshot_id: &str) -> bool {
     snapshot_id
         .strip_prefix(V2_VERSION)
         .is_some_and(|rest| rest.starts_with(LEGACY_SEP))
 }
 
-/// Split a `v2` id into exactly `components` parts after the version.
 pub(crate) fn split_v2(snapshot_id: &str, components: usize) -> Result<Vec<&str>> {
     split_versioned(snapshot_id, LEGACY_SEP, V2_VERSION, components)
 }

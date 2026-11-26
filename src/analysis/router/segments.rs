@@ -1,5 +1,3 @@
-//! List-segment, pipeline-stage, and cwd/HOME-tracking routing (#384, ADR-022 §6).
-
 use super::*;
 
 mod argv_walk;
@@ -28,36 +26,29 @@ use runner::{
 use unclaimed::{contains_unquoted_ansi_c_quote, unclaimed_interpreter_net};
 use wrappers::{posix_function_definition_body, strip_trailing_redirection, wrapper_bodies};
 
-/// Bound on wrapper-peeling recursion; shares ADR-022 §7's depth ceiling to bound quadratic work and stack depth.
 const MAX_WRAP_DEPTH: u32 = crate::analysis::OrchestrationBudget::L1_DEFAULT.max_depth;
 
-/// Fast-path guarded by `contains("<<")` to stay allocation-light on the hot path (`CONVENTION.md` §8).
 pub(super) fn command_has_heredoc(command: &str) -> bool {
     command.contains("<<") && !aegis_parser::extract_heredoc_bodies(command).is_empty()
 }
 
-/// Cwd state threaded across list segments and wrapper bodies (ADR-022 §6).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum CwdState {
     Unset,
     Literal(PathBuf),
-    /// Once degraded, never recovers; every later relative target degrades.
     Degraded,
 }
 
-/// `HOME` trust state for `~/` launcher operands (GHSA-xj54); once `Degraded`, never recovers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum HomeState {
     Trusted,
     Degraded,
 }
 
-/// `true` when `tok` assigns or names `HOME` (GHSA-xj54), so wrapper payloads degrade on it.
 pub(super) fn token_is_home_assignment(tok: &str) -> bool {
     tok == "HOME" || tok.starts_with("HOME=")
 }
 
-/// Borrow-based wrapper over `effective_token_slices_checked` so callers can keep raw `&str` tokens (#384, #430).
 fn effective_stage_slice<'a>(
     owned_tokens: &'a [String],
 ) -> (
@@ -71,8 +62,6 @@ fn effective_stage_slice<'a>(
     (tokens, slice, truncated)
 }
 
-/// Classify a stage's cwd effect: `Literal` only for `cd -- <literal>`, `Degraded` for other
-/// `cd`/`pushd`/`popd`/`source`/`.`/`eval` shapes (GHSA-xj54). Leaves wrappers to [`route_wrapped_stage`].
 fn parse_cd_like(stage_raw: &str) -> Option<CwdState> {
     let owned_tokens = aegis_parser::split_tokens(stage_raw);
     let (_tokens, slice, _truncated) = effective_stage_slice(&owned_tokens);
@@ -111,7 +100,6 @@ fn is_assignment_token(tok: &str) -> bool {
     is_shell_identifier(name)
 }
 
-/// `true` when every non-redirection token is an assignment and at least one exists (GHSA-xj54, Rule A).
 pub(super) fn is_assignment_only_stage(tokens: &[&str]) -> bool {
     let mut saw_assignment = false;
     let mut index = 0;
@@ -134,7 +122,6 @@ pub(super) fn is_assignment_only_stage(tokens: &[&str]) -> bool {
     saw_assignment
 }
 
-/// Programs that can mutate shell state including `HOME` (Rule A, GHSA-xj54); `printf` is handled separately for `-v`.
 const HOME_OPAQUE_PROGRAMS: &[&str] = &[
     "read",
     "mapfile",
@@ -152,12 +139,10 @@ const HOME_OPAQUE_PROGRAMS: &[&str] = &[
     ".",
 ];
 
-/// Loop headers write the loop variable and degrade `HOME` trust (Rule A, GHSA-xj54).
 pub(super) fn is_for_or_select_header(raw_tokens: &[&str]) -> bool {
     matches!(raw_tokens.first(), Some(&"for") | Some(&"select"))
 }
 
-/// Any variable-writing or shell-state-mutating stage withholds `HOME` trust conservatively (Rule A, GHSA-xj54).
 fn stage_degrades_home_trust(stage_raw: &str) -> bool {
     let owned_tokens = aegis_parser::split_tokens(stage_raw);
     let (raw_tokens, slice, _truncated) = effective_stage_slice(&owned_tokens);
@@ -168,7 +153,6 @@ fn stage_degrades_home_trust(stage_raw: &str) -> bool {
 
     if let Some(slice) = &slice {
         if slice.program == "printf" {
-            // Glued `-vNAME` writes a variable just like `-v NAME`.
             return slice.tokens[1..].iter().any(|tok| tok.starts_with("-v"));
         }
         if HOME_OPAQUE_PROGRAMS.contains(&slice.program) {
@@ -179,7 +163,6 @@ fn stage_degrades_home_trust(stage_raw: &str) -> bool {
     is_assignment_only_stage(&raw_tokens)
 }
 
-/// Fold a cwd change; only an unbroken `&&` chain preserves a literal cwd (ADR-022 §6).
 fn fold_cd(
     current: &CwdState,
     effect: CwdState,
@@ -199,7 +182,6 @@ fn fold_cd(
     }
 }
 
-/// Crossing any operator other than `&&` degrades a `Literal` cwd.
 fn advance_across_separator(
     state: CwdState,
     separator: Option<aegis_parser::ListSeparator>,
@@ -212,7 +194,6 @@ fn advance_across_separator(
     }
 }
 
-/// Rebase relative targets onto `cwd`, or degrade when `cwd` is unknown (ADR-022 §6).
 fn apply_cwd(target: RoutedTarget, cwd: &CwdState) -> RoutedTarget {
     match (target, cwd) {
         (t, CwdState::Unset) => t,
@@ -254,7 +235,6 @@ fn apply_cwd(target: RoutedTarget, cwd: &CwdState) -> RoutedTarget {
     }
 }
 
-/// Route one list segment (top-level or inside a wrapper body), updating `cwd` and `home` (#384, GHSA-xj54).
 pub(super) fn route_list_segment(
     segment: &aegis_parser::ListSegment,
     ctx: &RouteContext<'_>,
@@ -266,7 +246,6 @@ pub(super) fn route_list_segment(
     let stages = &segment.pipeline.segments;
 
     if stages.len() == 1 {
-        // Checked before `parse_cd_like` because `source`/`.` matches both (GHSA-xj54).
         if stage_degrades_home_trust(&stages[0].raw) {
             *home = HomeState::Degraded;
         }
@@ -284,7 +263,6 @@ pub(super) fn route_list_segment(
         return;
     }
 
-    // Any `cd`-like stage in a pipeline subshell degrades the pipeline and subsequent cwd (ADR-022 §6).
     let mut pipeline_had_cd = false;
     let mut stage_targets = Vec::new();
     let mut wrapped_stage_targets = Vec::new();
@@ -342,7 +320,6 @@ pub(super) fn route_list_segment(
         if index > 0
             && let Some(bare_interp) = bare_stage_interpreter(&stage.raw, ctx.trusted_aliases)
         {
-            // Only the two-stage `printf '%s' <literal> | <interp>` producer is statically recoverable (ADR-022 §6).
             if index == 1
                 && stages.len() == 2
                 && let Some(literal) = printf_percent_s_literal(&stages[0].raw)
@@ -359,7 +336,6 @@ pub(super) fn route_list_segment(
             }
             continue;
         }
-        // Unclaimed stage: fall back to the fail-closed net (#384, #430, ADR-022 §6).
         stage_targets.extend(unclaimed_interpreter_net(&stage.raw, ctx, *home));
     }
 
@@ -369,7 +345,6 @@ pub(super) fn route_list_segment(
     for target in stage_targets {
         push_unique(targets, apply_cwd(target, cwd));
     }
-    // Already resolved against `scratch_cwd`; do not rebase again against the pipeline's cwd.
     for target in wrapped_stage_targets {
         push_unique(targets, target);
     }
@@ -383,7 +358,6 @@ fn push_unique(targets: &mut Vec<RoutedTarget>, target: RoutedTarget) {
     }
 }
 
-/// Route a non-pipeline stage; wrapper targets are already cwd-resolved by [`route_wrapped_stage`].
 fn route_stage(
     stage_raw: &str,
     ctx: &RouteContext<'_>,
@@ -416,7 +390,6 @@ fn route_stage(
     }
 }
 
-/// Reserved words that open a wrapper without keeping the next word in command position (#430).
 const WRAPPER_ONLY_RESERVED_WORDS: &[&str] = &["case", "function", "coproc"];
 
 fn stage_starts_with_reserved_word(trimmed: &str, word: &str) -> bool {
@@ -425,7 +398,6 @@ fn stage_starts_with_reserved_word(trimmed: &str, word: &str) -> bool {
         .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
 }
 
-/// Cheap prefix/substring pre-filter for grammar `route_direct_stage` cannot see through (#430, `CONVENTION.md` §8).
 fn stage_may_be_wrapped(stage_raw: &str) -> bool {
     let trimmed = stage_raw.trim_start();
     trimmed.starts_with('(')
@@ -442,7 +414,6 @@ fn stage_may_be_wrapped(stage_raw: &str) -> bool {
         || posix_function_definition_body(trimmed).is_some()
 }
 
-/// Command tail after heredoc marker(s) on line 1; `list_segments` keeps it attached to preserve heredoc bodies (#384).
 fn heredoc_marker_line_tail(stage_raw: &str) -> Option<&str> {
     let first_line = stage_raw.lines().next()?;
     let (_, mut after) = aegis_parser::split_at_heredoc_marker(first_line)?;
@@ -459,8 +430,6 @@ fn heredoc_marker_line_tail(stage_raw: &str) -> Option<&str> {
     (!without_operator.is_empty()).then_some(without_operator)
 }
 
-/// Route targets inside grammar wrappers (#430). Any `cwd` change inside a wrapper body
-/// degrades the caller's `cwd` conservatively; `home` degradation propagates the same way (GHSA-xj54).
 fn route_wrapped_stage(
     stage_raw: &str,
     ctx: &RouteContext<'_>,
@@ -474,7 +443,6 @@ fn route_wrapped_stage(
     }
 
     if depth >= MAX_WRAP_DEPTH {
-        // Fail closed past the nesting cap (`CONVENTION.md` §2, #384).
         push_unique(
             targets,
             RoutedTarget::Unresolved {

@@ -1,7 +1,3 @@
-//! Environment-mutating tests for `evaluate_policy_rules` `when` clauses.
-//!
-//! Each environment case runs in a child with its own environment.
-
 use std::fs;
 #[path = "support/isolated_test.rs"]
 mod isolated_test;

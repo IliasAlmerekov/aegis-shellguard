@@ -1,5 +1,3 @@
-//! End-to-end privacy regressions for Language-aware source analysis.
-
 #![cfg(feature = "language-analysis")]
 
 mod support;
@@ -34,10 +32,6 @@ fn read_audit(home: &Path) -> Vec<u8> {
     fs::read(home.join(".aegis/audit.jsonl")).unwrap_or_default()
 }
 
-/// Runs one surface in a fresh home until `ran` sees the fixture's Match, so
-/// each privacy check runs against real analysis output. The CLI clamps the
-/// analysis deadline to 100 ms, and a loaded test run can miss it (#458).
-/// Every fixture here denies, so a repeat executes nothing.
 fn until_match(
     label: &str,
     mut run: impl FnMut(&Path) -> Output,
@@ -82,11 +76,6 @@ fn run_aegis(home: &Path, cwd: &Path, args: &[&str], input: Option<&[u8]>, ci: b
         .expect("Aegis privacy fixture must finish")
 }
 
-/// Positive counterpart to `assert_does_not_disclose_source`: proves language
-/// analysis actually ran and produced the fixture's `LANG-FS-DEL` Match on this
-/// surface, so the accompanying privacy assertion cannot pass vacuously because
-/// analysis silently degraded (e.g. missed the timeout) and produced no Match
-/// at all.
 fn assert_ran_language_analysis(label: &str, bytes: &[u8]) {
     let rendered = String::from_utf8_lossy(bytes);
     assert!(
@@ -105,9 +94,6 @@ fn assert_does_not_disclose_source(label: &str, bytes: &[u8]) {
 
 #[tokio::test]
 async fn analyzed_script_source_is_absent_from_every_public_output_surface() {
-    // The command deliberately contains only a path. The sentinel exists solely
-    // in the inspected script, so this detects source disclosure rather than the
-    // supported raw-command echo in Shell output and audit records.
     let cwd = TempDir::new().expect("temporary command cwd");
     let command = write_analyzed_script(cwd.path());
 
@@ -154,9 +140,6 @@ async fn analyzed_script_source_is_absent_from_every_public_output_surface() {
         |home| run_aegis(home, cwd.path(), &["--command", &command], None, false),
         |home, _| shows_match(&read_audit(home.path())),
     );
-    // Shell's non-interactive text output only renders match detail with
-    // `--verbose`; the audit log is the surface that proves language analysis
-    // ran without disclosing source for the default (non-verbose) invocation.
     assert_does_not_disclose_source("Shell stdout", &shell.stdout);
     assert_does_not_disclose_source("Shell stderr", &shell.stderr);
     let shell_audit = fs::read(shell_home.path().join(".aegis/audit.jsonl"))
@@ -200,9 +183,6 @@ async fn analyzed_script_source_is_absent_from_every_public_output_surface() {
         },
         |home, _| shows_match(&read_audit(home.path())),
     );
-    // Watch's NDJSON result frame carries only `decision`/`exit_code` — it
-    // structurally cannot echo match text — so the audit log is the surface
-    // that actually proves Watch ran language analysis without disclosing source.
     assert_does_not_disclose_source("Watch NDJSON", &watch.stdout);
     assert_does_not_disclose_source("Watch diagnostics", &watch.stderr);
     let watch_audit = fs::read(watch_home.path().join(".aegis/audit.jsonl"))

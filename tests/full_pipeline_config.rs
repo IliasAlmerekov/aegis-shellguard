@@ -1,9 +1,3 @@
-//! Config subcommand behavior: `config show`/`init`/`validate` projection,
-//! layered config source attribution, legacy allowlist rejection, and
-//! per-rule error location reporting.
-//!
-//! Split from the original `tests/full_pipeline.rs` (behavior-preserving move).
-
 mod support;
 
 use std::fs;

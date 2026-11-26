@@ -1,10 +1,3 @@
-//! Manifest atomic-write helpers for the Supabase snapshot runtime.
-//!
-//! These helpers preserve the manifest atomic-write semantics:
-//! write temp file -> sync temp file -> rename -> sync parent directory.
-//! The ordering, fsync/sync steps, and the test-only manifest write failure
-//! injection hook MUST NOT be reordered, dropped, or simplified.
-
 use std::fs;
 use std::path::Path;
 

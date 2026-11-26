@@ -1,14 +1,3 @@
-//! Opt-in npm update notice (ADR-038).
-//!
-//! Consent and cache state live under `~/.aegis/`, global and never in a
-//! project `.aegis.toml` — a project must not be able to turn on an outbound
-//! request on a developer's machine. The shell wrapper is the only automatic
-//! trigger: on an interactive TTY, text output, with a stale cache, it spawns
-//! one detached background child (this same binary, re-invoked with
-//! [`INTERNAL_UPDATE_CHECK_FLAG`]) that performs the registry check and exits
-//! without the parent ever waiting on it. Aegis never self-updates and never
-//! executes npm; it only prints the version and the command to run.
-
 mod error;
 mod registry;
 mod state;
@@ -26,34 +15,17 @@ pub use state::{Channel, UpdateState};
 
 type Result<T> = std::result::Result<T, UpdateError>;
 
-/// Argv flag that re-invokes this binary as the internal background
-/// update-check child. Recognized by `main.rs` before clap parsing and Tokio
-/// runtime construction, mirroring `analysis::INTERNAL_LANGUAGE_WORKER_FLAG`.
 pub const INTERNAL_UPDATE_CHECK_FLAG: &str = "--internal-update-check";
 
 const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const NOTICE_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
-/// A lock older than this is assumed to belong to a crashed or killed child
-/// and is reclaimed, so a single stuck lock cannot permanently silence
-/// background checks.
 const LOCK_STALE_AFTER: Duration = Duration::from_secs(120);
 
-/// Result of a live registry check.
 pub enum CheckOutcome {
-    /// The registry answered and the cache was updated.
-    Fetched {
-        /// The version string the registry reported as `latest`.
-        latest: String,
-    },
-    /// The network was unreachable or the response was malformed. The
-    /// previous cache is left untouched.
-    Failed {
-        /// Why the check failed.
-        error: UpdateError,
-    },
+    Fetched { latest: String },
+    Failed { error: UpdateError },
 }
 
-/// `aegis update enable --channel npm`: opt in and select a channel.
 pub fn enable(channel: Channel) -> Result<UpdateState> {
     enable_at(&state::state_path()?, channel)
 }
@@ -68,8 +40,6 @@ fn enable_at(path: &Path, channel: Channel) -> Result<UpdateState> {
     })
 }
 
-/// `aegis update disable`: opt out and clear the selected channel. The last
-/// known cache is left in place — it is inert without consent.
 pub fn disable() -> Result<UpdateState> {
     disable_at(&state::state_path()?)
 }
@@ -84,22 +54,10 @@ fn disable_at(path: &Path) -> Result<UpdateState> {
     })
 }
 
-/// `aegis update status`: read consent, channel, and cache state.
 pub fn status() -> Result<UpdateState> {
     state::load(&state::state_path()?)
 }
 
-/// Run a live registry check now and persist the result on success. Used by
-/// the explicit `aegis update check` command and by the background child the
-/// shell wrapper spawns. Runs regardless of stored consent: an explicit
-/// `check` invocation — interactive or backgrounded on the wrapper's own
-/// schedule — is itself the authorization for that one request; `consent`
-/// only gates whether the wrapper spawns that background invocation
-/// automatically and whether a notice ever prints.
-///
-/// A failed check returns `Ok(CheckOutcome::Failed { .. })`, not `Err`. It
-/// records the attempt timestamp but preserves the cached latest version, so
-/// a flaky network neither corrupts nor clears the last valid cache record.
 pub fn check_now(channel: Channel) -> Result<CheckOutcome> {
     check_now_with(
         &state::state_path()?,
@@ -142,12 +100,6 @@ fn check_now_while_locked(
     Ok(CheckOutcome::Fetched { latest })
 }
 
-/// Print an update notice to stderr and record it as shown, if one is due
-/// for `installed_version`. Callers must already have confirmed an
-/// interactive TTY and non-CI, non-JSON, non-Watch, non-hook context — this
-/// function does not re-check the environment, only consent and cache state.
-/// Best-effort: any failure to read or write state is swallowed by the
-/// caller, never surfaced to the wrapped command's exit code.
 pub fn maybe_render_notice(installed_version: &str) -> Result<()> {
     maybe_render_notice_at(&state::state_path()?, installed_version)
 }
@@ -173,7 +125,6 @@ fn maybe_render_notice_at(path: &Path, installed_version: &str) -> Result<()> {
         state::save(path, &current)?;
 
         let mut stderr = std::io::stderr();
-        // Advisory notice write is best-effort; closed stderr has no fallback channel.
         let _ = writeln!(
             stderr,
             "Aegis {newer} is available (installed: {installed_version}). Update: npm i -g @iliasalmerekov/aegis@latest"
@@ -207,8 +158,6 @@ fn cache_is_stale(state: &UpdateState) -> bool {
     }
 }
 
-/// The channel to background-check now, when consent is on, a channel is
-/// selected, and the cache is stale — `None` otherwise.
 fn spawn_channel_if_due(state: &UpdateState) -> Option<Channel> {
     if !state.consent {
         return None;
@@ -217,11 +166,6 @@ fn spawn_channel_if_due(state: &UpdateState) -> Option<Channel> {
     cache_is_stale(state).then_some(channel)
 }
 
-/// Spawn the detached background update-check child if consent is on, a
-/// channel is selected, and the cache is stale. Best-effort and silent on
-/// every failure path (missing `HOME`, corrupt state, lock contention,
-/// `current_exe` unavailable) — never affects the wrapped command's exit
-/// code, and never blocks waiting on the child.
 pub fn maybe_spawn_background_check() {
     let Ok(state_path) = state::state_path() else {
         return;
@@ -238,19 +182,15 @@ pub fn maybe_spawn_background_check() {
         state::save(&state_path, &current)?;
         Ok(Some(channel))
     })();
-    // Background check is best-effort; state load/save or clock errors skip spawning.
     let Some(channel) = scheduled.ok().flatten() else {
-        // Best-effort lock release; stale locks expire after LOCK_STALE_AFTER.
         let _ = release_lock();
         return;
     };
     let Ok(exe) = std::env::current_exe() else {
-        // Best-effort lock release; stale locks expire after LOCK_STALE_AFTER.
         let _ = release_lock();
         return;
     };
 
-    // Background check spawn is best-effort; failure skips this check without affecting the command.
     let _spawned = std::process::Command::new(exe)
         .arg(INTERNAL_UPDATE_CHECK_FLAG)
         .arg(channel.as_arg())
@@ -259,7 +199,6 @@ pub fn maybe_spawn_background_check() {
         .stderr(std::process::Stdio::null())
         .spawn();
 
-    // Best-effort lock release; stale locks expire after LOCK_STALE_AFTER.
     let _ = release_lock();
 }
 
@@ -285,9 +224,6 @@ fn acquire_lock_at(path: &Path) -> Result<bool> {
         std::fs::create_dir_all(parent)?;
     }
 
-    // At most one reclaim attempt: try to create the lock, and if it already
-    // exists and is stale, remove it and try exactly once more. A second
-    // contender losing that retry backs off rather than looping.
     for _ in 0..2 {
         match std::fs::OpenOptions::new()
             .write(true)
@@ -301,7 +237,6 @@ fn acquire_lock_at(path: &Path) -> Result<bool> {
                     file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
                 }
                 let mut file = file;
-                // Lock ownership comes from O_EXCL creation; PID text is diagnostic only.
                 let _ = writeln!(file, "pid={}", std::process::id());
                 return Ok(true);
             }
@@ -309,7 +244,6 @@ fn acquire_lock_at(path: &Path) -> Result<bool> {
                 if !lock_is_stale(path) {
                     return Ok(false);
                 }
-                // Best-effort stale lock removal; a racing process may remove it first.
                 let _ = std::fs::remove_file(path);
             }
             Err(err) => return Err(err.into()),
@@ -342,9 +276,6 @@ fn release_lock_at(path: &Path) -> Result<()> {
     }
 }
 
-/// Entry point for the `--internal-update-check <channel>` child the shell
-/// wrapper spawns. Not a user-facing command. Always releases the lock on
-/// exit and always returns a best-effort exit code — nothing waits on it.
 pub fn run_internal_update_check(channel: Channel) -> i32 {
     let result = internal_check_now(channel);
     match result {
@@ -375,9 +306,6 @@ fn internal_check_now_with(
     })
 }
 
-/// Parse the channel argument that follows [`INTERNAL_UPDATE_CHECK_FLAG`] in
-/// `argv` and run the background check. Returns `0` (nothing to do, silently)
-/// when the flag has no recognized channel argument.
 pub fn run_internal_update_check_from_env() -> i32 {
     let channel = std::env::args()
         .skip_while(|arg| arg != INTERNAL_UPDATE_CHECK_FLAG)

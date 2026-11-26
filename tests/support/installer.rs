@@ -1,12 +1,3 @@
-//! Installer-flow shared helpers extracted verbatim from the original
-//! `tests/installer_flow.rs` so the split installer test crates
-//! (`installer_checksum`, `installer_platform`, `installer_tty`,
-//! `installer_live_release`) can share the same script runners, stub writers,
-//! and release-fixture preparation without duplicating logic.
-//!
-//! These helpers are test-only and intentionally panic on internal errors
-//! (`.unwrap()` is acceptable here). `write_executable` is reused from
-//! `super` (the parent `support` module) to avoid a name collision.
 #![allow(dead_code)]
 
 use std::fs;
@@ -384,9 +375,6 @@ pub fn run_script(script_name: &str, envs: &[(&str, &str)]) -> Output {
     run_script_at(&script_copy, envs)
 }
 
-/// Like `run_script`, but runs against a caller-supplied `HOME` instead of a
-/// throwaway sandbox, so a test can seed files under it (e.g. `~/.aegis`)
-/// before running the script and inspect them afterward.
 pub fn run_script_at_home(home: &Path, script_name: &str, envs: &[(&str, &str)]) -> Output {
     run_script_at_home_with_args(home, script_name, &[], envs)
 }

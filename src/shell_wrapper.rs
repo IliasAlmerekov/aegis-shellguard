@@ -119,15 +119,10 @@ fn run_shell_text_outcome(
     exit_code
 }
 
-/// Update notice (ADR-038): interactive-TTY-only, best-effort, and never
-/// allowed to affect the wrapped command's own exit code. Gated here rather
-/// than inside `aegis::update` so `Watch`, JSON output, and `aegis hook` —
-/// none of which call this function — never even construct the check.
 fn maybe_offer_update_notice() {
     if is_ci_environment() || !std::io::stdout().is_terminal() {
         return;
     }
-    // Update notice is best-effort and must not affect the wrapped command's exit code.
     let _ = aegis::update::maybe_render_notice(env!("CARGO_PKG_VERSION"));
     aegis::update::maybe_spawn_background_check();
 }

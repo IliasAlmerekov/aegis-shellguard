@@ -1,5 +1,3 @@
-//! Redirections between assignments, launchers, and the program must not hide it (#384).
-
 use super::*;
 
 fn evil_py_script_file() -> RoutedTarget {

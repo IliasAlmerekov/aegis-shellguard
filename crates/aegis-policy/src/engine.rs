@@ -1,5 +1,3 @@
-//! Pure policy engine: evaluate a prepared policy input and return a decision.
-
 use aegis_types::PolicyRuleDecision;
 use aegis_types::{
     AllowlistOverrideLevel, AnalysisStatus, CiPolicy, DetectionMechanism, Mode, RiskLevel,
@@ -8,19 +6,15 @@ use aegis_types::{
 
 use super::types::{PolicyAction, PolicyDecision, PolicyInput, PolicyRationale};
 
-/// Side-effect-free policy evaluator.
 pub trait PolicyEngine {
-    /// Evaluate the policy input and return a fully explained decision.
     fn evaluate(&self, input: PolicyInput<'_>) -> PolicyDecision;
 }
 
-/// Default policy evaluator used by the CLI runtime.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DefaultPolicyEngine;
 
 impl PolicyEngine for DefaultPolicyEngine {
     fn evaluate(&self, input: PolicyInput<'_>) -> PolicyDecision {
-        // Intrinsic-block commands are never bypassable — not by rules, not by allowlist.
         if input.assessment.risk == RiskLevel::Block {
             return block(input, PolicyRationale::IntrinsicRiskBlock);
         }
@@ -52,13 +46,9 @@ impl PolicyEngine for DefaultPolicyEngine {
         {
             return match decision {
                 PolicyRuleDecision::Allow => {
-                    // Preserve snapshot requirements for Danger commands even when a rule
-                    // auto-approves — consistent with allowlist-override behaviour.
                     let snaps = snapshots_required(&input, true);
                     auto_approve(input, PolicyRationale::PolicyRulesOverride, false, snaps)
                 }
-                // Handled before the language-aware gate so an explicit rule
-                // block remains terminal.
                 PolicyRuleDecision::Block => block(input, PolicyRationale::PolicyRulesOverride),
                 PolicyRuleDecision::Prompt => {
                     prompt_with_rationale(input, PolicyRationale::PolicyRulesOverride)
@@ -66,7 +56,6 @@ impl PolicyEngine for DefaultPolicyEngine {
             };
         }
         match input.mode {
-            // `Mode::Audit` opts out of all enforcement and ADR-016 snapshots; audit still logs `effect_opaque`.
             Mode::Audit => auto_approve(input, PolicyRationale::AuditMode, false, false),
             Mode::Protect => evaluate_protect(input),
             Mode::Strict => evaluate_strict(input),
@@ -74,7 +63,6 @@ impl PolicyEngine for DefaultPolicyEngine {
     }
 }
 
-/// Evaluate policy with the default engine.
 #[must_use]
 pub fn evaluate_policy(input: PolicyInput<'_>) -> PolicyDecision {
     DefaultPolicyEngine.evaluate(input)
@@ -107,7 +95,6 @@ fn evaluate_protect(input: PolicyInput<'_>) -> PolicyDecision {
             }
         }
         RiskLevel::Block => block(input, PolicyRationale::IntrinsicRiskBlock),
-        // Fail safe: an unknown future risk level is treated as Block.
         _ => block(input, PolicyRationale::IntrinsicRiskBlock),
     }
 }
@@ -127,7 +114,6 @@ fn evaluate_strict(input: PolicyInput<'_>) -> PolicyDecision {
             }
         }
         RiskLevel::Block => block(input, PolicyRationale::IntrinsicRiskBlock),
-        // Fail safe: an unknown future risk level is treated as Block.
         _ => block(input, PolicyRationale::IntrinsicRiskBlock),
     }
 }
@@ -137,9 +123,6 @@ fn allowlist_override_applies(input: &PolicyInput<'_>) -> bool {
         return false;
     }
 
-    // ADR-022 §5: allowlist entries cannot auto-approve a completed semantic
-    // Match or an Analysis degradation. The resulting Protect-mode prompt is a
-    // one-time decision for this assessment, not a reusable allowlist grant.
     if analysis_requires_explicit_approval(input) {
         return false;
     }
@@ -154,7 +137,6 @@ fn allowlist_override_applies(input: &PolicyInput<'_>) -> bool {
             AllowlistOverrideLevel::Danger
         ),
         RiskLevel::Safe | RiskLevel::Block => false,
-        // Fail safe: an unknown future risk level never qualifies for an override.
         _ => false,
     }
 }
@@ -172,7 +154,6 @@ fn analysis_requires_explicit_approval(input: &PolicyInput<'_>) -> bool {
             .matched
             .iter()
             .any(|matched| matched.evidence.mechanism() == DetectionMechanism::LanguageRule),
-        // Fail safe if a future analysis status is introduced.
         _ => true,
     }
 }
@@ -257,15 +238,11 @@ fn block(_input: PolicyInput<'_>, rationale: PolicyRationale) -> PolicyDecision 
     }
 }
 
-/// `auto_approved` is true when no human decides this run (ADR-031 §1).
 fn snapshots_required(input: &PolicyInput<'_>, auto_approved: bool) -> bool {
     if input.mode == Mode::Audit || input.config_flags.snapshot_policy == SnapshotPolicy::None {
         return false;
     }
 
-    // ADR-016: plugin applicability cannot erase Required recovery for
-    // effect-opaque execution. An empty plugin set is observed later as a
-    // Recovery degradation.
     if input.assessment.effect_opaque {
         return true;
     }
@@ -274,9 +251,6 @@ fn snapshots_required(input: &PolicyInput<'_>, auto_approved: bool) -> bool {
         return false;
     }
 
-    // ADR-031 §1: an auto-approved Danger is Required even with no applicable
-    // plugin. A confirmed Danger stays best-effort, requested only when a
-    // plugin applies.
     auto_approved
         || !input
             .execution_context

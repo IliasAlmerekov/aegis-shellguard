@@ -1,15 +1,5 @@
 use super::*;
 
-// GHSA-7564: every `GIT-*` token-prefix rule (`builtins_a.rs`/`builtins_b.rs`)
-// and the git-keyed regex rescan are anchored at `["git", "<subcommand>",
-// ...]`. A git global option between `git` and its subcommand (`-C <path>`,
-// `-c <name>=<value>`, `--git-dir=...`, ...) shifts the subcommand off
-// position 1, so none of them ever saw it. `git -C . reset --hard` and
-// `git -C repo push --delete origin x` were both `Safe`. The scanner now
-// resolves every position the subcommand could start at (aegis-parser's
-// `git_option_subcommand_starts`) and re-runs both mechanisms against each
-// candidate.
-
 fn ids(assessment: &Assessment) -> Vec<&str> {
     assessment
         .matched
@@ -17,8 +7,6 @@ fn ids(assessment: &Assessment) -> Vec<&str> {
         .map(|m| m.pattern.id.as_ref())
         .collect()
 }
-
-// ── Every GIT-* rule fires behind `-C .` ──────────────────────────────────
 
 #[test]
 fn assess_dash_capital_c_reset_hard_warns_via_git001() {
@@ -77,8 +65,6 @@ fn assess_dash_capital_c_push_delete_warns_via_git009() {
     );
 }
 
-// ── Every listed option form is skipped, not just `-C` ────────────────────
-
 #[test]
 fn assess_dash_c_config_value_reset_hard_warns_via_git001() {
     assert_assessment_matches_pattern("git -c k=v reset --hard", RiskLevel::Warn, "GIT-001");
@@ -126,14 +112,10 @@ fn assess_chain_of_several_options_reset_hard_warns_via_git001() {
     );
 }
 
-// ── Launcher plus git options compose ──────────────────────────────────────
-
 #[test]
 fn assess_sudo_dash_capital_c_reset_hard_warns_via_git001() {
     assert_assessment_matches_pattern("sudo git -C . reset --hard", RiskLevel::Warn, "GIT-001");
 }
-
-// `git -C repo push --delete` (#431).
 
 #[test]
 fn assess_dash_capital_c_repo_push_delete_warns_via_git009() {
@@ -144,8 +126,6 @@ fn assess_dash_capital_c_repo_push_delete_warns_via_git009() {
     );
 }
 
-// ── An unlisted option gets both readings ──────────────────────────────────
-
 #[test]
 fn assess_unlisted_option_immediately_before_subcommand_warns_via_git001() {
     assert_assessment_matches_pattern("git --newopt reset --hard", RiskLevel::Warn, "GIT-001");
@@ -155,8 +135,6 @@ fn assess_unlisted_option_immediately_before_subcommand_warns_via_git001() {
 fn assess_unlisted_option_with_one_operand_before_subcommand_warns_via_git001() {
     assert_assessment_matches_pattern("git --newopt x reset --hard", RiskLevel::Warn, "GIT-001");
 }
-
-// ── A Custom regex rule also reaches the candidate (Q5) ────────────────────
 
 #[test]
 fn assess_custom_regex_rule_fires_behind_dash_capital_c() {
@@ -181,8 +159,6 @@ fn assess_custom_regex_rule_fires_behind_dash_capital_c() {
         ids(&assessment)
     );
 }
-
-// ── Must not match ──────────────────────────────────────────────────────
 
 #[test]
 fn assess_dash_capital_c_status_stays_safe() {
@@ -213,8 +189,6 @@ fn assess_version_stays_safe() {
 
 #[test]
 fn assess_dash_c_core_editor_commit_stays_safe() {
-    // No GIT-* rule covers plain `commit`, with or without a git option
-    // ahead of it.
     let s = scanner();
     let assessment = s.assess("git -c core.editor=vim commit");
     assert_eq!(
@@ -227,8 +201,6 @@ fn assess_dash_c_core_editor_commit_stays_safe() {
 
 #[test]
 fn assess_dash_capital_c_push_dry_run_delete_stays_safe() {
-    // GIT-009's dry-run exemption (#431) must still apply once the leading
-    // `-C .` is skipped.
     let s = scanner();
     let assessment = s.assess("git -C . push --dry-run --delete origin x");
     assert!(
@@ -244,14 +216,10 @@ fn assess_dash_capital_c_push_dry_run_delete_stays_safe() {
     );
 }
 
-// Accepted false positive: keep scanning after print-and-exit options.
-
 #[test]
 fn assess_help_reset_hard_warns_via_git001() {
     assert_assessment_matches_pattern("git --help reset --hard", RiskLevel::Warn, "GIT-001");
 }
-
-// Candidate cap (GHSA-7564): past the cap the scanner reports `SCAN-004` without scanning candidates.
 
 fn alternating_unlisted_option_command(pairs: usize) -> String {
     let mut parts = vec!["git".to_string()];
@@ -266,7 +234,6 @@ fn alternating_unlisted_option_command(pairs: usize) -> String {
 
 #[test]
 fn assess_at_the_candidate_cap_still_scans_and_warns_via_git001() {
-    // 15 pairs yield exactly 16 candidates, the cap itself.
     let cmd = alternating_unlisted_option_command(15);
     let assessment = scanner().assess(&cmd);
 
@@ -286,7 +253,6 @@ fn assess_at_the_candidate_cap_still_scans_and_warns_via_git001() {
 
 #[test]
 fn assess_one_past_the_candidate_cap_warns_via_scan004_instead_of_scanning() {
-    // 16 pairs yield 17 candidates, one past the cap.
     let cmd = alternating_unlisted_option_command(16);
     let assessment = scanner().assess(&cmd);
 
@@ -319,11 +285,6 @@ fn assess_2000_unlisted_git_options_warns_via_scan004_without_scanning_candidate
         "got {:?}",
         ids(&assessment)
     );
-    // The cap must stop the per-candidate scans, not just add a warning. If
-    // any candidate were scanned, the trailing `reset --hard` would also
-    // match GIT-001, as the at-the-cap test above shows. This counts work
-    // done instead of wall-clock time, so machine load cannot flake it
-    // (#465). `benches/scanner_bench.rs` covers timing.
     assert!(
         !ids(&assessment).contains(&"GIT-001"),
         "cap must skip candidate scanning entirely, got {:?}",

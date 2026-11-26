@@ -1,5 +1,3 @@
-//! Owner-only filesystem helpers for audit directories and artifacts.
-
 use std::fs::{self, File, OpenOptions};
 use std::path::Path;
 

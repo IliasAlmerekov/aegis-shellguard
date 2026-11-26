@@ -1,13 +1,3 @@
-//! Git stages that need a Snapshot of the working tree git will act on (#471).
-//!
-//! `Scanner::assess` decides how risky a command is. It does not say which
-//! directory a `git` stage will change: `git -C ../other reset --hard` is
-//! `Danger`, but the tree at risk is `../other`, not the process cwd. This
-//! module reuses the scanner's own stage enumeration and git global-option
-//! walk (ADR-041) to report, for each `Danger` git stage that redirects its
-//! working tree, the raw option values the planner needs to resolve a Git
-//! target. It resolves nothing against the filesystem and takes no Snapshot.
-
 use std::collections::HashSet;
 
 use aegis_parser::{EffectiveTokenSlice, EndOfOptions, GitTargetArgs, GitTargetReadings};
@@ -17,60 +7,29 @@ use super::assessment::REGEX_SUPERSEDED_PREFIXES;
 use super::cd_walk::{CdUnresolved, StageDir, mentions_cd, stage_dirs};
 use super::{Scanner, pipeline_semantics, recursive};
 
-/// Why a redirected git stage has no single option set to resolve.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DangerStageTarget {
-    /// No git option redirects the stage: its working tree is the directory
-    /// the stage runs in (#525). Used for a stage moved only by `cd`, git or
-    /// not.
     Plain,
-    /// The `-C`/`--work-tree`/`--git-dir` values of every reading of the
-    /// stage's global options. One entry for an ordinary command; several
-    /// when an unlisted option makes two readings disagree.
     Options(Vec<GitTargetArgs>),
-    /// The option walk exceeded its candidate budget.
     TooManyOptions,
-    /// `GIT_DIR=` or `GIT_WORK_TREE=` sits in the stage's environment prefix,
-    /// or in Aegis's own environment.
     EnvironmentRedirect,
-    /// The stage sits behind a launcher whose argv the scanner cannot map
-    /// back onto the stage's own tokens (an `env -S` split).
     UnmappedLauncher,
-    /// A launcher before `git` changes the working directory (`env -C`,
-    /// `env --chdir`, `sudo -D`, `sudo --chdir`), so every relative path in
-    /// the stage resolves against a directory Aegis does not track.
     LauncherChangesDirectory,
 }
 
-/// One `Danger` stage whose working tree is not the process cwd, or not
-/// provably the process cwd: a git stage that redirects through options, or
-/// any stage that runs after a `cd` (#525).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DangerStage {
-    /// What the stage's options and environment say about its working tree.
     pub target: DangerStageTarget,
-    /// The directory the stage runs in, once earlier `cd` steps are applied.
     pub dir: StageDir,
-    /// Whether the stage's program is `git`. A non-git stage in a directory
-    /// that is no repository needs no Snapshot; a git stage there is a gap.
     pub is_git: bool,
 }
 
-/// The parts of Aegis's own environment that change what a stage can be shown
-/// to do.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct AmbientEnv {
-    /// `GIT_DIR` or `GIT_WORK_TREE` is set, so every spawned git inherits it
-    /// and no git stage can be shown to act on the cwd.
     pub(crate) git_env: bool,
-    /// `CDPATH` is set, so no relative `cd` can be followed.
     pub(crate) cdpath_set: bool,
-    /// Bash would start in physical mode (`SHELLOPTS` holds `physical`).
     pub(crate) physical: bool,
-    /// Bash would import an exported `cd` function (`BASH_FUNC_cd%%`) that
-    /// replaces the builtin.
     pub(crate) cd_function: bool,
-    /// Bash would start with `lastpipe` on (`BASHOPTS` holds `lastpipe`).
     pub(crate) lastpipe: bool,
 }
 
@@ -94,7 +53,6 @@ fn env_text(name: &str) -> String {
         .unwrap_or_default()
 }
 
-/// The evidence one report gathers while it walks the stages.
 #[derive(Default)]
 struct StageEvidence {
     redirected: Vec<DangerStage>,
@@ -102,14 +60,9 @@ struct StageEvidence {
     plain_ids: HashSet<String>,
 }
 
-/// The git Snapshot demand a command makes, stage by stage.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GitStageReport {
-    /// `Danger` git stages that redirect their working tree.
     pub redirected: Vec<DangerStage>,
-    /// Whether some part of the command that needs a Snapshot is not
-    /// explained by `redirected`: a non-redirected `Danger` stage, an
-    /// effect-opaque command, or a `Danger` match no git stage accounts for.
     pub needs_process_cwd: bool,
 }
 
@@ -120,14 +73,10 @@ impl StageEvidence {
         }
     }
 
-    /// Attribute the structural `Danger` matches of one pipeline (its `stages`)
-    /// to the directory `dir` it runs in.
     fn collect_pipeline(&mut self, scanner: &Scanner, stages: &[String], dir: &StageDir) {
         let pipeline = stages.join(" | ");
         let chains = aegis_parser::top_level_pipelines(&pipeline);
         let mut matched = pipeline_semantics::semantic_pipeline_matches(&chains);
-        // Patterns that read the whole pipeline text (`curl ... | sh`) match
-        // no single stage either.
         for stage in stages {
             let tokens = aegis_parser::split_tokens(stage);
             let refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
@@ -155,13 +104,6 @@ impl StageEvidence {
         }
     }
 
-    /// Attribute `Danger` matches no stage scan reproduces to the stages that
-    /// could hold them. The language-aware analysis adds such matches
-    /// (`python3 -c 'shutil.rmtree(...)'`, a script file) to the assessment,
-    /// and their ids cannot be rebuilt from a stage's tokens. Every stage that
-    /// a `cd` moved takes the match, and the process cwd keeps it when a stage
-    /// still runs there, so a moved stage never falls back to the cwd alone
-    /// (#525). This errs toward more Snapshots and disclosures.
     fn attribute_unmatched(&mut self, assessment: &Assessment, stages: &[(String, StageDir)]) {
         let unmatched: Vec<String> = assessment
             .matched
@@ -191,9 +133,6 @@ impl StageEvidence {
         }
     }
 
-    /// Sort the `Danger` stages among `targets` (the scan targets of `cmd`)
-    /// into redirected ones and ones that need the process cwd. `dir` is the
-    /// directory every stage of `cmd` runs in.
     fn collect(
         &mut self,
         scanner: &Scanner,
@@ -203,8 +142,6 @@ impl StageEvidence {
         ambient_git_env: bool,
     ) {
         for target in targets {
-            // The raw command joins every segment into one token list; each
-            // segment is its own target, so skip it as `assess` does.
             if target == cmd && aegis_parser::has_multiple_top_level_segments(cmd) {
                 continue;
             }
@@ -213,10 +150,6 @@ impl StageEvidence {
 
             for slice in aegis_parser::effective_token_slices(&token_refs) {
                 if !slice.program.eq_ignore_ascii_case("git") {
-                    // A Danger match in any other stage needs the process cwd
-                    // Snapshot, even when a redirected git stage matches the
-                    // same pattern id (`git -C a log --format='rm -rf x'`),
-                    // unless a `cd` moved the stage elsewhere (#525).
                     let ids = scanner.danger_ids(&slice);
                     if *dir == StageDir::Process {
                         self.plain_ids.extend(ids);
@@ -251,10 +184,6 @@ impl StageEvidence {
     }
 }
 
-/// The report for a command the recursive scan gave up on. A `cd` word may
-/// have moved the directory the unscanned part runs in, and that cannot be
-/// ruled out, so it is disclosed as an unresolved directory instead of being
-/// covered by the process cwd Snapshot alone.
 fn limit_hit_report(mentions_cd: bool) -> GitStageReport {
     let redirected = if mentions_cd {
         vec![DangerStage {
@@ -272,22 +201,16 @@ fn limit_hit_report(mentions_cd: bool) -> GitStageReport {
 }
 
 impl Scanner {
-    /// Report which `Danger` git stages of `cmd` redirect their working tree.
-    ///
-    /// `assessment` must be the assessment of `cmd`. Called only when a
-    /// recovery backstop applies, never on the safe path.
     pub fn git_stage_report(&self, cmd: &str, assessment: &Assessment) -> GitStageReport {
         self.git_stage_report_with(cmd, assessment, AmbientEnv::from_process())
     }
 
-    /// [`Self::git_stage_report`] with Aegis's own environment passed in.
     pub(crate) fn git_stage_report_with(
         &self,
         cmd: &str,
         assessment: &Assessment,
         ambient: AmbientEnv,
     ) -> GitStageReport {
-        // Read stage boundaries from the words bash runs, as `assess` does.
         let canonical = aegis_parser::canonical_ansi_c_quoting(cmd);
         let cmd = canonical.as_ref();
         let parsed = aegis_parser::Parser::parse(cmd);
@@ -302,8 +225,6 @@ impl Scanner {
 
         let mut evidence = StageEvidence::default();
         if mentions_cd(&target_report.targets) {
-            // #525: walk the command's list structure so each stage knows the
-            // directory it runs in. Runs only when a `cd` is present.
             let walk = stage_dirs(cmd, ambient);
             for (stage, dir) in &walk.stages {
                 let parsed = aegis_parser::Parser::parse(stage);
@@ -313,8 +234,6 @@ impl Scanner {
                 }
                 evidence.collect(self, stage, &stage_report.targets, dir, ambient.git_env);
             }
-            // The structural pipeline matches (`PIPE-*`) belong to the
-            // pipeline as a whole, so no single stage reproduces them.
             for (pipeline, dir) in walk.pipelines {
                 evidence.collect_pipeline(self, &pipeline, &dir);
             }
@@ -347,8 +266,6 @@ impl Scanner {
         }
     }
 
-    /// Ids of the `Danger` patterns one git slice matches, reading global
-    /// options the way `assess` does (ADR-041).
     fn danger_ids(&self, slice: &EffectiveTokenSlice<'_>) -> Vec<String> {
         let mut matched: Vec<MatchResult> =
             self.prefix_scan_effective_slices(std::slice::from_ref(slice), EndOfOptions::Ignore);
@@ -368,9 +285,6 @@ impl Scanner {
     }
 }
 
-/// The target of a non-git stage that a `cd` moved: plain, unless a launcher
-/// in front of it changes the directory again (`env -C`, `sudo -D`) or cannot
-/// be mapped back onto the stage's own tokens (#525).
 fn moved_stage_target(token_refs: &[&str], slice: &EffectiveTokenSlice<'_>) -> DangerStageTarget {
     match launcher_prefix(token_refs, slice) {
         None => DangerStageTarget::UnmappedLauncher,
@@ -381,8 +295,6 @@ fn moved_stage_target(token_refs: &[&str], slice: &EffectiveTokenSlice<'_>) -> D
     }
 }
 
-/// The tokens in front of the effective program, or `None` when the slice does
-/// not map back onto the tail of the stage's own tokens (an `env -S` split).
 fn launcher_prefix<'a, 'b>(
     token_refs: &'a [&'b str],
     slice: &EffectiveTokenSlice<'_>,
@@ -392,8 +304,6 @@ fn launcher_prefix<'a, 'b>(
     (token_refs[start..] == slice.tokens[1..]).then(|| &token_refs[..start])
 }
 
-/// `Some` when the stage's working tree is redirected or cannot be shown to
-/// be the process cwd; `None` for a plain stage.
 fn stage_target(
     token_refs: &[&str],
     slice: &EffectiveTokenSlice<'_>,
@@ -427,12 +337,6 @@ fn stage_target(
     }
 }
 
-/// Whether a launcher in `prefix` runs the command in another directory.
-///
-/// Reads `env -C DIR`, `-CDIR`, `--chdir DIR`, `--chdir=DIR` and the `sudo`
-/// forms `-D DIR`, `--chdir=DIR`, `-i` and `--login`. Short options may be clustered, so any short
-/// option token holding the letter counts. This leans toward reporting a
-/// change: an unresolved Git target is disclosed, never silently wrong.
 fn prefix_changes_directory(prefix: &[&str]) -> bool {
     let has_launcher = |name: &str| {
         prefix.iter().any(|token| {
@@ -449,8 +353,6 @@ fn prefix_changes_directory(prefix: &[&str]) -> bool {
         let short = |letter: char| {
             token.starts_with('-') && !token.starts_with("--") && token.contains(letter)
         };
-        // `sudo -i` and `--login` start the target user's login shell in
-        // that user's home directory.
         let login = *token == "--login" || short('i');
         ((env || sudo) && long) || (env && short('C')) || (sudo && (short('D') || login))
     })

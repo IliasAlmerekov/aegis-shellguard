@@ -1,30 +1,3 @@
-//! In-process pipeline test for the Python language adapter → root mapping →
-//! `LanguageAnalysisResult` (plan Iteration 6, ADR-022 §2/§3/§7).
-//!
-//! This is the seam where the boundary-forced parallel operation vocabulary in
-//! `aegis_language::operation` is converted into the `aegis_types::analysis`
-//! vocabulary and run through the shared classifier (`classify` / `language_match`)
-//! and the cross-language execution-sink invariant (`handle_sink`). No worker
-//! subprocess is involved — the adapter runs in-process and the root mapping
-//! composes its output directly, so the test pins the contract the worker
-//! wiring will later rely on.
-//!
-//! Invariants pinned here:
-//! - Every `aegis_language::OperationKind` variant maps one-for-one onto its
-//!   `aegis_types::OperationKind` counterpart, preserving modifiers and certainty
-//!   (the `operation.rs` doc promises this is pinned by a root-crate test).
-//! - A `CodeExecution` sink with a statically recovered literal payload emits a
-//!   `LANG-EXEC` `Danger` Match **and** a bounded recursive `QueueTarget` at
-//!   `parent_depth + 1`, parsed as the payload's own language (cross-language).
-//! - A `CodeExecution` sink with a dynamic payload emits the `LANG-EXEC` Match
-//!   plus `DegradationReason::DynamicSource` and **no** recursive target.
-//! - A non-execution destructive op emits its classified Match with no target.
-//! - A nonzero `parse_errors` count records `IncompleteSyntax` degradation.
-//! - Status aggregates monotonically: `NotApplicable < Complete < Degraded`.
-//! - The recursive target is accepted by the parent-owned `AnalysisQueue`.
-//! - `merge_analysis` lifts a baseline `Safe` `Assessment` to the language
-//!   `Match`'s risk and carries the analysis status onto `Assessment.analysis`.
-
 #![cfg(feature = "language-analysis")]
 
 mod support;
@@ -43,7 +16,6 @@ use aegis_types::{
     SourceOrigin, merge_analysis,
 };
 
-/// A throwaway `Assessment` baseline (Safe, no matches) for the merge test.
 fn python_baseline() -> Assessment {
     Assessment {
         command: ParsedCommand {
@@ -71,9 +43,6 @@ fn map_python(source: &str) -> aegis::analysis::mapping::MappingOutcome {
 
 #[test]
 fn every_operation_kind_maps_one_for_one() {
-    // The boundary-forced parallel vocabulary must convert losslessly: each
-    // aegis-language kind → its aegis-types counterpart, modifiers and certainty
-    // preserved. This is the conversion test the `operation.rs` doc promises.
     let cases: [(LangKind, TypesKind); 9] = [
         (LangKind::FilesystemDelete, TypesKind::FilesystemDelete),
         (
@@ -145,9 +114,6 @@ fn every_operation_kind_maps_one_for_one() {
 
 #[test]
 fn known_exec_payload_emits_match_and_cross_language_recursive_target() {
-    // os.system("rm -rf /tmp/x"): a Python execution sink whose literal payload
-    // is shell source → LANG-EXEC Danger Match + a recursive target parsed as
-    // Bash at depth 1 (ADR-022 §7 cross-language nesting). No degradation.
     let outcome = map_python("os.system(\"rm -rf /tmp/x\")");
 
     let exec = outcome
@@ -184,9 +150,6 @@ fn known_exec_payload_emits_match_and_cross_language_recursive_target() {
 
 #[test]
 fn dynamic_exec_payload_emits_match_and_degradation_without_target() {
-    // subprocess.run(cmd): a dynamic payload is never evaluated or decoded
-    // (ADR-022 §7). The sink still emits its LANG-EXEC Match, but records
-    // DynamicSource degradation and enqueues no recursive target.
     let outcome = map_python("subprocess.run(cmd)");
 
     assert_eq!(
@@ -215,8 +178,6 @@ fn dynamic_exec_payload_emits_match_and_degradation_without_target() {
 
 #[test]
 fn filesystem_delete_emits_match_without_target_or_degradation() {
-    // os.remove('x'): a non-execution destructive op emits its classified Match
-    // (LANG-FS-DEL, Warn) with no recursive target and no degradation.
     let outcome = map_python("os.remove('x')");
 
     let del = outcome
@@ -240,9 +201,6 @@ fn filesystem_delete_emits_match_without_target_or_degradation() {
 
 #[test]
 fn parse_errors_record_incomplete_syntax_degradation() {
-    // A malformed parse (nonzero ERROR nodes) records IncompleteSyntax
-    // degradation. The detected op's Match is still retained (ADR-022 §5:
-    // degradation is orthogonal to risk and never drops a Match).
     let op = LangOp {
         kind: LangKind::FilesystemDelete,
         modifiers: LangMods::default(),
@@ -312,7 +270,6 @@ fn adapter_unsupported_encoding_records_unsupported_encoding_degradation() {
 
 #[test]
 fn empty_adapter_result_is_not_applicable() {
-    // No operations and no parse errors → analysis does not apply to this target.
     let outcome = map_adapter_result(
         &AdapterResult::default(),
         SourceLanguage::Python,
@@ -329,8 +286,6 @@ fn empty_adapter_result_is_not_applicable() {
 
 #[test]
 fn recursive_target_is_accepted_by_parent_queue() {
-    // Composition: the recursive target the mapping produces is shaped exactly
-    // for the parent-owned AnalysisQueue (cross-language nesting accepted).
     let outcome = map_python("os.system(\"rm -rf /tmp/x\")");
     let target = outcome
         .recursive_targets
@@ -339,7 +294,6 @@ fn recursive_target_is_accepted_by_parent_queue() {
         .expect("literal payload → recursive target");
 
     let mut q = AnalysisQueue::new(QueueBudget::L1_DEFAULT);
-    // Root sink target (Python) first, then the nested Bash target.
     q.push(QueueTarget::new(
         SourceLanguage::Python,
         "os.system(\"rm -rf /tmp/x\")".to_string(),
@@ -352,9 +306,6 @@ fn recursive_target_is_accepted_by_parent_queue() {
 
 #[test]
 fn merge_lifts_baseline_safe_to_danger_and_carries_status() {
-    // merge_analysis (ADR-022 §1/§5): a baseline Safe Assessment + a language
-    // result with a Danger LANG-EXEC Match → merged risk Danger, the language
-    // Match is appended, and the analysis status is carried onto Assessment.
     let outcome = map_python("subprocess.run(cmd)");
     let merged = merge_analysis(&python_baseline(), &outcome.analysis);
 
@@ -384,14 +335,6 @@ fn merge_lifts_baseline_safe_to_danger_and_carries_status() {
 
 #[test]
 fn non_exec_dynamic_operand_emits_match_without_degradation() {
-    // ADR-022 §3/§4/§7: typed degradation is mandated for dynamic *execution-
-    // sink payloads* and for dynamic *source/cwd* — NOT for a non-execution op
-    // whose operand is a variable. os.remove(path): the path is dynamic, but
-    // the shared classifier already assigns the correct risk certainty-
-    // independently (a Dynamic operand never lowers risk, ADR-022 §3), so the
-    // operation's Match stands on its own with NO DynamicSource degradation
-    // (that variant is "source or working directory was dynamic", not "operand
-    // was dynamic"). Status is Complete, not Degraded.
     let outcome = map_python("os.remove(path)");
 
     assert!(

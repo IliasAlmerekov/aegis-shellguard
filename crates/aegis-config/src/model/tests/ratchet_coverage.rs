@@ -1,20 +1,3 @@
-//! Every field of `AegisConfig` (and its nested config structs) must run
-//! through a declared `Ratchet` direction — ADR-013, acceptance criterion
-//! "adding a field without a direction fails the build or a test". The
-//! exhaustive destructure in `model::merge_layer` gives the compile-error
-//! half of that guarantee; this test gives the other half, for the fields
-//! whose direction is a `Custom` function rather than a field-by-field
-//! destructure (which the compiler already checked).
-//!
-//! It runs one merge with a recording sink over the default config, collects
-//! every field path a `Ratchet` direction touched, and diffs that set
-//! against the leaf field paths of `AegisConfig`'s JSON schema. A `Custom`
-//! group (`postgres_snapshot`, `mysql_snapshot`, `supabase_snapshot`,
-//! `docker_scope`, `rules`) registers ONE path covering every schema leaf
-//! under it, rather than one path per leaf — see the doc comment on
-//! `custom_postgres_snapshot` and friends for why each of those groups is an
-//! all-or-nothing rule, not independent per-field tightening.
-
 use serde_json::Value;
 
 use super::AegisConfig;
@@ -29,9 +12,6 @@ fn resolve<'a>(node: &'a Value, defs: Option<&'a Value>) -> &'a Value {
     defs.and_then(|defs| defs.get(name)).unwrap_or(node)
 }
 
-/// Walk one JSON Schema node, appending a dotted path for every leaf
-/// (a field with no `properties` of its own — scalars, enums, and arrays
-/// all count as leaves; only nested objects recurse).
 fn collect_leaf_paths(node: &Value, defs: Option<&Value>, prefix: &str, out: &mut Vec<String>) {
     let node = resolve(node, defs);
 
@@ -46,8 +26,6 @@ fn collect_leaf_paths(node: &Value, defs: Option<&Value>, prefix: &str, out: &mu
 
     if let Some(properties) = node.get("properties").and_then(Value::as_object) {
         for (key, sub_schema) in properties {
-            // Deprecated input-only shims (sandbox.enabled, sandbox.required)
-            // are ignored at runtime and intentionally excluded from the ratchet.
             if sub_schema.get("deprecated").and_then(Value::as_bool) == Some(true) {
                 continue;
             }
@@ -75,9 +53,6 @@ fn schema_leaf_paths() -> Vec<String> {
     out
 }
 
-/// A declared path covers a schema leaf if it names that leaf exactly, or
-/// names an ancestor object a `Custom` group merges as a whole (e.g.
-/// `postgres_snapshot` covers `postgres_snapshot.database`).
 fn covers(declared: &str, leaf: &str) -> bool {
     leaf == declared || leaf.starts_with(&format!("{declared}."))
 }

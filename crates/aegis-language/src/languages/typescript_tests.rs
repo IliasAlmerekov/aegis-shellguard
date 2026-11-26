@@ -1,9 +1,6 @@
-//! Unit tests for the TypeScript adapter, including TypeScript-only syntax.
-
 use super::*;
 use crate::operation::{DetectedOperation, OperandCertainty, OperationKind, OperationModifiers};
 
-/// Assert `source` yields exactly one operation and return it.
 fn one_op(source: &str) -> DetectedOperation {
     let result = analyze(source);
     assert_eq!(
@@ -19,7 +16,6 @@ fn one_op(source: &str) -> DetectedOperation {
     result.operations.into_iter().next().unwrap()
 }
 
-/// Assert `source` yields no operations (and parses cleanly).
 fn no_ops(source: &str) {
     let result = analyze(source);
     assert_eq!(
@@ -32,8 +28,6 @@ fn no_ops(source: &str) {
         result.operations
     );
 }
-
-// --- One tracer per operation category (shared JS-family classifier) --------
 
 #[test]
 fn fs_unlinksync_literal_path_yields_filesystem_delete_known() {
@@ -101,8 +95,6 @@ fn child_process_spawn_argv_form_is_dynamic_without_payload() {
     assert!(op.payload.is_none());
 }
 
-// --- Dynamic operands ----------------------------------------------------
-
 #[test]
 fn fs_unlinksync_with_variable_path_is_dynamic() {
     let op = one_op("fs.unlinkSync(path)");
@@ -145,9 +137,6 @@ fn new_expression_with_type_arguments_still_surfaces_code_execution() {
     assert_eq!(payload.source, "return fs.unlinkSync('x')");
 }
 
-// --- TypeScript-only syntax: generic class method --------------------------
-// A destructive call inside a generic class method must surface.
-
 #[test]
 fn generic_class_method_calling_fs_surfaces_the_operation() {
     let src = "class C<T> {\n  m(): void {\n    fs.unlinkSync(\"x\");\n  }\n}";
@@ -156,7 +145,6 @@ fn generic_class_method_calling_fs_surfaces_the_operation() {
     assert_eq!(op.certainty, OperandCertainty::Known);
 }
 
-// Typed variables remain `Dynamic` (ADR-022 §3, §7).
 #[test]
 fn typed_variable_operand_is_dynamic() {
     let src = "function f(p: string) {\n  fs.unlinkSync(p);\n}";
@@ -175,11 +163,6 @@ fn typed_exec_operand_is_dynamic() {
     assert!(op.payload.is_none());
 }
 
-// --- Negatives: TS-only declarations and constructs ------------------------
-// Interfaces, enums, type aliases, type-only imports, `as` casts, decorators,
-// and ordinary comment/string/member-reference forms must NOT surface as
-// operations. These pin the adapter's narrowness over TS-only syntax.
-
 #[test]
 fn comment_mentioning_fs_unlinksync_is_not_an_operation() {
     no_ops("// fs.unlinkSync(\"x\")");
@@ -192,7 +175,6 @@ fn string_literal_mentioning_fs_unlinksync_is_not_an_operation() {
 
 #[test]
 fn member_reference_with_as_cast_is_not_an_operation() {
-    // `fs.unlinkSync` referenced (not called), then `as`-cast — no call site.
     no_ops("const ref = fs.unlinkSync as (p: string) => void");
 }
 
@@ -228,7 +210,6 @@ fn as_cast_expression_is_not_an_operation() {
 
 #[test]
 fn satisfies_expression_parses_cleanly_and_is_not_an_operation() {
-    // `satisfies` (TS 4.9+): pins the pinned grammar parses current TS.
     no_ops("const config = { a: 1 } satisfies Record<string, number>;");
 }
 
@@ -236,11 +217,6 @@ fn satisfies_expression_parses_cleanly_and_is_not_an_operation() {
 fn decorator_parses_cleanly_and_is_not_an_operation() {
     no_ops("@logged\nclass C {}");
 }
-
-// --- Modern TS parse-clean ------------------------------------------------
-// A representative mix of current TypeScript (generics, type annotations,
-// optional chaining, template literal types, utility types) must parse cleanly
-// and surface no false operations over non-tracked call sites.
 
 #[test]
 fn modern_typescript_parses_cleanly_with_no_false_operations() {
@@ -251,8 +227,6 @@ fn modern_typescript_parses_cleanly_with_no_false_operations() {
                const id = <U,>(x: U): U => x;\n";
     no_ops(src);
 }
-
-// --- Composition / ordering ------------------------------------------------
 
 #[test]
 fn multiple_operations_are_emitted_in_source_order() {
@@ -265,8 +239,6 @@ fn multiple_operations_are_emitted_in_source_order() {
         "operations must be in document order"
     );
 }
-
-// --- Malformed source ------------------------------------------------------
 
 #[test]
 fn malformed_source_records_parse_errors() {

@@ -1,4 +1,3 @@
-//! Structured explanation types for Aegis interception decisions.
 #![cfg_attr(
     not(test),
     deny(
@@ -16,74 +15,43 @@ use aegis_types::Mode;
 use aegis_types::{AssessmentBasis, DecisionSource, RiskLevel};
 use serde::{Deserialize, Serialize};
 
-/// Descriptive explanation assembled from existing planning and runtime facts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommandExplanation {
-    /// Scanner-derived explanation facts.
     pub scan: ScanExplanation,
-    /// Policy-derived explanation facts.
     pub policy: PolicyExplanation,
-    /// Execution-context facts that influenced planning.
     pub context: ExecutionContextExplanation,
-    /// Runtime execution outcome facts, when execution reached that stage.
     pub outcome: Option<ExecutionOutcomeExplanation>,
 }
 
-/// Scanner facts that describe why a command was classified as it was.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScanExplanation {
-    /// Highest risk observed in the scanner assessment.
     pub highest_risk: RiskLevel,
-    /// Live one-value label for the assessment source, read by policy output,
-    /// the TUI, and audit explanations alongside the richer `basis`
-    /// (ADR-022 §4, §10).
     pub decision_source: DecisionSource,
-    /// What produced the decision, expressed as the decisive `Match`es — every
-    /// `Match` at the assessment's maximum `RiskLevel`, or `Fallback` when
-    /// nothing matched (`AssessmentBasis`, ADR-022 §4). Carried in-memory
-    /// alongside `decision_source`; `#[serde(skip)]` keeps it out of the v1
-    /// audit JSONL so existing logs deserialize byte-for-byte. Iteration 2
-    /// (Audit v2) promotes this to a persisted, v2-compat field.
     #[serde(skip)]
     pub basis: AssessmentBasis,
-    /// Pattern matches preserved for explanation output.
     pub matched_patterns: Vec<ExplainedPatternMatch>,
 }
 
-/// Descriptive view of one matched pattern.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExplainedPatternMatch {
-    /// Stable pattern identifier.
     pub id: String,
-    /// Risk associated with the matched pattern.
     pub risk: RiskLevel,
-    /// Pattern description copied from the scanner pipeline.
     pub description: String,
-    /// Concrete matched text captured by the scanner.
     pub matched_text: String,
-    /// Optional human-readable explanation of why the rule is risky.
     pub justification: Option<String>,
 }
 
-/// Policy facts resolved during planning.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolicyExplanation {
-    /// Planned policy action selected for this command.
     pub action: PolicyAction,
-    /// Descriptive rationale carried through from policy evaluation.
     pub rationale: PolicyRationale,
-    /// Whether human confirmation is required before execution.
     pub requires_confirmation: bool,
-    /// Whether snapshots should be attempted before execution.
     pub snapshots_required: bool,
-    /// Whether the allowlist materially changed the policy outcome.
     pub allowlist_effective: bool,
-    /// Hard-block reason when policy selected a block action.
     pub block_reason: Option<BlockReason>,
 }
 
 impl PolicyExplanation {
-    /// Return the canonical concise reason label for consumer projections.
     #[must_use]
     pub fn concise_reason_label(&self) -> &'static str {
         match self.rationale {
@@ -104,92 +72,55 @@ impl PolicyExplanation {
     }
 }
 
-/// Disclosure when no Snapshot provider applies to a confirmation.
 pub const NO_ROLLBACK_DISCLOSURE: &str =
     "No Snapshot provider applies: this command cannot be rolled back.";
 
-/// Execution-context facts already known during planning.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExecutionContextExplanation {
-    /// Effective operating mode resolved before policy evaluation.
     pub mode: Mode,
-    /// Product surface that requested the decision.
     pub transport: ExecutionTransport,
-    /// Whether CI was detected for this invocation.
     pub ci_detected: bool,
-    /// Matching allowlist entry resolved for this context, when present.
     pub allowlist_match: Option<AllowlistExplanation>,
-    /// Snapshot plugins applicable to the resolved execution context.
     pub applicable_snapshot_plugins: Vec<String>,
-    /// The working trees the git Snapshot targets, one entry per redirected
-    /// git stage (#471). Empty when no git stage redirects its working tree.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub git_targets: Vec<GitTargetExplanation>,
-    /// `Recovery opt-out` (ADR-031 section 3): the command would carry
-    /// `Required recovery`, but a global `snapshot_policy = None` declines it.
-    /// Omitted when false, so legacy audit lines and their hashes are unchanged.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub recovery_opt_out: bool,
-    /// Why this command cannot be rolled back, when disclosed at confirmation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub no_rollback_disclosure: Option<String>,
 }
 
-/// One Git target as disclosed to the operator and the audit log.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum GitTargetExplanation {
-    /// The git Snapshot covers this working tree.
-    Resolved {
-        /// Canonical path of the working tree.
-        path: String,
-    },
-    /// No git Snapshot covers this stage's working tree.
-    Unresolved {
-        /// Why the Git target could not be resolved.
-        reason: String,
-    },
+    Resolved { path: String },
+    Unresolved { reason: String },
 }
 
-/// Descriptive allowlist provenance for explanation output.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AllowlistExplanation {
-    /// Original configured allowlist pattern that matched.
     pub pattern: String,
-    /// Operator-facing reason stored on the allowlist rule.
     pub reason: String,
-    /// Config layer that supplied the effective rule.
     pub source_layer: ConfigSourceLayer,
 }
 
-/// Runtime-only execution outcome facts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExecutionOutcomeExplanation {
-    /// Runtime decision observed after planning completed.
     pub decision: ExecutionDecisionExplanation,
-    /// Snapshot records created before the command reached execution.
     pub snapshots: Vec<SnapshotOutcomeExplanation>,
 }
 
-/// User-visible execution decision for runtime explanations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ExecutionDecisionExplanation {
-    /// The command ran after explicit approval.
     Approved,
-    /// The command was denied by the human confirmation step.
     Denied,
-    /// The command ran without a confirmation prompt.
     AutoApproved,
-    /// The command was blocked before execution.
     Blocked,
 }
 
-/// Runtime snapshot record surfaced in the explanation model.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SnapshotOutcomeExplanation {
-    /// Plugin name that produced the snapshot.
     pub plugin: String,
-    /// Opaque snapshot identifier returned by the plugin.
     pub snapshot_id: String,
 }
 

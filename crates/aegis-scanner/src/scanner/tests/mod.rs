@@ -34,10 +34,6 @@ fn test_match_result(matched_text: &str, start: usize, end: usize) -> MatchResul
     }
 }
 
-/// Assert that `assess(cmd)` reaches `expected_risk` and that `expected_id` is
-/// among the matched patterns. Shared across the `basic` and
-/// `destructive_rule_narrowness` test modules (the `edge_cases` module keeps
-/// its own `assert_command_matches_pattern`).
 #[cfg(test)]
 fn assert_assessment_matches_pattern(cmd: &str, expected_risk: RiskLevel, expected_id: &str) {
     let s = scanner();

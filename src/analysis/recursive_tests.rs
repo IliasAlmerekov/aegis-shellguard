@@ -1,11 +1,3 @@
-//! RED tests for the cross-language execution-sink invariant (plan
-//! Iteration 5, Slice 3; ADR-022 §3/§7).
-//!
-//! Pins the one invariant the plan names: a recognized process/shell/eval
-//! sink always emits a `CodeExecution` Match. A literal payload additionally
-//! becomes a bounded recursive target; a dynamic or encoded payload records
-//! `Analysis` degradation instead and is never evaluated or decoded.
-
 use super::{SinkDecision, handle_sink};
 use crate::analysis::queue::{AnalysisQueue, PushOutcome, QueueBudget, QueueTarget};
 use aegis_language::SourceLanguage;
@@ -55,7 +47,6 @@ fn literal_payload_emits_match_and_recursive_target() {
         0,
     );
 
-    // The visible sink always emits a CodeExecution Match.
     assert_eq!(d.sink_match.pattern.risk, RiskLevel::Danger);
     assert_eq!(d.sink_match.pattern.category, Category::Process);
     assert_eq!(d.sink_match.pattern.id.as_ref(), "LANG-EXEC");
@@ -63,7 +54,6 @@ fn literal_payload_emits_match_and_recursive_target() {
         d.sink_match.evidence.mechanism(),
         DetectionMechanism::LanguageRule
     );
-    // A literal payload becomes a bounded recursive target at parent_depth + 1.
     let target = d
         .recursive_target
         .expect("literal payload enqueues a target");
@@ -73,38 +63,25 @@ fn literal_payload_emits_match_and_recursive_target() {
         "root sink at depth 0 → payload target at depth 1"
     );
     assert_eq!(target.source, "rm -rf /tmp/x");
-    // No degradation when the payload is a literal.
     assert_eq!(d.degradation, None);
 }
 
 #[test]
 fn dynamic_payload_emits_match_and_degradation_without_target() {
     let op = code_exec(OperandCertainty::Dynamic);
-    let d = handle_sink(
-        &op,
-        SourceLanguage::Bash,
-        None, // dynamic payload — not statically recoverable
-        provenance(&op),
-        None,
-        0,
-    );
+    let d = handle_sink(&op, SourceLanguage::Bash, None, provenance(&op), None, 0);
 
-    // A dynamic sink still retains its Match (ADR-022 §3/§7).
     assert_eq!(d.sink_match.pattern.risk, RiskLevel::Danger);
     assert_eq!(d.sink_match.pattern.id.as_ref(), "LANG-EXEC");
-    // No recursive target — the payload is never evaluated.
     assert!(
         d.recursive_target.is_none(),
         "a dynamic payload must not be enqueued"
     );
-    // Typed degradation instead.
     assert_eq!(d.degradation, Some(DegradationReason::DynamicSource));
 }
 
 #[test]
 fn partial_payload_emits_match_and_degradation_without_target() {
-    // A Partial operand (alias / adjacent literal, not fully resolved) is not
-    // a complete literal payload, so it is not enqueued; the sink still Matchs.
     let op = code_exec(OperandCertainty::Partial);
     let d = handle_sink(&op, SourceLanguage::Bash, None, provenance(&op), None, 0);
     assert_eq!(d.sink_match.pattern.risk, RiskLevel::Danger);
@@ -114,19 +91,8 @@ fn partial_payload_emits_match_and_degradation_without_target() {
 
 #[test]
 fn decode_to_eval_emits_match_and_degradation_without_decoding() {
-    // A base64-wrapped payload is a decode-to-eval shape (ADR-022 §7). Aegis
-    // does not decode it: no recursive target carries decoded bytes, and the
-    // raw encoded string is not treated as literal source either. The visible
-    // sink still emits a CodeExecution Match plus degradation.
     let op = code_exec(OperandCertainty::Dynamic);
-    let d = handle_sink(
-        &op,
-        SourceLanguage::Python,
-        None, // encoded payload is not a resolved literal
-        provenance(&op),
-        None,
-        0,
-    );
+    let d = handle_sink(&op, SourceLanguage::Python, None, provenance(&op), None, 0);
     assert_eq!(d.sink_match.pattern.id.as_ref(), "LANG-EXEC");
     assert_eq!(d.sink_match.pattern.risk, RiskLevel::Danger);
     assert!(
@@ -152,8 +118,6 @@ fn recursive_target_depth_is_parent_depth_plus_one() {
 
 #[test]
 fn cross_language_payload_target_uses_payload_language() {
-    // A Python sink whose literal payload is JavaScript: the recursive target
-    // is parsed as JavaScript, not Python (cross-language nesting, ADR-022 §7).
     let op = code_exec(OperandCertainty::Known);
     let d = handle_sink(
         &op,
@@ -171,7 +135,6 @@ fn cross_language_payload_target_uses_payload_language() {
 
 #[test]
 fn sink_match_is_code_execution_for_both_literal_and_dynamic() {
-    // Every recognized sink retains its CodeExecution Match regardless of payload certainty (ADR-022 §3/§7).
     let lit = handle_sink(
         &code_exec(OperandCertainty::Known),
         SourceLanguage::Bash,
@@ -200,8 +163,6 @@ fn sink_match_is_code_execution_for_both_literal_and_dynamic() {
 
 #[test]
 fn degradation_never_lowers_sink_risk() {
-    // Degradation is orthogonal to RiskLevel (ADR-022 §5): a degraded sink is
-    // still Danger, never lowered to authorize auto-execution.
     let d = handle_sink(
         &code_exec(OperandCertainty::Dynamic),
         SourceLanguage::Bash,
@@ -216,8 +177,6 @@ fn degradation_never_lowers_sink_risk() {
 
 #[test]
 fn cross_language_literal_payload_is_accepted_by_the_queue() {
-    // Composition: a Python sink produces a JavaScript recursive target, which
-    // the parent-owned queue accepts (cross-language nesting).
     let op = code_exec(OperandCertainty::Known);
     let d = handle_sink(
         &op,
@@ -230,7 +189,6 @@ fn cross_language_literal_payload_is_accepted_by_the_queue() {
     let target = d.recursive_target.expect("literal payload → target");
 
     let mut q = AnalysisQueue::new(QueueBudget::L1_DEFAULT);
-    // Root sink target (Python) first, then the nested JS target.
     q.push(QueueTarget::new(
         SourceLanguage::Python,
         "subprocess.run(['node','-e','fs.rmSync(\\'x\\')'])".to_string(),
@@ -243,8 +201,6 @@ fn cross_language_literal_payload_is_accepted_by_the_queue() {
 
 #[test]
 fn dynamic_payload_target_is_not_pushed_to_queue() {
-    // The parent never enqueues a dynamic payload: there is no target to push,
-    // so the queue stays at its prior state.
     let op = code_exec(OperandCertainty::Dynamic);
     let d = handle_sink(&op, SourceLanguage::Bash, None, provenance(&op), None, 0);
     assert!(d.recursive_target.is_none());

@@ -140,9 +140,6 @@ fn status_does_not_claim_ci_override_when_toggle_is_enabled() {
 
 #[test]
 fn off_still_disables_when_config_is_invalid() {
-    // Toggle succeeds (disabled flag is written) but audit append fails when
-    // the config is unparseable. Exit code must be non-zero — audit is a
-    // security artifact and write failures are hard errors.
     let home = TempDir::new().unwrap();
     let cwd = TempDir::new().unwrap();
     write_invalid_config(&cwd);
@@ -165,9 +162,6 @@ fn off_still_disables_when_config_is_invalid() {
 
 #[test]
 fn on_still_enables_when_config_is_invalid() {
-    // Toggle succeeds (disabled flag is removed) but audit append fails when
-    // the config is unparseable. Exit code must be non-zero — audit is a
-    // security artifact and write failures are hard errors.
     let home = TempDir::new().unwrap();
     let cwd = TempDir::new().unwrap();
     write_invalid_config(&cwd);
@@ -253,10 +247,6 @@ fn truthy_aegis_ci_forces_enforcing_ci_override() {
     }
 }
 
-/// The Toggle is an operator escape hatch, so the acceptance criterion for M3a
-/// requires the transition itself to be auditable — the session-start notice is
-/// informational and deliberately records nothing. The failure path is covered
-/// above; this pins the successful half, which nothing else asserted.
 #[test]
 fn a_successful_toggle_appends_an_audit_entry_for_each_transition() {
     let home = TempDir::new().unwrap();

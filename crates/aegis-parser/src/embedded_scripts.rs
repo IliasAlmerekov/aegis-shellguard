@@ -5,35 +5,20 @@ use crate::heredoc_data_consumer::heredoc_target_is_data_consumer;
 
 use aegis_types::InlineScript;
 
-/// A heredoc (or nowdoc) body extracted from a multi-line command string.
 #[derive(Debug, PartialEq)]
 pub struct HeredocBody {
-    /// The delimiter word (e.g., `EOF`, `SCRIPT`).
     pub delimiter: String,
-    /// The lines of text between the opening marker and the closing delimiter.
     pub body: String,
-    /// `true` when the delimiter was quoted (`<<'EOF'`, `<<"EOF"`, `<<\EOF`),
-    /// so bash performs no expansion on the body text.
     pub is_nowdoc: bool,
-    /// `true` when the command directly ahead of the heredoc operator is an
-    /// interpreter that executes stdin as code (e.g. `bash <<'EOF'`).
     pub target_is_interpreter: bool,
-    /// `true` when a quoted heredoc is read by a trusted data consumer and
-    /// neither its output nor a written file can reach a shell (ADR-042).
-    /// An exact delimiter is required, with no earlier ambiguous prefix.
     pub is_data_consumer_target: bool,
 }
 
-/// Programs that execute their stdin as code, independent of what bash's own
-/// heredoc expansion does. A nowdoc body handed to one of these must still be
-/// recursively scanned: the recipient interprets the raw text as a script.
 const STDIN_EXECUTING_PROGRAMS: &[&str] = &[
     "bash", "sh", "zsh", "dash", "ash", "ksh", "python", "python3", "node", "nodejs", "ruby",
     "php", "lua", "perl",
 ];
 
-/// Resolve the basename-normalized program token immediately preceding the
-/// heredoc operator on `line` (e.g. `bash` in `foo | bash <<'EOF'`).
 fn heredoc_target_program(line: &str, marker_start: usize) -> Option<&str> {
     let prefix = line[..marker_start].trim_end();
     let end = prefix.len();
@@ -60,11 +45,6 @@ fn heredoc_target_program(line: &str, marker_start: usize) -> Option<&str> {
     }
 }
 
-/// Extract process-substitution bodies from shell forms like `<(...)` (input)
-/// and `>(...)` (output, issue #384) alike.
-///
-/// The returned strings are the shell commands inside the substitution,
-/// without the surrounding `<(`/`>(` and `)`.
 pub fn extract_process_substitution_bodies(cmd: &str) -> Vec<String> {
     let chars: Vec<char> = cmd.chars().collect();
     let mut bodies = Vec::new();
@@ -166,11 +146,6 @@ fn extract_angle_paren_body(chars: &[char], start_idx: usize) -> Option<(String,
     None
 }
 
-/// Extract `eval` payload strings from logical shell segments.
-///
-/// This unwraps the arguments passed to `eval` so nested shell or interpreter
-/// bodies can be analyzed recursively. Variable-only forms such as `eval "$VAR"`
-/// remain opaque and are returned as-is when no literal body is available.
 pub fn extract_eval_payloads(cmd: &str) -> Vec<String> {
     let mut payloads = Vec::new();
 
@@ -210,18 +185,11 @@ struct HeredocMarker {
     delimiter_end: usize,
 }
 
-/// Open command-substitution or backtick frame; each opens a fresh quote scope
-/// even inside outer double quotes and restores `saved_quotes` on close.
 struct SubstitutionFrame {
-    /// `Some(depth)` for `$(...)` (starts at 1); `None` for a backtick frame.
     command_sub_depth: Option<usize>,
     saved_quotes: (bool, bool),
 }
 
-/// Byte index of the first unquoted `<<` in `line`.
-///
-/// `$(` and backticks open a fresh quote scope even inside double quotes so
-/// `"$(cat <<'EOF'"` still yields a heredoc marker.
 fn find_unquoted_double_lt(line: &str) -> Option<usize> {
     let mut single_quote = false;
     let mut double_quote = false;
@@ -286,15 +254,6 @@ fn find_unquoted_double_lt(line: &str) -> Option<usize> {
     None
 }
 
-/// Scan one line for a heredoc operator (`<<`) and return the parsed marker.
-///
-/// Recognises:
-/// - `<<WORD` - regular heredoc
-/// - `<<'WORD'` - nowdoc (single-quoted delimiter)
-/// - `<<"WORD"` - nowdoc (double-quoted delimiter)
-/// - `<<\WORD` - nowdoc (backslash-escaped delimiter)
-/// - `<<-WORD` - heredoc with leading-tab stripping
-/// - `<<-'WORD'` - nowdoc with leading-tab stripping
 fn find_heredoc_marker(line: &str) -> Option<HeredocMarker> {
     let operator_start = find_unquoted_double_lt(line)?;
     let after_op = &line[operator_start + 2..];
@@ -346,8 +305,6 @@ fn find_heredoc_marker(line: &str) -> Option<HeredocMarker> {
     (!word.is_empty()).then(|| mk(word, false, spec_start + word_len))
 }
 
-/// Split `line` at its first heredoc marker, returning the text before `<<`
-/// and the text after the delimiter spec. Returns `None` if no marker is found.
 pub fn split_at_heredoc_marker(line: &str) -> Option<(&str, &str)> {
     let marker = find_heredoc_marker(line)?;
     Some((
@@ -356,10 +313,6 @@ pub fn split_at_heredoc_marker(line: &str) -> Option<(&str, &str)> {
     ))
 }
 
-/// Byte ranges in `cmd` from each heredoc marker's `<<` through the end of its
-/// terminator line (or end of `cmd` if unterminated), treated as opaque by
-/// list-segment splitting so same-line chains stay attached and delimiter quotes
-/// do not toggle outer quote state.
 pub(crate) fn heredoc_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
     if !cmd.contains("<<") {
         return Vec::new();
@@ -372,7 +325,6 @@ pub(crate) fn heredoc_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
     walk_heredocs(
         &lines,
         |marker, _interpreter, _redirects, body_range, suspend_end| {
-            // The marker precedes the body; checked access avoids a panic if that changes.
             let Some(marker_line_index) = body_range.start.checked_sub(1) else {
                 return;
             };
@@ -411,39 +363,26 @@ fn indexed_lines(cmd: &str) -> Vec<(&str, usize)> {
     lines
 }
 
-/// Walk `lines` for heredoc/nowdoc markers, invoking `on_heredoc` with the
-/// parsed marker, whether its target executes stdin, whether it is a data
-/// consumer, the body `[start, end)` line range, and the first line not safe
-/// to suspend or mask.
 fn walk_heredocs(
     lines: &[&str],
     mut on_heredoc: impl FnMut(&HeredocMarker, bool, bool, Range<usize>, usize),
 ) {
-    // No marker anywhere: skip the walk, and with it the `command_text` copy
-    // below, for the common heredoc-free command (`CONVENTION.md` §8).
     if !lines.iter().any(|line| line.contains("<<")) {
         return;
     }
 
     let mut i = 0;
-    // Command lines seen so far, heredoc bodies and terminators left out, so
-    // the data-consumer predicate sees a `$(` opened on an earlier line.
     let mut command_text = String::new();
 
     while i < lines.len() {
         if let Some(marker) = find_heredoc_marker(lines[i]) {
             let marker_line = lines[i];
-            // Keep the prefix boundary before appending the marker line.
             let preceding_len = command_text.len();
             command_text.push_str(marker_line);
             command_text.push('\n');
             i += 1;
             let body_start = i;
 
-            // A non-exact prefix may close the body during bash's recovery
-            // inside `$(`, but ordinary heredocs keep it as body text.
-            // Preserve exact-delimiter extraction while stopping suspension
-            // at the first ambiguous line so later commands stay visible.
             let mut first_prefixed = None;
             let mut terminator_exact = false;
             while i < lines.len() {
@@ -494,21 +433,6 @@ fn walk_heredocs(
     }
 }
 
-/// Extract all heredoc (and nowdoc) bodies from a multi-line command string.
-///
-/// Each call to this function scans `cmd` line by line, looking for `<<WORD`
-/// or `<<'WORD'` markers. When found, it collects every subsequent line until
-/// the closing delimiter appears on its own line (with leading tabs stripped
-/// when `<<-` was used).
-///
-/// # Examples
-///
-/// ```text
-/// cmd <<EOF
-/// rm -rf /
-/// EOF
-/// ```
-/// -> `[HeredocBody { delimiter: "EOF", body: "rm -rf /", is_nowdoc: false }]`
 pub fn extract_heredoc_bodies(cmd: &str) -> Vec<HeredocBody> {
     let mut bodies = Vec::new();
     let lines: Vec<&str> = cmd.lines().collect();
@@ -529,11 +453,6 @@ pub fn extract_heredoc_bodies(cmd: &str) -> Vec<HeredocBody> {
     bodies
 }
 
-/// Neutralize inert substitution markers (or blank the full body for trusted
-/// data consumers, ADR-042) in nowdoc bodies sent to non-interpreter commands.
-///
-/// Nowdoc bodies routed to an interpreter (`bash <<'EOF'`, `python3 <<'EOF'`)
-/// and file writes stay untouched. Returns a modified copy for scanning only.
 pub fn mask_inert_heredoc_substitution_markers(cmd: &str) -> String {
     if !cmd.contains("<<") {
         return cmd.to_string();
@@ -560,7 +479,6 @@ pub fn mask_inert_heredoc_substitution_markers(cmd: &str) -> String {
     output_lines.join("\n")
 }
 
-/// Preserves line length so downstream column offsets stay aligned.
 fn mask_substitution_markers(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut chars = line.chars().peekable();
@@ -579,26 +497,6 @@ fn mask_substitution_markers(line: &str) -> String {
     out
 }
 
-/// Extract all inline scripts from interpreter invocations in `cmd`.
-///
-/// Recognises the following patterns (the script flag immediately precedes
-/// the script body as the next shell token):
-///
-/// | Interpreter       | Flag |
-/// |-------------------|------|
-/// | `python` / `python3` | `-c` |
-/// | `node` / `nodejs` | `-e` |
-/// | `ruby`            | `-e` |
-/// | `php`             | `-r` |
-/// | `lua`             | `-e` |
-/// | `perl`            | `-e` |
-///
-/// # Examples
-///
-/// ```text
-/// python3 -c "import os; os.system('rm -rf /')"
-/// ```
-/// -> `[InlineScript { interpreter: "python3", body: "import os; os.system('rm -rf /')" }]`
 pub fn extract_inline_scripts(cmd: &str) -> Vec<InlineScript> {
     const INTERPRETERS: &[(&str, &str)] = &[
         ("python", "-c"),
@@ -666,7 +564,6 @@ mod tests {
         assert!(find_heredoc_marker(line).is_some());
     }
 
-    // `$((` arithmetic is not special-cased; `<<` inside it still reads as a marker.
     #[test]
     fn a_double_lt_inside_dollar_paren_paren_arithmetic_matches_pre_fix_looseness() {
         let line = "echo $((1 << 2))";

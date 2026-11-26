@@ -26,11 +26,6 @@ fn assessment(risk: RiskLevel) -> Assessment {
     }
 }
 
-/// A completed language-aware assessment at the given risk.
-///
-/// This models a semantic `Warn` such as a source-level destructive API that
-/// was not auto-approved by the shell scanner. Iteration 9 policy must treat
-/// the presence of this summary as distinct from an ordinary scanner warning.
 fn language_aware_assessment(risk: RiskLevel) -> Assessment {
     let match_risk = match risk {
         RiskLevel::Safe | RiskLevel::Warn => RiskLevel::Warn,
@@ -83,7 +78,6 @@ fn language_aware_assessment(risk: RiskLevel) -> Assessment {
     }
 }
 
-/// A degraded language-aware assessment at the given risk.
 fn degraded_language_aware_assessment(risk: RiskLevel) -> Assessment {
     degraded_language_aware_assessment_with_reason(
         risk,
@@ -104,9 +98,6 @@ fn degraded_language_aware_assessment_with_reason(
     }
 }
 
-/// An effect-opaque `sh ./cleanup.sh`-shaped assessment at the given `risk`
-/// (ADR-016). Shared by the effect-opaque recovery tests below, which only
-/// ever vary `risk`.
 fn effect_opaque_assessment(risk: RiskLevel) -> Assessment {
     Assessment {
         risk,
@@ -202,13 +193,6 @@ fn audit_mode_never_requires_confirmation_or_snapshots() {
 
 #[test]
 fn audit_mode_opts_out_of_effect_opaque_recovery() {
-    // ADR-016 / Spec #3: `Mode::Audit` is an intentional, observe-only opt-out
-    // from *all* enforcement — prompts, blocks, and recovery backstops alike —
-    // broader than `SnapshotPolicy::None`. An effect-opaque command that WOULD
-    // require a pre-exec snapshot under `Protect`/`Strict` must NOT require one
-    // under `Audit`, even with snapshots configured and a plugin available.
-    // (Standards #1 still records `effect_opaque=true` on the audit entry; the
-    // recovery decision itself is declined here.)
     let assessment = effect_opaque_assessment(RiskLevel::Safe);
     let decision = evaluate_policy(PolicyInput {
         assessment: &assessment,

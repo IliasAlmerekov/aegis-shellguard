@@ -1,13 +1,3 @@
-//! Field-group merge for `LanguageAnalysisConfig` (ADR-022 §6). Every budget,
-//! including `script_file_limit_bytes`, is `Tighten` with a hard ceiling that
-//! clamps at every layer including Global; `trusted_aliases` is `GlobalOnly`
-//! ("trusted global aliases only" — a project must never introduce its own
-//! trusted interpreter alias).
-//!
-//! This replaces the old string-keyed `budget_fields()` dispatch: each budget
-//! is now its own typed `Ratchet` call, so a typo in a field name is a
-//! compile error instead of a silently skipped check.
-
 use crate::allowlist::ConfigSourceLayer;
 
 use super::super::partial::PartialLanguageAnalysisConfig;
@@ -22,9 +12,6 @@ use super::super::{
 use super::direction::{GlobalOnly, Ratchet, Tighten, format_debug, format_display, keep_smaller};
 use super::warning::RatchetSink;
 
-/// Merge one layer's `[language_analysis]` overlay into the trusted base. The
-/// destructure of both structs is an exhaustive tripwire — a new
-/// `LanguageAnalysisConfig` field breaks this until it declares a direction.
 pub(crate) fn merge_language_analysis(
     base: LanguageAnalysisConfig,
     overlay: PartialLanguageAnalysisConfig,

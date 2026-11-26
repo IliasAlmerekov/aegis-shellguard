@@ -1,12 +1,7 @@
-//! Serialization and ordering tests for the Language-aware analysis data
-//! model. Split out of `analysis.rs` to stay under the 800-line file budget.
-
 use super::*;
 
 #[test]
 fn operand_certainty_orders_known_partial_dynamic() {
-    // Decreasing certainty: Known < Partial < Dynamic. max() is the
-    // least-certain (Dynamic), which the merge must never treat as safe.
     assert!(OperandCertainty::Known < OperandCertainty::Partial);
     assert!(OperandCertainty::Partial < OperandCertainty::Dynamic);
     assert_eq!(
@@ -24,8 +19,6 @@ fn operand_certainty_orders_known_partial_dynamic() {
 
 #[test]
 fn analysis_status_orders_not_applicable_complete_degraded() {
-    // Increasing degradation: NotApplicable < Complete < Degraded. max()
-    // of any set is the worst status — the merge invariant.
     assert!(AnalysisStatus::NotApplicable < AnalysisStatus::Complete);
     assert!(AnalysisStatus::Complete < AnalysisStatus::Degraded);
     assert_eq!(
@@ -91,7 +84,6 @@ fn degradation_reason_round_trips_each_bucket() {
         let back: DegradationReason = serde_json::from_str(&json).unwrap();
         assert_eq!(back, variant);
     }
-    // Spot-check the snake_case tag of two distinct buckets.
     assert_eq!(
         serde_json::to_string(&DegradationReason::LimitExceeded).unwrap(),
         "\"limit_exceeded\"",
@@ -186,8 +178,6 @@ fn operation_modifiers_default_all_false_and_round_trip() {
     assert_eq!(back, mods);
     assert!(json.contains("\"recursive\":true"));
     assert!(json.contains("\"destructive_mode\":true"));
-    // Derived `Deserialize` has no `#[serde(default)]`, so all three fields
-    // are required and serialized — including `forced: false`.
     assert!(json.contains("\"forced\":false"));
 }
 
@@ -212,10 +202,6 @@ fn detected_operation_round_trips_and_preserves_certainty() {
 
 #[test]
 fn detected_operation_with_dynamic_certainty_is_not_known() {
-    // A Dynamic operand is never evidence of safety (ADR-022 §3, §7). The
-    // type system does not encode that invariant, but the certainty must
-    // round-trip as `Dynamic` — the classifier/merge layer enforces the
-    // never-safe rule, and this test pins the data contract it depends on.
     let op = DetectedOperation {
         kind: OperationKind::CodeExecution,
         modifiers: OperationModifiers::default(),
@@ -296,11 +282,6 @@ fn analysis_provenance_round_trips_with_metadata_only() {
 
 #[test]
 fn analysis_provenance_serialized_form_carries_no_source_body_or_snippet() {
-    // ADR-022 §10: provenance must not persist script contents, full
-    // snippets, imported source, variable values, or syntax trees. Pin
-    // that at the serialization boundary so a later field cannot leak
-    // source silently. The expected key set is the independent source of
-    // truth (the ADR's allow-list), not a re-derivation of the struct.
     let provenance = AnalysisProvenance {
         language: Some("python".to_string()),
         source_origin: SourceOrigin::ScriptFile,
@@ -341,7 +322,6 @@ fn analysis_provenance_serialized_form_carries_no_source_body_or_snippet() {
             "provenance leaked forbidden source-bearing key {key:?} in {keys:?}",
         );
     }
-    // The path and hash ARE allowed (metadata, not contents).
     assert!(keys.contains(&"file_path"));
     assert!(keys.contains(&"source_hash"));
 }
@@ -358,12 +338,10 @@ fn target_analysis_round_trips_and_status_orders_toward_degraded() {
         degradation_reasons: vec![DegradationReason::LimitExceeded],
         provenance: None,
     };
-    // The merge takes the worst status; Degraded beats Complete.
     assert_eq!(
         complete.status.max(degraded.status),
         AnalysisStatus::Degraded,
     );
-    // Round-trip preserves the typed reasons.
     let json = serde_json::to_string(&degraded).unwrap();
     let back: TargetAnalysis = serde_json::from_str(&json).unwrap();
     assert_eq!(back, degraded);
@@ -383,9 +361,6 @@ fn match_evidence_regex_round_trips_and_projects_to_mechanism() {
     assert_eq!(back, evidence);
     assert_eq!(evidence.mechanism(), DetectionMechanism::RegexPattern);
     assert_eq!(evidence.source(), DetectionSource::Builtin);
-    // Tagged shape: { "kind": "regex_pattern", "source": "builtin" }.
-    // The discriminator key is the generic "kind" (consistent with
-    // `AssessmentBasis`); the domain term lives in the variant value.
     assert!(json.contains("\"kind\":\"regex_pattern\""));
     assert!(json.contains("\"source\":\"builtin\""));
 }
@@ -404,8 +379,6 @@ fn match_evidence_token_prefix_round_trips() {
 
 #[test]
 fn match_evidence_language_carries_operation_and_provenance() {
-    // Only LanguageRule carries operation + provenance (ADR-022 §4). The
-    // enum shape makes a regex match carrying an operation unconstructable.
     let operation = DetectedOperation {
         kind: OperationKind::CodeExecution,
         modifiers: OperationModifiers::default(),
@@ -433,8 +406,6 @@ fn match_evidence_language_carries_operation_and_provenance() {
     assert_eq!(back, evidence);
     assert_eq!(evidence.mechanism(), DetectionMechanism::LanguageRule);
     assert_eq!(evidence.source(), DetectionSource::Builtin);
-    // A Dynamic code-execution sink still records its operation in
-    // evidence (ADR-022 §3): uncertainty never hides the visible sink.
     assert!(json.contains("\"kind\":\"language_rule\""));
     assert!(json.contains("\"kind\":\"code_execution\""));
     assert!(json.contains("\"certainty\":\"dynamic\""));

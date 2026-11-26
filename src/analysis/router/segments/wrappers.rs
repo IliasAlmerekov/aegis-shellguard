@@ -1,5 +1,3 @@
-//! Wrapper-body peeling for `case`/`function`/`coproc` and grammar wrappers (#384, #430).
-
 use super::*;
 
 fn strip_group_or_subshell_wrapper(raw: &str) -> Option<&str> {
@@ -10,7 +8,6 @@ fn strip_group_or_subshell_wrapper(raw: &str) -> Option<&str> {
         .or_else(|| trimmed.strip_prefix('(').and_then(|s| s.strip_suffix(')')))
 }
 
-/// Raw-substring `case` arm extraction (preserves inline quoting across `;;`/`;;&`/`;&`) (#384).
 fn case_arm_bodies(rest: &str) -> Vec<String> {
     let Some((_word, mut remaining)) = rest.split_once(" in ") else {
         return Vec::new();
@@ -39,7 +36,6 @@ fn case_arm_bodies(rest: &str) -> Vec<String> {
     bodies
 }
 
-/// Quote-aware scan for `;;&`, `;;`, or `;&` (longest match first so `;;&` is not split).
 fn find_case_arm_terminator(s: &str) -> Option<(usize, usize)> {
     let mut in_single_quote = false;
     let mut in_double_quote = false;
@@ -75,7 +71,6 @@ fn strip_trailing_esac(s: &str) -> &str {
     trimmed.strip_suffix("esac").map_or(trimmed, str::trim_end)
 }
 
-/// POSIX `NAME() BODY` body; routed conservatively at definition time since call sites are not tracked (#384).
 pub(super) fn posix_function_definition_body(trimmed: &str) -> Option<&str> {
     let paren_pos = trimmed.find('(')?;
     let name = trimmed[..paren_pos].trim_end();
@@ -91,7 +86,6 @@ pub(super) fn posix_function_definition_body(trimmed: &str) -> Option<&str> {
     (!body.is_empty()).then_some(body)
 }
 
-/// Bash `function NAME [()] BODY` body; routed at definition time (#384).
 fn function_keyword_body(rest: &str) -> Option<&str> {
     let name_end = rest.find(|c: char| c.is_whitespace() || c == '(')?;
     let name = &rest[..name_end];
@@ -108,13 +102,11 @@ fn function_keyword_body(rest: &str) -> Option<&str> {
             .trim_start()
             .strip_prefix(')')
             .map_or("", str::trim_start),
-        // Non-empty `(` opens a subshell body, so keep it.
         _ => tail,
     };
     (!body.is_empty()).then_some(body)
 }
 
-/// `coproc [NAME] { BODY; }`; bare `coproc <cmd>` is already handled by launcher stripping (#384).
 fn coproc_body(rest: &str) -> Option<&str> {
     if let Some(body) = strip_group_or_subshell_wrapper(rest) {
         return Some(body);
@@ -126,7 +118,6 @@ fn coproc_body(rest: &str) -> Option<&str> {
     strip_group_or_subshell_wrapper(tail.trim_start())
 }
 
-/// Strip trailing redirections using raw-substring boundaries so wrapper punctuation stays clean (#384).
 pub(super) fn strip_trailing_redirection(s: &str) -> &str {
     let mut rest = s.trim_end();
     loop {
@@ -148,7 +139,6 @@ pub(super) fn strip_trailing_redirection(s: &str) -> &str {
     }
 }
 
-/// Uses `len_utf8()` because Unicode whitespace (e.g. U+0085) can be multi-byte.
 fn split_at_last_whitespace(value: &str) -> Option<(&str, &str)> {
     let (index, whitespace) = value
         .char_indices()
@@ -157,7 +147,6 @@ fn split_at_last_whitespace(value: &str) -> Option<(&str, &str)> {
     Some((&value[..index], &value[after_whitespace..]))
 }
 
-/// Extract raw wrapper bodies without dequoting, so inline `-c`/`-e` quoting survives the second pass (GHSA-mgwj-4828-3mrg).
 pub(super) fn wrapper_bodies(stage_raw: &str, trusted_aliases: &[(&str, &str)]) -> Vec<String> {
     let mut bodies = Vec::new();
     let trimmed = strip_trailing_redirection(stage_raw.trim_start());
@@ -199,7 +188,6 @@ pub(super) fn wrapper_bodies(stage_raw: &str, trusted_aliases: &[(&str, &str)]) 
         && heredoc_write_then_exec_reuse(stage_raw, trusted_aliases).is_none()
         && let Some(tail) = heredoc_marker_line_tail(stage_raw)
     {
-        // Skip tail when `heredoc_write_then_exec_reuse` already routed it directly.
         bodies.push(tail.to_owned());
     }
     bodies

@@ -1,8 +1,3 @@
-//! Snapshot and rollback plugins for Aegis.
-//!
-//! This crate provides the [`SnapshotPlugin`] trait, [`SnapshotRegistry`],
-//! [`SnapshotRegistryConfig`], and six built-in provider backends:
-//! git, docker, postgres, mysql, sqlite, and supabase.
 #![cfg_attr(
     not(test),
     deny(
@@ -12,13 +7,11 @@
         clippy::unreachable
     )
 )]
-#![deny(missing_docs)]
 
 use std::path::Path;
 
 use async_trait::async_trait;
 
-/// Typed error for snapshot operations.
 pub mod error;
 pub use error::SnapshotError;
 
@@ -32,116 +25,57 @@ mod postgres;
 mod sqlite;
 mod supabase;
 
-/// Built-in Docker snapshot provider.
 pub use docker::DockerPlugin;
-/// Built-in Git snapshot provider.
 pub use git::{GitPlugin, git_toplevel};
-/// Built-in MySQL snapshot provider.
 pub use mysql::MysqlPlugin;
-/// Built-in PostgreSQL snapshot provider.
 pub use postgres::PostgresPlugin;
-/// Built-in SQLite snapshot provider.
 pub use sqlite::SqlitePlugin;
-/// Built-in Supabase snapshot provider.
 pub use supabase::SupabasePlugin;
 
-/// Injectable clock primitives for deterministic retention tests.
 mod clock;
-/// Filesystem containment checks for snapshot artifacts.
 mod containment;
-/// Snapshot liveness outcome and shared check helpers.
 mod liveness;
-/// Filesystem path helpers for the snapshot subsystem.
 mod paths;
-/// Snapshot attempt readiness outcome and shared check helpers.
 mod readiness;
-/// Snapshot registry materialization and runtime dispatch.
 mod registry;
-/// Snapshot retention policy and prunable-record resolution.
 mod retention;
-/// Owner-only filesystem creation helpers for snapshot artifacts.
 mod secure_fs;
-/// The shared `snapshot_id` codec: hex components, `v3` layout, legacy splits.
 mod snapshot_id;
-/// Shared fake-executable helpers for the snapshot plugins' own tests.
 #[cfg(test)]
 mod test_support;
-/// Test hooks for observing snapshot registry materialization.
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 
-/// Re-export of [`clock::Clock`], [`clock::SystemClock`], [`clock::FixedClock`].
 pub use clock::{Clock, FixedClock, SystemClock};
-/// Re-export of [`liveness::Liveness`].
 pub use liveness::Liveness;
-/// Re-export of [`readiness::ArtifactReadiness`].
 pub use readiness::ArtifactReadiness;
-/// Re-export of [`registry::SnapshotCoverage`], [`registry::SnapshotRegistry`],
-/// [`registry::SnapshotRegistryConfig`], [`registry::available_provider_names`].
 pub use registry::{
     SnapshotCoverage, SnapshotRegistry, SnapshotRegistryConfig, available_provider_names,
 };
-/// Re-export of [`retention::PrunableRecord`], [`retention::RetentionPolicy`].
 pub use retention::{PrunableRecord, RetentionPolicy};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
-/// The message logged when one plugin's snapshot attempt fails inside
-/// [`SnapshotRegistry::snapshot_all`] and the registry moves on to the next
-/// plugin. Named so the emission site and its tests reference the same
-/// literal rather than depending on it by accident: the Diagnostic stream as
-/// a whole carries no compatibility promise (see the glossary entry in
-/// `CONTEXT.md`), but this string is deliberately pinned.
 pub const SNAPSHOT_FAILED_CONTINUING: &str = "snapshot failed, continuing";
 
-/// A plugin that knows how to snapshot and roll back one kind of state.
 #[async_trait]
 pub trait SnapshotPlugin: Send + Sync {
-    /// Short human-readable name used in logs and the TUI.
     fn name(&self) -> &'static str;
 
-    /// Return `true` when this plugin can act on the given working directory.
     async fn is_applicable(&self, cwd: &Path) -> bool;
 
-    /// Create a snapshot and return its identifier.
     async fn snapshot(&self, cwd: &Path, cmd: &str) -> Result<String>;
 
-    /// The git working tree a Snapshot taken at `cwd` covers, as a canonical
-    /// top-level path (ADR-053). Only the git provider has one; every other
-    /// provider keeps this default.
     async fn snapshot_target(&self, _cwd: &Path) -> Option<String> {
         None
     }
 
-    /// Revert to a previously created snapshot.
     async fn rollback(&self, snapshot_id: &str) -> Result<()>;
 
-    /// Delete a previously created snapshot artifact.
-    ///
-    /// Deletion must be idempotent: returning `Ok(())` when the artifact has
-    /// already been removed. Backend failures are reported as
-    /// [`SnapshotError::DeleteFailed`].
     async fn delete(&self, snapshot_id: &str) -> Result<()>;
 
-    /// Check whether `snapshot_id` can still be restored, looking only at what
-    /// [`rollback`](Self::rollback) needs (ADR-052).
-    ///
-    /// Returns `Err` for a record Rollback cannot use: a malformed id, an
-    /// artifact path outside the Snapshot store, or a manifest that fails its
-    /// eligibility check. Required, with no default: a provider must not
-    /// answer "unknown" by omission.
     async fn liveness(&self, snapshot_id: &str) -> Result<Liveness>;
 
-    /// Check the artifact `snapshot_id` names, right after creation
-    /// (ADR-031 §6).
-    ///
-    /// Infallible on purpose: an id the plugin cannot parse or an artifact it
-    /// cannot reach is [`ArtifactReadiness::UNAVAILABLE`], not an `Err` the
-    /// caller must interpret. The presence check is mandatory; a structural
-    /// check runs only after it passes and must end within the structural
-    /// timeout, so the registry's per-attempt timeout stays the presence
-    /// bound. Required, with no default: a provider must not answer "ready"
-    /// by omission.
     async fn readiness(&self, snapshot_id: &str) -> ArtifactReadiness;
 }
 
@@ -361,8 +295,6 @@ mod tests {
 
         let now = OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
         let policy = RetentionPolicy::from_max_count_per_provider(1);
-        // Newest first in log order. A clock correction gave the newest record
-        // the earlier timestamp.
         let records = vec![
             PrunableRecord {
                 plugin: "git".to_string(),
@@ -391,19 +323,16 @@ mod tests {
             max_age_days: Some(7),
         });
         let records = vec![
-            // Outside the age window but kept by the per-provider count (it is the newest).
             PrunableRecord {
                 plugin: "git".to_string(),
                 snapshot_id: "count-kept".to_string(),
                 recorded_at: now - time::Duration::days(1),
             },
-            // Inside the age window but not kept by count; age rule preserves it.
             PrunableRecord {
                 plugin: "git".to_string(),
                 snapshot_id: "age-kept".to_string(),
                 recorded_at: now - time::Duration::days(2),
             },
-            // Outside both windows; this is the only candidate.
             PrunableRecord {
                 plugin: "git".to_string(),
                 snapshot_id: "prune-me".to_string(),

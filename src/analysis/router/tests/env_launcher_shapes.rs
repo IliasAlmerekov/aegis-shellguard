@@ -1,5 +1,3 @@
-//! Tests for `env` launcher shapes (`-S`/`--split-string`, `-C`/`--chdir`) (#384, #437).
-
 use super::*;
 use std::time::Instant;
 
@@ -146,7 +144,6 @@ fn env_chdir_behind_a_command_launcher_degrades_the_relative_target() {
     );
 }
 
-/// Fail closed when `env -S` expands into more tokens than the original stage (#437).
 #[test]
 fn env_split_string_value_that_re_splits_longer_than_the_original_tokens_degrades_instead_of_panicking()
  {
@@ -177,7 +174,6 @@ fn env_split_string_re_split_sweep_never_panics() {
     assert!(panicked.is_empty(), "these shapes panicked: {panicked:?}");
 }
 
-/// Deep `env -S` nesting past `ENV_SPLIT_MAX_DEPTH` must degrade with `LimitExceeded` (#437).
 #[test]
 fn env_dash_s_chain_past_the_nesting_bound_finishes_quickly_and_fails_closed() {
     let command = format!("env -S {}'true'", "'env -S' ".repeat(3000));

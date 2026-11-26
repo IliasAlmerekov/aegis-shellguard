@@ -1,6 +1,5 @@
 use super::*;
 
-/// A snapshot plugin that fails the test if probed or invoked.
 struct ForbiddenPlugin;
 
 #[async_trait::async_trait]

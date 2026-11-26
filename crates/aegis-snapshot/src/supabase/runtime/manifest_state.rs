@@ -1,12 +1,3 @@
-//! Manifest construction, schema validation, and strict rollback-eligibility
-//! recomputation for the Supabase snapshot runtime.
-//!
-//! The eligibility recomputation is the security-critical invariant that
-//! prevents rollback of partial/degraded manifests. The logic here MUST be
-//! preserved exactly: no relaxing of `db_supported`/`allowed` checks, no
-//! changes to the `overall_status` mapping, and no drift between persisted
-//! summary fields and the recomputed values.
-
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 

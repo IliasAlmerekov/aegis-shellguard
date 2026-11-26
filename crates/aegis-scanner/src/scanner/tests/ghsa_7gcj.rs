@@ -1,10 +1,5 @@
 use super::*;
 
-// GHSA-7gcj-4f7x-7fxj / #415: FS-020 and PS-008 detect recursive `rm` regardless
-// of flag order, bundling, launcher prefix, or command chaining.
-
-// Forms with no force flag (#415).
-
 #[test]
 fn assess_rm_dash_r_is_danger_via_fs020() {
     assert_assessment_matches_pattern("rm -r build", RiskLevel::Danger, "FS-020");
@@ -81,8 +76,6 @@ fn assess_chained_rm_dash_r_is_danger_via_fs020() {
     );
 }
 
-// ── Advisory: force present too, but flag order still defeats FS-001 ─────
-
 #[test]
 fn assess_rm_dash_v_dash_rf_is_danger_via_fs020() {
     assert_assessment_matches_pattern("rm -v -rf build", RiskLevel::Danger, "FS-020");
@@ -102,8 +95,6 @@ fn assess_rm_operand_then_split_r_f_is_danger_via_fs020() {
 fn assess_rm_dash_r_operand_dash_f_is_danger_via_fs020() {
     assert_assessment_matches_pattern("rm -r build -f", RiskLevel::Danger, "FS-020");
 }
-
-// ── FS-001 overlap: unchanged forms report FS-001 only ────────────────────
 
 #[test]
 fn assess_rm_dash_rf_still_reports_fs001_only() {
@@ -168,8 +159,6 @@ fn assess_rm_dash_r_dash_f_still_reports_fs001_only() {
             .any(|m| m.pattern.id.as_ref() == "FS-020")
     );
 }
-
-// ── Must not fire ──────────────────────────────────────────────────────────
 
 #[test]
 fn assess_git_rm_dash_r_cached_stays_below_fs020() {
@@ -277,13 +266,6 @@ fn assess_rm_dash_i_alone_stays_below_fs020() {
     );
 }
 
-// ── PS-008: root deletion, any flag order (Block) ─────────────────────────
-//
-// PS-006's regex has the same first-token-only shape FS-001 had, so
-// `rm -rf /` was Block only when the flags led the invocation. PS-008 is a
-// token-prefix rule that finds the recursive flag anywhere and a `/`
-// operand, independent of order or `-f`.
-
 #[test]
 fn assess_rm_dash_v_dash_rf_root_is_block_via_ps008() {
     assert_assessment_matches_pattern("rm -v -rf /", RiskLevel::Block, "PS-008");
@@ -318,11 +300,6 @@ fn assess_sudo_rm_dash_v_dash_rf_root_is_block_via_ps008() {
 fn assess_rm_dash_r_double_dash_root_is_block_via_ps008() {
     assert_assessment_matches_pattern("rm -r -- /", RiskLevel::Block, "PS-008");
 }
-
-// ── PS-008: spellings of `/` (Block) ──────────────────────────────────────
-//
-// `//`, `/.`, `/..`, and longer runs of those components all resolve to `/`.
-// PS-006's regex only knows the literal `/`, so these fell back to Danger.
 
 #[test]
 fn assess_rm_dash_rf_double_slash_is_block_via_ps008() {
@@ -383,8 +360,6 @@ fn assess_rm_dash_rf_paths_below_root_stay_below_ps008() {
     }
 }
 
-// ── PS-006 overlap: unchanged forms report PS-006 only ────────────────────
-
 #[test]
 fn assess_rm_dash_rf_root_still_reports_ps006_only() {
     let s = scanner();
@@ -429,8 +404,6 @@ fn assess_rm_dash_r_dash_f_root_still_reports_ps006_only() {
             .any(|m| m.pattern.id.as_ref() == "PS-008")
     );
 }
-
-// ── PS-008: must not fire ──────────────────────────────────────────────────
 
 #[test]
 fn assess_rm_rf_root_glob_stays_below_ps008() {

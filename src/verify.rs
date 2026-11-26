@@ -1,5 +1,3 @@
-//! CLI implementation for `aegis snapshot verify` (ADR-052 §5).
-
 use aegis::error::AegisError;
 use aegis_audit::{AuditLogger, SnapshotLedger};
 use aegis_config::AegisConfig;
@@ -8,7 +6,6 @@ use serde::Serialize;
 
 use crate::{EXIT_ABSENT, EXIT_INCONCLUSIVE, EXIT_INTERNAL, rollback};
 
-/// A `Liveness` tag, or `Error` when the check itself failed.
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Outcome {
@@ -31,7 +28,6 @@ impl Outcome {
     }
 }
 
-/// One checked Snapshot.
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub(crate) struct VerifyRow {
     pub(crate) plugin: String,
@@ -63,8 +59,6 @@ impl VerifyRow {
     }
 }
 
-/// Check one Snapshot, or every live record of the Snapshot ledger one after another.
-/// Nothing is cached: each call asks the providers again.
 pub(crate) async fn execute(id: Option<String>) -> Result<Vec<VerifyRow>, AegisError> {
     let config = AegisConfig::load()?;
     let logger = AuditLogger::from_audit_config(&config.audit);
@@ -91,7 +85,6 @@ pub(crate) async fn execute(id: Option<String>) -> Result<Vec<VerifyRow>, AegisE
     Ok(rows)
 }
 
-/// 4 for any error, else 1 for any `absent`, else 5 for any `inconclusive`, else 0.
 pub(crate) fn exit_code(rows: &[VerifyRow]) -> i32 {
     let has = |outcome| rows.iter().any(|row| row.outcome == outcome);
     if has(Outcome::Error) {

@@ -1,15 +1,3 @@
-//! Drop token-prefix matches that only exist because a normalized scan target
-//! lost its quote boundaries (#484).
-//!
-//! A logical segment reaches the scanner as its words joined by spaces, so
-//! re-tokenizing `git push origin 'x --force'` yields a standalone `--force`
-//! that git never receives. That same re-split is also how a command string
-//! handed to a runner (`watch 'git clean -fdx'`) reaches the prefix rules, so
-//! the lossy tokens stay the source of matches. This module only removes the
-//! matches that the segment's quote-preserving tokens contradict, and it is
-//! the one place a `--` ends option parsing: a `--` in the lossy tokens may
-//! come from a quoted argument, so it never hides a flag there.
-
 use aegis_parser::EndOfOptions;
 use aegis_types::{MatchEvidence, MatchResult};
 
@@ -17,13 +5,6 @@ use super::Scanner;
 use super::assessment::REGEX_SUPERSEDED_PREFIXES;
 
 impl Scanner {
-    /// Remove token-prefix matches in `matched[from..]` that the
-    /// quote-preserving `quoted` tokens of the same segment do not support.
-    ///
-    /// A match stays when the same rule also matches `quoted` (where `--` ends
-    /// option parsing for the programs that treat it so), or when a
-    /// quoted token that re-tokenizes into several words names the rule's
-    /// program: that token may be a command string some runner executes.
     pub(super) fn drop_quote_split_matches(
         &self,
         matched: &mut Vec<MatchResult>,
@@ -56,8 +37,6 @@ impl Scanner {
         matched.append(&mut later);
     }
 
-    /// Ids of every token-prefix rule that matches `tokens`, through the same
-    /// launcher stripping and git/aegis global-option skipping as `assess`.
     fn prefix_ids(&self, tokens: &[String]) -> Vec<String> {
         let refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
         let slices = aegis_parser::effective_token_slices(&refs);
@@ -77,7 +56,6 @@ impl Scanner {
             .collect()
     }
 
-    /// The lowercase programs a token-prefix rule is indexed under.
     fn prefix_programs<'a>(&'a self, id: &'a str) -> impl Iterator<Item = &'a str> {
         self.prefix_by_program
             .iter()

@@ -1,18 +1,8 @@
-//! Parity between the two readers of one bash word (ADR-022 §8, ADR-051).
-//!
-//! `aegis-language` is a leaf crate and cannot call the `aegis-parser`
-//! tokenizer, so its bash adapter carries its own word reader
-//! ([`aegis_language::languages::bash_word::shell_word`]). This test runs both
-//! readers over a shared table and an exhaustive set of short inputs, so the
-//! two cannot drift apart: a word must read the same way in the shell scanner
-//! and in the language adapter.
-
 #![cfg(feature = "language-analysis")]
 
 use aegis_language::languages::bash_word::shell_word;
 use aegis_parser::split_tokens;
 
-/// What the parser tokenizer reads `text` as when it is exactly one word.
 fn parser_word(text: &str) -> Option<String> {
     match split_tokens(text).as_slice() {
         [word] => Some(word.clone()),
@@ -126,8 +116,6 @@ fn enumerate(alphabet: &[char], depth: usize, text: &mut String) {
 
 #[test]
 fn ansi_c_escape_sequences_read_the_same_in_both_readers() {
-    // Every escape letter and digit run inside `$'...'`, with a trailing
-    // character to catch over- or under-consumption.
     let mut text = String::new();
     for esc in (0x20u8..0x7f).map(char::from) {
         for tail in [

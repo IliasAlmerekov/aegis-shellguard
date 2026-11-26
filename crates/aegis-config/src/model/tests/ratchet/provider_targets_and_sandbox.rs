@@ -1,16 +1,6 @@
-// ── C3-01: provider target config must ratchet, not last-wins ──────────
-// When a provider is ENABLED in the trusted base (either via its
-// `auto_snapshot_<provider>` flag OR via `snapshot_policy = "Full"`, which
-// materializes every built-in provider regardless of the flags), the project
-// layer must NOT replace that provider's target config with a disabled/empty/
-// narrower one. Weakening is ignored (keep base) and a
-// `project_security_ratchet` warning is emitted. Repointing to another ENABLED
-// (non-empty) target is permitted and is NOT a bypass.
 
 #[test]
 fn project_sqlite_snapshot_path_cannot_empty_global_enabled() {
-    // C3-01: sqlite provider is enabled in base (auto_snapshot_sqlite = true
-    // with a non-empty path); project empties the path → keep base + warn.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -41,8 +31,6 @@ fn project_sqlite_snapshot_path_cannot_empty_global_enabled() {
 
 #[test]
 fn project_sqlite_snapshot_path_cannot_repoint_to_another_nonempty_path() {
-    // #269: repointing an enabled Snapshot target is a decoy-path bypass, not
-    // an allowed tightening — keep the base path and warn.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -73,8 +61,6 @@ fn project_sqlite_snapshot_path_cannot_repoint_to_another_nonempty_path() {
 
 #[test]
 fn project_postgres_snapshot_cannot_empty_database_when_enabled() {
-    // C3-01: postgres provider enabled in base; project empties database →
-    // keep base database + warn.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -105,8 +91,6 @@ fn project_postgres_snapshot_cannot_empty_database_when_enabled() {
 
 #[test]
 fn project_postgres_snapshot_cannot_repoint_database_when_enabled() {
-    // #269: repointing an enabled postgres target to another non-empty
-    // database is the decoy-database bypass — keep base + warn.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -137,8 +121,6 @@ fn project_postgres_snapshot_cannot_repoint_database_when_enabled() {
 
 #[test]
 fn project_postgres_snapshot_cannot_repoint_port_when_enabled() {
-    // #269: `port` is a Snapshot-target field too — repointing it alone still
-    // aims Rollback at a different server.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -165,8 +147,6 @@ fn project_postgres_snapshot_cannot_repoint_port_when_enabled() {
 
 #[test]
 fn project_mysql_snapshot_cannot_empty_database_when_enabled() {
-    // C3-01: mysql provider enabled in base; project empties database →
-    // keep base database + warn.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -197,8 +177,6 @@ fn project_mysql_snapshot_cannot_empty_database_when_enabled() {
 
 #[test]
 fn project_supabase_snapshot_cannot_empty_db_when_enabled() {
-    // C3-01: supabase provider enabled in base; project empties
-    // supabase_snapshot.db.database → keep base + warn.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -229,9 +207,6 @@ fn project_supabase_snapshot_cannot_empty_db_when_enabled() {
 
 #[test]
 fn project_provider_target_not_ratcheted_when_base_disabled() {
-    // C3-01 guard: the target ratchet is conditional on the base provider being
-    // ENABLED. When the base flag is false (provider off), the project may
-    // enable the provider AND configure its own target — no ratchet, no warn.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -262,10 +237,6 @@ fn project_provider_target_not_ratcheted_when_base_disabled() {
 
 #[test]
 fn project_provider_target_ratcheted_under_snapshot_policy_full() {
-    // C3-01: under `snapshot_policy = "Full"` every built-in provider is
-    // materialized regardless of its `auto_snapshot_*` flag, so a project that
-    // empties an enabled provider's target must be ratcheted even though the
-    // per-provider flag is at its default `false`.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -300,8 +271,6 @@ fn project_provider_target_ratcheted_under_snapshot_policy_full() {
 
 #[test]
 fn project_docker_scope_cannot_narrow_all_to_labeled_when_enabled() {
-    // C3-01 docker: breadth rank All > Labeled. Provider enabled in base with
-    // mode = "All"; project narrows to "Labeled" → keep base (All) + warn.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -333,10 +302,6 @@ fn project_docker_scope_cannot_narrow_all_to_labeled_when_enabled() {
 
 #[test]
 fn project_docker_scope_cannot_introduce_noop_names_empty_when_enabled() {
-    // C3-01 docker: Names with empty name_patterns is a no-op (breadth 0),
-    // narrower than Labeled (breadth 1). Provider enabled in base with
-    // mode = "Labeled"; project switches to "Names" with no patterns → keep
-    // base (Labeled) + warn.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -372,8 +337,6 @@ fn project_docker_scope_cannot_introduce_noop_names_empty_when_enabled() {
 
 #[test]
 fn project_docker_scope_can_broaden_labeled_to_all() {
-    // C3-01 docker guard: broadening the scope is permitted (not a bypass) —
-    // keep project value (All), NO warning.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -403,15 +366,9 @@ fn project_docker_scope_can_broaden_labeled_to_all() {
     assert_no_warning_for(&warnings, "docker_scope", "C3-01 docker broaden");
 }
 
-// ── C3-02: sandbox.allow_write must support project tightening (intersection)
-// Current merge always returns `base.allow_write` under the Project layer, so
-// a project cannot tighten to a subset. Desired: keep `base ∩ requested`.
-// Tightening (subset) honored, no warning. Expansion (paths outside base)
-// dropped, warn.
 
 #[test]
 fn project_sandbox_allow_write_can_tighten_to_subset() {
-    // C3-02: project may tighten the writable surface to a subset of the base.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -443,7 +400,6 @@ fn project_sandbox_allow_write_can_tighten_to_subset() {
 
 #[test]
 fn project_sandbox_allow_write_expansion_dropped_and_warned() {
-    // C3-02: paths outside the base are dropped (keep intersection) + warn.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -475,8 +431,6 @@ fn project_sandbox_allow_write_expansion_dropped_and_warned() {
 
 #[test]
 fn project_sandbox_allow_write_disjoint_tightens_to_empty() {
-    // C3-02: a disjoint project set tightens the writable surface to nothing;
-    // the outside path is dropped + warn.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -507,9 +461,6 @@ fn project_sandbox_allow_write_disjoint_tightens_to_empty() {
 
 #[test]
 fn project_sandbox_allow_write_narrower_trusted_root_survives_wider_project_root() {
-    // #242: trusted `/workspace/src` + project `/workspace` is a widening
-    // attempt. The path-tree intersection keeps `/workspace/src` (with its
-    // global provenance) and only `project_security_ratchet` is raised.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -540,8 +491,6 @@ fn project_sandbox_allow_write_narrower_trusted_root_survives_wider_project_root
 
 #[test]
 fn project_sandbox_allow_write_narrows_to_deeper_project_root_without_warning() {
-    // Trusted `/workspace` + project `/workspace/src` is a tightening: the
-    // narrower root wins, keeps project provenance, and raises no warning.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -572,9 +521,6 @@ fn project_sandbox_allow_write_narrows_to_deeper_project_root_without_warning() 
 
 #[test]
 fn project_sandbox_allow_write_parent_dir_entry_is_kept_for_omission_not_folded() {
-    // `/opt/../etc` starts with `/opt` component-wise but must never count as
-    // inside it: `..` is not folded lexically. It is not a widening attempt
-    // either: it stays as written so the ceiling omits it with `parent_dir`.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -601,17 +547,9 @@ fn project_sandbox_allow_write_parent_dir_entry_is_kept_for_omission_not_folded(
     assert_no_warning_for(&warnings, "sandbox.allow_write", "parent_dir kept");
 }
 
-// ── C3-03: misspelled [sandbox] fields must be rejected ─────────────────
-// `PartialSandboxSettings` lacks `#[serde(deny_unknown_fields)]`, so typos like
-// `require` (instead of `required`) or `allow_netork` (instead of
-// `allow_network`) are silently ignored — a config that looks stricter than it
-// is. Both the partial (layered) path and the direct `AegisConfig`/`SandboxSettings`
-// path must reject unknown fields.
 
 #[test]
 fn partial_sandbox_rejects_unknown_field_require() {
-    // C3-03: `require` is a misspelling of `required`; the project file must
-    // fail to load rather than silently ignore the stricter setting.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
 
@@ -631,7 +569,6 @@ fn partial_sandbox_rejects_unknown_field_require() {
 
 #[test]
 fn partial_sandbox_rejects_unknown_field_allow_netork() {
-    // C3-03: `allow_netork` is a misspelling of `allow_network`.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
 
@@ -651,8 +588,6 @@ fn partial_sandbox_rejects_unknown_field_allow_netork() {
 
 #[test]
 fn direct_sandbox_rejects_unknown_field_require() {
-    // C3-03: the direct `AegisConfig`/`SandboxSettings` deserialization path
-    // (used by `amend`) must also reject unknown `[sandbox]` fields.
     let toml_src = "[sandbox]\nrequire = true\n";
     let result = toml::from_str::<AegisConfig>(toml_src);
     assert!(

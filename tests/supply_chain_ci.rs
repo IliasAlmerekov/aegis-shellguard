@@ -31,10 +31,6 @@ fn security_gate_runs_cargo_audit() {
     );
 }
 
-// The audit and deny steps live in a composite action so that CI and the
-// release workflow run the identical checks. These two assertions are what
-// keeps that true: without them, either caller could quietly drop the action
-// and the tests above would still pass against an action nobody invokes.
 #[test]
 fn ci_security_job_invokes_the_security_gate() {
     let workflow = fs::read_to_string(repo_path(".github/workflows/ci.yml"))
@@ -76,8 +72,6 @@ fn msrv_workflow() -> String {
         .expect("MSRV workflow should be readable")
 }
 
-/// `.github/versions.env` as `(KEY, value)` pairs, comments and blank lines
-/// dropped.
 fn pinned_versions() -> Vec<(String, String)> {
     let file = fs::read_to_string(repo_path(".github/versions.env"))
         .expect("versions.env should be readable");
@@ -116,17 +110,9 @@ fn both_workflows_read_the_versions_from_the_one_file() {
     }
 }
 
-/// A second copy of a version is how the release toolchain drifts from the one
-/// CI tested with. Every pin belongs in `.github/versions.env` and reaches a
-/// job as an output of the `gate`/`config` job.
 #[test]
 fn no_workflow_hardcodes_a_pinned_version() {
     for (key, value) in pinned_versions() {
-        // A dotted or dated version string is distinctive enough to search for
-        // on its own. A bare number (a Node major, an iteration count) would
-        // collide with unrelated digits inside a pinned action SHA, so it is
-        // searched for in the shapes a workflow would actually spell it:
-        // `node-version: 22`, `-runs=100000`.
         let spellings: Vec<String> = if value.contains('.') || value.contains('-') {
             vec![value.clone()]
         } else {
@@ -179,8 +165,6 @@ fn contributing() -> String {
     fs::read_to_string(repo_path("CONTRIBUTING.md")).expect("CONTRIBUTING.md should be readable")
 }
 
-/// Words of `text` that look like a Rust toolchain version (`1.NN` or
-/// `1.NN.N`) or a pinned nightly (`nightly-YYYY-MM-DD`).
 fn toolchain_tokens(text: &str) -> Vec<String> {
     let looks_like_rust_version = |token: &str| {
         let mut parts = token.split('.');
@@ -201,12 +185,6 @@ fn toolchain_tokens(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// Places in `text` that pick a floating release channel instead of a pinned
-/// toolchain: a `+stable`, `+beta` or `+nightly` override, or a bare channel
-/// name anywhere on a line that runs `rustup` (`rustup toolchain install`,
-/// `rustup update`, `rustup run` and so on). Each use is reported with the
-/// word before it. Prose such as "the pinned nightly Rust" on a line without
-/// `rustup` is not a toolchain selection and does not count.
 fn floating_toolchain_uses(text: &str) -> Vec<String> {
     const CHANNELS: [&str; 3] = ["stable", "beta", "nightly"];
 
@@ -346,8 +324,6 @@ fn docs_ci_documents_every_release_target() {
     );
 }
 
-/// Every `actions/checkout` step in a workflow, as the block of YAML from the
-/// `uses:` line up to the next step in the same job.
 fn checkout_steps(workflow: &str) -> Vec<String> {
     workflow
         .split("actions/checkout@")
@@ -359,13 +335,6 @@ fn checkout_steps(workflow: &str) -> Vec<String> {
         .collect()
 }
 
-/// `actions/checkout` writes the workflow token into `.git/config` by default,
-/// where any later step, build script, or dependency can read it. No job here
-/// pushes with it: the release notes are published by `action-gh-release` with
-/// its own token, and the tag admission check talks to the compare API through
-/// `GH_TOKEN`. The one exception is the Homebrew tap checkout in release.yml:
-/// it authenticates with an SSH deploy key (`ssh-key:`), not the workflow
-/// token, and keeps it so the later `git push` works.
 #[test]
 fn no_checkout_leaves_the_workflow_token_in_the_checkout() {
     for (name, workflow) in workflows() {
@@ -392,9 +361,6 @@ fn no_checkout_leaves_the_workflow_token_in_the_checkout() {
     }
 }
 
-/// An empty `targets` array is valid JSON and would sail through: the build
-/// matrix would expand to nothing, and the Release would publish with only
-/// `THIRD_PARTY_NOTICES.md` attached. Both readers must count the targets.
 #[test]
 fn an_empty_target_table_stops_the_build_and_the_release() {
     let loader = fs::read_to_string(repo_path(".github/actions/load-versions/action.yml"))
@@ -412,8 +378,6 @@ fn an_empty_target_table_stops_the_build_and_the_release() {
 
 const MERGE_ADMISSION_JOB_NAME: &str = "Merge admission (all CI jobs)";
 
-/// Top-level job ids under `jobs:` in `ci.yml`, in file order. A job id is a
-/// line indented by exactly two spaces that ends in a colon.
 fn ci_job_ids(workflow: &str) -> Vec<String> {
     let workflow = workflow.replace("\r\n", "\n");
     let jobs = workflow
@@ -429,7 +393,6 @@ fn ci_job_ids(workflow: &str) -> Vec<String> {
         .collect()
 }
 
-/// The YAML block of one job, from its id line to the next job id.
 fn ci_job_block(workflow: &str, id: &str) -> String {
     let workflow = workflow.replace("\r\n", "\n");
     let header = format!("\n  {id}:\n");
@@ -463,9 +426,6 @@ fn merge_admission_check_needs_every_other_ci_job() {
     let admission_id = merge_admission_job_id(&workflow);
     let admission = ci_job_block(&workflow, &admission_id);
 
-    // Only the `      - <id>` items under `    needs:` count. Matching the whole
-    // job block would let an id survive in the `HEAVY_JOBS` env line, or as a
-    // substring of another id (`build` inside `build-macos`).
     let needs: Vec<&str> = admission
         .lines()
         .skip_while(|line| *line != "    needs:")
@@ -544,9 +504,6 @@ fn merge_admission_check_runs_even_when_a_need_failed() {
     );
 }
 
-/// The `name:` of every `ci.yml` job. A name that embeds a matrix expression
-/// (`Cross build (${{ matrix.target }})`) is cut before the expression, since
-/// docs cannot spell a value that only exists at run time.
 fn ci_job_names(workflow: &str) -> Vec<String> {
     ci_job_ids(workflow)
         .iter()
@@ -579,7 +536,6 @@ fn docs_ci_documents_every_ci_job() {
     }
 }
 
-/// The `runs-on:` value of every job in a workflow, as `(job id, label)`.
 fn runner_labels(workflow: &str) -> Vec<(String, String)> {
     ci_job_ids(workflow)
         .into_iter()
@@ -596,9 +552,6 @@ fn runner_labels(workflow: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// The runner label `.github/build-targets.json` gives its Linux targets. Every
-/// Linux target must name the same one, since the jobs outside the matrix read
-/// a single `linux_runner`.
 fn pinned_linux_runner() -> String {
     let file = fs::read_to_string(repo_path(".github/build-targets.json"))
         .expect("build-targets.json should be readable");
@@ -628,7 +581,6 @@ fn pinned_linux_runner() -> String {
     pinned.to_string()
 }
 
-/// Checked workflows, as `(file name, contents)`.
 fn workflows() -> [(&'static str, String); 3] {
     [
         ("ci.yml", ci_workflow()),
@@ -637,11 +589,6 @@ fn workflows() -> [(&'static str, String); 3] {
     ]
 }
 
-/// The jobs that name the Linux runner as a literal. `gate` and `config` load
-/// the runner labels, so they cannot read their own from a job output. The
-/// Merge admission check runs with `if: always()` and must fail when `gate`
-/// failed, which leaves every `gate` output empty. `msrv` is a single-job
-/// workflow without `load-versions`, so it pins the same Linux label directly.
 const LITERAL_RUNNER_JOBS: [(&str, &str); 4] = [
     ("ci.yml", "gate"),
     ("ci.yml", "merge-admission"),
@@ -649,10 +596,6 @@ const LITERAL_RUNNER_JOBS: [(&str, &str); 4] = [
     ("msrv.yml", "msrv"),
 ];
 
-/// A `-latest` label moves to a new OS image whenever GitHub decides:
-/// `ubuntu-latest` moved from Ubuntu 24.04 to 26.04 starting 2026-10-19
-/// (actions/runner-images#14748). An OS bump has to be a reviewed one-line
-/// change in `.github/build-targets.json` instead.
 #[test]
 fn no_workflow_uses_a_floating_runner_label() {
     for name in [

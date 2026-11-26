@@ -64,7 +64,6 @@ fn fallback_leaves_a_homebrew_cellar_link_alone_and_advises_brew() {
     support::write_executable(&cellar_binary, "#!/bin/sh\nexit 99\n");
     let bindir = temp.path().join("bin");
     fs::create_dir_all(&bindir).unwrap();
-    // A relative target, as Homebrew writes it.
     std::os::unix::fs::symlink("../Cellar/aegis/1.0/bin/aegis", bindir.join("aegis")).unwrap();
     let home = temp.path().join("home");
     let path = format!("{}:{}", bindir.display(), installer_path(&temp, &tools));

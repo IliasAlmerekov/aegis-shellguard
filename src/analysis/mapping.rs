@@ -1,30 +1,3 @@
-//! Root-side mapping from an adapter's `aegis_language` operation vocabulary
-//! into the `aegis_types` analysis vocabulary, the shared classifier, and the
-//! cross-language execution-sink invariant (ADR-022 §2/§3/§7, plan Iteration 6).
-//!
-//! `aegis_language` is a workspace leaf and may not depend on `aegis_types`
-//! (pinned by `tests/aegis_language_boundary.rs`), so the operation vocabulary
-//! an adapter *produces* is a boundary-forced parallel of `aegis_types::analysis`.
-//! This module is the single place that converts the parallel types into the
-//! shared types and composes the result:
-//!
-//! - [`map_operation`] converts one [`aegis_language::operation::DetectedOperation`]
-//!   into one [`aegis_types::DetectedOperation`] (span/payload dropped; the span
-//!   moves into `AnalysisProvenance`, the payload feeds the recursive sink
-//!   invariant). No adapter assigns a final `RiskLevel`; every operation routes
-//!   through the shared classifier via [`aegis_types::language_match`]
-//!   (ADR-022 §3).
-//! - [`map_adapter_result`] runs the full composition for one analysis target:
-//!   each detected operation becomes a `LANG-*` `Match`, a `CodeExecution` sink
-//!   with a literal payload additionally enqueues a bounded recursive
-//!   [`QueueTarget`], a dynamic/encoded payload records
-//!   [`DegradationReason::DynamicSource`], and a nonzero `parse_errors` count
-//!   records [`DegradationReason::IncompleteSyntax`]. Status aggregates
-//!   monotonically (`NotApplicable < Complete < Degraded`).
-//!
-//! This is the in-process composition the worker wiring (a later slice) will
-//! rely on; it owns no I/O and spawns no subprocess.
-
 use aegis_language::SourceLanguage;
 use aegis_language::operation::{
     AdapterDegradation, AdapterResult, ByteSpan as LangSpan, DetectedOperation as LangOp,
@@ -39,35 +12,12 @@ use aegis_types::{
 use super::queue::QueueTarget;
 use super::recursive::handle_sink;
 
-/// The output of mapping one adapter result into the shared analysis vocabulary.
-///
-/// `analysis` is the [`LanguageAnalysisResult`] ready for [`aegis_types::merge_analysis`];
-/// `recursive_targets` are the bounded nested targets the parent process must
-/// enqueue for recursive analysis (ADR-022 §7). The targets are returned
-/// separately rather than pushed internally so the parent owns the queue and
-/// the depth/budget policy (Iteration 5).
 #[derive(Debug, Clone)]
 pub struct MappingOutcome {
-    /// The language-aware analysis result (status, Matches, degradation reasons).
     pub analysis: LanguageAnalysisResult,
-    /// Bounded recursive targets enqueued from literal execution-sink payloads.
     pub recursive_targets: Vec<QueueTarget>,
 }
 
-/// Convert one adapter operation into the shared `aegis_types` operation.
-///
-/// Returns `None` when the adapter emitted an `OperationKind` that has no
-/// `aegis_types` counterpart yet. Both vocabularies are `#[non_exhaustive]` and
-/// kept in lockstep by the `every_operation_kind_maps_one_for_one` pipeline test;
-/// a future adapter kind with no shared mapping is a workspace-internal gap that
-/// surfaces there. `None` is handled by [`map_adapter_result`] by skipping the
-/// op rather than mislabeling it with a wrong kind or panicking.
-///
-/// `OperationModifiers` and `OperandCertainty` always map (certainty's
-/// `non_exhaustive` wildcard falls back to `Dynamic` — the conservative "never
-/// evidence of safety" default, ADR-022 §7). The adapter-local `span` and
-/// `payload` are dropped here — the span moves into `AnalysisProvenance` in
-/// [`map_adapter_result`], and the payload feeds [`handle_sink`].
 #[must_use]
 pub fn map_operation(op: &LangOp) -> Option<DetectedOperation> {
     Some(DetectedOperation {
@@ -77,21 +27,6 @@ pub fn map_operation(op: &LangOp) -> Option<DetectedOperation> {
     })
 }
 
-/// Compose one adapter result into a [`MappingOutcome`] for one analysis target
-/// (ADR-022 §2/§3/§7).
-///
-/// The analyzed source body is deliberately not a parameter here: every
-/// language-aware Match receives a stable, source-free label rather than a
-/// slice of it, so this composition step never needs the source bytes
-/// (ADR-022 §10). `source_hash` is the optional hex digest of the analyzed
-/// bytes, persisted into each operation's provenance. `parent_depth` is the
-/// depth of the target being mapped; any literal execution-sink payload
-/// becomes a recursive target at `parent_depth + 1`.
-///
-/// Status aggregation is monotonic: `Degraded` if any degradation reason was
-/// recorded, else `Complete` if any Match was produced, else `NotApplicable`.
-/// Degradation reasons are deduplicated (the same reason from multiple ops
-/// records once).
 #[must_use]
 pub fn map_adapter_result(
     adapter: &AdapterResult,
@@ -113,18 +48,11 @@ pub fn map_adapter_result(
 
     for op in &adapter.operations {
         let Some(mapped) = map_operation(op) else {
-            // An adapter kind with no shared mapping yet: skip rather than
-            // mislabel or panic (see `map_operation`). The lockstep conversion
-            // test prevents this for every currently-defined kind.
             continue;
         };
         let span = map_span(op.span);
 
         if op.kind == LangKind::CodeExecution {
-            // The payload's own language (cross-language: a Python eval of a
-            // JavaScript literal enqueues a JavaScript target). When no payload
-            // was recovered, `handle_sink` ignores `payload_language`; the
-            // sink's own language is the least-misleading placeholder.
             let payload_language = op.payload.as_ref().map_or(language, |p| p.language);
             let resolved_payload = op.payload.as_ref().map(|p| p.source.as_str());
 
@@ -160,14 +88,6 @@ pub fn map_adapter_result(
                 push_unique(&mut reasons, reason);
             }
         } else {
-            // A non-execution op emits its classified Match directly. The shared
-            // classifier assigns risk certainty-independently (a Dynamic operand
-            // never lowers risk, ADR-022 §3), so the Match stands on its own:
-            // no typed degradation. `DegradationReason::DynamicSource` is
-            // "source or working directory was dynamic" (ADR-022 §4) — a dynamic
-            // *operand* (unresolved path) is neither, and ADR-022 mandates
-            // degradation only for dynamic execution-sink payloads (§3/§7) or
-            // dynamic source/cwd (§6), not for non-execution dynamic operands.
             let provenance = build_provenance(
                 &mapped,
                 &provenance_context,
@@ -215,7 +135,6 @@ struct ProvenanceContext<'a> {
     source_hash: Option<&'a str>,
 }
 
-/// Build the metadata-only provenance for one detected operation.
 fn build_provenance(
     op: &DetectedOperation,
     context: &ProvenanceContext<'_>,
@@ -237,7 +156,6 @@ fn build_provenance(
     }
 }
 
-/// Map an adapter byte span into the shared byte span.
 fn map_span(span: LangSpan) -> ByteSpan {
     ByteSpan {
         line: span.line,
@@ -247,10 +165,6 @@ fn map_span(span: LangSpan) -> ByteSpan {
     }
 }
 
-/// Map an adapter operation kind into the shared operation kind (one-for-one).
-///
-/// Returns `None` for a future `aegis_language` kind with no `aegis_types`
-/// counterpart yet (both enums are `#[non_exhaustive]`).
 fn map_kind(kind: LangKind) -> Option<OperationKind> {
     match kind {
         LangKind::FilesystemDelete => Some(OperationKind::FilesystemDelete),
@@ -266,7 +180,6 @@ fn map_kind(kind: LangKind) -> Option<OperationKind> {
     }
 }
 
-/// Map adapter modifiers into shared modifiers.
 fn map_modifiers(mods: LangMods) -> OperationModifiers {
     OperationModifiers {
         recursive: mods.recursive,
@@ -275,11 +188,6 @@ fn map_modifiers(mods: LangMods) -> OperationModifiers {
     }
 }
 
-/// Map adapter certainty into shared certainty (one-for-one).
-///
-/// The `non_exhaustive` wildcard falls back to `Dynamic` — the conservative
-/// "never evidence of safety" default (ADR-022 §7) — for any future certainty
-/// variant this crate does not yet understand.
 fn map_certainty(certainty: LangCert) -> OperandCertainty {
     match certainty {
         LangCert::Known => OperandCertainty::Known,
@@ -288,7 +196,6 @@ fn map_certainty(certainty: LangCert) -> OperandCertainty {
     }
 }
 
-/// Push `reason` into `reasons` only if it is not already present (dedup).
 fn push_unique(reasons: &mut Vec<DegradationReason>, reason: DegradationReason) {
     if !reasons.contains(&reason) {
         reasons.push(reason);

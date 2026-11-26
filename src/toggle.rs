@@ -18,57 +18,37 @@ type Result<T> = std::result::Result<T, AegisError>;
 const TOGGLE_FILE_NAME: &str = "disabled";
 const AEGIS_DIR_NAME: &str = ".aegis";
 
-/// Disabled-state toggle status.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ToggleState {
-    /// Aegis is active and will inspect commands.
     Enabled,
-    /// Aegis is disabled because `~/.aegis/disabled` exists.
     Disabled,
 }
 
-/// Snapshot of toggle and config state for CLI output.
 #[derive(Debug, Clone)]
 pub struct ToggleStatusView {
-    /// Current toggle state.
     pub state: ToggleState,
-    /// Absolute path to the toggle flag.
     pub flag_path: PathBuf,
-    /// Human-readable config location summary.
     pub config_status: String,
-    /// Whether CI is overriding the local toggle.
     pub ci_override_active: bool,
-    /// Trusted ceiling and deprecated sandbox warnings.
     pub ceiling_issues: Vec<aegis_config::validate::ValidationIssue>,
 }
 
-/// Resolve the global toggle flag path under the current user's home directory.
 pub fn disabled_flag_path() -> Result<PathBuf> {
     Ok(resolve_disabled_flag_path(home_dir()?))
 }
 
-/// Return `true` when the global toggle flag is present.
 pub fn is_disabled() -> Result<bool> {
     is_disabled_at(&disabled_flag_path()?)
 }
 
-/// Create or refresh `~/.aegis/disabled` with a timestamp and caller PID.
-///
-/// Returns `true` when the flag already existed.
 pub fn disable() -> Result<bool> {
     disable_at(&disabled_flag_path()?)
 }
 
-/// Remove `~/.aegis/disabled` if it exists.
-///
-/// Returns `true` when the flag was present and removed.
 pub fn enable() -> Result<bool> {
     enable_at(&disabled_flag_path()?)
 }
 
-/// Read the current toggle state.
-///
-/// This is a convenience wrapper around [`is_disabled`].
 pub fn status() -> Result<ToggleState> {
     Ok(if is_disabled()? {
         ToggleState::Disabled
@@ -77,7 +57,6 @@ pub fn status() -> Result<ToggleState> {
     })
 }
 
-/// Snapshot the toggle state and status text for display.
 pub fn status_view(ci_override_active: bool) -> Result<ToggleStatusView> {
     Ok(ToggleStatusView {
         state: status()?,
@@ -88,8 +67,6 @@ pub fn status_view(ci_override_active: bool) -> Result<ToggleStatusView> {
     })
 }
 
-/// Sandbox warnings for the current directory: trusted ceiling warnings
-/// (outside `Mode::Audit`) plus any `deprecated_sandbox_field` warnings.
 fn ceiling_issues_here() -> Vec<aegis_config::validate::ValidationIssue> {
     let Ok(cwd) = env::current_dir() else {
         return Vec::new();
@@ -108,7 +85,6 @@ fn ceiling_issues_here() -> Vec<aegis_config::validate::ValidationIssue> {
     issues
 }
 
-/// Append an audit entry for a toggle command using the effective audit config.
 pub fn append_toggle_audit_entry(command: &str) -> Result<()> {
     Ok(audit_logger()?.append(AuditEntry::new(
         command.to_string(),
@@ -129,8 +105,6 @@ fn home_dir() -> Result<PathBuf> {
     home_dir_or_internal_error(aegis_config::home_dir())
 }
 
-/// Split from [`home_dir`] so the missing-`HOME` arm is reachable from a test
-/// without mutating process-wide environment state.
 fn home_dir_or_internal_error(resolved: Option<PathBuf>) -> Result<PathBuf> {
     resolved.ok_or_else(|| AegisError::Internal {
         detail: "HOME is not set; cannot resolve ~/.aegis/disabled".to_string(),
@@ -152,11 +126,6 @@ fn is_disabled_at(path: &Path) -> Result<bool> {
     }
 }
 
-/// Return a concise description of the active configuration location.
-///
-/// This reports the highest-precedence config file that exists, matching the
-/// effective layer order used by config loading. When no config file exists,
-/// it falls back to a defaults-only message.
 pub fn config_status() -> Result<String> {
     let current_dir = env::current_dir()?;
     let layer_paths =

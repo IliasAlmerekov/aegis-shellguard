@@ -5,9 +5,6 @@ use std::fs;
 use aegis_config::PruneConfig;
 use support::repo_path;
 
-/// Field names declared on `PruneConfig`, read from its generated JSON
-/// schema rather than hard-coded — a field renamed or added there is
-/// renamed or added here too, so it can't silently drop out of the docs.
 fn prune_config_field_names() -> Vec<String> {
     let schema =
         serde_json::to_value(schemars::schema_for!(PruneConfig)).expect("schema serializes");

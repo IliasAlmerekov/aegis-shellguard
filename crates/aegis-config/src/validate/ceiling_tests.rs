@@ -1,5 +1,3 @@
-//! Trusted-ceiling warnings as `config validate` reports them (#242).
-
 use std::fs;
 
 use tempfile::TempDir;

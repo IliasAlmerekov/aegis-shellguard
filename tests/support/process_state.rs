@@ -1,12 +1,9 @@
-//! Restoring guard for process state in single-threaded tests.
-
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
 static PROCESS_STATE: Mutex<()> = Mutex::new(());
 
-/// Holds the shared process-state lock and restores changes on drop.
 pub struct ProcessStateGuard {
     _lock: MutexGuard<'static, ()>,
     env: Vec<(OsString, Option<OsString>)>,
@@ -14,7 +11,6 @@ pub struct ProcessStateGuard {
 }
 
 impl ProcessStateGuard {
-    /// Lock process state, including for read-only operations.
     pub fn lock() -> Self {
         Self {
             _lock: PROCESS_STATE
@@ -25,10 +21,6 @@ impl ProcessStateGuard {
         }
     }
 
-    /// Set or remove a variable until this guard is dropped.
-    ///
-    /// # Safety
-    /// No other thread or foreign library may access the environment until drop.
     #[expect(
         clippy::disallowed_methods,
         reason = "the guard owns environment mutation"
@@ -45,8 +37,6 @@ impl ProcessStateGuard {
         self.env.push(previous);
     }
 
-    /// Change cwd until drop. All code using cwd must coordinate with this lock,
-    /// and the original directory must remain available until restoration.
     #[expect(
         clippy::disallowed_methods,
         reason = "the guard owns working-directory mutation"

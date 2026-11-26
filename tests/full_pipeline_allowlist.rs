@@ -1,9 +1,3 @@
-//! Allowlist policy: danger/warn override auto-approval, ceiling enforcement,
-//! verbose/quiet diagnostics, scoped-rule runtime rejection, and CI/Strict
-//! allowlist interactions.
-//!
-//! Split from the original `tests/full_pipeline.rs` (behavior-preserving move).
-
 mod support;
 
 use std::fs;
@@ -79,8 +73,6 @@ reason = "test allowlist"
         "destroy -target=module.test.api\n"
     );
 
-    // AEGIS_FORCE_INTERACTIVE=1 lets the test pipe "no\n" to simulate a
-    // human denying the dangerous non-allowlisted command.
     let mut denied_child = base_command(home.path())
         .current_dir(workspace.path())
         .env("PATH", &path)
@@ -121,8 +113,6 @@ reason = "test allowlist"
     assert_eq!(entries[0]["ci_detected"], serde_json::json!(false));
     assert_eq!(entries[0]["allowlist_matched"], serde_json::json!(true));
     assert_eq!(entries[0]["allowlist_effective"], serde_json::json!(true));
-    // The audit log must record which allowlist rule fired so operators can
-    // trace auto-approvals back to their config.
     assert_eq!(
         entries[0]["allowlist_pattern"],
         "terraform destroy -target=module.test.*"
@@ -134,7 +124,6 @@ reason = "test allowlist"
     assert_eq!(entries[1]["ci_detected"], serde_json::json!(false));
     assert_eq!(entries[1]["allowlist_matched"], serde_json::json!(false));
     assert_eq!(entries[1]["allowlist_effective"], serde_json::json!(false));
-    // Non-matching command — allowlist_pattern field must be absent from JSON.
     assert!(entries[1].get("allowlist_pattern").is_none());
 }
 
@@ -197,8 +186,6 @@ reason = "protect warn ceiling"
     assert!(entries[0].get("allowlist_reason").is_none());
 }
 
-/// When verbose mode is on and a command matches the allowlist, stderr must
-/// include a message identifying which rule fired.
 #[test]
 fn verbose_allowlist_match_prints_rule_name() {
     let home = TempDir::new().unwrap();
@@ -408,8 +395,6 @@ reason = "too broad"
     assert!(String::from_utf8_lossy(&output.stderr).contains("must declare cwd or user scope"));
 }
 
-/// Protect mode + CI policy Block + allowlisted Danger command must
-/// auto-approve (allowlist wins over CI policy in Protect mode).
 #[test]
 fn protect_ci_allowlisted_danger_executes_and_logs_autoapproved() {
     let home = TempDir::new().unwrap();

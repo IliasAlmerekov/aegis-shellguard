@@ -1,5 +1,3 @@
-//! `rg --pre` and `ag --pager` executor-option routing (GHSA-xj54).
-
 use super::*;
 
 #[test]
@@ -42,9 +40,6 @@ fn ag_pager_equals_glued_path_routes() {
     );
 }
 
-// ── An interpreter-named value degrades, same as any other executor value
-// ─────────────────────────────────────────────────────────────────────────
-
 #[test]
 fn rg_pre_naming_an_interpreter_degrades() {
     assert_eq!(
@@ -52,9 +47,6 @@ fn rg_pre_naming_an_interpreter_degrades() {
         vec![unresolved_dynamic()]
     );
 }
-
-// ── Ordinary rg/ag invocations, including a value on `--pre-glob` (which
-// must not be misread as `--pre`), auto-approve ────────────────────────────
 
 #[test]
 fn ordinary_rg_and_ag_invocations_auto_approve() {
@@ -67,10 +59,6 @@ fn ordinary_rg_and_ag_invocations_auto_approve() {
         assert_eq!(route(command, &[]), Vec::new(), "{command}");
     }
 }
-
-// ── A bare `--` ends rg's and ag's own option parsing, so a `--pre`/
-// `--pager`-shaped word past it is a positional argument, not the option
-// ─────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn rg_and_ag_option_words_past_bare_double_dash_auto_approve() {

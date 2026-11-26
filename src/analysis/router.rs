@@ -1,10 +1,3 @@
-//! Production source-target router (ADR-022 §6).
-//!
-//! Uses `aegis-parser` directly because `aegis-language` is a leaf crate
-//! (ADR-022 §4, `tests/aegis_language_boundary.rs`).
-//! [`route`] touches no filesystem; [`resolve`] performs bounded reads via
-//! [`crate::analysis::source_reader`].
-
 use std::cell::Cell;
 use std::path::{Path, PathBuf};
 
@@ -18,73 +11,37 @@ use super::source_reader::{self, SourceReadError};
 mod segments;
 use segments::{CwdState, HomeState, route_list_segment};
 
-/// A source-analysis route decided without (for `Inline`) or before (for
-/// `ScriptFile`) any filesystem access.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RoutedTarget {
-    /// An inline interpreter body (`-c` / `-e`) — the source is already in
-    /// hand from the command string.
     Inline {
-        /// The language the inline body should be parsed as.
         language: SourceLanguage,
-        /// The inline source body.
         source: String,
     },
-    /// A script file named in argv, or directly executed with a verified
-    /// shebang. Not yet read — [`resolve`] performs the bounded read.
     ScriptFile {
-        /// The language the file should be parsed as.
         language: SourceLanguage,
-        /// The path as it appeared in the command (not yet canonicalized).
         path: PathBuf,
     },
-    /// The interpreter has a source (stdin, a dynamic pipeline, …) that could
-    /// not be statically recovered. Never claims safety — always resolves to
-    /// typed degradation.
     Dynamic {
-        /// The language that would have been analyzed.
         language: SourceLanguage,
-        /// Why the source could not be recovered.
         reason: DegradationReason,
     },
-    /// A route whose source language cannot be established without resolving
-    /// an unsafe or unavailable prerequisite. It still carries degradation so
-    /// routing never silently drops a source candidate.
     Unresolved {
-        /// Why routing could not establish an analyzable target.
         reason: DegradationReason,
     },
-    /// A path-like program token (`./script.py`, `/abs/path/script`) executed
-    /// directly, with no known interpreter naming it. [`resolve`] reads the
-    /// file and only treats it as a target if its first line is a verified
-    /// shebang (ADR-022 §6) — no `PATH`/`--version`/content-guessing probes.
     DirectExec {
-        /// The path as it appeared in the command.
         path: PathBuf,
     },
-    /// A path-like operand of an unclaimed stage (`setsid ./pyx`), resolved
-    /// like `DirectExec` except missing paths and directories are `NotApplicable`
-    /// (#384, #430).
     LauncherOperand {
-        /// The path as it appeared in the command.
         path: PathBuf,
     },
 }
 
-/// A route that did not resolve into an analyzable [`SourceTarget`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnresolvedTarget {
-    /// The route language, when routing established one before resolution.
-    ///
-    /// A direct executable under a dynamic cwd has no language until its
-    /// shebang can be read, so its degradation deliberately carries `None`.
     pub language: Option<SourceLanguage>,
-    /// Why it did not resolve.
     pub reason: DegradationReason,
 }
 
-/// Resolution result used by live orchestration, including original-byte hash
-/// metadata and degradations that do not have a known language yet.
 pub(super) enum Resolution {
     #[cfg_attr(
         not(feature = "language-analysis"),
@@ -144,7 +101,6 @@ pub(super) async fn resolve_for_analysis(
                 Ok(path) => path,
                 Err(reason) => return Resolution::Degraded(reason),
             };
-            // Speculative operand: missing or directory is NotApplicable, unlike DirectExec (#384, #430).
             if launcher_operand_is_missing_or_directory(&path).await {
                 return Resolution::NotApplicable;
             }
@@ -153,7 +109,6 @@ pub(super) async fn resolve_for_analysis(
     }
 }
 
-/// Verified shebang resolves; no shebang, oversized, or non-UTF-8 is `NotApplicable`; other read errors degrade.
 async fn resolve_verified_shebang_read(path: &Path, script_file_limit_bytes: u64) -> Resolution {
     match source_reader::read_script_file(path, script_file_limit_bytes).await {
         Ok(read) => {
@@ -172,7 +127,6 @@ async fn resolve_verified_shebang_read(path: &Path, script_file_limit_bytes: u64
                 source_byte_offset: read.source_byte_offset,
             }
         }
-        // Oversized or non-UTF-8 files (e.g. compiled binaries, #345) cannot carry an ASCII shebang.
         Err(SourceReadError::TooLarge { .. } | SourceReadError::InvalidUtf8) => {
             Resolution::NotApplicable
         }
@@ -180,7 +134,6 @@ async fn resolve_verified_shebang_read(path: &Path, script_file_limit_bytes: u64
     }
 }
 
-/// Uses no-follow `symlink_metadata` so symlinks still reach `resolve_verified_shebang_read`'s degrade path (#384, #430).
 async fn launcher_operand_is_missing_or_directory(path: &Path) -> bool {
     match tokio::fs::symlink_metadata(path).await {
         Ok(metadata) => metadata.is_dir(),
@@ -202,19 +155,12 @@ fn resolve_command_path(
     }
 }
 
-/// A known interpreter invocation shape.
 struct Interpreter {
-    /// The canonical registry program name (after basename/version normalization).
     program: &'static str,
-    /// The inline-source flag, e.g. `-c` (Python/Bash) or `-e` (Node).
     inline_flag: &'static str,
-    /// The language the interpreter's source should be parsed as.
     language: SourceLanguage,
 }
 
-/// The L1 foundation interpreters that expose inline or file source. Shell
-/// `sh` is mapped onto the Bash grammar (the L1 Shell/Bash adapter, ADR-022
-/// §9).
 const INTERPRETERS: &[Interpreter] = &[
     Interpreter {
         program: "python3",
@@ -242,42 +188,30 @@ const INTERPRETERS: &[Interpreter] = &[
         language: SourceLanguage::JavaScript,
     },
     Interpreter {
-        // Debian/Ubuntu installs Node as `nodejs` (#384).
         program: "nodejs",
         inline_flag: "-e",
         language: SourceLanguage::JavaScript,
     },
 ];
 
-/// Immutable command context threaded through segment and wrapper routing.
 struct RouteContext<'a> {
     command: &'a str,
     trusted_aliases: &'a [(&'a str, &'a str)],
-    /// Caller-supplied home directory for `~/` launcher operands; routing does not read process env.
     home: Option<&'a Path>,
-    /// End offset of the enclosing top-level segment in `command`; segment granularity
-    /// only widens the alias scan window (conservative direction, #437).
     alias_scope_end: Cell<usize>,
 }
 
-/// Route analyzable source in `command`. `trusted_aliases` maps trusted aliases
-/// (e.g. `"py"` -> `"python3"`) to canonical registry names (#384, #430).
 #[must_use]
 pub fn route(command: &str, trusted_aliases: &[(&str, &str)]) -> Vec<RoutedTarget> {
     route_with_home(command, trusted_aliases, None)
 }
 
-/// Route analyzable source in `command` with a caller-supplied `home` for `~/`
-/// launcher operands. `None` or any earlier `HOME`-mutating/opaque segment degrades
-/// later `~/` operands (GHSA-xj54).
 #[must_use]
 pub fn route_with_home(
     command: &str,
     trusted_aliases: &[(&str, &str)],
     home: Option<&Path>,
 ) -> Vec<RoutedTarget> {
-    // Rewrite `$'...'` to single quotes with a leading `$''` marker so raw-text
-    // walks see quote edges while Rule C still degrades ANSI-C quoting.
     let canonical = aegis_parser::canonical_ansi_c_quoting_marked(command);
     let command = canonical.as_ref();
     let ctx = RouteContext {
@@ -298,7 +232,6 @@ pub fn route_with_home(
     targets
 }
 
-/// Falls back to `command.len()` on no-match so alias scope only widens, never narrows (#437).
 fn segment_text_end(command: &str, search_from: usize, raw: &str) -> usize {
     command
         .get(search_from..)
@@ -306,14 +239,10 @@ fn segment_text_end(command: &str, search_from: usize, raw: &str) -> usize {
         .map_or(command.len(), |idx| search_from + idx + raw.len())
 }
 
-/// A path with no substitution, expansion, or glob syntax.
 fn is_literal_path(path: &str) -> bool {
     !path.is_empty() && !path.contains(['$', '`', '*', '~', '?', '[', ']', '{', '}'])
 }
 
-/// A bare path-like program token (`./script.py`, `/abs/path/script`) is a
-/// candidate direct-exec target; a plain name (no `/`) would require `PATH`
-/// resolution, which routing never performs (ADR-022 §6).
 fn direct_exec_route(program_token: &str) -> Option<RoutedTarget> {
     program_token
         .contains('/')
@@ -329,7 +258,6 @@ fn stdin_target(language: SourceLanguage, route: StdinRoute) -> RoutedTarget {
     }
 }
 
-/// Reuse the in-hand heredoc body for `<cat > PATH | tee PATH> <<HEREDOC && <interp> PATH`.
 fn heredoc_write_then_exec_reuse(
     command: &str,
     trusted_aliases: &[(&str, &str)],
@@ -365,8 +293,6 @@ fn heredoc_write_then_exec_reuse(
     Some(vec![stdin_target(interp.language, route)])
 }
 
-/// Recognize a literal `cat > PATH` or `tee PATH` write target — the text
-/// before the heredoc marker on its opening line.
 fn heredoc_write_target(before_marker: &str) -> Option<PathBuf> {
     let tokens = aegis_parser::split_tokens(before_marker.trim());
     let refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
@@ -376,8 +302,6 @@ fn heredoc_write_target(before_marker: &str) -> Option<PathBuf> {
     }
 }
 
-/// Recognize `printf '%s' <literal>` exactly — a narrowly-proven
-/// literal-only producer (ADR-022 §6) — and return the literal.
 fn printf_percent_s_literal(segment: &str) -> Option<String> {
     let tokens = aegis_parser::split_tokens(segment);
     let refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
@@ -394,8 +318,6 @@ fn printf_percent_s_literal(segment: &str) -> Option<String> {
     Some(rest[1].to_owned())
 }
 
-/// Resolve `program` to a registry [`Interpreter`], trying an exact match
-/// first, then versioned-basename normalization, then `trusted_aliases`.
 fn resolve_interpreter(
     program: &str,
     trusted_aliases: &[(&str, &str)],
@@ -418,13 +340,8 @@ fn resolve_interpreter(
     INTERPRETERS.iter().find(|i| i.program == *canonical)
 }
 
-/// Versioned-basename family prefixes mapped to their canonical registry
-/// program name, e.g. `python3.11` and `python3` both normalize to `python3`.
 const BASENAME_FAMILIES: &[(&str, &str)] = &[("python", "python3"), ("node", "node")];
 
-/// Strip a trailing version suffix (digits and dots) from a program basename,
-/// e.g. `python3.11` → `python`, `node20` → `node`. Returns `name` unchanged
-/// if it has no trailing version suffix.
 fn strip_version_suffix(name: &str) -> &str {
     let mut end = name.len();
     for (idx, ch) in name.char_indices().rev() {
@@ -441,7 +358,6 @@ fn inline_body(tok: &str, flag: &str, rest: &[&str], pos: usize) -> Option<Strin
     if tok == flag {
         return rest.get(pos + 1).map(|s| (*s).to_owned());
     }
-    // Reject `-`-prefixed tails so lookalike flags (e.g. `-e-x`) are not read as glued bodies.
     let stripped = tok.strip_prefix(flag)?;
     if stripped.is_empty() || stripped.starts_with('-') {
         return None;
@@ -449,9 +365,6 @@ fn inline_body(tok: &str, flag: &str, rest: &[&str], pos: usize) -> Option<Strin
     Some(stripped.to_owned())
 }
 
-/// Resolve every routed target into either an analyzable [`SourceTarget`] or
-/// an [`UnresolvedTarget`] carrying typed degradation, performing the bounded
-/// catch-only read for [`RoutedTarget::ScriptFile`] routes.
 pub async fn resolve(
     routed: Vec<RoutedTarget>,
     script_file_limit_bytes: u64,
@@ -518,9 +431,6 @@ fn degradation_reason(err: &SourceReadError) -> DegradationReason {
     }
 }
 
-/// Verify a file begins with a shebang naming a registry interpreter
-/// (`#!/usr/bin/env python3`, `#!/usr/bin/python3`), without content-guessing
-/// beyond that first line (ADR-022 §6: no `PATH`/`--version` probing).
 #[must_use]
 pub fn verified_shebang_language(first_line: &str) -> Option<SourceLanguage> {
     let rest = first_line.strip_prefix("#!")?;

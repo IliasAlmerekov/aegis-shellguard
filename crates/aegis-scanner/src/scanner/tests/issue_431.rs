@@ -1,7 +1,5 @@
 use super::*;
 
-// Issue #431: `git push` forms that delete refs on the remote ran as Safe,
-// while deleting a local branch with `git branch -D` gets a Warn (GIT-006).
 fn ids(assessment: &Assessment) -> Vec<&str> {
     assessment
         .matched
@@ -24,19 +22,14 @@ fn git_push_forms_that_delete_remote_refs_warn() {
         "git push --prune origin",
         "git push origin --prune refs/heads/*:refs/heads/*",
         "git push --mirror backup",
-        // Git accepts unambiguous long-option prefixes and short-flag bundles.
         "git push origin --del old-branch",
         "git push --pru origin",
         "git push --mir backup",
         "git push -ud origin old-branch",
         "git push origin +:old-branch",
-        // A later `--no-dry-run` turns the push back into a real one.
         "git push --dry-run --no-dry-run origin --delete old-branch",
         "git push -n --no-dry origin :old-branch",
-        // Only the exact dry-run spellings suppress the rule, so an
-        // abbreviation git would also accept still warns.
         "git push --dry origin --delete old-branch",
-        // A push-option value is consumed, and the flag after it is real.
         "git push -o ci.skip -d origin old-branch",
         "git push --push-option ci.skip --delete origin old-branch",
         "git push --push-option=ci.skip -d origin old-branch",
@@ -63,12 +56,10 @@ fn git_push_forms_that_do_not_delete_stay_safe() {
         "git push --dry-run origin main",
         "git push -oci.skip-deploy origin main",
         "git push --push-option=deploy origin main",
-        // A dry run deletes nothing on the remote.
         "git push --dry-run origin --delete old-branch",
         "git push -n origin :old-branch",
         "git push -nd origin old-branch",
         "git push --delete --dry-run origin old-branch",
-        // The value of `-o` / `--push-option` is data, not a flag.
         "git push -o -d origin main",
         "git push --push-option -d origin main",
         "git push -uo -d origin main",

@@ -1,13 +1,9 @@
-//! Unit tests for the Claude Code installer.
-
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
 use super::*;
 use tempfile::TempDir;
 
-/// A fixed absolute command used by the JSON-only `apply_installation`
-/// tests so they can exercise registration without touching the filesystem.
 const TEST_HOOK_COMMAND: &str = "/tmp/aegis-hooks/aegis-pre-tool-use.sh";
 
 #[test]
@@ -23,11 +19,8 @@ fn render_claude_pre_tool_use_hook_substitutes_absolute_binary_path() {
         rendered.contains(&expected),
         "rendered hook must assign the shell-quoted absolute aegis path, got:\n{rendered}"
     );
-    // The transparent-rewrite shim must not reintroduce jq/python3 parsing.
     assert!(!rendered.contains("python3 -"));
     assert!(!rendered.contains("jq -"));
-    // The hook must run the binary (not exec) so it survives the binary's
-    // death and can fail closed on abnormal termination (M4).
     assert!(
         !rendered.contains("exec \"${AEGIS_BIN}\" hook"),
         "the hook must not exec the binary; it must capture output and exit status"
@@ -195,10 +188,6 @@ fn global_claude_install_errors_on_malformed_nested_bash_hook_entry() {
     assert!(err.to_string().contains("settings.hooks.PreToolUse"));
 }
 
-// Neither shape below is one Aegis wrote or manages, so neither may block the
-// install. A `Bash`-matched entry with a malformed body still fails closed —
-// that case is covered by the malformed-nested-hook test above.
-
 #[test]
 fn global_claude_install_ignores_a_foreign_non_object_pre_tool_use_member() {
     let home = TempDir::new().expect("home dir");
@@ -328,11 +317,6 @@ fn install_is_idempotent_and_preserves_existing_entries() {
     );
 }
 
-/// A non-`Bash` matcher carrying an Aegis-managed command is a superseded
-/// registration the agent no longer fires Aegis on. The unified prune walks
-/// every matcher, so a rerun drops the managed command (and the entry it
-/// emptied) instead of leaving a dead registration alongside the canonical
-/// one (#175 gap 2).
 #[test]
 fn install_prunes_a_non_bash_hook_with_an_aegis_managed_command() {
     let mut settings = serde_json::json!({
@@ -392,8 +376,6 @@ fn install_adds_hooks_tree_when_missing() {
     );
 }
 
-/// True when any PreToolUse entry (any matcher) has a hook with the given
-/// command. Used by the migration tests to assert legacy commands are gone.
 fn any_hook_command(entries: &Value, command: &str) -> bool {
     entries.as_array().is_some_and(|arr| {
         arr.iter().any(|entry| {
@@ -404,7 +386,6 @@ fn any_hook_command(entries: &Value, command: &str) -> bool {
     })
 }
 
-/// Count PreToolUse Bash entries that own the canonical aegis hook command.
 fn aegis_entry_count(entries: &Value, command: &str) -> usize {
     entries
         .as_array()

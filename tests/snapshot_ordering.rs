@@ -1,9 +1,3 @@
-//! Snapshot ordering regression tests.
-//!
-//! These tests enforce the PRD contract that snapshots are created only after a
-//! dangerous command is approved and before it runs; blocked and denied commands
-//! must never create snapshots.
-
 mod support;
 
 use std::fs;
@@ -279,9 +273,6 @@ fn test_watch_mode_denied_danger_command_audit_failure_emits_error_no_result() {
     let cwd = TempDir::new().unwrap();
     init_git_repo(cwd.path());
 
-    // Force audit append to fail by making the ~/.aegis directory path a regular
-    // file. create_dir_all on the audit parent will fail, so the denied frame
-    // must not be downgraded to a normal result frame.
     fs::write(home.path().join(".aegis"), "not a directory").unwrap();
 
     let input =
@@ -322,14 +313,11 @@ fn test_watch_mode_approved_danger_command_child_observes_snapshot_before_exec()
     init_git_repo(cwd.path());
     let cwd_path = canonical_test_path(cwd.path());
 
-    // Commit a baseline file so the repo is valid for stashing.
     let baseline = cwd_path.join("baseline.txt");
     fs::write(&baseline, "baseline\n").unwrap();
     run_git(&cwd_path, &["add", "baseline.txt"]);
     run_git(&cwd_path, &["commit", "-m", "baseline"]);
 
-    // Create an untracked marker file. The git snapshot must capture it before
-    // the child runs, and must leave it on disk while doing so (issue #356).
     let marker = cwd_path.join("marker.txt");
     fs::write(&marker, "present\n").unwrap();
 
@@ -348,11 +336,6 @@ reason = "approved before-exec test"
     )
     .unwrap();
 
-    // If the snapshot ran before the child, the stash ref exists and the probe
-    // succeeds. If the child ran first, there is no stash ref yet, the probe
-    // fails, and the shell exits non-zero. Use a newline to separate the
-    // harmless rm from the probe so the allowlist glob (which excludes `;`,
-    // `&`, and `|`) still matches the whole command.
     let input = "{\"cmd\":\"rm -rf /tmp/aegis-watch-before-exec\\ntest -f .git/refs/stash\",\"id\":\"before-exec-1\"}\n";
     let output = aegis_watch_in(home.path(), &cwd_path, input.as_bytes());
 
@@ -409,14 +392,11 @@ fn test_shell_approved_danger_command_child_observes_snapshot_before_exec() {
     init_git_repo(cwd.path());
     let cwd_path = canonical_test_path(cwd.path());
 
-    // Commit a baseline file so the repo is valid for stashing.
     let baseline = cwd_path.join("baseline.txt");
     fs::write(&baseline, "baseline\n").unwrap();
     run_git(&cwd_path, &["add", "baseline.txt"]);
     run_git(&cwd_path, &["commit", "-m", "baseline"]);
 
-    // Create an untracked marker file. The git snapshot must capture it before
-    // the child runs, and must leave it on disk while doing so (issue #356).
     let marker = cwd_path.join("marker.txt");
     fs::write(&marker, "present\n").unwrap();
 
@@ -435,11 +415,6 @@ reason = "approved shell before-exec test"
     )
     .unwrap();
 
-    // If the snapshot ran before the child, the stash ref exists and the probe
-    // succeeds. If the child ran first, there is no stash ref yet, the probe
-    // fails, and the shell exits non-zero. Use a newline to separate the
-    // harmless rm from the probe so the allowlist glob (which excludes `;`,
-    // `&`, and `|`) still matches the whole command.
     let output = base_command(home.path())
         .current_dir(&cwd_path)
         .args([
@@ -486,19 +461,14 @@ fn test_sandboxed_approved_danger_command_records_snapshots_before_exec() {
     init_git_repo(cwd.path());
     let cwd_path = canonical_test_path(cwd.path());
 
-    // Commit a baseline file so the repo is valid for stashing.
     let baseline = cwd_path.join("baseline.txt");
     fs::write(&baseline, "baseline\n").unwrap();
     run_git(&cwd_path, &["add", "baseline.txt"]);
     run_git(&cwd_path, &["commit", "-m", "baseline"]);
 
-    // Create an untracked marker file. The git snapshot must capture it before
-    // the child runs, and must leave it on disk while doing so (issue #356).
     let marker = cwd_path.join("marker.txt");
     fs::write(&marker, "present\n").unwrap();
 
-    // bwrap on Linux does not bind /bin, so use a shell located under /usr so
-    // the sandboxed child can actually exec it.
     let shell = Path::new("/usr/bin/bash");
     if !shell.exists() {
         println!("{shell:?} not present; skipping sandboxed ordering test");

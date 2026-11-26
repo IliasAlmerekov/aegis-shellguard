@@ -146,14 +146,8 @@ fn shell_launch_options_drop_login_flag_for_posix_sh() {
     assert_eq!(launch.session_flags(Path::new("/bin/zsh")), vec!["-l"]);
 }
 
-// ── Shell resolution — resolve_shell_inner ────────────────────────────────
-//
-// All four scenarios are tested against the pure inner function so that no
-// real environment variables are read or mutated during the test run.
-
 #[test]
 fn shell_resolution_aegis_real_shell_takes_priority() {
-    // AEGIS_REAL_SHELL must win even when SHELL is also set.
     let result = resolve_shell_inner(
         Some(std::ffi::OsStr::new("/usr/bin/zsh")),
         Some(std::ffi::OsStr::new("/bin/bash")),
@@ -164,15 +158,12 @@ fn shell_resolution_aegis_real_shell_takes_priority() {
 
 #[test]
 fn shell_resolution_missing_aegis_real_shell_falls_through_to_shell() {
-    // When AEGIS_REAL_SHELL is absent, $SHELL is used.
     let result = resolve_shell_inner(None, Some(std::ffi::OsStr::new("/bin/bash")), None);
     assert_eq!(result, PathBuf::from("/bin/bash"));
 }
 
 #[test]
 fn shell_resolution_shell_pointing_to_aegis_falls_back_to_posix() {
-    // If $SHELL resolves to the Aegis binary itself, we must NOT exec it
-    // again — that would be infinite recursion.  The fallback is /bin/sh.
     let aegis_path = PathBuf::from("/usr/local/bin/aegis");
     let result = resolve_shell_inner(None, Some(aegis_path.as_os_str()), Some(&aegis_path));
     assert_eq!(
@@ -184,21 +175,15 @@ fn shell_resolution_shell_pointing_to_aegis_falls_back_to_posix() {
 
 #[test]
 fn shell_resolution_invalid_shell_path_returned_as_is() {
-    // An invalid/non-existent path in $SHELL is returned without
-    // validation — exec() will fail with a clear OS error.  resolve_shell
-    // is not responsible for path existence checking.
     let result = resolve_shell_inner(None, Some(std::ffi::OsStr::new("/nonexistent/shell")), None);
     assert_eq!(result, PathBuf::from("/nonexistent/shell"));
 }
 
 #[test]
 fn shell_resolution_both_missing_falls_back_to_bin_sh() {
-    // Neither AEGIS_REAL_SHELL nor SHELL set → POSIX fallback.
     let result = resolve_shell_inner(None, None, None);
     assert_eq!(result, PathBuf::from("/bin/sh"));
 }
-
-// ── Shell resolution helpers ──────────────────────────────────────────────
 
 #[test]
 fn same_file_true_for_identical_paths() {
@@ -236,10 +221,6 @@ fn config_load_error_lines_omit_fix_hint_for_non_config_errors() {
     assert!(lines[0].contains("failed to load config"));
 }
 
-// ── Watch mode — stub removed ─────────────────────────────────────────────
-//
-// Verify that watch mode participates in the real pipeline by checking
-// that frame parsing works end-to-end.
 #[tokio::test]
 async fn watch_mode_safe_command_emits_result_frame() {
     use aegis::watch::{InputFrame, MAX_FRAME_BYTES, ReadLineResult, read_bounded_line};
@@ -376,8 +357,6 @@ fn cli_parses_install_subcommand_with_local_flag() {
     assert!(!args.claude_code);
     assert!(!args.codex);
 }
-
-// ── CI policy ─────────────────────────────────────────────────────────────
 
 fn make_assessment(risk: RiskLevel) -> Assessment {
     Assessment {
@@ -558,8 +537,6 @@ fn ci_policy_block_allows_safe_in_ci() {
 
 #[test]
 fn ci_policy_allow_does_not_short_circuit_in_ci() {
-    // With CiPolicy::Allow, CI detection is ignored — the normal flow runs.
-    // A Safe command must still be AutoApproved.
     let assessment = Assessment {
         risk: RiskLevel::Safe,
         effect_opaque: false,
@@ -581,7 +558,6 @@ fn ci_policy_allow_does_not_short_circuit_in_ci() {
 
 #[test]
 fn not_in_ci_does_not_trigger_ci_policy() {
-    // Outside CI, even CiPolicy::Block must not affect Safe commands.
     let assessment = Assessment {
         risk: RiskLevel::Safe,
         effect_opaque: false,
@@ -597,7 +573,6 @@ fn not_in_ci_does_not_trigger_ci_policy() {
 
 #[test]
 fn audit_mode_blocks_intrinsic_block_risk_level() {
-    // RiskLevel::Block is never bypassable — not even in Audit mode.
     let assessment = make_assessment(RiskLevel::Block);
     let (decision, snapshots, _) = decide_command(
         &context_with_mode(Mode::Audit),
@@ -719,10 +694,6 @@ snapshot_policy = "None"
     assert_eq!(config.snapshot_policy, SnapshotPolicy::Selective);
 }
 
-/// The scanner skips Aegis' global options with its own fixed table
-/// (`aegis_parser::aegis_option_subcommand_start`). A new global option the
-/// table misses would hide `aegis <option> off` from every `AEG-*` rule
-/// again, so every option clap accepts before a subcommand must be skipped.
 #[test]
 fn scanner_skips_every_global_cli_option_before_a_subcommand() {
     use clap::CommandFactory;

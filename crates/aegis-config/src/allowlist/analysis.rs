@@ -1,5 +1,3 @@
-//! Advisory analysis helpers for allowlist and blocklist rules.
-
 use super::AllowlistWarning;
 #[cfg(test)]
 use super::BlocklistWarning;
@@ -7,11 +5,6 @@ use crate::AllowlistRule;
 #[cfg(test)]
 use crate::BlockRule;
 
-/// Produce advisory warnings for one structured allowlist rule.
-///
-/// This analysis is informational only. It does not participate in
-/// authoritative runtime allow/deny matching, which is performed exclusively
-/// by the compiled [`crate::Allowlist`].
 pub fn analyze_allowlist_rule(rule: &AllowlistRule) -> Vec<AllowlistWarning> {
     let mut warnings = Vec::new();
     let location = warning_location(rule);
@@ -37,7 +30,6 @@ pub fn analyze_allowlist_rule(rule: &AllowlistRule) -> Vec<AllowlistWarning> {
     warnings
 }
 
-/// Produce advisory warnings for one structured blocklist rule.
 #[cfg(test)]
 pub fn analyze_blocklist_rule(rule: &BlockRule) -> Vec<BlocklistWarning> {
     let mut warnings = Vec::new();

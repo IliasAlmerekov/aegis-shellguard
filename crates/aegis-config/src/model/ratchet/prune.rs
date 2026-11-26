@@ -1,9 +1,3 @@
-//! Field-group merge for `PruneConfig`. `enabled` is `Tighten` (#268);
-//! `max_count_per_provider`/`max_age_days` are `Custom` — a larger value
-//! keeps more Snapshots, but an unset base limit must stay unset rather than
-//! adopt whatever the project requests (with both limits unset, prune deletes
-//! nothing; letting a project set either one widens deletion).
-
 use std::fmt::Display;
 
 use crate::allowlist::ConfigSourceLayer;
@@ -13,12 +7,6 @@ use super::super::partial::PartialPruneConfig;
 use super::direction::{Ratchet, Tighten, bool_false_is_stricter, format_display};
 use super::warning::{RatchetSink, is_project};
 
-/// Ratchet a prune retention limit (`prune.max_count_per_provider`,
-/// `prune.max_age_days`) where a larger value keeps more Snapshots.
-///
-/// Global config remains last-wins. A project may raise a limit the base
-/// already sets, but cannot lower it or set a limit the base leaves unset:
-/// with both limits unset prune deletes nothing, so adding one widens deletion.
 fn ratchet_prune_retention<T: Ord + Copy>(
     base: Option<T>,
     overlay: Option<T>,
@@ -51,9 +39,6 @@ fn custom_prune_limit<T: Ord + Copy + Display>(
     kept
 }
 
-/// Merge one layer's `[prune]` overlay into the trusted base. The destructure
-/// of both structs is an exhaustive tripwire — a new `PruneConfig` field
-/// breaks this until it declares a direction.
 pub(crate) fn merge_prune(
     base: PruneConfig,
     overlay: PartialPruneConfig,

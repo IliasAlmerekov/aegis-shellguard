@@ -1,13 +1,5 @@
-//! Issue #319: `Scanner` construction.
-//!
-//! These tests use `PatternSet::from_sources` with a hand-built `Pattern` to
-//! reach cases the shipped `patterns.toml` doesn't exercise: a built-in-sourced
-//! pattern with a regex that fails to compile, and a pattern with no
-//! extractable keyword.
-
 use super::*;
 
-/// Regex compilation stays eager for every pattern source (#319).
 #[test]
 fn malformed_builtin_sourced_regex_fails_construction_not_scan() {
     let bad = Pattern {
@@ -34,9 +26,6 @@ fn malformed_builtin_sourced_regex_fails_construction_not_scan() {
     );
 }
 
-/// A pattern whose regex yields no extractable literal keyword (`has_uncovered`)
-/// cannot be gated by AC keyword matching — it must always be a `full_scan`
-/// candidate, regardless of what appeared in the command.
 #[test]
 fn pattern_with_no_extractable_keyword_is_always_a_full_scan_candidate() {
     let custom = Pattern {
@@ -64,7 +53,6 @@ fn pattern_with_no_extractable_keyword_is_always_a_full_scan_candidate() {
     );
 }
 
-/// `full_scan` must match `EXEC-006` on `sh -c id` through the shipped `patterns.toml` (#319).
 #[test]
 fn sh_dash_c_is_flagged_by_exec_006() {
     let scanner = Scanner::try_new(PatternSet::load().expect("patterns.toml must load"))

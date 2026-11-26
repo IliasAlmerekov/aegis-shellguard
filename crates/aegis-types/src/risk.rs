@@ -1,28 +1,26 @@
-//! Risk classification for shell commands.
-
 use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-/// Classifies the risk level of a shell command.
-///
-/// Ordered by severity: `Safe < Warn < Danger < Block`.
-///
-/// `#[non_exhaustive]` ensures match arms in external crates require a wildcard,
-/// preserving forward-compatibility if new levels are added in v2.
 #[non_exhaustive]
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, schemars::JsonSchema,
 )]
+#[schemars(description = "Classifies the risk level of a shell command.
+
+Ordered by severity: `Safe < Warn < Danger < Block`.
+
+`#[non_exhaustive]` ensures match arms in external crates require a wildcard,
+preserving forward-compatibility if new levels are added in v2.")]
 pub enum RiskLevel {
-    /// No risk detected; command is safe to execute.
+    #[schemars(description = "No risk detected; command is safe to execute.")]
     Safe,
-    /// Potentially dangerous; prompt for confirmation.
+    #[schemars(description = "Potentially dangerous; prompt for confirmation.")]
     Warn,
-    /// Dangerous; strong confirmation required.
+    #[schemars(description = "Dangerous; strong confirmation required.")]
     Danger,
-    /// Never allow this command to run.
+    #[schemars(description = "Never allow this command to run.")]
     Block,
 }
 

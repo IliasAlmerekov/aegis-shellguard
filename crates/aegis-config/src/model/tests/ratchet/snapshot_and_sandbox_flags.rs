@@ -1,12 +1,6 @@
-// ── C3 ratchet expansion: neighboring un-ratcheted fields ───────────────
-// The existing ratchet covers mode, allowlist_override_level, snapshot_policy,
-// ci_policy, auto_snapshot_*, sandbox.allow_network, and sandbox.allow_write.
-// (`sandbox.enabled` and `sandbox.required` left the 1.0 contract per ADR-029
-// and #229.)
 
 #[test]
 fn project_auto_snapshot_git_cannot_weaken_global_true() {
-    // Under Selective policy each plugin is gated by its `auto_snapshot_*` flag, so the flag must ratchet.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -101,7 +95,6 @@ fn project_auto_snapshot_flags_can_tighten_default_false_to_true() {
 
 #[test]
 fn project_sandbox_allow_network_cannot_weaken_global_false() {
-    // `allow_network` is directional: `true` is weaker, so project `true` over global `false` ratchets to `false`.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -129,8 +122,6 @@ fn project_sandbox_allow_network_cannot_weaken_global_false() {
 
 #[test]
 fn project_sandbox_allow_network_can_tighten_global_true_to_false() {
-    // Guard: tightening (global true → project false) must still work after the
-    // ratchet expansion is implemented.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -157,7 +148,6 @@ fn project_sandbox_allow_network_can_tighten_global_true_to_false() {
 
 #[test]
 fn project_sandbox_allow_write_cannot_expand_global_base() {
-    // More `allow_write` entries is weaker, so the project layer cannot expand the global base set.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);

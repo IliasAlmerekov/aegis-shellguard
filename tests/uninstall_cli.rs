@@ -333,8 +333,6 @@ fn uninstall_preflights_malformed_rc_and_symlinked_settings_or_rc() {
                 fs::write(home.path().join(".bashrc"), "# >>> aegis shell setup >>>\n").unwrap()
             }
             "settings-link" => {
-                // A symlinked settings file is refused only when uninstall
-                // would prune an Aegis registration from it.
                 fs::write(outside.path().join("target"), SETTINGS_WITH_AEGIS_HOOK).unwrap();
                 std::os::unix::fs::symlink(
                     outside.path().join("target"),
@@ -343,7 +341,6 @@ fn uninstall_preflights_malformed_rc_and_symlinked_settings_or_rc() {
                 .unwrap()
             }
             _ => {
-                // A symlinked rc is refused only when uninstall would rewrite it.
                 fs::write(outside.path().join("target"), RC_WITH_BLOCK).unwrap();
                 std::os::unix::fs::symlink(
                     outside.path().join("target"),
@@ -579,8 +576,6 @@ fn uninstall_reports_the_codex_hooks_feature_flag_it_leaves_enabled() {
     );
 }
 
-/// macOS temp dirs live under `/var`, a symlink to `/private/var`, so a
-/// custom rc path the operator types often crosses a symlinked directory.
 #[test]
 fn uninstall_cleans_a_custom_rc_reached_through_a_symlinked_directory() {
     let home = TempDir::new().unwrap();

@@ -1,5 +1,3 @@
-//! Docker snapshot provider.
-
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::path::Path;
@@ -17,15 +15,11 @@ use crate::{ArtifactReadiness, Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
-/// Sentinel returned when there were no running containers at snapshot time.
 const NO_CONTAINERS: &str = "none";
 const DOCKER_BUSY_RETRY_ATTEMPTS: usize = 40;
 
-/// Snapshot plugin that commits and saves Docker container state.
 pub struct DockerPlugin {
-    /// Path to the docker executable. Defaults to `"docker"` (resolved from PATH).
     docker_bin: String,
-    /// Scoping rules controlling which containers are eligible for snapshot.
     scope: DockerScope,
 }
 
@@ -39,12 +33,10 @@ impl Default for DockerPlugin {
 }
 
 impl DockerPlugin {
-    /// Create a `DockerPlugin` with default settings.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Override the container scoping rules for this plugin instance.
     pub fn with_scope(mut self, scope: DockerScope) -> Self {
         self.scope = scope;
         self
@@ -57,7 +49,7 @@ impl DockerPlugin {
                 args.push("--filter".to_string());
                 args.push(format!("label={}=true", self.scope.label));
             }
-            DockerScopeMode::All => { /* no filters */ }
+            DockerScopeMode::All => {}
             DockerScopeMode::Names => {
                 for pat in &self.scope.name_patterns {
                     args.push("--filter".to_string());
@@ -93,7 +85,6 @@ impl DockerPlugin {
     }
 }
 
-/// Host-level configuration captured from a running container before snapshot.
 #[derive(Debug, Serialize, Deserialize)]
 struct ContainerConfig {
     name: String,
@@ -104,7 +95,6 @@ struct ContainerConfig {
     restart_policy: String,
 }
 
-/// One record in the snapshot_id string — one entry per snapshotted container.
 #[derive(Debug, Serialize, Deserialize)]
 struct ContainerRecord {
     container_id: String,
@@ -244,9 +234,6 @@ impl SnapshotPlugin for DockerPlugin {
                 !String::from_utf8_lossy(&out.stdout).trim().is_empty()
             }
             Ok(_) => {
-                // The plugin is simply not applicable here (no Docker daemon
-                // to snapshot), the same as any other provider finding
-                // nothing to do — not a coverage degradation.
                 tracing::info!("docker ps failed, Docker may not be running: plugin skipped");
                 false
             }
@@ -392,12 +379,9 @@ impl SnapshotPlugin for DockerPlugin {
             };
             args.push(record.image);
         }
-        // An empty id names no image, so there is nothing to call present.
         if args.len() == 2 {
             return ArtifactReadiness::UNAVAILABLE;
         }
-        // The image is the artifact; `image inspect` asks the local daemon only
-        // and fails if any image is missing. One call fits the attempt budget.
         let found = self.run_docker_output(&args, "docker image inspect").await;
         if found.is_ok_and(|out| out.status.success()) {
             ArtifactReadiness::PRESENT_UNCHECKED
@@ -420,8 +404,6 @@ impl SnapshotPlugin for DockerPlugin {
             records.push(record);
         }
 
-        // `rollback` removes the live container before it runs the recorded
-        // image, so every image must be there; any missing one is `Absent`.
         for record in &records {
             let out = match self
                 .run_docker_output(["image", "inspect", &record.image], "docker image inspect")

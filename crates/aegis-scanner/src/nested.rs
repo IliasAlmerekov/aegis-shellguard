@@ -16,17 +16,10 @@ pub enum RecursiveScanLimit {
 pub struct RecursiveScanReport {
     pub targets: Vec<String>,
     pub limit_hit: Option<RecursiveScanLimit>,
-    /// The logical segments behind the normalized entries of `targets`, with
-    /// their quote-preserving tokens. Empty on the recursive path, which
-    /// queues normalized strings for further expansion and so has no single
-    /// set of tokens per target.
     pub segments: Vec<ScanSegment>,
 }
 
 impl RecursiveScanReport {
-    /// The quote-preserving tokens of the logical segment that normalized to
-    /// `target`, or `None` when no segment did or when two segments with
-    /// different tokens did (#484).
     pub fn quoted_tokens(&self, target: &str) -> Option<&[String]> {
         let mut found = self
             .segments
@@ -38,12 +31,6 @@ impl RecursiveScanReport {
     }
 }
 
-/// Collect recursive scan targets derived from nested execution wrappers.
-///
-/// The returned list always contains `cmd` itself (with any inert heredoc
-/// text masked out — see `mask_inert_heredoc_substitution_markers`) plus any
-/// normalized or unwrapped payloads discovered through shell nesting,
-/// heredocs, inline interpreters, process substitution, and `eval`.
 pub fn recursive_scan_targets(cmd: &str) -> RecursiveScanReport {
     let mut targets = Vec::new();
     let mut seen = HashSet::new();
@@ -55,12 +42,6 @@ pub fn recursive_scan_targets(cmd: &str) -> RecursiveScanReport {
             continue;
         }
 
-        // Masking (not just the substitution-marker pass but the full-body
-        // blanking for trusted data consumers — see
-        // `mask_inert_heredoc_substitution_markers`) must apply here too:
-        // `candidate` is what full_scan actually pattern-matches against,
-        // and the very first candidate popped off the queue is `cmd` itself
-        // unmodified.
         targets.push(mask_inert_heredoc_substitution_markers(&candidate));
 
         if depth >= MAX_NESTED_SCAN_DEPTH {
@@ -86,8 +67,6 @@ pub fn recursive_scan_targets(cmd: &str) -> RecursiveScanReport {
 }
 
 fn expand_nested_targets(cmd: &str) -> Vec<String> {
-    // See `mask_inert_heredoc_substitution_markers` for why this is needed
-    // before segmentation.
     let sanitized = mask_inert_heredoc_substitution_markers(cmd);
     let mut targets = logical_segments(&sanitized);
     let parsed = Parser::parse(cmd);
@@ -97,9 +76,6 @@ fn expand_nested_targets(cmd: &str) -> Vec<String> {
     }
 
     for heredoc in extract_heredoc_bodies(cmd) {
-        // Same inert-nowdoc reasoning as the masking above: don't recurse
-        // into a body that bash never expands and whose target never
-        // executes it either.
         if heredoc.is_nowdoc && !heredoc.target_is_interpreter {
             continue;
         }

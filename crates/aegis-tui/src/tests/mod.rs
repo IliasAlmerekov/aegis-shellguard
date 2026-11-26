@@ -23,8 +23,6 @@ use aegis_types::{
 };
 use aegis_types::{RiskLevel, SnapshotRecord};
 
-// ── helpers ───────────────────────────────────────────────────────────────
-
 pub fn make_match(
     id: &'static str,
     risk: RiskLevel,
@@ -250,7 +248,6 @@ pub fn default_explanation_for_assessment(assessment: &Assessment) -> CommandExp
     }
 }
 
-/// Strip ANSI escape sequences from a string so we can do plain-text assertions.
 pub fn strip_ansi(s: &str) -> String {
     let re = regex::Regex::new(r"\x1b\[[0-9;]*m").unwrap();
     re.replace_all(s, "").to_string()

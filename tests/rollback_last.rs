@@ -1,6 +1,3 @@
-//! `aegis rollback --last` (#499, ADR-053): the latest command whose Snapshots
-//! are bound to the current location, restored through the #215 preflight.
-
 mod support;
 
 use std::fs;
@@ -18,7 +15,6 @@ struct Env {
     home: TempDir,
 }
 
-/// One Snapshot to record: plugin, id, git target.
 type Rec<'a> = (&'a str, String, Option<&'a Path>);
 
 impl Env {
@@ -32,7 +28,6 @@ impl Env {
         self.home.path().join(".aegis").join("audit.jsonl")
     }
 
-    /// Record a command that ran in `cwd` (or in an unknown place) with `snaps`.
     fn record(&self, command: &str, cwd: Option<&Path>, snaps: Vec<Rec<'_>>) {
         let snapshots = snaps
             .into_iter()
@@ -55,7 +50,6 @@ impl Env {
         AuditLogger::new(self.audit_path()).append(entry).unwrap();
     }
 
-    /// Run `aegis <args>` in `cwd`; stdin is null, so there is never a terminal.
     fn run(&self, cwd: &Path, args: &[&str], bin_dir: Option<&Path>) -> Output {
         let mut command = Command::new(env!("CARGO_BIN_EXE_aegis"));
         command
@@ -77,7 +71,6 @@ impl Env {
         command.output().unwrap()
     }
 
-    /// A git repository with one commit, under the temp home.
     fn repo(&self, name: &str) -> PathBuf {
         let repo = self.home.path().join(name);
         fs::create_dir(&repo).unwrap();
@@ -90,9 +83,6 @@ impl Env {
         repo
     }
 
-    /// Configure the sqlite provider for `repo` and keep its files out of the
-    /// git stash: a git restore parks untracked files, which would pull
-    /// `app.db` from under the sqlite restore.
     fn use_sqlite_in(&self, repo: &Path) {
         fs::write(
             repo.join(".aegis.toml"),
@@ -104,8 +94,6 @@ impl Env {
         git(repo, &["commit", "-q", "-m", "ignore sqlite files"]);
     }
 
-    /// Take a git Snapshot the way the plugin does (stash, then put the work
-    /// back), then run "the command": delete the file. Returns the Snapshot id.
     fn snapshot_then_delete(&self, repo: &Path, file: &str) -> String {
         fs::write(repo.join(file), "precious\n").unwrap();
         git(
@@ -118,7 +106,6 @@ impl Env {
         format!("{}\t{hash}", repo.display())
     }
 
-    /// A fake `docker` that logs every call; returns its bin dir and the log.
     fn fake_docker(&self) -> (PathBuf, PathBuf) {
         let bin_dir = self.home.path().join("fake-bin");
         fs::create_dir(&bin_dir).unwrap();
@@ -203,8 +190,6 @@ fn last_binds_git_and_sqlite_v3_ids_to_the_current_location() {
     restores_git_and_sqlite_via_last(true);
 }
 
-/// `v3` ids are the ones Aegis writes now; the tab ids are every Snapshot
-/// recorded before (ADR-026 section 2) and must keep working.
 fn restores_git_and_sqlite_via_last(v3: bool) {
     let env = Env::new();
     let repo = env.repo("repo");
@@ -354,7 +339,6 @@ fn a_failing_provider_does_not_stop_the_others_and_gets_no_audit_entry() {
     fs::create_dir_all(&store).unwrap();
     let missing_dump = store.canonicalize().unwrap().join("gone.db");
     let sqlite_id = format!("v2\t{}\t{}", hex(&repo.join("app.db")), hex(&missing_dump));
-    // The failing provider comes first, so a stop-on-error loop would never reach git.
     env.record(
         "terraform destroy",
         Some(&repo),

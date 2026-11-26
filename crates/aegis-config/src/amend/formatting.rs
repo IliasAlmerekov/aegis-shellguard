@@ -1,5 +1,3 @@
-//! TOML formatting and atomic config file append helpers.
-
 use std::fs;
 use std::path::Path;
 
@@ -9,7 +7,6 @@ use crate::error::ConfigError;
 
 type Result<T> = std::result::Result<T, ConfigError>;
 
-/// Escape a string for safe inclusion in a TOML double-quoted value.
 pub(super) fn toml_escape(s: &str) -> String {
     let mut escaped = String::with_capacity(s.len() + 2);
     escaped.push('"');
@@ -27,14 +24,6 @@ pub(super) fn toml_escape(s: &str) -> String {
     escaped
 }
 
-/// Append a TOML array-of-tables entry to the config file at `config_path`.
-///
-/// The write is atomic (temp file + `rename`) so concurrent callers in watch
-/// mode cannot corrupt the config.
-///
-/// If `existing_content` is `Some`, it is used directly (avoids a second read
-/// when the caller has already parsed the file for deduplication).
-/// If the file does not exist, it is created (including parent directories).
 pub(super) fn append_config_table_entry(
     config_path: &Path,
     existing_content: Option<&str>,
@@ -64,7 +53,6 @@ pub(super) fn append_config_table_entry(
     Ok(())
 }
 
-/// Build the human-readable reason string for an auto-appended allow rule.
 pub(crate) fn allow_reason_for_date(date: OffsetDateTime) -> String {
     let date = date.date();
     format!(
@@ -75,7 +63,6 @@ pub(crate) fn allow_reason_for_date(date: OffsetDateTime) -> String {
     )
 }
 
-/// Build the human-readable reason string for an auto-appended block rule.
 pub(crate) fn block_reason_for_date(date: OffsetDateTime) -> String {
     let date = date.date();
     format!(

@@ -106,13 +106,10 @@ integrity_mode = "ChainSha256" # Off = no chain hashes, ChainSha256 = chained SH
 type Result<T> = std::result::Result<T, ConfigError>;
 
 impl AegisConfig {
-    /// Return the starter `aegis.toml` template text.
     pub fn init_template() -> &'static str {
         INIT_TEMPLATE
     }
 
-    /// Write the starter `aegis.toml` to `current_dir`. Returns the path to the
-    /// new file. Errors if a config file already exists at that path.
     pub fn init_in(current_dir: &Path) -> Result<PathBuf> {
         let path = current_dir.join(PROJECT_CONFIG_FILE);
         if path.exists() {

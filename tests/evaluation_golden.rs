@@ -1,28 +1,3 @@
-//! Evaluation golden: pins the verdict of a fixed command corpus.
-//!
-//! Every corpus command runs through `aegis -c <command> --output json` in
-//! `Protect` and in `Strict`, with an empty allowlist, a fresh temporary
-//! `HOME` and a working directory outside the repository. The command is never
-//! executed. Each result is compared with a row of
-//! `tests/fixtures/evaluation_golden.jsonl`.
-//!
-//! The corpus holds every `[[cases]]` entry of
-//! `tests/fixtures/security_bypass_corpus.toml`, the git-tracked shell fuzz
-//! seeds and the other commands listed in `tests/fixtures/evaluation_corpus.toml`.
-//!
-//! A row that differs is evaluated once more: language analysis has a hard
-//! 100 ms deadline (ADR-022, #458), and a loaded runner can miss it.
-//!
-//! Regenerate the golden after a change that alters a verdict, on an otherwise
-//! idle machine:
-//!
-//! ```text
-//! AEGIS_UPDATE_EVALUATION_GOLDEN=1 cargo test --test evaluation_golden
-//! ```
-//!
-//! A behaviour-changing PR commits the new golden in the same PR. A cleanup PR
-//! never edits it.
-
 mod support;
 
 use std::collections::BTreeMap;
@@ -42,21 +17,18 @@ const GOLDEN_PATH: &str = "tests/fixtures/evaluation_golden_default.jsonl";
 const UPDATE_VAR: &str = "AEGIS_UPDATE_EVALUATION_GOLDEN";
 const MODES: [&str; 2] = ["protect", "strict"];
 
-/// One command of the corpus, evaluated once per mode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Entry {
     id: String,
     command: String,
 }
 
-/// One entry in one mode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Case {
     entry: Entry,
     mode: &'static str,
 }
 
-/// One line of the golden file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct Row {
     id: String,
@@ -84,7 +56,6 @@ impl Row {
     }
 }
 
-/// `field: old -> new` for every field that differs between `golden` and `actual`.
 fn changed_fields(golden: &Row, actual: &Row) -> Vec<String> {
     golden
         .fields()
@@ -95,11 +66,6 @@ fn changed_fields(golden: &Row, actual: &Row) -> Vec<String> {
         .collect()
 }
 
-/// Compares `golden` with the evaluation of every case.
-///
-/// A row that differs is evaluated a second time and counts only if the second
-/// run differs too. The error lists every differing row, every case without a
-/// golden row and every golden row without a case.
 fn compare_with_retry(
     golden: &[Row],
     cases: &[Case],
@@ -170,7 +136,6 @@ fn read_fixture(relative: &str) -> String {
     fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
 
-/// Bypass cases, then fuzz seeds, then the other corpus commands.
 fn load_entries() -> Vec<Entry> {
     let bypass: BypassCorpus =
         toml::from_str(&read_fixture("tests/fixtures/security_bypass_corpus.toml")).unwrap();
@@ -185,7 +150,6 @@ fn load_entries() -> Vec<Entry> {
             command: case.command,
         })
         .collect();
-    // A checkout with core.autocrlf can hold CRLF copies of the LF blobs.
     entries.extend(corpus.seed_files.iter().map(|path| Entry {
         id: format!("seed:{path}"),
         command: read_fixture(path).replace("\r\n", "\n"),
@@ -209,7 +173,6 @@ fn cases(entries: &[Entry]) -> Vec<Case> {
         .collect()
 }
 
-/// Runs one case through the binary in a fresh `HOME` and working directory.
 fn evaluate(case: &Case) -> Row {
     let home = TempDir::new().unwrap();
     let cwd = TempDir::new().unwrap();

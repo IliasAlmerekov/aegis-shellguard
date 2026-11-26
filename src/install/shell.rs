@@ -2,9 +2,7 @@ use std::path::{Path, PathBuf};
 
 use super::{InstallError, shell_quote};
 
-/// Start of a shell block owned by Aegis.
 pub(super) const BEGIN_MARKER: &str = "# >>> aegis shell setup >>>";
-/// End of a shell block owned by Aegis.
 pub(super) const END_MARKER: &str = "# <<< aegis shell setup <<<";
 
 pub(crate) fn run_setup_shell(args: &crate::SetupShellArgs) -> i32 {
@@ -35,15 +33,6 @@ fn run_setup_shell_inner(args: &crate::SetupShellArgs) -> Result<String, Install
         None => detect_real_shell(&aegis_bin)?,
     };
 
-    // Invariant: the real shell must never resolve to the Aegis binary itself,
-    // regardless of which source supplied it (--shell, AEGIS_REAL_SHELL, or
-    // $SHELL). Writing Aegis as AEGIS_REAL_SHELL would make it exec itself
-    // recursively. `same_file` canonicalizes both paths so symlinks — and any
-    // lexically-different path to the same file — are caught. This centralizes
-    // the guard the $SHELL branch already applies inside detect_real_shell, so
-    // AEGIS_REAL_SHELL (which "wins outright") and an explicit --shell cannot
-    // bypass it. Applied before --remove too: a self-referential real shell is
-    // never a sane state to proceed from.
     if crate::shell_compat::same_file(&real_shell, Some(&aegis_bin)) {
         return Err(InstallError::RealShellIsAegis);
     }
@@ -61,13 +50,6 @@ fn run_setup_shell_inner(args: &crate::SetupShellArgs) -> Result<String, Install
         ));
     }
 
-    // `aegis_bin` is interpolated into `export SHELL='...'` in the managed
-    // block. Package-manager installs legitimately produce paths the real shell
-    // would never use — most importantly scoped npm packages such as
-    // `.../node_modules/@iliasalmerekov/aegis/vendor/aegis`, whose `@` the old
-    // shared validator rejected (the root cause of the reported
-    // `error: real shell path contains unsafe characters`). `--remove` does not
-    // write `aegis_bin`, so it is intentionally not validated there.
     validate_aegis_binary_path(&aegis_bin)?;
 
     install_shell_setup_file(&rc_file, &real_shell, &aegis_bin)?;
@@ -79,13 +61,6 @@ fn run_setup_shell_inner(args: &crate::SetupShellArgs) -> Result<String, Install
     ))
 }
 
-// Detect the real shell the user wants Aegis to delegate to. AEGIS_REAL_SHELL
-// wins outright; otherwise $SHELL is used unless it already resolves to the
-// Aegis binary itself (which would cause recursive wrapping). The comparison
-// canonicalizes both paths via `shell_compat::same_file` so a $SHELL that is a
-// symlink (or other lexically-different path) to the Aegis binary is still
-// caught — a purely lexical compare would let it through and write Aegis as the
-// real shell. Fails closed with an actionable message when neither is usable.
 fn detect_real_shell(aegis_bin: &Path) -> Result<PathBuf, InstallError> {
     if let Some(value) = std::env::var_os("AEGIS_REAL_SHELL")
         && !value.is_empty()
@@ -135,13 +110,6 @@ fn remove_managed_block(input: &str) -> String {
     output
 }
 
-/// Reject path content that cannot be safely written into a generated shell rc
-/// file. Empty paths are nonsensical, and ASCII/Unicode control characters
-/// (newline, carriage return, NUL, …) would break the single line the managed
-/// block emits — a newline in particular could smuggle a second statement past
-/// the single-quote escaping. Everything else is made injection-safe by
-/// `shell_quote`, so legitimate package-manager paths (spaces, `@` for scoped
-/// npm packages, `+`, …) are accepted rather than rejected.
 fn validate_path_chars(path: &Path, label: &'static str) -> Result<(), InstallError> {
     let value = path.to_string_lossy();
     if value.is_empty() {
@@ -267,9 +235,6 @@ mod tests {
         );
     }
 
-    // A scoped npm install path contains `@` and would have been rejected by
-    // the old strict allowlist. Single-quote escaping makes it safe, and the
-    // managed block must round-trip it verbatim inside single quotes.
     #[test]
     fn managed_block_single_quotes_scoped_npm_aegis_binary_path() {
         let scoped = "/home/u/.npm/node_modules/@iliasalmerekov/aegis/vendor/aegis";
@@ -278,9 +243,6 @@ mod tests {
         assert!(block.contains(&format!("export SHELL='{scoped}'")));
     }
 
-    // A quote-sensitive payload must be made inert by single-quote escaping
-    // rather than executed. The embedded double quote, semicolon, and `#` all
-    // live inside single quotes, so the value is a literal path assignment.
     #[test]
     fn shell_quote_neutralizes_injection_payload() {
         let quoted = shell_quote("/tmp/aegis\"; export EVIL=1; #");
@@ -329,8 +291,6 @@ mod tests {
         assert!(err.to_string().contains("real shell path"));
     }
 
-    // A scoped npm binary path (`@`) is legitimate and must be accepted; the
-    // old shared validator rejected it, which was the reported root cause.
     #[test]
     fn validate_aegis_binary_path_accepts_scoped_npm_path() {
         let scoped = Path::new("/home/u/.npm/node_modules/@iliasalmerekov/aegis/vendor/aegis");
@@ -338,8 +298,6 @@ mod tests {
         assert!(validate_aegis_binary_path(scoped).is_ok());
     }
 
-    // When the aegis binary path is the offending one, the error must name the
-    // aegis binary path, not the real shell path.
     #[test]
     fn validate_aegis_binary_path_names_aegis_binary_on_control_char() {
         let err = validate_aegis_binary_path(Path::new("/tmp/aegis\nexport EVIL=1")).unwrap_err();

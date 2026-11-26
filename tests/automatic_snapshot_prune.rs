@@ -1,5 +1,3 @@
-//! Automatic Snapshot retention through the public command transports.
-
 mod support;
 
 use std::fs;

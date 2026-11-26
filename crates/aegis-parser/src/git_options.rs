@@ -1,18 +1,5 @@
-//! Git global-option skipping (GHSA-7564).
-//!
-//! `git`'s own options between `git` and its subcommand (`-C <path>`,
-//! `-c <name>=<value>`, `--git-dir=...`, ...) shift the subcommand off
-//! position 1, so a `GIT-*` rule keyed on `["git", "<subcommand>", ...]`
-//! never sees it. This module resolves, for a token slice whose first token
-//! is `git`, every position the subcommand could start at, so the scanner
-//! can re-run its `GIT-*` rules against each candidate. It does not touch
-//! [`crate::EffectiveTokenSlice`] or execution in any way. It is
-//! detection-only, exactly like [`crate::effective_token_slices`].
-
 use std::collections::VecDeque;
 
-/// Options that take no value (`git(1)` 2.55's global options, checked
-/// against local git 2.43.0 behaviour). Case-sensitive: git flags are.
 const NO_VALUE_OPTIONS: &[&str] = &[
     "-v",
     "--version",
@@ -36,8 +23,6 @@ const NO_VALUE_OPTIONS: &[&str] = &[
     "--icase-pathspecs",
 ];
 
-/// Options whose value is glued in with `=`, or is the next token when this
-/// one carries no `=`.
 const EQ_OR_NEXT_TOKEN_OPTIONS: &[&str] = &[
     "--git-dir",
     "--work-tree",
@@ -46,43 +31,21 @@ const EQ_OR_NEXT_TOKEN_OPTIONS: &[&str] = &[
     "--attr-source",
 ];
 
-/// Cap on distinct subcommand-start candidates one git slice may produce (GHSA-7564).
-///
-/// Bounds per-slice scanner rescan cost (2000 unlisted options at 180 ms against 100 at 0.83 ms);
-/// past this cap [`git_option_subcommand_starts`] returns [`GitSubcommandStarts::TooMany`].
 pub const MAX_GIT_OPTION_CANDIDATES: usize = 16;
 
-/// Outcome of resolving where a git slice's subcommand could start.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitSubcommandStarts {
-    /// Every candidate start position, ascending, at most
-    /// [`MAX_GIT_OPTION_CANDIDATES`] of them.
     Starts(Vec<usize>),
-    /// The walk found more than [`MAX_GIT_OPTION_CANDIDATES`] candidates.
-    /// The caller must not scan any of them.
     TooMany,
 }
 
-/// How many tokens a git global-option token consumes, starting at itself.
 enum OptionArity {
-    /// Consumes only this token.
     NoValue,
-    /// Consumes this token and exactly the next one, unconditionally
-    /// (`-C <path>`, `-c <name>[=<value>]`). Git has no `=`-glued form for
-    /// either, so a token spelled `-C/tmp` or `-cfoo=bar` is not this case;
-    /// see [`classify`].
     NextToken,
-    /// Consumes this token and, only when it carries no `=`, the next one
-    /// too.
     EqOrNextToken,
-    /// Not a known option: two readings apply, see [`successors`].
     Unlisted,
 }
 
-/// Classify a candidate git global-option token (known to start with `-`).
-///
-/// Glued short forms (`-C/tmp`, `-cfoo=bar`) are rejected by git and fall
-/// through to [`OptionArity::Unlisted`].
 fn classify(token: &str) -> OptionArity {
     if token == "-C" || token == "-c" {
         return OptionArity::NextToken;
@@ -90,14 +53,10 @@ fn classify(token: &str) -> OptionArity {
 
     let name = token.split('=').next().unwrap_or(token);
 
-    // `--exec-path` takes an optional value glued with `=`; either spelling
-    // consumes only this one token.
     if name == "--exec-path" {
         return OptionArity::NoValue;
     }
 
-    // `--list-cmds=<group>` consumes only itself; the bare form is rejected
-    // by git, so it falls to the unlisted-option rule instead.
     if name == "--list-cmds" {
         return if token.contains('=') {
             OptionArity::NoValue
@@ -117,14 +76,6 @@ fn classify(token: &str) -> OptionArity {
     OptionArity::Unlisted
 }
 
-/// Positions reachable from `pos` (a git global-option token) in one step.
-///
-/// A known-arity option has exactly one successor. An unlisted option has
-/// two: the position right after it (it took no value) and the position two
-/// tokens after it (it took the next token as its value). That is the same
-/// two-reading treatment ADR-014 uses for an unknown launcher flag. Either
-/// successor is omitted when it would run past the end of `tokens`, per the
-/// rule that a candidate with no remaining token produces nothing.
 fn successors(tokens: &[&str], pos: usize) -> [Option<usize>; 2] {
     let has_next = pos + 1 < tokens.len();
 
@@ -142,12 +93,6 @@ fn successors(tokens: &[&str], pos: usize) -> [Option<usize>; 2] {
     }
 }
 
-/// Resolve every position `tokens` could start its subcommand at after git
-/// global options (GHSA-7564).
-///
-/// Returns `Starts(vec![])` when `tokens[1]` is absent or does not start with
-/// `-`. Each position is visited at most once (O(n) in unlisted options), and
-/// the walk stops immediately past [`MAX_GIT_OPTION_CANDIDATES`].
 pub fn git_option_subcommand_starts(tokens: &[&str]) -> GitSubcommandStarts {
     if tokens.len() < 2 || !tokens[1].starts_with('-') {
         return GitSubcommandStarts::Starts(Vec::new());
@@ -181,47 +126,22 @@ pub fn git_option_subcommand_starts(tokens: &[&str]) -> GitSubcommandStarts {
     GitSubcommandStarts::Starts(starts)
 }
 
-/// The `-C`, `--work-tree` and `--git-dir` values one reading of a git
-/// slice's global options applies, in the order git applies them (#471).
-///
-/// Values are raw tokens: nothing here touches the filesystem, expands a
-/// variable or resolves a relative path. The caller decides what a path
-/// means.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct GitTargetArgs {
-    /// Every `-C <path>` value, in command order. Git applies them in
-    /// sequence, each relative path resolving against the previous result.
     pub dash_c: Vec<String>,
-    /// The last `--work-tree` value, in either spelling.
     pub work_tree: Option<String>,
-    /// The last `--git-dir` value, in either spelling.
     pub git_dir: Option<String>,
-    /// Whether `--bare` is among the options: git then treats the directory
-    /// as a bare repository with no working tree to snapshot.
     pub bare: bool,
 }
 
-/// Outcome of [`git_option_target_readings`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitTargetReadings {
-    /// The distinct option sets of every reading that reaches a subcommand
-    /// start, in discovery order. Empty when the slice has no global options.
-    /// More than one entry means an unlisted option made two readings of the
-    /// same command disagree about the target.
     Readings(Vec<GitTargetArgs>),
-    /// The walk exceeded its state budget. The caller must treat the target
-    /// as unresolved.
     TooMany,
 }
 
-/// Upper bound on distinct `(position, options)` states the target walk
-/// explores. [`git_option_subcommand_starts`] already caps candidates, but
-/// the target walk keeps a state per option set, so it needs a bound of its
-/// own to stay linear-ish on a hostile chain of unlisted options.
 const MAX_TARGET_WALK_STATES: usize = 1024;
 
-/// The value a known option applies at `pos`, if it is one of the three
-/// target options, folded into `args`.
 fn apply_target_option(tokens: &[&str], pos: usize, args: &GitTargetArgs) -> GitTargetArgs {
     let token = tokens[pos];
     let mut next = args.clone();
@@ -257,18 +177,6 @@ fn apply_target_option(tokens: &[&str], pos: usize, args: &GitTargetArgs) -> Git
     next
 }
 
-/// Resolve the `-C`, `--work-tree` and `--git-dir` values behind every
-/// reading of `tokens`' git global options.
-///
-/// Walks the same option graph as [`git_option_subcommand_starts`] (same
-/// option table, same two readings of an unlisted option), but carries the
-/// target options each path applied. A reading that reaches a subcommand
-/// start contributes its option set. Identical sets collapse, so an unlisted
-/// option that does not change the target adds no reading, while one that
-/// swallows a `-C` as its value adds a second, different reading.
-///
-/// Like [`git_option_subcommand_starts`], returns an empty reading list for a
-/// slice with no global options.
 pub fn git_option_target_readings(tokens: &[&str]) -> GitTargetReadings {
     use std::collections::HashSet;
 
@@ -289,9 +197,6 @@ pub fn git_option_target_readings(tokens: &[&str]) -> GitTargetReadings {
             continue;
         }
 
-        // An unlisted option never names `-C`, `--work-tree` or `--git-dir`
-        // (`classify` lists all three), so `apply_target_option` leaves its
-        // args unchanged and no arity special case is needed here.
         let carried = apply_target_option(tokens, pos, &args);
         for succ in successors(tokens, pos).into_iter().flatten() {
             if succ >= tokens.len() {
@@ -316,8 +221,6 @@ pub fn git_option_target_readings(tokens: &[&str]) -> GitTargetReadings {
 mod tests {
     use super::{GitSubcommandStarts, MAX_GIT_OPTION_CANDIDATES, git_option_subcommand_starts};
 
-    /// Unwraps the `Starts` variant; panics on `TooMany`, which none of the
-    /// cases below except the dedicated cap tests should ever hit.
     fn starts(tokens: &[&str]) -> Vec<usize> {
         match git_option_subcommand_starts(tokens) {
             GitSubcommandStarts::Starts(starts) => starts,
@@ -333,8 +236,6 @@ mod tests {
 
     #[test]
     fn plain_subcommand_produces_nothing() {
-        // No leading `-`: the ordinary prefix match already covers this, so
-        // the helper must skip the whole walk.
         assert_eq!(starts(&["git", "reset", "--hard"]), Vec::<usize>::new());
     }
 
@@ -391,7 +292,6 @@ mod tests {
 
     #[test]
     fn bare_list_cmds_falls_to_the_unlisted_rule() {
-        // Git rejects a bare `--list-cmds`, so it gets the two-reading unlisted treatment.
         let tokens = ["git", "--list-cmds", "reset", "--hard"];
         assert_eq!(starts(&tokens), vec![2]);
     }
@@ -406,8 +306,6 @@ mod tests {
 
     #[test]
     fn bare_exec_path_consumes_only_itself() {
-        // Bare `--exec-path` prints the path and takes no value, so the next
-        // token is the subcommand, not a value.
         assert_eq!(starts(&["git", "--exec-path", "reset", "--hard"]), vec![2]);
     }
 
@@ -432,7 +330,6 @@ mod tests {
 
     #[test]
     fn glued_dash_capital_c_short_form_is_treated_as_unlisted_and_still_finds_reset() {
-        // Git rejects `-C/tmp` as an unknown option; the unlisted rule still finds `reset`.
         assert_eq!(starts(&["git", "-C/tmp", "reset", "--hard"]), vec![2]);
     }
 
@@ -452,7 +349,6 @@ mod tests {
 
     #[test]
     fn unlisted_option_chain_yields_linear_not_exponential_candidates() {
-        // Pins the O(n) walk bound on 2000 unlisted options (GHSA-7564).
         let mut tokens: Vec<String> = vec!["git".to_string()];
         for i in 0..2000 {
             tokens.push(format!("--unknown-{i}"));
@@ -471,10 +367,6 @@ mod tests {
         );
     }
 
-    /// Builds `["git", "--o0", "v0", "--o1", "v1", ..., "reset", "--hard"]`:
-    /// `pairs` unlisted options each immediately followed by a plain-looking
-    /// value, so each option's no-value reading lands on that value token
-    /// and counts as one more candidate start (GHSA-7564 cap).
     fn alternating_unlisted_option_value_tokens(pairs: usize) -> Vec<String> {
         let mut tokens: Vec<String> = vec!["git".to_string()];
         for i in 0..pairs {
@@ -491,8 +383,6 @@ mod tests {
         let tokens = alternating_unlisted_option_value_tokens(MAX_GIT_OPTION_CANDIDATES - 1);
         let token_refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
 
-        // `MAX_GIT_OPTION_CANDIDATES - 1` value tokens plus the final
-        // `reset` is exactly `MAX_GIT_OPTION_CANDIDATES` candidates.
         let result = starts(&token_refs);
         assert_eq!(result.len(), MAX_GIT_OPTION_CANDIDATES);
     }
@@ -510,7 +400,6 @@ mod tests {
 
     #[test]
     fn two_thousand_unlisted_option_value_pairs_report_too_many_fast() {
-        // Pins early exit at the candidate cap (GHSA-7564).
         let tokens = alternating_unlisted_option_value_tokens(2000);
         let token_refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
 

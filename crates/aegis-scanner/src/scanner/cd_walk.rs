@@ -1,16 +1,3 @@
-//! The directory each stage of a command runs in, once earlier `cd` steps are
-//! applied (#525, ADR-050).
-//!
-//! The walk reads only the command's own list structure: top-level segments,
-//! their separators, pipelines and `( ... )` groups. It trusts a `cd` only when
-//! the next stage provably runs after it succeeded, and otherwise reports why
-//! the directory is unknown. It resolves nothing against the filesystem.
-//!
-//! This is deliberately a different rule from the router's `CwdState`
-//! (ADR-022 section 6), which decides what to auto-approve and so trusts only
-//! `cd -- <literal> &&`. Here a wrong answer only mis-aims a recovery point,
-//! which the disclosure rules of ADR-048 already cover.
-
 use std::cell::{Cell, RefCell};
 
 use aegis_parser::ListSeparator;
@@ -18,42 +5,24 @@ use aegis_parser::ListSeparator;
 use super::git_stages::AmbientEnv;
 use super::recursive;
 
-/// Why a stage's directory could not be followed through the `cd` steps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CdUnresolved {
-    /// `cd` with no path, `cd -`, an option, extra operands, `pushd` or `popd`.
     UnsupportedForm,
-    /// A `cd` path holds an unquoted `$`, glob, brace expansion, backslash or
-    /// `~`, or a `$`, backtick or backslash inside double quotes.
     DynamicPath,
-    /// A relative `cd` while `CDPATH` is set in Aegis's own environment.
     CdPathSet,
-    /// The `cd` may not have run before the stage: it is followed by anything
-    /// but `&&`, or is itself reached through `||`.
     MayNotRun,
-    /// A `cd` hides behind `eval`, `source`, `.`, a launcher or a nested shell.
     Opaque,
-    /// An earlier stage may have turned on Bash's physical mode (`set -P`,
-    /// `set -o physical`, `SHELLOPTS`), so `..` resolves through symlinks and
-    /// the lexical walk would name the wrong directory.
     PhysicalMode,
 }
 
-/// The directory one stage runs in, relative to the process cwd.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StageDir {
-    /// The process cwd: no `cd` step precedes the stage.
     Process,
-    /// The literal `cd` paths applied in order, each relative to the previous
-    /// result (an absolute path replaces it).
     Chain(Vec<String>),
-    /// The directory cannot be known.
     Unresolved(CdUnresolved),
 }
 
 impl StageDir {
-    /// This directory after something makes it unknowable for `reason`. An
-    /// already unresolved directory keeps its first reason.
     fn degrade(&self, reason: CdUnresolved) -> StageDir {
         match self {
             StageDir::Unresolved(_) => self.clone(),
@@ -62,11 +31,6 @@ impl StageDir {
     }
 }
 
-/// Whether `path`, taken as unquoted text, holds a character the shell would
-/// expand or unquote, so its value is not known from the text. The quotes are
-/// already gone from the text a caller passes here, so a quoted literal such
-/// as `'x$y'` also reads as dynamic: this errs toward unresolved. A `cd`
-/// operand is judged from the raw text with its quoting instead.
 #[must_use]
 pub fn path_is_dynamic(path: &str) -> bool {
     path.contains(['$', '*', '?', '[', ']', '~', '`', '{', '}', '\\'])
@@ -74,14 +38,8 @@ pub fn path_is_dynamic(path: &str) -> bool {
 
 const MAX_GROUP_DEPTH: usize = 8;
 
-/// Programs that change the directory, or may, through text Aegis cannot see.
-/// `eval`, `source` and `.` always count, with no `cd` word required: the
-/// string or file they run can hold a `cd` that never appears in the command
-/// line (`eval "$X"`, `source env.sh`). This errs toward unresolved.
 const CD_LIKE: &[&str] = &["cd", "pushd", "popd", "eval", "source", "."];
 
-/// Whether `target` holds a stage whose effective program is `cd`, `pushd` or
-/// `popd`: the cheap trigger that turns the walk on.
 pub(super) fn mentions_cd(targets: &[String]) -> bool {
     targets.iter().any(|target| {
         if !(target.contains("cd") || target.contains("pushd") || target.contains("popd")) {
@@ -96,17 +54,11 @@ pub(super) fn mentions_cd(targets: &[String]) -> bool {
     })
 }
 
-/// The stages and pipelines of a command, each with the directory it runs in.
 pub(super) struct Walk {
-    /// Every stage text, with the directory it runs in.
     pub(super) stages: Vec<(String, StageDir)>,
-    /// Every multi-stage pipeline, as its stage texts, with the directory the
-    /// whole pipeline runs in. Pipeline-level (structural) Danger matches
-    /// belong to these, not to any single stage.
     pub(super) pipelines: Vec<(Vec<String>, StageDir)>,
 }
 
-/// Split `cmd` into stage texts, each with the directory it runs in.
 pub(super) fn stage_dirs(cmd: &str, ambient: AmbientEnv) -> Walk {
     let mut stages = Vec::new();
     let walker = Walker {
@@ -124,23 +76,14 @@ pub(super) fn stage_dirs(cmd: &str, ambient: AmbientEnv) -> Walk {
 }
 
 struct Walker {
-    /// Whether an earlier stage may have turned on Bash's physical mode
-    /// (`set -P`). Once on, it stays on.
     physical: Cell<bool>,
-    /// Multi-stage pipelines seen so far, with the directory each runs in.
     pipelines: RefCell<Vec<(Vec<String>, StageDir)>>,
-    /// Whether `CDPATH` may be set: in Aegis's own environment, or by an
-    /// earlier stage of the command line. Once set, it stays set.
     cdpath_set: Cell<bool>,
-    /// Whether Bash's `lastpipe` may be on, so the last stage of a pipeline
-    /// runs in the current shell. Once on, it stays on.
     lastpipe: Cell<bool>,
-    /// Whether Aegis's environment exports a `cd` function Bash would import.
     cd_function: bool,
 }
 
 impl Walker {
-    /// Walk one list of segments; returns the directory after the last one.
     fn list(
         &self,
         cmd: &str,
@@ -165,8 +108,6 @@ impl Walker {
             let last_index = segment.pipeline.segments.len() - 1;
             for (index, stage) in segment.pipeline.segments.iter().enumerate() {
                 let effect = self.stage(stage.raw.trim(), &state, incoming, out, depth);
-                // A `cd` in a pipeline runs in a subshell: no effect after it,
-                // unless `lastpipe` runs the last stage in the current shell.
                 let in_shell = single || (index == last_index && self.lastpipe.get());
                 if in_shell && let Some(effect) = effect {
                     next = effect;
@@ -178,8 +119,6 @@ impl Walker {
         state
     }
 
-    /// Record one stage; returns the directory after it when it is a `cd`-like
-    /// construct that changes the current shell's directory.
     fn stage(
         &self,
         raw: &str,
@@ -198,9 +137,6 @@ impl Walker {
         }
 
         let tokens = aegis_parser::split_tokens(raw);
-        // A stage that names `CDPATH` may set or clear it for the stages after
-        // it. This errs toward unresolved. The stage itself runs with the old
-        // value (`CDPATH=x cd y` is a hidden `cd`, unresolved on its own).
         let touches_cdpath =
             raw.contains("CDPATH") || tokens.iter().any(|token| token.contains("CDPATH"));
         let result = self.stage_inner(raw, &tokens, state, incoming, out);
@@ -225,11 +161,7 @@ impl Walker {
         out: &mut Vec<(String, StageDir)>,
     ) -> Option<StageDir> {
         if tokens.first().map(String::as_str) == Some("cd") {
-            // The tokenizer drops quotes and backslashes, so the quoting is
-            // read from the raw text.
             let operands = cd_operands(raw, tokens);
-            // A substitution in an operand runs before the `cd` takes effect,
-            // so what it holds belongs to the directory in effect before it.
             if raw.contains("$(") || raw.contains('`') || raw.contains("<(") {
                 let before = match hidden_cd(raw, true) {
                     Some(reason) => state.degrade(reason),
@@ -238,11 +170,9 @@ impl Walker {
                 out.push((raw.to_string(), before));
             }
             if self.cd_function {
-                // Bash runs the imported function, not the builtin.
                 return Some(state.degrade(CdUnresolved::Opaque));
             }
             if self.physical.get() {
-                // `..` would follow symlinks, which the lexical walk does not.
                 return Some(state.degrade(CdUnresolved::PhysicalMode));
             }
             return Some(self.apply_cd(state, &operands, incoming));
@@ -265,9 +195,6 @@ impl Walker {
     ) -> StageDir {
         let parsed = self.literal_path(operands);
         if let StageDir::Unresolved(_) = state {
-            // A literal absolute `cd` reached through `&&` runs only when the
-            // earlier steps succeeded, and lands in the same place whatever the
-            // directory was before: it recovers a known directory.
             return match parsed {
                 Ok(path) if incoming == Some(ListSeparator::And) && path.starts_with('/') => {
                     StageDir::Chain(vec![path])
@@ -292,7 +219,6 @@ impl Walker {
         }
     }
 
-    /// The literal path a `cd` with these operands names, or why it is not one.
     fn literal_path(&self, operands: &[CdWord]) -> Result<String, CdUnresolved> {
         let word = match operands {
             [word] if !word.value.starts_with('-') => word,
@@ -306,8 +232,6 @@ impl Walker {
         if word.dynamic {
             return Err(CdUnresolved::DynamicPath);
         }
-        // `CDPATH` is not searched for an absolute path, or one whose first
-        // component is `.` or `..`.
         let searched = !path.starts_with('/')
             && path != "."
             && path != ".."
@@ -320,27 +244,13 @@ impl Walker {
     }
 }
 
-/// One operand of a `cd`: its text after quote removal, and whether the shell
-/// would still change it (expand a variable, glob, brace or `~`, or unescape).
 struct CdWord {
     value: String,
     dynamic: bool,
-    /// Whether any part of the word was quoted.
     quoted: bool,
-    /// Where an unquoted `<` or `>` starts inside the word, with whether the
-    /// text before it was dynamic. `cd ../x>log` is the operand `../x` and a
-    /// redirection.
     redirect: Option<(usize, bool)>,
 }
 
-/// The operands of the `cd` stage `raw`, whose tokens are `tokens`.
-///
-/// Reads the raw text so quoting counts: single quotes make everything
-/// literal; inside double quotes only `$`, a backtick and a backslash expand;
-/// unquoted, any of those or a glob, brace or `~` expands, and a backslash
-/// always counts as dynamic. When the raw words do not line up with the
-/// tokenizer's tokens, every operand counts as dynamic: unresolved whenever
-/// unsure.
 fn cd_operands(raw: &str, tokens: &[String]) -> Vec<CdWord> {
     let words = raw_words(raw);
     let aligned = words
@@ -363,9 +273,6 @@ fn cd_operands(raw: &str, tokens: &[String]) -> Vec<CdWord> {
     )
 }
 
-/// Drop the redirections (`2>/dev/null`, `> file`, `&>x`, `< in`) from the
-/// words of a command: they are syntax, not arguments. A quoted word is always
-/// an argument.
 fn without_redirections(words: Vec<CdWord>) -> Vec<CdWord> {
     let mut kept = Vec::new();
     let mut skip_target = false;
@@ -406,8 +313,6 @@ fn without_redirections(words: Vec<CdWord>) -> Vec<CdWord> {
     kept
 }
 
-/// Split `raw` into whitespace-separated words the way the tokenizer does
-/// for plain words, tracking which characters were left unquoted.
 fn raw_words(raw: &str) -> Vec<CdWord> {
     let mut words = Vec::new();
     let mut value = String::new();
@@ -443,9 +348,6 @@ fn raw_words(raw: &str) -> Vec<CdWord> {
                 } else if double {
                     matches!(c, '$' | '`' | '\\')
                 } else {
-                    // Parentheses only parse in a `cd` operand as an extended
-                    // glob (`@(x)`, `!(x)`), which Bash expands when `extglob`
-                    // is on.
                     path_is_dynamic(c.encode_utf8(&mut [0; 4])) || matches!(c, '(' | ')')
                 };
                 value.push(c);
@@ -463,7 +365,6 @@ fn raw_words(raw: &str) -> Vec<CdWord> {
     words
 }
 
-/// A resolved directory survives only an unbroken `&&` chain.
 fn advance(state: StageDir, separator: Option<ListSeparator>) -> StageDir {
     match (&state, separator) {
         (StageDir::Chain(_), Some(sep)) if sep != ListSeparator::And => {
@@ -473,14 +374,6 @@ fn advance(state: StageDir, separator: Option<ListSeparator>) -> StageDir {
     }
 }
 
-/// Why `raw`, an ordinary stage, may change the directory behind Aegis's back:
-/// `pushd`/`popd`, or any `cd`, `eval`, `source` or `.` it holds directly or in
-/// a nested shell, substitution or payload.
-///
-/// For a `cd` stage (`is_cd_stage`), the stage's own `cd` is skipped.
-///
-/// Precedence: a stage that is itself `pushd` or `popd` is `UnsupportedForm`,
-/// whatever else it holds; any other hit is `Opaque`.
 fn hidden_cd(raw: &str, is_cd_stage: bool) -> Option<CdUnresolved> {
     let parsed = aegis_parser::Parser::parse(raw);
     let report = recursive::scan_targets(raw, &parsed);
@@ -495,8 +388,6 @@ fn hidden_cd(raw: &str, is_cd_stage: bool) -> Option<CdUnresolved> {
             if !CD_LIKE.contains(&program) {
                 continue;
             }
-            // The `cd` stage's own `cd` is not hidden: only what its operands
-            // hold counts.
             if is_cd_stage
                 && program == "cd"
                 && (target.contains("$(") || target.contains('`') || target.contains("<("))
@@ -512,10 +403,6 @@ fn hidden_cd(raw: &str, is_cd_stage: bool) -> Option<CdUnresolved> {
     reason
 }
 
-/// Whether `raw` (tokens `tokens`) may turn on Bash's physical directory mode
-/// for the stages after it: `set -P`, `set -eP`, `set -o physical`, a `set`
-/// with a word Aegis cannot read, or any mention of `SHELLOPTS`. This errs
-/// toward true.
 fn sets_physical_mode(raw: &str, tokens: &[String]) -> bool {
     if raw.contains("SHELLOPTS") {
         return true;
@@ -530,9 +417,6 @@ fn sets_physical_mode(raw: &str, tokens: &[String]) -> bool {
     })
 }
 
-/// The program behind a `command` or `builtin` wrapper and its options, when
-/// it is a directory-changing one (`command -p cd`). The parser's launcher
-/// walk skips only the wrapper word, so an option would read as the program.
 fn wrapped_cd_like(tokens: &[String]) -> Option<&str> {
     let mut words = tokens
         .iter()

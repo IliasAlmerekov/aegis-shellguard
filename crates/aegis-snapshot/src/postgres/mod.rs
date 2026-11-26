@@ -1,5 +1,3 @@
-//! PostgreSQL snapshot provider.
-
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -20,7 +18,6 @@ type Result<T> = std::result::Result<T, SnapshotError>;
 
 const BUSY_RETRY_ATTEMPTS: usize = 12;
 
-/// Snapshot plugin for PostgreSQL databases.
 pub struct PostgresPlugin {
     target: DatabaseTarget,
     pg_dump_bin: String,
@@ -28,7 +25,6 @@ pub struct PostgresPlugin {
 }
 
 impl PostgresPlugin {
-    /// Create a new PostgreSQL snapshot plugin.
     pub fn new(
         database: String,
         host: String,
@@ -139,14 +135,12 @@ impl SnapshotPlugin for PostgresPlugin {
         {
             Ok(output) => output,
             Err(error) => {
-                // Best-effort cleanup of the reserved dump file; preserve the primary error.
                 let _ = std::fs::remove_file(&dump_path);
                 return Err(error);
             }
         };
 
         if !output.status.success() {
-            // Best-effort cleanup of the reserved dump file; preserve the primary error.
             let _ = std::fs::remove_file(&dump_path);
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             return Err(SnapshotError::CommandFailed {
@@ -156,7 +150,6 @@ impl SnapshotPlugin for PostgresPlugin {
         }
 
         if let Err(error) = harden_existing_artifact("postgres", &dump_path) {
-            // Best-effort cleanup of the reserved dump file; preserve the primary error.
             let _ = std::fs::remove_file(&dump_path);
             return Err(error);
         }

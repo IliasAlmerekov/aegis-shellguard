@@ -1,14 +1,3 @@
-//! Slice B — #384: a `cd` inside a wrapper body is tracked, not ignored.
-//! Split from `tests/analysis_orchestrate.rs` to stay under the repo's
-//! 800-line file budget; real-subprocess seam, same as its sibling.
-//!
-//! A cd hidden inside a `(...)`/`{...}`/reserved-word wrapper must not go
-//! invisible to routing: a whole-stage `(...)`/`{...}` wrap still routes
-//! everything inside it, and a relative target elsewhere in the same body
-//! must resolve against the cd's effect, not the *outer* cwd — otherwise a
-//! command reads the wrong file while still reporting Safe. `d1/sub/evil.py`
-//! is the dangerous payload; `sub/evil.py` is a decoy with the same tail.
-
 #![cfg(feature = "language-analysis")]
 
 mod support;
@@ -83,10 +72,6 @@ async fn run_joins_a_literal_cd_inside_a_subshell_and_reads_the_right_file() {
 
 #[tokio::test]
 async fn run_degrades_rather_than_auto_approving_a_non_literal_cd_inside_a_subshell() {
-    // `cd d1` (no `--`) is not the router's trusted literal shape, so the
-    // subshell's own cwd walk degrades rather than resolving `./sub/evil.py`
-    // against a directory it cannot prove — never `NotStarted`, which would
-    // silently report Safe with no analysis at all.
     let workspace = wrapper_cd_workspace();
     let baseline = safe_baseline();
     let outcome = run_with_budget_in_cwd(

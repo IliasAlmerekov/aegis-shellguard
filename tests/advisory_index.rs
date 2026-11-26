@@ -16,7 +16,6 @@ const PUBLISHED_ADVISORIES: [&str; 7] = [
 
 const ADVISORY_INDEX_WHY: &str = "an advisory without a named regression test can be reopened silently when its layer is moved or gated";
 
-/// Distinct `GHSA-xxxx-xxxx-xxxx` ids found in `text`.
 fn ghsa_ids(text: &str) -> Vec<String> {
     let mut ids = Vec::new();
     for (start, _) in text.match_indices("GHSA-") {

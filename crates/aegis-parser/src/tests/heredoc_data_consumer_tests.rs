@@ -1,4 +1,3 @@
-// Data consumer predicate tests for heredoc bodies (#396, #432).
 use super::super::*;
 
 #[test]
@@ -15,7 +14,6 @@ fn heredoc_xargs_is_not_flagged_as_data_consumer() {
     assert!(!bodies[0].is_data_consumer_target);
 }
 
-// Assignment `$(...)` captures are untrusted (ADR-042).
 #[test]
 fn heredoc_inside_assignment_command_substitution_is_not_flagged() {
     for cmd in [
@@ -110,11 +108,9 @@ fn heredoc_data_consumer_inside_compound_command_is_not_flagged() {
         "if false; then :; else true; cat <<'EOF'\nsome text\nEOF\nfi | sh",
         "select x in a; do true; cat <<'EOF'\nsome text\nEOF\ndone | sh",
         "coproc true; cat <<'EOF'\nsome text\nEOF",
-        // A `}` or `)` inside a comment does not close an enclosing group.
         "{ true; # closed } here\ncat <<'EOF'\nsome text\nEOF\n} >&3",
         "( true # closed ) here\ncat <<'EOF'\nsome text\nEOF\n) | sh",
         "true # ; cat\ncat <<'EOF'\nsome text\nEOF",
-        // An earlier `exec` can redirect stdout to a shell.
         "exec > >(sh)\ncat <<'EOF'\nsome text\nEOF",
         "exec 1> >(sh)\ncat <<'EOF'\nsome text\nEOF",
         "exec >&3\ncat <<'EOF'\nsome text\nEOF",
@@ -139,7 +135,6 @@ fn heredoc_data_consumer_after_quoted_or_closed_brace_is_flagged() {
     }
 }
 
-// Captures are never trusted (ADR-042).
 #[test]
 fn heredoc_capture_then_run_the_variable_is_not_flagged() {
     let cases = [
@@ -161,7 +156,6 @@ fn heredoc_capture_then_run_the_variable_is_not_flagged() {
     }
 }
 
-// ANSI-C `$'\''` escapes `'` instead of toggling quotes, so the prefix is untrusted.
 #[test]
 fn heredoc_ansi_c_quote_escape_before_marker_is_not_flagged() {
     let cmd = "cat $'\\'' ' <<'EOF'\nx'; rm -rf /; : '\nEOF\n'";
@@ -169,7 +163,6 @@ fn heredoc_ansi_c_quote_escape_before_marker_is_not_flagged() {
     assert!(!bodies[0].is_data_consumer_target);
 }
 
-// A quote left open on an earlier line turns the marker line into quoted text in bash.
 #[test]
 fn heredoc_quote_left_open_from_earlier_line_is_not_flagged() {
     let cmd = "echo 'start\ncat <<'EOF'\n'; rm -rf /; : '\nEOF\n'";
@@ -205,7 +198,6 @@ fn heredoc_after_balanced_quote_prefix_line_stays_flagged() {
     assert!(bodies[0].is_data_consumer_target);
 }
 
-// Only prefixes built from known inert commands keep the body trusted (ADR-042).
 #[test]
 fn heredoc_after_prefix_that_can_rebind_the_consumer_is_not_flagged() {
     let prefixes = [
@@ -264,7 +256,6 @@ fn heredoc_after_inert_command_prefix_stays_flagged() {
     }
 }
 
-// `set` stays trusted only as a plain error-handling option list.
 #[test]
 fn heredoc_after_set_that_can_assign_is_not_flagged() {
     for prefix in ["set -A path /tmp/p", "set -k", "set -o posix", "set -e $x"] {

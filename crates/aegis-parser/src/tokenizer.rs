@@ -7,37 +7,14 @@ use crate::segmentation::ends_with_redirect_target;
 use ansi_c::read_ansi_c_quoted;
 pub use ansi_c::{canonical_ansi_c_quoting, canonical_ansi_c_quoting_marked};
 
-/// Split a shell command string into tokens, respecting quoting and escaping rules.
-///
-/// Rules:
-/// - Whitespace separates tokens (unless quoted or escaped).
-/// - Single-quoted strings are one token; no escape processing inside.
-/// - Double-quoted strings are one token; a backslash inside escapes only
-///   `$`, backtick, `"`, `\` and newline, and stays before anything else.
-/// - A backslash-newline outside single quotes is a line continuation and
-///   is removed.
-/// - Backslash outside quotes escapes the next character (treated literally).
-/// - `;`, `&&`, `||`, and `|` outside quotes are returned as separator tokens.
-/// - Unquoted literal `$IFS` / `${IFS}` are treated as shell word-separators
-///   (see `ifs_marker_len`), closing the C2 obfuscation bypass.
-/// - ANSI-C quoting (`$'...'`) is decoded the way bash decodes it, so
-///   `$'\162m'` yields `rm`. A piece that never closes keeps its raw
-///   spelling, `$'` included; see [`ansi_c_quoting_is_inexact`].
-/// - Locale quoting (`$"..."`) reads as plain double quotes.
 pub fn split_tokens(cmd: &str) -> Vec<String> {
     split_tokens_checked(cmd).0
 }
 
-/// `true` when `cmd` holds an ANSI-C quoted piece (`$'...'`) whose decoded
-/// word may differ from what bash runs: the piece never closes, holds a NUL,
-/// or decodes to bytes that are not valid UTF-8. A caller must not treat such
-/// a command as understood. Costs a substring check unless `$'` occurs.
 pub fn ansi_c_quoting_is_inexact(cmd: &str) -> bool {
     cmd.contains("$'") && !split_tokens_checked(cmd).1
 }
 
-/// [`split_tokens`], paired with `false` when an ANSI-C quoted piece did not
-/// decode exactly.
 fn split_tokens_checked(cmd: &str) -> (Vec<String>, bool) {
     let mut exact = true;
     let mut tokens = Vec::new();
@@ -55,10 +32,7 @@ fn split_tokens_checked(cmd: &str) -> (Vec<String>, bool) {
                 in_double_quote = !in_double_quote;
             }
             '\\' if !in_single_quote => match chars.next() {
-                // A backslash-newline is a line continuation: both go.
                 Some('\n') | None => {}
-                // Inside double quotes the backslash stays unless it escapes
-                // one of the characters bash gives it meaning before.
                 Some(next) if in_double_quote && !matches!(next, '$' | '`' | '"' | '\\') => {
                     current.push('\\');
                     current.push(next);
@@ -85,7 +59,6 @@ fn split_tokens_checked(cmd: &str) -> (Vec<String>, bool) {
                 }
             }
             '|' if !in_single_quote && !in_double_quote && ends_with_redirect_target(&current) => {
-                // `>|`/`<|` is redirection syntax, not a pipe separator (#384).
                 current.push(ch);
             }
             '|' if !in_single_quote && !in_double_quote => {
@@ -116,17 +89,13 @@ fn split_tokens_checked(cmd: &str) -> (Vec<String>, bool) {
                 exact &= piece.exact;
                 current.push_str(&piece.text);
             }
-            // `$"..."` is locale translation; without a message catalog bash
-            // reads it as `"..."`, so the `$` is dropped.
             '$' if !in_single_quote && !in_double_quote && chars.peek() == Some(&'"') => {}
             '$' if !in_single_quote && !in_double_quote => {
-                // `$` already consumed; `chars` is positioned just past it.
                 if let Some(marker_len) = ifs_marker_len(&chars) {
                     if !current.is_empty() {
                         tokens.push(current.clone());
                         current.clear();
                     }
-                    // Consume the rest of the marker (the leading `$` is gone).
                     for _ in 1..marker_len {
                         chars.next();
                     }
@@ -147,22 +116,6 @@ fn split_tokens_checked(cmd: &str) -> (Vec<String>, bool) {
     (tokens, exact)
 }
 
-/// Recognize a literal unquoted IFS expansion at the tokenizer's current cursor.
-///
-/// `chars` must be positioned **just past** the leading `$`. Returns the full
-/// marker length in characters (`4` for `$IFS`, `6` for `${IFS}`) when the
-/// upcoming characters form a literal IFS expansion, or `None` otherwise. The
-/// iterator is never advanced; the caller consumes the remaining marker
-/// characters only on a match.
-///
-/// The bare `$IFS` form matches only at an identifier boundary so that distinct
-/// variables such as `$IFSHOME` are left intact. The braced `${IFS}` form is
-/// self-delimited by its closing brace. Unknown variables stay opaque: this is a
-/// narrow, deterministic normalization, not full shell expansion.
-///
-/// Out of scope (see P3-3): parameter-expansion modifiers such as
-/// `${IFS:-x}` / `${IFS:+x}` and runtime `IFS=` reassignment are not normalized.
-/// This helper only recognizes the two literal default-IFS spellings.
 fn ifs_marker_len(chars: &Peekable<Chars<'_>>) -> Option<usize> {
     let mut lookahead = chars.clone();
     match lookahead.next()? {
@@ -187,15 +140,6 @@ fn ifs_marker_len(chars: &Peekable<Chars<'_>>) -> Option<usize> {
     }
 }
 
-/// Extract a command prefix suitable for an `[[allow]]` rule.
-///
-/// Rules:
-/// - Keep the program name (first token).
-/// - Keep flag tokens (starting with `-`) as meaningful modifiers.
-/// - Keep subcommand tokens that come immediately after the program (e.g. `git push`).
-/// - Stop at the first non-flag, non-subcommand token that looks like a file path or value.
-/// - Stop at `--` (end-of-options marker).
-/// - Tokens starting with `/`, `.`, `~`, or containing `.` / `/` are treated as paths/values and stripped.
 pub fn extract_prefix(tokens: &[String]) -> Vec<String> {
     if tokens.is_empty() {
         return Vec::new();
@@ -214,7 +158,6 @@ pub fn extract_prefix(tokens: &[String]) -> Vec<String> {
             prefix.push(token.clone());
             continue;
         }
-        // Stop at the first token that looks like a file path or value.
         if token.starts_with('/')
             || token.starts_with('.')
             || token.starts_with('~')
@@ -223,8 +166,6 @@ pub fn extract_prefix(tokens: &[String]) -> Vec<String> {
         {
             break;
         }
-        // When there are no flags and more than three tokens total,
-        // treat only the first non-program token as a subcommand.
         if !has_any_flag && tokens.len() > 3 && i > 0 {
             break;
         }

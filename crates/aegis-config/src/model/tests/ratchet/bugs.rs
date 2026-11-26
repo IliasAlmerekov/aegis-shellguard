@@ -1,8 +1,6 @@
-// Project docker_scope overlays must keep-or-broaden base; narrowing or incomparable moves keep base and warn.
 
 #[test]
 fn project_docker_scope_names_to_disjoint_names_rejected() {
-    // Disjoint `Names` overlay is not a superset of base: keep base + warn.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -188,9 +186,6 @@ fn project_docker_scope_names_to_labeled_rejected() {
 
 #[test]
 fn project_docker_scope_names_superset_patterns_allowed() {
-    // bugs-01 GREEN-BY-DESIGN guard: base Names `["a"]`; project Names
-    // `["a", "b"]` (literal-string superset — every base pattern is in the
-    // overlay). Broaden-or-equal is permitted: keep project value, NO warning.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -226,9 +221,6 @@ fn project_docker_scope_names_superset_patterns_allowed() {
 
 #[test]
 fn project_docker_scope_labeled_to_labeled_same_label_allowed() {
-    // bugs-01 GREEN-BY-DESIGN guard: base default `Labeled` (label
-    // "aegis.snapshot"); project `Labeled` with the SAME label. Identical
-    // effective scope — keep project value, NO warning.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -261,7 +253,6 @@ fn project_docker_scope_labeled_to_labeled_same_label_allowed() {
     );
 }
 
-// Under SnapshotPolicy::None no provider is materialized, so provider target ratchets do not fire.
 
 #[test]
 fn project_provider_target_not_ratcheted_under_snapshot_policy_none() {
@@ -297,7 +288,6 @@ fn project_provider_target_not_ratcheted_under_snapshot_policy_none() {
     );
 }
 
-// Equal allow_write sets in different order do not weaken base and must not warn.
 
 #[test]
 fn project_sandbox_allow_write_reordered_subset_no_warning() {
@@ -374,16 +364,9 @@ fn project_allow_write_narrowing_keeps_the_global_list_as_trusted_base() {
     );
 }
 
-// ── tests-01: backfill missing GREEN-BY-DESIGN repoint guards ─────────────
-// Pin already-correct repoint behavior for mysql and supabase so the bugs-01 /
-// bugs-02 fixes cannot regress them.
 
 #[test]
 fn project_mysql_snapshot_cannot_repoint_database_when_enabled() {
-    // #269: global `auto_snapshot_mysql = true` + `[mysql_snapshot] database
-    // = "mydb"`; a project that repoints to "otherdb" is a decoy-database
-    // attempt — Rollback must still restore into the trusted target, so the
-    // base database is kept and a `mysql_snapshot.database` warning fires.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -414,9 +397,6 @@ fn project_mysql_snapshot_cannot_repoint_database_when_enabled() {
 
 #[test]
 fn project_mysql_snapshot_cannot_repoint_host_or_user_when_enabled() {
-    // #269: host/user are Snapshot-target fields too — a project that leaves
-    // `database` alone but repoints `host`/`user` still aims Rollback at a
-    // different server, so each field is protected and warned individually.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -445,10 +425,6 @@ fn project_mysql_snapshot_cannot_repoint_host_or_user_when_enabled() {
 
 #[test]
 fn project_supabase_snapshot_cannot_repoint_db_when_enabled() {
-    // #269: global `auto_snapshot_supabase = true` + `[supabase_snapshot.db]
-    // database = "supadb"`; a project that repoints `db.database` is exactly
-    // the decoy-database bypass this ticket closes — keep the base database
-    // and warn on the dotted field name.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -483,7 +459,6 @@ fn project_supabase_snapshot_cannot_repoint_db_when_enabled() {
 
 #[test]
 fn project_supabase_snapshot_cannot_repoint_project_ref_or_host_when_enabled() {
-    // #269: `project_ref` and `db.host` are Snapshot-target fields too.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -520,9 +495,6 @@ fn project_supabase_snapshot_cannot_repoint_project_ref_or_host_when_enabled() {
 
 #[test]
 fn project_cannot_disable_supabase_rollback_target_match_when_provider_enabled_in_base() {
-    // #269 / the issue's core scenario: global enables Supabase with the
-    // target-match check on; a hostile project turns the check off AND
-    // repoints the target. Both must be rejected.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -559,10 +531,6 @@ fn project_cannot_disable_supabase_rollback_target_match_when_provider_enabled_i
 
 #[test]
 fn project_cannot_disable_supabase_rollback_target_match_even_when_provider_not_enabled_in_base() {
-    // #269 counter-case: base leaves the provider off, so the project is free
-    // to enable its OWN Supabase target — but even then it may not disable
-    // `require_config_target_match_on_rollback`, because that flag protects
-    // whichever target ends up configured, including a project-chosen one.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -583,9 +551,7 @@ fn project_cannot_disable_supabase_rollback_target_match_even_when_provider_not_
     let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
     let warnings = project_ratchet_warnings(&base, &workspace.path().join(PROJECT_CONFIG_FILE));
 
-    // The project's own database target is honored (base never enabled a target)...
     assert_eq!(config.supabase_snapshot.db.database, "projdb");
-    // ...but the target-match check stays on regardless.
     assert!(config.supabase_snapshot.require_config_target_match_on_rollback);
     assert_has_warning_for(
         &warnings,
@@ -596,11 +562,6 @@ fn project_cannot_disable_supabase_rollback_target_match_even_when_provider_not_
 
 #[test]
 fn global_layer_can_disable_supabase_rollback_target_match_and_repoint_target() {
-    // #269 counterpart: the ratchet restricts only the PROJECT layer. The
-    // global layer is trusted and stays last-wins for every Supabase field,
-    // including `require_config_target_match_on_rollback` and the database
-    // target itself — an operator can turn the check off or repoint the
-    // target from their own global config.
     let workspace = TempDir::new().unwrap();
     let home = TempDir::new().unwrap();
     let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
@@ -617,7 +578,6 @@ fn global_layer_can_disable_supabase_rollback_target_match_and_repoint_target() 
          host = \"global.supabase.co\"\n",
     )
     .unwrap();
-    // No project `.aegis.toml` at all — this exercises defaults -> global only.
 
     let config = AegisConfig::load_for(workspace.path(), Some(home.path())).unwrap();
 

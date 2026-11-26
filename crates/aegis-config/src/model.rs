@@ -12,13 +12,6 @@ use super::snapshot::{
 };
 use crate::error::ConfigError;
 
-/// Validate that `patterns` compile into a working scanner.
-///
-/// Converts config-layer [`UserPattern`]s into the neutral `Pattern` shape and
-/// builds an [`aegis_scanner::Scanner`] to surface regex/ID errors. This is the
-/// config/scanner boundary — the scanner never sees config types.
-///
-/// An empty slice returns `Ok(())` without building a scanner (#319).
 pub(crate) fn validate_custom_patterns(patterns: &[UserPattern]) -> Result<()> {
     if patterns.is_empty() {
         return Ok(());
@@ -27,21 +20,9 @@ pub(crate) fn validate_custom_patterns(patterns: &[UserPattern]) -> Result<()> {
     aegis_scanner::PatternSet::from_sources(&converted)
         .and_then(aegis_scanner::Scanner::try_new)
         .map(|_| ())
-        // Fold into `Config` (not a distinct variant) so the per-file path
-        // wrapping in `validate_runtime_requirements_for_path` still applies.
         .map_err(|err| ConfigError::Config(err.to_string()))
 }
 
-/// Validate that the built-in pattern set alone compiles into a working
-/// scanner, with no custom patterns involved.
-///
-/// Diagnostics-only: call this from `aegis config validate`'s reporting path,
-/// never from [`AegisConfig::validate_runtime_requirements`]. A broken
-/// built-in regex is a bug in the binary, not a per-invocation risk — paying
-/// a full scanner build on every command to catch it would defeat the point
-/// of skipping the build in [`validate_custom_patterns`] above. `patterns.rs`
-/// also compiles every built-in regex in its own test, so a broken binary
-/// fails CI before it ships.
 pub(crate) fn validate_builtin_scanner() -> Result<()> {
     aegis_scanner::PatternSet::from_sources(&[])
         .and_then(aegis_scanner::Scanner::try_new)
@@ -64,9 +45,6 @@ pub use rules::{
     LanguageAnalysisConfig, PolicyPatternToken, PolicyRule, TrustedAlias, UserPattern, WhenClause,
 };
 
-// Bring submodule items into the `model` namespace so they remain reachable
-// from `model::tests` (which does `pub use super::*`) and from the merge logic
-// below. These stay private aliases — visibility is unchanged.
 use partial::PartialConfig;
 #[cfg(test)]
 use partial::{PartialSupabaseDb, PartialSupabaseSnapshotConfig};
@@ -77,7 +55,6 @@ use template::PROJECT_CONFIG_FILE;
 
 const GLOBAL_CONFIG_DIR: &str = ".config/aegis";
 const GLOBAL_CONFIG_FILE: &str = "config.toml";
-/// Current configuration schema version.
 pub const CURRENT_CONFIG_VERSION: u32 = 1;
 
 type Result<T> = std::result::Result<T, ConfigError>;
@@ -148,10 +125,6 @@ fn snapshot_policy_rank(policy: SnapshotPolicy) -> u8 {
     }
 }
 
-/// Stricter of two `AuditIntegrityMode` values (`ChainSha256` wins over `Off`).
-/// Used as the `stricter` comparator for the `Tighten` direction on
-/// `audit.integrity_mode` (`ratchet::audit`), so the merge path and the
-/// warning it produces always agree on the effective `kept` value.
 pub(super) fn most_restrictive_integrity_mode(
     left: AuditIntegrityMode,
     right: AuditIntegrityMode,
@@ -170,99 +143,117 @@ fn integrity_mode_rank(mode: AuditIntegrityMode) -> u8 {
     }
 }
 
-// Every field's Ratchet direction lives in `model::ratchet` (ADR-013,
-// CONTEXT.md "Ratchet direction"). `merge_layer` below destructures
-// `AegisConfig` and every nested config struct exhaustively and routes each
-// field through its declared direction in one pass, producing the merged
-// config AND the project-layer weakening warnings together.
 use ratchet::SecurityRatchetWarning;
 
-/// A resolved config file path together with the layer it represents.
 #[derive(Debug, Clone)]
 pub struct ConfigLayerPath {
-    /// Whether this path is the global or project config layer.
     pub source_layer: ConfigSourceLayer,
-    /// Absolute path to the config file for this layer.
     pub path: PathBuf,
 }
 
-/// Sandbox configuration — controls the Trusted ceiling for mandatory Sandbox confinement.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, Default)]
 #[serde(default, deny_unknown_fields)]
+#[schemars(
+    description = "Sandbox configuration — controls the Trusted ceiling for mandatory Sandbox confinement."
+)]
 pub struct SandboxSettings {
-    /// Deprecated: Aegis ignores this value; the Sandbox is always applied
-    /// outside `Mode::Audit` (ADR-029). Kept for schema v1 compatibility.
+    #[schemars(
+        description = "Deprecated: Aegis ignores this value; the Sandbox is always applied
+outside `Mode::Audit` (ADR-029). Kept for schema v1 compatibility."
+    )]
     #[serde(default, skip_serializing)]
     #[schemars(extend("deprecated" = true))]
     pub enabled: bool,
-    /// Deprecated: Aegis ignores this value; Sandbox unavailability always
-    /// blocks outside `Mode::Audit` (ADR-029). Kept for schema v1 compatibility.
+    #[schemars(
+        description = "Deprecated: Aegis ignores this value; Sandbox unavailability always
+blocks outside `Mode::Audit` (ADR-029). Kept for schema v1 compatibility."
+    )]
     #[serde(default, skip_serializing)]
     #[schemars(extend("deprecated" = true))]
     pub required: bool,
-    /// Writable roots of the Trusted ceiling. Absent means the computed
-    /// default (workspace plus temporary directory); a present list replaces
-    /// that default, and an explicit `[]` means zero writable roots.
+    #[schemars(
+        description = "Writable roots of the Trusted ceiling. Absent means the computed
+default (workspace plus temporary directory); a present list replaces
+that default, and an explicit `[]` means zero writable roots."
+    )]
     #[schemars(with = "Option<Vec<PathBuf>>")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allow_write: Option<Vec<crate::ceiling::WriteRoot>>,
-    /// True when `allow_write` is a project list over an absent trusted list:
-    /// it can only narrow the computed default, which is intersected at
-    /// ceiling resolution (not known at merge). Not part of the wire format.
+    #[schemars(
+        description = "True when `allow_write` is a project list over an absent trusted list:
+it can only narrow the computed default, which is intersected at
+ceiling resolution (not known at merge). Not part of the wire format."
+    )]
     #[serde(skip)]
     pub allow_write_narrows_computed: bool,
-    /// The list a project `allow_write` narrowed, kept so enforcement can check
-    /// canonical containment against it. `None` when no project list narrowed
-    /// a present trusted list. Not part of the wire format.
+    #[schemars(
+        description = "The list a project `allow_write` narrowed, kept so enforcement can check
+canonical containment against it. `None` when no project list narrowed
+a present trusted list. Not part of the wire format."
+    )]
     #[serde(skip)]
     pub allow_write_trusted: Option<Vec<crate::ceiling::WriteRoot>>,
-    /// Whether the sandboxed process may access the network.
+    #[schemars(description = "Whether the sandboxed process may access the network.")]
     pub allow_network: bool,
 }
 
-/// Prune configuration for `aegis snapshot prune`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, Default)]
 #[serde(default, deny_unknown_fields)]
+#[schemars(description = "Prune configuration for `aegis snapshot prune`.")]
 pub struct PruneConfig {
-    /// Whether prune is enabled. Currently advisory; manual `--yes` is still required.
+    #[schemars(
+        description = "Whether prune is enabled. Currently advisory; manual `--yes` is still required."
+    )]
     pub enabled: bool,
-    /// Keep the newest N snapshots per provider. `None` disables the count rule.
+    #[schemars(
+        description = "Keep the newest N snapshots per provider. `None` disables the count rule."
+    )]
     pub max_count_per_provider: Option<usize>,
-    /// Keep snapshots newer than this many days. `None` disables the age rule.
+    #[schemars(
+        description = "Keep snapshots newer than this many days. `None` disables the age rule."
+    )]
     pub max_age_days: Option<u32>,
 }
 
-/// Top-level Aegis runtime configuration.
-///
-/// Loaded in order: built-in defaults → `~/.config/aegis/config.toml` (user-global)
-/// → `.aegis.toml` (project). Every field's Ratchet direction — how far the
-/// project layer may change it, if at all — is declared in `model::merge_layer`
-/// and listed field-by-field in ADR-013's normative table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
+#[schemars(description = "Top-level Aegis runtime configuration.
+
+Loaded in order: built-in defaults → `~/.config/aegis/config.toml` (user-global)
+→ `.aegis.toml` (project). Every field's Ratchet direction — how far the
+project layer may change it, if at all — is declared in `model::merge_layer`
+and listed field-by-field in ADR-013's normative table.")]
 pub struct AegisConfig {
-    /// Schema version. Must equal [`CURRENT_CONFIG_VERSION`].
+    #[schemars(description = "Schema version. Must equal [`CURRENT_CONFIG_VERSION`].")]
     #[serde(
         default = "default_config_version",
         deserialize_with = "deserialize_config_version"
     )]
     pub config_version: u32,
-    /// Operating mode: `Protect`, `Audit`, or `Strict`.
+    #[schemars(description = "Operating mode: `Protect`, `Audit`, or `Strict`.")]
     pub mode: Mode,
-    /// Extra user-defined patterns merged with built-in patterns at runtime.
+    #[schemars(
+        description = "Extra user-defined patterns merged with built-in patterns at runtime."
+    )]
     pub custom_patterns: Vec<UserPattern>,
-    /// Per-pattern provenance (which layer each `custom_patterns` entry came from). Internal; not serialized.
+    #[schemars(
+        description = "Per-pattern provenance (which layer each `custom_patterns` entry came from). Internal; not serialized."
+    )]
     #[serde(skip)]
     pub(crate) custom_pattern_layers: Vec<ConfigSourceLayer>,
-    /// `current_dir` this config was resolved against, when loaded via
-    /// [`Self::load_for`]/[`Self::load`]. Internal; not serialized.
+    #[schemars(
+        description = "`current_dir` this config was resolved against, when loaded via
+[`Self::load_for`]/[`Self::load`]. Internal; not serialized."
+    )]
     #[serde(skip)]
     pub(crate) source_current_dir: Option<PathBuf>,
-    /// `home_dir` this config was resolved against, when loaded via
-    /// [`Self::load_for`]/[`Self::load`]. Internal; not serialized.
+    #[schemars(
+        description = "`home_dir` this config was resolved against, when loaded via
+[`Self::load_for`]/[`Self::load`]. Internal; not serialized."
+    )]
     #[serde(skip)]
     pub(crate) source_home_dir: Option<PathBuf>,
-    /// Structured allow-list rules (TOML: `[[allow]]`).
+    #[schemars(description = "Structured allow-list rules (TOML: `[[allow]]`).")]
     #[serde(
         default,
         rename = "allow",
@@ -270,61 +261,69 @@ pub struct AegisConfig {
         deserialize_with = "deserialize_allowlist_rules"
     )]
     pub allowlist: Vec<AllowlistRule>,
-    /// Per-rule provenance for `allowlist`. Internal; not serialized.
+    #[schemars(description = "Per-rule provenance for `allowlist`. Internal; not serialized.")]
     #[serde(skip)]
     pub(crate) allowlist_layers: Vec<ConfigSourceLayer>,
-    /// Structured block-list rules (TOML: `[[block]]`).
+    #[schemars(description = "Structured block-list rules (TOML: `[[block]]`).")]
     #[serde(default, rename = "block", alias = "blocklist")]
     pub blocklist: Vec<BlockRule>,
-    /// Per-rule provenance for `blocklist`. Internal; not serialized.
+    #[schemars(description = "Per-rule provenance for `blocklist`. Internal; not serialized.")]
     #[serde(skip)]
     pub(crate) blocklist_layers: Vec<ConfigSourceLayer>,
-    /// Which layer set `audit.max_file_size_bytes`. Internal; not serialized.
+    #[schemars(
+        description = "Which layer set `audit.max_file_size_bytes`. Internal; not serialized."
+    )]
     #[serde(skip)]
     pub(crate) audit_max_file_size_bytes_source: Option<ConfigSourceLayer>,
-    /// Which layer set `audit.retention_files`. Internal; not serialized.
+    #[schemars(description = "Which layer set `audit.retention_files`. Internal; not serialized.")]
     #[serde(skip)]
     pub(crate) audit_retention_files_source: Option<ConfigSourceLayer>,
-    /// Maximum risk level the allow-list may auto-approve in Protect/Strict mode.
+    #[schemars(
+        description = "Maximum risk level the allow-list may auto-approve in Protect/Strict mode."
+    )]
     pub allowlist_override_level: AllowlistOverrideLevel,
-    /// Controls which Snapshot plugins run for planned recovery.
+    #[schemars(description = "Controls which Snapshot plugins run for planned recovery.")]
     pub snapshot_policy: SnapshotPolicy,
-    /// Enable Git when a command's Snapshot plan requests it.
+    #[schemars(description = "Enable Git when a command's Snapshot plan requests it.")]
     pub auto_snapshot_git: bool,
-    /// Enable Docker when a command's Snapshot plan requests it.
+    #[schemars(description = "Enable Docker when a command's Snapshot plan requests it.")]
     pub auto_snapshot_docker: bool,
-    /// Enable PostgreSQL when a command's Snapshot plan requests it.
+    #[schemars(description = "Enable PostgreSQL when a command's Snapshot plan requests it.")]
     pub auto_snapshot_postgres: bool,
-    /// PostgreSQL connection details used when snapshotting is enabled.
+    #[schemars(description = "PostgreSQL connection details used when snapshotting is enabled.")]
     pub postgres_snapshot: PostgresSnapshotConfig,
-    /// Enable MySQL when a command's Snapshot plan requests it.
+    #[schemars(description = "Enable MySQL when a command's Snapshot plan requests it.")]
     pub auto_snapshot_mysql: bool,
-    /// MySQL connection details used when snapshotting is enabled.
+    #[schemars(description = "MySQL connection details used when snapshotting is enabled.")]
     pub mysql_snapshot: MysqlSnapshotConfig,
-    /// Enable Supabase when a command's Snapshot plan requests it.
+    #[schemars(description = "Enable Supabase when a command's Snapshot plan requests it.")]
     pub auto_snapshot_supabase: bool,
-    /// Supabase snapshot provider settings used when snapshotting is enabled.
-    /// Layered config replaces this provider config as a whole.
+    #[schemars(
+        description = "Supabase snapshot provider settings used when snapshotting is enabled.
+Layered config replaces this provider config as a whole."
+    )]
     pub supabase_snapshot: SupabaseSnapshotConfig,
-    /// Enable SQLite when a command's Snapshot plan requests it.
+    #[schemars(description = "Enable SQLite when a command's Snapshot plan requests it.")]
     pub auto_snapshot_sqlite: bool,
-    /// Path to a SQLite database file, relative to the current working
-    /// directory or absolute.
+    #[schemars(
+        description = "Path to a SQLite database file, relative to the current working
+directory or absolute."
+    )]
     pub sqlite_snapshot_path: String,
-    /// Which Docker containers to include in snapshots.
+    #[schemars(description = "Which Docker containers to include in snapshots.")]
     pub docker_scope: DockerScope,
-    /// Behaviour when a CI environment is detected.
+    #[schemars(description = "Behaviour when a CI environment is detected.")]
     pub ci_policy: CiPolicy,
-    /// Audit log rotation and integrity settings.
+    #[schemars(description = "Audit log rotation and integrity settings.")]
     pub audit: AuditConfig,
-    /// Typed policy rules (TOML: `[[rules]]`).
+    #[schemars(description = "Typed policy rules (TOML: `[[rules]]`).")]
     #[serde(default, rename = "rules")]
     pub rules: Vec<PolicyRule>,
-    /// Sandbox layer settings.
+    #[schemars(description = "Sandbox layer settings.")]
     pub sandbox: SandboxSettings,
-    /// Snapshot prune retention settings.
+    #[schemars(description = "Snapshot prune retention settings.")]
     pub prune: PruneConfig,
-    /// Language-aware analysis script-file and trusted-alias budgets.
+    #[schemars(description = "Language-aware analysis script-file and trusted-alias budgets.")]
     pub language_analysis: LanguageAnalysisConfig,
 }
 
@@ -335,7 +334,6 @@ impl Default for AegisConfig {
 }
 
 impl AegisConfig {
-    /// Load the effective config for the current working directory.
     pub fn load() -> Result<Self> {
         let current_dir = env::current_dir()?;
         let home_dir = crate::home_dir();
@@ -343,7 +341,6 @@ impl AegisConfig {
         Self::load_for(&current_dir, home_dir.as_deref())
     }
 
-    /// Load config without triggering runtime validation (for `aegis config show`).
     pub fn load_inspection() -> Result<Self> {
         let current_dir = env::current_dir()?;
         let home_dir = crate::home_dir();
@@ -351,7 +348,6 @@ impl AegisConfig {
         Self::load_for_inspection(&current_dir, home_dir.as_deref())
     }
 
-    /// Return the built-in default configuration.
     pub fn defaults() -> Self {
         Self {
             config_version: CURRENT_CONFIG_VERSION,
@@ -388,56 +384,24 @@ impl AegisConfig {
         }
     }
 
-    /// Serialize the config to a pretty-printed TOML string.
     pub fn to_toml_string(&self) -> Result<String> {
         toml::to_string_pretty(self)
             .map_err(|error| ConfigError::Config(format!("failed to serialize config: {error}")))
     }
 
-    /// Whether every `custom_patterns` entry carries config-file provenance.
-    ///
-    /// True only for a config assembled by the layered file loader, which
-    /// stamps `custom_pattern_layers` one-for-one alongside `custom_patterns`
-    /// as each layer is merged in. A config built directly in memory (no
-    /// file behind it) leaves `custom_pattern_layers` empty, so a caller that
-    /// wants to attribute a scanner failure to a config file — see
-    /// [`crate::validate::locate_invalid_custom_pattern`] — must check this
-    /// first: without it, the bisection would fall back to a placeholder
-    /// layer and could report a config file that never contributed the
-    /// pattern.
     pub fn has_full_custom_pattern_provenance(&self) -> bool {
         !self.custom_patterns.is_empty()
             && self.custom_pattern_layers.len() == self.custom_patterns.len()
     }
 
-    /// The `current_dir` this config was resolved against, if it was loaded
-    /// through [`Self::load_for`] or [`Self::load`].
-    ///
-    /// A caller building a `RuntimeContext` from a config loaded against a
-    /// non-default directory (tests, or any other explicit `load_for` call)
-    /// should attribute scanner errors to this root rather than the
-    /// process's actual `current_dir`, which may point somewhere else
-    /// entirely.
     pub fn source_current_dir(&self) -> Option<&Path> {
         self.source_current_dir.as_deref()
     }
 
-    /// The `home_dir` this config was resolved against, if it was loaded
-    /// through [`Self::load_for`] or [`Self::load`]. See
-    /// [`Self::source_current_dir`].
     pub fn source_home_dir(&self) -> Option<&Path> {
         self.source_home_dir.as_deref()
     }
 
-    /// Validate config invariants required before constructing runtime state.
-    ///
-    /// This covers semantic config checks plus allowlist compilation so
-    /// direct `RuntimeContext::new` callers get the same fail-closed
-    /// guarantees as file-loaded configs. It does not build a scanner: the
-    /// custom-pattern scanner `RuntimeContext::new` builds right after this
-    /// call is the fail-closed signal for invalid custom patterns, so
-    /// building one here too would pay `Scanner::try_new` twice per command
-    /// only to discard the first result (issue #319/#280).
     pub fn validate_runtime_requirements(&self) -> Result<()> {
         self.validate()?;
         Allowlist::from_layered_rules(&self.layered_allowlist_rules()).map(|_| ())?;
@@ -445,14 +409,6 @@ impl AegisConfig {
         Ok(())
     }
 
-    /// Same checks as [`Self::validate_runtime_requirements`], minus the
-    /// custom-pattern scanner rebuild.
-    ///
-    /// Used by [`Self::validate_runtime_requirements_for_path`] per config
-    /// layer. Custom patterns are validated exactly once, downstream, when
-    /// `RuntimeContext` builds the real scanner from the fully merged config
-    /// — rebuilding one here too, per layer, would pay `Scanner::try_new`
-    /// redundantly (issue #319/#399).
     fn validate_runtime_requirements_selective(&self) -> Result<()> {
         self.validate()?;
         Allowlist::from_layered_rules(&self.layered_allowlist_rules()).map(|_| ())?;
@@ -460,17 +416,14 @@ impl AegisConfig {
         Ok(())
     }
 
-    /// Load and validate config for a specific working directory and home dir.
     pub fn load_for(current_dir: &Path, home_dir: Option<&Path>) -> Result<Self> {
         Self::load_for_internal(current_dir, home_dir, true)
     }
 
-    /// Load config for a specific directory without runtime validation.
     pub fn load_for_inspection(current_dir: &Path, home_dir: Option<&Path>) -> Result<Self> {
         Self::load_for_internal(current_dir, home_dir, false)
     }
 
-    /// Resolve the ordered list of existing config layer files (global, then project).
     pub fn layer_paths_for(current_dir: &Path, home_dir: Option<&Path>) -> Vec<ConfigLayerPath> {
         let global_path = home_dir.map(|h| h.join(GLOBAL_CONFIG_DIR).join(GLOBAL_CONFIG_FILE));
         let project_path = current_dir.join(PROJECT_CONFIG_FILE);
@@ -493,15 +446,10 @@ impl AegisConfig {
         layers
     }
 
-    /// Merge a single config layer file into `base` without runtime
-    /// validation.
     pub fn merge_layer_path_unvalidated(base: Self, layer: &ConfigLayerPath) -> Result<Self> {
         Self::merge_layer_path_with_warnings(base, layer).map(|(config, _)| config)
     }
 
-    /// Merge a single config layer file into `base` without runtime
-    /// validation, returning the project-layer weakening warnings from the
-    /// SAME pass (empty for the Global layer, which is trusted).
     pub(crate) fn merge_layer_path_with_warnings(
         base: Self,
         layer: &ConfigLayerPath,
@@ -626,11 +574,6 @@ impl AegisConfig {
             })
     }
 
-    /// Return the layered allowlist input annotated with source layer.
-    ///
-    /// This preserves per-rule provenance from the layered config merge so
-    /// later allowlist compilation can distinguish project-vs-global entries
-    /// while compiling the effective runtime matcher.
     pub fn layered_allowlist_rules(&self) -> Vec<LayeredAllowlistRule> {
         self.allowlist
             .iter()
@@ -648,7 +591,6 @@ impl AegisConfig {
             .collect()
     }
 
-    /// Return the layered blocklist input annotated with source layer.
     pub fn layered_blocklist_rules(&self) -> Vec<LayeredBlocklistRule> {
         self.blocklist
             .iter()

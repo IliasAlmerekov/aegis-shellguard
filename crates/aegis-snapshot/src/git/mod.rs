@@ -1,5 +1,3 @@
-//! Git snapshot provider — creates stashes before dangerous commands.
-
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
@@ -11,19 +9,8 @@ use crate::{ArtifactReadiness, Liveness, SnapshotPlugin};
 
 type Result<T> = std::result::Result<T, SnapshotError>;
 
-/// Sentinel value stored when the working tree had no changes to stash.
-/// A real stash hash is always a 40-char hex string, so this cannot collide.
 const CLEAN_SENTINEL: &str = "clean";
 
-/// Environment variables git reads to locate a repository instead of walking
-/// up from `cwd`. This is the exact output of `git rev-parse --local-env-vars`
-/// (git 2.43) — the list git itself clears when it enters another repository
-/// (for example via `-C` or a submodule), so clearing it here on every spawn
-/// gives `GitPlugin` the same isolation git already relies on internally.
-///
-/// A caller's ambient `GIT_DIR` (set, for instance, by git in a `pre-push`
-/// hook running in a linked worktree) would otherwise override `current_dir`
-/// and point every spawn at the wrong repository (issue #317).
 const GIT_ENV_VARS_TO_CLEAR: &[&str] = &[
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
     "GIT_CONFIG",
@@ -42,10 +29,6 @@ const GIT_ENV_VARS_TO_CLEAR: &[&str] = &[
     "GIT_COMMON_DIR",
 ];
 
-/// Build a `git` command scoped to `cwd`, isolated from ambient git-location
-/// environment variables. Every git spawn in this module and its tests goes
-/// through this instead of spawning `git` directly. See
-/// `GIT_ENV_VARS_TO_CLEAR`.
 fn git_command(cwd: impl AsRef<Path>) -> Command {
     let mut cmd = Command::new("git");
     cmd.current_dir(cwd);
@@ -55,11 +38,7 @@ fn git_command(cwd: impl AsRef<Path>) -> Command {
     cmd
 }
 
-/// The top-level directory of the working tree that contains `dir`, or `None`
-/// when `dir` is not inside a git working tree (a bare repository included) or
-/// git cannot run. Isolated from ambient git-location variables.
 pub async fn git_toplevel(dir: &Path) -> Option<std::path::PathBuf> {
-    // git spawn/wait failure returns None; callers treat the directory as not a git worktree.
     let output = git_command(dir)
         .args(["rev-parse", "--show-toplevel"])
         .stderr(std::process::Stdio::null())
@@ -74,15 +53,11 @@ pub async fn git_toplevel(dir: &Path) -> Option<std::path::PathBuf> {
     if top.is_empty() {
         return None;
     }
-    // Uncanonicalizable top-level path cannot be bound to a location, so treat as None.
     std::path::PathBuf::from(top).canonicalize().ok()
 }
 
-/// Message prefix of the stash entry `rollback` creates for the state it
-/// replaces. Tests and recovery instructions both look for it.
 const PRE_ROLLBACK_PREFIX: &str = "aegis-pre-rollback-";
 
-/// Seconds since the Unix epoch, used to label stash entries.
 fn unix_timestamp() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -90,8 +65,6 @@ fn unix_timestamp() -> u64 {
         .unwrap_or(0)
 }
 
-/// Report whether `cwd`'s working tree holds anything a stash would capture:
-/// staged changes, unstaged changes, or untracked files.
 async fn working_tree_is_dirty(cwd: impl AsRef<Path>) -> Result<bool> {
     let status_out = git_command(cwd)
         .args(["status", "--porcelain"])
@@ -111,12 +84,10 @@ async fn working_tree_is_dirty(cwd: impl AsRef<Path>) -> Result<bool> {
     Ok(!status_out.stdout.iter().all(|b| b.is_ascii_whitespace()))
 }
 
-/// `v3:<hex cwd>:<commit hash>`. The hash is already hex and stays as is.
 fn build_snapshot_id(cwd: &Path, hash: &str) -> String {
     snapshot_id::join_v3(&[&snapshot_id::encode_path(cwd), hash])
 }
 
-/// The one parser of git ids: `v3:` ids, and the legacy `<raw cwd><TAB><hash>`.
 fn parse_snapshot_id(id: &str) -> Result<(PathBuf, &str)> {
     if snapshot_id::is_v3(id) {
         let parts = snapshot_id::split_v3(id, 2)?;
@@ -128,10 +99,7 @@ fn parse_snapshot_id(id: &str) -> Result<(PathBuf, &str)> {
     Ok((PathBuf::from(cwd), hash))
 }
 
-/// Find the positional `stash@{N}` reference of the entry whose commit is
-/// `hash`, or `None` when the entry is gone.
 async fn find_stash_ref(cwd: impl AsRef<Path>, hash: &str) -> Result<Option<String>> {
-    // kill_on_drop: a liveness timeout drops this future and must not orphan git.
     let list_out = git_command(cwd)
         .args(["stash", "list", "--format=%H %gd"])
         .kill_on_drop(true)
@@ -155,9 +123,6 @@ async fn find_stash_ref(cwd: impl AsRef<Path>, hash: &str) -> Result<Option<Stri
     }))
 }
 
-/// Apply the stash entry `hash` onto `cwd`, index included. Returns `None`
-/// when git restored the state, or the joined git output when it refused, so
-/// each caller can wrap the same failure in the error its own path needs.
 async fn apply_stash(cwd: impl AsRef<Path>, hash: &str) -> Result<Option<String>> {
     let apply_out = git_command(cwd)
         .args(["stash", "apply", "--index", hash])
@@ -177,9 +142,6 @@ async fn apply_stash(cwd: impl AsRef<Path>, hash: &str) -> Result<Option<String>
     Ok(Some(format!("{stdout}{stderr}").trim().to_string()))
 }
 
-/// Move the current working-tree state into a stash entry of its own, so the
-/// tree is back at HEAD and a snapshot entry can be applied onto it. Returns
-/// the entry's commit hash, or `None` when the tree was already clean.
 async fn park_current_work(cwd: &Path) -> Result<Option<String>> {
     if !working_tree_is_dirty(cwd).await? {
         tracing::debug!(
@@ -239,7 +201,6 @@ async fn park_current_work(cwd: &Path) -> Result<Option<String>> {
     Ok(Some(hash))
 }
 
-/// Built-in Git snapshot provider (creates stashes before dangerous commands).
 pub struct GitPlugin;
 
 #[async_trait]
@@ -256,7 +217,6 @@ impl SnapshotPlugin for GitPlugin {
             .status()
             .await
         {
-            // git ran and told us definitively whether `cwd` is a repo.
             Ok(status) => {
                 let applicable = status.success();
                 tracing::debug!(
@@ -266,11 +226,6 @@ impl SnapshotPlugin for GitPlugin {
                 );
                 applicable
             }
-            // We could not even spawn git, so we have no signal either way.
-            // Fail open rather than silently reporting "not a repo": the
-            // caller still attempts `snapshot()`, and if that also cannot
-            // spawn git, the failure surfaces through the existing
-            // `SNAPSHOT_FAILED_CONTINUING` warning instead of vanishing here.
             Err(error) => {
                 tracing::error!(
                     %error,
@@ -331,11 +286,6 @@ impl SnapshotPlugin for GitPlugin {
 
         let hash = String::from_utf8_lossy(&rev_out.stdout).trim().to_string();
 
-        // `git stash push` writes the entry *and* resets the working tree to
-        // HEAD. Put the captured work straight back: a snapshot records state,
-        // it must never be observable in the tree (issue #356). The tree is at
-        // HEAD here, so this apply has nothing to merge against and the entry
-        // stays in the stash list for a later rollback.
         let restored = match apply_stash(cwd, &hash).await {
             Ok(restored) => restored,
             Err(error) => {
@@ -368,7 +318,6 @@ impl SnapshotPlugin for GitPlugin {
     async fn snapshot_target(&self, cwd: &Path) -> Option<String> {
         let top = match git_toplevel(cwd).await {
             Some(top) => top,
-            // Omit target metadata when cwd cannot be canonicalized.
             None => cwd.canonicalize().ok()?,
         };
         Some(top.to_string_lossy().into_owned())
@@ -382,21 +331,14 @@ impl SnapshotPlugin for GitPlugin {
 
         let (cwd, hash) = parse_snapshot_id(snapshot_id)?;
 
-        // Resolve the entry before anything is written: a rollback that cannot
-        // find its snapshot must fail without touching the working tree.
         find_stash_ref(&cwd, hash)
             .await?
             .ok_or_else(|| SnapshotError::GitStashNotFound {
                 hash: hash.to_string(),
             })?;
 
-        // The snapshot left the working tree as it found it, so whatever is on
-        // disk now would make `git stash apply` refuse to overwrite it. Park
-        // that state in its own stash entry first: a rollback replaces the
-        // current state with the captured one, it never destroys it.
         park_current_work(&cwd).await?;
 
-        // Parking shifts every `stash@{N}`, so resolve the positional ref again.
         let stash_ref = find_stash_ref(&cwd, hash).await?.ok_or_else(|| {
             SnapshotError::ParkedStashDisappeared {
                 hash: hash.to_string(),
@@ -436,7 +378,6 @@ impl SnapshotPlugin for GitPlugin {
         let Ok((cwd, hash)) = parse_snapshot_id(snapshot_id) else {
             return ArtifactReadiness::UNAVAILABLE;
         };
-        // A stash commit is the artifact: presence is "the commit object exists".
         let found = git_command(&cwd)
             .args(["cat-file", "-e", &format!("{hash}^{{commit}}")])
             .stdin(std::process::Stdio::null())
@@ -475,7 +416,6 @@ impl SnapshotPlugin for GitPlugin {
             }
         }
 
-        // The same lookup `rollback` performs before it touches anything.
         Ok(match find_stash_ref(&cwd, hash).await {
             Ok(Some(_)) => Liveness::Present,
             Ok(None) => Liveness::Absent {

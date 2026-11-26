@@ -51,8 +51,6 @@ fn assess_m5_pkg007_npm_unpublish_fires_danger() {
 
 #[test]
 fn assess_m5_npm_rules_through_launchers_and_compound_fire() {
-    // ADR-014: launcher stripping, absolute-path basename normalization, and
-    // compound-command segmentation apply to these token-prefix rules too.
     assert_assessment_matches_pattern("sudo npm publish", RiskLevel::Warn, "PKG-006");
     assert_assessment_matches_pattern("rtk npm publish", RiskLevel::Warn, "PKG-006");
     assert_assessment_matches_pattern("/usr/bin/npm publish", RiskLevel::Warn, "PKG-006");

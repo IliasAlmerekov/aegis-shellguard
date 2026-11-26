@@ -1,20 +1,6 @@
 use super::{PipelineChain, PipelineSegment, extract_nested_commands, split_tokens};
 use crate::list_segments::{SuspendCursor, case_statement_suspend_ranges};
 
-/// Split a raw shell command string into normalized logical segments for scanning.
-///
-/// Splits at top-level control operators (`&&`, `||`, `;`, `|`, newlines) outside
-/// quotes, and adds unwrapped segments for env prefixes, leading shell syntax,
-/// subshells, command substitutions, and nested `sh -c` strings.
-///
-/// # Examples
-///
-/// ```text
-/// "echo ok && rm -rf /"   -> ["echo ok", "rm -rf /"]
-/// "cmd1; cmd2; cmd3"       -> ["cmd1", "cmd2", "cmd3"]
-/// "bash -c 'a && b'"       -> ["bash -c a && b", "a", "b"]
-/// "echo $(rm -rf /)"       -> ["echo $(rm -rf /)", "rm -rf /"]
-/// ```
 pub fn logical_segments(cmd: &str) -> Vec<String> {
     let mut segments = Vec::new();
 
@@ -25,23 +11,12 @@ pub fn logical_segments(cmd: &str) -> Vec<String> {
     segments
 }
 
-/// One logical segment of a command, in the two forms the scanner needs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScanSegment {
-    /// The segment's words joined by single spaces, as [`logical_segments`]
-    /// returns it. Quoting is gone, so re-tokenizing this string splits a
-    /// quoted argument such as `'x --force'` into separate words.
     pub normalized: String,
-    /// The segment's words with quote boundaries kept: `'x --force'` stays one
-    /// token, as the program receives it.
     pub tokens: Vec<String>,
 }
 
-/// [`logical_segments`], with each segment's quote-preserving tokens.
-///
-/// Two raw segments can normalize to the same string while their tokens
-/// differ (`git push 'x --force'` and `git push x --force`), so this list
-/// deduplicates on both fields and may hold one `normalized` value twice.
 pub fn logical_scan_segments(cmd: &str) -> Vec<ScanSegment> {
     let mut segments = Vec::new();
 
@@ -52,23 +27,10 @@ pub fn logical_scan_segments(cmd: &str) -> Vec<ScanSegment> {
     segments
 }
 
-/// Whether `cmd` holds more than one top-level command: a `;`, `&&`, `||`,
-/// `|` or newline outside quotes splits it. A token-prefix rule must not match
-/// across such a split (#425).
 pub fn has_multiple_top_level_segments(cmd: &str) -> bool {
     split_top_level_segments(cmd).len() > 1
 }
 
-/// Extract top-level pipeline chains from shell input.
-///
-/// Examples:
-///
-/// ```text
-/// "echo ok | sh"                    -> [["echo ok", "sh"]]
-/// "a | b && c | d"                  -> [["a", "b"], ["c", "d"]]
-/// "echo 'x|y' | bash"               -> [["echo x|y", "bash"]]
-/// "echo ok && rm -rf /"             -> []
-/// ```
 pub fn top_level_pipelines(cmd: &str) -> Vec<PipelineChain> {
     split_top_level_command_groups(cmd)
         .into_iter()
@@ -107,7 +69,6 @@ fn collect_scan_segments(raw_segment: &str, segments: &mut Vec<ScanSegment>) {
     }
 
     if let Some(subshell_body) = unwrap_subshell_group(raw_segment) {
-        // Re-split the subshell body on its own top-level separators (#430).
         for nested_segment in split_top_level_segments(&subshell_body) {
             collect_scan_segments(&nested_segment, segments);
         }
@@ -202,7 +163,6 @@ pub(super) fn split_top_level_segments(cmd: &str) -> Vec<String> {
                     chars.next();
                     finalize_segment(&mut current, &mut segments);
                 } else if chars.peek() != Some(&'>') && !ends_with_redirect_target(&current) {
-                    // Standalone background `&` (excludes `&>`, `&>>`, `>&`, `<&`).
                     finalize_segment(&mut current, &mut segments);
                 } else {
                     current.push(ch);
@@ -247,7 +207,6 @@ pub(crate) fn split_pipeline_segments(raw_group: &str) -> Vec<PipelineSegment> {
     let mut command_subst_depth = 0usize;
 
     while let Some((byte_idx, ch)) = chars.next() {
-        // Keep `case ... esac` opaque so arm `|`/` )` does not split pipelines (#384).
         if suspend.contains(byte_idx) {
             current.push(ch);
             continue;
@@ -308,7 +267,6 @@ pub(crate) fn split_pipeline_segments(raw_group: &str) -> Vec<PipelineSegment> {
                 && chars.peek().map(|&(_, c)| c) != Some('|')
                 && !ends_with_redirect_target(&current) =>
             {
-                // `>|` is noclobber redirection, not a pipe (#384).
                 finalize_segment(&mut current, &mut raw_segments);
             }
             _ => current.push(ch),
@@ -325,10 +283,6 @@ pub(crate) fn split_pipeline_segments(raw_group: &str) -> Vec<PipelineSegment> {
         .collect()
 }
 
-/// `true` when `current` (ignoring trailing whitespace) ends with an unescaped
-/// `>` or `<`, meaning a following `&` is part of `>&`/`<&` (fd duplication).
-///
-/// Odd preceding backslash count means escaped (`\>` is literal).
 pub(crate) fn ends_with_redirect_target(current: &str) -> bool {
     let mut rev = current.trim_end().chars().rev();
     match rev.next() {
@@ -432,7 +386,6 @@ fn strip_shell_keyword<'a>(segment: &'a str, keyword: &str) -> Option<&'a str> {
         .then(|| rest.trim_start())
 }
 
-/// Return the raw inner text of a leading `(...)` subshell, preserving original quoting.
 pub fn unwrap_subshell_group(raw_segment: &str) -> Option<String> {
     let trimmed = raw_segment.trim();
     if !trimmed.starts_with('(') {
@@ -450,7 +403,6 @@ pub fn unwrap_subshell_group(raw_segment: &str) -> Option<String> {
     let mut close_idx = None;
 
     while let Some((idx, ch)) = chars.next() {
-        // Keep `case ... esac` opaque so an arm `)` does not close the subshell (#384).
         if suspend.contains(idx) {
             continue;
         }
@@ -509,7 +461,6 @@ pub fn unwrap_subshell_group(raw_segment: &str) -> Option<String> {
     None
 }
 
-/// Extract raw top-level `$(...)` and backtick command-substitution bodies, preserving quoting.
 pub fn extract_command_substitution_bodies(raw_segment: &str) -> Vec<String> {
     let case_ranges = case_statement_suspend_ranges(raw_segment);
     let mut bodies = Vec::new();
@@ -557,10 +508,6 @@ pub fn extract_command_substitution_bodies(raw_segment: &str) -> Vec<String> {
     bodies
 }
 
-/// Replace top-level `$(...)` and backtick command substitutions with `$()`.
-///
-/// Must run on raw text before [`split_tokens`] strips quotes. Returns `None`
-/// on unclosed substitutions or ANSI-C `$'...'` quoting so callers fall back safely.
 pub fn mask_command_substitutions(text: &str) -> Option<std::borrow::Cow<'_, str>> {
     if !text.contains(['$', '`']) {
         return Some(std::borrow::Cow::Borrowed(text));
@@ -587,7 +534,6 @@ pub fn mask_command_substitutions(text: &str) -> Option<std::borrow::Cow<'_, str
             }
             '\'' if !in_double_quote => in_single_quote = !in_single_quote,
             '"' if !in_single_quote => in_double_quote = !in_double_quote,
-            // ANSI-C `$'...'` escapes quotes, which this scan does not decode.
             '$' if !in_single_quote
                 && !in_double_quote
                 && text[idx + ch_len..].starts_with('\'') =>
@@ -615,7 +561,6 @@ pub fn mask_command_substitutions(text: &str) -> Option<std::borrow::Cow<'_, str
     Some(std::borrow::Cow::Owned(kept))
 }
 
-/// Extract `(body, end_idx)` for `$(...)` at `start_idx`, skipping `case_ranges` (#384).
 fn extract_dollar_paren_body(
     raw_segment: &str,
     start_idx: usize,

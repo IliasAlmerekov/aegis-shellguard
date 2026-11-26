@@ -5,9 +5,11 @@
 # (#276). CI, the pre-push hook and `just lint` all call it, and
 # `tests/lint_gate_ci.rs` fails if any of them grows its own copy again.
 #
-# Usage: scripts/lint.sh [fmt|clippy|text|all]
+# Usage: scripts/lint.sh [fmt|clippy|comments|text|all]
 #   fmt     check formatting
 #   clippy  lint every target and feature, warnings are errors
+#   comments  no comment in any tracked `.rs` file except `// SAFETY:`, found with
+#           a Rust lexer (`cargo run -p xtask -- check-comments`)
 #   text    checks clippy cannot make: no `.rs` file under src/, crates/,
 #           tests/, fuzz/ or benches/ exceeds 800 lines, no `.rs` file under
 #           src/, crates/ or tests/ carries a frozen tracker id in its name,
@@ -16,7 +18,7 @@
 #           CONVENTION.md, CONTRIBUTING.md and CLAUDE.md exists in the tree,
 #           no unguarded `Command::new("git")` spawns exist, and
 #           scripts/test-tamper-check.test.sh passes
-#   all     fmt, clippy, then text (also the default with no argument)
+#   all     fmt, clippy, comments, then text (also the default with no argument)
 #
 # LINT_TEXT_ROOT points the text checks at another directory than the
 # checkout. The fixture tests use it. It changes nothing else.
@@ -230,6 +232,11 @@ $files
 EOF
 }
 
+run_comments() {
+    echo "lint: cargo +$toolchain run -p xtask -- check-comments"
+    cargo "+$toolchain" run --quiet --locked -p xtask -- check-comments
+}
+
 run_text() {
     echo "lint: text checks"
     root=${LINT_TEXT_ROOT:-.}
@@ -270,14 +277,16 @@ run_text() {
 case "${1:-all}" in
     fmt) run_fmt ;;
     clippy) run_clippy ;;
+    comments) run_comments ;;
     text) run_text ;;
     all)
         run_fmt
         run_clippy
+        run_comments
         run_text
         ;;
     *)
-        echo "usage: scripts/lint.sh [fmt|clippy|text|all]" >&2
+        echo "usage: scripts/lint.sh [fmt|clippy|comments|text|all]" >&2
         exit 2
         ;;
 esac

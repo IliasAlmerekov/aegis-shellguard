@@ -14,7 +14,6 @@ use super::{
 
 type Result<T> = std::result::Result<T, ConfigError>;
 
-/// Partial view of [`PruneConfig`] used during layered config merge.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct PartialPruneConfig {
@@ -23,8 +22,6 @@ pub(super) struct PartialPruneConfig {
     pub(super) max_age_days: Option<u32>,
 }
 
-/// Partial view of `SupabaseSnapshotConfig::db` used during layered config
-/// merge.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct PartialSupabaseDb {
@@ -34,17 +31,6 @@ pub(super) struct PartialSupabaseDb {
     pub(super) user: Option<String>,
 }
 
-/// Partial view of `SupabaseSnapshotConfig` used during layered config
-/// merge. Every field is individually `Option` — unlike Postgres/MySQL, which
-/// stay whole structs — because `require_config_target_match_on_rollback`
-/// must ratchet independently of the database-target fields: a project must
-/// never disable the rollback target-match check, even for a Supabase target
-/// it is otherwise free to configure itself (#269).
-///
-/// The merge and ratchet-warning logic for this type lives in
-/// `ratchet::supabase` (alongside `ratchet_postgres_snapshot`,
-/// `ratchet_mysql_snapshot`, and `ratchet_sqlite_path`), not here — this
-/// struct is just the deserialization shape.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct PartialSupabaseSnapshotConfig {
@@ -53,10 +39,6 @@ pub(super) struct PartialSupabaseSnapshotConfig {
     pub(super) db: PartialSupabaseDb,
 }
 
-/// Partial view of [`SandboxSettings`] used during layered config merge.
-///
-/// Allows individual sandbox fields to be set per-layer without resetting
-/// fields that were not mentioned in a later layer.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct PartialSandboxSettings {
@@ -66,11 +48,6 @@ pub(super) struct PartialSandboxSettings {
     pub(super) allow_network: Option<bool>,
 }
 
-/// Partial view of [`LanguageAnalysisConfig`] used during layered config merge.
-///
-/// Merged by `ratchet::merge_language_analysis`, which destructures this
-/// struct field-by-field — each budget is its own typed `Ratchet` call, not a
-/// string-keyed dispatch.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct PartialLanguageAnalysisConfig {
@@ -84,10 +61,6 @@ pub(super) struct PartialLanguageAnalysisConfig {
     pub(super) trusted_aliases: Option<Vec<TrustedAlias>>,
 }
 
-/// Partial config used for layered merging.
-/// Scalar fields are `Option` so we can distinguish "not set" from "set to
-/// the default value". Vec fields default to empty and are concatenated across
-/// layers (global first, then project).
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct PartialConfig {

@@ -1,11 +1,3 @@
-//! Rollback support for the Supabase snapshot runtime.
-//!
-//! Contains artifact-path resolution (with bundle-root containment checks
-//! that reject absolute paths, parent traversal, and symlink escape) and the
-//! config-target-match checks used to gate rollback when the operator opted
-//! into `require_config_target_match_on_rollback`. These invariants MUST be
-//! preserved exactly.
-
 use std::path::{Component, Path, PathBuf};
 
 use aegis_config::SupabaseSnapshotConfig;
@@ -51,7 +43,6 @@ impl SupabaseManifest {
                 })?;
         let parent_canonical = match parent.canonicalize() {
             Ok(path) => path,
-            // A parent that is gone cannot point outside the bundle; the caller finds the dump missing.
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(resolved),
             Err(error) => {
                 return Err(SnapshotError::OperationFailed {

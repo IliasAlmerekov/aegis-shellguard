@@ -1,19 +1,7 @@
-//! Shared sandbox support and test-injection hook.
-//!
-//! Platform modules (`linux`, `macos`, `windows`, `unsupported`) route their
-//! "sandbox unavailable" code paths through [`crate::SandboxError::Required`] so typed
-//! behavior stays consistent across targets.
-
 use std::path::PathBuf;
 
 use crate::{SandboxConfig, WriteRoot};
 
-// ── Test injection ────────────────────────────────────────────────────────────
-//
-// The forced-unavailable hook is only exercised by the Linux and macOS sandbox
-// modules' "sandbox unavailable" code paths. Gate it to those targets so it is
-// not dead code on native Windows (which routes to `unsupported.rs` and never
-// consults the hook).
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[cfg(test)]
 thread_local! {
@@ -34,17 +22,13 @@ pub(crate) fn is_forced_sandbox_unavailable() -> bool {
     return false;
 }
 
-/// Why a root was left out at enforcement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OmitReason {
-    /// The root could not be canonicalized (it does not exist).
     NotFound,
-    /// The canonical root lies outside every canonical trusted root.
     OutsideTrustedCeiling,
 }
 
 impl OmitReason {
-    /// Stable machine-readable name, equal to the config crate's.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::NotFound => "not_found",
@@ -53,33 +37,22 @@ impl OmitReason {
     }
 }
 
-/// A root left out at enforcement, with its provenance.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OmittedRoot {
-    /// Why it was left out.
     pub reason: OmitReason,
-    /// The root as configured, with its layer and location.
     pub root: WriteRoot,
 }
 
-/// The canonical writable paths enforcement binds, and what it left out.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ResolvedAllowWrite {
-    /// Canonical roots that passed. Empty stays empty: there is no fallback.
     pub paths: Vec<PathBuf>,
-    /// Roots left out; surfaced by `status`, never printed by `-c`.
     pub omitted: Vec<OmittedRoot>,
 }
 
-/// Canonicalize the effective roots and the trusted roots, and keep an
-/// effective root only if its canonical path lies under a canonical trusted
-/// root. Shared by bwrap, Landlock and Seatbelt, which bind the resolved path,
-/// never the configured one, to avoid symlink confusion.
 pub fn resolve_allow_write(config: &SandboxConfig) -> ResolvedAllowWrite {
     let trusted: Vec<PathBuf> = config
         .trusted_roots
         .iter()
-        // Uncanonicalizable trusted roots are omitted, narrowing rather than widening writes.
         .filter_map(|root| root.path.canonicalize().ok())
         .collect();
     let mut out = ResolvedAllowWrite::default();
@@ -105,15 +78,8 @@ pub fn resolve_allow_write(config: &SandboxConfig) -> ResolvedAllowWrite {
     out
 }
 
-// ── Shared test helpers ────────────────────────────────────────────────────────
-
 #[cfg(test)]
 pub(crate) mod test_helpers {
-    /// RAII guard that clears the forced-unavailable flag on drop.
-    ///
-    /// Only meaningful where the forced-unavailable hook exists (Linux/macOS);
-    /// gate it to those targets so the module compiles cleanly on native
-    /// Windows, which routes to `unsupported.rs` and never sets the flag.
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub(crate) struct ForceUnavailableGuard;
 
@@ -124,8 +90,6 @@ pub(crate) mod test_helpers {
         }
     }
 }
-
-// ── Common (platform-agnostic) tests ───────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -142,8 +106,6 @@ mod tests {
         );
     }
 
-    // ── SandboxConfig defaults ────────────────────────────────────────────────
-
     #[test]
     fn sandbox_config_default_has_empty_allow_write() {
         assert!(SandboxConfig::default().allow_write.is_empty());
@@ -154,15 +116,11 @@ mod tests {
         assert!(!SandboxConfig::default().allow_network);
     }
 
-    // ── SandboxError::Display ─────────────────────────────────────────────────
-
     #[test]
     fn sandbox_error_required_display_mentions_required_or_unavailable() {
         let msg = SandboxError::Required.to_string().to_lowercase();
         assert!(msg.contains("required") || msg.contains("unavailable"));
     }
-
-    // ── Legacy test names (kept for backwards compatibility) ─────────────────
 
     #[test]
     fn test_sandbox_config_default_allows_no_write_paths() {
@@ -181,8 +139,6 @@ mod tests {
         let lower = msg.to_lowercase();
         assert!(lower.contains("required") || lower.contains("unavailable"));
     }
-
-    // ── resolve_allow_write ───────────────────────────────────────────────────
 
     fn root(path: &std::path::Path, layer: CeilingLayer, location: &str) -> WriteRoot {
         WriteRoot {

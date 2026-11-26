@@ -1,27 +1,14 @@
-//! Shared post-attempt Required recovery status.
-
 use aegis_snapshot::SnapshotCoverage;
 use aegis_types::{Mode, RecoveryDegradation, RiskLevel, SnapshotAttemptReadiness};
 
 use crate::planning::InterceptionPlan;
 
-/// Post-attempt state for an active ADR-016 Required recovery obligation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecoveryStatus {
-    /// Every applicable Snapshot plugin created its required Snapshot and
-    /// every attempt's artifact passed its readiness check.
     Ready,
-    /// No required Snapshot was created, or only some applicable plugins
-    /// created one.
     Degraded(RecoveryDegradation),
 }
 
-/// Derive the shared ADR-016 Recovery status from policy and runtime facts.
-///
-/// `coverage` must come from the snapshot pass that ran for this command, so
-/// that the record count and the applicable-plugin count describe the same
-/// moment (ADR-036). `obligated` is true for effect-opaque execution and for
-/// an unattended `Danger` run (ADR-031 section 1).
 #[must_use]
 pub fn recovery_status(
     obligated: bool,
@@ -32,9 +19,6 @@ pub fn recovery_status(
         return None;
     }
 
-    // Fixed priority (ADR-031 §9). Only record attempts count for the artifact
-    // reasons: a plugin that left no record is Partial or None. A record with
-    // no readiness verdict fails closed as Unavailable.
     Some(if coverage.records.is_empty() {
         RecoveryStatus::Degraded(RecoveryDegradation::NoSnapshotAvailable)
     } else if coverage.has_attempt(SnapshotAttemptReadiness::Invalid) {
@@ -50,12 +34,6 @@ pub fn recovery_status(
     })
 }
 
-/// The Recovery degradation, if any, that must stop or interrupt this run.
-///
-/// An unavailable working directory degrades required Recovery for attended and
-/// unattended runs (#220). An unresolved Git target degrades an unattended run
-/// (#471). Otherwise post-attempt [`recovery_status`] decides. `Mode::Audit`
-/// declines enforcement; a confirmed run can use the Recovery override.
 #[must_use]
 pub fn plan_recovery_degradation(
     plan: &InterceptionPlan,
@@ -86,13 +64,6 @@ pub fn plan_recovery_degradation(
     }
 }
 
-/// The reason an `ApproveAlways` rule must not be saved for this run, if any
-/// (ADR-031 section 4, persistence gate).
-///
-/// An unavailable working directory blocks persistence for every risk level.
-/// Otherwise a `Danger` or effect-opaque command waits for `Recovery status =
-/// Ready`; commands outside that obligation need no Recovery check (ADR-031).
-/// `None` means the rule may be written.
 #[must_use]
 pub fn allow_rule_persistence_degradation(
     plan: &InterceptionPlan,
@@ -192,8 +163,6 @@ mod tests {
 
     #[test]
     fn more_records_than_applicable_plugins_stays_ready() {
-        // Defensive: a caller that assembles coverage by hand cannot turn an
-        // undercount of applicable plugins into a spurious degradation.
         let coverage = SnapshotCoverage {
             applicable: 1,
             ..checked(&[("git", Ready), ("sqlite", Ready)], &[])
@@ -214,8 +183,6 @@ mod tests {
         }
     }
 
-    /// Coverage where `records` all produced a record, `unrecorded` plugins
-    /// failed, and each record carries the given readiness.
     fn checked(
         verdicts: &[(&'static str, SnapshotAttemptReadiness)],
         unrecorded: &[&'static str],
@@ -305,8 +272,6 @@ mod tests {
 
     #[test]
     fn a_plugin_without_a_record_is_not_a_recorded_artifact_gone_missing() {
-        // The failed plugin's attempt reads `Unavailable` in the audit array,
-        // yet no recorded artifact is missing: that is Partial, not Unavailable.
         let coverage = checked(&[("git", Ready)], &["docker"]);
 
         assert_eq!(
@@ -346,8 +311,6 @@ mod tests {
             None
         );
     }
-
-    // #471: an unresolved Git target halts unattended runs only.
 
     fn plan_for(command: &str, mode: Mode) -> InterceptionPlan {
         use crate::planning::{CwdState, PlanningOutcome, PlanningRequest, plan_with_context};

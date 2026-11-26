@@ -4,13 +4,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Atomically write `bytes` to `path` via a sibling temporary file and rename.
-///
-/// Creates a unique temporary file in `path`'s parent directory using
-/// `create_new`, applies `mode` on Unix when `Some` (ignoring the process
-/// umask), writes `bytes`, calls `sync_all`, and renames the temporary file
-/// over `path`. Removes the temporary file on any failure after it is created
-/// and returns the original I/O error. Does not create the parent directory.
 pub fn write_atomic(path: &Path, bytes: &[u8], mode: Option<u32>) -> io::Result<()> {
     let parent = path.parent().ok_or_else(|| {
         io::Error::new(io::ErrorKind::InvalidInput, "path has no parent directory")
@@ -26,7 +19,6 @@ pub fn write_atomic(path: &Path, bytes: &[u8], mode: Option<u32>) -> io::Result<
     }
     #[cfg(not(unix))]
     {
-        // File permission modes are Unix-only; non-Unix targets keep default permissions.
         let _ = mode;
     }
 
@@ -45,7 +37,6 @@ pub fn write_atomic(path: &Path, bytes: &[u8], mode: Option<u32>) -> io::Result<
 
     let result = write_result.and_then(|()| fs::rename(&temp_path, path));
     if result.is_err() {
-        // Best-effort temp cleanup; preserve the primary I/O error.
         let _ = fs::remove_file(&temp_path);
     }
     result

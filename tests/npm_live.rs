@@ -1,13 +1,3 @@
-// Gated live npm smoke test. Default `cargo test` is network-free: this test
-// is a no-op unless `AEGIS_TEST_LIVE_NPM=1` is set, in which case it installs
-// the published `@iliasalmerekov/aegis@AEGIS_TEST_EXPECTED_VERSION` from the
-// npm registry, retrying while the registry catches up with a fresh publish,
-// and checks that `aegis --version` prints that version. The release
-// workflow's `smoke-install` job runs it; run it by hand where npm is
-// available:
-//   AEGIS_TEST_LIVE_NPM=1 AEGIS_TEST_EXPECTED_VERSION=0.7.0 \
-//     cargo test --test npm_live -- --nocapture
-
 mod support;
 
 use std::process::Command;
@@ -64,7 +54,6 @@ fn live_npm_package_installs_and_runs_aegis() {
         );
     }
 
-    // Run the binary npm installed, not whatever else is on PATH.
     let prefix = run("npm", &["prefix", "-g"]);
     assert!(prefix.status.success(), "npm prefix -g failed");
     let prefix = String::from_utf8_lossy(&prefix.stdout).trim().to_string();

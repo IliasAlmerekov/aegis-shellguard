@@ -1,16 +1,3 @@
-//! Sandboxing layer for Aegis.
-//!
-//! Provides typed, presentation-free preparation through
-//! [`PreparedSandboxCommand`] on supported platforms:
-//! - **Linux**: bwrap + Landlock
-//! - **macOS**: Seatbelt (`sandbox-exec`)
-//!
-//! Native Windows is intentionally unsupported for Aegis 1.0. Windows users
-//! should run Aegis inside WSL2, where it behaves as Linux.
-//!
-//! Platform-specific implementation lives in a private `platform` module alias
-//! that resolves to `linux.rs`, `macos.rs`, or `unsupported.rs` depending on the
-//! build target. Shared test support lives in `support.rs`.
 #![cfg_attr(
     not(test),
     deny(
@@ -44,78 +31,45 @@ mod platform;
 #[path = "macos.rs"]
 mod platform;
 
-// Native `windows` is intentionally routed to the unsupported module for
-// Aegis 1.0; Windows users should run Aegis inside WSL2/Linux.
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 #[path = "unsupported.rs"]
 mod platform;
 
-/// Internal flag that re-execs the Aegis binary as a thin landlock wrapper
-/// inside bwrap's mount namespace. Owned here so `main.rs` and the sandbox
-/// crate cannot drift.
 pub const INNER_LANDLOCK_FLAG: &str = "--aegis-inner-landlock";
 
-/// Typed error for sandbox operations.
 #[derive(Debug, thiserror::Error)]
 pub enum SandboxError {
-    /// The sandbox is unavailable on this system.
     #[error("sandbox is required but unavailable on this system")]
     Required,
 
-    /// The sandbox is unavailable because this process is already confined by an
-    /// active outer Seatbelt profile, which refuses the nested `sandbox_apply`
-    /// call Aegis needs to make (macOS only). Kept distinct from
-    /// [`Self::Required`] because, unlike a missing or broken `sandbox-exec`,
-    /// this cause has a practical remedy to name.
     #[error("sandbox is required but nested under an active outer sandbox")]
     RequiredNestedUnderOuterSandbox,
 
-    /// bwrap failed to set up the sandbox (namespace, mount, or permissions error).
     #[error("sandbox setup failed: {0}")]
     SetupFailed(String),
 
-    /// A sandbox execution error occurred (e.g. a malformed confinement
-    /// argument). Carries no `io::Error`; see [`Self::Spawn`] for the I/O
-    /// failure case.
     #[error("sandbox execution error: {0}")]
     Execution(String),
 
-    /// The confined subprocess could not be spawned, awaited, or run to
-    /// completion. `operation` names the step as data (`"spawn"`, `"wait
-    /// for"`, `"run"`) so a fail-closed branch can match on the variant
-    /// instead of parsing prose, and `source` keeps the original
-    /// `io::Error` — including its `ErrorKind` — instead of collapsing it
-    /// to a string.
     #[error("failed to {operation} sandboxed command: {source}")]
     Spawn {
-        /// The subprocess step that failed.
         operation: &'static str,
-        /// The underlying I/O error.
         #[source]
         source: std::io::Error,
     },
 
-    /// Wrapped I/O error.
     #[error("sandbox I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
 
-/// One writable root with the provenance needed to explain its omission.
-///
-/// Sandbox-side mirror of the config crate's `WriteRoot`: this crate must not
-/// depend on `aegis-config`; the layer type is shared through `aegis-types`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WriteRoot {
-    /// The configured or computed path.
     pub path: PathBuf,
-    /// Layer the root came from.
     pub layer: CeilingLayer,
-    /// Config file or computed-root label the root came from.
     pub location: String,
 }
 
 impl WriteRoot {
-    /// A root without provenance.
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
@@ -125,39 +79,21 @@ impl WriteRoot {
     }
 }
 
-/// Configuration for the sandbox layer.
 #[derive(Debug, Clone, Default)]
 pub struct SandboxConfig {
-    /// Effective writable roots (after project narrowing).
     pub allow_write: Vec<WriteRoot>,
-    /// The trusted roots (global layer or computed default) every canonical
-    /// effective root must lie under. Required: an empty list admits no root.
     pub trusted_roots: Vec<WriteRoot>,
-    /// Whether the sandboxed process is allowed to access the network.
     pub allow_network: bool,
 }
 
-/// A command prepared for the selected confinement path.
-///
-/// `status` describes the command stored in `command`. Preparation never
-/// renders user-facing output or applies process-wide restrictions.
 #[derive(Debug)]
 pub struct PreparedSandboxCommand {
-    /// The confined or direct command that the caller may execute or spawn.
     pub command: std::process::Command,
-    /// Factual Sandbox status for the prepared command.
     pub status: SandboxStatus,
-    /// Whether the inner landlock wrapper will report the actual status over a
-    /// pipe when spawned (true on the exec path with a non-empty `allow_write`).
     #[cfg(target_os = "linux")]
     reports_status: bool,
 }
 
-/// A sandbox child that has reported its actual confinement status.
-///
-/// On Linux with the inner Landlock wrapper, the wrapped program remains
-/// stopped until [`Self::release`] is called. Dropping this value closes the
-/// gate, causing the wrapper to fail closed before it can exec the program.
 pub struct ReportedSandboxChild {
     child: Option<std::process::Child>,
     status: SandboxStatus,
@@ -166,7 +102,6 @@ pub struct ReportedSandboxChild {
 }
 
 impl ReportedSandboxChild {
-    /// Wrap an already-started child whose status needs no release gate.
     pub fn from_child(child: std::process::Child, status: SandboxStatus) -> Self {
         Self {
             child: Some(child),
@@ -176,12 +111,10 @@ impl ReportedSandboxChild {
         }
     }
 
-    /// Return the actual status the launch path reported.
     pub fn status(&self) -> SandboxStatus {
         self.status
     }
 
-    /// Permit the inner wrapper to exec the wrapped program and return its child.
     pub fn release(mut self) -> Result<std::process::Child, SandboxError> {
         #[cfg(target_os = "linux")]
         if let Some(fd) = self.release_fd.take() {
@@ -224,29 +157,12 @@ impl PreparedSandboxCommand {
         }
     }
 
-    /// Replace the current process with the prepared command.
-    ///
-    /// On Linux the Landlock layer is applied by the innermost re-exec'd
-    /// wrapper inside bwrap's mount namespace, so this method never restricts
-    /// the current process. Watch callers may therefore use it safely.
-    ///
-    /// This method does not return when process replacement succeeds. It
-    /// returns [`SandboxError::Io`] if the operating-system `exec` call fails.
     #[cfg(unix)]
     pub fn exec(mut self) -> SandboxError {
         use std::os::unix::process::CommandExt;
         SandboxError::Io(self.command.exec())
     }
 
-    /// Spawn the prepared command and return the actual status reported by the
-    /// inner landlock wrapper, so the caller can audit what actually applied at
-    /// the execution seam rather than what preparation predicted.
-    ///
-    /// When the landlock wrapper is present, a pipe is set up and the wrapper
-    /// writes its actual status over it; an empty read (EOF) means the wrapper
-    /// failed closed and the command never ran (`NotAttempted`). When the
-    /// wrapper is absent, the command is spawned directly and the preparation
-    /// status is returned.
     #[cfg(target_os = "linux")]
     pub fn spawn_and_report(mut self) -> Result<ReportedSandboxChild, SandboxError> {
         if !self.reports_status {
@@ -258,10 +174,6 @@ impl PreparedSandboxCommand {
             });
         }
 
-        // Set up the status-report pipe and release gate with O_CLOEXEC so the
-        // child never inherits the parent's ends (otherwise dropping
-        // ReportedSandboxChild without calling release() would deadlock
-        // wait_for_release() waiting for EOF on gate_read_fd).
         let mut fds = [0; 2];
         // SAFETY: `fds` is a valid 2-element `i32` array writable by `pipe2`.
         if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
@@ -279,8 +191,6 @@ impl PreparedSandboxCommand {
         }
         let (gate_read_fd, gate_write_fd) = (gate_fds[0], gate_fds[1]);
 
-        // Set the write end as fd 3 on the command, and tell the inner wrapper
-        // which fd to report over.
         self.command.env(landlock::AEGIS_LANDLOCK_STATUS_FD, "3");
         self.command.env(landlock::AEGIS_LANDLOCK_RELEASE_FD, "4");
         use std::os::unix::process::CommandExt;
@@ -300,18 +210,14 @@ impl PreparedSandboxCommand {
             });
         }
 
-        // Spawn the command.
         let child = self.command.spawn().map_err(SandboxError::Io)?;
 
-        // Close the parent's copy of the write end so the read returns EOF once
-        // the inner wrapper closes it.
         // SAFETY: `write_fd` and `gate_read_fd` are open pipe descriptors owned by the parent and are not used after close.
         unsafe {
             libc::close(write_fd);
             libc::close(gate_read_fd);
         }
 
-        // Read the actual status.
         let status = read_status_from_fd(read_fd)?;
         // SAFETY: `read_fd` is an open pipe descriptor owned by the parent and is not used after close.
         unsafe {
@@ -335,8 +241,6 @@ impl PreparedSandboxCommand {
     }
 }
 
-/// Read the status byte the inner landlock wrapper wrote to `fd`. An empty read
-/// (EOF) means the wrapper failed closed and the command never ran.
 #[cfg(target_os = "linux")]
 fn read_status_from_fd(fd: i32) -> Result<SandboxStatus, SandboxError> {
     let mut buf = [0u8; 1];
@@ -357,22 +261,10 @@ fn read_status_from_fd(fd: i32) -> Result<SandboxStatus, SandboxError> {
     }
 }
 
-// ── Public availability query ─────────────────────────────────────────────────
-
-/// Return `true` when a diagnostic availability probe succeeds for `config`.
-///
-/// This probe is not authoritative for execution or Audit; callers must use
-/// the status returned by [`prepare_for_exec`] or [`prepare_for_spawn`]. Native
-/// Windows and other unsupported targets always return `false`.
 pub fn sandbox_available_for(config: &SandboxConfig) -> bool {
     platform::sandbox_available_for(config)
 }
 
-/// Whether this host is WSL1, which cannot create the user namespaces the Linux
-/// sandbox needs. Only meaningful on Linux; other targets return `false`.
-///
-/// Callers use this to name the WSL1 cause in the startup warning instead of
-/// the generic unavailability message (ADR-029 §3).
 pub fn wsl1_unavailable() -> bool {
     #[cfg(target_os = "linux")]
     {
@@ -384,10 +276,6 @@ pub fn wsl1_unavailable() -> bool {
     }
 }
 
-/// Whether the AppArmor user namespace restriction sysctl reads `1`.
-///
-/// An absent or unreadable sysctl returns `false` (unknown), not proof that
-/// AppArmor imposes no restriction. Non-Linux targets also return `false`.
 pub fn apparmor_userns_restricted() -> bool {
     #[cfg(target_os = "linux")]
     {
@@ -399,18 +287,6 @@ pub fn apparmor_userns_restricted() -> bool {
     }
 }
 
-// ── Implementation ────────────────────────────────────────────────────────────
-
-/// Prepare a [`std::process::Command`] suitable for POSIX `exec()` that wraps
-/// `program` and `args` inside the sandbox described by `config`.
-///
-/// On Linux, Landlock is deferred until [`PreparedSandboxCommand::exec`] so
-/// preparation cannot restrict the caller before its Audit append.
-///
-/// Returns [`SandboxError::Required`] when sandbox infrastructure is
-/// unavailable, [`SandboxError::Execution`] when configured paths or profile
-/// construction fail, and [`SandboxError::SetupFailed`] when a platform
-/// launcher rejects the prepared profile.
 pub fn prepare_for_exec(
     config: &SandboxConfig,
     program: &OsStr,
@@ -419,13 +295,6 @@ pub fn prepare_for_exec(
     platform::prepare_for_exec(config, program, args)
 }
 
-/// Prepare a child command without applying process-wide restrictions.
-///
-/// This is the spawn-safe entry point for persistent callers such as Watch.
-/// Returns [`SandboxError::Required`] when required infrastructure is
-/// unavailable, [`SandboxError::Execution`] when configured paths or profile
-/// construction fail, and [`SandboxError::SetupFailed`] when a platform
-/// launcher rejects the prepared profile.
 pub fn prepare_for_spawn(
     config: &SandboxConfig,
     program: &OsStr,
@@ -434,40 +303,20 @@ pub fn prepare_for_spawn(
     platform::prepare_for_spawn(config, program, args)
 }
 
-/// Run the inner landlock wrapper: read the serialized `allow_write` config
-/// from the environment, apply Landlock, then exec the real program. Returns a
-/// process exit code; never returns on success (exec replaces the process).
-///
-/// This is the re-exec'd innermost process inside bwrap's mount namespace. It
-/// must stay thin: no config-from-disk, no audit, no snapshots. Fail-closed:
-/// if Landlock cannot be applied, it exits non-zero before exec'ing the target.
 #[cfg(target_os = "linux")]
 pub fn run_inner_landlock_wrapper() -> i32 {
     landlock::run_inner_landlock_wrapper()
 }
 
-/// Return the Landlock ABI version supported by this kernel (0 if unavailable).
 #[cfg(target_os = "linux")]
 pub fn landlock_abi() -> u32 {
     landlock::landlock_abi()
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // ── Refactor acceptance guards (file-size split) ──────────────────────────
-
-    /// Size guard for the split-aegis-sandbox refactor.
-    ///
-    /// Acceptance criterion from the plan: "No `crates/aegis-sandbox/src/*.rs`
-    /// file exceeds 800 LoC." This test scans every `*.rs` direct child of
-    /// `src/` at runtime and asserts each is at most 800 lines (counting all
-    /// lines, matching `wc -l`). It MUST FAIL now because `lib.rs` is 2071
-    /// LoC, and MUST PASS after the refactor splits the code into focused
-    /// platform modules.
     #[test]
     fn no_src_file_exceeds_800_lines() {
         let src_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -478,7 +327,6 @@ mod tests {
         for entry in entries {
             let entry = entry.unwrap_or_else(|e| panic!("failed to iterate src dir entry: {e}"));
             let path = entry.path();
-            // Only direct children of src/ that end in .rs.
             if path.extension().and_then(|e| e.to_str()) != Some("rs") {
                 continue;
             }
@@ -501,24 +349,14 @@ mod tests {
         );
     }
 
-    /// Public API presence guard for the split-aegis-sandbox refactor.
-    ///
-    /// The refactor must preserve every public item listed in the plan's
-    /// "No public API changes for" acceptance criterion. Constructing/valuing
-    /// each type and calling each function here anchors them at compile time
-    /// and runtime; if the green-tester accidentally removes or renames one,
-    /// this test fails to compile or fails at runtime.
     #[test]
     fn public_api_surface_survives_refactor() {
-        // SandboxConfig
         let config = SandboxConfig::default();
-        // SandboxError
         let err_display = SandboxError::Required.to_string();
         assert!(
             !err_display.is_empty(),
             "SandboxError::Required display is empty"
         );
-        // sandbox_available_for
         let _ = sandbox_available_for(&config);
 
         #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -526,8 +364,6 @@ mod tests {
             use std::ffi::{OsStr, OsString};
             let program = OsStr::new("/usr/bin/true");
             let args: &[OsString] = &[];
-            // POSIX prepare_for_exec — anchor its signature; ignore the outcome
-            // (it may error or succeed depending on environment, which is fine).
             let _ = prepare_for_exec(&config, program, args);
         }
     }

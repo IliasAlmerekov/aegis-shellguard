@@ -1,5 +1,3 @@
-//! Supported-interface agreement regression for Language-aware analysis.
-
 #![cfg(feature = "language-analysis")]
 
 mod support;
@@ -20,19 +18,10 @@ struct CanonicalOutcome {
     decision: String,
 }
 
-/// `ci_policy = "Allow"` neutralizes the CI-transport-only fail-closed policy
-/// (default `Block`, which would make the CI arm exit non-`Denied` for reasons
-/// unrelated to Language-aware analysis and break agreement with Shell/Watch/
-/// hooks). CI's default fail-closed posture is covered separately by
-/// `analysis_orchestrate_runtime.rs`; this suite is only about whether every
-/// transport reaches the same Assessment+Decision once that policy is neutral.
 fn configure_ci_allow(home: &Path) {
     support::write_global_config(home, "ci_policy = \"Allow\"\n");
 }
 
-/// Runs one transport in a fresh home until its audit records completed
-/// analysis, so every transport is compared on a completed Assessment (#458).
-/// Every fixture here denies without a TTY, so a repeat executes nothing.
 fn completed_home(label: &str, mut run: impl FnMut(&Path)) -> TempDir {
     support::until_analysis_completes(
         label,
@@ -69,11 +58,6 @@ fn audit_outcome(home: &Path) -> CanonicalOutcome {
         entries.len()
     );
     CanonicalOutcome {
-        // Audit is the common typed public Assessment projection for every
-        // supported transport. Keep every behavior-bearing field rather than
-        // reducing agreement to risk and pattern IDs; timestamps and the raw
-        // command are intentionally transport-independent metadata, not part
-        // of the Assessment+Decision contract under test.
         assessment: serde_json::json!({
             "risk": value["risk"],
             "matched_patterns": value["matched_patterns"],

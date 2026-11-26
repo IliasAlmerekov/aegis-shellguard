@@ -12,7 +12,6 @@ use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
 fn bench_scanner_construction(c: &mut Criterion) {
-    // Models the one-per-process `BUILTIN_SCANNER` build cost (static cannot re-init in a loop).
     c.bench_function("scanner_construction", |b| {
         b.iter(|| {
             let patterns = PatternSet::load().expect("patterns.toml must load");
@@ -25,7 +24,6 @@ fn bench_runtime_context_construction(c: &mut Criterion) {
     let runtime = Runtime::new().expect("tokio runtime must start");
     let handle = runtime.handle().clone();
 
-    // Default config clones the warm `BUILTIN_SCANNER` Arc, disjoint from `scanner_construction`.
     c.bench_function("runtime_context_construction", |b| {
         b.iter(|| {
             black_box(
@@ -40,7 +38,6 @@ fn bench_runtime_context_custom_pattern_construction(c: &mut Criterion) {
     let runtime = Runtime::new().expect("tokio runtime must start");
     let handle = runtime.handle().clone();
 
-    // One custom pattern triggers a full scanner rebuild merging built-ins and custom patterns.
     let mut config = AegisConfig::default();
     config.custom_patterns = vec![UserPattern {
         id: "USR-BENCH-001".to_string(),
@@ -62,8 +59,6 @@ fn bench_runtime_context_custom_pattern_construction(c: &mut Criterion) {
     });
 }
 
-// The Sandbox-enabled hot path: the `.git` search plus the ceiling
-// computation, from a directory nested six levels below the worktree root.
 fn bench_sandbox_ceiling_nested_worktree(c: &mut Criterion) {
     let repo = TempDir::new().expect("temp repo must be created");
     std::fs::create_dir(repo.path().join(".git")).expect(".git must be created");
@@ -83,8 +78,6 @@ criterion_group! {
     targets = bench_scanner_construction, bench_runtime_context_construction, bench_runtime_context_custom_pattern_construction, bench_sandbox_ceiling_nested_worktree
 }
 
-// Full process spawn per iteration; shorter sample/measurement window keeps bench fast.
-
 fn bench_startup_safe_command(c: &mut Criterion) {
     let home = TempDir::new().expect("temp HOME must be created");
 
@@ -94,7 +87,6 @@ fn bench_startup_safe_command(c: &mut Criterion) {
                 .args(["-c", "ls -la", "--output", "json"])
                 .env("HOME", home.path())
                 .current_dir(home.path())
-                // `AEGIS_CI=0` short-circuits `is_ci_environment` without clearing every CI variable.
                 .env("AEGIS_CI", "0")
                 .output()
                 .expect("aegis must spawn and run to completion");

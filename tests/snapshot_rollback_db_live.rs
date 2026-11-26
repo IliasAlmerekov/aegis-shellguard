@@ -1,13 +1,3 @@
-//! Live database snapshot/rollback integration tests for [`PostgresPlugin`],
-//! [`MysqlPlugin`], and [`SupabasePlugin`].
-//!
-//! Each test is gated behind its own opt-in environment variable so default
-//! `cargo test` requires no running database server:
-//! - `AEGIS_POSTGRES_SNAPSHOT_TESTS=1` (against PostgreSQL 16)
-//! - `AEGIS_MYSQL_SNAPSHOT_TESTS=1` (against MySQL 8.0, image `mysql:8.0`)
-//! - `AEGIS_SUPABASE_SNAPSHOT_TESTS=1` (against PostgreSQL 16 via Supabase's
-//!   Postgres-compatible dump/restore path)
-
 use std::process::Command;
 
 use aegis_config::{PostgresSnapshotConfig, SupabaseSnapshotConfig};
@@ -91,7 +81,6 @@ struct PgDbGuard<'a>(&'a PgConn);
 
 impl Drop for PgDbGuard<'_> {
     fn drop(&mut self) {
-        // Best-effort cleanup of the disposable test database.
         let _ = Command::new("psql")
             .args([
                 "-h",
@@ -184,7 +173,6 @@ struct MysqlDbGuard<'a>(&'a MysqlConn);
 
 impl Drop for MysqlDbGuard<'_> {
     fn drop(&mut self) {
-        // Best-effort cleanup of the disposable test database.
         let _ = Command::new("mysql")
             .args([
                 &format!("--host={}", self.0.host),

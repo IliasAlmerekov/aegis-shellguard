@@ -1,11 +1,3 @@
-//! Issue #334 — the scanner, not the agent hook, decides on Aegis' own
-//! state-changing commands.
-//!
-//! The hook only denies a command whose first word is literally `aegis`, so
-//! `echo hi && aegis off`, `/usr/bin/aegis off`, `env aegis off` and
-//! `command aegis off` all reached the scanner and were auto-approved as Safe.
-//! These tests pin the scanner classification for every spelling.
-
 use aegis_scanner::assess;
 use aegis_types::RiskLevel;
 

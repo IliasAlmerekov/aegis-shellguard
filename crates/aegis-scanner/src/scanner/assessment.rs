@@ -10,22 +10,13 @@ use aegis_types::{
 
 use super::{Scanner, highlighting, pipeline_semantics, recursive};
 
-/// (regex id, prefix id) pairs where the regex already reports everything its
-/// paired token-prefix rule would add for the same target, so the prefix rule
-/// steps aside once the regex has matched (GHSA-7gcj-4f7x-7fxj / #415).
 pub(super) const REGEX_SUPERSEDED_PREFIXES: &[(&str, &str)] =
     &[("FS-001", "FS-020"), ("PS-006", "PS-008")];
 
-/// Synthetic pattern id for the GHSA-7564 candidate-cap Warn, alongside
-/// `SCAN-001`..`SCAN-003` below.
 const GIT_OPTION_CAP_EXCEEDED_ID: &str = "SCAN-004";
 
-/// Synthetic pattern id for an ANSI-C quoted word (`$'...'`) that does not
-/// decode exactly (see [`aegis_parser::ansi_c_quoting_is_inexact`]).
 const INEXACT_ANSI_C_ID: &str = "SCAN-005";
 
-/// Records that regex `id` matched the current target, for a later
-/// [`prefix_id_superseded`] check.
 fn note_regex_match(seen: &mut [bool; REGEX_SUPERSEDED_PREFIXES.len()], id: &str) {
     for (slot, (regex_id, _)) in seen.iter_mut().zip(REGEX_SUPERSEDED_PREFIXES) {
         if *regex_id == id {
@@ -34,8 +25,6 @@ fn note_regex_match(seen: &mut [bool; REGEX_SUPERSEDED_PREFIXES.len()], id: &str
     }
 }
 
-/// Whether prefix rule `id` should step aside because its paired regex (see
-/// [`REGEX_SUPERSEDED_PREFIXES`]) already matched the current target.
 fn prefix_id_superseded(seen: &[bool; REGEX_SUPERSEDED_PREFIXES.len()], id: &str) -> bool {
     seen.iter()
         .zip(REGEX_SUPERSEDED_PREFIXES)
@@ -43,26 +32,10 @@ fn prefix_id_superseded(seen: &[bool; REGEX_SUPERSEDED_PREFIXES.len()], id: &str
 }
 
 impl Scanner {
-    /// Assess a raw shell command and return a complete [`Assessment`].
-    ///
-    /// Pipeline:
-    /// 1. Parse the command via [`aegis_parser::Parser::parse`] to preserve the original command contract.
-    /// 2. Run [`Scanner::quick_scan`] on the raw command. If no keyword hits, return `Safe` immediately.
-    /// 3. Build the recursive scan path via nested parsing helpers.
-    /// 4. Run [`Scanner::full_scan`] on each discovered target and merge unique pattern matches.
-    ///    Within the same target, a git slice with global options before its subcommand is
-    ///    rescanned from each possible subcommand position (GHSA-7564).
-    /// 5. Compute the maximum [`RiskLevel`] across all matched patterns and return.
-    ///
-    /// Every step reads the command with ANSI-C quoting rewritten to the words
-    /// bash runs ([`aegis_parser::canonical_ansi_c_quoting`]); the returned
-    /// [`ParsedCommand::raw`] keeps the spelling as written.
     pub fn assess(&self, cmd: &str) -> Assessment {
         let canonical = aegis_parser::canonical_ansi_c_quoting(cmd);
         let mut assessment = self.assess_canonical(&canonical);
         if let std::borrow::Cow::Owned(_) = canonical {
-            // Offsets point into the rewritten text; recompute them from
-            // matched text against the command as written.
             for result in &mut assessment.matched {
                 result.highlight_range = None;
             }
@@ -117,14 +90,10 @@ impl Scanner {
                 Some(
                     "Review the generated script separately or store it in a checked file before execution",
                 ),
-                // An inline-script invocation (`-c` / `-e`) is not effect-opaque:
-                // its body is what exceeded the limit, and inline bodies are
-                // extracted and scanned, not deferred to a file.
                 false,
             );
         }
 
-        // Pipeline detection needs the raw string (quoting-aware).
         let maybe_pipelines = cmd
             .contains('|')
             .then(|| aegis_parser::top_level_pipelines(cmd));
@@ -133,12 +102,8 @@ impl Scanner {
             .map(|pipelines| pipelines.iter().any(|chain| chain.segments.len() > 1))
             .unwrap_or(false);
 
-        // Effect-opacity is orthogonal to the quick-scan gate: a script-file
-        // execution (`sh ./cleanup.sh`) is `Safe` to the quick scan yet still
-        // effect-opaque, so it must be computed before the early return below.
         let effect_opaque = super::effect_opaque::detect(cmd, &command, maybe_pipelines.as_deref());
 
-        // Use the normalized form as the primary scan target. It is free of quoting noise.
         if !self.quick_scan(&command.normalized) && !has_pipeline_chain {
             return Assessment {
                 risk: RiskLevel::Safe,
@@ -166,16 +131,10 @@ impl Scanner {
         }
 
         for target in &target_report.targets {
-            // Token-prefix scan: parsed tokens, not raw string. Reuse the same
-            // token refs to derive the effective program key for indexed regexes.
             let tokens = aegis_parser::split_tokens(target);
             let token_refs: Vec<&str> = tokens.iter().map(|s| s.as_str()).collect();
 
-            // Derive the program from the target's first token (lowercase) so
-            // full_scan can use the by-program index on the fast path.
             let prog = aegis_parser::effective_program(&token_refs).map(str::to_ascii_lowercase);
-            // Tracks which of REGEX_SUPERSEDED_PREFIXES' regex ids fired for
-            // this target, so the paired prefix rule below can step aside.
             let mut regex_matched_for_target = [false; REGEX_SUPERSEDED_PREFIXES.len()];
             for pattern in self.full_scan(target, prog.as_deref()) {
                 note_regex_match(&mut regex_matched_for_target, pattern.pattern.id.as_ref());
@@ -204,12 +163,6 @@ impl Scanner {
                 }
             }
 
-            // The raw command joins every segment into one token list, so an
-            // `any_star()` would run past `;`, `&&`, `|` or a newline into the
-            // next command's flags (#425). Each segment is its own target, so
-            // this `continue` skips the whole token path for the raw command
-            // (prefix scan, git/aegis option candidates, quote-split drop). That
-            // is safe because every top-level segment is scanned on its own.
             if target == cmd && aegis_parser::has_multiple_top_level_segments(cmd) {
                 continue;
             }
@@ -273,9 +226,6 @@ impl Scanner {
         }
     }
 
-    /// Rescan each `aegis` candidate slice whose subcommand sits behind Aegis'
-    /// own global options (`aegis --quiet uninstall`), so the `AEG-*` prefix
-    /// rules see `aegis <subcommand>` as they would without the options.
     pub(super) fn scan_aegis_option_candidates(
         &self,
         effective_slices: &[aegis_parser::EffectiveTokenSlice<'_>],
@@ -295,8 +245,6 @@ impl Scanner {
             let aegis_tokens: Vec<&str> = std::iter::once(candidate.tokens[0])
                 .chain(candidate.tokens[start..].iter().copied())
                 .collect();
-            // As for git, report the subcommand-onward span: it is a real
-            // substring of the raw command, unlike the synthetic slice.
             let tail = candidate.tokens[start..].join(" ");
             for rule in rules {
                 if matched
@@ -314,11 +262,6 @@ impl Scanner {
         }
     }
 
-    /// Rescan each git candidate slice for a subcommand hidden behind a
-    /// global option (GHSA-7564): the option shifts the subcommand off
-    /// position 1, so no `GIT-*` rule above ever sees it. Resolves where the
-    /// subcommand actually starts and re-runs both scan mechanisms there,
-    /// pushing matches (and the `SCAN-004` cap warning) into `matched`.
     pub(super) fn scan_git_option_candidates(
         &self,
         effective_slices: &[aegis_parser::EffectiveTokenSlice<'_>],
@@ -334,9 +277,6 @@ impl Scanner {
             let starts = match aegis_parser::git_option_subcommand_starts(&candidate.tokens) {
                 aegis_parser::GitSubcommandStarts::Starts(starts) => starts,
                 aegis_parser::GitSubcommandStarts::TooMany => {
-                    // Too many unrecognized options to scan without the
-                    // quadratic cost the cap exists to avoid. Fail closed
-                    // with a Warn instead of scanning none of them.
                     if !matched.iter().any(|existing: &MatchResult| {
                         existing.pattern.id.as_ref() == GIT_OPTION_CAP_EXCEEDED_ID
                     }) {
@@ -359,12 +299,6 @@ impl Scanner {
                 let git_tokens: Vec<&str> = std::iter::once(candidate.tokens[0])
                     .chain(candidate.tokens[start..].iter().copied())
                     .collect();
-                // The candidate string is synthetic, so a byte offset a
-                // regex found inside it does not point at the raw
-                // command. Report the subcommand-onward span instead: it
-                // is always a real substring of the raw command, or
-                // `sorted_highlight_ranges` skips the highlight rather
-                // than guessing.
                 let tail = candidate.tokens[start..].join(" ");
                 let joined = git_tokens.join(" ");
 
@@ -419,7 +353,6 @@ fn uncertain_assessment_without_parse(
         id,
         description,
         safe_alt,
-        // No parsed command to classify, so no effect-opacity claim.
         false,
     )
 }
@@ -462,9 +395,6 @@ fn uncertain_match(
         }),
         matched_text: String::new(),
         highlight_range: None,
-        // The synthetic scan-limit marker is `Pattern`-family (regex-shaped),
-        // not a `Token-prefix rule` or Language-aware rule, so it maps to the
-        // `RegexPattern` mechanism with a built-in source.
         evidence: MatchEvidence::RegexPattern {
             source: DetectionSource::Builtin,
         },

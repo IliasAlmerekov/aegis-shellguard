@@ -1,8 +1,5 @@
 use super::*;
 
-// #424: `git commit --amend` rewrites the last commit, yet no built-in rule
-// keyed on it, so it fell through to `Safe` like a plain `git commit`.
-
 #[test]
 fn assess_commit_amend_anywhere_in_arguments_warns_via_git010() {
     for cmd in [

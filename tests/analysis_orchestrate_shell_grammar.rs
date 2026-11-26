@@ -1,10 +1,3 @@
-//! Decision-level regression tests for issue #384/#430: a command chained on
-//! a heredoc marker's own line, and shell-grammar gaps that could hide an
-//! interpreter. Real-subprocess seam, same as `tests/analysis_orchestrate.rs`
-//! and its `wrapper_cd` sibling:
-//! these exercise the full route -> spawn -> Analyze -> map -> merge
-//! composition through `aegis::analysis::run_with_budget_in_cwd`.
-
 #![cfg(feature = "language-analysis")]
 
 mod support;
@@ -67,15 +60,11 @@ async fn assert_recursive_delete_found_in(workspace: &tempfile::TempDir, command
     );
 }
 
-// ── A command chained on a heredoc marker's own line is routed ─────────────
-
 #[tokio::test]
 async fn run_finds_a_delete_chained_on_a_heredoc_marker_line() {
     let workspace = shell_grammar_workspace();
     assert_recursive_delete_found_in(&workspace, "cat <<A && python3 ./evil.py\nhi\nA").await;
 }
-
-// ── Leading redirection, stdin redirection, and a function body ────────────
 
 #[tokio::test]
 async fn run_finds_a_delete_behind_a_leading_output_redirection() {

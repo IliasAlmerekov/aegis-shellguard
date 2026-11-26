@@ -132,8 +132,6 @@ fn run_planned_shell_command_with_sandbox<R: ExecutionRenderer>(
                     plan,
                     launch,
                     Decision::Approved,
-                    // ADR-031 section 4: the rule waits for the Snapshot pass,
-                    // and never exists while Recovery is opted out.
                     prompt_decision == PromptDecision::ApproveAlways,
                     sandbox_config,
                     renderer,
@@ -171,13 +169,6 @@ fn run_planned_shell_command_with_sandbox<R: ExecutionRenderer>(
     }
 }
 
-/// Create snapshots, append the audit entry, and execute the command.
-///
-/// This helper captures the shared ordering for auto-approved and
-/// human-approved execution branches: snapshot creation happens only after the
-/// final `Allow`/`AutoApproved` decision and before both the audit append and
-/// the (optionally sandboxed) child process start. `Block` and `Denied`
-/// branches never reach this function, so they cannot create snapshots.
 #[expect(
     clippy::too_many_arguments,
     reason = "the execution inputs mirror the existing Wrapper execution seam"
@@ -418,11 +409,6 @@ where
 {
     match prepare() {
         Ok((command, prep_status)) => {
-            // Only Linux's inner Landlock wrapper can change `Active` after
-            // preparation. It is held at its release gate, so reporting its
-            // status before Audit does not start the wrapped program. Every
-            // other launch path has a final preparation status and retains the
-            // M1 audit-before-spawn ordering.
             let needs_inner_report =
                 cfg!(target_os = "linux") && prep_status == SandboxStatus::Active;
             if !needs_inner_report {
@@ -448,7 +434,6 @@ where
                             report_error(&format!("failed to write audit log: {err}"));
                             return EXIT_INTERNAL;
                         }
-                        // Reap the failed wrapper child; its exit status is superseded by EXIT_INTERNAL.
                         let _ = wait(child);
                         report_error(
                             "Sandbox setup failed; command not executed: inner sandbox wrapper did not report status",

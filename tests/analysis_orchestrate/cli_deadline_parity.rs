@@ -1,11 +1,3 @@
-//! Analysis results that CLI tests cannot assert reliably (#458).
-//!
-//! The CLI clamps `language_analysis.timeout_ms` to 100 ms at every config
-//! layer (ADR-022), and a loaded `cargo test --workspace` run can miss that
-//! deadline. The CLI tests therefore assert only what holds when analysis
-//! degrades. These tests run the same commands through `aegis::analysis` with
-//! a 5 s budget and check the Matches and completion.
-
 use super::*;
 
 use std::path::Path;
@@ -128,7 +120,6 @@ async fn shell_script_hiding_a_force_push_yields_git_003_without_its_source() {
         .iter()
         .find(|item| item.pattern.id.as_ref() == "GIT-003")
         .unwrap_or_else(|| panic!("must carry a GIT-003 Match: {assessment:?}"));
-    // ADR-022 §10: script contents never leave the analysis stage.
     assert!(
         !git_003.matched_text.contains("origin main"),
         "the Match must not disclose script source"

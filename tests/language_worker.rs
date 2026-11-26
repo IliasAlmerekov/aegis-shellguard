@@ -1,21 +1,3 @@
-//! Iteration 3 — the ephemeral language worker as a real subprocess.
-//!
-//! These tests spawn the official `aegis` binary with the undocumented
-//! `--internal-language-worker` flag, which makes the process delegate
-//! immediately to `aegis_language::worker::run` over stdin/stdout (ADR-022 §2).
-//! They pin the subprocess-level invariants the parent client (Iteration 3
-//! slice 4) relies on:
-//!
-//! - a clean Parse request round-trips over real pipes;
-//! - the worker writes *only* frame bytes to stdout — no noise that would
-//!   corrupt the framed stream;
-//! - the worker exits cleanly when the parent closes stdin (end of session);
-//! - a malformed frame stops the worker with a non-zero exit, and only the
-//!   responses served before the malformed frame are present on stdout.
-//!
-//! Crash/hang/timeout handling and prior-result retention are parent-client
-//! concerns and are covered by the slice-4 client tests, not here.
-
 #![cfg(feature = "language-analysis")]
 
 mod support;
@@ -27,8 +9,6 @@ use aegis_language::SourceLanguage;
 use aegis_language::protocol::{self, DecodedFrame, Request, Response};
 use support::aegis_bin;
 
-/// Spawn the worker subprocess with piped stdin/stdout, with any
-/// `leading_args` placed before `--internal-language-worker`.
 fn spawn_worker_with_args(leading_args: &[&str]) -> std::process::Child {
     Command::new(aegis_bin())
         .args(leading_args)
@@ -40,12 +20,10 @@ fn spawn_worker_with_args(leading_args: &[&str]) -> std::process::Child {
         .expect("the aegis binary must be buildable and spawnable")
 }
 
-/// Spawn the worker subprocess with piped stdin/stdout.
 fn spawn_worker() -> std::process::Child {
     spawn_worker_with_args(&[])
 }
 
-/// Encode a sequence of requests into one byte buffer.
 fn encode_requests(requests: &[(u32, Request)]) -> Vec<u8> {
     let mut buf = Vec::new();
     for (id, req) in requests {
@@ -54,9 +32,6 @@ fn encode_requests(requests: &[(u32, Request)]) -> Vec<u8> {
     buf
 }
 
-/// Decode every response frame from `buf`, returning them in order. Asserts
-/// that the buffer is consumed exactly with no trailing bytes — i.e. the
-/// worker wrote only well-formed frames and no noise.
 fn decode_all_responses(buf: &[u8]) -> Vec<DecodedFrame<Response>> {
     let mut out = Vec::new();
     let mut rest = buf;
@@ -78,8 +53,6 @@ fn parse_request(language: SourceLanguage, source: &[u8]) -> Request {
     }
 }
 
-/// Run a worker session: write `input` to stdin, close it, then read all
-/// stdout and wait for the exit status.
 fn run_session(input: &[u8]) -> (Vec<u8>, std::process::ExitStatus) {
     let mut child = spawn_worker();
     {
@@ -87,7 +60,6 @@ fn run_session(input: &[u8]) -> (Vec<u8>, std::process::ExitStatus) {
         stdin
             .write_all(input)
             .expect("writing requests to the worker must succeed");
-        // Dropping stdin closes the pipe, signaling end-of-session.
     }
     let mut stdout = child.stdout.take().expect("stdout must be piped");
     let mut out = Vec::new();
@@ -116,9 +88,6 @@ fn worker_subprocess_round_trips_a_clean_parse_request() {
 
 #[test]
 fn worker_subprocess_writes_only_frame_bytes_to_stdout() {
-    // Two clean requests. The entire stdout buffer must decode to exactly two
-    // frames with zero leftover bytes — any extra byte (a log line, a prompt,
-    // tracing output) would corrupt the framed stream.
     let input = encode_requests(&[
         (1, parse_request(SourceLanguage::Python, b"x = 1")),
         (2, parse_request(SourceLanguage::Bash, b"echo hi")),
@@ -131,15 +100,10 @@ fn worker_subprocess_writes_only_frame_bytes_to_stdout() {
         responses.iter().map(|f| f.request_id).collect::<Vec<_>>(),
         vec![1, 2]
     );
-    // `decode_all_responses` asserts no trailing bytes by consuming the whole
-    // buffer; reaching here with two frames proves stdout was noise-free.
 }
 
 #[test]
 fn worker_subprocess_exits_cleanly_when_stdin_closes_with_no_requests() {
-    // No requests at all — the parent spawned the worker and immediately closed
-    // stdin. The worker must read end-of-input and exit 0 without writing
-    // anything.
     let (out, status) = run_session(&[]);
     assert!(status.success(), "an empty session must exit 0");
     assert!(
@@ -150,8 +114,6 @@ fn worker_subprocess_exits_cleanly_when_stdin_closes_with_no_requests() {
 
 #[test]
 fn worker_subprocess_stops_on_a_malformed_frame_with_a_nonzero_exit() {
-    // A valid first frame, then a frame with bad magic. The worker must serve
-    // the first, then stop on the malformed frame and exit non-zero.
     let mut input = encode_requests(&[(1, parse_request(SourceLanguage::Python, b"x = 1"))]);
     input.extend_from_slice(b"XXXX\x01\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00");
     let (out, status) = run_session(&input);
@@ -170,10 +132,6 @@ fn worker_subprocess_stops_on_a_malformed_frame_with_a_nonzero_exit() {
 
 #[test]
 fn internal_worker_flag_wins_over_an_argument_clap_would_reject() {
-    // `--not-a-real-clap-flag` matches no `Cli` argument. If `main()` ran
-    // clap before checking for the worker flag, this invocation would fail
-    // with clap's "unexpected argument" error and exit 2 instead of running
-    // a worker session.
     let mut child = spawn_worker_with_args(&["--not-a-real-clap-flag"]);
 
     let input = encode_requests(&[(1, parse_request(SourceLanguage::Python, b"print(1)"))]);

@@ -14,7 +14,6 @@ use super::shared::{
 };
 use super::stdout_renderer::PromptDecision;
 
-/// Drops `queue!`/`flush` errors: terminal writes have no fallback channel.
 pub(super) fn render_dialog<W: Write>(
     assessment: &Assessment,
     explanation: &CommandExplanation,
@@ -55,7 +54,6 @@ pub(super) fn render_dialog<W: Write>(
         print_dangerous_action(assessment, out);
     }
 
-    // Matched patterns + safe alternatives + diagnostics
     if !assessment.matched.is_empty() {
         let _ = queue!(out, Print("\n  Matched rules:\n"));
         for m in &assessment.matched {
@@ -140,9 +138,6 @@ pub(super) fn render_dialog<W: Write>(
         );
     }
 
-    // Git targets (#471): the working tree each git stage acts on. An
-    // unresolved one is disclosed in red: no git Snapshot covers it, and no
-    // Snapshot of the current directory stands in for it.
     for target in &explanation.context.git_targets {
         match target {
             GitTargetExplanation::Resolved { path } => {
@@ -175,7 +170,6 @@ pub(super) fn render_dialog<W: Write>(
         );
     }
 
-    // Snapshots
     if !snapshots.is_empty() {
         let _ = queue!(out, Print("\n  Snapshots created:\n"));
         for s in snapshots {
@@ -191,8 +185,6 @@ pub(super) fn render_dialog<W: Write>(
     let _ = out.flush();
 }
 
-/// Danger prompt. `always` offers "Always allow"; it is false while Recovery is
-/// opted out, when no persistent approval may exist (ADR-031 section 4).
 pub(super) fn prompt_danger_with_always<R: BufRead, W: Write>(
     input: &mut R,
     out: &mut W,
@@ -254,8 +246,6 @@ pub(super) fn prompt_danger_with_always<R: BufRead, W: Write>(
     }
 }
 
-/// Warn prompt with "Always allow" and "Always deny" options. `always` is false
-/// while Recovery is opted out, as for the Danger prompt.
 pub(super) fn prompt_warn_with_always<R: BufRead, W: Write>(
     input: &mut R,
     out: &mut W,
@@ -307,7 +297,6 @@ pub(super) fn prompt_warn_with_always<R: BufRead, W: Write>(
     }
 }
 
-/// Prompt for a non-persistable, one-time Analysis override (ADR-022 §5).
 pub(super) fn prompt_analysis_override<R: BufRead, W: Write>(
     input: &mut R,
     out: &mut W,
@@ -319,7 +308,6 @@ pub(super) fn prompt_analysis_override<R: BufRead, W: Write>(
     )
 }
 
-/// Prompt for a non-persistable, one-time analysis confirmation.
 pub(super) fn prompt_analysis_confirmation<R: BufRead, W: Write>(
     input: &mut R,
     out: &mut W,
@@ -368,10 +356,6 @@ fn prompt_one_time_analysis<R: BufRead, W: Write>(
     }
 }
 
-/// Show control characters (ESC, newline, ...) as visible `\u{..}` escapes.
-///
-/// A Git target path comes from the command text; printed raw, an escape
-/// sequence in it could rewrite what the confirmation dialog shows.
 fn escape_control(text: &str) -> String {
     text.chars()
         .flat_map(|c| {

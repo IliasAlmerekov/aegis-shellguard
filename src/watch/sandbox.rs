@@ -1,5 +1,3 @@
-//! Sandbox lifecycle for Watch commands.
-
 use std::future::Future;
 
 use aegis_types::{EXIT_BLOCKED, EXIT_INTERNAL, RecoveryDegradation, SandboxStatus};
@@ -107,10 +105,6 @@ pub(super) async fn complete_watch_approved_execution(
     .await;
 }
 
-/// The session-startup unavailability verdict (ADR-029 §3): `Some` warning
-/// fields when a configured Sandbox cannot confine on this host, `None` when
-/// confinement is not configured (nothing is expected) or the probe succeeds.
-/// Split from the emitter so the selection is testable on any host.
 pub(super) fn startup_unavailability(
     sandbox: Option<&aegis_sandbox::SandboxConfig>,
     is_wsl1: bool,
@@ -131,15 +125,8 @@ pub(super) fn startup_unavailability(
 static TEST_STARTUP_UNAVAILABLE: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// Warn once at watch-session startup when a configured Sandbox has no usable
-/// bwrap path (ADR-029 §3: warn at startup, refuse per command). Emitted
-/// before the first input frame so the unavailability is visible even when
-/// the session's first commands never reach execution.
 pub(super) async fn warn_if_sandbox_unavailable_at_startup(context: &RuntimeContext) {
     let sandbox = context.config().sandbox.clone();
-    // The probe spawns and waits on a real bwrap child, which must not block
-    // the async runtime thread (CONVENTION.md §3); this module's prepare path
-    // already routes blocking sandbox work through spawn_blocking.
     let unavailability = tokio::task::spawn_blocking(move || {
         let is_wsl1 = aegis_sandbox::wsl1_unavailable();
         let apparmor_restricted = aegis_sandbox::apparmor_userns_restricted();
@@ -159,9 +146,6 @@ pub(super) async fn warn_if_sandbox_unavailable_at_startup(context: &RuntimeCont
         startup_unavailability(sandbox.as_ref(), is_wsl1, apparmor_restricted, available)
     })
     .await
-    // A join failure means the probe never answered; the startup warning is
-    // advisory, so it fails open here — per-command refusal still gates
-    // execution.
     .ok()
     .flatten();
     let Some((code, message)) = unavailability else {
@@ -263,7 +247,6 @@ fn frame_sandbox(
     if config.mode == aegis_types::Mode::Audit {
         return None;
     }
-    // Uncanonicalizable cwd stays None so confinement narrows to temp-only below.
     let canonical = cwd.and_then(|path| std::fs::canonicalize(path).ok());
     let mut sandbox = crate::runtime::sandbox_ceiling(
         config,
@@ -278,11 +261,9 @@ fn frame_sandbox(
             .allow_write
             .into_iter()
             .flat_map(|root| {
-                // Uncanonicalizable roots are dropped rather than widened during temp intersection.
                 let canonical_root = std::fs::canonicalize(&root.path).ok();
                 temporary.allow_write.iter().filter_map(move |temp| {
                     let path = canonical_root.as_ref()?;
-                    // Uncanonicalizable temp roots are skipped rather than widening writes.
                     let temp = std::fs::canonicalize(&temp.path).ok()?;
                     let intersection = if path.starts_with(&temp) {
                         path

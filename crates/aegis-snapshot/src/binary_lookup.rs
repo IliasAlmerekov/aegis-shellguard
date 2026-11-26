@@ -1,5 +1,3 @@
-//! `PATH`-based executable lookup shared by database snapshot providers.
-
 use std::env;
 use std::ffi::OsStr;
 use std::path::Path;
@@ -7,14 +5,10 @@ use std::path::Path;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-/// Return `true` when `binary` resolves to a runnable file either directly
-/// (when it contains path components) or via the process `PATH`.
 pub(crate) async fn binary_available(binary: &str) -> bool {
     binary_available_in(binary, env::var_os("PATH").as_deref()).await
 }
 
-/// Return `true` when `binary` resolves to a runnable file directly or inside
-/// `path_env`.
 async fn binary_available_in(binary: &str, path_env: Option<&OsStr>) -> bool {
     if binary.is_empty() {
         return false;

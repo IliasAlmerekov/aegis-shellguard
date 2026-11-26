@@ -216,8 +216,6 @@ fn install_script_auto_installs_claude_hooks_via_installed_binary() {
         "installer should show Claude hook setup output from the installed binary; stdout=\n{stdout}"
     );
     let claude_settings = fs::read_to_string(home.join(".claude").join("settings.json")).unwrap();
-    // After ADR-012 the Claude hook registration points at an absolute,
-    // PATH-independent shim, not the bare `aegis hook` subcommand.
     let claude_shim = home
         .join(".claude")
         .join("hooks")

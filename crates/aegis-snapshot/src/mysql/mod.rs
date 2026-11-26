@@ -1,5 +1,3 @@
-//! MySQL snapshot provider.
-
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -22,7 +20,6 @@ type Result<T> = std::result::Result<T, SnapshotError>;
 
 const BUSY_RETRY_ATTEMPTS: usize = 12;
 
-/// Snapshot plugin for MySQL databases.
 pub struct MysqlPlugin {
     target: DatabaseTarget,
     mysqldump_bin: String,
@@ -30,7 +27,6 @@ pub struct MysqlPlugin {
 }
 
 impl MysqlPlugin {
-    /// Create a new MySQL snapshot plugin.
     pub fn new(
         database: String,
         host: String,
@@ -112,7 +108,6 @@ impl MysqlPlugin {
     }
 
     async fn kill_and_reap_child(child: &mut tokio::process::Child) {
-        // Best-effort child cleanup on an error path; the caller already has a failure to return.
         let _ = child.kill().await;
         let _ = child.wait().await;
     }
@@ -189,21 +184,18 @@ impl SnapshotPlugin for MysqlPlugin {
         {
             Ok(child) => child,
             Err(err) => {
-                // Best-effort cleanup of the reserved dump file; preserve the primary error.
                 let _ = std::fs::remove_file(&dump_path);
                 return Err(err);
             }
         };
 
         let mut stdout = child.stdout.take().ok_or_else(|| {
-            // Best-effort cleanup of the reserved dump file; preserve the primary error.
             let _ = std::fs::remove_file(&dump_path);
             SnapshotError::StreamUnavailable {
                 action: "capture mysqldump stdout",
             }
         })?;
         let stderr = child.stderr.take().ok_or_else(|| {
-            // Best-effort cleanup of the reserved dump file; preserve the primary error.
             let _ = std::fs::remove_file(&dump_path);
             SnapshotError::StreamUnavailable {
                 action: "capture mysqldump stderr",
@@ -217,7 +209,6 @@ impl SnapshotPlugin for MysqlPlugin {
             .await?;
         if let Err(err) = io::copy(&mut stdout, &mut dump_file).await {
             Self::kill_and_reap_child(&mut child).await;
-            // Best-effort stderr drain and dump cleanup; preserve the primary copy error.
             let _ = Self::collect_stderr(stderr_task, "mysqldump").await;
             let _ = std::fs::remove_file(&dump_path);
             return Err(SnapshotError::OperationFailed {
@@ -239,7 +230,6 @@ impl SnapshotPlugin for MysqlPlugin {
         let stderr = Self::collect_stderr(stderr_task, "mysqldump").await?;
 
         if !status.success() {
-            // Best-effort cleanup of the reserved dump file; preserve the primary error.
             let _ = std::fs::remove_file(&dump_path);
             let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
             return Err(SnapshotError::CommandFailed {
@@ -249,7 +239,6 @@ impl SnapshotPlugin for MysqlPlugin {
         }
 
         if let Err(error) = harden_existing_artifact("mysql", &dump_path) {
-            // Best-effort cleanup of the reserved dump file; preserve the primary error.
             let _ = std::fs::remove_file(&dump_path);
             return Err(error);
         }
@@ -300,7 +289,6 @@ impl SnapshotPlugin for MysqlPlugin {
         if let Err(err) = io::copy(&mut dump_file, &mut stdin).await {
             drop(stdin);
             Self::kill_and_reap_child(&mut child).await;
-            // Best-effort stderr drain; preserve the primary stdin copy error.
             let _ = Self::collect_stderr(stderr_task, "mysql").await;
             return Err(SnapshotError::OperationFailed {
                 action: "write mysql stdin".to_string(),

@@ -1,5 +1,3 @@
-//! `Data consumer` nowdoc masking in the unclaimed-interpreter net (#396, #432).
-
 use super::*;
 
 #[test]

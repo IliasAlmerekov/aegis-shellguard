@@ -1,10 +1,6 @@
-//! Linux sandbox implementation: bwrap + Landlock.
-
 use std::ffi::{OsStr, OsString};
 
 use crate::{PreparedSandboxCommand, SandboxConfig, SandboxError};
-
-// ── Public-to-crate entry points ──────────────────────────────────────────────
 
 pub(crate) fn sandbox_available_for(config: &SandboxConfig) -> bool {
     crate::bwrap::available_bwrap_program(config).is_some()
@@ -37,11 +33,6 @@ fn prepare(
         return Err(SandboxError::Required);
     };
 
-    // The Shell exec path applies Landlock in the innermost re-exec'd wrapper
-    // (inside bwrap's mount namespace) so the two layers compose. The Watch
-    // spawn path (apply_exec_restrictions = false) stays bwrap-only per
-    // ADR-021. The wrapper also gates an empty `allow_write` profile: Shell
-    // must obtain its actual status before the Audit entry is committed.
     let use_landlock_wrapper = apply_exec_restrictions;
     let mut cmd = std::process::Command::new(bwrap_program);
 
@@ -70,17 +61,7 @@ fn prepare(
     Ok(PreparedSandboxCommand::active(cmd, use_landlock_wrapper))
 }
 
-// ── bwrap argument builder ────────────────────────────────────────────────────
-
-/// Build the `bwrap` argument list for the given `config`.
-///
-/// Binds only the canonical roots that pass `resolve_allow_write`; a root that
-/// does not exist or escapes the trusted roots is left out, not an error.
 pub(crate) fn build_bwrap_args(config: &SandboxConfig) -> Result<Vec<OsString>, SandboxError> {
-    // A read-only view of the whole filesystem, with `allow_write`
-    // paths bound writable on top. Binding `/` (rather than a
-    // minimal set of system dirs) keeps any `allow_write` path — wherever its
-    // parent lives — visible inside the namespace.
     let mut args: Vec<OsString> = vec![
         "--ro-bind".into(),
         "/".into(),
@@ -105,8 +86,6 @@ pub(crate) fn build_bwrap_args(config: &SandboxConfig) -> Result<Vec<OsString>, 
     Ok(args)
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
 
@@ -117,8 +96,6 @@ mod tests {
     use super::{build_bwrap_args, prepare_for_exec};
     use crate::bwrap::sysctl_userns_available;
 
-    // ── Linux: sandbox_available_for reflects forced-unavailable ─────────────
-
     #[cfg(target_os = "linux")]
     #[test]
     fn sandbox_available_for_returns_false_when_forced_unavailable() {
@@ -126,8 +103,6 @@ mod tests {
         let _guard = ForceUnavailableGuard;
         assert!(!sandbox_available_for(&SandboxConfig::default()));
     }
-
-    // ── Linux: bwrap argument builder ────────────────────────────────────────
 
     #[cfg(target_os = "linux")]
     #[test]
@@ -139,7 +114,6 @@ mod tests {
         };
         let args = build_bwrap_args(&cfg).expect("build_bwrap_args failed");
         let has_bind_tmp = args.windows(3).any(|w| {
-            // canonical /tmp is /tmp
             w[0].as_os_str() == "--bind" && w[1].as_os_str() == "/tmp" && w[2].as_os_str() == "/tmp"
         });
         assert!(has_bind_tmp, "expected --bind /tmp /tmp, got: {args:?}");
@@ -196,8 +170,6 @@ mod tests {
         let args = build_bwrap_args(&cfg).expect("an omitted root is not an error");
         assert!(!args.iter().any(|a| a.as_os_str() == "--bind"));
     }
-
-    // ── Linux: sysctl probe ───────────────────────────────────────────────────
 
     #[cfg(target_os = "linux")]
     #[test]

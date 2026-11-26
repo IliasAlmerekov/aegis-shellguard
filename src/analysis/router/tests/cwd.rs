@@ -1,5 +1,3 @@
-//! cwd-tracking regression tests (#384, ADR-022 §6).
-
 use super::*;
 
 #[test]
@@ -16,7 +14,6 @@ fn two_chained_literal_cds_join_into_one_relative_base() {
 
 #[test]
 fn a_dynamic_cd_followed_by_a_literal_cd_stays_degraded() {
-    // Degraded cwd never recovers (ADR-022 §6).
     let targets = route(r#"cd "$D" && cd -- sub && python3 ./evil.py"#, &[]);
     assert_eq!(
         targets,
@@ -143,8 +140,6 @@ fn a_cd_inside_a_for_loop_body_degrades_a_later_relative_target() {
     );
 }
 
-// ── #384: `source`/`.` can run a `cd` the router cannot see into ───────────
-
 #[test]
 fn source_degrades_a_later_relative_target() {
     let targets = route("source ./x.sh; python3 ./sub/evil.py", &[]);
@@ -159,7 +154,6 @@ fn source_degrades_a_later_relative_target() {
 
 #[test]
 fn eval_running_a_cd_degrades_a_later_relative_target() {
-    // GHSA-xj54: `eval` can run an arbitrary `cd`.
     let targets = route(r#"eval "cd /tmp/evil"; ./pyx"#, &[]);
     assert_eq!(targets, vec![unresolved_dynamic()]);
 }

@@ -1,13 +1,9 @@
-//! Program-word checks for the unclaimed-interpreter net (#384, #430).
-
-/// `true` when a program word requires shell expansion (`$`, backticks, or brace list) (#384, #430).
 pub(super) fn is_dynamic_program_word(word: &str) -> bool {
     word.contains('$')
         || word.contains('`')
         || (word.starts_with('{') && word.ends_with('}') && word.contains(','))
 }
 
-/// Last `alias` replacement for `name` in the caller-supplied byte-range `scope` (text search would hit the first identical stage); returns raw text so callers decide opacity (#384, #430, #437).
 pub(super) fn alias_value(scope: &str, name: &str) -> Option<String> {
     let owned_tokens = aegis_parser::split_tokens(scope);
     let tokens: Vec<&str> = owned_tokens.iter().map(String::as_str).collect();

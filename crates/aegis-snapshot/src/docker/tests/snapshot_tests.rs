@@ -60,8 +60,6 @@ esac"#,
     );
 }
 
-// ── snapshot ───────────────────────────────────────────────────────────────
-
 #[tokio::test]
 async fn snapshot_reports_docker_launch_failure() {
     let dir = TempDir::new().unwrap();
@@ -114,7 +112,6 @@ esac"#
     assert!(id.contains("def456"), "snapshot_id must reference def456");
     assert!(id.contains("aegis-snap-"), "must use aegis-snap- prefix");
 
-    // Each line must be valid JSON with the expected fields.
     for line in id.lines() {
         let rec: ContainerRecord = serde_json::from_str(line)
             .expect("each snapshot_id line must be a valid ContainerRecord");
@@ -192,11 +189,8 @@ esac"#
     assert!(result.is_err(), "snapshot must propagate commit failure");
 }
 
-// ── rollback ───────────────────────────────────────────────────────────────
-
 #[tokio::test]
 async fn rollback_noop_for_no_containers_sentinel() {
-    // Must succeed without touching any docker binary.
     DockerPlugin::default()
         .rollback(NO_CONTAINERS)
         .await
@@ -308,24 +302,12 @@ async fn rollback_continues_when_stop_fails() {
 esac"#,
     );
     let snapshot_id = minimal_record("abc123", "aegis-snap-abc123-1700000000");
-    // Must succeed despite stop failure.
     plugin(&dir.path().join("docker"))
         .rollback(&snapshot_id)
         .await
         .unwrap();
 }
 
-// ── async-safety regression tests ─────────────────────────────────────────
-
-/// Proves `is_applicable` does not block the Tokio thread while `docker ps`
-/// runs.
-///
-/// The gate works in both directions, so the green case needs no timing
-/// assumption (#466). The mock `ps` first creates `ps-started`, then waits
-/// for `bg-task-ran` (500 polls of 10 ms, about 5 s). The background task
-/// waits for `ps-started`, bumps the counter, and writes `bg-task-ran`. The
-/// counter can only move while `ps` is running, so a blocking
-/// `is_applicable` leaves it at 0 even if it yields once before blocking.
 #[tokio::test(flavor = "current_thread")]
 async fn is_applicable_does_not_block_tokio_runtime_v2() {
     use std::sync::Arc;
@@ -358,8 +340,6 @@ esac"#
     let counter_bg = Arc::clone(&counter);
 
     let bg = tokio::task::spawn(async move {
-        // Wait until `ps` is running. The cap only keeps `bg.await` from
-        // hanging if `ps` never starts; the assertion fails in that case.
         let seen = tokio::time::timeout(Duration::from_secs(10), async {
             while !tokio::fs::try_exists(&started).await.unwrap() {
                 tokio::time::sleep(Duration::from_millis(1)).await;
@@ -368,8 +348,6 @@ esac"#
         .await
         .is_ok();
         if seen {
-            // Bump before writing the marker, so `ps` seeing the marker
-            // implies the counter is already updated.
             counter_bg.fetch_add(1, Ordering::SeqCst);
             tokio::fs::write(&ran, b"").await.unwrap();
         }
@@ -377,8 +355,6 @@ esac"#
 
     let _ = p.is_applicable(Path::new("/")).await;
 
-    // Read the counter before awaiting `bg`. A blocking `is_applicable` held
-    // the only Tokio thread for the whole `ps` run, so it is still 0 here.
     let counter_after = counter.load(Ordering::SeqCst);
 
     bg.await.unwrap();

@@ -8,7 +8,6 @@ use aegis_explanation::{BlockReason, PolicyRationale};
 use aegis_types::MatchResult;
 use aegis_types::{Assessment, DecisionSource, HighlightRange, MatchEvidence, PatternSource};
 
-/// Build plain-language `Reason:` lines for a Language-aware Match or Analysis degradation.
 fn analysis_reason_lines(assessment: &Assessment) -> Vec<String> {
     let mut reasons = Vec::new();
     for m in &assessment.matched {
@@ -22,7 +21,6 @@ fn analysis_reason_lines(assessment: &Assessment) -> Vec<String> {
                 .rule_id
                 .as_deref()
                 .unwrap_or(m.pattern.id.as_ref());
-            // Built from DetectedOperation, never touching matched_text or source bytes (ADR-022 §10).
             let description = aegis_types::classify(operation).description;
             reasons.push(format!("matched rule {rule_id}: {description}"));
         }
@@ -42,7 +40,6 @@ fn analysis_reason_lines(assessment: &Assessment) -> Vec<String> {
     reasons
 }
 
-/// Drops `queue!` errors: terminal writes have no fallback channel.
 pub(super) fn print_analysis_reasons<W: Write>(
     assessment: &Assessment,
     explanation: &CommandExplanation,
@@ -64,7 +61,6 @@ pub(super) fn print_analysis_reasons<W: Write>(
     }
 }
 
-/// Drops `queue!` errors: terminal writes have no fallback channel.
 pub(super) fn print_command_line<W: Write>(assessment: &Assessment, out: &mut W) {
     let _ = queue!(out, Print("  Command:\n    "));
     let highlighted = build_highlighted_command_from_ranges(
@@ -75,7 +71,6 @@ pub(super) fn print_command_line<W: Write>(assessment: &Assessment, out: &mut W)
     let _ = queue!(out, Print("\n"));
 }
 
-/// Drops `queue!` errors: terminal writes have no fallback channel.
 pub(super) fn print_dangerous_action<W: Write>(assessment: &Assessment, out: &mut W) {
     let action = dangerous_action_text(assessment);
     let _ = queue!(out, Print("  Dangerous action:\n    "));
@@ -89,15 +84,11 @@ pub(crate) fn build_highlighted_command(cmd: &str, matches: &[MatchResult]) -> S
     build_highlighted_command_from_ranges(cmd, &ranges)
 }
 
-/// Build a copy of `cmd` with already-sorted highlight ranges wrapped in ANSI bold-red codes.
-///
-/// Overlapping ranges are merged before highlighting so the output is well-formed.
 fn build_highlighted_command_from_ranges(cmd: &str, ranges: &[HighlightRange]) -> String {
     if ranges.is_empty() {
         return cmd.to_string();
     }
 
-    // Reconstruct the string with ANSI bold-red around each highlighted span.
     let mut result = String::with_capacity(cmd.len() + ranges.len() * 9);
     let mut pos = 0;
     for range in ranges {
@@ -241,8 +232,6 @@ pub(super) fn block_reason_text(explanation: &CommandExplanation) -> &'static st
         None => "blocked by policy",
     }
 }
-
-// ── Label helpers ─────────────────────────────────────────────────────────────
 
 pub(super) fn pattern_source_label(source: PatternSource) -> &'static str {
     match source {

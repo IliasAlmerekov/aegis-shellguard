@@ -1,18 +1,3 @@
-//! M3a parity contract: the `Session-start notice` an agent
-//! hook emits must report the same `Effective enforcement state` that
-//! `aegis status` reports for the same environment.
-//!
-//! `aegis status` is the authoritative surface for effective state. The hooks
-//! deliberately resolve the Toggle and the CI override inline in shell instead
-//! of sourcing the managed helper (ADR-007), so no compiler or linker keeps
-//! them agreeing with `runtime_gate::is_ci_environment` and
-//! `toggle::disabled_flag_path`. These tests are that guard.
-//!
-//! Each case derives the state twice from independent implementations — once by
-//! parsing `aegis status` stdout, once by classifying the notice text — and
-//! requires the two to agree. Neither answer is computed from the other, so a
-//! drift in either implementation fails the test rather than cancelling out.
-
 mod support;
 
 use std::fs;
@@ -22,29 +7,18 @@ use std::process::Command;
 use serde_json::Value;
 use tempfile::TempDir;
 
-// `CI_MARKER_VARS` is the same list `run_script_with_env` clears for the hook,
-// shared rather than restated: if the two lists drifted apart, the two surfaces
-// would stop running under identical environments — the exact property these
-// cases exist to compare.
 use support::aegis_bin;
 use support::agent_hooks::{CI_MARKER_VARS, run_script_with_env};
 
-/// The session-start hooks under this contract, by script path.
 const SESSION_START_HOOKS: [&str; 2] = [
     "hooks/claude-session-start.sh",
     "hooks/codex-session-start.sh",
 ];
 
-/// The effective enforcement state a surface reports: whether commands are
-/// actually guarded, and whether a CI override is what makes them guarded.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum EffectiveState {
-    /// Aegis inspects commands; the Toggle is on.
     Enforcing,
-    /// Aegis passes commands through unguarded; the Toggle is off.
     DisabledPassthrough,
-    /// Aegis inspects commands even though the Toggle is off, because CI
-    /// overrides it.
     CiOverride,
 }
 
@@ -53,7 +27,6 @@ fn write_disabled_flag(home: &Path) {
     fs::write(home.join(".aegis").join("disabled"), "timestamp=x\npid=1\n").unwrap();
 }
 
-/// Parse the `effective mode:` line `aegis status` prints.
 fn status_effective_state(home: &Path, cwd: &Path, envs: &[(&str, &str)]) -> EffectiveState {
     let mut command = Command::new(aegis_bin());
     command.arg("status").env("HOME", home).current_dir(cwd);
@@ -85,9 +58,6 @@ fn status_effective_state(home: &Path, cwd: &Path, envs: &[(&str, &str)]) -> Eff
     }
 }
 
-/// Classify the notice a session-start hook emits, by the sentence that opens
-/// it. The three branches are mutually exclusive by construction: only the
-/// override notice names both enforcement and the overridden Toggle.
 fn notice_effective_state(home: &Path, hook: &str, envs: &[(&str, &str)]) -> EffectiveState {
     let output = run_script_with_env(hook, home, &[], None, envs);
     assert!(
@@ -122,8 +92,6 @@ fn notice_effective_state(home: &Path, hook: &str, envs: &[(&str, &str)]) -> Eff
     }
 }
 
-/// Assert both session-start hooks agree with `aegis status` under one
-/// environment. `disabled` writes the Toggle flag before either surface runs.
 fn assert_parity(disabled: bool, envs: &[(&str, &str)], expected: EffectiveState) {
     let home = TempDir::new().unwrap();
     let cwd = TempDir::new().unwrap();
@@ -170,9 +138,6 @@ fn falsy_aegis_ci_keeps_the_notice_and_status_on_disabled_passthrough() {
     );
 }
 
-/// `JENKINS_URL` is the one marker both implementations read as "set and
-/// non-empty" rather than as a truthy word, so it needs its own case: a
-/// truthiness check on either side would silently drop Jenkins.
 #[test]
 fn a_non_empty_jenkins_url_overrides_a_disabled_toggle_on_both_surfaces() {
     assert_parity(

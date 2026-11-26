@@ -1,19 +1,5 @@
-//! Authoritative implementation of policy pattern matching.
-//!
-//! Used by both the config validator and the runtime rule evaluator to ensure
-//! consistent case-sensitive prefix matching semantics.
-
 use crate::model::PolicyPatternToken;
 
-/// Returns `true` if `cmd_tokens` starts with the given `pattern` (prefix
-/// match, exact case).
-///
-/// - [`PolicyPatternToken::Single`] requires an exact (`==`) match.
-/// - [`PolicyPatternToken::Alts`] requires that at least one alternative
-///   exactly matches the corresponding command token.
-///
-/// An empty pattern never matches. Extra trailing command tokens beyond the
-/// pattern length are ignored.
 pub fn policy_pattern_matches(pattern: &[PolicyPatternToken], cmd_tokens: &[&str]) -> bool {
     if pattern.is_empty() {
         return false;

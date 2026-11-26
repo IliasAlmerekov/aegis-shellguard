@@ -1,5 +1,3 @@
-//! Explanation formatter: render human-readable decision explanations.
-
 use aegis_explanation::{
     AllowlistExplanation, CommandExplanation, ExecutionContextExplanation,
     ExecutionDecisionExplanation, ExecutionOutcomeExplanation, ExplainedPatternMatch,
@@ -18,12 +16,6 @@ use aegis_config::AllowlistMatch;
 use aegis_policy::{ExecutionTransport, PolicyDecision};
 use aegis_types::{Assessment, Decision, MatchResult, Mode, SnapshotRecord};
 
-/// Build a [`CommandExplanation`] from planning-time inputs.
-///
-/// Takes the individual `DecisionContext` fields rather than the type itself:
-/// `DecisionContext` lives in `crate::planning`, and `planning` already calls
-/// into this module, so accepting it here would reopen the
-/// `planning` <-> `explanation` import cycle.
 #[must_use]
 pub fn build_explanation_from_plan(
     assessment: &Assessment,
@@ -73,14 +65,7 @@ pub fn build_explanation_from_plan(
     }
 }
 
-/// Extension trait for [`CommandExplanation`] that adds builder-style methods
-/// needed in the binary crate.
-///
-/// Using an extension trait is required because `CommandExplanation` is defined
-/// in the `aegis-explanation` crate and inherent `impl` blocks for external
-/// types are forbidden by the orphan rule.
 pub trait CommandExplanationExt {
-    /// Return this explanation with runtime outcome facts appended.
     #[must_use]
     fn with_runtime_outcome(self, outcome: ExecutionOutcomeExplanation) -> Self;
 }
@@ -92,7 +77,6 @@ impl CommandExplanationExt for CommandExplanation {
     }
 }
 
-/// Build the runtime outcome explanation from execution results.
 #[must_use]
 pub fn build_outcome_explanation(
     decision: Decision,
@@ -104,7 +88,6 @@ pub fn build_outcome_explanation(
             Decision::Denied => ExecutionDecisionExplanation::Denied,
             Decision::AutoApproved => ExecutionDecisionExplanation::AutoApproved,
             Decision::Blocked | Decision::Pruned => ExecutionDecisionExplanation::Blocked,
-            // Fail closed for any future unknown decision variant.
             _ => ExecutionDecisionExplanation::Blocked,
         },
         snapshots: snapshots
@@ -117,7 +100,6 @@ pub fn build_outcome_explanation(
     }
 }
 
-/// Build an [`ExplainedPatternMatch`] from a scanner [`MatchResult`].
 #[must_use]
 pub fn explained_pattern_match_from(value: &MatchResult) -> ExplainedPatternMatch {
     ExplainedPatternMatch {
@@ -129,7 +111,6 @@ pub fn explained_pattern_match_from(value: &MatchResult) -> ExplainedPatternMatc
     }
 }
 
-/// Build an [`AllowlistExplanation`] from a config [`AllowlistMatch`].
 #[must_use]
 pub fn allowlist_explanation_from(value: &AllowlistMatch) -> AllowlistExplanation {
     AllowlistExplanation {
@@ -283,11 +264,6 @@ mod tests {
             explanation.scan.decision_source,
             DecisionSource::CustomPattern
         );
-        // Slice F (narrow): the richer `Assessment basis` is carried alongside
-        // the v1 `decision_source` projection. Only FS-001 is at the max
-        // (Danger) risk, so the basis retains exactly that one decisive ID;
-        // the lower-risk USR-001 match is excluded. The v1 projection
-        // (CustomPattern, because USR-001 is custom) is unchanged.
         assert_eq!(explanation.scan.basis, assessment.basis(),);
         match &assessment.basis() {
             AssessmentBasis::Decisive { match_ids } => {

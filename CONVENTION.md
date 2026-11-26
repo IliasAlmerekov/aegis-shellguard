@@ -136,10 +136,8 @@ Architectural constraints:
   - enum variants: `PascalCase`
   - pattern IDs in data: uppercase strings like `"FS-001"`
 - Prefer ASCII unless there is a strong reason not to.
-- A comment that explains why holds at most one line the code cannot show: a constraint, an invariant, a measurement, a GHSA link, an issue number. History, rejected alternatives, comparisons with other designs, review-round and finding-id citations, and restatements of the code go in the commit message; `scripts/lint.sh text` rejects review-round and finding-id citations. API docs, format specs and `// SAFETY:` comments follow their own rules.
-- Keep each `.rs` file at or under 800 lines (`scripts/lint.sh text`); when a file reaches the cap, split it by responsibility rather than trimming code or comments to fit.
-- Every `unsafe` block carries a `// SAFETY:` comment directly above it naming the invariant that makes the call sound, enforced by `clippy::undocumented_unsafe_blocks` through `[workspace.lints]`.
-- All new public items must have `///` doc comments.
+- Rust code carries no comments: no line, doc or block comments. The one exception is a SAFETY comment (`// SAFETY:`) directly above an `unsafe` block or `unsafe impl`, naming the invariant that makes it sound (`clippy::undocumented_unsafe_blocks` requires it). Text users see lives in clap `help`/`about` and schemars `description` attributes. `scripts/lint.sh comments` runs a lexer-based check in CI; `cargo run -p xtask -- strip-comments` removes violations. Context a comment would hold goes in the commit message or PR body.
+- Keep each `.rs` file at or under 800 lines (`scripts/lint.sh text`); when a file reaches the cap, split it by responsibility rather than trimming code to fit.
 - Avoid broad re-export layers unless they materially improve the public API.
 - Commits use the short conventional form (`feat:`, `fix:`, `perf:`, ...), subject line under 72 characters, body explaining why rather than what.
 - Every PR body is [`.github/pull_request_template.md`](.github/pull_request_template.md) filled in, at most 10 non-empty lines, whoever opens it; only bot PRs such as Dependabot keep their generated body. With `gh pr create`, copy the template into a file and pass it with `--body-file`. Keep the four parts in order: `Closes #N` (or `No issue: <reason>` for PRs that `CONTRIBUTING.md` lets skip an issue), one or two sentences on what and why, `Evidence:` bullets with each command run and its result (or the test that failed before the fix and passes after), and `Confidence:` as `high`, `medium`, or `low` plus one sentence naming the residual risk. Delete the template comments. File lists and change walkthroughs live in the diff; follow-ups, benchmarks, and session notes go in issue comments.
@@ -163,10 +161,9 @@ Architectural constraints:
 - Errors must not be silently discarded in production logic.
 - Do not convert actionable errors into `None` or a silent fallback unless that behavior is
   intentional, documented, and tested.
-- Every deliberate `let _ =` or `.ok()` (including `.ok()?` and chains) in production code carries a
-  one-line why comment directly above the drop (or in the enclosing function's doc comment naming
-  the drop); name unused bindings `_x` at introduction, keeping `let _ = x;` with a why comment only
-  when `#[cfg]` makes the binding used on another target.
+- Every deliberate `let _ =` or `.ok()` (including `.ok()?` and chains) in production code drops an
+  error that has no useful handling, and the commit message says why; name unused bindings `_x` at
+  introduction, keeping `let _ = x;` only when `#[cfg]` makes the binding used on another target.
 
 ## 6. Dependency Rules
 

@@ -1,31 +1,9 @@
-//! Shell Scanner pass over analyzed Shell/Bash source (issue #383).
-//!
-//! The Bash adapter reports only the operations it models (deletes, permission
-//! changes, file writes, execution sinks). A shell script file is different
-//! from an inline `bash -c` body: the outer Scanner never saw its contents, so
-//! a script that runs `git push --force` would otherwise look clean. Every Bash
-//! target therefore also runs through the same Scanner the outer command used,
-//! so a command inside a script gets the Matches it would get when typed.
-//!
-//! Scanner Matches keep their regex/keyword evidence, so policy treats them
-//! like the typed command. Their `matched_text` and highlight spans point into
-//! the script, not the outer command: both are replaced so no script contents
-//! reach rendering or the Audit log (ADR-022 §10).
-
 use aegis_types::{AnalysisStatus, DegradationReason, LanguageAnalysisResult};
 
 use aegis_scanner::Scanner;
 
-/// Source-free label carried by a Scanner Match found inside analyzed source.
 pub const SHELL_SOURCE_MATCH_LABEL: &str = "shell command in analyzed source";
 
-/// Scan Shell/Bash `source` with `scanner` and project the result into the
-/// language-analysis vocabulary.
-///
-/// Status is `Complete` when the Scanner matched anything, else
-/// `NotApplicable`. An effect-opaque command inside the source (for example a
-/// nested `python3 other.py`) runs a payload this pass cannot see, so it
-/// records [`DegradationReason::DynamicSource`] instead of claiming safety.
 #[must_use]
 pub fn scan_shell_source(scanner: &Scanner, source: &str) -> LanguageAnalysisResult {
     let assessment = scanner.assess(source);
@@ -59,9 +37,6 @@ pub fn scan_shell_source(scanner: &Scanner, source: &str) -> LanguageAnalysisRes
     }
 }
 
-/// Fold `other` into `into`: Matches concatenate, reasons deduplicate, and
-/// status takes the more degraded of the two (`NotApplicable < Complete <
-/// Degraded`).
 pub fn fold_result(into: &mut LanguageAnalysisResult, other: LanguageAnalysisResult) {
     into.matches.extend(other.matches);
     for reason in other.degradation_reasons {

@@ -1,5 +1,3 @@
-//! Compound-command list-segment routing tests (#384).
-
 use super::*;
 
 #[test]

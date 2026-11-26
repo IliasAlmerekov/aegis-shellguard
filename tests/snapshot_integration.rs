@@ -93,13 +93,11 @@ reason = "subdir snapshot test"
         "intercept stderr:\n{}",
         String::from_utf8_lossy(&intercept_output.stderr)
     );
-    // Taking the snapshot must not be observable in the working tree (#356).
     assert_eq!(
         fs::read_to_string(workspace.path().join("tracked.txt")).unwrap(),
         "subdir change\n"
     );
 
-    // Stand in for damage done by the command that ran after the snapshot.
     fs::write(workspace.path().join("tracked.txt"), "clobbered\n").unwrap();
 
     let entries = read_audit_entries(home.path());
@@ -182,13 +180,11 @@ reason = "worktree snapshot test"
         "intercept stderr:\n{}",
         String::from_utf8_lossy(&intercept_output.stderr)
     );
-    // Taking the snapshot must not be observable in the working tree (#356).
     assert_eq!(
         fs::read_to_string(worktree.path().join("tracked.txt")).unwrap(),
         "worktree change\n"
     );
 
-    // Stand in for damage done by the command that ran after the snapshot.
     fs::write(worktree.path().join("tracked.txt"), "clobbered\n").unwrap();
 
     let entries = read_audit_entries(home.path());
@@ -257,9 +253,6 @@ reason = "rollback conflict test"
         "intercept stderr:\n{}",
         String::from_utf8_lossy(&intercept_output.stderr)
     );
-    // Commit a different version of the same file. The stash entry now carries
-    // a change against a parent that no longer matches HEAD, so applying it
-    // cannot auto-merge.
     commit_file(workspace.path(), "tracked.txt", "conflicting change\n");
 
     let entries = read_audit_entries(home.path());

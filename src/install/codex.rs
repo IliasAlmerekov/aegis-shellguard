@@ -57,10 +57,6 @@ fn materialize_codex_hooks(codex_dir: &Path) -> Result<InstallOutcome, InstallEr
     Ok(combine_outcomes(ptu_outcome, session_outcome))
 }
 
-/// Materialize the Codex PreToolUse hook with `__AEGIS_BIN__` replaced by an
-/// absolute, shell-quoted path to the Aegis binary. This keeps the hook working
-/// when Codex runs it with a minimal PATH; an explicit `AEGIS_BIN` in the
-/// environment still overrides the templated default.
 fn render_pre_tool_use_hook() -> String {
     CODEX_PRE_TOOL_USE_HOOK_SH.replace("__AEGIS_BIN__", &shell_quote(&resolved_aegis_bin()))
 }
@@ -103,9 +99,6 @@ fn apply_codex_hooks_json(
         .ok_or_else(|| {
             InstallError::InvalidStructure("hooks.hooks.SessionStart must be an array".into())
         })?;
-    // Prune-then-add: drop every aegis-managed SessionStart registration that
-    // is not the canonical `startup|resume` one, including a stale entry under
-    // another matcher, while preserving unrelated user hooks.
     let (session_pruned, session_present) = super::prune_aegis_managed_hooks(
         session_entries,
         "hooks.hooks.SessionStart",
@@ -141,8 +134,6 @@ fn apply_codex_hooks_json(
         }));
     }
 
-    // Idempotent only when both canonical entries were already the sole
-    // aegis-managed ones and nothing was pruned.
     if (session_present && !session_pruned) && (ptu_present && !ptu_pruned) {
         return Ok(InstallOutcome::AlreadyPresent);
     }
@@ -251,8 +242,6 @@ mod tests {
         assert!(err.to_string().contains("hooks.json"));
     }
 
-    /// Reads the commands registered under `section`, so a case can assert both
-    /// that ours arrived and that a foreign entry was left alone.
     fn registered_commands(codex_dir: &Path, section: &str) -> Vec<String> {
         let hooks: Value =
             serde_json::from_str(&fs::read_to_string(codex_dir.join("hooks.json")).expect("read"))
@@ -271,19 +260,8 @@ mod tests {
             .unwrap_or_default()
     }
 
-    // The four cases below each hold a `SessionStart`/`PreToolUse` entry Aegis
-    // did not write and does not recognize. None of them is ours, so none of
-    // them may block our install: an operator whose agent config contains a
-    // third-party entry must still end up with an effective-state notice.
-
     #[test]
     fn codex_install_ignores_a_foreign_entry_whose_hooks_are_not_an_array() {
-        // The malformed entry sits under a matcher Aegis does not own
-        // (`startup`, not the canonical `startup|resume`): a foreign/corrupted
-        // shape outside Aegis' canonical namespace is left untouched rather
-        // than blocking the install (M3a). Under the canonical
-        // matcher the same shape fails closed — covered by the Claude
-        // malformed-nested-hook test.
         let home = TempDir::new().expect("home dir");
         let codex_dir = home.path().join(".codex");
         fs::create_dir_all(&codex_dir).expect("create codex dir");
@@ -313,10 +291,6 @@ mod tests {
         );
     }
 
-    // The same malformed shape under the canonical `startup|resume` matcher
-    // fails closed: Aegis owns that namespace and must be able to safely prune
-    // and add into it. This is the counterpart to the tolerant non-canonical
-    // case above and pins the unified strict-on-canonical rule (#175).
     #[test]
     fn codex_install_errors_on_a_malformed_canonical_session_start_entry() {
         let home = TempDir::new().expect("home dir");
@@ -460,11 +434,8 @@ mod tests {
             rendered.contains(&expected),
             "rendered hook must assign the shell-quoted absolute aegis path, got:\n{rendered}"
         );
-        // The transparent-rewrite hook must not reintroduce jq/python3 parsing.
         assert!(!rendered.contains("python3 -"));
         assert!(!rendered.contains("jq -"));
-        // The hook must run the binary (not exec) so it survives the binary's
-        // death and can fail closed on abnormal termination (M4).
         assert!(
             !rendered.contains("exec \"${AEGIS_BIN}\" hook"),
             "the hook must not exec the binary; it must capture output and exit status"

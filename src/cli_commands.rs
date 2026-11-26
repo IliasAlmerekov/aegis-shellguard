@@ -197,8 +197,6 @@ pub(crate) fn handle_toggle_status_command() -> i32 {
     0
 }
 
-/// True when `enabledPlugins` turns the Aegis Claude Code plugin on but Claude
-/// Code has not installed it, so the plugin registers no `Hook` (ADR-047).
 fn claude_plugin_enabled_but_not_installed() -> bool {
     use crate::install::claude_plugin::{ClaudePluginState, claude_code_plugin_state};
 
@@ -208,7 +206,6 @@ fn claude_plugin_enabled_but_not_installed() -> bool {
     })
 }
 
-/// The `claude code hooks:` value of `aegis status` (#500, ADR-047).
 fn claude_hook_registration_label() -> String {
     use crate::install::claude_plugin::{ClaudeHookRegistration, claude_hook_registration};
 
@@ -459,9 +456,6 @@ fn handle_snapshot_verify_command(args: VerifyArgs, runtime: &tokio::runtime::Ru
 }
 
 fn handle_snapshot_list_command() -> i32 {
-    // Listing is read-only and needs no policy: it must keep working when a
-    // config file is damaged, which is when recovery matters most. Reading
-    // finds rotated segments without the rotation or integrity settings.
     let logger = AuditLogger::default();
     match SnapshotLedger::load(&logger) {
         Ok(ledger) => {
@@ -475,15 +469,6 @@ fn handle_snapshot_list_command() -> i32 {
     }
 }
 
-/// Render every live Snapshot in the Snapshot ledger, newest first in log order.
-///
-/// The audit log is append-only, so a recorded id does **not** guarantee the
-/// underlying stash/image/dump still exists (it may have been deleted or
-/// corrupted). The output therefore reports *recorded* snapshots for discovery,
-/// not a recoverability guarantee.
-///
-/// One row per (provider, id) pair, the same key `aegis rollback` and
-/// `aegis snapshot prune` use; pruned pairs are hidden and counted.
 pub(crate) fn format_snapshot_listing(ledger: &SnapshotLedger) -> String {
     let pruned = ledger.pruned_count();
     let records = ledger.live_records();
@@ -521,8 +506,6 @@ pub(crate) fn handle_config_validate_command(args: ConfigValidateArgs) -> i32 {
     };
     let home_dir = aegis_config::home_dir();
     let mut report = validate_config_layers(&current_dir, home_dir.as_deref());
-    // Roots that only enforcement can reject (a symlink resolving outside the
-    // trusted roots) are not visible to the config-level check.
     if report.errors.is_empty()
         && let Ok(config) = AegisConfig::load_for_inspection(&current_dir, home_dir.as_deref())
         && let Some(ceiling) = aegis::runtime::sandbox_ceiling(&config, &current_dir)
@@ -696,7 +679,6 @@ mod tests {
 
     #[test]
     fn deduplicates_repeated_snapshot_id() {
-        // The rollback audit entry re-records the same snapshot id; it must appear once.
         let entries = vec![
             entry_with_snapshot("rm -rf src", "git", "snap-001"),
             entry_with_snapshot("aegis rollback snap-001", "git", "snap-001"),
@@ -713,7 +695,6 @@ mod tests {
 
     #[test]
     fn same_id_under_two_providers_lists_one_row_per_pair_newest_first() {
-        // The ledger keys a Snapshot by (provider, id), as rollback and prune do.
         let entries = vec![
             entry_with_snapshot("first", "git", "dup-id"),
             entry_with_snapshot("second", "docker", "dup-id"),
@@ -740,8 +721,6 @@ mod tests {
 
     #[test]
     fn preserves_tab_in_git_style_id() {
-        // Git snapshot ids are `"<cwd>\t<hash>"`; the tab must survive verbatim so
-        // the id stays copyable into `aegis rollback`.
         let id = "/home/user/project\tabc123def456";
         let entries = vec![entry_with_snapshot("rm -rf .", "git", id)];
 

@@ -1,5 +1,3 @@
-//! Watch-mode NDJSON protocol and runner.
-
 pub mod protocol;
 pub mod runner;
 mod sandbox;

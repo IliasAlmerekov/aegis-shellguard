@@ -1,9 +1,3 @@
-//! Shell-wrapper passthrough behavior: stdout/stderr/exit-code fidelity,
-//! environment and working-directory preservation, and shell-resolution
-//! fallback regressions.
-//!
-//! Split from the original `tests/full_pipeline.rs` (behavior-preserving move).
-
 mod support;
 
 use std::process::Command;
@@ -170,8 +164,6 @@ fn shell_wrapper_preserves_environment_and_working_directory() {
     assert_eq!(entries[0]["risk"], "Safe");
 }
 
-/// When `SHELL` points to the aegis binary itself, `resolve_shell` must
-/// fall back to `/bin/sh` to prevent an infinite exec loop.
 #[test]
 fn shell_env_pointing_to_aegis_binary_falls_back_to_bin_sh() {
     let home = TempDir::new().unwrap();
@@ -190,8 +182,6 @@ fn shell_env_pointing_to_aegis_binary_falls_back_to_bin_sh() {
     assert_eq!(output.stdout, b"hi\n");
 }
 
-/// When `AEGIS_REAL_SHELL` points to a nonexistent binary, `exec_command`
-/// must return exit code 1 rather than panicking.
 #[test]
 fn nonexistent_aegis_real_shell_returns_exit_code_1() {
     let home = TempDir::new().unwrap();

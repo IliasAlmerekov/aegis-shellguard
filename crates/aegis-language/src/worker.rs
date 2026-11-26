@@ -1,63 +1,25 @@
-//! Ephemeral language-worker dispatch loop and in-process inline-source helper
-//! (ADR-022 §1, §2).
-//!
-//! [`run`] serves a bounded sequence of [`crate::protocol`] `Parse` and
-//! `Analyze` frames for one intercepted command and exits when input ends or
-//! the request cap is reached. There is no daemon, filesystem access,
-//! subprocess execution, or network service (ADR-022 §2). Protocol or I/O
-//! failures return a typed [`RunOutcome`] that the parent maps to
-//! `DegradationReason::WorkerFailure` while retaining prior results (ADR-022
-//! §2, §4).
-//!
-//! [`analyze`] checks an intercepted command for inline source and parses any
-//! targets in-process, returning [`Outcome::NotStarted`] for no-source
-//! commands (ADR-022 §1).
-
 use std::io::{Read, Write};
 
 use crate::language::{self, SourceLanguage};
 use crate::protocol::{self, Request, Response};
 use crate::router::{self, SourceTarget};
 
-/// The maximum number of requests one worker session will serve before
-/// force-stopping (ADR-022 §2: a bounded sequence for one intercepted command).
-///
-/// This is a worker-side safety cap, deliberately above any realistic
-/// single-command target count (the parent's own budgets in ADR-022 §7 bound
-/// the real target set); it exists so a runaway or hostile parent cannot keep
-/// the worker alive indefinitely.
 pub const MAX_REQUESTS_PER_SESSION: u32 = 64;
 
-/// Why the worker dispatch loop stopped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunOutcome {
-    /// The reader reached end-of-input with no bytes left — the clean, expected
-    /// end of a session (the parent closed its write end).
     EndOfInput,
-    /// The session served its bounded quota of requests and force-stopped.
     MaxRequestsReached,
-    /// A partial frame was left in the buffer when the reader hit end-of-input:
-    /// the parent sent a truncated frame then closed. A worker failure.
     TruncatedFrame,
-    /// A frame decoded as malformed (bad magic, version, kind, payload). A
-    /// worker failure — the protocol carries no error-response variant, so the
-    /// worker stops and the parent degrades.
     MalformedFrame,
-    /// A read from the request stream failed. A worker failure.
     ReadFailed,
-    /// Writing a response frame failed (the parent closed its read end early).
-    /// A worker failure.
     WriteFailed,
 }
 
-/// Run the worker dispatch loop over `reader` / `writer`, serving up to
-/// [`MAX_REQUESTS_PER_SESSION`] requests then stopping.
 pub fn run<R: Read, W: Write>(reader: R, writer: W) -> RunOutcome {
     run_with_limit(reader, writer, MAX_REQUESTS_PER_SESSION)
 }
 
-/// Run the worker dispatch loop with an explicit request cap, for tests that
-/// exercise the force-exit bound without sending 64+ frames.
 pub(crate) fn run_with_limit<R: Read, W: Write>(
     mut reader: R,
     mut writer: W,
@@ -69,14 +31,8 @@ pub(crate) fn run_with_limit<R: Read, W: Write>(
     loop {
         match protocol::decode_request(&buf) {
             Ok(Some(frame)) => {
-                // A complete request arrived: drop it from the buffer and serve it.
                 buf.drain(..frame.consumed);
                 let response = handle_request(&frame.message);
-                // A `Parsed`/`ParseFailed`/`UnsupportedLanguage` payload is tiny,
-                // but an `Analyzed` payload frames a full `AdapterResult` that can
-                // exceed `MAX_FRAME_PAYLOAD` for a large analysis result; treat the
-                // resulting `Oversized` as a session-ending write failure (no panic,
-                // no malformed frame on the wire).
                 let encoded = match protocol::encode_response(frame.request_id, &response) {
                     Ok(bytes) => bytes,
                     Err(_) => return RunOutcome::WriteFailed,
@@ -91,8 +47,6 @@ pub(crate) fn run_with_limit<R: Read, W: Write>(
             }
             Ok(None) => match reader.read(&mut chunk) {
                 Ok(0) => {
-                    // End of input. A clean session ends with an empty buffer;
-                    // leftover bytes mean the parent sent a truncated frame.
                     return if buf.is_empty() {
                         RunOutcome::EndOfInput
                     } else {
@@ -107,9 +61,6 @@ pub(crate) fn run_with_limit<R: Read, W: Write>(
     }
 }
 
-/// Parse or analyze the source carried by a [`Request`] and produce the
-/// matching [`Response`]. The worker parses only the supplied bytes
-/// (ADR-022 §2).
 fn handle_request(request: &Request) -> Response {
     let (language, source) = match request {
         Request::Parse { language, source } => (*language, source.as_slice()),
@@ -117,9 +68,6 @@ fn handle_request(request: &Request) -> Response {
             return analyze_source(language, source);
         }
     };
-    // The parent is responsible for the UTF-8 encoding contract (ADR-022 §7);
-    // bytes that are not valid UTF-8 cannot be parsed here, so the worker
-    // reports a parse failure and the parent degrades.
     let source_str = match std::str::from_utf8(source) {
         Ok(s) => s,
         Err(_) => return Response::ParseFailed,
@@ -132,7 +80,6 @@ fn handle_request(request: &Request) -> Response {
     }
 }
 
-// Parent owns UTF-8 validation (ADR-022 §7); invalid UTF-8 yields one parse error so parent degrades.
 fn analyze_source(language: &SourceLanguage, source: &[u8]) -> Response {
     let adapter = match language {
         SourceLanguage::Python => crate::languages::python::analyze,
@@ -157,22 +104,12 @@ fn analyze_source(language: &SourceLanguage, source: &[u8]) -> Response {
     }
 }
 
-/// Outcome of [`analyze`] on one command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
-    /// No analyzable source targets were found; the worker did not start and
-    /// performed no filesystem metadata calls (ADR-022 §1).
     NotStarted,
-    /// Inline source targets were parsed in-process; `targets` counts bodies
-    /// for which [`crate::language::parse`] returned `Ok` (including trees with
-    /// syntax errors).
     Parsed { targets: usize },
 }
 
-/// Check `command` for inline source targets and parse any found in-process.
-///
-/// No-source commands return [`Outcome::NotStarted`] with no filesystem access
-/// (ADR-022 §1).
 #[must_use]
 pub fn analyze(command: &str) -> Outcome {
     let targets = router::source_targets(command);
@@ -184,7 +121,6 @@ pub fn analyze(command: &str) -> Outcome {
     }
 }
 
-/// Count the targets whose inline body parses with its declared grammar.
 fn count_parseable(targets: Vec<SourceTarget>) -> usize {
     targets
         .iter()
@@ -192,7 +128,6 @@ fn count_parseable(targets: Vec<SourceTarget>) -> usize {
         .count()
 }
 
-/// Parse `source` as `language`, returning whether it produced a tree.
 fn parses(language: SourceLanguage, source: &str) -> bool {
     language::parse(language, source).is_ok()
 }
@@ -202,7 +137,6 @@ mod dispatch_tests {
     use super::*;
     use crate::protocol::{self, DecodedFrame, Request, Response};
 
-    /// Encode a sequence of requests into one byte buffer the worker can read.
     fn encode_requests(requests: &[(u32, Request)]) -> Vec<u8> {
         let mut buf = Vec::new();
         for (id, req) in requests {
@@ -213,7 +147,6 @@ mod dispatch_tests {
         buf
     }
 
-    /// Decode every response frame the worker wrote, in order.
     fn decode_responses(buf: &[u8]) -> Vec<DecodedFrame<Response>> {
         let mut out = Vec::new();
         let mut rest = buf;
@@ -234,7 +167,6 @@ mod dispatch_tests {
         }
     }
 
-    /// Build an `Analyze` request carrying `source` for `language`.
     fn analyze_request(language: SourceLanguage, source: &[u8]) -> Request {
         Request::Analyze {
             language,
@@ -298,7 +230,6 @@ mod dispatch_tests {
 
     #[test]
     fn run_force_exits_after_the_request_cap_without_serving_the_extra() {
-        // Cap at 2; send 3. Only the first two may be served.
         let requests = encode_requests(&[
             (1, parse_request(SourceLanguage::Python, b"a = 1")),
             (2, parse_request(SourceLanguage::Python, b"b = 2")),
@@ -320,7 +251,6 @@ mod dispatch_tests {
 
     #[test]
     fn run_stops_on_a_malformed_frame_without_serving_it() {
-        // A valid first frame, then a frame with bad magic.
         let mut buf = encode_requests(&[(1, parse_request(SourceLanguage::Python, b"x = 1"))]);
         buf.extend_from_slice(b"XXXX\x01\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00");
         let reader = std::io::Cursor::new(buf);
@@ -339,7 +269,6 @@ mod dispatch_tests {
 
     #[test]
     fn run_reports_a_truncated_trailing_frame_as_a_worker_failure() {
-        // A valid frame followed by a partial header (5 bytes, not a full frame).
         let mut buf = encode_requests(&[(1, parse_request(SourceLanguage::Python, b"x = 1"))]);
         buf.extend_from_slice(b"AELW\x01");
         let reader = std::io::Cursor::new(buf);
@@ -358,8 +287,6 @@ mod dispatch_tests {
 
     #[test]
     fn run_reports_parse_failed_for_invalid_utf8_source() {
-        // 0xFF is not valid UTF-8; the parent owns the encoding contract, so
-        // the worker cannot parse these bytes and reports ParseFailed.
         let requests = encode_requests(&[(7, parse_request(SourceLanguage::Python, b"\xFF\xFE"))]);
         let reader = std::io::Cursor::new(requests);
         let mut output = Vec::new();
@@ -378,8 +305,6 @@ mod dispatch_tests {
 
     #[test]
     fn run_reports_a_nonzero_error_count_for_incomplete_syntax() {
-        // `def f(` is incomplete Python: the grammar still produces a tree, but
-        // it contains an ERROR node, so error_count must be nonzero.
         let requests = encode_requests(&[(9, parse_request(SourceLanguage::Python, b"def f("))]);
         let reader = std::io::Cursor::new(requests);
         let mut output = Vec::new();
@@ -549,11 +474,6 @@ mod dispatch_tests {
 
     #[test]
     fn run_returns_an_analyzed_parse_error_for_invalid_utf8_python_source() {
-        // The parent owns the UTF-8 encoding contract (ADR-022 §7). Bytes that
-        // are not valid UTF-8 cannot be handed to the adapter (it takes a
-        // `&str`), so the worker reports an `Analyzed` result with a single
-        // parse error and no operations — the parent maps `parse_errors` to a
-        // degradation reason rather than treating the target as clean.
         let requests =
             encode_requests(&[(23, analyze_request(SourceLanguage::Python, b"\xFF\xFE"))]);
         let reader = std::io::Cursor::new(requests);

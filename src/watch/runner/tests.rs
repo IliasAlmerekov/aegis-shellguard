@@ -29,10 +29,6 @@ fn watch_execution_cwd_is_unavailable_when_unavailable() {
     assert_eq!(watch_execution_cwd(&cwd_state), None);
 }
 
-/// Build a [`RuntimeContext`] whose snapshot registry is pinned to `GitPlugin`
-/// only, so it cannot pick up a `docker`-applicable state from whatever
-/// containers happen to be running on the host (see
-/// `set_snapshot_registry_for_tests`).
 fn context_with_audit_path(audit_path: PathBuf) -> RuntimeContext {
     let context = RuntimeContext::new_with_audit_path(
         AegisConfig::default(),
@@ -46,12 +42,6 @@ fn context_with_audit_path(audit_path: PathBuf) -> RuntimeContext {
     context
 }
 
-/// Pinned to an empty registry, not `GitPlugin`-only: this test asserts what
-/// `sandbox_status` gets recorded on a Recovery-Deny path, not anything about
-/// `GitPlugin` itself, so it has no reason to spawn `git` at all. See the
-/// ADR-039 addendum for why a `GitPlugin`-only registry was suspected (but not
-/// confirmed) to still race under process/FD pressure via
-/// `GitPlugin::is_applicable`'s fail-open branch.
 fn context_with_optional_sandbox(audit_path: PathBuf) -> RuntimeContext {
     let mut config = AegisConfig::default();
     config.sandbox.enabled = true;
@@ -62,7 +52,6 @@ fn context_with_optional_sandbox(audit_path: PathBuf) -> RuntimeContext {
     context
 }
 
-/// A snapshot plugin that always applies and always succeeds.
 struct SucceedingPlugin;
 
 #[async_trait::async_trait]
@@ -103,7 +92,6 @@ impl aegis_snapshot::SnapshotPlugin for SucceedingPlugin {
     }
 }
 
-/// A snapshot plugin that always applies and always fails.
 struct FailingPlugin;
 
 #[async_trait::async_trait]
@@ -146,9 +134,6 @@ impl aegis_snapshot::SnapshotPlugin for FailingPlugin {
     }
 }
 
-/// Pin the registry to one plugin that succeeds and one that fails, so the
-/// snapshot pass produces exactly the partial coverage of issue #312: a usable
-/// snapshot record next to an applicable plugin that never produced one.
 fn context_with_partial_coverage(audit_path: PathBuf) -> RuntimeContext {
     let context = RuntimeContext::new_with_audit_path(
         AegisConfig::default(),
@@ -443,8 +428,6 @@ fn audit_cwd_makes_a_relative_path_absolute() {
 
 const TERRAFORM_DESTROY: &str = "terraform destroy -target=module.test.api";
 
-/// Danger `terraform destroy` that the allowlist auto-approves (ADR-031 section 1).
-/// `plugins` pins the Snapshot registry so no host state leaks in.
 fn context_with_allowlisted_danger(
     workspace: &TempDir,
     audit_path: PathBuf,
@@ -590,7 +573,6 @@ async fn watch_confirmed_danger_with_a_failed_snapshot_skips_the_recovery_prompt
     assert!(entry.get("recovery_degradation").is_none());
 }
 
-/// Default config (no allowlist, so `Danger` prompts); `plugins` pins the registry.
 fn context_with_default_config(
     audit_path: PathBuf,
     plugins: Vec<Box<dyn aegis_snapshot::SnapshotPlugin>>,
@@ -605,7 +587,6 @@ fn context_with_default_config(
     context
 }
 
-/// The audit entry's `snapshot_attempts` as `(plugin, readiness)` pairs.
 fn audited_attempts(entry: &Value) -> Vec<(String, String)> {
     entry["snapshot_attempts"]
         .as_array()

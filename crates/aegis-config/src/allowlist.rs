@@ -1,5 +1,3 @@
-//! Allowlist and blocklist compilation, matching, and analysis.
-
 use std::path::Path;
 
 use regex::Regex;
@@ -20,35 +18,25 @@ pub use analysis::analyze_blocklist_rule;
 use compile::{compile_block_rule, compile_rule};
 pub(crate) use compile::{validate_single_block_rule, validate_single_rule};
 
-/// Configuration layer that supplied an allowlist rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ConfigSourceLayer {
-    /// Rule loaded from the global config file.
     Global,
-    /// Rule loaded from the project-local config file.
     Project,
 }
 
-/// Runtime context used to evaluate scoped allowlist rules.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AllowlistContext<'a> {
-    /// Raw command string about to be evaluated.
     pub command: &'a str,
-    /// Working directory for the command execution, when it could be resolved.
     pub cwd: Option<&'a Path>,
-    /// Effective user running Aegis, when it could be resolved reliably.
     pub user: Option<&'a str>,
-    /// Current time used for expiry evaluation.
     pub now: OffsetDateTime,
 }
 
 impl<'a> AllowlistContext<'a> {
-    /// Create a new allowlist matching context.
     pub fn new(command: &'a str, cwd: &'a Path, user: &'a str, now: OffsetDateTime) -> Self {
         Self::with_optional_scope(command, Some(cwd), Some(user), now)
     }
 
-    /// Create a new allowlist matching context with optional cwd and user scope.
     pub fn with_optional_scope(
         command: &'a str,
         cwd: Option<&'a Path>,
@@ -63,7 +51,6 @@ impl<'a> AllowlistContext<'a> {
         }
     }
 
-    /// Return a copy of this context with a different user.
     #[cfg(test)]
     pub fn with_user(self, user: &'a str) -> Self {
         Self {
@@ -73,17 +60,13 @@ impl<'a> AllowlistContext<'a> {
     }
 }
 
-/// Structured allowlist rule paired with the config layer that defined it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LayeredAllowlistRule {
-    /// Original config rule.
     pub rule: AllowlistRule,
-    /// Source config layer for precedence decisions.
     pub source_layer: ConfigSourceLayer,
 }
 
 impl LayeredAllowlistRule {
-    /// Create a rule sourced from the global config layer.
     pub fn global(rule: AllowlistRule) -> Self {
         Self {
             rule,
@@ -91,7 +74,6 @@ impl LayeredAllowlistRule {
         }
     }
 
-    /// Create a rule sourced from the project config layer.
     pub fn project(rule: AllowlistRule) -> Self {
         Self {
             rule,
@@ -106,32 +88,20 @@ impl From<AllowlistRule> for LayeredAllowlistRule {
     }
 }
 
-/// The allowlist entry that caused a command to be trusted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AllowlistMatch {
-    /// The original glob pattern from the config that matched.
     pub pattern: String,
-    /// Operator-facing justification attached to the rule.
     pub reason: String,
-    /// Config layer that supplied the winning rule.
     pub source_layer: ConfigSourceLayer,
 }
 
-/// Advisory warning produced by allowlist quality analysis.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AllowlistWarning {
-    /// Stable machine-readable warning code.
     pub code: &'static str,
-    /// Human-readable explanation.
     pub message: String,
-    /// Best-effort source location string for the rule.
     pub location: String,
 }
 
-/// Compiled effective allowlist view used for authoritative runtime matching.
-///
-/// This is the runtime matcher consulted for allow/deny decisions after the
-/// layered config input has been validated and compiled.
 #[derive(Debug, Clone, Default)]
 pub struct Allowlist {
     project_entries: Vec<CompiledRule>,
@@ -150,10 +120,6 @@ struct CompiledRule {
 }
 
 impl Allowlist {
-    /// Compatibility alias for [`Allowlist::from_layered_rules`].
-    ///
-    /// This preserves the legacy constructor shape while delegating to the
-    /// explicit layered-rule compile facade.
     pub fn new<T>(rules: &[T]) -> Result<Self>
     where
         T: Clone + Into<LayeredAllowlistRule>,
@@ -161,8 +127,6 @@ impl Allowlist {
         Self::from_layered_rules(rules)
     }
 
-    /// Compile layered provenance-preserving rules into the effective runtime
-    /// matcher used for authoritative allow/deny decisions.
     pub fn from_layered_rules<T>(rules: &[T]) -> Result<Self>
     where
         T: Clone + Into<LayeredAllowlistRule>,
@@ -184,10 +148,6 @@ impl Allowlist {
         })
     }
 
-    /// Returns the first effective allowlist entry for the current context.
-    ///
-    /// Effective means the pattern matches, any optional `cwd` / `user` scope
-    /// matches, and the rule is not expired for `context.now`.
     pub fn match_reason(&self, context: &AllowlistContext<'_>) -> Option<AllowlistMatch> {
         self.project_entries
             .iter()
@@ -200,7 +160,6 @@ impl Allowlist {
             })
     }
 
-    /// Returns `true` when any effective allowlist entry matches the context.
     #[cfg(test)]
     pub fn is_allowed(&self, context: &AllowlistContext<'_>) -> bool {
         self.match_reason(context).is_some()
@@ -238,19 +197,13 @@ impl CompiledRule {
     }
 }
 
-// ── Blocklist types and runtime matcher ────────────────────────────────────
-
-/// Structured blocklist rule paired with the config layer that defined it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LayeredBlocklistRule {
-    /// Original config rule.
     pub rule: BlockRule,
-    /// Source config layer for precedence decisions.
     pub source_layer: ConfigSourceLayer,
 }
 
 impl LayeredBlocklistRule {
-    /// Create a rule sourced from the global config layer.
     pub fn global(rule: BlockRule) -> Self {
         Self {
             rule,
@@ -258,7 +211,6 @@ impl LayeredBlocklistRule {
         }
     }
 
-    /// Create a rule sourced from the project config layer.
     pub fn project(rule: BlockRule) -> Self {
         Self {
             rule,
@@ -273,29 +225,20 @@ impl From<BlockRule> for LayeredBlocklistRule {
     }
 }
 
-/// The blocklist entry that caused a command to be blocked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlocklistMatch {
-    /// The original glob pattern from the config that matched.
     pub pattern: String,
-    /// Operator-facing justification attached to the rule.
     pub reason: String,
-    /// Config layer that supplied the winning rule.
     pub source_layer: ConfigSourceLayer,
 }
 
-/// Advisory warning produced by blocklist quality analysis.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlocklistWarning {
-    /// Stable machine-readable warning code.
     pub code: &'static str,
-    /// Human-readable explanation.
     pub message: String,
-    /// Best-effort source location string for the rule.
     pub location: String,
 }
 
-/// Compiled effective blocklist view used for authoritative runtime matching.
 #[derive(Debug, Clone, Default)]
 pub struct Blocklist {
     project_entries: Vec<CompiledRule>,
@@ -303,8 +246,6 @@ pub struct Blocklist {
 }
 
 impl Blocklist {
-    /// Compile layered provenance-preserving rules into the effective runtime
-    /// matcher used for authoritative block decisions.
     pub fn from_layered_rules<T>(rules: &[T]) -> Result<Self>
     where
         T: Clone + Into<LayeredBlocklistRule>,
@@ -326,12 +267,6 @@ impl Blocklist {
         })
     }
 
-    /// Returns the first effective blocklist entry for the current context.
-    ///
-    /// An entry matches the command as written or its unquoted form (ADR-051),
-    /// so a quoted spelling (`"rm" -rf x`, `$'rm' -rf x`, `r''m -rf x`) cannot
-    /// dodge an entry that blocks the plain command. The allowlist matches
-    /// only the command as written.
     pub fn match_reason(&self, context: &AllowlistContext<'_>) -> Option<BlocklistMatch> {
         let unquoted = unquoted_form(context.command);
         let unquoted_context = unquoted.as_deref().map(|command| AllowlistContext {
@@ -354,14 +289,11 @@ impl Blocklist {
             })
     }
 
-    /// Returns `true` when any effective blocklist entry matches the context.
     pub fn is_blocked(&self, context: &AllowlistContext<'_>) -> bool {
         self.match_reason(context).is_some()
     }
 }
 
-/// The words bash runs, quotes removed and escapes decoded, joined by single
-/// spaces; `None` when that equals the trimmed command.
 fn unquoted_form(command: &str) -> Option<String> {
     let unquoted = aegis_parser::split_tokens(command).join(" ");
     (unquoted != command.trim()).then_some(unquoted)
@@ -638,8 +570,6 @@ mod tests {
     fn now_utc() -> OffsetDateTime {
         OffsetDateTime::now_utc()
     }
-
-    // ── Blocklist tests ───────────────────────────────────────────────────────
 
     use super::{Blocklist, BlocklistMatch, LayeredBlocklistRule, analyze_blocklist_rule};
     use crate::BlockRule;

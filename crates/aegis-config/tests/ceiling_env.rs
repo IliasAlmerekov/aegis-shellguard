@@ -1,5 +1,3 @@
-//! `compute_trusted_ceiling` ignores `GIT_*` and `TMPDIR` environment variables.
-
 #[expect(
     dead_code,
     reason = "this test uses only environment changes; the dedicated probe tests cwd"

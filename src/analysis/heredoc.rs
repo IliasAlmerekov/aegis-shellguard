@@ -1,34 +1,12 @@
-//! Heredoc / here-string / literal-producer stdin routing (ADR-022 §6, L1
-//! Iteration 4 slice 3).
-//!
-//! Interpreter stdin is only analyzed when the source is statically
-//! recoverable: a quoted heredoc, a literal here-string, or a narrowly proven
-//! literal-only producer such as `printf '%s'`. Everything else (expanding
-//! heredocs/here-strings with detected substitutions, or any other dynamic
-//! pipeline) degrades honestly rather than being evaluated or guessed at.
-
 use aegis_parser::extract_heredoc_bodies;
 use aegis_types::DegradationReason;
 
-/// A statically-recoverable (or provably-not-recoverable) interpreter stdin
-/// source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StdinRoute {
-    /// The exact source text stdin will receive.
     Literal(String),
-    /// Stdin is known to exist but its content could not be statically
-    /// recovered.
     Dynamic(DegradationReason),
 }
 
-/// Detect a heredoc (`<<WORD` / `<<'WORD'`) attached to the first line of
-/// `command` and classify its recoverability.
-///
-/// A quoted heredoc (nowdoc) is exact source. An unquoted (expanding) heredoc
-/// is only treated as literal when its body contains no `$`/backtick
-/// expansion syntax; otherwise it degrades rather than being evaluated
-/// (ADR-022 §6). Only the first heredoc in `command` is considered — multiple
-/// heredocs per command are out of this slice's scope.
 #[must_use]
 pub fn heredoc_stdin(command: &str) -> Option<StdinRoute> {
     let first_line = command.lines().next()?;
@@ -39,18 +17,9 @@ pub fn heredoc_stdin(command: &str) -> Option<StdinRoute> {
     Some(classify(heredoc.body, heredoc.is_nowdoc))
 }
 
-/// Detect a here-string (`<<< 'literal'` / `<<<"literal"` / the glued
-/// `<<<'literal'` the tokenizer never puts a space in front of, issue #384)
-/// among the tokens following an interpreter invocation.
 #[must_use]
 pub fn here_string_stdin(rest_tokens: &[&str]) -> Option<StdinRoute> {
     let pos = rest_tokens.iter().position(|tok| tok.starts_with("<<<"))?;
-    // The tokenizer already strips the surrounding quotes, so single- vs.
-    // double-quoted here-strings are indistinguishable here; classify by
-    // expansion syntax alone, same as an unquoted heredoc. A glued literal
-    // (`<<<"$X"` — no space, so the tokenizer keeps it one word) carries its
-    // body in the same token, past the `<<<` itself; the spaced form
-    // (`<<<`, `"$X"`) carries it in the next token instead.
     let glued = &rest_tokens[pos][3..];
     let body = if glued.is_empty() {
         (*rest_tokens.get(pos + 1)?).to_owned()
@@ -60,9 +29,6 @@ pub fn here_string_stdin(rest_tokens: &[&str]) -> Option<StdinRoute> {
     Some(classify(body, false))
 }
 
-/// Classify an already-extracted heredoc/here-string body (shared with
-/// [`super::router`]'s heredoc-to-file reuse, which extracts the body itself
-/// to also recover the closing delimiter).
 pub(crate) fn classify(body: String, is_nowdoc: bool) -> StdinRoute {
     if is_nowdoc || !contains_expansion(&body) {
         StdinRoute::Literal(body)

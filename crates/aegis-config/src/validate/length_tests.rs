@@ -1,5 +1,3 @@
-//! Pattern length limit (issue #217) as `config validate` reports it.
-
 use super::{ConfigSourceMap, ValidationReport, validate_config};
 use crate::allowlist::ConfigSourceLayer;
 use crate::model::UserPattern;

@@ -44,7 +44,6 @@ async fn rollback_continues_when_rm_fails() {
 esac"#,
     );
     let snapshot_id = minimal_record("abc123", "aegis-snap-abc123-1700000000");
-    // Must succeed despite rm failure (container may already be removed).
     plugin(&dir.path().join("docker"))
         .rollback(&snapshot_id)
         .await
@@ -144,8 +143,6 @@ esac"#,
     }
 }
 
-// ── build_run_args unit tests ───────────────────────────────────────────────
-
 #[test]
 fn build_run_args_minimal_config() {
     let cfg = ContainerConfig {
@@ -175,7 +172,6 @@ fn build_run_args_full_config() {
     };
     let args = DockerPlugin::build_run_args("snap-image", &cfg);
 
-    // Check structural flags are present (order of labels is not guaranteed).
     assert!(args.contains(&"run".to_string()));
     assert!(args.contains(&"-d".to_string()));
     assert!(args.contains(&"--name".to_string()));
@@ -207,13 +203,11 @@ fn build_run_args_skips_no_restart_policy() {
     assert!(!args.contains(&"--restart".to_string()));
 }
 
-// ── build_ps_args (scope filtering) ────────────────────────────────────────
-
 #[test]
 fn build_ps_args_labeled_scope_adds_label_filter() {
     let p = DockerPlugin {
         docker_bin: "docker".to_string(),
-        scope: DockerScope::default(), // Labeled, label = "aegis.snapshot"
+        scope: DockerScope::default(),
     };
     let args = p.build_ps_args();
     assert_eq!(
@@ -279,8 +273,6 @@ fn build_ps_args_labeled_scope_custom_label() {
     );
 }
 
-// ── snapshot with scope (integration) ──────────────────────────────────────
-
 #[tokio::test]
 async fn snapshot_with_labeled_scope_passes_filter_to_docker_ps() {
     let dir = TempDir::new().unwrap();
@@ -301,7 +293,7 @@ esac"#
         ),
     );
 
-    let scope = DockerScope::default(); // Labeled
+    let scope = DockerScope::default();
     let p = plugin_with_scope(&dir.path().join("docker"), scope);
     let _id = p.snapshot(Path::new("/"), "rm -rf /").await.unwrap();
 
@@ -344,7 +336,6 @@ esac"#
     let _id = p.snapshot(Path::new("/"), "rm -rf /").await.unwrap();
 
     let calls = fs::read_to_string(&log).unwrap();
-    // First line should be just "ps -q" without --filter
     let first_call = calls.lines().next().unwrap();
     assert!(
         !first_call.contains("--filter"),

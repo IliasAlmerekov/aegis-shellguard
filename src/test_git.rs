@@ -1,12 +1,6 @@
-//! The one way tests spawn `git`. Unit tests in `src/` reach it as
-//! `crate::test_git`, integration tests through `tests/support`.
-
 use std::path::Path;
 use std::process::Command;
 
-/// `git` running in `dir` with every inherited `GIT_` variable removed. Git
-/// exports `GIT_DIR` to hooks in a linked worktree, so without this a test run
-/// from a hook writes into the developer's repository.
 pub(crate) fn git_command(dir: &Path) -> Command {
     let mut command = Command::new("git");
     command.current_dir(dir);
@@ -18,7 +12,6 @@ pub(crate) fn git_command(dir: &Path) -> Command {
     command
 }
 
-/// Creates `path` if needed and runs `git init -q` in it.
 pub(crate) fn git_init(path: &Path) {
     std::fs::create_dir_all(path).unwrap();
     assert!(

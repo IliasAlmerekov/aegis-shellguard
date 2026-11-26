@@ -1,6 +1,3 @@
-//! `support::init_git_repo` under an inherited `GIT_DIR`, the variable git
-//! exports to hooks in a linked worktree.
-
 mod support;
 
 use std::path::Path;
@@ -13,7 +10,6 @@ const TEST_NAME: &str = "init_git_repo_ignores_an_inherited_git_dir";
 
 #[test]
 fn init_git_repo_ignores_an_inherited_git_dir() {
-    // Setting GIT_DIR in this process would race the other tests, so a child run gets it.
     match std::env::var_os(CHILD_REPO) {
         Some(repo) => support::init_git_repo(Path::new(&repo)),
         None => rerun_with_a_decoy_git_dir(),

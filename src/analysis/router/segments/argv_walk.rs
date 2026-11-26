@@ -1,12 +1,9 @@
-//! Interpreter-argv walking and `env -C`/`--chdir` prefix scanning.
-
 use super::*;
 
 fn is_env_chdir_flag(tok: &str) -> bool {
     tok == "--chdir" || tok.starts_with("--chdir=") || tok.starts_with("-C")
 }
 
-/// Scans the whole `prefix` (not just `prefix[0]`) because another launcher can wrap `env -C`/`--chdir` (#384).
 pub(super) fn env_chdir_prefix(prefix: &[&str]) -> bool {
     prefix.iter().enumerate().any(|(idx, tok)| {
         let basename = tok.rsplit('/').next().unwrap_or(tok);
@@ -15,7 +12,6 @@ pub(super) fn env_chdir_prefix(prefix: &[&str]) -> bool {
     })
 }
 
-/// Resolve `stage` to its interpreter only when argv carries no source of its own, so piped stdin is routed (#384).
 pub(super) fn bare_stage_interpreter(
     stage: &str,
     trusted_aliases: &[(&str, &str)],
@@ -33,18 +29,14 @@ pub(super) fn bare_stage_interpreter(
 
 pub(super) enum ArgvWalk {
     Routed(RoutedTarget),
-    /// Inline flag present with no body; never falls back to stdin.
     NoSource,
     NoMatch,
 }
 
-/// Walk interpreter argv (`rest`), stopping option parsing at the first positional script argument (ADR-022 §6).
 pub(super) fn walk_interpreter_argv(interp: &Interpreter, rest: &[&str]) -> ArgvWalk {
-    // Stop at `<<`/`<<<`: tokens after the marker are heredoc/here-string body, not argv.
     let marker_pos = rest.iter().position(|tok| tok.starts_with("<<"));
     let before_marker = marker_pos.map_or(rest, |idx| &rest[..idx]);
 
-    // Stdin redirect target is used only if no inline body or positional script is found (#384).
     let mut stdin_redirect_target: Option<&str> = None;
 
     let mut pos = 0;
@@ -60,7 +52,6 @@ pub(super) fn walk_interpreter_argv(interp: &Interpreter, rest: &[&str]) -> Argv
             });
         }
         if aegis_parser::is_redirection_operator(tok) {
-            // Skip both the redirection operator and its target so the target is not read as a script arg.
             if is_plain_input_redirect(tok)
                 && let Some(target) = before_marker.get(pos + 1)
                 && is_literal_path(target)
@@ -95,7 +86,6 @@ pub(super) fn walk_interpreter_argv(interp: &Interpreter, rest: &[&str]) -> Argv
     }
 }
 
-/// Only omitted fd or `0` redirects stdin; non-stdin fds (e.g. `3<file`) are not script source.
 fn redirects_stdin_fd(fd: &str) -> bool {
     fd.is_empty() || fd == "0"
 }
@@ -106,7 +96,6 @@ fn is_plain_input_redirect(tok: &str) -> bool {
     after_fd == "<" && redirects_stdin_fd(fd)
 }
 
-/// Target of a glued stdin redirect (`<file`, `0<file`), excluding heredocs, dup-fds, and non-stdin fds (#384).
 fn glued_plain_input_redirect_target(tok: &str) -> Option<&str> {
     let after_fd = tok.trim_start_matches(|c: char| c.is_ascii_digit());
     let fd = &tok[..tok.len() - after_fd.len()];
@@ -117,7 +106,6 @@ fn glued_plain_input_redirect_target(tok: &str) -> Option<&str> {
     (!target.is_empty() && !target.starts_with(['<', '&', '>'])).then_some(target)
 }
 
-/// Last literal stdin redirect sitting before the program; later `<` overwrites earlier ones (#384).
 pub(super) fn leading_stdin_redirect_target<'a>(prefix: &[&'a str]) -> Option<&'a str> {
     let mut pos = 0;
     let mut last_target = None;

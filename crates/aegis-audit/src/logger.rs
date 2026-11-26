@@ -1,5 +1,3 @@
-//! Audit logger: append-only JSONL with optional hash-chain integrity.
-
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 
@@ -26,11 +24,6 @@ type Result<T> = std::result::Result<T, AuditError>;
 static AUDIT_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 const CHAIN_ALG_SHA256: &str = "sha256";
 
-/// RFC 3339 timestamp stored in the audit log.
-///
-/// New entries serialize as RFC 3339 / ISO 8601 strings with an explicit
-/// timezone. Older logs that stored Unix seconds remain readable via the
-/// custom deserializer below.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AuditTimestamp(OffsetDateTime);
 
@@ -39,14 +32,12 @@ impl AuditTimestamp {
         Self(OffsetDateTime::now_utc())
     }
 
-    /// Create a timestamp from Unix seconds.
     pub fn from_unix_seconds(seconds: i64) -> std::result::Result<Self, String> {
         OffsetDateTime::from_unix_timestamp(seconds)
             .map(Self)
             .map_err(|err| format!("invalid unix timestamp {seconds}: {err}"))
     }
 
-    /// Parse a timestamp from an RFC 3339 string.
     pub fn parse_rfc3339(value: &str) -> std::result::Result<Self, String> {
         OffsetDateTime::parse(value, &Rfc3339)
             .map(Self)
@@ -113,120 +104,51 @@ impl<'de> Deserialize<'de> for AuditTimestamp {
     }
 }
 
-/// Core fields present in every audit entry.
-///
-/// Shell-wrapper and direct-invocation entries are stored as
-/// `AuditEntry::Decision(DecisionEntry)`. Watch-mode entries are
-/// `AuditEntry::Watch(WatchEntry)`, which embeds this struct via `base`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecisionEntry {
-    /// When the decision was recorded.
     pub timestamp: AuditTimestamp,
-    /// Monotonic sequence number within the current Aegis process.
-    ///
-    /// Disambiguates entries with very similar timestamps. Zero in older logs
-    /// that predate this field.
     pub sequence: u64,
-    /// The command string that was intercepted.
     pub command: String,
-    /// Risk level assessed by the scanner.
     pub risk: RiskLevel,
-    /// Patterns that matched the command.
     pub matched_patterns: Vec<MatchedPattern>,
-    /// Top-level projection of `matched_patterns[].id` for log aggregation.
     pub pattern_ids: Vec<String>,
-    /// Final user or system decision.
     pub decision: Decision,
-    /// Snapshots taken before command execution.
     pub snapshots: Vec<AuditSnapshot>,
-    /// Human-readable explanation of the decision.
     pub explanation: Option<CommandExplanation>,
-    /// Aegis operating mode at the time.
     pub mode: Option<Mode>,
-    /// Whether a CI environment was detected.
     pub ci_detected: Option<bool>,
-    /// Whether an allowlist pattern matched.
     pub allowlist_matched: Option<bool>,
-    /// Whether the allowlist overrode the risk level.
     pub allowlist_effective: Option<bool>,
-    /// Hash algorithm used for the integrity chain.
     pub chain_alg: Option<String>,
-    /// Hash of the previous audit entry.
     pub prev_hash: Option<String>,
-    /// Hash of this audit entry.
     pub entry_hash: Option<String>,
-    /// ID of the allowlist pattern that matched.
     pub allowlist_pattern: Option<String>,
-    /// Reason the allowlist matched.
     pub allowlist_reason: Option<String>,
-    /// Factual confinement state for this command. `Unavailable` covers both
-    /// optional unconfined fallback and required fail-closed blocking;
-    /// `NotAttempted` records an enabled Sandbox stopped before preparation.
     pub sandbox_status: SandboxStatus,
-    /// Whether the assessed command was `Effect-opaque execution` (ADR-016).
-    /// `None` on pre-ADR-016 log lines; fresh entries record an explicit bool.
     pub effect_opaque: Option<bool>,
-    /// Whether a recovery snapshot was required before execution (ADR-016).
-    /// `None` on pre-ADR-016 log lines; fresh entries record an explicit bool.
     pub snapshots_required: Option<bool>,
-    /// Whether sandbox confinement was required before execution (ADR-016), the
-    /// optional stricter tier distinct from `snapshots_required`. `None` on
-    /// pre-ADR-016 log lines; fresh entries record an explicit bool.
     pub confinement_required: Option<bool>,
-    /// Why a required recovery backstop was not available, when it was not
-    /// (ADR-016). `None` when no degradation occurred or on pre-ADR-016 lines.
     pub recovery_degradation: Option<RecoveryDegradation>,
-    /// Assessment basis — the decisive Match IDs at the entry's maximum
-    /// `RiskLevel`, or `Fallback` when nothing matched (ADR-022 §10, Audit v2).
-    /// `None` on legacy v1 lines (absent v2 fields identify a legacy line);
-    /// fresh entries populate it from `Assessment::basis()`.
     pub basis: Option<aegis_types::AssessmentBasis>,
-    /// Language-aware analysis summary — overall status and typed degradation
-    /// reasons, orthogonal to `RiskLevel` (ADR-022 §5, §10, Audit v2). `None`
-    /// on legacy v1 lines and on fresh entries with no language analysis.
     pub analysis: Option<aegis_types::AnalysisSummary>,
-    /// One element per `Snapshot plugin` attempt made, in attempt order
-    /// (ADR-031 §8, §10). `None` on lines that predate the field and while the
-    /// runtime does not yet populate it.
     pub snapshot_attempts: Option<Vec<SnapshotAttempt>>,
-    /// Working directory the command ran in: the `cwd` of a watch frame, or the
-    /// process directory in shell-wrapper mode (the `Command location`, #499).
-    /// `None` on lines that predate the field.
     pub cwd: Option<String>,
 }
 
-/// Watch-mode audit entry.
-///
-/// Contains all `DecisionEntry` fields via `base`, plus the watch-frame
-/// correlation fields.  `source` and `id` are `Option<String>` so that
-/// legacy audit log lines which omit them still deserialize correctly. The
-/// frame's `cwd` lives in `base.cwd`, shared with shell-wrapper entries.
-/// `transport` is implicit — it is always `"watch"`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WatchEntry {
-    /// Core decision fields shared with shell-wrapper entries.
     pub base: DecisionEntry,
-    /// Agent/caller identity from the watch-mode input frame.
     pub source: Option<String>,
-    /// Correlation ID from the watch-mode input frame.
     pub id: Option<String>,
 }
 
-/// One append-only audit record stored as a single JSON line.
-///
-/// Shell-wrapper entries are `Decision`; watch-mode entries are `Watch`.
-/// Both serialise to the same flat JSON format for backwards compatibility
-/// with existing `~/.aegis/audit.jsonl` files.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuditEntry {
-    /// Shell-wrapper or direct-invocation entry.
     Decision(DecisionEntry),
-    /// Watch-mode entry with extra correlation context.
     Watch(WatchEntry),
 }
 
 impl AuditEntry {
-    /// Shared reference to the common decision fields, regardless of variant.
     pub fn as_base(&self) -> &DecisionEntry {
         match self {
             AuditEntry::Decision(e) => e,
@@ -241,7 +163,6 @@ impl AuditEntry {
         }
     }
 
-    /// Returns `Some` only for watch-mode entries.
     pub fn watch_context(&self) -> Option<&WatchEntry> {
         match self {
             AuditEntry::Watch(w) => Some(w),
@@ -250,8 +171,6 @@ impl AuditEntry {
     }
 }
 
-// Private flat struct used exclusively for JSON serde.
-// Preserves the on-disk format so existing audit logs remain readable.
 #[derive(Serialize, Deserialize)]
 struct AuditEntryFlat {
     timestamp: AuditTimestamp,
@@ -284,17 +203,10 @@ struct AuditEntryFlat {
     allowlist_pattern: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     allowlist_reason: Option<String>,
-    // Canonical sandbox field. Legacy logs omit it; we fall back to the
-    // `sandbox_active` boolean below when reading those.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     sandbox_status: Option<SandboxStatus>,
-    // Legacy boolean projection, still written so that older readers keep
-    // working. `None` for not-configured entries (skipped on the wire).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     sandbox_active: Option<bool>,
-    // ADR-016 recovery backstop axes. Legacy logs omit them; `#[serde(default)]`
-    // reads absent fields back as `None` so "not recorded" stays distinct from
-    // "explicitly false" (same convention as the allowlist flags above).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     effect_opaque: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -303,12 +215,6 @@ struct AuditEntryFlat {
     confinement_required: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     recovery_degradation: Option<RecoveryDegradation>,
-    // ADR-022 §10 Audit v2 fields. `#[serde(default)]` reads absent fields back
-    // as `None` so a legacy v1 line (no v2 fields) stays distinct from a v2
-    // line that explicitly records a value; `skip_serializing_if = "Option::is_none"`
-    // keeps v1 entries byte-for-byte identical to the pre-v2 form, so their
-    // integrity hash is unchanged and mixed v1/v2 logs verify without rewriting
-    // old lines.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     basis: Option<aegis_types::AssessmentBasis>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -349,8 +255,6 @@ impl From<AuditEntryFlat> for AuditEntry {
             entry_hash: flat.entry_hash,
             allowlist_pattern: flat.allowlist_pattern,
             allowlist_reason: flat.allowlist_reason,
-            // Prefer the canonical field; fall back to the legacy boolean for
-            // logs written before `sandbox_status` existed.
             sandbox_status: flat
                 .sandbox_status
                 .unwrap_or_else(|| SandboxStatus::from(flat.sandbox_active)),
@@ -436,123 +340,73 @@ impl<'de> Deserialize<'de> for AuditEntry {
     }
 }
 
-/// Parameters for filtering the audit log.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AuditQuery {
-    /// Maximum number of recent entries to return.
     pub last: Option<usize>,
-    /// Filter by assessed risk level.
     pub risk: Option<RiskLevel>,
-    /// Filter by final decision.
     pub decision: Option<Decision>,
-    /// Only entries at or after this timestamp.
     pub since: Option<AuditTimestamp>,
-    /// Only entries at or before this timestamp.
     pub until: Option<AuditTimestamp>,
-    /// Only entries whose command contains this substring.
     pub command_contains: Option<String>,
 }
 
-/// Aggregated statistics over a slice of the audit log.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AuditSummary {
-    /// Total number of entries matched by the query.
     pub total_entries: usize,
-    /// Breakdown of decisions.
     pub decision_counts: DecisionCounts,
-    /// Breakdown of risk levels.
     pub risk_counts: RiskCounts,
-    /// Most frequently matched patterns.
     pub top_patterns: Vec<PatternCount>,
 }
 
-/// Count of each decision type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 pub struct DecisionCounts {
-    /// Number of `Approved` decisions.
     pub approved: usize,
-    /// Number of `Denied` decisions.
     pub denied: usize,
-    /// Number of `AutoApproved` decisions.
     pub auto_approved: usize,
-    /// Number of `Blocked` decisions.
     pub blocked: usize,
-    /// Number of `Pruned` decisions.
     pub pruned: usize,
 }
 
-/// Count of each risk level.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 pub struct RiskCounts {
-    /// Number of `Safe` assessments.
     pub safe: usize,
-    /// Number of `Warn` assessments.
     pub warn: usize,
-    /// Number of `Danger` assessments.
     pub danger: usize,
-    /// Number of `Block` assessments.
     pub block: usize,
 }
 
-/// How many times a specific pattern matched.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PatternCount {
-    /// Pattern identifier.
     pub id: String,
-    /// Number of occurrences.
     pub count: usize,
 }
 
-/// Stable audit representation of a matched scanner pattern.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MatchedPattern {
-    /// Pattern identifier (e.g. "FS-001").
     pub id: String,
-    /// Risk level assigned by the pattern.
     pub risk: RiskLevel,
-    /// Human-readable description of what the pattern detects.
     pub description: String,
-    /// Suggested safe alternative, if any.
     pub safe_alt: Option<String>,
-    /// Category of the pattern (e.g. Filesystem, Git). Optional for backwards compat.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub category: Option<Category>,
-    /// The actual substring of the command that triggered this pattern.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub matched_text: Option<String>,
-    /// Origin of this pattern in the runtime set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<PatternSource>,
-    /// Typed detection evidence identifying this match's mechanism and source
-    /// (ADR-022 §10, Audit v2). Absent on legacy v1 lines; fresh entries
-    /// populate it from `MatchResult.evidence`. Covered by the integrity chain
-    /// because the payload serializes `matched_patterns` directly.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evidence: Option<aegis_types::MatchEvidence>,
-    /// Stable detection ID for this match (ADR-022 §10, Audit v2). Absent on
-    /// legacy v1 lines; fresh entries mirror the pattern id today, leaving room
-    /// for a future detection-stable identifier distinct from the v1 pattern id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detection_id: Option<String>,
 }
 
-/// Stable audit representation of one snapshot created before execution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuditSnapshot {
-    /// Name of the snapshot plugin that created it.
     pub plugin: String,
-    /// Opaque identifier used to restore the snapshot.
     pub snapshot_id: String,
-    /// The git working tree a git Snapshot covers: its resolved Git target
-    /// (ADR-048), as a canonical top-level path. Set only by the git plugin;
-    /// `None` for every other provider and for lines that predate the field.
-    /// `skip_serializing_if` keeps old entries byte-identical, so their
-    /// integrity hash is unchanged (ADR-053).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_target: Option<String>,
 }
 
-/// Policy for rotating the append-only audit log.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuditRotationPolicy {
     max_file_size_bytes: u64,
@@ -571,31 +425,21 @@ struct AuditLock {
     file: std::fs::File,
 }
 
-/// Result of verifying the cryptographic integrity chain.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuditIntegrityReport {
-    /// Overall verification status.
     pub status: AuditIntegrityStatus,
-    /// Total entries examined.
     pub checked_entries: usize,
-    /// Entries linked by a valid hash chain.
     pub chained_entries: usize,
-    /// Human-readable summary message.
     pub message: String,
 }
 
-/// Outcome of an integrity chain verification pass.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuditIntegrityStatus {
-    /// Every chained entry verified successfully.
     Verified,
-    /// No integrity metadata present in the log.
     NoIntegrityData,
-    /// At least one chain link is broken or tampered.
     Corrupt,
 }
 
-/// Append-only JSONL audit log stored under `~/.aegis/audit.jsonl`.
 pub struct AuditLogger {
     pub(super) path: PathBuf,
     rotation: Option<AuditRotationPolicy>,
@@ -612,25 +456,12 @@ impl From<&MatchResult> for MatchedPattern {
             category: Some(m.pattern.category),
             matched_text: Some(m.public_matched_text().to_string()),
             source: Some(m.pattern.source),
-            // Audit v2: persist typed evidence and a stable detection ID. The
-            // detection ID is the stable identifier of THIS detection: a
-            // Language-aware rule's provenance rule id (distinct from the v1
-            // pattern id), falling back to the pattern id when the rule id is
-            // absent; a regex / token-prefix match's pattern id. The typed
-            // evidence carries the mechanism and, for language rules, the
-            // detected operation + metadata-only provenance (ADR-022 §10).
             evidence: Some(m.evidence.clone()),
             detection_id: Some(detection_id_for(m)),
         }
     }
 }
 
-/// Derive the stable detection ID for a `MatchResult` (ADR-022 §10).
-///
-/// A `LanguageRule` carries its own stable rule id in `AnalysisProvenance`; when
-/// present it is the detection ID (and differs from the v1 pattern id). When the
-/// rule id is absent, or for regex / token-prefix matches, the detection ID is
-/// the pattern id — the stable identifier for those mechanisms.
 fn detection_id_for(m: &MatchResult) -> String {
     match &m.evidence {
         aegis_types::MatchEvidence::LanguageRule { provenance, .. } => provenance

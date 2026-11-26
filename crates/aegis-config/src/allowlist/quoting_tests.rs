@@ -1,5 +1,3 @@
-//! Blocklist and allowlist matching against quoted spellings of a command.
-
 use std::path::Path;
 
 use time::OffsetDateTime;

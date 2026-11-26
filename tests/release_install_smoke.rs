@@ -1,6 +1,3 @@
-//! Contract tests for the `smoke-install` job in the release workflow: it
-//! installs the published Homebrew formula and npm package after a release.
-
 use std::path::Path;
 
 fn release_workflow() -> String {
@@ -8,8 +5,6 @@ fn release_workflow() -> String {
     std::fs::read_to_string(&path).expect("release workflow should be readable")
 }
 
-/// The text of one top-level job, from its `  <name>:` line to the next job
-/// or the comment block that introduces it.
 fn job(workflow: &str, name: &str) -> String {
     let header = format!("  {name}:");
     let mut lines = workflow.lines().skip_while(|line| *line != header);

@@ -1,23 +1,15 @@
-//! Human decision outcome of the interception flow.
-
 use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-/// User-visible outcome of the interception flow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Decision {
-    /// User explicitly approved the command.
     Approved,
-    /// User explicitly denied the command.
     Denied,
-    /// Approved automatically by allowlist or safe path.
     AutoApproved,
-    /// Blocked by policy or because the command is too dangerous.
     Blocked,
-    /// Snapshot was removed by `aegis snapshot prune`.
     Pruned,
 }
 

@@ -38,7 +38,6 @@ fn interactive_shell_output(home: &Path, cwd: &Path, response: &[u8]) -> Output 
     )
 }
 
-/// Runs `shell_line` under a PTY, waits for `prompt`, then sends `response`.
 fn interactive_shell_command_output(
     home: &Path,
     cwd: &Path,
@@ -101,9 +100,6 @@ fn interactive_shell_command_output(
     let mut stdin = child.stdin.take().unwrap();
     stdin.write_all(response).unwrap();
 
-    // BSD `script` writes VEOF directly to the PTY when its stdin closes, while
-    // previously read input may still be queued. Keep the pipe open so VEOF
-    // cannot overtake the prompt response on macOS.
     #[cfg(target_os = "linux")]
     drop(stdin);
 
@@ -363,8 +359,6 @@ fn evaluation_reports_required_plan_without_simulating_recovery_degradation() {
 
 const TERRAFORM_DESTROY: &str = "terraform destroy -target=module.test.api";
 
-/// A workspace whose `terraform` stub drops an `executed` marker, with the
-/// Danger command allowlisted so it is auto-approved (ADR-031 section 1).
 fn allowlisted_danger_workspace(home: &Path, workspace: &Path) -> (PathBuf, String) {
     let bin = workspace.join("bin");
     fs::create_dir_all(&bin).unwrap();
@@ -445,7 +439,6 @@ fn confirmed_danger_without_a_snapshot_provider_runs_without_a_recovery_prompt()
     let workspace = TempDir::new().unwrap();
     let cwd = workspace.path().canonicalize().unwrap();
     let (marker, path) = allowlisted_danger_workspace(home.path(), &cwd);
-    // Drop the allowlist so a human has to confirm the Danger command.
     fs::remove_file(cwd.join(".aegis.toml")).unwrap();
     let marker_env = marker.to_string_lossy().into_owned();
 
@@ -471,9 +464,6 @@ fn confirmed_danger_without_a_snapshot_provider_runs_without_a_recovery_prompt()
     assert!(entry.get("recovery_degradation").is_none());
 }
 
-/// `allowlisted_danger_workspace` without the project allowlist, so a human
-/// confirms the Danger command. Returns the marker, `PATH`, and the global
-/// config path where `ApproveAlways` writes its rule.
 fn confirming_danger_workspace(home: &Path, cwd: &Path) -> (PathBuf, String, PathBuf) {
     let (marker, path) = allowlisted_danger_workspace(home, cwd);
     fs::remove_file(cwd.join(".aegis.toml")).unwrap();

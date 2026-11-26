@@ -1,5 +1,3 @@
-//! Live routed-source and effective-budget orchestration regressions.
-
 #![cfg(feature = "language-analysis")]
 
 mod support;
@@ -133,9 +131,6 @@ async fn run_degrades_relative_script_when_command_cwd_is_unavailable() {
 
 #[tokio::test]
 async fn run_degrades_relative_direct_exec_after_dynamic_cd() {
-    // ADR-022 §6 / Iteration 10 P7: this target has no resolved language
-    // until a shebang is read, so routing must preserve the unknown-language
-    // degradation instead of dropping it.
     let baseline = safe_baseline();
 
     let workspace = tempfile::tempdir().unwrap();
@@ -200,9 +195,6 @@ async fn run_preserves_dynamic_source_as_typed_degradation() {
 #[cfg(unix)]
 #[tokio::test]
 async fn worker_failures_degrade_the_full_assessment_without_fail_open() {
-    // These are executable stand-ins for the self-spawned worker. `Worker::spawn`
-    // adds its private flag, which POSIX shell scripts safely ignore; this keeps
-    // the test at the parent orchestration seam rather than mocking worker_client.
     let fixtures = tempfile::tempdir().expect("temporary worker fixture directory");
     let failures = [
         ("crash", "exit 9"),
@@ -486,8 +478,6 @@ async fn script_resolution_is_inside_total_deadline_and_preserves_original_byte_
     );
 }
 
-// Speculative `LauncherOperand` directories resolving `NotApplicable` must not consume `max_script_files` (#437).
-
 #[tokio::test]
 async fn run_launcher_operand_directories_beyond_max_script_files_do_not_prompt() {
     let workspace = tempfile::tempdir().unwrap();
@@ -536,7 +526,6 @@ async fn run_launcher_operand_candidates_beyond_the_pre_resolution_cap_fail_clos
     }
     let baseline = safe_baseline();
 
-    // `max_script_files: 1` caps speculative candidates at 4; candidates 5 and 6 fail closed before resolution.
     let outcome = run_with_budget_in_cwd(
         &command,
         AnalysisCwd::Resolved(workspace.path()),
@@ -624,9 +613,6 @@ async fn run_launcher_operand_real_script_files_beyond_max_script_files_still_li
 async fn run_launcher_operand_mix_of_scripts_and_directories_only_budgets_real_scripts() {
     let workspace = tempfile::tempdir().unwrap();
     let mut command = String::from("du -sh");
-    // Distinct victim names keep the three script bodies distinct, so the
-    // parent's content-hash dedup (`AnalysisQueue::push`) analyzes all
-    // three instead of collapsing identical sources into one.
     for n in 1..=3 {
         let path = workspace.path().join(format!("script{n}.py"));
         std::fs::write(

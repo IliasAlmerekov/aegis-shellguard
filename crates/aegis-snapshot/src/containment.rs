@@ -1,14 +1,7 @@
-//! Snapshot artifact containment checks for filesystem-backed plugins.
-
 use std::path::{Component, Path, PathBuf};
 
 use crate::{Result, SnapshotError};
 
-/// Return an artifact path only when it is provably inside `store`.
-///
-/// `candidate` must be an absolute artifact path. The artifact itself may be
-/// absent so deletion can remain idempotent; its parent must still resolve
-/// beneath the canonical snapshot store.
 pub(crate) fn contain_artifact(
     plugin: &'static str,
     store: &Path,

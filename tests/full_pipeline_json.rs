@@ -1,8 +1,3 @@
-//! JSON planning (`--output json`): evaluation-only contract, decision
-//! projection, snapshot-plan reporting, and stderr-free machine consumption.
-//!
-//! Split from the original `tests/full_pipeline.rs` (behavior-preserving move).
-
 mod support;
 
 use std::fs;
@@ -421,9 +416,6 @@ fn json_output_prompts_for_inline_python_delete() {
         .output()
         .unwrap();
 
-    // A missed 100 ms analysis deadline also prompts, so only the prompt is
-    // reliable here. `analysis_orchestrate::cli_deadline_parity` checks the
-    // Warn LANG-FS-DEL Match (#458).
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stderr.is_empty());
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -448,8 +440,6 @@ fn json_output_applies_ci_block_to_inline_python_delete() {
     assert_eq!(output.status.code(), Some(3));
     assert!(output.stderr.is_empty());
 
-    // A missed 100 ms analysis deadline blocks with the same reason, so the
-    // Warn risk is not asserted here (#458).
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json["decision"], "block");
     assert_eq!(json["block_reason"], "protect_ci_policy");
@@ -475,8 +465,6 @@ fn strict_json_output_uses_analysis_override_instead_of_unrelated_strict_block()
     assert!(output.stderr.is_empty());
 
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
-    // A missed 100 ms analysis deadline takes the same override, so the Warn
-    // risk is not asserted here (#458).
     assert_eq!(json["mode"], "strict");
     assert_eq!(json["decision"], "prompt");
     assert!(json.get("block_reason").is_none());
@@ -505,10 +493,6 @@ canonical = "python3"
         .output()
         .unwrap();
 
-    // Without the alias, routing ignores `trusted-python` and the command
-    // auto-approves, so the prompt shows the alias reached routing. The Match
-    // itself needs completed analysis and is checked in
-    // `analysis_orchestrate::cli_deadline_parity` (#458).
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stderr.is_empty());
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
@@ -577,7 +561,6 @@ fn missing_direct_exec_path_degrades_instead_of_auto_approving() {
     assert_eq!(json["decision"], "prompt");
 }
 
-/// Re-splitting `env -S` longer than the original stage tokens must degrade to a prompt, not crash (#437).
 #[test]
 fn env_split_string_value_that_re_splits_longer_than_the_original_tokens_prompts_instead_of_crashing()
  {
@@ -598,7 +581,6 @@ fn env_split_string_value_that_re_splits_longer_than_the_original_tokens_prompts
     assert_eq!(json["decision"], "prompt");
 }
 
-/// A 3000-deep `env -S` chain stops at `ENV_SPLIT_MAX_DEPTH` without stack overflow or auto-approval (#437).
 #[test]
 fn env_dash_s_chain_past_the_nesting_bound_yields_a_verdict_not_auto_approve() {
     let home = TempDir::new().unwrap();
@@ -648,8 +630,6 @@ fn tilde_launcher_operand_with_interpreter_shebang_prompts_but_missing_or_plain_
 
 #[test]
 fn json_output_git_dash_capital_c_reset_hard_warns() {
-    // GHSA-7564: `-C .` shifted `reset --hard` off position 1, so GIT-001
-    // never fired through the CLI end-to-end.
     let home = TempDir::new().unwrap();
 
     let output = base_command(home.path())

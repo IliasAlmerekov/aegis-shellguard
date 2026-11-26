@@ -1,28 +1,18 @@
-//! Workspace resolver: the root of the enclosing git worktree, found with
-//! `stat` only (never by spawning `git`), plus the gitdirs that may join the
-//! `Trusted ceiling` when they provably belong to that worktree.
-
 use std::fs::{self, Metadata};
 use std::io::Read;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
-/// Why no workspace exists for a working directory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkspaceUnresolvedReason {
-    /// No `.git` found walking up from the working directory.
     NoWorktree,
-    /// The worktree root is `/`.
     Root,
-    /// The worktree root is the home directory.
     Home,
-    /// The worktree root is a strict ancestor of the home directory.
     HomeAncestor,
 }
 
 impl WorkspaceUnresolvedReason {
-    /// Stable machine-readable name.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::NoWorktree => "no_worktree",
@@ -33,52 +23,31 @@ impl WorkspaceUnresolvedReason {
     }
 }
 
-/// A resolved workspace.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Workspace {
-    /// Root of the enclosing git worktree (the directory that holds `.git`).
     pub root: PathBuf,
-    /// Canonical gitdir and commondir that point back at this worktree.
-    /// Empty for a plain `.git` directory (it lies inside `root`).
     pub gitdirs: Vec<PathBuf>,
-    /// Set when `.git` is a file whose `gitdir:` target does not point back at
-    /// this worktree, or whose `commondir` is not the git layout's parent of
-    /// the gitdir; the rejected path is carried for the warning.
     pub unverified_gitdir: Option<PathBuf>,
 }
 
-/// Outcome of [`resolve_workspace`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkspaceResolution {
-    /// A usable workspace.
     Resolved(Workspace),
-    /// No workspace, with the reason.
     Unresolved(WorkspaceUnresolvedReason),
 }
 
-/// `st_dev` of a directory, injectable so mount boundaries can be tested.
 pub type DeviceFn = Box<dyn Fn(&Path, &Metadata) -> u64>;
 
-/// Environment the resolver reads, injectable so tests are hermetic.
 pub struct ResolverInputs {
-    /// Home directory used for the degenerate-workspace rule.
     pub home: Option<PathBuf>,
-    /// Temporary directories of the computed default (never from `TMPDIR`).
     pub temp_dirs: Vec<PathBuf>,
-    /// `st_dev` of a path; the upward search stops where it changes.
     pub device: DeviceFn,
 }
 
-/// Resolve the workspace of `cwd` with the real system inputs.
 pub fn resolve_workspace(cwd: &Path) -> WorkspaceResolution {
     resolve_workspace_with(cwd, &ResolverInputs::system())
 }
 
-/// Resolve the workspace of `cwd` with injected inputs.
-///
-/// Walks up from `cwd` to the first `.git` (file or directory) using
-/// `symlink_metadata` only, stopping where `st_dev` changes. `GIT_DIR`,
-/// `GIT_WORK_TREE` and `GIT_COMMON_DIR` are never read.
 pub fn resolve_workspace_with(cwd: &Path, inputs: &ResolverInputs) -> WorkspaceResolution {
     use WorkspaceResolution::Unresolved;
     use WorkspaceUnresolvedReason::NoWorktree;
@@ -86,9 +55,6 @@ pub fn resolve_workspace_with(cwd: &Path, inputs: &ResolverInputs) -> WorkspaceR
     let Some(root) = find_worktree_root(cwd, inputs) else {
         return Unresolved(NoWorktree);
     };
-    // Enforcement canonicalises the root, so the degenerate-workspace rule
-    // must judge the canonical one: a cwd reached through a symlink can
-    // resolve to the home or `/`. One extra `realpath`, no tree walk.
     let canonical_root = fs::canonicalize(&root).ok();
     let canonical_home = inputs
         .home
@@ -114,10 +80,8 @@ fn find_worktree_root(cwd: &Path, inputs: &ResolverInputs) -> Option<PathBuf> {
     if !cwd.is_absolute() {
         return None;
     }
-    // Unreadable cwd aborts worktree discovery, granting no workspace.
     let start_dev = (inputs.device)(cwd, &fs::metadata(cwd).ok()?);
     for dir in cwd.ancestors() {
-        // Unreadable ancestor aborts worktree discovery, granting no workspace.
         let md = fs::metadata(dir).ok()?;
         if (inputs.device)(dir, &md) != start_dev {
             return None;
@@ -131,7 +95,6 @@ fn find_worktree_root(cwd: &Path, inputs: &ResolverInputs) -> Option<PathBuf> {
     None
 }
 
-/// The degenerate-workspace rule: `/`, the home, and any ancestor of home.
 pub(super) fn classify_root(root: &Path, home: Option<&Path>) -> Option<WorkspaceUnresolvedReason> {
     if root.parent().is_none() {
         return Some(WorkspaceUnresolvedReason::Root);
@@ -161,15 +124,11 @@ fn workspace_for(root: PathBuf) -> Workspace {
             let line = text.lines().next()?;
             Some(ws.root.join(line.strip_prefix("gitdir:")?.trim()))
         })
-        // An unparsable `.git` file claims no gitdir: report the file itself.
         .unwrap_or_else(|| dot_git.clone());
     match verified_gitdir(&ws.root, &dot_git, &claimed) {
         Some(gitdir) => {
             let common = read_small(&gitdir.join("commondir"))
-                // Uncanonicalizable commondir is omitted rather than added to writable gitdirs.
                 .and_then(|text| fs::canonicalize(gitdir.join(text.trim())).ok());
-            // A forged gitdir can name any commondir: accept it only in git's
-            // real layout, `<commondir>/worktrees/<name>`.
             let layout_ok = |common: &Path| {
                 gitdir.parent().is_some_and(|p| {
                     p.file_name().is_some_and(|n| n == "worktrees") && p.parent() == Some(common)
@@ -189,11 +148,7 @@ fn workspace_for(root: PathBuf) -> Workspace {
     ws
 }
 
-/// Accept `claimed` only if it points back at this worktree: the `gitdir`
-/// file of a linked worktree names `dot_git`, or `core.worktree` of a
-/// submodule resolves to `root`.
 fn verified_gitdir(root: &Path, dot_git: &Path, claimed: &Path) -> Option<PathBuf> {
-    // Uncanonicalizable claimed gitdir stays unverified and is not granted write access.
     let gitdir = fs::canonicalize(claimed).ok()?;
     let same = |named: &str, expected: &Path| {
         let (Ok(a), Ok(b)) = (
@@ -213,7 +168,6 @@ fn verified_gitdir(root: &Path, dot_git: &Path, claimed: &Path) -> Option<PathBu
     (linked || submodule()).then_some(gitdir)
 }
 
-/// `worktree` value of the `[core]` section of a git config file.
 fn core_worktree(config: &str) -> Option<String> {
     let mut in_core = false;
     for line in config.lines().map(str::trim) {
@@ -232,11 +186,9 @@ fn core_worktree(config: &str) -> Option<String> {
     None
 }
 
-/// Read a small text file; larger files are truncated, never fully loaded.
 pub(super) fn read_small(path: &Path) -> Option<String> {
     const LIMIT: u64 = 256 * 1024;
     let mut text = String::new();
-    // Unreadable or non-UTF-8 git metadata returns None so callers reject the gitdir.
     fs::File::open(path)
         .ok()?
         .take(LIMIT)
@@ -246,7 +198,6 @@ pub(super) fn read_small(path: &Path) -> Option<String> {
 }
 
 impl ResolverInputs {
-    /// Real passwd home, real `st_dev`, platform temporary directories.
     pub fn system() -> Self {
         Self {
             home: system_home(passwd_home(), std::env::var_os("HOME").map(PathBuf::from)),
@@ -256,7 +207,6 @@ impl ResolverInputs {
     }
 }
 
-/// Passwd home wins; the `HOME` variable only counts without a passwd entry.
 pub(super) fn system_home(passwd: Option<PathBuf>, env: Option<PathBuf>) -> Option<PathBuf> {
     passwd.or(env)
 }
@@ -292,8 +242,6 @@ pub(super) fn passwd_home() -> Option<PathBuf> {
     }
 }
 
-/// `/tmp`, plus the per-user temporary directory on macOS. `TMPDIR` is never
-/// read: an attacker-controlled variable must not widen the ceiling.
 fn system_temp_dirs() -> Vec<PathBuf> {
     #[allow(unused_mut)]
     let mut dirs = vec![PathBuf::from("/tmp")];

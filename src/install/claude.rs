@@ -15,18 +15,10 @@ const CLAUDE_SESSION_START_HOOK_SH: &str =
 
 pub(crate) fn run_claude_install(global: bool) -> ClaudeInstallResult {
     match claude_code_plugin_state_for_install(global) {
-        // The plugin registers the same hooks; installing settings entries
-        // too would run `aegis hook` twice per command. Existing entries stay
-        // as they are: an install that deletes config would surprise the user
-        // (ADR-047).
         ClaudePluginState::Active => ClaudeInstallResult::SkippedClaudeCodePlugin,
-        // An enabled plugin that is not installed registers nothing, so the
-        // settings hooks are the only guard (ADR-047).
         ClaudePluginState::EnabledNotInstalled => ClaudeInstallResult::PluginNotInstalled(
             AgentInstallResult::from_result(run_install_inner(global)),
         ),
-        // Claude Code changed its internal file, so whether the plugin is
-        // installed is unknown; installing settings hooks fails closed.
         ClaudePluginState::UnknownFormat => ClaudeInstallResult::PluginFormatUnknown(
             AgentInstallResult::from_result(run_install_inner(global)),
         ),
@@ -36,9 +28,6 @@ pub(crate) fn run_claude_install(global: bool) -> ClaudeInstallResult {
     }
 }
 
-/// A global install covers every project, so only user settings decide it. A
-/// `--local` install writes the shared project settings.json, so that file
-/// and user settings decide it, never the personal settings.local.json.
 fn claude_code_plugin_state_for_install(global: bool) -> ClaudePluginState {
     let home = super::home_dir();
     if global {
@@ -84,9 +73,6 @@ fn run_global_claude_install_at_home(
 fn run_install_at_path(settings_path: &Path) -> Result<InstallOutcome, InstallError> {
     let mut settings = load_settings(settings_path)?;
 
-    // The shim lives next to the settings file in `<settings_dir>/hooks/`.
-    // Deriving the dir from the settings path keeps global and `--local`
-    // installs on a single code path.
     let settings_dir = settings_path
         .parent()
         .ok_or_else(|| InstallError::InvalidPath {
@@ -102,8 +88,6 @@ fn run_install_at_path(settings_path: &Path) -> Result<InstallOutcome, InstallEr
     let session_shim_outcome =
         write_executable(&session_shim_path, &render_claude_session_start_hook())?;
 
-    // Resolve to an absolute path so the registered command is PATH-independent
-    // even when install ran from a relative cwd (e.g. a project-local install).
     let hook_command = std::path::absolute(&shim_path)
         .map_err(|source| InstallError::Resolve {
             what: "failed to resolve absolute hook path",
@@ -162,10 +146,6 @@ fn apply_session_start_installation(
             )
         })?;
 
-    // Prune-then-add: drop every aegis-managed SessionStart registration that
-    // is not the canonical `startup|resume` one (including a stale entry under
-    // another matcher that fires the notice twice), while preserving unrelated
-    // user hooks.
     let (pruned_any, canonical_present) = super::prune_aegis_managed_hooks(
         session_start,
         "settings.hooks.SessionStart",
@@ -174,8 +154,6 @@ fn apply_session_start_installation(
         super::is_aegis_managed_session_start_command,
     )?;
 
-    // Idempotent only when the canonical entry was already the sole
-    // aegis-managed hook and nothing was pruned.
     if canonical_present && !pruned_any {
         return Ok(InstallOutcome::AlreadyPresent);
     }
@@ -189,17 +167,10 @@ fn apply_session_start_installation(
     Ok(InstallOutcome::Installed)
 }
 
-/// Materialize the Claude PreToolUse hook with `__AEGIS_BIN__` replaced by an
-/// absolute, shell-quoted path to the Aegis binary. Mirrors the Codex renderer
-/// so both shims stay behaviorally identical; only agent-specific comments
-/// differ (see ADR-012 consequences).
 fn render_claude_pre_tool_use_hook() -> String {
     CLAUDE_PRE_TOOL_USE_HOOK_SH.replace("__AEGIS_BIN__", &shell_quote(&resolved_aegis_bin()))
 }
 
-/// Materialize the Claude SessionStart hook with the same binary path as the
-/// PreToolUse hook, so its missing-binary notice checks the binary the
-/// PreToolUse hook will actually run.
 fn render_claude_session_start_hook() -> String {
     CLAUDE_SESSION_START_HOOK_SH.replace("__AEGIS_BIN__", &shell_quote(&resolved_aegis_bin()))
 }
@@ -226,11 +197,6 @@ fn apply_installation(
         InstallError::InvalidStructure("settings.hooks.PreToolUse must be a JSON array".into())
     })?;
 
-    // Prune-then-add: remove every aegis-managed legacy Bash registration (the
-    // bare `aegis hook`, the legacy `aegis-rewrite.sh` file, and any stale
-    // `aegis-pre-tool-use.sh` at a different absolute path or under a matcher
-    // Aegis does not install) while preserving the canonical entry and any
-    // unrelated user hooks.
     let (pruned_any, canonical_present) = super::prune_aegis_managed_hooks(
         pre_tool_use,
         "settings.hooks.PreToolUse",
@@ -239,9 +205,6 @@ fn apply_installation(
         super::is_aegis_managed_bash_command,
     )?;
 
-    // Idempotent only when the canonical entry was already the sole aegis-managed
-    // hook and nothing was pruned. Any pruning or a missing canonical entry means
-    // the settings changed (or must change), so we report `Installed` and write.
     if canonical_present && !pruned_any {
         return Ok(InstallOutcome::AlreadyPresent);
     }

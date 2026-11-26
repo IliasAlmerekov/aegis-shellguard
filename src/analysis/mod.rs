@@ -1,14 +1,3 @@
-//! Parent-side language analysis orchestration (ADR-022 §2/§6, L1 Iterations
-//! 3-4).
-//!
-//! The parent process owns async orchestration: spawning the ephemeral worker,
-//! framing requests/responses, enforcing deadlines, and converting worker
-//! failures into typed degradation. The worker subprocess itself and the
-//! framing protocol live in the `aegis-language` crate. [`router`] resolves
-//! which parts of an intercepted command are analyzable source (Iteration 4);
-//! wiring its output into [`worker_client`] and merging results into an
-//! `Assessment` remains a later slice.
-
 use std::path::Path;
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -16,18 +5,14 @@ fn sha256_hex(bytes: &[u8]) -> String {
 
     let mut encoded = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
-        // Writing to a String is infallible.
         let _ = write!(encoded, "{byte:02x}");
     }
     encoded
 }
 
-/// Working-directory state used to resolve relative language-analysis sources.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnalysisCwd<'a> {
-    /// Relative source paths resolve from this directory.
     Resolved(&'a Path),
-    /// The command working directory is unavailable; relative sources degrade.
     Unavailable,
 }
 

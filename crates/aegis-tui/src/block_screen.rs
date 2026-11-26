@@ -13,7 +13,6 @@ use super::shared::{
     print_command_line,
 };
 
-/// Drops `queue!`/`flush` errors: command is already denied and writes have no fallback channel.
 pub(super) fn render_block<W: Write>(
     assessment: &Assessment,
     explanation: &CommandExplanation,
@@ -63,13 +62,6 @@ pub(super) fn render_block<W: Write>(
     let _ = out.flush();
 }
 
-/// Print a non-interactive denial notice.  Emitted when stdin is not a TTY
-/// and the command would have triggered a prompt in interactive mode.
-///
-/// We use Yellow (not Red) to distinguish from Block, which is truly
-/// catastrophic.  This denial is policy-driven, not a safety absolute.
-///
-/// Drops `queue!`/`flush` errors: command is already denied and writes have no fallback channel.
 pub(super) fn render_noninteractive_denial<W: Write>(
     assessment: &Assessment,
     explanation: &CommandExplanation,
@@ -109,12 +101,6 @@ pub(super) fn render_noninteractive_denial<W: Write>(
     let _ = out.flush();
 }
 
-/// Print the non-interactive denial for a Language-aware Match or Analysis degradation.
-///
-/// Unlike an ordinary Warn/Danger denial, this path must not suggest an
-/// allowlist: ADR-022 §5 permits only a non-persistable one-time decision.
-///
-/// Drops `queue!`/`flush` errors: command is already denied and writes have no fallback channel.
 pub(super) fn render_noninteractive_analysis_denial<W: Write>(
     assessment: &Assessment,
     explanation: &CommandExplanation,
@@ -141,7 +127,6 @@ pub(super) fn render_noninteractive_analysis_denial<W: Write>(
     let _ = out.flush();
 }
 
-/// Drops `queue!`/`flush` errors: command is already denied and writes have no fallback channel.
 pub(crate) fn render_policy_block<W: Write>(
     assessment: &Assessment,
     explanation: &CommandExplanation,

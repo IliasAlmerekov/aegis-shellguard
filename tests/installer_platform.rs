@@ -710,8 +710,6 @@ fn uninstall_script_points_at_npm_uninstall_when_npm_owns_the_remaining_binary()
     fs::create_dir_all(&elsewhere).unwrap();
     write_fake_release_binary(&elsewhere.join("aegis"));
 
-    // A stub `npm` that reports the aegis package as globally installed,
-    // standing in for a real npm global install.
     fs::write(
         elsewhere.join("npm"),
         "#!/bin/sh\ncase \"$*\" in\n  'ls -g @iliasalmerekov/aegis') exit 0 ;;\n  *) exit 1 ;;\nesac\n",
