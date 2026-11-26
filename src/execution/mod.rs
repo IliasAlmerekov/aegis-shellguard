@@ -110,7 +110,6 @@ impl<R: ExecutionRenderer> ShellRun<'_, R> {
 
     fn execute(&self, verdict: aegis::runtime::disposition::Verdict) -> i32 {
         let coverage = self.create_snapshots();
-        let attempts = coverage.snapshot_attempts();
         let gate = recovery_gate(
             self.cmd,
             self.plan,
@@ -121,12 +120,7 @@ impl<R: ExecutionRenderer> ShellRun<'_, R> {
         match gate {
             RecoveryGate::Deny(degradation) => {
                 let status = aegis::runtime::sandbox_status_before_preparation(self.sandbox_config);
-                let options = AuditWriteOptions {
-                    snapshot_attempts: &attempts,
-                    recovery_degradation: Some(degradation),
-                    ..AuditWriteOptions::for_plan(self.plan, status)
-                };
-                match self.audit(Decision::Denied, &coverage.records, options) {
+                match self.audit_covered(Decision::Denied, &coverage, Some(degradation), status) {
                     Ok(()) => EXIT_DENIED,
                     Err(err) => {
                         err!("error: failed to write audit log: {err}");
@@ -139,29 +133,29 @@ impl<R: ExecutionRenderer> ShellRun<'_, R> {
                 degradation,
             } => complete_shell_execution(
                 decision,
-                ShellLifecycle {
-                    prepare: || prepare_command(self.cmd, self.launch, self.sandbox_config),
-                    append_audit: |final_decision, sandbox_status| {
-                        let options = AuditWriteOptions {
-                            snapshot_attempts: &attempts,
-                            recovery_degradation: degradation,
-                            ..AuditWriteOptions::for_plan(self.plan, sandbox_status)
-                        };
-                        self.audit(final_decision, &coverage.records, options)
-                    },
-                    execute: exec_prepared_command,
-                    wait: crate::shell_compat::wait_for_child,
-                    report_error: |message: &str| self.renderer.report_error(message),
-                    unavailable_message: || {
-                        aegis::runtime::sandbox_unavailable_code_and_message(
-                            aegis_sandbox::wsl1_unavailable(),
-                            aegis_sandbox::apparmor_userns_restricted(),
-                        )
-                        .1
-                    },
+                &mut ShellPath {
+                    run: self,
+                    coverage: &coverage,
+                    degradation,
                 },
             ),
         }
+    }
+
+    fn audit_covered(
+        &self,
+        decision: Decision,
+        coverage: &SnapshotCoverage,
+        degradation: Option<RecoveryDegradation>,
+        status: SandboxStatus,
+    ) -> Result<(), AegisError> {
+        let attempts = coverage.snapshot_attempts();
+        let options = AuditWriteOptions {
+            snapshot_attempts: &attempts,
+            recovery_degradation: degradation,
+            ..AuditWriteOptions::for_plan(self.plan, status)
+        };
+        self.audit(decision, &coverage.records, options)
     }
 
     fn audit(
@@ -192,93 +186,133 @@ impl<R: ExecutionRenderer> ShellRun<'_, R> {
     }
 }
 
-struct ShellLifecycle<Prepare, Audit, Execute, Wait, Report, Unavailable> {
-    prepare: Prepare,
-    append_audit: Audit,
-    execute: Execute,
-    wait: Wait,
-    report_error: Report,
-    unavailable_message: Unavailable,
+struct ShellPath<'a, R> {
+    run: &'a ShellRun<'a, R>,
+    coverage: &'a SnapshotCoverage,
+    degradation: Option<RecoveryDegradation>,
 }
 
-fn complete_shell_execution<C, X, AuditError>(
-    decision: Decision,
-    lifecycle: ShellLifecycle<
-        impl FnOnce() -> Result<(C, SandboxStatus), aegis_sandbox::SandboxError>,
-        impl FnOnce(Decision, SandboxStatus) -> Result<(), AuditError>,
-        impl FnOnce(C) -> Result<(X, SandboxStatus), aegis_sandbox::SandboxError>,
-        impl FnOnce(X) -> i32,
-        impl FnOnce(&str),
-        impl FnOnce() -> &'static str,
-    >,
-) -> i32
-where
-    AuditError: std::fmt::Display,
-{
-    let ShellLifecycle {
-        prepare,
-        append_audit,
-        execute,
-        wait,
-        report_error,
-        unavailable_message,
-    } = lifecycle;
-    match prepare() {
+trait ShellLifecycle {
+    type Prepared;
+    type Running;
+    type AuditError: std::fmt::Display;
+
+    fn prepare(&mut self) -> Result<(Self::Prepared, SandboxStatus), aegis_sandbox::SandboxError>;
+    fn append_audit(
+        &mut self,
+        decision: Decision,
+        status: SandboxStatus,
+    ) -> Result<(), Self::AuditError>;
+    fn execute(
+        &mut self,
+        prepared: Self::Prepared,
+    ) -> Result<(Self::Running, SandboxStatus), aegis_sandbox::SandboxError>;
+    fn wait(&mut self, running: Self::Running) -> i32;
+    fn report_error(&mut self, message: &str);
+    fn unavailable_message(&self) -> &'static str;
+}
+
+impl<R: ExecutionRenderer> ShellLifecycle for ShellPath<'_, R> {
+    type Prepared = crate::shell_compat::PreparedShellCommand;
+    type Running = aegis_sandbox::ReportedSandboxChild;
+    type AuditError = AegisError;
+
+    fn prepare(&mut self) -> Result<(Self::Prepared, SandboxStatus), aegis_sandbox::SandboxError> {
+        prepare_command(self.run.cmd, self.run.launch, self.run.sandbox_config)
+    }
+
+    fn append_audit(
+        &mut self,
+        decision: Decision,
+        status: SandboxStatus,
+    ) -> Result<(), AegisError> {
+        self.run
+            .audit_covered(decision, self.coverage, self.degradation, status)
+    }
+
+    fn execute(
+        &mut self,
+        prepared: Self::Prepared,
+    ) -> Result<(Self::Running, SandboxStatus), aegis_sandbox::SandboxError> {
+        exec_prepared_command(prepared)
+    }
+
+    fn wait(&mut self, running: Self::Running) -> i32 {
+        crate::shell_compat::wait_for_child(running)
+    }
+
+    fn report_error(&mut self, message: &str) {
+        self.run.renderer.report_error(message);
+    }
+
+    fn unavailable_message(&self) -> &'static str {
+        aegis::runtime::sandbox_unavailable_code_and_message(
+            aegis_sandbox::wsl1_unavailable(),
+            aegis_sandbox::apparmor_userns_restricted(),
+        )
+        .1
+    }
+}
+
+fn complete_shell_execution(decision: Decision, lifecycle: &mut impl ShellLifecycle) -> i32 {
+    match lifecycle.prepare() {
         Ok((command, prep_status)) => {
             let needs_inner_report =
                 cfg!(target_os = "linux") && prep_status == SandboxStatus::Active;
             if !needs_inner_report {
-                if let Err(err) = append_audit(decision, prep_status) {
-                    report_error(&format!("failed to write audit log: {err}"));
+                if let Err(err) = lifecycle.append_audit(decision, prep_status) {
+                    lifecycle.report_error(&format!("failed to write audit log: {err}"));
                     return EXIT_INTERNAL;
                 }
-                return match execute(command) {
-                    Ok((child, _)) => wait(child),
+                return match lifecycle.execute(command) {
+                    Ok((child, _)) => lifecycle.wait(child),
                     Err(err) => {
-                        report_error(&setup_failed_message(&err));
+                        lifecycle.report_error(&setup_failed_message(&err));
                         EXIT_INTERNAL
                     }
                 };
             }
 
-            match execute(command) {
+            match lifecycle.execute(command) {
                 Ok((child, actual_status)) => {
                     if actual_status == SandboxStatus::NotAttempted {
-                        if let Err(err) = append_audit(Decision::Blocked, actual_status) {
-                            report_error(&format!("failed to write audit log: {err}"));
+                        if let Err(err) = lifecycle.append_audit(Decision::Blocked, actual_status) {
+                            lifecycle.report_error(&format!("failed to write audit log: {err}"));
                             return EXIT_INTERNAL;
                         }
-                        let _ = wait(child);
-                        report_error(&setup_failed_message(
+                        let _ = lifecycle.wait(child);
+                        lifecycle.report_error(&setup_failed_message(
                             &"inner sandbox wrapper did not report status",
                         ));
                         return EXIT_INTERNAL;
                     }
-                    if let Err(err) = append_audit(decision, actual_status) {
-                        report_error(&format!("failed to write audit log: {err}"));
+                    if let Err(err) = lifecycle.append_audit(decision, actual_status) {
+                        lifecycle.report_error(&format!("failed to write audit log: {err}"));
                         return EXIT_INTERNAL;
                     }
-                    wait(child)
+                    lifecycle.wait(child)
                 }
                 Err(err) => {
                     if let Err(audit_err) =
-                        append_audit(Decision::Blocked, SandboxStatus::NotAttempted)
+                        lifecycle.append_audit(Decision::Blocked, SandboxStatus::NotAttempted)
                     {
-                        report_error(&format!("failed to write audit log: {audit_err}"));
+                        lifecycle.report_error(&format!("failed to write audit log: {audit_err}"));
                         return EXIT_INTERNAL;
                     }
-                    report_error(&setup_failed_message(&err));
+                    lifecycle.report_error(&setup_failed_message(&err));
                     EXIT_INTERNAL
                 }
             }
         }
-        Err(err) => match SandboxFailure::record(&err, append_audit) {
+        Err(err) => match SandboxFailure::record(&err, |decision, status| {
+            lifecycle.append_audit(decision, status)
+        }) {
             Ok(failure) => {
-                report_error(&failure.message(unavailable_message));
+                lifecycle.report_error(&failure.message(|| lifecycle.unavailable_message()));
                 failure.exit_code()
             }
             Err(audit_err) => {
-                report_error(&format!("failed to write audit log: {audit_err}"));
+                lifecycle.report_error(&format!("failed to write audit log: {audit_err}"));
                 EXIT_INTERNAL
             }
         },

@@ -388,14 +388,9 @@ impl RuntimeContext {
         decision: Decision,
         snapshots: &[SnapshotRecord],
         explanation: &CommandExplanation,
-        mut options: AuditWriteOptions<'_>,
+        options: AuditWriteOptions<'_>,
     ) -> Result<(), AegisError> {
-        let watch = options.watch.take();
-        let mut entry =
-            self.build_audit_entry(assessment, decision, snapshots, explanation, &options);
-        if let Some(watch) = watch {
-            entry = entry.with_watch_context(watch.source, watch.cwd, watch.id);
-        }
+        let entry = self.build_audit_entry(assessment, decision, snapshots, explanation, &options);
         self.audit_logger.append(entry)?;
         self.complete_automatic_prune(snapshots)?;
         Ok(())
@@ -477,8 +472,13 @@ impl RuntimeContext {
         if !options.snapshot_attempts.is_empty() {
             entry = entry.with_snapshot_attempts(options.snapshot_attempts.to_vec());
         }
-        match options.recovery_degradation {
-            Some(degradation) => entry.with_recovery_degradation(degradation),
+        if let Some(degradation) = options.recovery_degradation {
+            entry = entry.with_recovery_degradation(degradation);
+        }
+        match &options.watch {
+            Some(watch) => {
+                entry.with_watch_context(watch.source.clone(), watch.cwd.clone(), watch.id.clone())
+            }
             None => entry,
         }
     }
