@@ -376,7 +376,7 @@ fn project_sandbox_allow_write_can_tighten_to_subset() {
 
     fs::write(
         global_dir.join(GLOBAL_CONFIG_FILE),
-        "[sandbox]\nenabled = true\nallow_write = [\"/opt\", \"/tmp\"]\n",
+        "[sandbox]\nallow_write = [\"/opt\", \"/tmp\"]\n",
     )
     .unwrap();
     fs::write(
@@ -407,7 +407,7 @@ fn project_sandbox_allow_write_expansion_dropped_and_warned() {
 
     fs::write(
         global_dir.join(GLOBAL_CONFIG_FILE),
-        "[sandbox]\nenabled = true\nallow_write = [\"/opt\"]\n",
+        "[sandbox]\nallow_write = [\"/opt\"]\n",
     )
     .unwrap();
     fs::write(
@@ -438,7 +438,7 @@ fn project_sandbox_allow_write_disjoint_tightens_to_empty() {
 
     fs::write(
         global_dir.join(GLOBAL_CONFIG_FILE),
-        "[sandbox]\nenabled = true\nallow_write = [\"/opt\"]\n",
+        "[sandbox]\nallow_write = [\"/opt\"]\n",
     )
     .unwrap();
     fs::write(

@@ -752,18 +752,6 @@
           "items": {
             "type": "string"
           }
-        },
-        "enabled": {
-          "description": "Deprecated: Aegis ignores this value; the Sandbox is always applied\noutside `Mode::Audit` (ADR-029). Kept for schema v1 compatibility.",
-          "type": "boolean",
-          "deprecated": true,
-          "writeOnly": true
-        },
-        "required": {
-          "description": "Deprecated: Aegis ignores this value; Sandbox unavailability always\nblocks outside `Mode::Audit` (ADR-029). Kept for schema v1 compatibility.",
-          "type": "boolean",
-          "deprecated": true,
-          "writeOnly": true
         }
       },
       "additionalProperties": false

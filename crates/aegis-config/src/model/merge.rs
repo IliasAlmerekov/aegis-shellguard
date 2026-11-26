@@ -1,8 +1,5 @@
 use super::partial::PartialConfig;
-use super::ratchet::{
-    self, DeprecatedSandboxFieldWarning, Ratchet, RatchetContext, RatchetSink,
-    SecurityRatchetWarning,
-};
+use super::ratchet::{self, Ratchet, RatchetContext, RatchetSink, SecurityRatchetWarning};
 use super::{
     AegisConfig, ConfigSourceLayer, most_restrictive_allowlist_override_level,
     most_restrictive_ci_policy, most_restrictive_mode, most_restrictive_snapshot_policy,
@@ -17,21 +14,6 @@ impl AegisConfig {
     ) -> (Self, Vec<SecurityRatchetWarning>) {
         let (config, sink) = Self::merge_layer_with_sink(base, overlay, layer, location);
         (config, sink.into_warnings())
-    }
-
-    pub(super) fn merge_layer_all_warnings(
-        base: Self,
-        overlay: PartialConfig,
-        layer: ConfigSourceLayer,
-        location: &str,
-    ) -> (
-        Self,
-        Vec<SecurityRatchetWarning>,
-        Vec<DeprecatedSandboxFieldWarning>,
-    ) {
-        let (config, sink) = Self::merge_layer_with_sink(base, overlay, layer, location);
-        let (ratchet, deprecated) = sink.into_all_warnings();
-        (config, ratchet, deprecated)
     }
 
     #[cfg(test)]

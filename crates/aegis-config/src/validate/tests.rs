@@ -473,7 +473,7 @@ mode = "Strict"
 allowlist_override_level = "Never"
 snapshot_policy = "Full"
 [sandbox]
-required = true
+allow_network = false
 "#,
     )
     .unwrap();
@@ -489,63 +489,6 @@ required = true
         "unexpected ratchet warnings: {:#?}",
         report.warnings
     );
-}
-
-#[test]
-fn validate_warns_when_project_disables_globally_enabled_sandbox() {
-    let workspace = TempDir::new().unwrap();
-    let home = TempDir::new().unwrap();
-    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
-    fs::create_dir_all(&global_dir).unwrap();
-
-    let global_path = global_dir.join(GLOBAL_CONFIG_FILE);
-    let project_path = workspace.path().join(PROJECT_CONFIG_FILE);
-    fs::write(&global_path, "[sandbox]\nenabled = true\n").unwrap();
-    fs::write(&project_path, "[sandbox]\nenabled = false\n").unwrap();
-
-    let report = validate_config_layers(workspace.path(), Some(home.path()));
-
-    assert!(
-        report.valid,
-        "config must remain valid; deprecated_sandbox_field is advisory, got errors: {:#?}",
-        report.errors
-    );
-    assert!(
-        report.errors.is_empty(),
-        "expected no hard errors, got {:#?}",
-        report.errors
-    );
-    assert!(
-        !report
-            .warnings
-            .iter()
-            .any(|w| w.code == "project_security_ratchet" && w.message.contains("sandbox.enabled")),
-        "sandbox.enabled must not raise project_security_ratchet: {:#?}",
-        report.warnings
-    );
-    let deprecated: Vec<_> = report
-        .warnings
-        .iter()
-        .filter(|w| w.code == "deprecated_sandbox_field")
-        .collect();
-    assert_eq!(
-        deprecated.len(),
-        2,
-        "expected one deprecated_sandbox_field warning per layer, got {:#?}",
-        report.warnings
-    );
-    assert!(deprecated.iter().any(|w| {
-        w.location == global_path.to_string_lossy()
-            && w.message.contains("sandbox.enabled")
-            && w.message.contains("global")
-            && w.message.contains("mode = \"Audit\"")
-    }));
-    assert!(deprecated.iter().any(|w| {
-        w.location == project_path.to_string_lossy()
-            && w.message.contains("sandbox.enabled")
-            && w.message.contains("project")
-            && w.message.contains("mode = \"Audit\"")
-    }));
 }
 
 #[test]
@@ -591,7 +534,7 @@ fn validate_warns_when_project_enables_network_over_global_deny() {
 
     fs::write(
         global_dir.join(GLOBAL_CONFIG_FILE),
-        "[sandbox]\nenabled = true\nallow_network = false\n",
+        "[sandbox]\nallow_network = false\n",
     )
     .unwrap();
     fs::write(
@@ -626,7 +569,7 @@ fn validate_warns_when_project_expands_allow_write_over_global_base() {
 
     fs::write(
         global_dir.join(GLOBAL_CONFIG_FILE),
-        "[sandbox]\nenabled = true\nallow_write = [\"/opt/data\"]\n",
+        "[sandbox]\nallow_write = [\"/opt/data\"]\n",
     )
     .unwrap();
     fs::write(
@@ -653,53 +596,26 @@ fn validate_warns_when_project_expands_allow_write_over_global_base() {
 }
 
 #[test]
-fn validate_warns_deprecated_sandbox_field_for_required_without_ratchet_warning() {
-    let workspace = TempDir::new().unwrap();
-    let home = TempDir::new().unwrap();
-    let global_dir = home.path().join(GLOBAL_CONFIG_DIR);
-    fs::create_dir_all(&global_dir).unwrap();
+fn removed_sandbox_flags_fail_validation_naming_the_field() {
+    for field in ["enabled", "required"] {
+        let workspace = TempDir::new().unwrap();
+        let home = TempDir::new().unwrap();
+        fs::write(
+            workspace.path().join(PROJECT_CONFIG_FILE),
+            format!("[sandbox]\n{field} = true\n"),
+        )
+        .unwrap();
 
-    let global_path = global_dir.join(GLOBAL_CONFIG_FILE);
-    let project_path = workspace.path().join(PROJECT_CONFIG_FILE);
-    fs::write(&global_path, "[sandbox]\nrequired = true\n").unwrap();
-    fs::write(&project_path, "[sandbox]\nrequired = false\n").unwrap();
+        let report = validate_config_layers(workspace.path(), Some(home.path()));
 
-    let report = validate_config_layers(workspace.path(), Some(home.path()));
-
-    assert!(
-        report.valid,
-        "config must remain valid; deprecated_sandbox_field is advisory, got errors: {:#?}",
-        report.errors
-    );
-    assert!(
-        !report
-            .warnings
-            .iter()
-            .any(|w| w.code == "project_security_ratchet" && w.message.contains("sandbox.required")),
-        "sandbox.required must not raise project_security_ratchet: {:#?}",
-        report.warnings
-    );
-    let deprecated: Vec<_> = report
-        .warnings
-        .iter()
-        .filter(|w| w.code == "deprecated_sandbox_field")
-        .collect();
-    assert_eq!(
-        deprecated.len(),
-        2,
-        "expected one deprecated_sandbox_field warning per layer, got {:#?}",
-        report.warnings
-    );
-    assert!(deprecated.iter().any(|w| {
-        w.location == global_path.to_string_lossy()
-            && w.message.contains("sandbox.required")
-            && w.message.contains("global")
-            && w.message.contains("mode = \"Audit\"")
-    }));
-    assert!(deprecated.iter().any(|w| {
-        w.location == project_path.to_string_lossy()
-            && w.message.contains("sandbox.required")
-            && w.message.contains("project")
-            && w.message.contains("mode = \"Audit\"")
-    }));
+        assert!(!report.valid, "{field} must be rejected");
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|e| e.message.contains(&format!("unknown field `{field}`"))),
+            "error must name `{field}`: {:#?}",
+            report.errors
+        );
+    }
 }

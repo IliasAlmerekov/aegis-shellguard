@@ -185,8 +185,8 @@ pub fn validate_config_layers(current_dir: &Path, home_dir: Option<&Path>) -> Va
         merge_report(&mut report, validate_config(&merged, &source_map));
     } else {
         for layer in layer_paths {
-            match AegisConfig::merge_layer_path_with_all_warnings(merged, &layer) {
-                Ok((next, warnings, deprecated_sandbox)) => {
+            match AegisConfig::merge_layer_path_with_warnings(merged, &layer) {
+                Ok((next, warnings)) => {
                     for warning in warnings {
                         push_unique_issue(
                             &mut report.warnings,
@@ -200,24 +200,6 @@ pub fn validate_config_layers(current_dir: &Path, home_dir: Option<&Path>) -> Va
                             },
                         );
                     }
-                    for deprecated in deprecated_sandbox {
-                        let layer_name = match deprecated.layer {
-                            ConfigSourceLayer::Global => "global",
-                            ConfigSourceLayer::Project => "project",
-                        };
-                        push_unique_issue(
-                            &mut report.warnings,
-                            ValidationIssue {
-                                code: "deprecated_sandbox_field",
-                                message: format!(
-                                    "`{}` ({layer_name} layer) is deprecated and ignored by Aegis (the Sandbox is mandatory outside `Mode::Audit`); set `mode = \"Audit\"` for observe-only use",
-                                    deprecated.field
-                                ),
-                                location: deprecated.location,
-                            },
-                        );
-                    }
-
                     merged = next;
                     let source_map = ConfigSourceMap::for_config_with_paths(
                         &merged,

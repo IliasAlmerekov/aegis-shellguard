@@ -165,7 +165,7 @@ fn sandboxed_command_runs_and_denies_write_outside_allow_write() {
     support::write_global_config(
         home.path(),
         &format!(
-            "[sandbox]\nenabled = true\nallow_write = [\"{}\"]\n",
+            "[sandbox]\nallow_write = [\"{}\"]\n",
             workspace.path().display()
         ),
     );

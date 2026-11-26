@@ -71,26 +71,15 @@ pub(crate) fn merge_sandbox(
     sink: &mut RatchetSink,
 ) -> SandboxSettings {
     let SandboxSettings {
-        enabled: _,
-        required: _,
         allow_write: base_allow_write,
         allow_write_narrows_computed: base_narrows_computed,
         allow_write_trusted: base_trusted,
         allow_network: base_allow_network,
     } = base;
     let PartialSandboxSettings {
-        enabled: req_enabled,
-        required: req_required,
         allow_write: req_allow_write,
         allow_network: req_allow_network,
     } = overlay;
-
-    if req_enabled.is_some() {
-        sink.warn_deprecated_sandbox("sandbox.enabled", layer, location);
-    }
-    if req_required.is_some() {
-        sink.warn_deprecated_sandbox("sandbox.required", layer, location);
-    }
 
     let (allow_write, allow_write_narrows_computed, allow_write_trusted) = custom_allow_write(
         base_allow_write,
@@ -103,8 +92,6 @@ pub(crate) fn merge_sandbox(
     );
 
     SandboxSettings {
-        enabled: false,
-        required: false,
         allow_write,
         allow_write_narrows_computed,
         allow_write_trusted,

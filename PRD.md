@@ -272,26 +272,22 @@ for `Mode::Audit`, where no confinement is expected.
 **not a confidentiality boundary and not a privilege boundary**: profiles do not
 promise to hide readable files or secrets from a command.
 
-**Configuration.** An existing `[sandbox]` section keeps loading under the
-mandatory layer, and the two flags that could switch the layer off leave the 1.0
-configuration contract. One invariant governs every field below: migration may
-only ever reduce authority, never grant it, with one recorded exception: a
-pre-1.0 config with `enabled = true` and no `allow_write` gains the computed
-default ceiling.
+**Configuration.** The `[sandbox]` section keeps loading under the mandatory
+layer. The two flags that could switch the layer off are removed. One invariant
+governs every field below: migration may only ever reduce authority, never grant
+it.
 
-- **`sandbox.enabled` and `sandbox.required` are not part of the 1.0
-  configuration contract.** A mandatory layer cannot also be skippable, so no
-  flag expresses "mandatory, but may be bypassed". Both are still accepted **by
-  exact name and ignored at whatever value they carry**, for the whole support
-  life of config schema v1, and each raises a typed `deprecated_sandbox_field`
-  warning naming its layer and location. `enabled = false` is not fail-open: the
-  layer applies regardless. Observe-only operation is `mode = "Audit"`, which is
-  where the obligation itself stops. `Toggle` and `Disabled passthrough` stay a
-  separate operator mechanism and are not an opt-out of the layer.
+- **`sandbox.enabled` and `sandbox.required` are removed.** A mandatory layer
+  cannot also be skippable, so no flag expresses "mandatory, but may be
+  bypassed". A config that still sets either fails to load as an unknown field,
+  so the user must delete those lines. Observe-only operation is
+  `mode = "Audit"`, which is where the obligation itself stops. `Toggle` and
+  `Disabled passthrough` stay a separate operator mechanism and are not an
+  opt-out of the layer.
 - **Aegis never rewrites a config file to migrate it.** Deleting a security field
   changes what the file means, so the record of what an installation once asked
   for stays where its owner put it.
-- Every other unrecognised `[sandbox]` key is still rejected, so a typo keeps
+- Every unrecognised `[sandbox]` key is still rejected, so a typo keeps
   failing the load rather than being silently tolerated.
 - **`sandbox.allow_write` is an explicit override of the computed default
   ceiling, never an addition to it.** Absent, the ceiling is the computed default
@@ -323,11 +319,11 @@ never blocks the shell, but the command can still fail on write under the
 narrower profile, and a path that disappears between canonicalisation and
 `bwrap --bind` fails setup.
 
-**Where the diagnostics surface.** `deprecated_sandbox_field` and
-`trusted_ceiling_path_omitted` are typed warnings, not startup logs: a
+**Where the diagnostics surface.** `trusted_ceiling_path_omitted` is a typed
+warning, not a startup log: a
 per-invocation warning on the `$SHELL -c` path would be noise and a risk to the
 Hook protocols. `aegis config validate` is the authoritative surface and
-`aegis status` an ordinary discovery surface for the same warnings; neither
+`aegis status` an ordinary discovery surface for the same warning; neither
 changes its exit code on warnings alone. The promise is that the warning is
 **available** on a discovery surface, not that every user reads it.
 

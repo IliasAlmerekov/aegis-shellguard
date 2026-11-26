@@ -29,7 +29,7 @@ fn codes(warnings: &[ValidationIssue]) -> Vec<&'static str> {
 
 #[test]
 fn enabled_sandbox_outside_a_worktree_warns_workspace_unresolved() {
-    let (warnings, valid) = run("[sandbox]\nenabled = true\n");
+    let (warnings, valid) = run("[sandbox]\n");
     assert!(valid, "ceiling warnings never invalidate the config");
     let w = warnings
         .iter()
@@ -50,8 +50,7 @@ fn audit_mode_does_no_workspace_search_and_raises_no_workspace_warning() {
 
 #[test]
 fn omitted_allow_write_entries_are_reported_with_reason_and_location() {
-    let (warnings, valid) =
-        run("[sandbox]\nenabled = true\nallow_write = [\"rel/dir\", \"/opt/../etc\"]\n");
+    let (warnings, valid) = run("[sandbox]\nallow_write = [\"rel/dir\", \"/opt/../etc\"]\n");
     assert!(valid);
     let omitted: Vec<_> = warnings
         .iter()
@@ -77,10 +76,8 @@ fn with_code<'a>(warnings: &'a [ValidationIssue], code: &str) -> Vec<&'a Validat
 
 #[test]
 fn project_entry_outside_the_computed_default_raises_the_ratchet_warning() {
-    let (warnings, valid) = run_layers(
-        "[sandbox]\nenabled = true\n",
-        Some("[sandbox]\nallow_write = [\"/etc\"]\n"),
-    );
+    let (warnings, valid) =
+        run_layers("[sandbox]\n", Some("[sandbox]\nallow_write = [\"/etc\"]\n"));
     assert!(valid);
     let ratchet = with_code(&warnings, "project_security_ratchet");
     assert_eq!(ratchet.len(), 1, "{warnings:#?}");
@@ -99,7 +96,7 @@ fn project_entry_outside_the_computed_default_raises_the_ratchet_warning() {
 #[test]
 fn project_relative_and_parent_dir_entries_are_omitted_not_clamped() {
     let (warnings, _) = run_layers(
-        "[sandbox]\nenabled = true\nallow_write = [\"/tmp\"]\n",
+        "[sandbox]\nallow_write = [\"/tmp\"]\n",
         Some("[sandbox]\nallow_write = [\"rel/dir\", \"/tmp/../etc\"]\n"),
     );
     let omitted = with_code(&warnings, "trusted_ceiling_path_omitted");
@@ -120,7 +117,7 @@ fn project_relative_and_parent_dir_entries_are_omitted_not_clamped() {
 #[test]
 fn global_invalid_entry_is_reported_even_when_a_project_list_narrows_it() {
     let (warnings, _) = run_layers(
-        "[sandbox]\nenabled = true\nallow_write = [\"rel/x\", \"/tmp\"]\n",
+        "[sandbox]\nallow_write = [\"rel/x\", \"/tmp\"]\n",
         Some("[sandbox]\nallow_write = [\"/tmp\"]\n"),
     );
     let omitted = with_code(&warnings, "trusted_ceiling_path_omitted");

@@ -102,7 +102,7 @@ fn project_sandbox_allow_network_cannot_weaken_global_false() {
 
     fs::write(
         global_dir.join(GLOBAL_CONFIG_FILE),
-        "[sandbox]\nenabled = true\nallow_network = false\n",
+        "[sandbox]\nallow_network = false\n",
     )
     .unwrap();
     fs::write(
@@ -129,7 +129,7 @@ fn project_sandbox_allow_network_can_tighten_global_true_to_false() {
 
     fs::write(
         global_dir.join(GLOBAL_CONFIG_FILE),
-        "[sandbox]\nenabled = true\nallow_network = true\n",
+        "[sandbox]\nallow_network = true\n",
     )
     .unwrap();
     fs::write(
@@ -155,7 +155,7 @@ fn project_sandbox_allow_write_cannot_expand_global_base() {
 
     fs::write(
         global_dir.join(GLOBAL_CONFIG_FILE),
-        "[sandbox]\nenabled = true\nallow_write = [\"/opt/data\"]\n",
+        "[sandbox]\nallow_write = [\"/opt/data\"]\n",
     )
     .unwrap();
     fs::write(

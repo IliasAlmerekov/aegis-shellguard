@@ -267,13 +267,9 @@ fn execution_audits_the_inner_wrapper_status_before_waiting_for_the_child() {
 }
 
 #[test]
-fn unavailable_sandbox_blocks_across_deprecated_field_permutations() {
+fn unavailable_sandbox_blocks_for_default_and_empty_sandbox_section() {
     let dir = tempfile::TempDir::new().unwrap();
-    for body in [
-        "",
-        "[sandbox]\nenabled = true\nrequired = true\n",
-        "[sandbox]\nenabled = false\nrequired = false\n",
-    ] {
+    for body in ["", "[sandbox]\n"] {
         let config: aegis_config::AegisConfig = toml::from_str(body).unwrap();
         assert_ne!(config.mode, aegis_types::Mode::Audit);
         let sandbox = aegis::runtime::sandbox_ceiling(&config, dir.path())

@@ -131,7 +131,6 @@ fn prd_defines_the_mandatory_sandbox_contract() {
         "write/network guardrail",
         "Trusted ceiling",
         "Confinement degradation",
-        "deprecated_sandbox_field",
         "trusted_ceiling_path_omitted",
         "zero configured writable roots",
         "never rewrites a config file",
@@ -194,14 +193,6 @@ fn derived_docs_state_the_mandatory_sandbox_contract() {
         assert!(
             contents.contains("not a confidentiality boundary"),
             "{doc} must keep the confidentiality half of the honesty claim"
-        );
-    }
-
-    for doc in ["README.md", "docs/config-schema.md", "docs/threat-model.md"] {
-        let contents = fs::read_to_string(repo_path(doc)).unwrap();
-        assert!(
-            contents.contains("deprecated_sandbox_field"),
-            "{doc} must state that `enabled`/`required` are accepted and ignored"
         );
     }
 

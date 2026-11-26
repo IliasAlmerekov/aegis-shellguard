@@ -75,7 +75,7 @@ Every config field declares one direction in `model/ratchet/direction.rs`. `merg
 - Append covers `allow`, `block`, and `custom_patterns`. Concatenation cannot remove a trusted entry, and each entry keeps its layer for later checks.
 - Global-only covers `language_analysis.trusted_aliases`.
 - Unratcheted covers `config_version` and `audit.compress_rotated`, which carry no security weight.
-- `sandbox.enabled` and `sandbox.required` are accepted and ignored at any value. The sandbox is always on, and the loader warns with `deprecated_sandbox_field`.
+- `sandbox.enabled` and `sandbox.required` are removed. A config that still sets either fails to load as an unknown field.
 
 ## Config schema
 

@@ -158,20 +158,6 @@ pub struct ConfigLayerPath {
 )]
 pub struct SandboxSettings {
     #[schemars(
-        description = "Deprecated: Aegis ignores this value; the Sandbox is always applied
-outside `Mode::Audit` (ADR-029). Kept for schema v1 compatibility."
-    )]
-    #[serde(default, skip_serializing)]
-    #[schemars(extend("deprecated" = true))]
-    pub enabled: bool,
-    #[schemars(
-        description = "Deprecated: Aegis ignores this value; Sandbox unavailability always
-blocks outside `Mode::Audit` (ADR-029). Kept for schema v1 compatibility."
-    )]
-    #[serde(default, skip_serializing)]
-    #[schemars(extend("deprecated" = true))]
-    pub required: bool,
-    #[schemars(
         description = "Writable roots of the Trusted ceiling. Absent means the computed
 default (workspace plus temporary directory); a present list replaces
 that default, and an explicit `[]` means zero writable roots."
@@ -454,26 +440,13 @@ impl AegisConfig {
         base: Self,
         layer: &ConfigLayerPath,
     ) -> Result<(Self, Vec<SecurityRatchetWarning>)> {
-        let (config, warnings, _) = Self::merge_layer_path_with_all_warnings(base, layer)?;
-        Ok((config, warnings))
-    }
-
-    pub(crate) fn merge_layer_path_with_all_warnings(
-        base: Self,
-        layer: &ConfigLayerPath,
-    ) -> Result<(
-        Self,
-        Vec<SecurityRatchetWarning>,
-        Vec<ratchet::DeprecatedSandboxFieldWarning>,
-    )> {
         let overlay = PartialConfig::from_path(&layer.path)?;
-        let (config, ratchet, deprecated) = Self::merge_layer_all_warnings(
+        Ok(Self::merge_layer(
             base,
             overlay,
             layer.source_layer,
             &layer.path.to_string_lossy(),
-        );
-        Ok((config, ratchet, deprecated))
+        ))
     }
 
     fn load_for_internal(

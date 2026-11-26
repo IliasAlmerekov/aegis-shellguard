@@ -43,8 +43,7 @@ fn context_with_audit_path(audit_path: PathBuf) -> RuntimeContext {
 }
 
 fn context_with_optional_sandbox(audit_path: PathBuf) -> RuntimeContext {
-    let mut config = AegisConfig::default();
-    config.sandbox.enabled = true;
+    let config = AegisConfig::default();
     let context =
         RuntimeContext::new_with_audit_path(config, tokio::runtime::Handle::current(), audit_path)
             .unwrap();

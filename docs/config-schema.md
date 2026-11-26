@@ -302,26 +302,15 @@ disagree, the PRD is the promise and the code is the behaviour; the gap closes w
 
 ```toml
 [sandbox]
-enabled = false
-required = false
 allow_network = false
 allow_write = []
 ```
 
-- `sandbox.enabled` turns the sandbox layer on. Default `false`.
-- `sandbox.required` — when `true`, a command is blocked if the sandbox cannot be
-  applied (missing `bwrap`, unsupported kernel, etc.) instead of degrading to an
-  unconfined run. Default `false`: infrastructure unavailability records
-  `sandbox_status = "unavailable"`, emits a warning on the active Shell stderr or
-  Watch NDJSON channel, and then preserves the approved decision. Invalid
-  profiles and unexpected setup errors remain fail-closed.
-  Set `sandbox.required = true` when unconfined fallback is unacceptable.
 - `sandbox.allow_write` lists paths the sandboxed process may write to. Default
   empty (no writes outside the sandbox's own scope).
 - `sandbox.allow_network` permits network access from the sandboxed process.
   Default `false`.
-- Project-layer ratchet: `enabled` / `required` may only tighten (a
-  project can force them on, never off); `allow_network` can only be turned off
+- Project-layer ratchet: `allow_network` can only be turned off
   at the project layer, never on; and project `allow_write` is intersected with
   the base list — a project `.aegis.toml` can never widen the sandbox.
 - These fields also appear in `aegis-schema.json` under `SandboxSettings`.
@@ -332,13 +321,9 @@ allow_write = []
   outside `Mode::Audit`; when it cannot be established the command is blocked, and
   the recorded `sandbox_status = "unavailable"` accompanies `Decision::Blocked` as
   one event. There is no unconfined continuation to configure.
-- **`enabled` and `required` leave the contract.** Both are still accepted by
-  **exact name** and **ignored at any value**, each producing a typed
-  `deprecated_sandbox_field` diagnostic, for the whole support life of config
-  schema v1. `enabled = false` is not fail-open: the layer applies regardless.
-  Aegis **never rewrites a config file** to remove them.
-- **Both leave the ratcheted set** along with the contract — there is
-  nothing left to tighten once neither field affects behaviour.
+- **`enabled` and `required` are removed.** A config that still sets either
+  fails to load as an unknown field, so delete those lines. Aegis
+  **never rewrites a config file** to remove them.
 - **`allow_write` becomes an explicit override** of a computed `Trusted ceiling`
   default rather than an addition to an empty base. A "full set" is unexpressible
   because the workspace is resolved at runtime, so the default applies only when
