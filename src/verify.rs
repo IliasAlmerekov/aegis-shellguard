@@ -68,7 +68,7 @@ pub(crate) async fn execute(id: Option<String>) -> Result<Vec<VerifyRow>, AegisE
             vec![(target.plugin, target.snapshot_id)]
         }
         None => SnapshotLedger::load(&logger)?
-            .live_records()
+            .live_snapshots()
             .iter()
             .map(|record| (record.plugin.clone(), record.snapshot_id.clone()))
             .collect(),

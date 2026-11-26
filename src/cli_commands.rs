@@ -465,7 +465,7 @@ fn handle_snapshot_list_command() -> i32 {
     let logger = AuditLogger::default();
     match SnapshotLedger::load(&logger) {
         Ok(ledger) => {
-            out_raw!("{}", format_snapshot_listing(&ledger));
+            out_raw!("{}", ledger.format_listing());
             0
         }
         Err(err) => {
@@ -473,33 +473,6 @@ fn handle_snapshot_list_command() -> i32 {
             EXIT_INTERNAL
         }
     }
-}
-
-pub(crate) fn format_snapshot_listing(ledger: &SnapshotLedger) -> String {
-    let pruned = ledger.pruned_count();
-    let records = ledger.live_records();
-
-    if records.is_empty() {
-        if pruned == 0 {
-            return "No snapshots recorded.\n".to_string();
-        }
-        return format!("No snapshots recorded. ({pruned} pruned snapshot(s) hidden.)\n");
-    }
-
-    let mut out = String::from("Recorded snapshots (newest first):\n");
-    for record in records.iter().rev() {
-        let recorded = time::OffsetDateTime::from(record.recorded_at)
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap_or_else(|_| "unknown".to_string());
-        out.push('\n');
-        out.push_str(&format!("  provider: {}\n", record.plugin));
-        out.push_str(&format!("  recorded: {recorded}\n"));
-        out.push_str(&format!("  id:       {}\n", record.snapshot_id));
-    }
-    if pruned != 0 {
-        out.push_str(&format!("\n  ({pruned} pruned snapshot(s) hidden.)\n"));
-    }
-    out
 }
 
 pub(crate) fn handle_config_validate_command(args: ConfigValidateArgs) -> i32 {
@@ -637,7 +610,6 @@ fn format_audit_summary(
 
 #[cfg(test)]
 mod tests {
-    use super::format_snapshot_listing as format_ledger;
     use aegis_audit::{AuditEntry, AuditSnapshot, SnapshotLedger};
     use aegis_types::Decision;
     use aegis_types::RiskLevel;
@@ -659,7 +631,7 @@ mod tests {
     }
 
     fn format_snapshot_listing(entries: &[AuditEntry]) -> String {
-        format_ledger(&SnapshotLedger::from_entries(entries))
+        SnapshotLedger::from_entries(entries).format_listing()
     }
 
     #[test]

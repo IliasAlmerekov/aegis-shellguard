@@ -31,7 +31,7 @@ fn entry(command: &str, cwd: Option<&str>, snapshots: Vec<AuditSnapshot>) -> Aud
     .with_cwd(cwd.map(str::to_string))
 }
 
-fn names(candidates: &[Candidate<'_>]) -> Vec<String> {
+fn names(candidates: &[BoundCommand<'_>]) -> Vec<String> {
     candidates
         .iter()
         .map(|c| c.command.command.clone())

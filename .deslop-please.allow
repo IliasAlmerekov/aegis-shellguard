@@ -4,7 +4,6 @@ module-cycle aegis::analysis::orchestrate,aegis::analysis::router
 module-cycle aegis::analysis::router::segments::executor_config,aegis::analysis::router::segments::unclaimed
 module-cycle aegis::planning,aegis::runtime
 module-cycle aegis::planning::git_target,aegis::planning::types
-module-cycle aegis_audit::logger::integrity,aegis_audit::logger::query,aegis_audit::logger::writer
 module-cycle aegis_config::allowlist,aegis_config::ceiling,aegis_config::model,aegis_config::pattern_match,aegis_config::validate
 module-cycle aegis_language::operation,aegis_language::protocol
 module-cycle aegis_parser::embedded_scripts,aegis_parser::heredoc_data_consumer,aegis_parser::list_segments,aegis_parser::nested_shells,aegis_parser::segmentation,aegis_parser::tokenizer
@@ -23,8 +22,6 @@ field-leak aegis::planning::types::InterceptionPlan::explanation
 field-leak aegis::runtime::context::RuntimeContext::async_handle
 field-leak aegis::runtime::context::RuntimeContext::policy_rules
 field-leak aegis::runtime::context::RuntimeContext::runtime_config
-field-leak aegis_audit::ledger::SnapshotLedger::commands
-field-leak aegis_audit::ledger::SnapshotLedger::live
 field-leak aegis_config::model::AegisConfig::allowlist
 field-leak aegis_config::model::AegisConfig::allowlist_layers
 field-leak aegis_config::model::AegisConfig::audit

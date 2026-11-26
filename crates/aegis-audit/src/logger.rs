@@ -15,7 +15,9 @@ use aegis_types::{
 
 use crate::error::AuditError;
 
+mod entry;
 mod integrity;
+mod lock;
 mod query;
 mod rotation;
 mod writer;
