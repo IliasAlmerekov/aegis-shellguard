@@ -42,6 +42,7 @@ each event. A Heavy job is one behind the `heavy` output of the gate job.
 | `Quality (fmt, clippy, test)` | yes | yes | yes | yes | yes |
 | `Language analysis (test, clippy, deny)` | yes | yes | yes | yes | yes |
 | `Unused dependencies (machete)` | yes | yes | yes | yes | yes |
+| `Architecture lints (deslop-please)` | yes | yes | yes | yes | yes |
 | `Landing (test, build)` | yes | yes | yes | yes | yes |
 | `Security (audit, deny)` | yes | yes | yes | yes | yes |
 | `Release build (ubuntu-24.04)` | yes | yes | yes | yes | yes |
@@ -61,6 +62,7 @@ What each job runs:
 - `Quality (fmt, clippy, test)`: formatting, clippy, and tests
 - `Language analysis (test, clippy, deny)`: workspace tests, clippy lints, and `cargo-deny` with `--features language-analysis`
 - `Unused dependencies (machete)`: `cargo machete` at the version pinned in `.github/versions.env`
+- `Architecture lints (deslop-please)`: `deslop-please --features language-analysis --allow .deslop-please.allow`, using the release binary and checksum pinned in `.github/versions.env`. The allowlist holds the existing debt; a new finding fails the job.
 - `Landing (test, build)`: type check, tests, and static export build of the `landing/` npm workspace
 - `Security (audit, deny)`: `cargo-audit` and `cargo-deny`
 - `Release build (ubuntu-24.04)` and `Release build (macos-26)`: `cargo build --release` on each runner. The Linux label in the name comes from `.github/build-targets.json`.
