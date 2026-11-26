@@ -44,7 +44,6 @@ async fn watch_approve_always_writes_the_active_config() {
             frame,
             &context,
             plan,
-            false,
             |_, _| PromptDecision::ApproveAlways,
             |_| panic!("Warn requires no Recovery override"),
         )
@@ -87,7 +86,6 @@ async fn run_approve_always(
         frame,
         context,
         plan,
-        false,
         |_, _| PromptDecision::ApproveAlways,
         |degradation| {
             events
@@ -191,7 +189,6 @@ async fn watch_snapshot_policy_none_marks_the_danger_dialog_and_audit_and_writes
         frame,
         &context,
         plan,
-        false,
         |_, explanation| {
             offered.set(Some(explanation.context.recovery_opt_out));
             PromptDecision::ApproveAlways
@@ -221,7 +218,6 @@ async fn watch_snapshot_policy_none_still_persists_an_ordinary_warn_approval() {
         frame,
         &context,
         plan,
-        false,
         |_, explanation| {
             opted_out.set(Some(explanation.context.recovery_opt_out));
             PromptDecision::ApproveAlways
@@ -246,7 +242,6 @@ async fn watch_snapshot_policy_none_marks_a_denied_danger_audit_entry() {
         frame,
         &context,
         plan,
-        false,
         |_, _| PromptDecision::Deny,
         |_| RecoveryPromptDecision::Deny,
         |_, _| {},
@@ -346,7 +341,6 @@ async fn unavailable_cwd_never_persists_watch_rules() {
                 },
                 &context,
                 plan,
-                false,
                 |_, _| decision,
                 |_| panic!("Warn needs no recovery"),
             )

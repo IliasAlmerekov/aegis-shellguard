@@ -1,21 +1,15 @@
 use std::path::PathBuf;
 
-use tokio::io::{AsyncReadExt, BufReader as TokioBufReader};
-use tokio::sync::mpsc;
+use tokio::io::BufReader as TokioBufReader;
 
 use crate::planning::{
-    CwdState, ExecutionDisposition, InterceptionPlan, PlanningOutcome, PreparedPlanner,
-    SetupFailurePlan,
+    CwdState, InterceptionPlan, PlanningOutcome, PreparedPlanner, SetupFailurePlan,
 };
-use crate::runtime::{
-    RuntimeContext, WatchAuditContext, allow_rule_persistence_degradation,
-    plan_recovery_degradation, sandbox_status_before_preparation,
+use crate::runtime::disposition::{
+    DispositionOutput, RecoveryGate, decide, persist_allow_rule, recovery_gate, snapshot_request,
 };
-use aegis_config::amend::{
-    AppendOutcome, active_config_path_for_append, append_allow_rule, append_block_rule,
-};
-use aegis_parser::{extract_prefix, split_tokens};
-use aegis_policy::{BlockReason, ExecutionTransport};
+use crate::runtime::{RuntimeContext, sandbox_status_before_preparation};
+use aegis_policy::ExecutionTransport;
 use aegis_tui::{
     PromptDecision, RecoveryPromptDecision, show_block_via_tty,
     show_confirmation_via_tty_with_decision, show_policy_block_via_tty,
@@ -23,21 +17,15 @@ use aegis_tui::{
 };
 use aegis_types::{Decision, EXIT_BLOCKED, EXIT_DENIED, EXIT_INTERNAL};
 
+use super::exec::execute_prepared_and_emit;
 use super::protocol::{
-    InputFrame, MAX_FRAME_BYTES, OutputDecision, OutputFrame, ReadLineResult, emit_frame,
-    exit_internal, read_bounded_line,
+    InputFrame, MAX_FRAME_BYTES, OutputDecision, ReadLineResult, emit_error_or_exit,
+    emit_result_or_exit, exit_internal, read_bounded_line,
 };
 use super::sandbox::{
     WatchExecution, append_watch_execution_audit, complete_watch_approved_execution,
     emit_watch_audit_error, prepare_watch_command, warn_if_sandbox_unavailable_at_startup,
 };
-
-const CHANNEL_CAPACITY: usize = 64;
-
-enum WatchEvent {
-    Stdout(Vec<u8>),
-    Stderr(Vec<u8>),
-}
 
 pub async fn run(prepared: &PreparedPlanner, ci_detected: bool) -> i32 {
     if !ci_detected {
@@ -152,7 +140,7 @@ async fn process_frame(line: String, context: &RuntimeContext, ci_detected: bool
             report_watch_setup_failure(&plan);
             exit_internal();
         }
-        PlanningOutcome::Planned(plan) => run_watch_plan(frame, context, plan, ci_detected).await,
+        PlanningOutcome::Planned(plan) => run_watch_plan(frame, context, plan).await,
     }
 }
 
@@ -181,17 +169,11 @@ async fn process_disabled_frame(line: String) {
     execute_and_emit(&frame.cmd, &cwd, id).await;
 }
 
-async fn run_watch_plan(
-    frame: InputFrame,
-    context: &RuntimeContext,
-    plan: InterceptionPlan,
-    ci_detected: bool,
-) {
+async fn run_watch_plan(frame: InputFrame, context: &RuntimeContext, plan: InterceptionPlan) {
     run_watch_plan_with_prompts(
         frame,
         context,
         plan,
-        ci_detected,
         |assessment, explanation| {
             tokio::task::block_in_place(|| {
                 show_confirmation_via_tty_with_decision(assessment, explanation, &[])
@@ -206,18 +188,16 @@ async fn run_watch_plan_with_prompts<C, R>(
     frame: InputFrame,
     context: &RuntimeContext,
     plan: InterceptionPlan,
-    ci_detected: bool,
     confirmation_prompt: C,
     recovery_prompt: R,
 ) where
-    C: FnOnce(&aegis_types::Assessment, &aegis_explanation::CommandExplanation) -> PromptDecision,
-    R: FnOnce(aegis_types::RecoveryDegradation) -> RecoveryPromptDecision,
+    C: FnMut(&aegis_types::Assessment, &aegis_explanation::CommandExplanation) -> PromptDecision,
+    R: FnMut(aegis_types::RecoveryDegradation) -> RecoveryPromptDecision,
 {
     run_watch_plan_with_persistence(
         frame,
         context,
         plan,
-        ci_detected,
         confirmation_prompt,
         recovery_prompt,
         persist_allow_rule,
@@ -225,26 +205,45 @@ async fn run_watch_plan_with_prompts<C, R>(
     .await;
 }
 
-fn persist_allow_rule(cmd: &str, cwd: &std::path::Path) {
-    let Some(config_path) = active_config_path_for_append() else {
-        err!("warning: cannot persist allow rule: no config file found");
-        return;
-    };
-    let tokens = split_tokens(cmd);
-    let prefix = extract_prefix(&tokens);
-    match append_allow_rule(&config_path, &prefix, cwd) {
-        Ok(AppendOutcome::Conflict {
-            pattern,
-            existing_location,
-        }) => {
-            let location = match existing_location {
-                aegis_config::allowlist::ConfigSourceLayer::Project => "project",
-                aegis_config::allowlist::ConfigSourceLayer::Global => "global",
-            };
-            err!("warning: conflicting rule for '{pattern}' already exists in {location} config");
-        }
-        Ok(AppendOutcome::SkippedDuplicate | AppendOutcome::Appended) => {}
-        Err(err) => err!("error: failed to append allow rule: {err}"),
+struct WatchOutput<C, R, P> {
+    confirmation_prompt: C,
+    recovery_prompt: R,
+    persist_allow: P,
+}
+
+impl<C, R, P> DispositionOutput for WatchOutput<C, R, P>
+where
+    C: FnMut(&aegis_types::Assessment, &aegis_explanation::CommandExplanation) -> PromptDecision,
+    R: FnMut(aegis_types::RecoveryDegradation) -> RecoveryPromptDecision,
+    P: FnMut(&str, &std::path::Path),
+{
+    fn confirm(&mut self, plan: &InterceptionPlan) -> PromptDecision {
+        (self.confirmation_prompt)(plan.assessment(), plan.explanation())
+    }
+
+    fn recovery_override(
+        &mut self,
+        degradation: aegis_types::RecoveryDegradation,
+    ) -> RecoveryPromptDecision {
+        (self.recovery_prompt)(degradation)
+    }
+
+    fn show_policy_block(&mut self, plan: &InterceptionPlan) {
+        tokio::task::block_in_place(|| {
+            show_policy_block_via_tty(plan.assessment(), plan.explanation());
+        });
+    }
+
+    fn show_intrinsic_block(&mut self, plan: &InterceptionPlan) {
+        tokio::task::block_in_place(|| show_block_via_tty(plan.assessment(), plan.explanation()));
+    }
+
+    fn warn(&mut self, message: &str) {
+        err!("warning: {message}");
+    }
+
+    fn persist_allow(&mut self, cmd: &str, cwd: &std::path::Path) {
+        (self.persist_allow)(cmd, cwd);
     }
 }
 
@@ -252,262 +251,85 @@ async fn run_watch_plan_with_persistence<C, R, P>(
     frame: InputFrame,
     context: &RuntimeContext,
     plan: InterceptionPlan,
-    ci_detected: bool,
     confirmation_prompt: C,
     recovery_prompt: R,
     persist_allow: P,
 ) where
-    C: FnOnce(&aegis_types::Assessment, &aegis_explanation::CommandExplanation) -> PromptDecision,
-    R: FnOnce(aegis_types::RecoveryDegradation) -> RecoveryPromptDecision,
-    P: FnOnce(&str, &std::path::Path),
+    C: FnMut(&aegis_types::Assessment, &aegis_explanation::CommandExplanation) -> PromptDecision,
+    R: FnMut(aegis_types::RecoveryDegradation) -> RecoveryPromptDecision,
+    P: FnMut(&str, &std::path::Path),
 {
     let id = frame.id.clone();
     let cwd = watch_execution_cwd(plan.decision_context().cwd_state());
-
-    let mut approve_always = false;
-    let runtime_decision = match plan.execution_disposition() {
-        ExecutionDisposition::Execute => Decision::AutoApproved,
-        ExecutionDisposition::RequiresApproval => {
-            let decision = confirmation_prompt(plan.assessment(), plan.explanation());
-            if decision == PromptDecision::ApproveAlways && cwd.is_none() {
-                err!("warning: cannot persist allow rule: working directory unavailable");
-            }
-            approve_always = decision == PromptDecision::ApproveAlways
-                && cwd.is_some()
-                && !plan.explanation().context.recovery_opt_out;
-            if decision == PromptDecision::DenyAlways {
-                if cwd.is_none() {
-                    err!("warning: cannot persist block rule: working directory unavailable");
-                } else if let (Some(cwd), Some(config_path)) =
-                    (cwd, active_config_path_for_append())
-                {
-                    let tokens = split_tokens(&frame.cmd);
-                    let prefix = extract_prefix(&tokens);
-                    match append_block_rule(&config_path, &prefix, cwd) {
-                        Ok(AppendOutcome::Conflict {
-                            pattern,
-                            existing_location,
-                        }) => {
-                            let location = match existing_location {
-                                aegis_config::allowlist::ConfigSourceLayer::Project => "project",
-                                aegis_config::allowlist::ConfigSourceLayer::Global => "global",
-                            };
-                            err!(
-                                "warning: conflicting rule for '{pattern}' already exists in {location} config"
-                            );
-                        }
-                        Ok(AppendOutcome::SkippedDuplicate | AppendOutcome::Appended) => {}
-                        Err(err) => err!("error: failed to append block rule: {err}"),
-                    }
-                } else {
-                    err!("warning: cannot persist block rule: no config file found");
-                }
-            }
-            if matches!(
-                decision,
-                PromptDecision::Approve | PromptDecision::ApproveAlways
-            ) {
-                Decision::Approved
-            } else {
-                Decision::Denied
-            }
-        }
-        ExecutionDisposition::Block => {
-            tokio::task::block_in_place(|| match plan.policy_decision().block_reason() {
-                Some(BlockReason::IntrinsicRiskBlock) => {
-                    show_block_via_tty(plan.assessment(), plan.explanation())
-                }
-                Some(BlockReason::StrictPolicy) => {
-                    show_policy_block_via_tty(plan.assessment(), plan.explanation())
-                }
-                Some(BlockReason::ProtectCiPolicy) => {
-                    show_policy_block_via_tty(plan.assessment(), plan.explanation())
-                }
-                Some(BlockReason::BlocklistOverride) => {
-                    show_policy_block_via_tty(plan.assessment(), plan.explanation())
-                }
-                Some(BlockReason::PolicyRulesOverride) => {
-                    show_policy_block_via_tty(plan.assessment(), plan.explanation())
-                }
-                None => {}
-            });
-            Decision::Blocked
-        }
+    let mut out = WatchOutput {
+        confirmation_prompt,
+        recovery_prompt,
+        persist_allow,
     };
 
-    match runtime_decision {
-        Decision::Approved | Decision::AutoApproved => {
-            let coverage = if let Some(cwd) = cwd {
-                create_watch_snapshots(context, &plan, cwd).await
-            } else {
-                aegis_snapshot::SnapshotCoverage::default()
-            };
-            let snapshots = coverage.records.as_slice();
-            let attempts = coverage.snapshot_attempts();
-            let attempts = attempts.as_slice();
-            let persistence_block = if approve_always {
-                allow_rule_persistence_degradation(&plan, &coverage)
-            } else {
-                None
-            };
-            if persistence_block.is_some() {
-                err!("warning: allow rule not saved: Recovery is not ready for this run");
-            }
-            let degradation = plan_recovery_degradation(
-                &plan,
-                runtime_decision == Decision::AutoApproved,
-                &coverage,
-            )
-            .or(persistence_block);
-            if approve_always
-                && degradation.is_none()
-                && let Some(cwd) = cwd
-            {
-                persist_allow(&frame.cmd, cwd);
-            }
-            if let Some(degradation) = degradation {
-                let recovery_decision = recovery_prompt(degradation);
-                match recovery_decision {
-                    RecoveryPromptDecision::RunOnceWithoutRecovery => {
-                        complete_watch_approved_execution(
-                            WatchExecution {
-                                frame: &frame,
-                                context,
-                                plan: &plan,
-                                ci_detected,
-                                cwd,
-                                snapshots,
-                                attempts,
-                                recovery_degradation: Some(degradation),
-                            },
-                            Decision::Approved,
+    let verdict = decide(&frame.cmd, &plan, &mut out);
+    let refused = |decision: Decision, output: OutputDecision, exit_code: i32| {
+        let execution = WatchExecution {
+            frame: &frame,
+            context,
+            plan: &plan,
+            cwd,
+            snapshots: &[],
+            attempts: &[],
+            recovery_degradation: None,
+        };
+        let status = sandbox_status_before_preparation(context.config().sandbox.as_ref());
+        match append_watch_execution_audit(&execution, decision, status) {
+            Ok(()) => emit_result_or_exit(execution.frame.id.clone(), output, exit_code),
+            Err(err) => emit_watch_audit_error(&execution.frame.id, &err),
+        }
+    };
+    match verdict.decision {
+        Decision::Denied => refused(Decision::Denied, OutputDecision::Denied, EXIT_DENIED),
+        Decision::Blocked => refused(Decision::Blocked, OutputDecision::Blocked, EXIT_BLOCKED),
+        _ => {
+            let coverage = match snapshot_request(&plan) {
+                Some(request) => {
+                    context
+                        .create_snapshots_for_plan_async(
+                            request.cwd,
+                            request.command,
+                            &request.git_targets,
                         )
-                        .await;
-                        return;
-                    }
-                    RecoveryPromptDecision::Deny => {
-                        let execution = WatchExecution {
-                            frame: &frame,
-                            context,
-                            plan: &plan,
-                            ci_detected,
-                            cwd,
-                            snapshots,
-                            attempts,
-                            recovery_degradation: Some(degradation),
-                        };
-                        if let Err(err) = append_watch_execution_audit(
-                            &execution,
-                            Decision::Denied,
-                            sandbox_status_before_preparation(context.config().sandbox.as_ref()),
-                        ) {
-                            emit_watch_audit_error(&id, &err);
-                            return;
-                        }
-                        if emit_frame(&OutputFrame::Result {
-                            id,
-                            decision: OutputDecision::Denied,
-                            exit_code: EXIT_DENIED,
-                        })
-                        .is_err()
-                        {
-                            exit_internal();
-                        }
-                        return;
+                        .await
+                }
+                None => aegis_snapshot::SnapshotCoverage::default(),
+            };
+            let attempts = coverage.snapshot_attempts();
+            let execution = |recovery_degradation| WatchExecution {
+                frame: &frame,
+                context,
+                plan: &plan,
+                cwd,
+                snapshots: coverage.records.as_slice(),
+                attempts: attempts.as_slice(),
+                recovery_degradation,
+            };
+            match recovery_gate(&frame.cmd, &plan, &coverage, verdict, &mut out) {
+                RecoveryGate::Deny(degradation) => {
+                    let status =
+                        sandbox_status_before_preparation(context.config().sandbox.as_ref());
+                    match append_watch_execution_audit(
+                        &execution(Some(degradation)),
+                        Decision::Denied,
+                        status,
+                    ) {
+                        Ok(()) => emit_result_or_exit(id, OutputDecision::Denied, EXIT_DENIED),
+                        Err(err) => emit_watch_audit_error(&id, &err),
                     }
                 }
-            }
-            complete_watch_approved_execution(
-                WatchExecution {
-                    frame: &frame,
-                    context,
-                    plan: &plan,
-                    ci_detected,
-                    cwd,
-                    snapshots,
-                    attempts,
-                    recovery_degradation: None,
-                },
-                runtime_decision,
-            )
-            .await;
-        }
-        Decision::Denied => {
-            if !append_watch_audit_with_empty_snapshots(
-                context,
-                &plan,
-                runtime_decision,
-                ci_detected,
-                &frame,
-                cwd,
-                &id,
-            ) {
-                return;
-            }
-            if emit_frame(&OutputFrame::Result {
-                id,
-                decision: OutputDecision::Denied,
-                exit_code: EXIT_DENIED,
-            })
-            .is_err()
-            {
-                exit_internal();
-            }
-        }
-        _ => {
-            if !append_watch_audit_with_empty_snapshots(
-                context,
-                &plan,
-                runtime_decision,
-                ci_detected,
-                &frame,
-                cwd,
-                &id,
-            ) {
-                return;
-            }
-            if emit_frame(&OutputFrame::Result {
-                id,
-                decision: OutputDecision::Blocked,
-                exit_code: EXIT_BLOCKED,
-            })
-            .is_err()
-            {
-                exit_internal();
+                RecoveryGate::Run {
+                    decision,
+                    degradation,
+                } => complete_watch_approved_execution(execution(degradation), decision).await,
             }
         }
     }
-}
-
-fn append_watch_audit_with_empty_snapshots(
-    context: &RuntimeContext,
-    plan: &InterceptionPlan,
-    runtime_decision: Decision,
-    ci_detected: bool,
-    frame: &InputFrame,
-    cwd: Option<&std::path::Path>,
-    id: &Option<String>,
-) -> bool {
-    if let Err(err) = context.append_watch_audit_entry(
-        plan.assessment(),
-        runtime_decision,
-        &[],
-        plan.explanation(),
-        WatchAuditContext {
-            allowlist_match: plan.decision_context().allowlist_match(),
-            allowlist_effective: plan.policy_decision().allowlist_effective,
-            ci_detected,
-            sandbox_status: sandbox_status_before_preparation(context.config().sandbox.as_ref()),
-            snapshot_attempts: &[],
-            source: frame.source.clone(),
-            cwd: cwd.and_then(audit_cwd),
-            id: id.clone(),
-        },
-    ) {
-        emit_error_or_exit(id.clone(), format!("audit log write failed: {err}"));
-        return false;
-    }
-    true
 }
 
 fn resolve_frame_cwd(frame: &InputFrame, id: &Option<String>) -> Result<PathBuf, ()> {
@@ -525,31 +347,11 @@ fn resolve_frame_cwd(frame: &InputFrame, id: &Option<String>) -> Result<PathBuf,
     })
 }
 
-pub(super) fn audit_cwd(cwd: &std::path::Path) -> Option<String> {
-    std::path::absolute(cwd)
-        .ok()
-        .map(|path| path.to_string_lossy().into_owned())
-}
-
 fn watch_execution_cwd(cwd_state: &CwdState) -> Option<&std::path::Path> {
     match cwd_state {
         CwdState::Resolved(path) => Some(path.as_path()),
         CwdState::Unavailable => None,
     }
-}
-
-async fn create_watch_snapshots(
-    context: &RuntimeContext,
-    plan: &InterceptionPlan,
-    cwd: &std::path::Path,
-) -> aegis_snapshot::SnapshotCoverage {
-    let crate::planning::SnapshotPlan::Required { git_targets, .. } = plan.snapshot_plan() else {
-        return aegis_snapshot::SnapshotCoverage::default();
-    };
-
-    context
-        .create_snapshots_for_plan_async(cwd, &plan.assessment().command.raw, &git_targets)
-        .await
 }
 
 fn report_watch_setup_failure(plan: &SetupFailurePlan) {
@@ -560,7 +362,7 @@ fn report_watch_setup_failure(plan: &SetupFailurePlan) {
 }
 
 async fn execute_and_emit(cmd: &str, cwd: &std::path::Path, id: Option<String>) {
-    let (command, _) = match prepare_watch_command(cmd, None).await {
+    let (command, _) = match prepare_watch_command(cmd).await {
         Ok(prepared) => prepared,
         Err(err) => {
             emit_error_or_exit(id, format!("failed to prepare child: {err}"));
@@ -568,137 +370,6 @@ async fn execute_and_emit(cmd: &str, cwd: &std::path::Path, id: Option<String>) 
         }
     };
     execute_prepared_and_emit(command, Some(cwd), id).await;
-}
-
-fn emit_error_or_exit(id: Option<String>, message: String) {
-    if emit_frame(&OutputFrame::Error {
-        id,
-        exit_code: EXIT_INTERNAL,
-        message,
-    })
-    .is_err()
-    {
-        exit_internal();
-    }
-}
-
-pub(super) async fn execute_prepared_and_emit(
-    mut command: std::process::Command,
-    cwd: Option<&std::path::Path>,
-    id: Option<String>,
-) {
-    #[cfg(unix)]
-    use std::os::unix::process::ExitStatusExt;
-    use tokio::process::Command;
-
-    if let Some(cwd) = cwd {
-        command.current_dir(cwd);
-    }
-    command
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    let mut child = match Command::from(command).spawn() {
-        Ok(c) => c,
-        Err(e) => {
-            emit_error_or_exit(id, format!("failed to spawn child: {e}"));
-            return;
-        }
-    };
-
-    let (Some(child_stdout), Some(child_stderr)) = (child.stdout.take(), child.stderr.take())
-    else {
-        let message = match child.start_kill() {
-            Ok(()) => "failed to capture child output".to_owned(),
-            Err(e) => format!("failed to capture child output; failed to kill child: {e}"),
-        };
-        emit_error_or_exit(id, message);
-        return;
-    };
-
-    let (tx, mut rx) = mpsc::channel::<WatchEvent>(CHANNEL_CAPACITY);
-
-    let tx_out = tx.clone();
-    tokio::spawn(async move {
-        let mut buf = vec![0u8; 4096];
-        let mut reader = TokioBufReader::new(child_stdout);
-        loop {
-            match reader.read(&mut buf).await {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    if tx_out
-                        .send(WatchEvent::Stdout(buf[..n].to_vec()))
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-            }
-        }
-    });
-
-    let tx_err = tx;
-    tokio::spawn(async move {
-        let mut buf = vec![0u8; 4096];
-        let mut reader = TokioBufReader::new(child_stderr);
-        loop {
-            match reader.read(&mut buf).await {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    if tx_err
-                        .send(WatchEvent::Stderr(buf[..n].to_vec()))
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-            }
-        }
-    });
-
-    while let Some(event) = rx.recv().await {
-        use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-        let frame = match event {
-            WatchEvent::Stdout(data) => OutputFrame::Stdout {
-                id: id.clone(),
-                data_b64: BASE64.encode(&data),
-            },
-            WatchEvent::Stderr(data) => OutputFrame::Stderr {
-                id: id.clone(),
-                data_b64: BASE64.encode(&data),
-            },
-        };
-        if emit_frame(&frame).is_err() {
-            let _ = child.kill().await;
-            exit_internal();
-        }
-    }
-
-    let exit_code = match child.wait().await {
-        Ok(status) => status.code().unwrap_or_else(|| {
-            #[cfg(unix)]
-            {
-                128 + status.signal().unwrap_or(0)
-            }
-            #[cfg(not(unix))]
-            {
-                128
-            }
-        }),
-        Err(_) => EXIT_INTERNAL,
-    };
-
-    if emit_frame(&OutputFrame::Result {
-        id,
-        decision: OutputDecision::Approved,
-        exit_code,
-    })
-    .is_err()
-    {
-        exit_internal();
-    }
 }
 
 #[cfg(test)]

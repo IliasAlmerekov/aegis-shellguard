@@ -14,7 +14,6 @@ use aegis_types::{Assessment, DecisionSource};
 
 use crate::policy_output;
 use crate::shell_compat::{self, ShellLaunchOptions};
-use crate::shell_flow;
 use crate::{CommandOutputFormat, EXIT_INTERNAL, OutputVerbosity};
 
 pub(crate) fn run_shell_wrapper(
@@ -73,7 +72,7 @@ pub(crate) fn run_shell_wrapper(
         return render_json_outcome(&prepared, &outcome);
     }
 
-    run_shell_text_outcome(cmd, verbosity, &prepared, outcome, launch)
+    run_shell_text_outcome(cmd, &prepared, outcome, launch)
 }
 
 fn report_setup_failure(plan: &SetupFailurePlan) -> i32 {
@@ -98,20 +97,15 @@ fn render_json_outcome(prepared: &PreparedPlanner, outcome: &PlanningOutcome) ->
 
 fn run_shell_text_outcome(
     cmd: &str,
-    verbosity: OutputVerbosity,
     prepared: &PreparedPlanner,
     outcome: PlanningOutcome,
     launch: &ShellLaunchOptions,
 ) -> i32 {
     let exit_code = match outcome {
         PlanningOutcome::SetupFailure(plan) => report_setup_failure(&plan),
-        PlanningOutcome::Planned(plan) => shell_flow::run_planned_shell_command(
-            cmd,
-            verbosity.is_verbose(),
-            prepared,
-            &plan,
-            launch,
-        ),
+        PlanningOutcome::Planned(plan) => {
+            crate::execution::run_planned_shell_command(cmd, prepared, &plan, launch)
+        }
     };
 
     maybe_offer_update_notice();

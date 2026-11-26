@@ -1,76 +1,67 @@
-use aegis::planning::{CwdState, ExecutionDisposition, InterceptionPlan, PreparedPlanner};
-use aegis::runtime::{
-    AuditWriteOptions, allow_rule_persistence_degradation, plan_recovery_degradation,
+use aegis::error::AegisError;
+use aegis::planning::{InterceptionPlan, PreparedPlanner};
+use aegis::runtime::disposition::{
+    AuditRecord, DispositionOutput, RecoveryGate, SandboxFailure, append_audit, decide,
+    persist_allow_rule, recovery_gate, setup_failed_message, snapshot_request,
 };
-use aegis_config::amend::{
-    AppendOutcome, active_config_path_for_append, append_allow_rule, append_block_rule,
-};
-use aegis_parser::{extract_prefix, split_tokens};
-use aegis_policy::BlockReason;
 use aegis_snapshot::SnapshotCoverage;
 use aegis_tui::{ExecutionRenderer, PromptDecision, RecoveryPromptDecision, TerminalRenderer};
-use aegis_types::Decision;
-use aegis_types::SandboxStatus;
-use aegis_types::SnapshotRecord;
+use aegis_types::{Decision, RecoveryDegradation, SandboxStatus};
 
 use crate::shell_compat::{ShellLaunchOptions, exec_prepared_command, prepare_command};
 use crate::{EXIT_BLOCKED, EXIT_DENIED, EXIT_INTERNAL};
 
-fn persist_rule(
-    cmd: &str,
-    plan: &InterceptionPlan,
-    append_fn: impl FnOnce(
-        &std::path::Path,
-        &[String],
-        &std::path::Path,
-    ) -> Result<AppendOutcome, aegis_config::ConfigError>,
-    label: &str,
-) -> Result<(), String> {
-    let CwdState::Resolved(cwd) = plan.decision_context().cwd_state() else {
-        err!("warning: cannot persist {label} rule: working directory unavailable");
-        return Ok(());
-    };
-    match active_config_path_for_append() {
-        Some(config_path) => {
-            let tokens = split_tokens(cmd);
-            let prefix = extract_prefix(&tokens);
-            match append_fn(&config_path, &prefix, cwd) {
-                Ok(AppendOutcome::Conflict {
-                    pattern,
-                    existing_location,
-                }) => {
-                    let location = match existing_location {
-                        aegis_config::allowlist::ConfigSourceLayer::Project => "project",
-                        aegis_config::allowlist::ConfigSourceLayer::Global => "global",
-                    };
-                    err!(
-                        "warning: conflicting rule for '{pattern}' already exists in {location} config"
-                    );
-                }
-                Ok(AppendOutcome::SkippedDuplicate | AppendOutcome::Appended) => {}
-                Err(err) => return Err(format!("{err}")),
-            }
-        }
-        None => {
-            err!("warning: cannot persist {label} rule: no config file found");
-        }
+struct ShellOutput<'a, R>(&'a R);
+
+impl<R: ExecutionRenderer> DispositionOutput for ShellOutput<'_, R> {
+    fn confirm(&mut self, plan: &InterceptionPlan) -> PromptDecision {
+        self.0
+            .show_confirmation(plan.assessment(), plan.explanation(), &[])
     }
-    Ok(())
+
+    fn recovery_override(&mut self, degradation: RecoveryDegradation) -> RecoveryPromptDecision {
+        self.0.show_recovery_override(degradation)
+    }
+
+    fn show_policy_block(&mut self, plan: &InterceptionPlan) {
+        self.0
+            .show_policy_block(plan.assessment(), plan.explanation());
+    }
+
+    fn show_intrinsic_block(&mut self, plan: &InterceptionPlan) {
+        self.0
+            .show_intrinsic_block(plan.assessment(), plan.explanation(), &[]);
+    }
+
+    fn warn(&mut self, message: &str) {
+        self.0.warn(message);
+    }
+
+    fn persist_allow(&mut self, cmd: &str, cwd: &std::path::Path) {
+        persist_allow_rule(cmd, cwd);
+    }
+}
+
+struct ShellRun<'a, R> {
+    cmd: &'a str,
+    prepared: &'a PreparedPlanner,
+    plan: &'a InterceptionPlan,
+    launch: &'a ShellLaunchOptions,
+    sandbox_config: Option<&'a aegis_sandbox::SandboxConfig>,
+    renderer: &'a R,
 }
 
 pub(crate) fn run_planned_shell_command(
     cmd: &str,
-    verbose: bool,
     prepared: &PreparedPlanner,
     plan: &InterceptionPlan,
     launch: &ShellLaunchOptions,
 ) -> i32 {
-    run_planned_shell_command_with_renderer(cmd, verbose, prepared, plan, launch, &TerminalRenderer)
+    run_planned_shell_command_with_renderer(cmd, prepared, plan, launch, &TerminalRenderer)
 }
 
 pub(crate) fn run_planned_shell_command_with_renderer<R: ExecutionRenderer>(
     cmd: &str,
-    verbose: bool,
     prepared: &PreparedPlanner,
     plan: &InterceptionPlan,
     launch: &ShellLaunchOptions,
@@ -80,319 +71,122 @@ pub(crate) fn run_planned_shell_command_with_renderer<R: ExecutionRenderer>(
         PreparedPlanner::Ready(context) => context.config().sandbox.as_ref(),
         PreparedPlanner::SetupFailure(_) => None,
     };
-    run_planned_shell_command_with_sandbox(
-        cmd,
-        verbose,
-        prepared,
-        plan,
-        launch,
-        sandbox_config,
-        renderer,
-    )
+    run_planned_shell_command_with_sandbox(cmd, prepared, plan, launch, sandbox_config, renderer)
 }
 
 fn run_planned_shell_command_with_sandbox<R: ExecutionRenderer>(
     cmd: &str,
-    verbose: bool,
     prepared: &PreparedPlanner,
     plan: &InterceptionPlan,
     launch: &ShellLaunchOptions,
     sandbox_config: Option<&aegis_sandbox::SandboxConfig>,
     renderer: &R,
 ) -> i32 {
-    match plan.execution_disposition() {
-        ExecutionDisposition::Execute => execute_with_snapshots(
-            cmd,
-            verbose,
-            prepared,
-            plan,
-            launch,
-            Decision::AutoApproved,
-            false,
-            sandbox_config,
-            renderer,
-        ),
-        ExecutionDisposition::RequiresApproval => {
-            let prompt_decision =
-                renderer.show_confirmation(plan.assessment(), plan.explanation(), &[]);
-            if prompt_decision == PromptDecision::DenyAlways
-                && let Err(err) = persist_rule(cmd, plan, append_block_rule, "block")
-            {
-                err!("error: failed to append block rule: {err}");
-            }
-            let approved = matches!(
-                prompt_decision,
-                PromptDecision::Approve | PromptDecision::ApproveAlways
-            );
-            if approved {
-                execute_with_snapshots(
-                    cmd,
-                    verbose,
-                    prepared,
-                    plan,
-                    launch,
-                    Decision::Approved,
-                    prompt_decision == PromptDecision::ApproveAlways,
-                    sandbox_config,
-                    renderer,
-                )
-            } else {
-                if let Err(err) = append_shell_audit(
-                    prepared,
-                    plan,
-                    Decision::Denied,
-                    &[],
-                    &[],
-                    aegis::runtime::sandbox_status_before_preparation(sandbox_config),
-                ) {
-                    err!("error: failed to write audit log: {err}");
-                    return EXIT_INTERNAL;
-                }
-                EXIT_DENIED
-            }
-        }
-        ExecutionDisposition::Block => {
-            show_block_for_plan(plan, renderer);
-            if let Err(err) = append_shell_audit(
-                prepared,
-                plan,
-                Decision::Blocked,
-                &[],
-                &[],
-                aegis::runtime::sandbox_status_before_preparation(sandbox_config),
-            ) {
-                err!("error: failed to write audit log: {err}");
-                return EXIT_INTERNAL;
-            }
-            EXIT_BLOCKED
-        }
-    }
-}
-
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the execution inputs mirror the existing Wrapper execution seam"
-)]
-fn execute_with_snapshots<R: ExecutionRenderer>(
-    cmd: &str,
-    _verbose: bool,
-    prepared: &PreparedPlanner,
-    plan: &InterceptionPlan,
-    launch: &ShellLaunchOptions,
-    decision: Decision,
-    approve_always: bool,
-    sandbox_config: Option<&aegis_sandbox::SandboxConfig>,
-    renderer: &R,
-) -> i32 {
-    let coverage = create_snapshots_for_plan(prepared, plan);
-    let snapshots = coverage.records.as_slice();
-    let attempts = coverage.snapshot_attempts();
-    let attempts = attempts.as_slice();
-    let unavailable = matches!(plan.decision_context().cwd_state(), CwdState::Unavailable);
-    if approve_always && unavailable {
-        err!("warning: cannot persist allow rule: working directory unavailable");
-    }
-    let approve_always =
-        approve_always && !unavailable && !plan.explanation().context.recovery_opt_out;
-    let persistence_block = if approve_always {
-        allow_rule_persistence_degradation(plan, &coverage)
-    } else {
-        None
-    };
-    if persistence_block.is_some() {
-        renderer.warn("allow rule not saved: Recovery is not ready for this run");
-    }
-    let degradation =
-        plan_recovery_degradation(plan, decision == Decision::AutoApproved, &coverage)
-            .or(persistence_block);
-    if approve_always
-        && degradation.is_none()
-        && let Err(err) = persist_rule(cmd, plan, append_allow_rule, "allow")
-    {
-        err!("error: failed to append allow rule: {err}");
-    }
-    if let Some(degradation) = degradation {
-        return match renderer.show_recovery_override(degradation) {
-            RecoveryPromptDecision::RunOnceWithoutRecovery => complete_approved_shell_execution(
-                ShellExecution {
-                    cmd,
-                    launch,
-                    sandbox_config,
-                    prepared,
-                    plan,
-                    snapshots,
-                    attempts,
-                    recovery_degradation: Some(degradation),
-                },
-                Decision::Approved,
-                renderer,
-            ),
-            RecoveryPromptDecision::Deny => {
-                if let Err(err) = append_shell_recovery_audit(
-                    prepared,
-                    plan,
-                    Decision::Denied,
-                    snapshots,
-                    attempts,
-                    aegis::runtime::sandbox_status_before_preparation(sandbox_config),
-                    degradation,
-                ) {
-                    err!("error: failed to write audit log: {err}");
-                    return EXIT_INTERNAL;
-                }
-                EXIT_DENIED
-            }
-        };
-    }
-
-    complete_approved_shell_execution(
-        ShellExecution {
-            cmd,
-            launch,
-            sandbox_config,
-            prepared,
-            plan,
-            snapshots,
-            attempts,
-            recovery_degradation: None,
-        },
-        decision,
-        renderer,
-    )
-}
-
-struct ShellExecution<'a> {
-    cmd: &'a str,
-    launch: &'a ShellLaunchOptions,
-    sandbox_config: Option<&'a aegis_sandbox::SandboxConfig>,
-    prepared: &'a PreparedPlanner,
-    plan: &'a InterceptionPlan,
-    snapshots: &'a [SnapshotRecord],
-    attempts: &'a [aegis_types::SnapshotAttempt],
-    recovery_degradation: Option<aegis_types::RecoveryDegradation>,
-}
-
-fn complete_approved_shell_execution<R: ExecutionRenderer>(
-    execution: ShellExecution<'_>,
-    decision: Decision,
-    renderer: &R,
-) -> i32 {
-    let ShellExecution {
+    ShellRun {
         cmd,
-        launch,
-        sandbox_config,
         prepared,
         plan,
-        snapshots,
-        attempts,
-        recovery_degradation,
-    } = execution;
-
-    complete_shell_execution(
-        decision,
-        || prepare_command(cmd, launch, sandbox_config),
-        |final_decision, sandbox_status| match recovery_degradation {
-            Some(degradation) => append_shell_recovery_audit(
-                prepared,
-                plan,
-                final_decision,
-                snapshots,
-                attempts,
-                sandbox_status,
-                degradation,
-            ),
-            None => append_shell_audit(
-                prepared,
-                plan,
-                final_decision,
-                snapshots,
-                attempts,
-                sandbox_status,
-            ),
-        },
-        exec_prepared_command,
-        crate::shell_compat::wait_for_child,
-        |message| renderer.report_error(message),
-        || {
-            aegis::runtime::sandbox_unavailable_code_and_message(
-                aegis_sandbox::wsl1_unavailable(),
-                aegis_sandbox::apparmor_userns_restricted(),
-            )
-            .1
-        },
-    )
-}
-
-fn append_shell_recovery_audit(
-    prepared: &PreparedPlanner,
-    plan: &InterceptionPlan,
-    decision: Decision,
-    snapshots: &[SnapshotRecord],
-    attempts: &[aegis_types::SnapshotAttempt],
-    sandbox_status: SandboxStatus,
-    degradation: aegis_types::RecoveryDegradation,
-) -> Result<(), aegis::error::AegisError> {
-    if let PreparedPlanner::Ready(context) = prepared {
-        return context.append_audit_entry_with_recovery_degradation(
-            plan.assessment(),
-            decision,
-            snapshots,
-            plan.explanation(),
-            AuditWriteOptions {
-                allowlist_match: plan.decision_context().allowlist_match(),
-                allowlist_effective: plan.policy_decision().allowlist_effective,
-                ci_detected: plan.decision_context().ci_detected(),
-                sandbox_status,
-                snapshot_attempts: attempts,
-            },
-            degradation,
-        );
+        launch,
+        sandbox_config,
+        renderer,
     }
-    Ok(())
+    .run()
 }
 
-fn create_snapshots_for_plan(
-    prepared: &PreparedPlanner,
-    plan: &InterceptionPlan,
-) -> SnapshotCoverage {
-    let aegis::planning::SnapshotPlan::Required { git_targets, .. } = plan.snapshot_plan() else {
-        return SnapshotCoverage::default();
-    };
-    match prepared {
-        PreparedPlanner::Ready(context) => {
-            let CwdState::Resolved(cwd) = plan.decision_context().cwd_state() else {
-                return SnapshotCoverage::default();
-            };
-            context.create_snapshots_for_plan(cwd, &plan.assessment().command.raw, &git_targets)
+impl<R: ExecutionRenderer> ShellRun<'_, R> {
+    fn run(&self) -> i32 {
+        let verdict = decide(self.cmd, self.plan, &mut ShellOutput(self.renderer));
+        match verdict.decision {
+            Decision::Denied => self.refuse(Decision::Denied, EXIT_DENIED),
+            Decision::Blocked => self.refuse(Decision::Blocked, EXIT_BLOCKED),
+            _ => self.execute(verdict),
         }
-        PreparedPlanner::SetupFailure(_) => SnapshotCoverage::default(),
     }
-}
 
-fn append_shell_audit(
-    prepared: &PreparedPlanner,
-    plan: &InterceptionPlan,
-    decision: Decision,
-    snapshots: &[SnapshotRecord],
-    attempts: &[aegis_types::SnapshotAttempt],
-    sandbox_status: SandboxStatus,
-) -> Result<(), aegis::error::AegisError> {
-    if let PreparedPlanner::Ready(context) = prepared {
-        return context.append_audit_entry(
-            plan.assessment(),
-            decision,
-            snapshots,
-            plan.explanation(),
-            AuditWriteOptions {
-                allowlist_match: plan.decision_context().allowlist_match(),
-                allowlist_effective: plan.policy_decision().allowlist_effective,
-                ci_detected: plan.decision_context().ci_detected(),
-                sandbox_status,
-                snapshot_attempts: attempts,
-            },
-        );
+    fn refuse(&self, decision: Decision, exit_code: i32) -> i32 {
+        let status = aegis::runtime::sandbox_status_before_preparation(self.sandbox_config);
+        match self.audit(&AuditRecord::without_snapshots(decision, status)) {
+            Ok(()) => exit_code,
+            Err(err) => {
+                err!("error: failed to write audit log: {err}");
+                EXIT_INTERNAL
+            }
+        }
     }
-    Ok(())
+
+    fn execute(&self, verdict: aegis::runtime::disposition::Verdict) -> i32 {
+        let coverage = self.create_snapshots();
+        let attempts = coverage.snapshot_attempts();
+        let gate = recovery_gate(
+            self.cmd,
+            self.plan,
+            &coverage,
+            verdict,
+            &mut ShellOutput(self.renderer),
+        );
+        match gate {
+            RecoveryGate::Deny(degradation) => {
+                let record = AuditRecord {
+                    decision: Decision::Denied,
+                    sandbox_status: aegis::runtime::sandbox_status_before_preparation(
+                        self.sandbox_config,
+                    ),
+                    snapshots: &coverage.records,
+                    attempts: &attempts,
+                    recovery_degradation: Some(degradation),
+                };
+                match self.audit(&record) {
+                    Ok(()) => EXIT_DENIED,
+                    Err(err) => {
+                        err!("error: failed to write audit log: {err}");
+                        EXIT_INTERNAL
+                    }
+                }
+            }
+            RecoveryGate::Run {
+                decision,
+                degradation,
+            } => complete_shell_execution(
+                decision,
+                || prepare_command(self.cmd, self.launch, self.sandbox_config),
+                |final_decision, sandbox_status| {
+                    self.audit(&AuditRecord {
+                        decision: final_decision,
+                        sandbox_status,
+                        snapshots: &coverage.records,
+                        attempts: &attempts,
+                        recovery_degradation: degradation,
+                    })
+                },
+                exec_prepared_command,
+                crate::shell_compat::wait_for_child,
+                |message| self.renderer.report_error(message),
+                || {
+                    aegis::runtime::sandbox_unavailable_code_and_message(
+                        aegis_sandbox::wsl1_unavailable(),
+                        aegis_sandbox::apparmor_userns_restricted(),
+                    )
+                    .1
+                },
+            ),
+        }
+    }
+
+    fn audit(&self, record: &AuditRecord<'_>) -> Result<(), AegisError> {
+        match self.prepared {
+            PreparedPlanner::Ready(context) => append_audit(context, self.plan, record, None),
+            PreparedPlanner::SetupFailure(_) => Ok(()),
+        }
+    }
+
+    fn create_snapshots(&self) -> SnapshotCoverage {
+        let (PreparedPlanner::Ready(context), Some(request)) =
+            (self.prepared, snapshot_request(self.plan))
+        else {
+            return SnapshotCoverage::default();
+        };
+        context.create_snapshots_for_plan(request.cwd, request.command, &request.git_targets)
+    }
 }
 
 fn complete_shell_execution<C, X, AuditError>(
@@ -419,9 +213,7 @@ where
                 return match execute(command) {
                     Ok((child, _)) => wait(child),
                     Err(err) => {
-                        report_error(&format!(
-                            "Sandbox setup failed; command not executed: {err}"
-                        ));
+                        report_error(&setup_failed_message(&err));
                         EXIT_INTERNAL
                     }
                 };
@@ -435,9 +227,9 @@ where
                             return EXIT_INTERNAL;
                         }
                         let _ = wait(child);
-                        report_error(
-                            "Sandbox setup failed; command not executed: inner sandbox wrapper did not report status",
-                        );
+                        report_error(&setup_failed_message(
+                            &"inner sandbox wrapper did not report status",
+                        ));
                         return EXIT_INTERNAL;
                     }
                     if let Err(err) = append_audit(decision, actual_status) {
@@ -453,60 +245,21 @@ where
                         report_error(&format!("failed to write audit log: {audit_err}"));
                         return EXIT_INTERNAL;
                     }
-                    report_error(&format!(
-                        "Sandbox setup failed; command not executed: {err}"
-                    ));
+                    report_error(&setup_failed_message(&err));
                     EXIT_INTERNAL
                 }
             }
         }
-        Err(aegis_sandbox::SandboxError::Required) => {
-            if let Err(err) = append_audit(Decision::Blocked, SandboxStatus::Unavailable) {
-                report_error(&format!("failed to write audit log: {err}"));
-                return EXIT_INTERNAL;
+        Err(err) => match SandboxFailure::record(&err, append_audit) {
+            Ok(failure) => {
+                report_error(&failure.message(unavailable_message));
+                failure.exit_code()
             }
-            report_error(unavailable_message());
-            EXIT_BLOCKED
-        }
-        Err(aegis_sandbox::SandboxError::RequiredNestedUnderOuterSandbox) => {
-            if let Err(err) = append_audit(Decision::Blocked, SandboxStatus::Unavailable) {
-                report_error(&format!("failed to write audit log: {err}"));
-                return EXIT_INTERNAL;
-            }
-            report_error(aegis::runtime::SANDBOX_REQUIRED_NESTED_UNAVAILABLE_MESSAGE);
-            EXIT_BLOCKED
-        }
-        Err(err) => {
-            if let Err(audit_err) = append_audit(Decision::Blocked, SandboxStatus::NotAttempted) {
+            Err(audit_err) => {
                 report_error(&format!("failed to write audit log: {audit_err}"));
-                return EXIT_INTERNAL;
+                EXIT_INTERNAL
             }
-            report_error(&format!(
-                "Sandbox setup failed; command not executed: {err}"
-            ));
-            EXIT_INTERNAL
-        }
-    }
-}
-
-fn show_block_for_plan<R: ExecutionRenderer>(plan: &InterceptionPlan, renderer: &R) {
-    match plan.policy_decision().block_reason() {
-        Some(BlockReason::ProtectCiPolicy) => {
-            renderer.show_policy_block(plan.assessment(), plan.explanation())
-        }
-        Some(BlockReason::IntrinsicRiskBlock) => {
-            renderer.show_intrinsic_block(plan.assessment(), plan.explanation(), &[]);
-        }
-        Some(BlockReason::StrictPolicy) => {
-            renderer.show_policy_block(plan.assessment(), plan.explanation());
-        }
-        Some(BlockReason::BlocklistOverride) => {
-            renderer.show_policy_block(plan.assessment(), plan.explanation());
-        }
-        Some(BlockReason::PolicyRulesOverride) => {
-            renderer.show_policy_block(plan.assessment(), plan.explanation());
-        }
-        None => {}
+        },
     }
 }
 

@@ -4,7 +4,6 @@ module-cycle aegis::analysis::orchestrate,aegis::analysis::router
 module-cycle aegis::analysis::router::segments::executor_config,aegis::analysis::router::segments::unclaimed
 module-cycle aegis::planning,aegis::runtime
 module-cycle aegis::planning::git_target,aegis::planning::types
-module-cycle aegis::watch::runner,aegis::watch::sandbox
 module-cycle aegis_audit::logger::integrity,aegis_audit::logger::query,aegis_audit::logger::writer
 module-cycle aegis_config::allowlist,aegis_config::ceiling,aegis_config::model,aegis_config::pattern_match,aegis_config::validate
 module-cycle aegis_language::operation,aegis_language::protocol

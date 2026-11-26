@@ -19,7 +19,6 @@ fn main_entrypoint_does_not_embed_shell_policy_orchestration_helpers() {
         "fn create_snapshots_for_plan(",
         "fn append_shell_audit(",
         "fn show_block_for_plan(",
-        "fn decide_command(",
         "fn execute_policy_decision(",
         "fn test_command_explanation(",
         "fn evaluate_policy_decision(",

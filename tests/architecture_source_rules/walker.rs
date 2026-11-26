@@ -420,8 +420,8 @@ mod resolver_self_tests {
     #[test]
     fn the_walker_skips_files_gated_in_this_repo() {
         let src = paths("src");
-        assert!(src.contains(&"src/shell_flow.rs".to_string()));
-        assert!(!src.contains(&"src/shell_flow/test_support.rs".to_string()));
+        assert!(src.contains(&"src/execution/mod.rs".to_string()));
+        assert!(!src.contains(&"src/execution/snapshot_ordering_tests.rs".to_string()));
         assert!(
             paths("crates/aegis-config/src")
                 .iter()
