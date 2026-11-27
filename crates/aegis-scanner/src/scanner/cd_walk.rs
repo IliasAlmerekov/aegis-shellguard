@@ -265,9 +265,7 @@ impl Walker {
 
     fn literal_path(&self, operands: &[CdWord]) -> Result<String, CdUnresolved> {
         let word = match operands {
-            [word]
-                if !word.value.starts_with('-') && !(self.zsh && is_stack_index(&word.value)) =>
-            {
+            [word] if !(word.value.starts_with('-') || self.zsh && is_stack_index(&word.value)) => {
                 word
             }
             [dashdash, word]

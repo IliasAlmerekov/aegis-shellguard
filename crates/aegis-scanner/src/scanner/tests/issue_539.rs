@@ -46,6 +46,11 @@ fn ac2_zsh_directory_stack_forms_are_unsupported() {
 }
 
 #[test]
+fn ac2_a_plus_word_without_digits_stays_a_path_under_zsh() {
+    assert_eq!(dirs(&zsh("cd +foo && rm -rf y")), vec![chain(&["+foo"])]);
+}
+
+#[test]
 fn ac2_double_dash_does_not_hide_a_stack_index_under_zsh() {
     for cmd in ["cd -- +1 && rm -rf y", "cd -- -1 && rm -rf y"] {
         assert_eq!(
@@ -212,6 +217,7 @@ fn ac6_the_set_builtin_still_turns_physical_mode_on() {
     for cmd in [
         "set -P && cd x && rm -rf y",
         "builtin set -o physical && cd x && rm -rf y",
+        "X=1 set -P && cd x && rm -rf y",
     ] {
         assert_eq!(
             dirs(&bash(cmd)),
