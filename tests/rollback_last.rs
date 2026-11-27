@@ -294,7 +294,9 @@ fn approve_rm_rf_src_in_clean_repo(env: &Env) -> PathBuf {
     fs::write(repo.join("src").join("a.txt"), "a\n").unwrap();
     git(&repo, &["add", "-A"]);
     git(&repo, &["commit", "-q", "-m", "add src"]);
-    let mut child = Command::new("script")
+    let aegis = env!("CARGO_BIN_EXE_aegis");
+    let mut command = Command::new("script");
+    command
         .env("HOME", env.home.path())
         .env("AEGIS_AUDIT_PATH", env.audit_path())
         .env("AEGIS_REAL_SHELL", "/bin/sh")
@@ -305,14 +307,14 @@ fn approve_rm_rf_src_in_clean_repo(env: &Env) -> PathBuf {
         .current_dir(&repo)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .args([
-            "-qfec",
-            &format!("'{}' -c 'rm -rf src'", env!("CARGO_BIN_EXE_aegis")),
-            "/dev/null",
-        ])
-        .spawn()
-        .unwrap();
+        .stderr(Stdio::piped());
+    #[cfg(target_os = "linux")]
+    command.args(["-qfec", &format!("'{aegis}' -c 'rm -rf src'"), "/dev/null"]);
+    #[cfg(target_os = "macos")]
+    command
+        .args(["-q", "/dev/null", aegis])
+        .args(["-c", "rm -rf src"]);
+    let mut child = command.spawn().unwrap();
     child.stdin.take().unwrap().write_all(b"y\n").unwrap();
     let output = child.wait_with_output().unwrap();
     assert!(
