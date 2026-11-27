@@ -4,7 +4,7 @@
 
 **Roll back what your AI agent broke.**
 
-[![version](https://img.shields.io/badge/version-0.10.0-60A5FA?style=flat-square)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.10.1-60A5FA?style=flat-square)](CHANGELOG.md)
 [![platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-22C55E?style=flat-square)](#install)
 [![license](https://img.shields.io/badge/license-MIT-A855F7?style=flat-square)](LICENSE)
 [![built with](https://img.shields.io/badge/built%20with-Rust-F59E0B?style=flat-square)](Cargo.toml)
@@ -153,7 +153,7 @@ Installs the binary, writes a managed block to `~/.zshrc` or `~/.bashrc`, and ho
 ### Developer source install
 
 ```bash
-cargo install --git https://github.com/IliasAlmerekov/aegis-shellguard --tag v0.10.0 aegis
+cargo install --git https://github.com/IliasAlmerekov/aegis-shellguard --tag v0.10.1 aegis
 ```
 
 ### Shell-proxy mode (package manager installs)

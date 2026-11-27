@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+## [0.10.1] (2026-11-27)
+
 - Fixed: the release Homebrew smoke now passes. The formula test checks only `aegis --version`, because Homebrew's sandbox cannot host the mandatory Sandbox. The live smoke and the README trust the tap with `brew trust IliasAlmerekov/aegis`, and the npm smoke runs after a Homebrew smoke failure (#730).
 
 ## [0.10.0] (2026-11-27)
