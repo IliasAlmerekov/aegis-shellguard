@@ -270,7 +270,11 @@ impl Walker {
             {
                 word
             }
-            [dashdash, word] if dashdash.value == "--" => word,
+            [dashdash, word]
+                if dashdash.value == "--" && !(self.zsh && is_stack_index(&word.value)) =>
+            {
+                word
+            }
             _ => return Err(CdUnresolved::UnsupportedForm),
         };
         let path = &word.value;
@@ -293,7 +297,7 @@ impl Walker {
 }
 
 fn is_stack_index(path: &str) -> bool {
-    path.strip_prefix('+')
+    path.strip_prefix(['+', '-'])
         .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
 }
 

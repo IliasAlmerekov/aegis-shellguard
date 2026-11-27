@@ -66,8 +66,20 @@ fn ac2_zsh_directory_stack_forms_are_unsupported() {
 }
 
 #[test]
-fn ac2_double_dash_keeps_a_plus_operand_literal_under_zsh() {
-    assert_eq!(dirs(&zsh("cd -- +1 && rm -rf y")), chain(&["+1"]));
+fn ac2_double_dash_does_not_hide_a_stack_index_under_zsh() {
+    for cmd in ["cd -- +1 && rm -rf y", "cd -- -1 && rm -rf y"] {
+        assert_eq!(
+            dirs(&zsh(cmd)),
+            unresolved(CdUnresolved::UnsupportedForm),
+            "{cmd:?}"
+        );
+    }
+    assert_eq!(dirs(&zsh("cd -- /abs/+1 && rm -rf y")), chain(&["/abs/+1"]));
+}
+
+#[test]
+fn ac2_double_dash_keeps_a_plus_operand_literal_under_bash() {
+    assert_eq!(dirs(&bash("cd -- +1 && rm -rf y")), chain(&["+1"]));
 }
 
 #[test]
