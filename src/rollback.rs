@@ -19,6 +19,7 @@ pub(crate) struct RollbackTarget {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum RollbackOutcome {
     Restored(RollbackTarget),
+    NothingCaptured(RollbackTarget),
     Refused {
         code: i32,
         message: String,
@@ -32,6 +33,7 @@ pub(crate) enum RollbackOutcome {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Preflight {
     Restore,
+    NothingCaptured,
     Refused { code: i32, message: String },
     RestoredUnaudited { reason: String },
 }
@@ -56,6 +58,7 @@ pub(crate) async fn execute(snapshot_id: String, yes: bool) -> Result<RollbackOu
     .await?
     {
         Preflight::Restore => Ok(RollbackOutcome::Restored(target)),
+        Preflight::NothingCaptured => Ok(RollbackOutcome::NothingCaptured(target)),
         Preflight::Refused { code, message } => Ok(RollbackOutcome::Refused { code, message }),
         Preflight::RestoredUnaudited { reason } => {
             Ok(RollbackOutcome::RestoredUnaudited { target, reason })
@@ -95,7 +98,8 @@ pub(crate) fn decide(
     input: &mut impl BufRead,
 ) -> Preflight {
     match liveness {
-        Liveness::Present | Liveness::NothingCaptured => Preflight::Restore,
+        Liveness::Present => Preflight::Restore,
+        Liveness::NothingCaptured => Preflight::NothingCaptured,
         Liveness::Absent { reason } => Preflight::Refused {
             code: EXIT_ABSENT,
             message: format!(
@@ -270,15 +274,26 @@ mod tests {
     fn refused_code(preflight: &Preflight) -> Option<i32> {
         match preflight {
             Preflight::Refused { code, .. } => Some(*code),
-            Preflight::Restore | Preflight::RestoredUnaudited { .. } => None,
+            Preflight::Restore
+            | Preflight::NothingCaptured
+            | Preflight::RestoredUnaudited { .. } => None,
         }
     }
 
     #[test]
-    fn decide_restores_present_and_nothing_captured_without_asking() {
-        for liveness in [Liveness::Present, Liveness::NothingCaptured] {
-            assert_eq!(decide_with(liveness, false, false, ""), Preflight::Restore);
-        }
+    fn decide_restores_present_without_asking() {
+        assert_eq!(
+            decide_with(Liveness::Present, false, false, ""),
+            Preflight::Restore
+        );
+    }
+
+    #[test]
+    fn decide_reports_nothing_captured_without_asking() {
+        assert_eq!(
+            decide_with(Liveness::NothingCaptured, false, false, ""),
+            Preflight::NothingCaptured
+        );
     }
 
     #[test]
@@ -394,5 +409,68 @@ mod tests {
             matches!(preflight, Preflight::RestoredUnaudited { .. }),
             "{preflight:?}"
         );
+    }
+
+    struct Empty(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+    #[async_trait::async_trait]
+    impl aegis_snapshot::SnapshotPlugin for Empty {
+        fn name(&self) -> &'static str {
+            "stub"
+        }
+        async fn is_applicable(&self, _cwd: &std::path::Path) -> bool {
+            true
+        }
+        async fn snapshot(
+            &self,
+            _cwd: &std::path::Path,
+            _cmd: &str,
+        ) -> std::result::Result<String, aegis_snapshot::SnapshotError> {
+            Ok("S1".to_string())
+        }
+        async fn rollback(
+            &self,
+            _id: &str,
+        ) -> std::result::Result<(), aegis_snapshot::SnapshotError> {
+            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+        async fn delete(
+            &self,
+            _id: &str,
+        ) -> std::result::Result<(), aegis_snapshot::SnapshotError> {
+            Ok(())
+        }
+        async fn readiness(&self, _snapshot_id: &str) -> aegis_snapshot::ArtifactReadiness {
+            aegis_snapshot::ArtifactReadiness::PRESENT_UNCHECKED
+        }
+
+        async fn liveness(
+            &self,
+            _id: &str,
+        ) -> std::result::Result<Liveness, aegis_snapshot::SnapshotError> {
+            Ok(Liveness::NothingCaptured)
+        }
+    }
+
+    #[tokio::test]
+    async fn restore_checked_skips_provider_rollback_and_audit_for_an_empty_snapshot() {
+        let dir = TempDir::new().unwrap();
+        let audit = dir.path().join("audit.jsonl");
+        let logger = AuditLogger::new(audit.clone());
+        let called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let registry = SnapshotRegistry::new_with_plugins(vec![Box::new(Empty(called.clone()))]);
+        let target = RollbackTarget {
+            plugin: "stub".to_string(),
+            snapshot_id: "S1".to_string(),
+        };
+
+        let preflight = restore_checked(&registry, &logger, &target, true, false, &mut &b""[..])
+            .await
+            .unwrap();
+
+        assert_eq!(preflight, Preflight::NothingCaptured);
+        assert!(!called.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(!audit.exists());
     }
 }

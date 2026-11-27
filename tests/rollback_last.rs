@@ -284,6 +284,58 @@ fn last_with_yes_restores_the_latest_of_two_candidates() {
     assert!(!repo.join("older.txt").exists());
 }
 
+const NOTHING_TO_RESTORE: &str =
+    "nothing to restore: plugin=git snapshot_id=clean captured no changes";
+
+fn clean_tree_with_deleted_src(env: &Env) -> PathBuf {
+    let repo = env.repo("repo");
+    fs::create_dir(repo.join("src")).unwrap();
+    fs::write(repo.join("src").join("a.txt"), "a\n").unwrap();
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "add src"]);
+    env.record(
+        "rm -rf src",
+        Some(&repo),
+        vec![("git", "clean".to_string(), Some(&repo))],
+    );
+    fs::remove_dir_all(repo.join("src")).unwrap();
+    repo
+}
+
+#[test]
+fn last_reports_nothing_to_restore_for_a_clean_tree_snapshot() {
+    let env = Env::new();
+    let repo = clean_tree_with_deleted_src(&env);
+
+    let output = env.run(&repo, &["rollback", "--last", "--yes"], None);
+
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert!(
+        stdout(&output).contains(NOTHING_TO_RESTORE),
+        "{}",
+        stdout(&output)
+    );
+    assert!(!stdout(&output).contains("rollback complete"));
+    assert!(env.rollback_entries().is_empty());
+}
+
+#[test]
+fn rollback_by_id_reports_nothing_to_restore_for_a_clean_tree_snapshot() {
+    let env = Env::new();
+    let repo = clean_tree_with_deleted_src(&env);
+
+    let output = env.run(&repo, &["rollback", "clean", "--yes"], None);
+
+    assert_eq!(code(&output), 0, "{}", stderr(&output));
+    assert!(
+        stdout(&output).contains(NOTHING_TO_RESTORE),
+        "{}",
+        stdout(&output)
+    );
+    assert!(!stdout(&output).contains("rollback complete"));
+    assert!(env.rollback_entries().is_empty());
+}
+
 #[test]
 fn last_with_yes_prints_the_summary_of_what_it_restores() {
     let env = Env::new();
