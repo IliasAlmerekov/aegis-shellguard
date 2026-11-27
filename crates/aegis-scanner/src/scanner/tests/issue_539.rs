@@ -1,14 +1,8 @@
 use std::ffi::OsStr;
 
-use super::*;
+use super::issue_525::{chain, dirs, report_in, unresolved};
 use crate::scanner::git_stages::shell_is_zsh;
-use crate::scanner::{AmbientEnv, CdUnresolved, GitStageReport, StageDir};
-
-fn report_in(cmd: &str, ambient: AmbientEnv) -> GitStageReport {
-    let scanner = scanner();
-    let assessment = scanner.assess(cmd);
-    scanner.git_stage_report_with(cmd, &assessment, ambient)
-}
+use crate::scanner::{AmbientEnv, CdUnresolved, GitStageReport};
 
 fn zsh(cmd: &str) -> GitStageReport {
     report_in(
@@ -24,25 +18,11 @@ fn bash(cmd: &str) -> GitStageReport {
     report_in(cmd, AmbientEnv::default())
 }
 
-fn dirs(report: &GitStageReport) -> Vec<StageDir> {
-    report.redirected.iter().map(|s| s.dir.clone()).collect()
-}
-
-fn chain(steps: &[&str]) -> Vec<StageDir> {
-    vec![StageDir::Chain(
-        steps.iter().map(|s| (*s).to_string()).collect(),
-    )]
-}
-
-fn unresolved(reason: CdUnresolved) -> Vec<StageDir> {
-    vec![StageDir::Unresolved(reason)]
-}
-
 #[test]
 fn ac1_zsh_runs_the_last_pipeline_stage_in_the_current_shell() {
     assert_eq!(
         dirs(&zsh("true | cd ../other && rm -rf y")),
-        chain(&["../other"])
+        vec![chain(&["../other"])]
     );
 }
 
@@ -59,7 +39,7 @@ fn ac2_zsh_directory_stack_forms_are_unsupported() {
     for cmd in ["cd +1 && rm -rf y", "cd -2 && rm -rf y"] {
         assert_eq!(
             dirs(&zsh(cmd)),
-            unresolved(CdUnresolved::UnsupportedForm),
+            vec![unresolved(CdUnresolved::UnsupportedForm)],
             "{cmd:?}"
         );
     }
@@ -70,28 +50,31 @@ fn ac2_double_dash_does_not_hide_a_stack_index_under_zsh() {
     for cmd in ["cd -- +1 && rm -rf y", "cd -- -1 && rm -rf y"] {
         assert_eq!(
             dirs(&zsh(cmd)),
-            unresolved(CdUnresolved::UnsupportedForm),
+            vec![unresolved(CdUnresolved::UnsupportedForm)],
             "{cmd:?}"
         );
     }
-    assert_eq!(dirs(&zsh("cd -- /abs/+1 && rm -rf y")), chain(&["/abs/+1"]));
+    assert_eq!(
+        dirs(&zsh("cd -- /abs/+1 && rm -rf y")),
+        vec![chain(&["/abs/+1"])]
+    );
 }
 
 #[test]
 fn ac2_double_dash_keeps_a_plus_operand_literal_under_bash() {
-    assert_eq!(dirs(&bash("cd -- +1 && rm -rf y")), chain(&["+1"]));
+    assert_eq!(dirs(&bash("cd -- +1 && rm -rf y")), vec![chain(&["+1"])]);
 }
 
 #[test]
 fn ac2_bash_treats_a_plus_operand_as_a_relative_path() {
-    assert_eq!(dirs(&bash("cd +1 && rm -rf y")), chain(&["+1"]));
+    assert_eq!(dirs(&bash("cd +1 && rm -rf y")), vec![chain(&["+1"])]);
 }
 
 #[test]
 fn ac3_chdir_is_followed_like_cd() {
     assert_eq!(
         dirs(&bash("chdir ../other && rm -rf y")),
-        chain(&["../other"])
+        vec![chain(&["../other"])]
     );
 }
 
@@ -103,7 +86,7 @@ fn ac3_wrapped_chdir_is_as_opaque_as_wrapped_cd() {
     ] {
         assert_eq!(
             dirs(&bash(cmd)),
-            unresolved(CdUnresolved::Opaque),
+            vec![unresolved(CdUnresolved::Opaque)],
             "{cmd:?}"
         );
     }
@@ -113,7 +96,7 @@ fn ac3_wrapped_chdir_is_as_opaque_as_wrapped_cd() {
 fn ac3_eval_chdir_is_unresolved() {
     assert_eq!(
         dirs(&bash("eval chdir x && rm -rf y")),
-        unresolved(CdUnresolved::Opaque)
+        vec![unresolved(CdUnresolved::Opaque)]
     );
 }
 
@@ -125,7 +108,7 @@ fn ac3_scan_limit_with_chdir_reports_an_unresolved_target() {
 
     assert_eq!(
         dirs(&bash(&format!("{deep} && rm -rf y"))),
-        unresolved(CdUnresolved::Opaque)
+        vec![unresolved(CdUnresolved::Opaque)]
     );
     assert!(bash(&format!("{plain} && rm -rf y")).redirected.is_empty());
 }
@@ -141,7 +124,7 @@ fn ac4_ln_or_mv_before_a_cd_makes_it_unresolved() {
     ] {
         assert_eq!(
             dirs(&bash(cmd)),
-            unresolved(CdUnresolved::PathChanged),
+            vec![unresolved(CdUnresolved::PathChanged)],
             "{cmd:?}"
         );
     }
@@ -151,7 +134,7 @@ fn ac4_ln_or_mv_before_a_cd_makes_it_unresolved() {
 fn ac4_the_taint_blocks_the_absolute_cd_recovery() {
     assert_eq!(
         dirs(&bash("cd nope-$X && ln -s a b && cd /abs && rm -rf y")),
-        unresolved(CdUnresolved::PathChanged)
+        vec![unresolved(CdUnresolved::PathChanged)]
     );
 }
 
@@ -159,7 +142,7 @@ fn ac4_the_taint_blocks_the_absolute_cd_recovery() {
 fn ac4_other_earlier_stages_do_not_taint_the_walk() {
     assert_eq!(
         dirs(&bash("mkdir -p build && cd build && rm -rf y")),
-        chain(&["build"])
+        vec![chain(&["build"])]
     );
 }
 
@@ -167,20 +150,23 @@ fn ac4_other_earlier_stages_do_not_taint_the_walk() {
 fn ac5_a_subshell_cdpath_does_not_leak() {
     assert_eq!(
         dirs(&bash("(export CDPATH=/tmp) && cd project && rm -rf y")),
-        chain(&["project"])
+        vec![chain(&["project"])]
     );
 }
 
 #[test]
 fn ac5_a_subshell_physical_mode_does_not_leak() {
-    assert_eq!(dirs(&bash("(set -P) && cd x && rm -rf y")), chain(&["x"]));
+    assert_eq!(
+        dirs(&bash("(set -P) && cd x && rm -rf y")),
+        vec![chain(&["x"])]
+    );
 }
 
 #[test]
 fn ac5_a_zsh_pipeline_stage_scopes_cdpath_to_its_own_subshell() {
     assert_eq!(
         dirs(&zsh("export CDPATH=/x | cd p && rm -rf y")),
-        chain(&["p"])
+        vec![chain(&["p"])]
     );
 }
 
@@ -196,7 +182,7 @@ fn ac5_a_bash_pipeline_stage_scopes_lastpipe_to_its_own_subshell() {
 fn ac5_a_cdpath_set_in_the_current_shell_still_applies() {
     assert_eq!(
         dirs(&bash("export CDPATH=/tmp && cd project && rm -rf y")),
-        unresolved(CdUnresolved::CdPathSet)
+        vec![unresolved(CdUnresolved::CdPathSet)]
     );
 }
 
@@ -209,7 +195,7 @@ fn ac5_ambient_cdpath_still_applies_inside_a_subshell() {
 
     assert_eq!(
         dirs(&report_in("(true) && cd project && rm -rf y", ambient)),
-        unresolved(CdUnresolved::CdPathSet)
+        vec![unresolved(CdUnresolved::CdPathSet)]
     );
 }
 
@@ -217,7 +203,7 @@ fn ac5_ambient_cdpath_still_applies_inside_a_subshell() {
 fn ac6_set_named_as_an_argument_is_not_physical_mode() {
     assert_eq!(
         dirs(&bash("printf '%s' set -P && cd x && rm -rf y")),
-        chain(&["x"])
+        vec![chain(&["x"])]
     );
 }
 
@@ -229,7 +215,7 @@ fn ac6_the_set_builtin_still_turns_physical_mode_on() {
     ] {
         assert_eq!(
             dirs(&bash(cmd)),
-            unresolved(CdUnresolved::PhysicalMode),
+            vec![unresolved(CdUnresolved::PhysicalMode)],
             "{cmd:?}"
         );
     }
@@ -245,7 +231,7 @@ fn ac6_physical_mode_survives_a_keyword_prefix() {
     ] {
         assert_eq!(
             dirs(&bash(cmd)),
-            unresolved(CdUnresolved::PhysicalMode),
+            vec![unresolved(CdUnresolved::PhysicalMode)],
             "{cmd}"
         );
     }
