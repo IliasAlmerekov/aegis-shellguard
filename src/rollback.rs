@@ -350,10 +350,22 @@ mod tests {
         }
     }
 
-    struct Restoring;
+    struct Stub {
+        liveness: Liveness,
+        rolled_back: Arc<AtomicBool>,
+    }
+
+    impl Stub {
+        fn new(liveness: Liveness) -> Self {
+            Self {
+                liveness,
+                rolled_back: Arc::new(AtomicBool::new(false)),
+            }
+        }
+    }
 
     #[async_trait::async_trait]
-    impl aegis_snapshot::SnapshotPlugin for Restoring {
+    impl aegis_snapshot::SnapshotPlugin for Stub {
         fn name(&self) -> &'static str {
             "stub"
         }
@@ -371,6 +383,7 @@ mod tests {
             &self,
             _id: &str,
         ) -> std::result::Result<(), aegis_snapshot::SnapshotError> {
+            self.rolled_back.store(true, Ordering::SeqCst);
             Ok(())
         }
         async fn delete(
@@ -382,12 +395,11 @@ mod tests {
         async fn readiness(&self, _snapshot_id: &str) -> aegis_snapshot::ArtifactReadiness {
             aegis_snapshot::ArtifactReadiness::PRESENT_UNCHECKED
         }
-
         async fn liveness(
             &self,
             _id: &str,
         ) -> std::result::Result<Liveness, aegis_snapshot::SnapshotError> {
-            Ok(Liveness::Present)
+            Ok(self.liveness.clone())
         }
     }
 
@@ -397,7 +409,8 @@ mod tests {
         let blocker = dir.path().join("not-a-dir");
         std::fs::write(&blocker, b"x").unwrap();
         let logger = AuditLogger::new(blocker.join("audit.jsonl"));
-        let registry = SnapshotRegistry::new_with_plugins(vec![Box::new(Restoring)]);
+        let registry =
+            SnapshotRegistry::new_with_plugins(vec![Box::new(Stub::new(Liveness::Present))]);
         let target = RollbackTarget {
             plugin: "stub".to_string(),
             snapshot_id: "S1".to_string(),
@@ -413,56 +426,14 @@ mod tests {
         );
     }
 
-    struct NothingCapturedPlugin(Arc<AtomicBool>);
-
-    #[async_trait::async_trait]
-    impl aegis_snapshot::SnapshotPlugin for NothingCapturedPlugin {
-        fn name(&self) -> &'static str {
-            "stub"
-        }
-        async fn is_applicable(&self, _cwd: &std::path::Path) -> bool {
-            true
-        }
-        async fn snapshot(
-            &self,
-            _cwd: &std::path::Path,
-            _cmd: &str,
-        ) -> std::result::Result<String, aegis_snapshot::SnapshotError> {
-            Ok("S1".to_string())
-        }
-        async fn rollback(
-            &self,
-            _id: &str,
-        ) -> std::result::Result<(), aegis_snapshot::SnapshotError> {
-            self.0.store(true, Ordering::SeqCst);
-            Ok(())
-        }
-        async fn delete(
-            &self,
-            _id: &str,
-        ) -> std::result::Result<(), aegis_snapshot::SnapshotError> {
-            Ok(())
-        }
-        async fn readiness(&self, _snapshot_id: &str) -> aegis_snapshot::ArtifactReadiness {
-            aegis_snapshot::ArtifactReadiness::PRESENT_UNCHECKED
-        }
-        async fn liveness(
-            &self,
-            _id: &str,
-        ) -> std::result::Result<Liveness, aegis_snapshot::SnapshotError> {
-            Ok(Liveness::NothingCaptured)
-        }
-    }
-
     #[tokio::test]
     async fn restore_checked_skips_provider_rollback_and_audit_for_an_empty_snapshot() {
         let dir = TempDir::new().unwrap();
         let audit = dir.path().join("audit.jsonl");
         let logger = AuditLogger::new(audit.clone());
-        let called = Arc::new(AtomicBool::new(false));
-        let registry = SnapshotRegistry::new_with_plugins(vec![Box::new(NothingCapturedPlugin(
-            called.clone(),
-        ))]);
+        let stub = Stub::new(Liveness::NothingCaptured);
+        let rolled_back = stub.rolled_back.clone();
+        let registry = SnapshotRegistry::new_with_plugins(vec![Box::new(stub)]);
         let target = RollbackTarget {
             plugin: "stub".to_string(),
             snapshot_id: "S1".to_string(),
@@ -473,7 +444,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(preflight, Preflight::NothingCaptured);
-        assert!(!called.load(Ordering::SeqCst));
+        assert!(!rolled_back.load(Ordering::SeqCst));
         assert!(!audit.exists());
     }
 }
