@@ -319,9 +319,18 @@ fn claude_plugin_rollback_command_runs_through_bash_tool() {
         !command.contains("!`"),
         "the command must not inject shell output"
     );
-    for required in ["aegis snapshot list", "confirm", "aegis rollback"] {
+    for required in [
+        "aegis snapshot list",
+        "confirm",
+        "aegis rollback",
+        "aegis rollback --last",
+    ] {
         assert!(command.contains(required), "missing `{required}`");
     }
+    assert!(
+        !command.contains("--yes"),
+        "the command must not suggest --yes"
+    );
 }
 
 #[derive(Clone, Copy, Debug)]

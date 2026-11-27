@@ -6,6 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 ---
 
 ## [Unreleased]
+- Changed: the plugin `/rollback` command now points the user to `aegis rollback --last` when no Snapshot id is given, and hands over the `aegis rollback <id>` line for the user's own terminal instead of trying to run it through the Bash tool, where the hook always denies it (#634).
 - Fixed: the copy of detection rules FS-001, FS-012, GIT-001 and GIT-007 no longer claims the command has no undo or no recovery, which contradicted git Snapshot and `aegis rollback`. It now describes only what the command does (#551).
 - Fixed: `aegis rollback <id>` and `aegis rollback --last` no longer print `rollback complete` for a Snapshot that captured nothing. They print `nothing to restore: plugin=<plugin> snapshot_id=<id> captured no changes`, skip the provider rollback, write no rollback audit entry and exit 0 (#550).
 - Fixed: `aegis watch` no longer launches `aegis -c <cmd>` per frame when `SHELL` points at the Aegis binary; watch now uses the same shell resolution as the interactive path and falls back to `/bin/sh` (#705).
