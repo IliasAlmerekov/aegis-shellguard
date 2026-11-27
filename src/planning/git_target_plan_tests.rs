@@ -6,8 +6,9 @@ use aegis_scanner::CdUnresolved;
 use aegis_types::{Mode, SnapshotPolicy};
 use tempfile::TempDir;
 
+use crate::planning::CwdState;
 use crate::planning::git_target::{GitTarget, GitTargetUnresolved};
-use crate::planning::types::{CwdState, PlanningOutcome, SnapshotPlan};
+use crate::planning::types::{PlanningOutcome, SnapshotPlan};
 use crate::planning::{PlanningRequest, plan_with_context};
 use crate::runtime::RuntimeContext;
 use crate::test_git::git_init;

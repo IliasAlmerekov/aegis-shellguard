@@ -260,7 +260,7 @@ async fn run_watch_plan_with_persistence<C, R, P>(
     P: FnMut(&str, &std::path::Path),
 {
     let id = frame.id.clone();
-    let cwd = watch_execution_cwd(plan.decision_context().cwd_state());
+    let cwd = plan.decision_context().cwd_state().path();
     let mut out = WatchOutput {
         confirmation_prompt,
         recovery_prompt,
@@ -345,13 +345,6 @@ fn resolve_frame_cwd(frame: &InputFrame, id: &Option<String>) -> Result<PathBuf,
     std::env::current_dir().map_err(|_| {
         emit_error_or_exit(id.clone(), "cwd unavailable".to_string());
     })
-}
-
-fn watch_execution_cwd(cwd_state: &CwdState) -> Option<&std::path::Path> {
-    match cwd_state {
-        CwdState::Resolved(path) => Some(path.as_path()),
-        CwdState::Unavailable => None,
-    }
 }
 
 fn report_watch_setup_failure(plan: &SetupFailurePlan) {

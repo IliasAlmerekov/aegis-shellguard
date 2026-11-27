@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use serde_json::Value;
 use tempfile::TempDir;
 
-use super::{run_watch_plan_with_prompts, watch_execution_cwd};
+use super::run_watch_plan_with_prompts;
 use crate::planning::{CwdState, PlanningOutcome, PlanningRequest, plan_with_context_async};
 use crate::runtime::RuntimeContext;
 use crate::watch::protocol::InputFrame;
@@ -14,21 +14,6 @@ use aegis_config::AegisConfig;
 use aegis_policy::ExecutionTransport;
 use aegis_snapshot::{GitPlugin, SnapshotRegistry};
 use aegis_tui::{PromptDecision, RecoveryPromptDecision};
-
-#[test]
-fn watch_execution_cwd_returns_resolved_path() {
-    let path = PathBuf::from("/srv/project");
-    let cwd_state = CwdState::Resolved(path.clone());
-
-    assert_eq!(watch_execution_cwd(&cwd_state), Some(path.as_path()));
-}
-
-#[test]
-fn watch_execution_cwd_is_unavailable_when_unavailable() {
-    let cwd_state = CwdState::Unavailable;
-
-    assert_eq!(watch_execution_cwd(&cwd_state), None);
-}
 
 fn context_with_audit_path(audit_path: PathBuf) -> RuntimeContext {
     let context = RuntimeContext::new_with_audit_path(

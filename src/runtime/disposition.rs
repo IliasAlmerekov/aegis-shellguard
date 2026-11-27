@@ -103,10 +103,7 @@ pub fn recovery_gate(
         decision,
         approve_always,
     } = verdict;
-    let cwd = match plan.decision_context().cwd_state() {
-        CwdState::Resolved(path) => Some(path.as_path()),
-        CwdState::Unavailable => None,
-    };
+    let cwd = plan.decision_context().cwd_state().path();
     if approve_always && cwd.is_none() {
         err!("warning: cannot persist allow rule: working directory unavailable");
     }
