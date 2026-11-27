@@ -5,7 +5,7 @@ use crate::liveness::local_file_liveness;
 use crate::readiness::pg_dump_readiness;
 
 use manifest_io::write_manifest_atomically;
-pub(super) use manifest_state::phase1_complete;
+use manifest_state::phase1_complete;
 
 mod manifest_io;
 mod manifest_state;
@@ -25,6 +25,267 @@ fn eligible_dump_path(manifest: &SupabaseManifest, manifest_path: &Path) -> Resu
     }
     manifest.ensure_summary_matches_recomputed(&strict)?;
     manifest.resolve_db_artifact_path(manifest_path)
+}
+
+pub struct SupabasePlugin {
+    project_ref: String,
+    db: SupabaseTargetDb,
+    require_target_match: bool,
+    snapshots_dir: PathBuf,
+    pg_dump_bin: String,
+    pg_restore_bin: String,
+    #[cfg(test)]
+    inject_manifest_write_failure_for_tests: bool,
+}
+
+impl SupabasePlugin {
+    pub fn new(config: SupabaseSnapshotConfig, snapshots_dir: PathBuf) -> Self {
+        Self {
+            project_ref: config.project_ref,
+            db: SupabaseTargetDb {
+                database: config.db.database,
+                host: config.db.host,
+                port: config.db.port,
+                user: config.db.user,
+            },
+            require_target_match: config.require_config_target_match_on_rollback,
+            snapshots_dir,
+            pg_dump_bin: "pg_dump".to_string(),
+            pg_restore_bin: "pg_restore".to_string(),
+            #[cfg(test)]
+            inject_manifest_write_failure_for_tests: false,
+        }
+    }
+
+    fn has_database_target(&self) -> bool {
+        !self.db.database.trim().is_empty()
+    }
+
+    fn ensure_rollback_target_allowed(&self, manifest: &SupabaseManifest) -> Result<()> {
+        if self.require_target_match {
+            manifest.ensure_target_matches(&self.db)?;
+        }
+        Ok(())
+    }
+
+    fn target(&self) -> SupabaseTarget {
+        SupabaseTarget {
+            project_ref: self.project_ref.clone(),
+            db: Some(self.db.clone()),
+        }
+    }
+
+    fn validate_manifest_path(path: &Path, label: &str) -> Result<()> {
+        if !path.is_absolute()
+            || path.file_name() != Some(MANIFEST_FILE_NAME.as_ref())
+            || path.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::CurDir | std::path::Component::ParentDir
+                )
+            })
+        {
+            return Err(SnapshotError::InvalidSnapshotIdPath {
+                label: label.to_string(),
+                path: path.to_path_buf(),
+            });
+        }
+
+        Ok(())
+    }
+
+    fn build_snapshot_id(manifest_path: &Path) -> String {
+        snapshot_id::join_v3(&[&snapshot_id::encode_path(manifest_path)])
+    }
+
+    fn parse_snapshot_id(id: &str) -> Result<PathBuf> {
+        let encoded_path = if snapshot_id::is_v3(id) {
+            snapshot_id::split_v3(id, 1)?[0]
+        } else {
+            let (version, encoded_path) = id
+                .split_once(snapshot_id::LEGACY_SEP)
+                .ok_or_else(|| SnapshotError::MalformedSnapshotId { id: id.to_string() })?;
+            if version != LEGACY_SNAPSHOT_ID_VERSION {
+                return Err(SnapshotError::UnsupportedSnapshotIdVersion {
+                    version: version.to_string(),
+                });
+            }
+            encoded_path
+        };
+
+        let label = "manifest path";
+        let path = snapshot_id::decode_path(encoded_path, label)?;
+        Self::validate_manifest_path(&path, label)?;
+        Ok(path)
+    }
+
+    async fn validate_preflight(&self) -> Result<()> {
+        if !self.has_database_target() {
+            return Err(SnapshotError::Required {
+                subject: "supabase_snapshot.db.database",
+            });
+        }
+        if !crate::binary_lookup::binary_available(&self.pg_dump_bin).await {
+            return Err(SnapshotError::RequiredWhen {
+                subject: "pg_dump",
+                condition: "for supabase snapshots",
+            });
+        }
+        if !crate::binary_lookup::binary_available(&self.pg_restore_bin).await {
+            return Err(SnapshotError::RequiredWhen {
+                subject: "pg_restore",
+                condition: "for strict supabase rollback",
+            });
+        }
+        Ok(())
+    }
+
+    fn create_bundle_dir(&self) -> Result<PathBuf> {
+        create_store_dir("supabase", &self.snapshots_dir)?;
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+
+        let mut suffix = 0usize;
+        loop {
+            let dir_name = if suffix == 0 {
+                format!("supabase-{timestamp}")
+            } else {
+                format!("supabase-{timestamp}-{suffix}")
+            };
+            let bundle_dir = contain_artifact(
+                "supabase",
+                &self.snapshots_dir,
+                &self.snapshots_dir.join(dir_name),
+            )?;
+
+            match create_artifact_dir("supabase", &bundle_dir) {
+                Ok(()) => return Ok(bundle_dir),
+                Err(SnapshotError::Io(error))
+                    if error.kind() == std::io::ErrorKind::AlreadyExists =>
+                {
+                    suffix += 1;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+
+    fn cleanup_failed_bundle(&self, bundle_dir: &Path, dump_path: Option<&Path>) -> Result<()> {
+        let mut failures = Vec::new();
+
+        if let Some(path) = dump_path {
+            match fs::remove_file(path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    failures.push(format!("failed to remove dump {}: {error}", path.display()))
+                }
+            }
+        }
+
+        match fs::remove_dir_all(bundle_dir) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => failures.push(format!(
+                "failed to remove bundle {}: {error}",
+                bundle_dir.display()
+            )),
+        }
+
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(SnapshotError::CleanupIncomplete { failures })
+        }
+    }
+
+    fn fail_closed_after_cleanup(
+        &self,
+        original_error: SnapshotError,
+        bundle_dir: &Path,
+        dump_path: Option<&Path>,
+    ) -> SnapshotError {
+        match self.cleanup_failed_bundle(bundle_dir, dump_path) {
+            Ok(()) => original_error,
+            Err(cleanup_error) => SnapshotError::CleanupFailed {
+                original: Box::new(original_error),
+                cleanup: Box::new(cleanup_error),
+            },
+        }
+    }
+
+    async fn run_pg_dump(&self, dump_path: &Path) -> Result<()> {
+        let artifacts_dir = dump_path.parent().ok_or(SnapshotError::Rejected {
+            reason: "supabase dump path requires an artifact directory",
+        })?;
+        let dump_path = contain_artifact("supabase", artifacts_dir, dump_path)?;
+        let file = create_artifact_file("supabase", &dump_path)?;
+        drop(file);
+        let output = Command::new(&self.pg_dump_bin)
+            .arg("-Fc")
+            .arg("-h")
+            .arg(&self.db.host)
+            .arg("-p")
+            .arg(self.db.port.to_string())
+            .arg("-U")
+            .arg(&self.db.user)
+            .arg("-f")
+            .arg(&dump_path)
+            .arg(&self.db.database)
+            .output()
+            .await
+            .map_err(|error| SnapshotError::CommandLaunchFailed {
+                context: "failed to run pg_dump".to_string(),
+                detail: error.to_string(),
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(SnapshotError::CommandFailed {
+                command: "pg_dump".to_string(),
+                detail: stderr,
+            });
+        }
+
+        harden_existing_artifact("supabase", &dump_path)?;
+
+        Ok(())
+    }
+
+    async fn run_pg_restore(&self, target: &SupabaseTargetDb, dump_path: &Path) -> Result<()> {
+        let output = Command::new(&self.pg_restore_bin)
+            .arg("--clean")
+            .arg("--if-exists")
+            .arg("--create")
+            .arg("-h")
+            .arg(&target.host)
+            .arg("-p")
+            .arg(target.port.to_string())
+            .arg("-U")
+            .arg(&target.user)
+            .arg("-d")
+            .arg("postgres")
+            .arg(dump_path)
+            .output()
+            .await
+            .map_err(|error| SnapshotError::CommandLaunchFailed {
+                context: "failed to run pg_restore".to_string(),
+                detail: error.to_string(),
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(SnapshotError::CommandFailed {
+                command: "pg_restore".to_string(),
+                detail: stderr,
+            });
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -72,8 +333,13 @@ impl SnapshotPlugin for SupabasePlugin {
             }
         };
 
-        let manifest = match self.phase1_manifest("artifacts/db.dump", checksum_sha256, size_bytes)
-        {
+        let manifest = match phase1_complete(
+            self.target(),
+            self.require_target_match,
+            "artifacts/db.dump",
+            checksum_sha256,
+            size_bytes,
+        ) {
             Ok(manifest) => manifest,
             Err(error) => {
                 return Err(self.fail_closed_after_cleanup(error, &bundle_dir, Some(&dump_path)));
