@@ -8,7 +8,7 @@ use crate::planning::disposition::{
 use crate::planning::{
     CwdState, InterceptionPlan, PlanningOutcome, PreparedPlanner, SetupFailurePlan,
 };
-use crate::runtime::{RuntimeContext, sandbox_status_before_preparation};
+use crate::runtime::RuntimeContext;
 use aegis_policy::ExecutionTransport;
 use aegis_tui::{
     PromptDecision, RecoveryPromptDecision, show_block_via_tty,
@@ -278,7 +278,7 @@ async fn run_watch_plan_with_persistence<C, R, P>(
             attempts: &[],
             recovery_degradation: None,
         };
-        let status = sandbox_status_before_preparation(context.config().sandbox.as_ref());
+        let status = context.sandbox_status_before_preparation();
         match append_watch_execution_audit(&execution, decision, status) {
             Ok(()) => emit_result_or_exit(execution.frame.id.clone(), output, exit_code),
             Err(err) => emit_watch_audit_error(&execution.frame.id, &err),
@@ -313,8 +313,7 @@ async fn run_watch_plan_with_persistence<C, R, P>(
             };
             match recovery_gate(&frame.cmd, &plan, &coverage, verdict, &mut out) {
                 RecoveryGate::Deny(degradation) => {
-                    let status =
-                        sandbox_status_before_preparation(context.config().sandbox.as_ref());
+                    let status = context.sandbox_status_before_preparation();
                     match append_watch_execution_audit(
                         &execution(Some(degradation)),
                         Decision::Denied,

@@ -1,10 +1,12 @@
 pub mod context;
+mod policy_rules;
 pub mod recovery;
 mod sandbox;
 pub mod shell;
 pub mod user;
 
 pub use context::{AuditWriteOptions, RuntimeConfig, RuntimeContext, WatchAuditContext};
+pub use policy_rules::evaluate_policy_rules;
 pub use recovery::{RecoveryStatus, recovery_status};
 pub use sandbox::{
     SANDBOX_APPARMOR_UNAVAILABLE_CODE, SANDBOX_APPARMOR_UNAVAILABLE_MESSAGE,

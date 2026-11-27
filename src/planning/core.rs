@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use crate::planning::CwdState;
 use crate::planning::git_target::{GitTargetPlan, GitTargetUnresolved};
-use crate::planning::policy_rules::evaluate_policy_rules;
 use crate::planning::prepare::PreparedPlanner;
 use crate::planning::types::{DecisionContext, InterceptionPlan, PlanningOutcome};
 use crate::runtime::RuntimeContext;
@@ -205,7 +204,7 @@ fn build_planning_outcome(
             transport: decision_context.transport(),
             applicable_snapshot_plugins: decision_context.applicable_snapshot_plugins(),
         },
-        rules: evaluate_policy_rules(context.policy_rules(), request.command),
+        rules: context.evaluate_policy_rules(request.command),
     });
 
     PlanningOutcome::Planned(InterceptionPlan::from_policy(
