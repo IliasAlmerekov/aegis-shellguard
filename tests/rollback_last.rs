@@ -7,7 +7,7 @@
 mod support;
 
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
@@ -285,6 +285,8 @@ fn last_with_yes_restores_the_latest_of_two_candidates() {
     assert!(!repo.join("older.txt").exists());
 }
 
+const PROMPT: &[u8] = b"[y/N/a/d]";
+
 const NOTHING_TO_RESTORE: &str =
     "nothing to restore: plugin=git snapshot_id=clean captured no changes";
 
@@ -307,7 +309,7 @@ fn approve_rm_rf_src_in_clean_repo(env: &Env) -> PathBuf {
         .current_dir(&repo)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::null());
     #[cfg(target_os = "linux")]
     command.args(["-qfec", &format!("'{aegis}' -c 'rm -rf src'"), "/dev/null"]);
     #[cfg(target_os = "macos")]
@@ -315,13 +317,29 @@ fn approve_rm_rf_src_in_clean_repo(env: &Env) -> PathBuf {
         .args(["-q", "/dev/null", aegis])
         .args(["-c", "rm -rf src"]);
     let mut child = command.spawn().unwrap();
-    child.stdin.take().unwrap().write_all(b"y\n").unwrap();
-    let output = child.wait_with_output().unwrap();
+    let mut transcript = Vec::new();
+    let mut stdin = child.stdin.take();
+    let mut pty = child.stdout.take().unwrap();
+    let mut buffer = [0_u8; 1024];
+    let mut answered = false;
+    loop {
+        let length = pty.read(&mut buffer).unwrap();
+        if length == 0 {
+            break;
+        }
+        transcript.extend_from_slice(&buffer[..length]);
+        if !answered && transcript.windows(PROMPT.len()).any(|part| part == PROMPT) {
+            answered = true;
+            stdin.as_mut().unwrap().write_all(b"y\n").unwrap();
+            #[cfg(target_os = "linux")]
+            drop(stdin.take());
+        }
+    }
+    child.wait().unwrap();
     assert!(
         !repo.join("src").exists(),
-        "approve did not delete src: {}{}",
-        stdout(&output),
-        stderr(&output)
+        "approve did not delete src: {}",
+        String::from_utf8_lossy(&transcript)
     );
     repo
 }
