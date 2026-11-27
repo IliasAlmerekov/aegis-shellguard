@@ -66,9 +66,10 @@ pub async fn plan_with_context_async(
     };
 
     let mut git_targets = GitTargetPlan::default();
+    let mut opportunistic_dirs = Vec::new();
     if backstop {
         let report = context.git_stage_report(request.command, &assessment);
-        git_targets = GitTargetPlan::resolve(&report, &request.cwd_state);
+        (git_targets, opportunistic_dirs) = GitTargetPlan::resolve(&report, &request.cwd_state);
     }
     if backstop && matches!(request.cwd_state, CwdState::Resolved(_)) {
         let mut top_levels: Vec<(PathBuf, PathBuf)> = Vec::new();
@@ -110,7 +111,7 @@ pub async fn plan_with_context_async(
             if let Some(top) = &cwd_top {
                 git_targets.drop_resolved(top);
             }
-            for dir in std::mem::take(&mut git_targets.opportunistic_dirs) {
+            for dir in opportunistic_dirs {
                 if let Some(top) = aegis_snapshot::git_toplevel(&dir).await
                     && cwd_top.as_ref() != Some(&top)
                     && context.git_snapshot_applicable_at_async(&top).await
@@ -121,8 +122,6 @@ pub async fn plan_with_context_async(
                     }
                 }
             }
-        } else {
-            git_targets.opportunistic_dirs.clear();
         }
     }
 
