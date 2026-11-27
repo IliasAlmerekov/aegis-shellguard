@@ -2,8 +2,8 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::patterns::PrefixRule;
-use crate::scanner::MatchResult;
 use aegis_parser::EndOfOptions;
+use aegis_types::MatchResult;
 use aegis_types::{DetectionSource, MatchEvidence, Pattern};
 
 impl PrefixRule {

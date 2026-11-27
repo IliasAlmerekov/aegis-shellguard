@@ -2,7 +2,7 @@ use aegis_parser::EndOfOptions;
 use aegis_types::{MatchEvidence, MatchResult};
 
 use super::Scanner;
-use super::assessment::REGEX_SUPERSEDED_PREFIXES;
+use super::prefix_scan::REGEX_SUPERSEDED_PREFIXES;
 
 impl Scanner {
     pub(super) fn drop_quote_split_matches(

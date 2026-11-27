@@ -1,3 +1,4 @@
+mod ambient_env;
 mod assessment;
 mod cd_walk;
 mod effect_opaque;
@@ -5,7 +6,7 @@ mod git_stages;
 mod highlighting;
 mod keywords;
 mod pipeline_semantics;
-mod prefix_rule;
+mod prefix_scan;
 mod quote_split;
 mod recursive;
 
@@ -26,9 +27,9 @@ use aegis_types::{
 };
 
 pub use crate::patterns::PrefixRule;
-pub use cd_walk::{CdUnresolved, StageDir, path_is_dynamic};
 #[cfg(test)]
-pub(crate) use git_stages::AmbientEnv;
+pub(crate) use ambient_env::AmbientEnv;
+pub use cd_walk::{CdUnresolved, StageDir, path_is_dynamic};
 pub use git_stages::{DangerStage, DangerStageTarget, GitStageReport};
 
 const MAX_SCAN_COMMAND_LEN: usize = 64 * 1024;

@@ -1,7 +1,7 @@
 use std::ffi::OsStr;
 
 use super::issue_525::{chain, dirs, report_in, unresolved};
-use crate::scanner::git_stages::shell_is_zsh;
+use crate::scanner::ambient_env::shell_is_zsh;
 use crate::scanner::{AmbientEnv, CdUnresolved, GitStageReport};
 
 fn zsh(cmd: &str) -> GitStageReport {
