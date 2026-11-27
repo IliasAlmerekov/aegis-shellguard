@@ -6,7 +6,6 @@ field-leak aegis::planning::types::InterceptionPlan::assessment
 field-leak aegis::planning::types::InterceptionPlan::decision_context
 field-leak aegis::planning::types::InterceptionPlan::explanation
 field-leak aegis::runtime::context::RuntimeContext::async_handle
-field-leak aegis::runtime::context::RuntimeContext::policy_rules
 field-leak aegis::runtime::context::RuntimeContext::runtime_config
 field-leak aegis_config::model::AegisConfig::allowlist
 field-leak aegis_config::model::AegisConfig::allowlist_layers

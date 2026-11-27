@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Changed: `evaluate_policy_rules` moves from `aegis::planning` to `aegis::runtime`, and `RuntimeContext::policy_rules` is replaced by `RuntimeContext::evaluate_policy_rules`. Command behaviour is unchanged (#706).
 - Changed: the `aegis` library now layers `runtime` below `planning`. The plan disposition flow moves from `aegis::runtime::disposition` to `aegis::planning::disposition`, `SandboxFailure` and `setup_failed_message` move to `aegis::runtime`, and `AuditWriteOptions::for_plan` becomes `InterceptionPlan::audit_options`. Command behaviour is unchanged (#706).
 - Fixed: the `cd` walk that plans the git Snapshot's Git target now follows `chdir` and a `cd` in the last pipeline stage under zsh, leaves `cd +N` and `cd -N` under zsh and any `cd` after `ln` or `mv` unresolved, scopes `CDPATH`, physical mode and `lastpipe` to the subshell that sets them, and reads physical mode only from the `set` builtin (#539).
 - Fixed: the release npm smoke now passes `--prefer-online` to every `npm install -g` attempt, so a retry asks the registry again instead of reusing npm's cached metadata from before the publish (#733).

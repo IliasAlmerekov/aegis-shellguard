@@ -3,7 +3,7 @@ use std::fs;
 #[path = "support/isolated_test.rs"]
 mod isolated_test;
 
-use aegis::planning::evaluate_policy_rules;
+use aegis::runtime::evaluate_policy_rules;
 use aegis_config::{AegisConfig, PolicyPatternToken, PolicyRule, WhenClause};
 use aegis_parser::Parser as CommandParser;
 use aegis_policy::{

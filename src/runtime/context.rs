@@ -191,8 +191,12 @@ impl RuntimeContext {
         &self.auto_prune_config
     }
 
-    pub fn policy_rules(&self) -> &[aegis_config::PolicyRule] {
-        &self.policy_rules
+    pub fn evaluate_policy_rules(&self, cmd: &str) -> aegis_policy::PolicyRulesResult {
+        super::evaluate_policy_rules(&self.policy_rules, cmd)
+    }
+
+    pub fn sandbox_status_before_preparation(&self) -> aegis_types::SandboxStatus {
+        super::sandbox_status_before_preparation(self.runtime_config.sandbox.as_ref())
     }
 
     pub fn assess(&self, cmd: &str) -> Assessment {
