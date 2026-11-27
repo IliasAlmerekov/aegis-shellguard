@@ -84,6 +84,19 @@ fn install_smoke_job_should_skip_prereleases_and_run_npm_only_on_recovery() {
         .find(|step| step.starts_with("npm smoke"))
         .expect("smoke-install should have an npm smoke step");
     assert!(!npm.contains("if: github.event_name == 'push'"));
+    let setup_node = smoke
+        .split("- name: ")
+        .chain(smoke.split("- uses: "))
+        .find(|step| step.starts_with("actions/setup-node"))
+        .expect("smoke-install should set up Node");
+    assert!(
+        setup_node.contains("id: setup-node"),
+        "the Node setup step needs an id the npm step can test"
+    );
+    assert!(
+        npm.contains("!cancelled()") && npm.contains("steps.setup-node.outcome == 'success'"),
+        "npm smoke must run after a Homebrew failure, but not on cancel or a failed Node setup"
+    );
 }
 
 #[test]

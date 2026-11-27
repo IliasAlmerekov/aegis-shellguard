@@ -20,6 +20,10 @@ fn run_brew(args: &[&str]) -> std::process::Output {
         .unwrap_or_else(|error| panic!("failed to run brew {args:?}: {error}"))
 }
 
+fn lists_trust(commands: &str) -> bool {
+    commands.lines().any(|line| line.trim() == "trust")
+}
+
 fn assert_brew_ok(label: &str, output: &std::process::Output) {
     assert!(
         output.status.success(),
@@ -37,6 +41,13 @@ fn version_matches_should_compare_whole_tokens() {
 }
 
 #[test]
+fn lists_trust_should_match_whole_lines() {
+    assert!(lists_trust("tap\ntrust\nuntap\n"));
+    assert!(!lists_trust("tap\ntrustee\ntrust-foo\n"));
+    assert!(!lists_trust(""));
+}
+
+#[test]
 fn live_homebrew_tap_installs_and_tests_aegis() {
     if std::env::var_os("AEGIS_TEST_LIVE_HOMEBREW").is_none() {
         eprintln!("skipping live Homebrew test; set AEGIS_TEST_LIVE_HOMEBREW=1");
@@ -46,6 +57,11 @@ fn live_homebrew_tap_installs_and_tests_aegis() {
         .expect("AEGIS_TEST_EXPECTED_VERSION must name the version the tap should install");
 
     assert_brew_ok("brew tap", &run_brew(&["tap", "IliasAlmerekov/aegis"]));
+    let commands = run_brew(&["commands", "--quiet"]);
+    assert_brew_ok("brew commands", &commands);
+    if lists_trust(&String::from_utf8_lossy(&commands.stdout)) {
+        assert_brew_ok("brew trust", &run_brew(&["trust", "IliasAlmerekov/aegis"]));
+    }
     assert_brew_ok(
         "brew audit",
         &run_brew(&["audit", "--strict", "--online", FORMULA]),

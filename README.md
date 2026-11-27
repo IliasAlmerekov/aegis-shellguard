@@ -134,8 +134,11 @@ itself. It only tells you the version and the exact command to run.
 
 ```bash
 brew tap IliasAlmerekov/aegis
+brew trust IliasAlmerekov/aegis
 brew install aegis
 ```
+
+A current Homebrew refuses to load formulae from untrusted taps, so trust the tap before you install.
 
 Homebrew installs the binary only. Like npm and Cargo, it does not run the global shell installer. Opt in with `aegis setup-shell`.
 

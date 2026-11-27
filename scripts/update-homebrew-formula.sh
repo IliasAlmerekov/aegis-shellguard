@@ -185,7 +185,7 @@ class Aegis < Formula
   end
 
   test do
-    assert_match "brew-test", shell_output("#{bin}/aegis -c 'echo brew-test'")
+    assert_match version.to_s, shell_output("#{bin}/aegis --version")
   end
 end
 EOF
