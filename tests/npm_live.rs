@@ -23,7 +23,6 @@ fn run(command: &str, args: &[&str]) -> std::process::Output {
         .unwrap_or_else(|error| panic!("failed to run {command} {args:?}: {error}"))
 }
 
-// `--prefer-online` makes each retry revalidate cached metadata instead of reusing a pre-publish copy (#733).
 fn npm_install_args(spec: &str) -> [&str; 4] {
     ["install", "-g", "--prefer-online", spec]
 }
@@ -53,17 +52,17 @@ fn live_npm_package_installs_and_runs_aegis() {
     let expected = std::env::var("AEGIS_TEST_EXPECTED_VERSION")
         .expect("AEGIS_TEST_EXPECTED_VERSION must name the published version");
     let spec = format!("{PACKAGE}@{expected}");
+    let args = npm_install_args(&spec);
+    let shown = args.join(" ");
 
     let mut last = None;
     for attempt in 1..=INSTALL_ATTEMPTS {
-        let install = run("npm", &npm_install_args(&spec));
+        let install = run("npm", &args);
         if install.status.success() {
             last = None;
             break;
         }
-        eprintln!(
-            "npm install -g --prefer-online {spec} failed (attempt {attempt}/{INSTALL_ATTEMPTS})"
-        );
+        eprintln!("npm {shown} failed (attempt {attempt}/{INSTALL_ATTEMPTS})");
         last = Some(install);
         if attempt < INSTALL_ATTEMPTS {
             std::thread::sleep(RETRY_DELAY);
@@ -71,7 +70,7 @@ fn live_npm_package_installs_and_runs_aegis() {
     }
     if let Some(install) = last {
         panic!(
-            "npm install -g --prefer-online {spec} failed after {INSTALL_ATTEMPTS} attempts\nstdout:\n{}\nstderr:\n{}",
+            "npm {shown} failed after {INSTALL_ATTEMPTS} attempts\nstdout:\n{}\nstderr:\n{}",
             String::from_utf8_lossy(&install.stdout),
             String::from_utf8_lossy(&install.stderr)
         );
