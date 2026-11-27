@@ -1,28 +1,6 @@
-use std::ops::Range;
-
 use crate::PipelineChain;
-use crate::embedded_scripts::heredoc_suspend_ranges;
-use crate::segmentation::{ends_with_redirect_target, finalize_segment, split_pipeline_segments};
-
-pub(crate) struct SuspendCursor<'a> {
-    remaining: std::slice::Iter<'a, Range<usize>>,
-    active: Option<&'a Range<usize>>,
-}
-
-impl<'a> SuspendCursor<'a> {
-    pub(crate) fn new(ranges: &'a [Range<usize>]) -> Self {
-        let mut remaining = ranges.iter();
-        let active = remaining.next();
-        Self { remaining, active }
-    }
-
-    pub(crate) fn contains(&mut self, byte_idx: usize) -> bool {
-        while self.active.is_some_and(|range| range.end <= byte_idx) {
-            self.active = self.remaining.next();
-        }
-        self.active.is_some_and(|range| range.contains(&byte_idx))
-    }
-}
+use crate::redirection::ends_with_redirect_target;
+use crate::tokenizer::suspend_ranges::{case_statement_suspend_ranges, heredoc_suspend_ranges};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListSeparator {
@@ -39,122 +17,12 @@ pub struct ListSegment {
     pub separator: Option<ListSeparator>,
 }
 
-pub fn list_segments(cmd: &str) -> Vec<ListSegment> {
-    split_top_level_command_groups_with_separators(cmd)
-        .into_iter()
-        .map(|(raw_group, separator)| ListSegment {
-            pipeline: PipelineChain {
-                segments: split_pipeline_segments(&raw_group),
-                raw: raw_group,
-            },
-            separator,
-        })
-        .collect()
-}
-
-fn note_word_boundary(
-    word: &str,
-    word_start: usize,
-    word_end: usize,
-    was_command_position: bool,
-    open_starts: &mut Vec<usize>,
-    ranges: &mut Vec<Range<usize>>,
-) -> bool {
-    if !was_command_position {
-        return false;
+pub(crate) fn finalize_segment(current: &mut String, segments: &mut Vec<String>) {
+    let trimmed = current.trim();
+    if !trimmed.is_empty() {
+        segments.push(trimmed.to_string());
     }
-    if word == "case" {
-        open_starts.push(word_start);
-        false
-    } else if word == "esac" {
-        if let Some(start) = open_starts.pop()
-            && open_starts.is_empty()
-        {
-            ranges.push(start..word_end);
-        }
-        false
-    } else {
-        crate::COMMAND_STARTING_KEYWORDS.contains(&word)
-    }
-}
-
-pub(crate) fn case_statement_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
-    if !cmd.contains("case") {
-        return Vec::new();
-    }
-
-    let mut ranges = Vec::new();
-    let mut open_starts: Vec<usize> = Vec::new();
-    let mut in_single_quote = false;
-    let mut in_double_quote = false;
-    let mut in_backticks = false;
-    let mut command_position = true;
-    let mut word_start: Option<usize> = None;
-
-    let mut chars = cmd.char_indices();
-    while let Some((idx, ch)) = chars.next() {
-        match ch {
-            '\\' if !in_single_quote => {
-                word_start.get_or_insert(idx);
-                chars.next();
-                continue;
-            }
-            '\'' if !in_double_quote && !in_backticks => {
-                word_start.get_or_insert(idx);
-                in_single_quote = !in_single_quote;
-                continue;
-            }
-            '"' if !in_single_quote && !in_backticks => {
-                word_start.get_or_insert(idx);
-                in_double_quote = !in_double_quote;
-                continue;
-            }
-            '`' if !in_single_quote => {
-                word_start.get_or_insert(idx);
-                in_backticks = !in_backticks;
-                continue;
-            }
-            _ => {}
-        }
-
-        if in_single_quote || in_double_quote || in_backticks {
-            word_start.get_or_insert(idx);
-            continue;
-        }
-
-        let is_separator = matches!(ch, ';' | '&' | '|' | '(' | ')' | '{') || ch == '\n';
-        if ch.is_whitespace() || is_separator {
-            if let Some(start) = word_start.take() {
-                command_position = note_word_boundary(
-                    &cmd[start..idx],
-                    start,
-                    idx,
-                    command_position,
-                    &mut open_starts,
-                    &mut ranges,
-                );
-            }
-            if is_separator {
-                command_position = true;
-            }
-            continue;
-        }
-
-        word_start.get_or_insert(idx);
-    }
-
-    if let Some(start) = word_start.take() {
-        note_word_boundary(
-            &cmd[start..],
-            start,
-            cmd.len(),
-            command_position,
-            &mut open_starts,
-            &mut ranges,
-        );
-    }
-
-    ranges
+    current.clear();
 }
 
 fn finalize_with_separator(
@@ -356,9 +224,9 @@ mod tests {
     use super::*;
 
     fn raw_segments(cmd: &str) -> Vec<String> {
-        list_segments(cmd)
+        split_top_level_command_groups_with_separators(cmd)
             .into_iter()
-            .map(|s| s.pipeline.raw)
+            .map(|(raw, _separator)| raw)
             .collect()
     }
 

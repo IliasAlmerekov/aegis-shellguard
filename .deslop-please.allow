@@ -5,7 +5,6 @@ module-cycle aegis::analysis::router::segments::executor_config,aegis::analysis:
 module-cycle aegis::planning,aegis::runtime
 module-cycle aegis::planning::git_target,aegis::planning::types
 module-cycle aegis_config::allowlist,aegis_config::ceiling,aegis_config::model,aegis_config::pattern_match,aegis_config::validate
-module-cycle aegis_parser::embedded_scripts,aegis_parser::heredoc_data_consumer,aegis_parser::list_segments,aegis_parser::nested_shells,aegis_parser::segmentation,aegis_parser::tokenizer
 module-cycle aegis_scanner::patterns,aegis_scanner::scanner
 module-cycle aegis_scanner::scanner::assessment,aegis_scanner::scanner::quote_split
 module-cycle aegis_scanner::scanner::cd_walk,aegis_scanner::scanner::git_stages

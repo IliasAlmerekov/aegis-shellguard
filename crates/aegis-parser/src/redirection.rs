@@ -27,3 +27,11 @@ fn strip_leading_fd_marker(tok: &str) -> &str {
 pub(crate) fn redirection_token_len(tok: &str) -> usize {
     if is_redirection_operator(tok) { 2 } else { 1 }
 }
+
+pub(crate) fn ends_with_redirect_target(current: &str) -> bool {
+    let mut rev = current.trim_end().chars().rev();
+    match rev.next() {
+        Some('>') | Some('<') => rev.take_while(|&c| c == '\\').count() % 2 == 0,
+        _ => false,
+    }
+}
