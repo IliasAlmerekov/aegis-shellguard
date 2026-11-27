@@ -214,6 +214,7 @@ impl PatternSet {
 
 mod builtins_a;
 mod builtins_b;
+mod prefix_rule;
 
 pub(super) fn s(s: &'static str) -> PatternToken {
     PatternToken::Single(Cow::Borrowed(s))

@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 
 use aegis_parser::ListSeparator;
 
-use super::git_stages::AmbientEnv;
+use super::ambient_env::AmbientEnv;
 use super::recursive;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

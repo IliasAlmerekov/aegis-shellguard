@@ -5,11 +5,7 @@ module-cycle aegis::analysis::router::segments::executor_config,aegis::analysis:
 module-cycle aegis::planning,aegis::runtime
 module-cycle aegis::planning::git_target,aegis::planning::types
 module-cycle aegis_config::allowlist,aegis_config::ceiling,aegis_config::model,aegis_config::pattern_match,aegis_config::validate
-module-cycle aegis_scanner::patterns,aegis_scanner::scanner
-module-cycle aegis_scanner::scanner::assessment,aegis_scanner::scanner::quote_split
-module-cycle aegis_scanner::scanner::cd_walk,aegis_scanner::scanner::git_stages
 tangle aegis_config::model::AegisConfig,aegis_config::model::ratchet::context::RatchetContext,aegis_config::model::ratchet::context::provider_enabled_in_base
-tangle aegis_scanner::scanner::Scanner,aegis_scanner::scanner::git_stages::StageEvidence
 field-leak aegis::planning::git_target::GitTargetPlan::opportunistic_dirs
 field-leak aegis::planning::types::InterceptionPlan::assessment
 field-leak aegis::planning::types::InterceptionPlan::decision_context
