@@ -2,6 +2,7 @@ use std::iter::Peekable;
 use std::str::Chars;
 
 mod ansi_c;
+pub(crate) mod quote_scan;
 pub(crate) mod suspend_ranges;
 
 use crate::redirection::ends_with_redirect_target;

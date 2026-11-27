@@ -3,6 +3,7 @@ use crate::list_segments::{
     ListSegment, finalize_segment, split_top_level_command_groups_with_separators,
 };
 use crate::redirection::ends_with_redirect_target;
+use crate::tokenizer::quote_scan::QuoteState;
 use crate::tokenizer::suspend_ranges::{SuspendCursor, case_statement_suspend_ranges};
 
 pub fn logical_segments(cmd: &str) -> Vec<String> {
@@ -217,70 +218,18 @@ fn split_pipeline_segments(raw_group: &str) -> Vec<PipelineSegment> {
     let case_ranges = case_statement_suspend_ranges(raw_group);
     let mut suspend = SuspendCursor::new(&case_ranges);
     let mut chars = raw_group.char_indices().peekable();
-    let mut in_single_quote = false;
-    let mut in_double_quote = false;
-    let mut in_backticks = false;
-    let mut paren_depth = 0usize;
-    let mut command_subst_depth = 0usize;
+    let mut quoting = QuoteState::default();
 
     while let Some((byte_idx, ch)) = chars.next() {
         if suspend.contains(byte_idx) {
             current.push(ch);
             continue;
         }
+        if quoting.copy_quoting_syntax(ch, &mut chars, &mut current) {
+            continue;
+        }
         match ch {
-            '\\' if !in_single_quote => {
-                current.push(ch);
-                if let Some((_, next)) = chars.next() {
-                    current.push(next);
-                }
-            }
-            '\'' if !in_double_quote && !in_backticks => {
-                in_single_quote = !in_single_quote;
-                current.push(ch);
-            }
-            '"' if !in_single_quote && !in_backticks => {
-                in_double_quote = !in_double_quote;
-                current.push(ch);
-            }
-            '`' if !in_single_quote => {
-                in_backticks = !in_backticks;
-                current.push(ch);
-            }
-            '$' if !in_single_quote
-                && !in_backticks
-                && chars.peek().map(|&(_, c)| c) == Some('(') =>
-            {
-                command_subst_depth += 1;
-                current.push(ch);
-                if let Some((_, next)) = chars.next() {
-                    current.push(next);
-                }
-            }
-            '(' if !in_single_quote
-                && !in_double_quote
-                && !in_backticks
-                && command_subst_depth == 0 =>
-            {
-                paren_depth += 1;
-                current.push(ch);
-            }
-            ')' if !in_single_quote
-                && !in_backticks
-                && (command_subst_depth > 0 || paren_depth > 0) =>
-            {
-                if command_subst_depth > 0 {
-                    command_subst_depth -= 1;
-                } else {
-                    paren_depth -= 1;
-                }
-                current.push(ch);
-            }
-            '|' if !in_single_quote
-                && !in_double_quote
-                && !in_backticks
-                && paren_depth == 0
-                && command_subst_depth == 0
+            '|' if quoting.is_top_level()
                 && chars.peek().map(|&(_, c)| c) != Some('|')
                 && !ends_with_redirect_target(&current) =>
             {

@@ -1,6 +1,9 @@
 use crate::PipelineChain;
 use crate::redirection::ends_with_redirect_target;
-use crate::tokenizer::suspend_ranges::{case_statement_suspend_ranges, heredoc_suspend_ranges};
+use crate::tokenizer::quote_scan::QuoteState;
+use crate::tokenizer::suspend_ranges::{
+    SuspendCursor, case_statement_suspend_ranges, heredoc_suspend_ranges,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListSeparator {
@@ -44,80 +47,29 @@ pub(crate) fn split_top_level_command_groups_with_separators(
     let mut suspend_ranges = heredoc_suspend_ranges(cmd);
     suspend_ranges.extend(case_statement_suspend_ranges(cmd));
     suspend_ranges.sort_by_key(|range| range.start);
-    let mut suspend_ranges = suspend_ranges.iter();
-    let mut active_suspend = suspend_ranges.next();
+    let mut suspend = SuspendCursor::new(&suspend_ranges);
 
     let mut segments = Vec::new();
     let mut separators = Vec::new();
     let mut current = String::new();
     let mut chars = cmd.char_indices().peekable();
-    let mut in_single_quote = false;
-    let mut in_double_quote = false;
-    let mut in_backticks = false;
-    let mut paren_depth = 0usize;
+    let mut quoting = QuoteState::default();
     let mut brace_depth = 0usize;
-    let mut command_subst_depth = 0usize;
 
     while let Some((byte_idx, ch)) = chars.next() {
-        while active_suspend.is_some_and(|range| range.end <= byte_idx) {
-            active_suspend = suspend_ranges.next();
-        }
-        if active_suspend.is_some_and(|range| range.contains(&byte_idx)) {
+        if suspend.contains(byte_idx) {
             current.push(ch);
             continue;
         }
 
         let next_char = chars.peek().map(|&(_, c)| c);
 
+        if quoting.copy_quoting_syntax(ch, &mut chars, &mut current) {
+            continue;
+        }
+
         match ch {
-            '\\' if !in_single_quote => {
-                current.push(ch);
-                if let Some((_, next)) = chars.next() {
-                    current.push(next);
-                }
-            }
-            '\'' if !in_double_quote && !in_backticks => {
-                in_single_quote = !in_single_quote;
-                current.push(ch);
-            }
-            '"' if !in_single_quote && !in_backticks => {
-                in_double_quote = !in_double_quote;
-                current.push(ch);
-            }
-            '`' if !in_single_quote => {
-                in_backticks = !in_backticks;
-                current.push(ch);
-            }
-            '$' if !in_single_quote && !in_backticks && next_char == Some('(') => {
-                command_subst_depth += 1;
-                current.push(ch);
-                if let Some((_, next)) = chars.next() {
-                    current.push(next);
-                }
-            }
-            '(' if !in_single_quote
-                && !in_double_quote
-                && !in_backticks
-                && command_subst_depth == 0 =>
-            {
-                paren_depth += 1;
-                current.push(ch);
-            }
-            ')' if !in_single_quote
-                && !in_backticks
-                && (command_subst_depth > 0 || paren_depth > 0) =>
-            {
-                if command_subst_depth > 0 {
-                    command_subst_depth -= 1;
-                } else {
-                    paren_depth -= 1;
-                }
-                current.push(ch);
-            }
-            '{' if !in_single_quote
-                && !in_double_quote
-                && !in_backticks
-                && command_subst_depth == 0
+            '{' if quoting.allows_brace_open()
                 && (current.is_empty()
                     || current.ends_with(char::is_whitespace)
                     || current.ends_with(')'))
@@ -126,21 +78,14 @@ pub(crate) fn split_top_level_command_groups_with_separators(
                 brace_depth += 1;
                 current.push(ch);
             }
-            '}' if !in_single_quote
-                && !in_backticks
+            '}' if quoting.allows_brace_close()
                 && brace_depth > 0
                 && (current.ends_with(char::is_whitespace) || current.ends_with(';')) =>
             {
                 brace_depth -= 1;
                 current.push(ch);
             }
-            '\n' if !in_single_quote
-                && !in_double_quote
-                && !in_backticks
-                && paren_depth == 0
-                && brace_depth == 0
-                && command_subst_depth == 0 =>
-            {
+            '\n' if quoting.is_top_level() && brace_depth == 0 => {
                 finalize_with_separator(
                     ListSeparator::Newline,
                     &mut current,
@@ -148,13 +93,7 @@ pub(crate) fn split_top_level_command_groups_with_separators(
                     &mut separators,
                 );
             }
-            ';' if !in_single_quote
-                && !in_double_quote
-                && !in_backticks
-                && paren_depth == 0
-                && brace_depth == 0
-                && command_subst_depth == 0 =>
-            {
+            ';' if quoting.is_top_level() && brace_depth == 0 => {
                 finalize_with_separator(
                     ListSeparator::Semicolon,
                     &mut current,
@@ -162,13 +101,7 @@ pub(crate) fn split_top_level_command_groups_with_separators(
                     &mut separators,
                 );
             }
-            '&' if !in_single_quote
-                && !in_double_quote
-                && !in_backticks
-                && paren_depth == 0
-                && brace_depth == 0
-                && command_subst_depth == 0 =>
-            {
+            '&' if quoting.is_top_level() && brace_depth == 0 => {
                 if next_char == Some('&') {
                     chars.next();
                     finalize_with_separator(
@@ -188,14 +121,7 @@ pub(crate) fn split_top_level_command_groups_with_separators(
                     current.push(ch);
                 }
             }
-            '|' if !in_single_quote
-                && !in_double_quote
-                && !in_backticks
-                && paren_depth == 0
-                && brace_depth == 0
-                && command_subst_depth == 0
-                && next_char == Some('|') =>
-            {
+            '|' if quoting.is_top_level() && brace_depth == 0 && next_char == Some('|') => {
                 chars.next();
                 finalize_with_separator(
                     ListSeparator::Or,
