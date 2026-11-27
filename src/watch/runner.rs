@@ -2,11 +2,11 @@ use std::path::PathBuf;
 
 use tokio::io::BufReader as TokioBufReader;
 
+use crate::planning::disposition::{
+    DispositionOutput, RecoveryGate, decide, persist_allow_rule, recovery_gate, snapshot_request,
+};
 use crate::planning::{
     CwdState, InterceptionPlan, PlanningOutcome, PreparedPlanner, SetupFailurePlan,
-};
-use crate::runtime::disposition::{
-    DispositionOutput, RecoveryGate, decide, persist_allow_rule, recovery_gate, snapshot_request,
 };
 use crate::runtime::{RuntimeContext, sandbox_status_before_preparation};
 use aegis_policy::ExecutionTransport;
@@ -294,7 +294,8 @@ async fn run_watch_plan_with_persistence<C, R, P>(
                         .create_snapshots_for_plan_async(
                             request.cwd,
                             request.command,
-                            &request.git_targets,
+                            request.git_targets.process_cwd,
+                            request.git_targets.resolved_paths(),
                         )
                         .await
                 }

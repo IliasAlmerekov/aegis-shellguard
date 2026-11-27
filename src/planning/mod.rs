@@ -1,5 +1,6 @@
 pub mod core;
 mod cwd;
+pub mod disposition;
 pub mod git_target;
 #[cfg(test)]
 mod git_target_plan_cd_tests;
@@ -7,6 +8,7 @@ mod git_target_plan_cd_tests;
 mod git_target_plan_tests;
 pub mod policy_rules;
 pub mod prepare;
+mod recovery;
 pub mod types;
 
 pub use cwd::CwdState;

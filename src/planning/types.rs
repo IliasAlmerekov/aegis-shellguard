@@ -2,9 +2,10 @@ use crate::explanation::CommandExplanation;
 use crate::explanation::formatter::build_explanation_from_plan;
 use crate::planning::cwd::CwdState;
 use crate::planning::git_target::GitTargetPlan;
+use crate::runtime::AuditWriteOptions;
 use aegis_config::AllowlistMatch;
 use aegis_policy::{ExecutionTransport, PolicyAction, PolicyDecision};
-use aegis_types::{Assessment, Mode};
+use aegis_types::{Assessment, Mode, SandboxStatus};
 
 pub enum PlanningOutcome {
     Planned(InterceptionPlan),
@@ -21,6 +22,18 @@ pub struct InterceptionPlan {
 }
 
 impl InterceptionPlan {
+    pub fn audit_options(&self, sandbox_status: SandboxStatus) -> AuditWriteOptions<'_> {
+        AuditWriteOptions {
+            allowlist_match: self.decision_context().allowlist_match(),
+            allowlist_effective: self.policy_decision().allowlist_effective,
+            ci_detected: self.decision_context().ci_detected(),
+            sandbox_status,
+            snapshot_attempts: &[],
+            recovery_degradation: None,
+            watch: None,
+        }
+    }
+
     pub(crate) fn from_policy(
         assessment: Assessment,
         decision_context: DecisionContext,

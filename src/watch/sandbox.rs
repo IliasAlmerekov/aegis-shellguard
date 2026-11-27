@@ -3,8 +3,9 @@ use std::future::Future;
 use aegis_types::{EXIT_BLOCKED, EXIT_INTERNAL, RecoveryDegradation, SandboxStatus};
 
 use crate::planning::InterceptionPlan;
-use crate::runtime::disposition::{SandboxFailure, setup_failed_message};
-use crate::runtime::{AuditWriteOptions, RuntimeContext, WatchAuditContext};
+use crate::runtime::{
+    AuditWriteOptions, RuntimeContext, SandboxFailure, WatchAuditContext, setup_failed_message,
+};
 use aegis_types::Decision;
 use aegis_types::{SnapshotAttempt, SnapshotRecord};
 
@@ -189,7 +190,7 @@ pub(super) fn append_watch_execution_audit(
                 cwd: execution.cwd.and_then(audit_cwd),
                 id: execution.frame.id.clone(),
             }),
-            ..AuditWriteOptions::for_plan(execution.plan, sandbox_status)
+            ..execution.plan.audit_options(sandbox_status)
         },
     )
 }
