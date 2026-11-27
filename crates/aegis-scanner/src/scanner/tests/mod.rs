@@ -70,6 +70,7 @@ mod edge_cases;
 mod effect_opaque;
 mod ghsa_7564;
 mod ghsa_7gcj;
+mod git_stage_evidence;
 mod issue_344;
 mod issue_357;
 mod issue_396;
