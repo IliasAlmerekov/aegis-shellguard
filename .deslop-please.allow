@@ -1,7 +1,6 @@
 # Existing architectural debt suppressed by `deslop-please --allow`.
 # Fixing an entry here never fails CI; new issues not listed here fail.
 module-cycle aegis::planning,aegis::runtime
-module-cycle aegis::planning::git_target,aegis::planning::types
 module-cycle aegis_config::allowlist,aegis_config::ceiling,aegis_config::model,aegis_config::pattern_match,aegis_config::validate
 tangle aegis_config::model::AegisConfig,aegis_config::model::ratchet::context::RatchetContext,aegis_config::model::ratchet::context::provider_enabled_in_base
 field-leak aegis::planning::git_target::GitTargetPlan::opportunistic_dirs

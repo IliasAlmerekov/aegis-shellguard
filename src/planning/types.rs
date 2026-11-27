@@ -1,7 +1,6 @@
-use std::path::PathBuf;
-
 use crate::explanation::CommandExplanation;
 use crate::explanation::formatter::build_explanation_from_plan;
+use crate::planning::cwd::CwdState;
 use crate::planning::git_target::GitTargetPlan;
 use aegis_config::AllowlistMatch;
 use aegis_policy::{ExecutionTransport, PolicyAction, PolicyDecision};
@@ -203,12 +202,6 @@ impl DecisionContext {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CwdState {
-    Resolved(PathBuf),
-    Unavailable,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SnapshotPlan {
     NotRequired,
     Required {
@@ -233,6 +226,7 @@ mod tests {
     };
     use aegis_config::allowlist::ConfigSourceLayer;
     use aegis_policy::{PolicyAction, PolicyDecision, PolicyRationale};
+    use std::path::PathBuf;
     #[test]
     fn decision_context_constructor_preserves_read_access_via_getters() {
         let cwd_state = CwdState::Resolved(PathBuf::from("."));

@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 
+use crate::planning::CwdState;
 use crate::planning::git_target::{GitTargetPlan, GitTargetUnresolved};
 use crate::planning::policy_rules::evaluate_policy_rules;
 use crate::planning::prepare::PreparedPlanner;
-use crate::planning::types::{CwdState, DecisionContext, InterceptionPlan, PlanningOutcome};
+use crate::planning::types::{DecisionContext, InterceptionPlan, PlanningOutcome};
 use crate::runtime::RuntimeContext;
 use aegis_policy::{
     ExecutionTransport, PolicyAllowlistResult, PolicyBlocklistResult, PolicyCiState,
@@ -55,18 +56,9 @@ pub async fn plan_with_context_async(
             analysis_cwd(&request.cwd_state),
         )
         .await;
-    let allowlist_match = match &request.cwd_state {
-        CwdState::Resolved(path) => {
-            context.allowlist_match_for_command(request.command, Some(path.as_path()))
-        }
-        CwdState::Unavailable => context.allowlist_match_for_command(request.command, None),
-    };
-    let blocklist_match = match &request.cwd_state {
-        CwdState::Resolved(path) => {
-            context.is_blocked_for_command(request.command, Some(path.as_path()))
-        }
-        CwdState::Unavailable => context.is_blocked_for_command(request.command, None),
-    };
+    let allowlist_match =
+        context.allowlist_match_for_command(request.command, request.cwd_state.path());
+    let blocklist_match = context.is_blocked_for_command(request.command, request.cwd_state.path());
     let backstop = recovery_backstop_applies(&assessment, context.config().snapshot_policy);
     let mut applicable_snapshot_plugins = match (&request.cwd_state, backstop) {
         (CwdState::Resolved(path), true) => context.applicable_snapshot_plugins_async(path).await,

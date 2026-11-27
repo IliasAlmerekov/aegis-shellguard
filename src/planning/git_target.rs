@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use aegis_parser::GitTargetArgs;
 use aegis_scanner::{CdUnresolved, DangerStage, DangerStageTarget, GitStageReport, StageDir};
 
-use crate::planning::types::CwdState;
+use crate::planning::cwd::CwdState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GitTargetUnresolved {
@@ -176,10 +176,7 @@ impl GitTargetPlan {
         let mut targets: Vec<GitTarget> = Vec::new();
         let mut opportunistic_dirs: Vec<PathBuf> = Vec::new();
         let mut process_cwd = report.needs_process_cwd;
-        let canonical_cwd = match cwd {
-            CwdState::Resolved(path) => path.canonicalize().ok(),
-            CwdState::Unavailable => None,
-        };
+        let canonical_cwd = cwd.path().and_then(|path| path.canonicalize().ok());
 
         for stage in &report.redirected {
             let target = match resolve_stage_in_dir(stage, cwd) {
@@ -255,12 +252,9 @@ fn resolve_dir(dir: &StageDir, cwd: &CwdState) -> Result<CwdState, GitTargetUnre
         StageDir::Process => Ok(cwd.clone()),
         StageDir::Unresolved(reason) => Err(GitTargetUnresolved::Cd(*reason)),
         StageDir::Chain(steps) => {
-            let mut current: Option<PathBuf> = match cwd {
-                CwdState::Resolved(path) => {
-                    Some(start_dir(path, std::env::var_os("PWD").as_deref()))
-                }
-                CwdState::Unavailable => None,
-            };
+            let mut current: Option<PathBuf> = cwd
+                .path()
+                .map(|path| start_dir(path, std::env::var_os("PWD").as_deref()));
             for step in steps {
                 let joined =
                     join(current.as_deref(), step).ok_or(GitTargetUnresolved::CwdUnavailable)?;
@@ -382,10 +376,7 @@ fn resolve_args(args: &GitTargetArgs, cwd: &CwdState) -> GitTarget {
         _ => {}
     }
 
-    let mut after_c: Option<PathBuf> = match cwd {
-        CwdState::Resolved(path) => Some(path.clone()),
-        CwdState::Unavailable => None,
-    };
+    let mut after_c: Option<PathBuf> = cwd.path().map(Path::to_path_buf);
     for path in args.dash_c.iter().filter(|path| !path.is_empty()) {
         after_c = join(after_c.as_deref(), path);
         if after_c.is_none() {
