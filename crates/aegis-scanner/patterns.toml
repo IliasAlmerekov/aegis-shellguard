@@ -16,9 +16,9 @@ id = "FS-001"
 category = "Filesystem"
 risk = "Danger"
 pattern = '\brm\s+(?:-[A-Za-z]*[rR][A-Za-z]*f[A-Za-z]*|-[A-Za-z]*f[A-Za-z]*[rR][A-Za-z]*|(?:-[A-Za-z]*[rR][A-Za-z]*|--recursive)(?:\s+(?:--|-{1,2}[A-Za-z][A-Za-z0-9-]*))*\s+(?:-[A-Za-z]*f[A-Za-z]*|--force)|(?:-[A-Za-z]*f[A-Za-z]*|--force)(?:\s+(?:--|-{1,2}[A-Za-z][A-Za-z0-9-]*))*\s+(?:-[A-Za-z]*[rR][A-Za-z]*|--recursive))'
-description = "Recursive force delete — permanently removes files and directories with no recovery path"
+description = "Recursive force delete — removes files and directories directly, without the trash"
 safe_alt = "Move to trash: 'trash <path>' or 'mv <path> /tmp/backup-$(date +%s)'"
-justification = "This permanently deletes data. There is no undo. Confirm you have backups or that the data is truly disposable."
+justification = "This deletes files and directories directly, without the trash. Confirm the data is disposable or backed up."
 
 [[patterns]]
 id = "FS-002"

@@ -253,6 +253,36 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_restorable_rules_make_no_recovery_claims() {
+        let set = PatternSet::load().expect("patterns.toml must load");
+        let ids = ["FS-001", "FS-012", "GIT-001", "GIT-007"];
+        let copy: Vec<(&str, String)> = set
+            .patterns()
+            .iter()
+            .map(|p| (p.id.as_ref(), &p.description, &p.justification))
+            .chain(
+                set.prefix_rules()
+                    .iter()
+                    .map(|r| (r.id.as_ref(), &r.description, &r.justification)),
+            )
+            .filter(|(id, ..)| ids.contains(id))
+            .map(|(id, d, j)| {
+                let j = j.as_deref().unwrap_or_default();
+                (id, format!("{d} {j}").to_lowercase())
+            })
+            .collect();
+        assert_eq!(copy.len(), ids.len(), "every id must exist exactly once");
+        for (id, text) in &copy {
+            for banned in ["no undo", "no recovery", "irreversible"] {
+                assert!(
+                    !text.contains(banned),
+                    "{id} copy claims {banned:?}: {text}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn prefix_rule_rejects_a_blank_suppressing_token() {
         let ids = HashSet::new();
         let mut rule = rule_with_first(PatternToken::Single(Cow::Borrowed("npm")));

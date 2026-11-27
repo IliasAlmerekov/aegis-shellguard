@@ -45,7 +45,7 @@ pub(super) fn rules() -> Vec<PrefixRule> {
                 "Move to trash instead: 'trash <file>' or 'mv <file> /tmp/backup-$(date +%s)'",
             )),
             justification: Some(Cow::Borrowed(
-                "Deletes the named file immediately with no recovery path. Less destructive than 'rm -rf' but still irreversible.",
+                "Deletes the named file directly, without the trash.",
             )),
             source: PatternSource::Builtin,
             suppressed_by: &[],
@@ -200,7 +200,7 @@ pub(super) fn rules() -> Vec<PrefixRule> {
                 "Stash changes first: 'git stash push -m \"backup\"' then reset if needed",
             )),
             justification: Some(Cow::Borrowed(
-                "Discards all uncommitted changes permanently with no recovery. Stash first if you need any of the work.",
+                "Discards all uncommitted changes in the working tree and index. Stash first if you need any of the work.",
             )),
             source: PatternSource::Builtin,
             suppressed_by: &[],
@@ -365,7 +365,7 @@ pub(super) fn rules() -> Vec<PrefixRule> {
                 "Stage or stash changes you want to keep before running this",
             )),
             justification: Some(Cow::Borrowed(
-                "Discards all unstaged changes in the working directory. There is no undo after this command.",
+                "Discards all unstaged changes in the working directory and overwrites those files with the index version.",
             )),
             source: PatternSource::Builtin,
             suppressed_by: &[],
