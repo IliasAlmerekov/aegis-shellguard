@@ -393,7 +393,10 @@ registry package on macOS arm64, macOS Intel, and Linux after every stable tag,
 and after an npm recovery dispatch. Network-free contract tests live in
 `tests/npm_package.rs`; the gated live test
 (`AEGIS_TEST_LIVE_NPM=1 AEGIS_TEST_EXPECTED_VERSION=X.Y.Z`) lives in
-`tests/npm_live.rs`. Both keep default `cargo test` network-free.
+`tests/npm_live.rs`. Both keep default `cargo test` network-free. Each install
+attempt in the live test runs `npm install -g --prefer-online`, so a retry
+revalidates npm's cached package metadata against the registry instead of
+reusing a copy fetched before the version appeared (#733).
 
 ### Evidence recorded 2026-10-26 (release v0.8.0)
 

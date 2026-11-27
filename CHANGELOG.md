@@ -7,6 +7,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Fixed: the release npm smoke now passes `--prefer-online` to every `npm install -g` attempt, so a retry asks the registry again instead of reusing npm's cached metadata from before the publish (#733).
+
 ## [0.10.1] (2026-11-27)
 
 - Fixed: the release Homebrew smoke now passes. The formula test checks only `aegis --version`, because Homebrew's sandbox cannot host the mandatory Sandbox. The live smoke and the README trust the tap with `brew trust IliasAlmerekov/aegis`, and the npm smoke runs after a Homebrew smoke failure (#730).

@@ -23,6 +23,19 @@ fn run(command: &str, args: &[&str]) -> std::process::Output {
         .unwrap_or_else(|error| panic!("failed to run {command} {args:?}: {error}"))
 }
 
+fn npm_install_args(spec: &str) -> [&str; 4] {
+    ["install", "-g", "--prefer-online", spec]
+}
+
+#[test]
+fn npm_install_args_should_revalidate_cached_metadata() {
+    let spec = "@iliasalmerekov/aegis@1.2.3";
+    assert_eq!(
+        npm_install_args(spec),
+        ["install", "-g", "--prefer-online", spec]
+    );
+}
+
 #[test]
 fn version_matches_should_compare_whole_tokens() {
     assert!(version_matches("aegis 0.7.0\n", "0.7.0"));
@@ -39,15 +52,17 @@ fn live_npm_package_installs_and_runs_aegis() {
     let expected = std::env::var("AEGIS_TEST_EXPECTED_VERSION")
         .expect("AEGIS_TEST_EXPECTED_VERSION must name the published version");
     let spec = format!("{PACKAGE}@{expected}");
+    let args = npm_install_args(&spec);
+    let shown = args.join(" ");
 
     let mut last = None;
     for attempt in 1..=INSTALL_ATTEMPTS {
-        let install = run("npm", &["install", "-g", &spec]);
+        let install = run("npm", &args);
         if install.status.success() {
             last = None;
             break;
         }
-        eprintln!("npm install -g {spec} failed (attempt {attempt}/{INSTALL_ATTEMPTS})");
+        eprintln!("npm {shown} failed (attempt {attempt}/{INSTALL_ATTEMPTS})");
         last = Some(install);
         if attempt < INSTALL_ATTEMPTS {
             std::thread::sleep(RETRY_DELAY);
@@ -55,7 +70,7 @@ fn live_npm_package_installs_and_runs_aegis() {
     }
     if let Some(install) = last {
         panic!(
-            "npm install -g {spec} failed after {INSTALL_ATTEMPTS} attempts\nstdout:\n{}\nstderr:\n{}",
+            "npm {shown} failed after {INSTALL_ATTEMPTS} attempts\nstdout:\n{}\nstderr:\n{}",
             String::from_utf8_lossy(&install.stdout),
             String::from_utf8_lossy(&install.stderr)
         );
