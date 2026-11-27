@@ -443,8 +443,10 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    pub(crate) mod corpus_hash;
     mod heredoc_data_consumer_tests;
     mod parsing_tests;
+    mod quote_tracking_tests;
     mod runner_tests;
     mod segments_logical_tests;
     mod tokenizer_tests;

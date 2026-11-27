@@ -1,3 +1,4 @@
+use crate::tokenizer::quote_scan::{Scan, SubstitutionScan};
 use std::ops::Range;
 
 pub(crate) struct SuspendCursor<'a> {
@@ -142,69 +143,16 @@ pub(crate) struct HeredocSite<'a> {
     pub(crate) terminator_is_clean: bool,
 }
 
-struct SubstitutionFrame {
-    command_sub_depth: Option<usize>,
-    saved_quotes: (bool, bool),
-}
-
 fn find_unquoted_double_lt(line: &str) -> Option<usize> {
-    let mut single_quote = false;
-    let mut double_quote = false;
-    let mut frames: Vec<SubstitutionFrame> = Vec::new();
+    let mut scan = SubstitutionScan::default();
     let mut chars = line.char_indices().peekable();
 
     while let Some((idx, ch)) = chars.next() {
-        match ch {
-            '\\' if !single_quote => {
-                chars.next();
-            }
-            '\'' if !double_quote => single_quote = !single_quote,
-            '"' if !single_quote => double_quote = !double_quote,
-            '`' if !single_quote => {
-                if matches!(frames.last(), Some(f) if f.command_sub_depth.is_none()) {
-                    if let Some(frame) = frames.pop() {
-                        (single_quote, double_quote) = frame.saved_quotes;
-                    }
-                } else {
-                    frames.push(SubstitutionFrame {
-                        command_sub_depth: None,
-                        saved_quotes: (single_quote, double_quote),
-                    });
-                    single_quote = false;
-                    double_quote = false;
-                }
-            }
-            '$' if !single_quote && chars.peek().map(|&(_, c)| c) == Some('(') => {
-                chars.next();
-                frames.push(SubstitutionFrame {
-                    command_sub_depth: Some(1),
-                    saved_quotes: (single_quote, double_quote),
-                });
-                single_quote = false;
-                double_quote = false;
-            }
-            '(' if !single_quote && !double_quote => {
-                if let Some(depth) = frames.last_mut().and_then(|f| f.command_sub_depth.as_mut()) {
-                    *depth += 1;
-                }
-            }
-            ')' if !single_quote && !double_quote => {
-                let closed = if let Some(depth) =
-                    frames.last_mut().and_then(|f| f.command_sub_depth.as_mut())
-                {
-                    *depth -= 1;
-                    *depth == 0
-                } else {
-                    false
-                };
-                if closed && let Some(frame) = frames.pop() {
-                    (single_quote, double_quote) = frame.saved_quotes;
-                }
-            }
-            '<' if !single_quote && !double_quote && chars.peek().map(|&(_, c)| c) == Some('<') => {
-                return Some(idx);
-            }
-            _ => {}
+        if scan.step(idx, ch, &mut chars) == Scan::Plain
+            && ch == '<'
+            && chars.peek().map(|&(_, c)| c) == Some('<')
+        {
+            return Some(idx);
         }
     }
 
@@ -373,3 +321,7 @@ fn indexed_lines(cmd: &str) -> Vec<(&str, usize)> {
 #[cfg(test)]
 #[path = "../tests/suspend_ranges_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/double_lt_tests.rs"]
+mod double_lt_tests;

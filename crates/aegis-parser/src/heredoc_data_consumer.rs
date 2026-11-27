@@ -1,4 +1,5 @@
 use crate::split_tokens;
+use crate::tokenizer::quote_scan::{Scan, SubstitutionScan};
 
 mod inert_prefix;
 mod message_flags;
@@ -28,81 +29,22 @@ fn is_plain_identifier(name: &str) -> bool {
 }
 
 fn owning_simple_command_start(text: &str) -> usize {
-    struct Frame {
-        command_sub_depth: Option<usize>,
-        saved_quotes: (bool, bool),
-    }
-
-    let mut single_quote = false;
-    let mut double_quote = false;
-    let mut frames: Vec<Frame> = Vec::new();
+    let mut scan = SubstitutionScan::default();
     let mut start = 0;
     let mut chars = text.char_indices().peekable();
 
     while let Some((idx, ch)) = chars.next() {
-        match ch {
-            '\\' if !single_quote => {
-                chars.next();
-            }
-            '\'' if !double_quote => single_quote = !single_quote,
-            '"' if !single_quote => double_quote = !double_quote,
-            '`' if !single_quote => {
-                if matches!(frames.last(), Some(f) if f.command_sub_depth.is_none()) {
-                    if let Some(frame) = frames.pop() {
-                        (single_quote, double_quote) = frame.saved_quotes;
-                    }
-                } else {
-                    frames.push(Frame {
-                        command_sub_depth: None,
-                        saved_quotes: (single_quote, double_quote),
-                    });
-                    single_quote = false;
-                    double_quote = false;
-                    start = idx + ch.len_utf8();
+        match scan.step(idx, ch, &mut chars) {
+            Scan::CommandStart(after_opener) => start = after_opener,
+            Scan::Consumed | Scan::Quoted => {}
+            Scan::Plain => match ch {
+                ';' | '\n' => start = idx + 1,
+                '&' | '|' if chars.peek().map(|&(_, c)| c) == Some(ch) => {
+                    chars.next();
+                    start = idx + 2;
                 }
-            }
-            '$' if !single_quote && chars.peek().map(|&(_, c)| c) == Some('(') => {
-                if let Some((paren_idx, paren_ch)) = chars.next() {
-                    frames.push(Frame {
-                        command_sub_depth: Some(1),
-                        saved_quotes: (single_quote, double_quote),
-                    });
-                    single_quote = false;
-                    double_quote = false;
-                    start = paren_idx + paren_ch.len_utf8();
-                }
-            }
-            '(' if !single_quote && !double_quote => {
-                if let Some(depth) = frames.last_mut().and_then(|f| f.command_sub_depth.as_mut()) {
-                    *depth += 1;
-                } else {
-                    start = idx + ch.len_utf8();
-                }
-            }
-            ')' if !single_quote && !double_quote => {
-                let closed = if let Some(depth) =
-                    frames.last_mut().and_then(|f| f.command_sub_depth.as_mut())
-                {
-                    *depth -= 1;
-                    *depth == 0
-                } else {
-                    false
-                };
-                if closed && let Some(frame) = frames.pop() {
-                    (single_quote, double_quote) = frame.saved_quotes;
-                }
-            }
-            ';' | '\n' if !single_quote && !double_quote => {
-                start = idx + ch.len_utf8();
-            }
-            '&' | '|'
-                if !single_quote && !double_quote && chars.peek().map(|&(_, c)| c) == Some(ch) =>
-            {
-                if let Some((next_idx, next_ch)) = chars.next() {
-                    start = next_idx + next_ch.len_utf8();
-                }
-            }
-            _ => {}
+                _ => {}
+            },
         }
     }
     start
@@ -422,3 +364,7 @@ pub(super) fn heredoc_target_is_data_consumer(
         HeredocMarkerContext::Untrusted => false,
     }
 }
+
+#[cfg(test)]
+#[path = "tests/owning_start_tests.rs"]
+mod owning_start_tests;
