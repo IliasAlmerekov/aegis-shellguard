@@ -224,6 +224,22 @@ fn ac6_the_set_builtin_still_turns_physical_mode_on() {
 }
 
 #[test]
+fn ac6_physical_mode_survives_a_keyword_prefix() {
+    for cmd in [
+        "{ set -P; } && cd x && rm -rf y",
+        "if true; then set -P; fi; cd x && rm -rf y",
+        "time set -P && cd x && rm -rf y",
+        "! set -P; cd x && rm -rf y",
+    ] {
+        assert_eq!(
+            dirs(&bash(cmd)),
+            unresolved(CdUnresolved::PhysicalMode),
+            "{cmd}"
+        );
+    }
+}
+
+#[test]
 fn ac7_zsh_is_detected_by_file_name_with_real_shell_first() {
     let os = |value: &'static str| Some(OsStr::new(value));
 

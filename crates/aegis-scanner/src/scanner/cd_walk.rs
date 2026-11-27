@@ -463,6 +463,9 @@ fn sets_physical_mode(raw: &str, tokens: &[String]) -> bool {
     let mut words = tokens
         .iter()
         .map(String::as_str)
+        .skip_while(|token| {
+            *token == "{" || aegis_parser::COMMAND_STARTING_KEYWORDS.contains(token)
+        })
         .skip_while(|token| !token.starts_with('-') && token.contains('='));
     let mut program = words.next();
     if matches!(program, Some("builtin" | "command")) {
