@@ -6,11 +6,9 @@ use aegis_config::{
 use aegis_types::{RecordedSnapshot, SnapshotPolicy, SnapshotRecord};
 
 mod builtin;
-mod coverage;
-pub use coverage::SnapshotCoverage;
-use coverage::{COMMAND_READINESS_BUDGET, attempt};
 
 use crate::SnapshotPlugin;
+use crate::coverage::{COMMAND_READINESS_BUDGET, SnapshotCoverage, attempt};
 use crate::error::SnapshotError;
 use crate::liveness::{LIVENESS_TIMEOUT, Liveness};
 use crate::paths::resolve_snapshots_dir;

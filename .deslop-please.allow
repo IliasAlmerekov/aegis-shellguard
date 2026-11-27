@@ -29,7 +29,6 @@ field-leak aegis_config::model::AegisConfig::language_analysis
 field-leak aegis_config::model::AegisConfig::prune
 field-leak aegis_config::model::AegisConfig::rules
 field-leak aegis_config::model::AegisConfig::sandbox
-field-leak aegis_snapshot::supabase::SupabasePlugin::config
 shallow-module aegis_config::model::ratchet
 shallow-module aegis_snapshot::registry
 wide-directory crates/aegis-config/src/

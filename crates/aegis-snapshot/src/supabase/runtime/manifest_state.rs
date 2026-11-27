@@ -9,7 +9,7 @@ use super::super::{
     SupabaseTarget, SupabaseTargetDb,
 };
 
-pub(super) fn phase1_complete(
+pub(in crate::supabase) fn phase1_complete(
     config: &SupabaseSnapshotConfig,
     artifact_path: &str,
     checksum_sha256: String,

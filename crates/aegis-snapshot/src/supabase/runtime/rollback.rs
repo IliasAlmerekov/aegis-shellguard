@@ -81,7 +81,7 @@ impl SupabaseManifest {
         Ok(resolved)
     }
 
-    pub(super) fn ensure_config_target_matches(
+    pub(in crate::supabase) fn ensure_config_target_matches(
         &self,
         config: &SupabaseSnapshotConfig,
     ) -> Result<()> {

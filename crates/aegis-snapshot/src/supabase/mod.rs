@@ -170,8 +170,28 @@ impl SupabasePlugin {
         Ok(path)
     }
 
+    fn has_database_target(&self) -> bool {
+        !self.config.db.database.trim().is_empty()
+    }
+
+    fn phase1_manifest(
+        &self,
+        artifact_path: &str,
+        checksum_sha256: String,
+        size_bytes: u64,
+    ) -> Result<SupabaseManifest> {
+        runtime::phase1_complete(&self.config, artifact_path, checksum_sha256, size_bytes)
+    }
+
+    fn ensure_rollback_target_allowed(&self, manifest: &SupabaseManifest) -> Result<()> {
+        if self.config.require_config_target_match_on_rollback {
+            manifest.ensure_config_target_matches(&self.config)?;
+        }
+        Ok(())
+    }
+
     async fn validate_preflight(&self) -> Result<()> {
-        if self.config.db.database.trim().is_empty() {
+        if !self.has_database_target() {
             return Err(SnapshotError::Required {
                 subject: "supabase_snapshot.db.database",
             });

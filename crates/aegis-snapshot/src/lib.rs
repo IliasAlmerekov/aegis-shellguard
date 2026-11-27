@@ -24,6 +24,7 @@ pub use supabase::SupabasePlugin;
 
 mod clock;
 mod containment;
+mod coverage;
 mod liveness;
 mod paths;
 mod readiness;
@@ -37,11 +38,10 @@ mod test_support;
 pub mod testing;
 
 pub use clock::{Clock, FixedClock, SystemClock};
+pub use coverage::SnapshotCoverage;
 pub use liveness::Liveness;
 pub use readiness::ArtifactReadiness;
-pub use registry::{
-    SnapshotCoverage, SnapshotRegistry, SnapshotRegistryConfig, available_provider_names,
-};
+pub use registry::{SnapshotRegistry, SnapshotRegistryConfig, available_provider_names};
 pub use retention::{PrunableRecord, RetentionPolicy};
 
 type Result<T> = std::result::Result<T, SnapshotError>;

@@ -5,7 +5,7 @@ use crate::liveness::local_file_liveness;
 use crate::readiness::pg_dump_readiness;
 
 use manifest_io::write_manifest_atomically;
-use manifest_state::phase1_complete;
+pub(super) use manifest_state::phase1_complete;
 
 mod manifest_io;
 mod manifest_state;
@@ -34,7 +34,7 @@ impl SnapshotPlugin for SupabasePlugin {
     }
 
     async fn is_applicable(&self, _cwd: &Path) -> bool {
-        !self.config.db.database.trim().is_empty()
+        self.has_database_target()
             && crate::binary_lookup::binary_available(&self.pg_dump_bin).await
             && crate::binary_lookup::binary_available(&self.pg_restore_bin).await
     }
@@ -72,12 +72,8 @@ impl SnapshotPlugin for SupabasePlugin {
             }
         };
 
-        let manifest = match phase1_complete(
-            &self.config,
-            "artifacts/db.dump",
-            checksum_sha256,
-            size_bytes,
-        ) {
+        let manifest = match self.phase1_manifest("artifacts/db.dump", checksum_sha256, size_bytes)
+        {
             Ok(manifest) => manifest,
             Err(error) => {
                 return Err(self.fail_closed_after_cleanup(error, &bundle_dir, Some(&dump_path)));
@@ -200,9 +196,7 @@ impl SnapshotPlugin for SupabasePlugin {
             });
         }
 
-        if self.config.require_config_target_match_on_rollback {
-            manifest.ensure_config_target_matches(&self.config)?;
-        }
+        self.ensure_rollback_target_allowed(&manifest)?;
 
         let target = manifest
             .target

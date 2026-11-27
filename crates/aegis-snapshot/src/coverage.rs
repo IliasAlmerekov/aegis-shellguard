@@ -10,7 +10,7 @@ pub struct SnapshotCoverage {
     pub attempts: Vec<SnapshotAttempt>,
 }
 
-pub(super) const COMMAND_READINESS_BUDGET: std::time::Duration =
+pub(crate) const COMMAND_READINESS_BUDGET: std::time::Duration =
     std::time::Duration::from_millis(500);
 
 impl SnapshotCoverage {
@@ -59,7 +59,7 @@ impl SnapshotCoverage {
     }
 }
 
-pub(super) fn attempt(plugin: &str, outcome: ArtifactReadiness) -> SnapshotAttempt {
+pub(crate) fn attempt(plugin: &str, outcome: ArtifactReadiness) -> SnapshotAttempt {
     SnapshotAttempt {
         plugin: plugin.to_string(),
         readiness: outcome.readiness,
