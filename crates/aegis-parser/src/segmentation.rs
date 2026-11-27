@@ -1,5 +1,9 @@
 use super::{PipelineChain, PipelineSegment, extract_nested_commands, split_tokens};
-use crate::list_segments::{SuspendCursor, case_statement_suspend_ranges};
+use crate::list_segments::{
+    ListSegment, finalize_segment, split_top_level_command_groups_with_separators,
+};
+use crate::redirection::ends_with_redirect_target;
+use crate::tokenizer::suspend_ranges::{SuspendCursor, case_statement_suspend_ranges};
 
 pub fn logical_segments(cmd: &str) -> Vec<String> {
     let mut segments = Vec::new();
@@ -188,13 +192,26 @@ pub(super) fn split_top_level_segments(cmd: &str) -> Vec<String> {
 }
 
 fn split_top_level_command_groups(cmd: &str) -> Vec<String> {
-    crate::list_segments::split_top_level_command_groups_with_separators(cmd)
+    split_top_level_command_groups_with_separators(cmd)
         .into_iter()
         .map(|(raw, _separator)| raw)
         .collect()
 }
 
-pub(crate) fn split_pipeline_segments(raw_group: &str) -> Vec<PipelineSegment> {
+pub fn list_segments(cmd: &str) -> Vec<ListSegment> {
+    split_top_level_command_groups_with_separators(cmd)
+        .into_iter()
+        .map(|(raw_group, separator)| ListSegment {
+            pipeline: PipelineChain {
+                segments: split_pipeline_segments(&raw_group),
+                raw: raw_group,
+            },
+            separator,
+        })
+        .collect()
+}
+
+fn split_pipeline_segments(raw_group: &str) -> Vec<PipelineSegment> {
     let mut raw_segments = Vec::new();
     let mut current = String::new();
     let case_ranges = case_statement_suspend_ranges(raw_group);
@@ -281,22 +298,6 @@ pub(crate) fn split_pipeline_segments(raw_group: &str) -> Vec<PipelineSegment> {
             normalize_segment(&raw).map(|normalized| PipelineSegment { raw, normalized })
         })
         .collect()
-}
-
-pub(crate) fn ends_with_redirect_target(current: &str) -> bool {
-    let mut rev = current.trim_end().chars().rev();
-    match rev.next() {
-        Some('>') | Some('<') => rev.take_while(|&c| c == '\\').count() % 2 == 0,
-        _ => false,
-    }
-}
-
-pub(crate) fn finalize_segment(current: &mut String, segments: &mut Vec<String>) {
-    let trimmed = current.trim();
-    if !trimmed.is_empty() {
-        segments.push(trimmed.to_string());
-    }
-    current.clear();
 }
 
 fn normalize_segment(raw_segment: &str) -> Option<String> {

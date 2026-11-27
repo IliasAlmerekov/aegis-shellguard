@@ -267,3 +267,17 @@ fn heredoc_after_set_that_can_assign_is_not_flagged() {
         );
     }
 }
+
+#[test]
+fn unterminated_heredoc_is_not_flagged_as_data_consumer() {
+    let cmd = "gh pr create --body \"$(cat <<'EOF'\nsome text\n)\"";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(!bodies[0].is_data_consumer_target);
+}
+
+#[test]
+fn heredoc_with_a_delimiter_prefixed_body_line_is_not_flagged_as_data_consumer() {
+    let cmd = "gh pr create --body \"$(cat <<'EOF'\nEOFx\nEOF\n)\"";
+    let bodies = extract_heredoc_bodies(cmd);
+    assert!(!bodies[0].is_data_consumer_target);
+}

@@ -2,8 +2,9 @@ use std::iter::Peekable;
 use std::str::Chars;
 
 mod ansi_c;
+pub(crate) mod suspend_ranges;
 
-use crate::segmentation::ends_with_redirect_target;
+use crate::redirection::ends_with_redirect_target;
 use ansi_c::read_ansi_c_quoted;
 pub use ansi_c::{canonical_ansi_c_quoting, canonical_ansi_c_quoting_marked};
 

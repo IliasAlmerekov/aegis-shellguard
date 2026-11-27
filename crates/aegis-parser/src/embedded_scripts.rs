@@ -2,6 +2,7 @@ use std::ops::Range;
 
 use super::{segmentation::split_top_level_segments, split_tokens};
 use crate::heredoc_data_consumer::heredoc_target_is_data_consumer;
+use crate::tokenizer::suspend_ranges::{HeredocMarker, find_heredoc_marker, walk_heredoc_sites};
 
 use aegis_types::InlineScript;
 
@@ -177,134 +178,6 @@ pub fn extract_eval_payloads(cmd: &str) -> Vec<String> {
     payloads
 }
 
-struct HeredocMarker {
-    delimiter: String,
-    is_nowdoc: bool,
-    strip_tabs: bool,
-    operator_start: usize,
-    delimiter_end: usize,
-}
-
-struct SubstitutionFrame {
-    command_sub_depth: Option<usize>,
-    saved_quotes: (bool, bool),
-}
-
-fn find_unquoted_double_lt(line: &str) -> Option<usize> {
-    let mut single_quote = false;
-    let mut double_quote = false;
-    let mut frames: Vec<SubstitutionFrame> = Vec::new();
-    let mut chars = line.char_indices().peekable();
-
-    while let Some((idx, ch)) = chars.next() {
-        match ch {
-            '\\' if !single_quote => {
-                chars.next();
-            }
-            '\'' if !double_quote => single_quote = !single_quote,
-            '"' if !single_quote => double_quote = !double_quote,
-            '`' if !single_quote => {
-                if matches!(frames.last(), Some(f) if f.command_sub_depth.is_none()) {
-                    if let Some(frame) = frames.pop() {
-                        (single_quote, double_quote) = frame.saved_quotes;
-                    }
-                } else {
-                    frames.push(SubstitutionFrame {
-                        command_sub_depth: None,
-                        saved_quotes: (single_quote, double_quote),
-                    });
-                    single_quote = false;
-                    double_quote = false;
-                }
-            }
-            '$' if !single_quote && chars.peek().map(|&(_, c)| c) == Some('(') => {
-                chars.next();
-                frames.push(SubstitutionFrame {
-                    command_sub_depth: Some(1),
-                    saved_quotes: (single_quote, double_quote),
-                });
-                single_quote = false;
-                double_quote = false;
-            }
-            '(' if !single_quote && !double_quote => {
-                if let Some(depth) = frames.last_mut().and_then(|f| f.command_sub_depth.as_mut()) {
-                    *depth += 1;
-                }
-            }
-            ')' if !single_quote && !double_quote => {
-                let closed = if let Some(depth) =
-                    frames.last_mut().and_then(|f| f.command_sub_depth.as_mut())
-                {
-                    *depth -= 1;
-                    *depth == 0
-                } else {
-                    false
-                };
-                if closed && let Some(frame) = frames.pop() {
-                    (single_quote, double_quote) = frame.saved_quotes;
-                }
-            }
-            '<' if !single_quote && !double_quote && chars.peek().map(|&(_, c)| c) == Some('<') => {
-                return Some(idx);
-            }
-            _ => {}
-        }
-    }
-
-    None
-}
-
-fn find_heredoc_marker(line: &str) -> Option<HeredocMarker> {
-    let operator_start = find_unquoted_double_lt(line)?;
-    let after_op = &line[operator_start + 2..];
-    let (strip_tabs, after_dash) = match after_op.strip_prefix('-') {
-        Some(stripped) => (true, stripped),
-        None => (false, after_op),
-    };
-    let trimmed = after_dash.trim_start();
-    let spec_start =
-        operator_start + 2 + (strip_tabs as usize) + (after_dash.len() - trimmed.len());
-
-    let mk = |delimiter: String, is_nowdoc: bool, delimiter_end: usize| HeredocMarker {
-        delimiter,
-        is_nowdoc,
-        strip_tabs,
-        operator_start,
-        delimiter_end,
-    };
-
-    if let Some(inner) = trimmed.strip_prefix('\'') {
-        let close = inner.find('\'')?;
-        let delim = &inner[..close];
-        return (!delim.is_empty())
-            .then(|| mk(delim.to_string(), true, spec_start + 1 + close + 1));
-    }
-
-    if let Some(inner) = trimmed.strip_prefix('"') {
-        let close = inner.find('"')?;
-        let delim = &inner[..close];
-        return (!delim.is_empty())
-            .then(|| mk(delim.to_string(), true, spec_start + 1 + close + 1));
-    }
-
-    if let Some(inner) = trimmed.strip_prefix('\\') {
-        let word: String = inner
-            .chars()
-            .take_while(|c| c.is_alphanumeric() || *c == '_')
-            .collect();
-        let word_len = word.len();
-        return (!word.is_empty()).then(|| mk(word, true, spec_start + 1 + word_len));
-    }
-
-    let word: String = trimmed
-        .chars()
-        .take_while(|c| c.is_alphanumeric() || *c == '_')
-        .collect();
-    let word_len = word.len();
-
-    (!word.is_empty()).then(|| mk(word, false, spec_start + word_len))
-}
-
 pub fn split_at_heredoc_marker(line: &str) -> Option<(&str, &str)> {
     let marker = find_heredoc_marker(line)?;
     Some((
@@ -313,124 +186,35 @@ pub fn split_at_heredoc_marker(line: &str) -> Option<(&str, &str)> {
     ))
 }
 
-pub(crate) fn heredoc_suspend_ranges(cmd: &str) -> Vec<Range<usize>> {
-    if !cmd.contains("<<") {
-        return Vec::new();
-    }
-
-    let indexed = indexed_lines(cmd);
-    let lines: Vec<&str> = indexed.iter().map(|&(line, _)| line).collect();
-    let mut ranges = Vec::new();
-
-    walk_heredocs(
-        &lines,
-        |marker, _interpreter, _redirects, body_range, suspend_end| {
-            let Some(marker_line_index) = body_range.start.checked_sub(1) else {
-                return;
-            };
-            let Some(&(_, marker_line_start)) = indexed.get(marker_line_index) else {
-                return;
-            };
-            let start = marker_line_start + marker.operator_start;
-            let end = match indexed.get(suspend_end) {
-                Some(&(_, line_start)) if suspend_end < body_range.end => line_start,
-                Some(&(terminator_line, terminator_start)) => {
-                    terminator_start + terminator_line.len()
-                }
-                None => cmd.len(),
-            };
-            ranges.push(start..end);
-        },
-    );
-
-    ranges
-}
-
-fn indexed_lines(cmd: &str) -> Vec<(&str, usize)> {
-    let mut lines = Vec::new();
-    let mut start = 0;
-    for (idx, ch) in cmd.char_indices() {
-        if ch == '\n' {
-            let raw = &cmd[start..idx];
-            lines.push((raw.strip_suffix('\r').unwrap_or(raw), start));
-            start = idx + 1;
-        }
-    }
-    if start < cmd.len() {
-        let raw = &cmd[start..];
-        lines.push((raw.strip_suffix('\r').unwrap_or(raw), start));
-    }
-    lines
-}
-
 fn walk_heredocs(
     lines: &[&str],
     mut on_heredoc: impl FnMut(&HeredocMarker, bool, bool, Range<usize>, usize),
 ) {
-    if !lines.iter().any(|line| line.contains("<<")) {
-        return;
-    }
-
-    let mut i = 0;
-    let mut command_text = String::new();
-
-    while i < lines.len() {
-        if let Some(marker) = find_heredoc_marker(lines[i]) {
-            let marker_line = lines[i];
-            let preceding_len = command_text.len();
-            command_text.push_str(marker_line);
-            command_text.push('\n');
-            i += 1;
-            let body_start = i;
-
-            let mut first_prefixed = None;
-            let mut terminator_exact = false;
-            while i < lines.len() {
-                let candidate = if marker.strip_tabs {
-                    lines[i].trim_start_matches('\t')
-                } else {
-                    lines[i]
-                };
-                terminator_exact = candidate == marker.delimiter;
-                if terminator_exact {
-                    break;
-                }
-                if first_prefixed.is_none() && candidate.starts_with(marker.delimiter.as_str()) {
-                    first_prefixed = Some(i);
-                }
-                i += 1;
-            }
-            let body_end = i;
-            let suspend_end = first_prefixed.unwrap_or(body_end);
-
-            let target_is_interpreter = heredoc_target_program(marker_line, marker.operator_start)
-                .is_some_and(|program| {
+    walk_heredoc_sites(lines, |site| {
+        let target_is_interpreter =
+            heredoc_target_program(site.marker_line, site.marker.operator_start).is_some_and(
+                |program| {
                     STDIN_EXECUTING_PROGRAMS
                         .iter()
                         .any(|known| program.eq_ignore_ascii_case(known))
-                });
-            let is_data_consumer_target = terminator_exact
-                && first_prefixed.is_none()
-                && heredoc_target_is_data_consumer(
-                    &command_text[..preceding_len],
-                    marker_line,
-                    marker.operator_start,
-                    marker.delimiter_end,
-                );
-
-            on_heredoc(
-                &marker,
-                target_is_interpreter,
-                is_data_consumer_target,
-                body_start..body_end,
-                suspend_end,
+                },
             );
-        } else {
-            command_text.push_str(lines[i]);
-            command_text.push('\n');
-        }
-        i += 1;
-    }
+        let is_data_consumer_target = site.terminator_is_clean
+            && heredoc_target_is_data_consumer(
+                site.preceding_text,
+                site.marker_line,
+                site.marker.operator_start,
+                site.marker.delimiter_end,
+            );
+
+        on_heredoc(
+            site.marker,
+            target_is_interpreter,
+            is_data_consumer_target,
+            site.body_range,
+            site.suspend_end,
+        );
+    });
 }
 
 pub fn extract_heredoc_bodies(cmd: &str) -> Vec<HeredocBody> {
@@ -534,75 +318,4 @@ pub fn extract_inline_scripts(cmd: &str) -> Vec<InlineScript> {
     }
 
     scripts
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{find_heredoc_marker, heredoc_suspend_ranges};
-
-    #[test]
-    fn a_double_lt_inside_dollar_paren_within_double_quotes_is_a_marker() {
-        let line = "\"$(cat <<'EOF'";
-        assert!(find_heredoc_marker(line).is_some());
-    }
-
-    #[test]
-    fn a_double_lt_inside_a_plain_double_quoted_string_is_not_a_marker() {
-        let line = "\"<<EOF\"";
-        assert!(find_heredoc_marker(line).is_none());
-    }
-
-    #[test]
-    fn a_double_lt_inside_a_backtick_body_is_a_marker() {
-        let line = "`cat <<EOF`";
-        assert!(find_heredoc_marker(line).is_some());
-    }
-
-    #[test]
-    fn a_double_lt_inside_nested_dollar_paren_command_substitutions_is_a_marker() {
-        let line = "\"$(echo \"$(cat <<EOF)\")\"";
-        assert!(find_heredoc_marker(line).is_some());
-    }
-
-    #[test]
-    fn a_double_lt_inside_dollar_paren_paren_arithmetic_matches_pre_fix_looseness() {
-        let line = "echo $((1 << 2))";
-        assert!(find_heredoc_marker(line).is_some());
-    }
-
-    #[test]
-    fn a_heredoc_with_no_body_lines_suspends_marker_through_terminator() {
-        let cmd = "cat <<EOF\nEOF\n";
-        assert_eq!(
-            heredoc_suspend_ranges(cmd),
-            vec![cmd.find("<<").unwrap()..(cmd.rfind("EOF").unwrap() + "EOF".len())]
-        );
-    }
-
-    #[test]
-    fn a_heredoc_marker_with_nothing_after_it_suspends_to_the_end_of_cmd() {
-        let cmd = "cat <<EOF";
-        assert_eq!(
-            heredoc_suspend_ranges(cmd),
-            vec![cmd.find("<<").unwrap()..cmd.len()]
-        );
-    }
-
-    #[test]
-    fn a_crlf_heredoc_suspends_marker_through_terminator() {
-        let cmd = "cat <<EOF\r\nbody\r\nEOF\r\n";
-        assert_eq!(
-            heredoc_suspend_ranges(cmd),
-            vec![cmd.find("<<").unwrap()..(cmd.rfind("EOF").unwrap() + "EOF".len())]
-        );
-    }
-
-    #[test]
-    fn a_heredoc_terminator_with_no_trailing_newline_still_ends_the_suspend_range() {
-        let cmd = "cat <<EOF\nbody\nEOF";
-        assert_eq!(
-            heredoc_suspend_ranges(cmd),
-            vec![cmd.find("<<").unwrap()..(cmd.rfind("EOF").unwrap() + "EOF".len())]
-        );
-    }
 }

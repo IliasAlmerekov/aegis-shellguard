@@ -25,7 +25,7 @@ pub use git_options::{
     GitSubcommandStarts, GitTargetArgs, GitTargetReadings, MAX_GIT_OPTION_CANDIDATES,
     git_option_subcommand_starts, git_option_target_readings,
 };
-pub use list_segments::{ListSegment, ListSeparator, list_segments};
+pub use list_segments::{ListSegment, ListSeparator};
 pub use nested_shells::extract_nested_commands;
 #[cfg(test)]
 pub use prefix_match::matches_prefix_ending_options;
@@ -35,8 +35,8 @@ pub use redirection::{is_redirection_operator, starts_with_redirection_glyph};
 pub use runner::Runner;
 pub use segmentation::{
     ScanSegment, extract_command_substitution_bodies, has_multiple_top_level_segments,
-    logical_scan_segments, logical_segments, mask_command_substitutions, top_level_pipelines,
-    unwrap_subshell_group,
+    list_segments, logical_scan_segments, logical_segments, mask_command_substitutions,
+    top_level_pipelines, unwrap_subshell_group,
 };
 pub use tokenizer::{
     ansi_c_quoting_is_inexact, canonical_ansi_c_quoting, canonical_ansi_c_quoting_marked,
