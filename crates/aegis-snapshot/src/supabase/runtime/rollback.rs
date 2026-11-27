@@ -1,8 +1,6 @@
 use std::path::{Component, Path, PathBuf};
 
-use aegis_config::SupabaseSnapshotConfig;
-
-use super::super::{Result, SnapshotError, SupabaseManifest};
+use super::super::{Result, SnapshotError, SupabaseManifest, SupabaseTargetDb};
 
 impl SupabaseManifest {
     pub(super) fn resolve_db_artifact_path(&self, manifest_path: &Path) -> Result<PathBuf> {
@@ -81,10 +79,7 @@ impl SupabaseManifest {
         Ok(resolved)
     }
 
-    pub(super) fn ensure_config_target_matches(
-        &self,
-        config: &SupabaseSnapshotConfig,
-    ) -> Result<()> {
+    pub(super) fn ensure_target_matches(&self, configured: &SupabaseTargetDb) -> Result<()> {
         let target_db = self.target.db.as_ref().ok_or(SnapshotError::RequiredWhen {
             subject: "manifest target.db",
             condition: "for rollback",
@@ -92,28 +87,28 @@ impl SupabaseManifest {
 
         let mut mismatches = Vec::new();
 
-        if target_db.database != config.db.database {
+        if target_db.database != configured.database {
             mismatches.push(format!(
                 "database manifest={} current={}",
-                target_db.database, config.db.database
+                target_db.database, configured.database
             ));
         }
-        if target_db.host != config.db.host {
+        if target_db.host != configured.host {
             mismatches.push(format!(
                 "host manifest={} current={}",
-                target_db.host, config.db.host
+                target_db.host, configured.host
             ));
         }
-        if target_db.port != config.db.port {
+        if target_db.port != configured.port {
             mismatches.push(format!(
                 "port manifest={} current={}",
-                target_db.port, config.db.port
+                target_db.port, configured.port
             ));
         }
-        if target_db.user != config.db.user {
+        if target_db.user != configured.user {
             mismatches.push(format!(
                 "user manifest={} current={}",
-                target_db.user, config.db.user
+                target_db.user, configured.user
             ));
         }
 

@@ -1,16 +1,17 @@
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
-use aegis_config::SupabaseSnapshotConfig;
-
+#[cfg(test)]
+use super::super::SupabaseTargetDb;
 use super::super::{
     Result, SnapshotError, SupabaseArtifacts, SupabaseCapabilities, SupabaseDbArtifact,
     SupabaseManifest, SupabaseOverallStatus, SupabaseRollback, SupabaseStrictEligibility,
-    SupabaseTarget, SupabaseTargetDb,
+    SupabaseTarget,
 };
 
 pub(super) fn phase1_complete(
-    config: &SupabaseSnapshotConfig,
+    target: SupabaseTarget,
+    require_target_match: bool,
     artifact_path: &str,
     checksum_sha256: String,
     size_bytes: u64,
@@ -27,15 +28,7 @@ pub(super) fn phase1_complete(
         provider: "supabase".to_string(),
         created_at,
         capabilities: SupabaseCapabilities::phase1(),
-        target: SupabaseTarget {
-            project_ref: config.project_ref.clone(),
-            db: Some(SupabaseTargetDb {
-                database: config.db.database.clone(),
-                host: config.db.host.clone(),
-                port: config.db.port,
-                user: config.db.user.clone(),
-            }),
-        },
+        target,
         artifacts: SupabaseArtifacts {
             db: SupabaseDbArtifact {
                 present: true,
@@ -49,7 +42,7 @@ pub(super) fn phase1_complete(
         rollback: SupabaseRollback {
             db_supported: false,
             allowed: false,
-            config_target_match_required: config.require_config_target_match_on_rollback,
+            config_target_match_required: require_target_match,
             reasons: Vec::new(),
         },
         partial: false,
