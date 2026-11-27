@@ -1,10 +1,12 @@
 use std::collections::HashSet;
+use std::ffi::OsStr;
+use std::path::Path;
 
 use aegis_parser::{EffectiveTokenSlice, EndOfOptions, GitTargetArgs, GitTargetReadings};
 use aegis_types::{Assessment, MatchResult, RiskLevel};
 
 use super::assessment::REGEX_SUPERSEDED_PREFIXES;
-use super::cd_walk::{CdUnresolved, StageDir, mentions_cd, stage_dirs};
+use super::cd_walk::{CD_PROGRAMS, CdUnresolved, StageDir, mentions_cd, stage_dirs};
 use super::{Scanner, pipeline_semantics, recursive};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,6 +33,7 @@ pub(crate) struct AmbientEnv {
     pub(crate) physical: bool,
     pub(crate) cd_function: bool,
     pub(crate) lastpipe: bool,
+    pub(crate) zsh: bool,
 }
 
 impl AmbientEnv {
@@ -43,8 +46,20 @@ impl AmbientEnv {
             physical: env_text("SHELLOPTS").contains("physical"),
             cd_function: std::env::var_os("BASH_FUNC_cd%%").is_some(),
             lastpipe: env_text("BASHOPTS").contains("lastpipe"),
+            zsh: shell_is_zsh(
+                std::env::var_os("AEGIS_REAL_SHELL").as_deref(),
+                std::env::var_os("SHELL").as_deref(),
+            ),
         }
     }
+}
+
+pub(crate) fn shell_is_zsh(real_shell: Option<&OsStr>, shell: Option<&OsStr>) -> bool {
+    [real_shell, shell]
+        .into_iter()
+        .flatten()
+        .find(|value| !value.is_empty())
+        .is_some_and(|path| Path::new(path).file_name() == Some(OsStr::new("zsh")))
 }
 
 fn env_text(name: &str) -> String {
@@ -216,11 +231,7 @@ impl Scanner {
         let parsed = aegis_parser::Parser::parse(cmd);
         let target_report = recursive::scan_targets(cmd, &parsed);
         if target_report.limit_hit.is_some() {
-            return limit_hit_report(
-                ["cd", "pushd", "popd"]
-                    .iter()
-                    .any(|word| cmd.contains(word)),
-            );
+            return limit_hit_report(CD_PROGRAMS.iter().any(|word| cmd.contains(word)));
         }
 
         let mut evidence = StageEvidence::default();
