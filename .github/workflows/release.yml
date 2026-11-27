@@ -671,6 +671,7 @@ jobs:
         if: runner.os == 'Linux'
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        id: setup-node
         with:
           node-version: ${{ needs.config.outputs.node_version }}
           package-manager-cache: false
@@ -689,6 +690,7 @@ jobs:
           cargo test --test homebrew_live -- --nocapture
 
       - name: npm smoke
+        if: ${{ !cancelled() && steps.setup-node.outcome == 'success' }}
         shell: bash
         env:
           AEGIS_TEST_LIVE_NPM: "1"

@@ -321,6 +321,7 @@ formula is generated deterministically by `scripts/update-homebrew-formula.sh`.
    ```bash
    brew untap IliasAlmerekov/aegis 2>/dev/null || true
    brew tap IliasAlmerekov/aegis
+   brew trust IliasAlmerekov/aegis
    brew install aegis
    brew test aegis
    aegis --version

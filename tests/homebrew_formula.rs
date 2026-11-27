@@ -369,20 +369,23 @@ fn homebrew_formula_should_install_the_binary_without_shell_installer_side_effec
 }
 
 #[test]
-fn homebrew_formula_should_have_a_non_interactive_runtime_test() {
+fn homebrew_formula_should_have_a_version_only_test() {
     let formula = formula();
+    let (_, test_block) = formula
+        .split_once("test do")
+        .expect("formula must include a Homebrew test block");
 
     assert!(
-        formula.contains("test do"),
-        "formula must include a Homebrew test block"
+        test_block.contains("#{bin}/aegis --version"),
+        "formula test must run aegis --version"
     );
     assert!(
-        formula.contains("#{bin}/aegis -c"),
-        "formula test should exercise Aegis command execution, not only --version"
+        test_block.contains("version.to_s"),
+        "formula test must match the formula version"
     );
     assert!(
-        formula.contains("brew-test"),
-        "formula test should assert a deterministic safe command output"
+        !test_block.contains("aegis -c"),
+        "formula test must not run a command through Aegis: Homebrew's sandbox cannot host the Sandbox"
     );
 }
 
@@ -462,6 +465,12 @@ fn readme_should_document_homebrew_install_without_overclaiming_shell_setup() {
     assert!(
         readme.contains("brew install aegis"),
         "README must document brew install"
+    );
+    assert!(
+        readme.contains(
+            "brew tap IliasAlmerekov/aegis\nbrew trust IliasAlmerekov/aegis\nbrew install aegis\n"
+        ),
+        "README must trust the tap between brew tap and brew install"
     );
     assert!(
         readme.contains("Homebrew installs the binary only"),
