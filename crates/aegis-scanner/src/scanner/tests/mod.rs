@@ -80,6 +80,7 @@ mod issue_471;
 mod issue_484;
 mod issue_525;
 mod issue_525_codex3;
+mod issue_539;
 mod match_evidence;
 mod npm_publish;
 mod risk_levels;

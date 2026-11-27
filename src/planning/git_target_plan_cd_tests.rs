@@ -110,3 +110,15 @@ fn a_directory_changing_launcher_after_a_cd_is_disclosed_for_a_non_git_stage() {
         plan.targets
     );
 }
+
+#[test]
+fn ac8_the_new_cd_reasons_read_as_the_issue_states() {
+    assert_eq!(
+        GitTargetUnresolved::Cd(CdUnresolved::PathChanged).description(),
+        "an earlier ln or mv may change where a later cd lands"
+    );
+    assert_eq!(
+        GitTargetUnresolved::Cd(CdUnresolved::UnsupportedForm).description(),
+        "an earlier cd has no plain path (cd, cd -, an option, a directory-stack entry, pushd or popd)"
+    );
+}

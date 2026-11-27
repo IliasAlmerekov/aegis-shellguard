@@ -50,7 +50,7 @@ impl GitTargetUnresolved {
             Self::UnmappedLauncher => "git runs behind a launcher whose arguments Aegis cannot map",
             Self::Cd(reason) => match reason {
                 CdUnresolved::UnsupportedForm => {
-                    "an earlier cd has no plain path (cd, cd -, an option, pushd or popd)"
+                    "an earlier cd has no plain path (cd, cd -, an option, a directory-stack entry, pushd or popd)"
                 }
                 CdUnresolved::DynamicPath => {
                     "a path holds a variable, glob, brace or ~ that Aegis cannot expand"
@@ -62,6 +62,9 @@ impl GitTargetUnresolved {
                 }
                 CdUnresolved::PhysicalMode => {
                     "Bash physical mode may be on, so .. follows symlinks"
+                }
+                CdUnresolved::PathChanged => {
+                    "an earlier ln or mv may change where a later cd lands"
                 }
             },
         }

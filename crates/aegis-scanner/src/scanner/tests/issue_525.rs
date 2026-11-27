@@ -1,12 +1,15 @@
 use super::*;
 use crate::scanner::{AmbientEnv, CdUnresolved, DangerStageTarget, GitStageReport, StageDir};
 
-fn report_with(cmd: &str, cdpath_set: bool) -> GitStageReport {
+pub(super) fn report_in(cmd: &str, ambient: AmbientEnv) -> GitStageReport {
     let scanner = scanner();
     let assessment = scanner.assess(cmd);
-    scanner.git_stage_report_with(
+    scanner.git_stage_report_with(cmd, &assessment, ambient)
+}
+
+fn report_with(cmd: &str, cdpath_set: bool) -> GitStageReport {
+    report_in(
         cmd,
-        &assessment,
         AmbientEnv {
             git_env: false,
             cdpath_set,
@@ -19,15 +22,15 @@ fn report(cmd: &str) -> GitStageReport {
     report_with(cmd, false)
 }
 
-fn dirs(report: &GitStageReport) -> Vec<StageDir> {
+pub(super) fn dirs(report: &GitStageReport) -> Vec<StageDir> {
     report.redirected.iter().map(|s| s.dir.clone()).collect()
 }
 
-fn chain(steps: &[&str]) -> StageDir {
+pub(super) fn chain(steps: &[&str]) -> StageDir {
     StageDir::Chain(steps.iter().map(|s| (*s).to_string()).collect())
 }
 
-fn unresolved(reason: CdUnresolved) -> StageDir {
+pub(super) fn unresolved(reason: CdUnresolved) -> StageDir {
     StageDir::Unresolved(reason)
 }
 
@@ -412,7 +415,6 @@ fn a_cdpath_change_earlier_in_the_line_makes_a_later_relative_cd_unresolved() {
         "CDPATH=/tmp && cd project && rm -rf y",
         "declare -x CDPATH=/tmp && cd project && rm -rf y",
         "env CDPATH=/tmp true && cd project && rm -rf y",
-        "(export CDPATH=/tmp) && cd project && rm -rf y",
         "export CDPATH=/tmp; cd project && rm -rf y",
         "export CDP''ATH=/tmp && cd project && rm -rf y",
     ] {

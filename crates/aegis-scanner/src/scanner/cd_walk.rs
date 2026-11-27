@@ -13,6 +13,7 @@ pub enum CdUnresolved {
     MayNotRun,
     Opaque,
     PhysicalMode,
+    PathChanged,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,19 +39,21 @@ pub fn path_is_dynamic(path: &str) -> bool {
 
 const MAX_GROUP_DEPTH: usize = 8;
 
-const CD_LIKE: &[&str] = &["cd", "pushd", "popd", "eval", "source", "."];
+pub(super) const CD_PROGRAMS: [&str; 4] = ["cd", "chdir", "pushd", "popd"];
+
+const CD_LIKE: &[&str] = &["cd", "chdir", "pushd", "popd", "eval", "source", "."];
 
 pub(super) fn mentions_cd(targets: &[String]) -> bool {
     targets.iter().any(|target| {
-        if !(target.contains("cd") || target.contains("pushd") || target.contains("popd")) {
+        if !CD_PROGRAMS.iter().any(|word| target.contains(word)) {
             return false;
         }
         let tokens = aegis_parser::split_tokens(target);
         let refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
-        wrapped_cd_like(&tokens).is_some_and(|program| matches!(program, "cd" | "pushd" | "popd"))
+        wrapped_cd_like(&tokens).is_some_and(|program| CD_PROGRAMS.contains(&program))
             || aegis_parser::effective_token_slices(&refs)
                 .iter()
-                .any(|slice| matches!(slice.program, "cd" | "pushd" | "popd"))
+                .any(|slice| CD_PROGRAMS.contains(&slice.program))
     })
 }
 
@@ -65,6 +68,8 @@ pub(super) fn stage_dirs(cmd: &str, ambient: AmbientEnv) -> Walk {
         cdpath_set: Cell::new(ambient.cdpath_set),
         physical: Cell::new(ambient.physical),
         lastpipe: Cell::new(ambient.lastpipe),
+        zsh: ambient.zsh,
+        path_changed: Cell::new(false),
         cd_function: ambient.cd_function,
         pipelines: RefCell::new(Vec::new()),
     };
@@ -80,7 +85,16 @@ struct Walker {
     pipelines: RefCell<Vec<(Vec<String>, StageDir)>>,
     cdpath_set: Cell<bool>,
     lastpipe: Cell<bool>,
+    zsh: bool,
+    path_changed: Cell<bool>,
     cd_function: bool,
+}
+
+#[derive(Clone, Copy)]
+struct ShellState {
+    cdpath_set: bool,
+    physical: bool,
+    lastpipe: bool,
 }
 
 impl Walker {
@@ -107,8 +121,12 @@ impl Walker {
             let mut next = state.clone();
             let last_index = segment.pipeline.segments.len() - 1;
             for (index, stage) in segment.pipeline.segments.iter().enumerate() {
+                let in_shell = single || (index == last_index && (self.zsh || self.lastpipe.get()));
+                let saved = self.shell_state();
                 let effect = self.stage(stage.raw.trim(), &state, incoming, out, depth);
-                let in_shell = single || (index == last_index && self.lastpipe.get());
+                if !in_shell {
+                    self.restore(saved);
+                }
                 if in_shell && let Some(effect) = effect {
                     next = effect;
                 }
@@ -117,6 +135,20 @@ impl Walker {
             incoming = segment.separator;
         }
         state
+    }
+
+    fn shell_state(&self) -> ShellState {
+        ShellState {
+            cdpath_set: self.cdpath_set.get(),
+            physical: self.physical.get(),
+            lastpipe: self.lastpipe.get(),
+        }
+    }
+
+    fn restore(&self, saved: ShellState) {
+        self.cdpath_set.set(saved.cdpath_set);
+        self.physical.set(saved.physical);
+        self.lastpipe.set(saved.lastpipe);
     }
 
     fn stage(
@@ -132,7 +164,9 @@ impl Walker {
             return Some(StageDir::Unresolved(CdUnresolved::Opaque));
         }
         if let Some(inner) = aegis_parser::unwrap_subshell_group(raw) {
+            let saved = self.shell_state();
             self.list(&inner, state.clone(), out, depth + 1);
+            self.restore(saved);
             return None;
         }
 
@@ -149,6 +183,13 @@ impl Walker {
         if sets_physical_mode(raw, &tokens) {
             self.physical.set(true);
         }
+        let refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
+        if aegis_parser::effective_token_slices(&refs)
+            .iter()
+            .any(|slice| matches!(slice.program, "ln" | "mv"))
+        {
+            self.path_changed.set(true);
+        }
         result
     }
 
@@ -160,7 +201,7 @@ impl Walker {
         incoming: Option<ListSeparator>,
         out: &mut Vec<(String, StageDir)>,
     ) -> Option<StageDir> {
-        if tokens.first().map(String::as_str) == Some("cd") {
+        if matches!(tokens.first().map(String::as_str), Some("cd" | "chdir")) {
             let operands = cd_operands(raw, tokens);
             if raw.contains("$(") || raw.contains('`') || raw.contains("<(") {
                 let before = match hidden_cd(raw, true) {
@@ -193,6 +234,9 @@ impl Walker {
         operands: &[CdWord],
         incoming: Option<ListSeparator>,
     ) -> StageDir {
+        if self.path_changed.get() {
+            return StageDir::Unresolved(CdUnresolved::PathChanged);
+        }
         let parsed = self.literal_path(operands);
         if let StageDir::Unresolved(_) = state {
             return match parsed {
@@ -221,8 +265,14 @@ impl Walker {
 
     fn literal_path(&self, operands: &[CdWord]) -> Result<String, CdUnresolved> {
         let word = match operands {
-            [word] if !word.value.starts_with('-') => word,
-            [dashdash, word] if dashdash.value == "--" => word,
+            [word] if !(word.value.starts_with('-') || self.zsh && is_stack_index(&word.value)) => {
+                word
+            }
+            [dashdash, word]
+                if dashdash.value == "--" && !(self.zsh && is_stack_index(&word.value)) =>
+            {
+                word
+            }
             _ => return Err(CdUnresolved::UnsupportedForm),
         };
         let path = &word.value;
@@ -242,6 +292,11 @@ impl Walker {
         }
         Ok(path.clone())
     }
+}
+
+fn is_stack_index(path: &str) -> bool {
+    path.strip_prefix(['+', '-'])
+        .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
 }
 
 struct CdWord {
@@ -389,7 +444,7 @@ fn hidden_cd(raw: &str, is_cd_stage: bool) -> Option<CdUnresolved> {
                 continue;
             }
             if is_cd_stage
-                && program == "cd"
+                && matches!(program, "cd" | "chdir")
                 && (target.contains("$(") || target.contains('`') || target.contains("<("))
             {
                 continue;
@@ -407,14 +462,23 @@ fn sets_physical_mode(raw: &str, tokens: &[String]) -> bool {
     if raw.contains("SHELLOPTS") {
         return true;
     }
-    let Some(set_at) = tokens.iter().position(|token| token == "set") else {
-        return false;
-    };
-    tokens[set_at + 1..].iter().any(|token| {
-        token == "physical"
-            || token.contains('$')
-            || (token.starts_with('-') && !token.starts_with("--") && token.contains('P'))
-    })
+    let mut words = tokens
+        .iter()
+        .map(String::as_str)
+        .skip_while(|token| {
+            *token == "{" || aegis_parser::COMMAND_STARTING_KEYWORDS.contains(token)
+        })
+        .skip_while(|token| !token.starts_with('-') && token.contains('='));
+    let mut program = words.next();
+    if matches!(program, Some("builtin" | "command")) {
+        program = words.find(|token| !token.starts_with('-'));
+    }
+    program == Some("set")
+        && words.any(|token| {
+            token == "physical"
+                || token.contains('$')
+                || (token.starts_with('-') && !token.starts_with("--") && token.contains('P'))
+        })
 }
 
 fn wrapped_cd_like(tokens: &[String]) -> Option<&str> {

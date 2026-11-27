@@ -633,8 +633,9 @@ path, a missing path, a directory that is not a git repository, a `--git-dir`
 that is not `<work tree>/.git`, a `--work-tree` without `--git-dir`, `GIT_DIR=`
 or `GIT_WORK_TREE=` in the stage's env prefix, a launcher that changes the
 directory such as `env -C`, an unlisted option read two ways, or a `cd` that is
-`cd -`, `pushd`, takes an option, may not have run, hides behind `eval` or
-`source`, or meets a set `CDPATH`); no Snapshot covers an unresolved Git target
+`cd -`, `pushd`, takes an option, is `cd +N` or `cd -N` under zsh, may not have
+run, hides behind `eval` or `source`, meets a set `CDPATH`, or follows an `ln` or
+`mv` earlier in the line); `chdir` is followed like `cd`; no Snapshot covers an unresolved Git target
 and the dialog and audit entry say so.
 _Avoid_: Snapshot target (reserved for database plugins and the ratchet)
 

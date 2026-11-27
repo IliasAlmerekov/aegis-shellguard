@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 
 ## [Unreleased]
 
+- Fixed: the `cd` walk that plans the git Snapshot's Git target now follows `chdir` and a `cd` in the last pipeline stage under zsh, leaves `cd +N` and `cd -N` under zsh and any `cd` after `ln` or `mv` unresolved, scopes `CDPATH`, physical mode and `lastpipe` to the subshell that sets them, and reads physical mode only from the `set` builtin (#539).
 - Fixed: the release npm smoke now passes `--prefer-online` to every `npm install -g` attempt, so a retry asks the registry again instead of reusing npm's cached metadata from before the publish (#733).
 
 ## [0.10.1] (2026-11-27)
