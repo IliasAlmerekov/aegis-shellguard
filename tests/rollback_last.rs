@@ -7,6 +7,7 @@
 mod support;
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
@@ -287,25 +288,92 @@ fn last_with_yes_restores_the_latest_of_two_candidates() {
 const NOTHING_TO_RESTORE: &str =
     "nothing to restore: plugin=git snapshot_id=clean captured no changes";
 
-fn clean_tree_with_deleted_src(env: &Env) -> PathBuf {
+fn approve_rm_rf_src_in_clean_repo(env: &Env) -> PathBuf {
     let repo = env.repo("repo");
     fs::create_dir(repo.join("src")).unwrap();
     fs::write(repo.join("src").join("a.txt"), "a\n").unwrap();
     git(&repo, &["add", "-A"]);
     git(&repo, &["commit", "-q", "-m", "add src"]);
-    env.record(
-        "rm -rf src",
-        Some(&repo),
-        vec![("git", "clean".to_string(), Some(&repo))],
+    let mut child = Command::new("script")
+        .env("HOME", env.home.path())
+        .env("AEGIS_AUDIT_PATH", env.audit_path())
+        .env("AEGIS_REAL_SHELL", "/bin/sh")
+        .env("AEGIS_CI", "0")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .current_dir(&repo)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .args([
+            "-qfec",
+            &format!("'{}' -c 'rm -rf src'", env!("CARGO_BIN_EXE_aegis")),
+            "/dev/null",
+        ])
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(b"y\n").unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        !repo.join("src").exists(),
+        "approve did not delete src: {}{}",
+        stdout(&output),
+        stderr(&output)
     );
-    fs::remove_dir_all(repo.join("src")).unwrap();
     repo
+}
+
+fn assert_nothing_to_restore(env: &Env, output: &Output) {
+    assert_eq!(code(output), 0, "{}", stderr(output));
+    assert!(
+        stdout(output).contains(NOTHING_TO_RESTORE),
+        "{}",
+        stdout(output)
+    );
+    assert!(!stdout(output).contains("rollback complete"));
+    assert!(env.rollback_entries().is_empty());
 }
 
 #[test]
 fn last_reports_nothing_to_restore_for_a_clean_tree_snapshot() {
     let env = Env::new();
-    let repo = clean_tree_with_deleted_src(&env);
+    let repo = approve_rm_rf_src_in_clean_repo(&env);
+
+    let output = env.run(&repo, &["rollback", "--last", "--yes"], None);
+
+    assert_nothing_to_restore(&env, &output);
+}
+
+#[test]
+fn rollback_by_id_reports_nothing_to_restore_for_a_clean_tree_snapshot() {
+    let env = Env::new();
+    let repo = approve_rm_rf_src_in_clean_repo(&env);
+
+    let output = env.run(&repo, &["rollback", "clean", "--yes"], None);
+
+    assert_nothing_to_restore(&env, &output);
+}
+
+#[test]
+fn last_restores_the_real_snapshot_and_reports_the_empty_one_of_the_same_command() {
+    let env = Env::new();
+    let repo = env.repo("repo");
+    env.use_sqlite_in(&repo);
+    let store = env.home.path().join(".aegis").join("snapshots");
+    fs::create_dir_all(&store).unwrap();
+    let dump = store.canonicalize().unwrap().join("app-1.db");
+    fs::write(&dump, "before").unwrap();
+    fs::write(repo.join("app.db"), "after").unwrap();
+    let sqlite_id = format!("v2\t{}\t{}", hex(&repo.join("app.db")), hex(&dump));
+    env.record(
+        "rm -rf src && rm app.db",
+        Some(&repo),
+        vec![
+            ("git", "clean".to_string(), Some(&repo)),
+            ("sqlite", sqlite_id, None),
+        ],
+    );
 
     let output = env.run(&repo, &["rollback", "--last", "--yes"], None);
 
@@ -315,25 +383,9 @@ fn last_reports_nothing_to_restore_for_a_clean_tree_snapshot() {
         "{}",
         stdout(&output)
     );
-    assert!(!stdout(&output).contains("rollback complete"));
-    assert!(env.rollback_entries().is_empty());
-}
-
-#[test]
-fn rollback_by_id_reports_nothing_to_restore_for_a_clean_tree_snapshot() {
-    let env = Env::new();
-    let repo = clean_tree_with_deleted_src(&env);
-
-    let output = env.run(&repo, &["rollback", "clean", "--yes"], None);
-
-    assert_eq!(code(&output), 0, "{}", stderr(&output));
-    assert!(
-        stdout(&output).contains(NOTHING_TO_RESTORE),
-        "{}",
-        stdout(&output)
-    );
-    assert!(!stdout(&output).contains("rollback complete"));
-    assert!(env.rollback_entries().is_empty());
+    assert!(stdout(&output).contains("rollback complete: plugin=sqlite"));
+    assert_eq!(fs::read_to_string(repo.join("app.db")).unwrap(), "before");
+    assert_eq!(env.rollback_entries().len(), 1);
 }
 
 #[test]

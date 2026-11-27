@@ -176,6 +176,8 @@ pub(crate) fn append_rollback_audit_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use tempfile::TempDir;
 
     fn write_entry(
@@ -411,10 +413,10 @@ mod tests {
         );
     }
 
-    struct Empty(std::sync::Arc<std::sync::atomic::AtomicBool>);
+    struct NothingCapturedPlugin(Arc<AtomicBool>);
 
     #[async_trait::async_trait]
-    impl aegis_snapshot::SnapshotPlugin for Empty {
+    impl aegis_snapshot::SnapshotPlugin for NothingCapturedPlugin {
         fn name(&self) -> &'static str {
             "stub"
         }
@@ -432,7 +434,7 @@ mod tests {
             &self,
             _id: &str,
         ) -> std::result::Result<(), aegis_snapshot::SnapshotError> {
-            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            self.0.store(true, Ordering::SeqCst);
             Ok(())
         }
         async fn delete(
@@ -444,7 +446,6 @@ mod tests {
         async fn readiness(&self, _snapshot_id: &str) -> aegis_snapshot::ArtifactReadiness {
             aegis_snapshot::ArtifactReadiness::PRESENT_UNCHECKED
         }
-
         async fn liveness(
             &self,
             _id: &str,
@@ -458,8 +459,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let audit = dir.path().join("audit.jsonl");
         let logger = AuditLogger::new(audit.clone());
-        let called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let registry = SnapshotRegistry::new_with_plugins(vec![Box::new(Empty(called.clone()))]);
+        let called = Arc::new(AtomicBool::new(false));
+        let registry = SnapshotRegistry::new_with_plugins(vec![Box::new(NothingCapturedPlugin(
+            called.clone(),
+        ))]);
         let target = RollbackTarget {
             plugin: "stub".to_string(),
             snapshot_id: "S1".to_string(),
@@ -470,7 +473,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(preflight, Preflight::NothingCaptured);
-        assert!(!called.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(!called.load(Ordering::SeqCst));
         assert!(!audit.exists());
     }
 }
