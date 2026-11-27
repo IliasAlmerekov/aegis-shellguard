@@ -1,6 +1,5 @@
 # Existing architectural debt suppressed by `deslop-please --allow`.
 # Fixing an entry here never fails CI; new issues not listed here fail.
-module-cycle aegis::analysis::orchestrate,aegis::analysis::router
 module-cycle aegis::analysis::router::segments::executor_config,aegis::analysis::router::segments::unclaimed
 module-cycle aegis::planning,aegis::runtime
 module-cycle aegis::planning::git_target,aegis::planning::types
