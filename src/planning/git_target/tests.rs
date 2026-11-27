@@ -262,9 +262,11 @@ fn launcher_that_changes_directory_is_unresolved() {
 
 #[test]
 fn plan_without_redirected_stages_keeps_the_cwd_snapshot() {
-    let plan = GitTargetPlan::resolve(&GitStageReport::default(), &CwdState::Unavailable);
+    let (plan, opportunistic_dirs) =
+        GitTargetPlan::resolve(&GitStageReport::default(), &CwdState::Unavailable);
 
     assert_eq!(plan, GitTargetPlan::default());
+    assert!(opportunistic_dirs.is_empty());
     assert!(plan.process_cwd);
 }
 
@@ -288,7 +290,7 @@ fn plan_keeps_each_distinct_target_and_skips_the_cwd_when_unneeded() {
         needs_process_cwd: false,
     };
 
-    let plan = GitTargetPlan::resolve(&report, &cwd_of(&dir));
+    let (plan, _) = GitTargetPlan::resolve(&report, &cwd_of(&dir));
 
     assert_eq!(
         plan.targets,
@@ -313,7 +315,7 @@ fn plan_folds_a_target_equal_to_the_cwd_into_the_cwd_pass() {
         needs_process_cwd: false,
     };
 
-    let plan = GitTargetPlan::resolve(&report, &cwd_of(&dir));
+    let (plan, _) = GitTargetPlan::resolve(&report, &cwd_of(&dir));
 
     assert!(plan.targets.is_empty());
     assert!(plan.process_cwd);
@@ -330,7 +332,7 @@ fn plan_reports_an_unresolved_target() {
         needs_process_cwd: false,
     };
 
-    let plan = GitTargetPlan::resolve(&report, &CwdState::Unavailable);
+    let (plan, _) = GitTargetPlan::resolve(&report, &CwdState::Unavailable);
 
     assert!(plan.has_unresolved());
     assert_eq!(plan.resolved_paths().count(), 0);
@@ -344,7 +346,6 @@ fn explain_names_each_target_and_each_unresolved_reason() {
             GitTarget::Unresolved(GitTargetUnresolved::PathNotFound),
         ],
         process_cwd: false,
-        opportunistic_dirs: Vec::new(),
     };
 
     assert_eq!(

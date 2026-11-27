@@ -81,7 +81,6 @@ pub enum GitTarget {
 pub struct GitTargetPlan {
     pub targets: Vec<GitTarget>,
     pub process_cwd: bool,
-    pub opportunistic_dirs: Vec<PathBuf>,
 }
 
 impl Default for GitTargetPlan {
@@ -89,7 +88,6 @@ impl Default for GitTargetPlan {
         Self {
             targets: Vec::new(),
             process_cwd: true,
-            opportunistic_dirs: Vec::new(),
         }
     }
 }
@@ -168,9 +166,9 @@ impl GitTargetPlan {
     }
 
     #[must_use]
-    pub fn resolve(report: &GitStageReport, cwd: &CwdState) -> Self {
+    pub fn resolve(report: &GitStageReport, cwd: &CwdState) -> (Self, Vec<PathBuf>) {
         if report.redirected.is_empty() {
-            return Self::default();
+            return (Self::default(), Vec::new());
         }
 
         let mut targets: Vec<GitTarget> = Vec::new();
@@ -201,11 +199,13 @@ impl GitTargetPlan {
             }
         }
 
-        Self {
-            targets,
-            process_cwd,
+        (
+            Self {
+                targets,
+                process_cwd,
+            },
             opportunistic_dirs,
-        }
+        )
     }
 
     pub fn drop_resolved(&mut self, path: &Path) {
