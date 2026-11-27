@@ -302,7 +302,7 @@ fn claude_plugin_manifests_are_consistent() {
 }
 
 #[test]
-fn claude_plugin_rollback_command_runs_through_bash_tool() {
+fn claude_plugin_rollback_command_hands_rollback_to_the_user() {
     let command = read_repo_file("plugins/aegis/commands/rollback.md");
     let front_matter = command
         .strip_prefix("---\n")
@@ -322,8 +322,9 @@ fn claude_plugin_rollback_command_runs_through_bash_tool() {
     for required in [
         "aegis snapshot list",
         "confirm",
-        "aegis rollback",
         "aegis rollback --last",
+        "aegis rollback <id>",
+        "Never run it yourself",
     ] {
         assert!(command.contains(required), "missing `{required}`");
     }
