@@ -1,16 +1,16 @@
 ---
-description: Roll the workspace back to an Aegis Snapshot
+description: Pick an Aegis Snapshot and hand over the rollback command
 argument-hint: "[snapshot-id]"
 disable-model-invocation: true
 ---
 
-Roll the workspace back to an Aegis Snapshot. Snapshot id from the user, if any: $ARGUMENTS
+Help the user roll the workspace back to an Aegis Snapshot. Snapshot id from the user, if any: $ARGUMENTS
 
-Run every `aegis` command below through the Bash tool, so the Aegis PreToolUse hook sees it. Do not use any other way to run them.
+Aegis reserves `aegis rollback` for the human operator, and the Aegis PreToolUse hook denies it. Never run it yourself. Hand the user the exact line to run in their own terminal.
 
-1. If no snapshot id was given, run `aegis snapshot list` and show the user the list. Ask which Snapshot to restore and wait for the answer.
-2. Show the chosen Snapshot's entry as `aegis snapshot list` reports it. Tell the user that rolling back overwrites the current state that Snapshot covers.
-3. Ask the user to confirm the rollback of that exact id. Stop if they do not confirm.
-4. After they confirm, run `aegis rollback <id>` with the confirmed id and report its output.
+Run `aegis snapshot list` through the Bash tool, so the hook sees it. It is the only `aegis` command this command runs.
 
-If Aegis refuses `aegis rollback` because the command is reserved for the human operator, do not retry it in another form. Give the user the exact `aegis rollback <id>` command to run in their own terminal.
+1. If no snapshot id was given, tell the user to run `aegis rollback --last` in their own terminal. It restores the Snapshots of the latest command recorded for the current repository or directory. It shows its own summary and asks the user to confirm before it restores anything. Also tell the user you can list older Snapshots with `aegis snapshot list` if they want one of those instead. Do not list Snapshots yet. Stop there unless the user asks for an older Snapshot. If they do, run `aegis snapshot list`, show the list, ask which Snapshot to restore and wait for the answer.
+2. Once you have a snapshot id, from the user or from their pick, go to step 3. Never choose or guess an id yourself.
+3. Run `aegis snapshot list` and show the entry for that id as the list reports it. If the id is not in the list, say so and stop. Otherwise tell the user that rolling back overwrites the current state that Snapshot covers.
+4. Give the user the exact `aegis rollback <id>` line, with that id, to run in their own terminal. Stop there.
