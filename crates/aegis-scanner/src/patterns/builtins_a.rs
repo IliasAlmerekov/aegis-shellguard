@@ -45,7 +45,7 @@ pub(super) fn rules() -> Vec<PrefixRule> {
                 "Move to trash instead: 'trash <file>' or 'mv <file> /tmp/backup-$(date +%s)'",
             )),
             justification: Some(Cow::Borrowed(
-                "Deletes the named file directly, without the trash. Less destructive than 'rm -rf' because it removes only one file.",
+                "Deletes the named file directly, without the trash.",
             )),
             source: PatternSource::Builtin,
             suppressed_by: &[],

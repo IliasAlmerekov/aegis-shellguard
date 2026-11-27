@@ -255,32 +255,23 @@ mod tests {
     #[test]
     fn snapshot_restorable_rules_make_no_recovery_claims() {
         let set = PatternSet::load().expect("patterns.toml must load");
-        let mut copy: Vec<(&str, String)> = Vec::new();
-        for p in set.patterns().iter().filter(|p| p.id == "FS-001") {
-            let text = format!(
-                "{} {}",
-                p.description,
-                p.justification.as_deref().unwrap_or_default()
-            );
-            copy.push((p.id.as_ref(), text.to_lowercase()));
-        }
-        for r in set
-            .prefix_rules()
+        let ids = ["FS-001", "FS-012", "GIT-001", "GIT-007"];
+        let copy: Vec<(&str, String)> = set
+            .patterns()
             .iter()
-            .filter(|r| matches!(r.id.as_ref(), "FS-012" | "GIT-001" | "GIT-007"))
-        {
-            let text = format!(
-                "{} {}",
-                r.description,
-                r.justification.as_deref().unwrap_or_default()
-            );
-            copy.push((r.id.as_ref(), text.to_lowercase()));
-        }
-        assert_eq!(
-            copy.len(),
-            4,
-            "FS-001, FS-012, GIT-001 and GIT-007 must all exist"
-        );
+            .map(|p| (p.id.as_ref(), &p.description, &p.justification))
+            .chain(
+                set.prefix_rules()
+                    .iter()
+                    .map(|r| (r.id.as_ref(), &r.description, &r.justification)),
+            )
+            .filter(|(id, ..)| ids.contains(id))
+            .map(|(id, d, j)| {
+                let j = j.as_deref().unwrap_or_default();
+                (id, format!("{d} {j}").to_lowercase())
+            })
+            .collect();
+        assert_eq!(copy.len(), ids.len(), "every id must exist exactly once");
         for (id, text) in &copy {
             for banned in ["no undo", "no recovery", "irreversible"] {
                 assert!(
