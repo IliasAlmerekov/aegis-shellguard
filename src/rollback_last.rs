@@ -32,6 +32,13 @@ pub(crate) struct LastReport {
     pub(crate) failed: Vec<(RollbackTarget, i32, String)>,
     pub(crate) unaudited: Vec<(RollbackTarget, String)>,
     pub(crate) skipped: Vec<RollbackTarget>,
+    pub(crate) nothing_captured: Vec<RollbackTarget>,
+}
+
+enum Restore {
+    Done,
+    NothingCaptured,
+    Unaudited(String),
 }
 
 enum Choice {
@@ -229,8 +236,9 @@ pub(crate) async fn execute(yes: bool) -> Result<LastOutcome> {
     for snapshot in &chosen.bound {
         let target = target_of(snapshot);
         match restore_one(&registry, &audit_logger, &target, yes, is_tty, &mut input).await {
-            Ok(None) => report.restored.push(target),
-            Ok(Some(reason)) => report.unaudited.push((target, reason)),
+            Ok(Restore::Done) => report.restored.push(target),
+            Ok(Restore::NothingCaptured) => report.nothing_captured.push(target),
+            Ok(Restore::Unaudited(reason)) => report.unaudited.push((target, reason)),
             Err((code, reason)) => report.failed.push((target, code, reason)),
         }
     }
@@ -244,10 +252,11 @@ async fn restore_one(
     yes: bool,
     is_tty: bool,
     input: &mut impl BufRead,
-) -> std::result::Result<Option<String>, (i32, String)> {
+) -> std::result::Result<Restore, (i32, String)> {
     match restore_checked(registry, logger, target, yes, is_tty, input).await {
-        Ok(Preflight::Restore) => Ok(None),
-        Ok(Preflight::RestoredUnaudited { reason }) => Ok(Some(reason)),
+        Ok(Preflight::Restore) => Ok(Restore::Done),
+        Ok(Preflight::NothingCaptured) => Ok(Restore::NothingCaptured),
+        Ok(Preflight::RestoredUnaudited { reason }) => Ok(Restore::Unaudited(reason)),
         Ok(Preflight::Refused { code, message }) => Err((code, message)),
         Err(error) => Err((EXIT_INTERNAL, error.to_string())),
     }

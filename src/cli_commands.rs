@@ -345,6 +345,14 @@ pub(crate) fn handle_rollback_command(
             );
             0
         }
+        Ok(rollback::RollbackOutcome::NothingCaptured(target)) => {
+            out!(
+                "nothing to restore: plugin={} snapshot_id={} captured no changes",
+                target.plugin,
+                target.snapshot_id
+            );
+            0
+        }
         Ok(rollback::RollbackOutcome::RestoredUnaudited { target, reason }) => {
             out!(
                 "rollback complete: plugin={} snapshot_id={}",
@@ -372,6 +380,13 @@ fn handle_rollback_last_command(yes: bool, runtime: &tokio::runtime::Runtime) ->
             for target in &report.restored {
                 out!(
                     "rollback complete: plugin={} snapshot_id={}",
+                    target.plugin,
+                    target.snapshot_id
+                );
+            }
+            for target in &report.nothing_captured {
+                out!(
+                    "nothing to restore: plugin={} snapshot_id={} captured no changes",
                     target.plugin,
                     target.snapshot_id
                 );

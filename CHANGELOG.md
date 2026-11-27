@@ -6,6 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: 
 ---
 
 ## [Unreleased]
+- Fixed: `aegis rollback <id>` and `aegis rollback --last` no longer print `rollback complete` for a Snapshot that captured nothing. They print `nothing to restore: plugin=<plugin> snapshot_id=<id> captured no changes`, skip the provider rollback, write no rollback audit entry and exit 0 (#550).
 - Fixed: `aegis watch` no longer launches `aegis -c <cmd>` per frame when `SHELL` points at the Aegis binary; watch now uses the same shell resolution as the interactive path and falls back to `/bin/sh` (#705).
 
 - Changed: strict workspace lints. `[workspace.lints]` denies `dead_code`, `unsafe_code`, `unwrap_used`, `expect_used`, `panic`, `allow_attributes` and related lints, `#[allow]` is banned in favor of `#[expect]` with a reason, and the per-crate `cfg_attr` deny attributes are gone. The bwrap build script and the built-in prefix rule self-check return errors instead of panicking. `main` returns `ExitCode` and `std::process::exit` is denied. A new `Architecture lints (deslop-please)` CI job runs a pinned `deslop-please` against an allowlist of existing findings (#704).
