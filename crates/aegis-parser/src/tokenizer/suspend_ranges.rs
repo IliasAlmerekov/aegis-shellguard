@@ -373,3 +373,7 @@ fn indexed_lines(cmd: &str) -> Vec<(&str, usize)> {
 #[cfg(test)]
 #[path = "../tests/suspend_ranges_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/double_lt_tests.rs"]
+mod double_lt_tests;

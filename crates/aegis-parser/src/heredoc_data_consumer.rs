@@ -422,3 +422,7 @@ pub(super) fn heredoc_target_is_data_consumer(
         HeredocMarkerContext::Untrusted => false,
     }
 }
+
+#[cfg(test)]
+#[path = "tests/owning_start_tests.rs"]
+mod owning_start_tests;
