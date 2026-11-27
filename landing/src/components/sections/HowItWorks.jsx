@@ -21,7 +21,7 @@ import { Reveal } from '../ui/Reveal'
    eleven-pixel type. See `--color-electric-text`. */
 const NOTE_HELD = 'var(--color-electric-text)'
 
-const RELEASE = '0.10.0'
+const RELEASE = '0.10.1'
 
 const STEPS = [
   {
