@@ -328,9 +328,9 @@ impl RuntimeContext {
         cmd: &str,
     ) -> SnapshotCoverage {
         let registry = self.snapshot_registry();
-        let mut coverage = registry.snapshot_all(cwd, cmd).await;
-        registry.check_readiness(&mut coverage).await;
-        coverage
+        registry
+            .snapshot_for_targets(cwd, cmd, true, std::iter::empty())
+            .await
     }
 
     pub async fn create_snapshots_for_plan_async(
@@ -340,16 +340,14 @@ impl RuntimeContext {
         git_targets: &crate::planning::GitTargetPlan,
     ) -> SnapshotCoverage {
         let registry = self.snapshot_registry();
-        let mut coverage = if git_targets.process_cwd {
-            registry.snapshot_all(cwd, cmd).await
-        } else {
-            registry.snapshot_all_except("git", cwd, cmd).await
-        };
-        for path in git_targets.resolved_paths() {
-            coverage.merge(registry.snapshot_plugin_at("git", path, cmd).await);
-        }
-        registry.check_readiness(&mut coverage).await;
-        coverage
+        registry
+            .snapshot_for_targets(
+                cwd,
+                cmd,
+                git_targets.process_cwd,
+                git_targets.resolved_paths(),
+            )
+            .await
     }
 
     pub fn create_snapshots_for_plan(

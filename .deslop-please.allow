@@ -30,7 +30,6 @@ field-leak aegis_config::model::AegisConfig::prune
 field-leak aegis_config::model::AegisConfig::rules
 field-leak aegis_config::model::AegisConfig::sandbox
 shallow-module aegis_config::model::ratchet
-shallow-module aegis_snapshot::registry
 wide-directory crates/aegis-config/src/
 wide-directory crates/aegis-parser/src/
 wide-directory crates/aegis-scanner/src/scanner/tests/

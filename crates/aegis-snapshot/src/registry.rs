@@ -138,26 +138,35 @@ impl SnapshotRegistry {
         self.plugins.iter().map(|plugin| plugin.name()).collect()
     }
 
-    pub async fn snapshot_all(&self, cwd: &Path, cmd: &str) -> SnapshotCoverage {
+    pub async fn snapshot_for_targets<'a>(
+        &self,
+        cwd: &Path,
+        cmd: &str,
+        process_cwd: bool,
+        extra_paths: impl IntoIterator<Item = &'a Path>,
+    ) -> SnapshotCoverage {
+        let mut coverage = if process_cwd {
+            self.snapshot_all(cwd, cmd).await
+        } else {
+            self.snapshot_all_except("git", cwd, cmd).await
+        };
+        for path in extra_paths {
+            coverage.merge(self.snapshot_plugin_at("git", path, cmd).await);
+        }
+        self.check_readiness(&mut coverage).await;
+        coverage
+    }
+
+    async fn snapshot_all(&self, cwd: &Path, cmd: &str) -> SnapshotCoverage {
         self.snapshot_matching(cwd, cmd, |_| true).await
     }
 
-    pub async fn snapshot_all_except(
-        &self,
-        excluded: &str,
-        cwd: &Path,
-        cmd: &str,
-    ) -> SnapshotCoverage {
+    async fn snapshot_all_except(&self, excluded: &str, cwd: &Path, cmd: &str) -> SnapshotCoverage {
         self.snapshot_matching(cwd, cmd, |name| name != excluded)
             .await
     }
 
-    pub async fn snapshot_plugin_at(
-        &self,
-        plugin: &str,
-        dir: &Path,
-        cmd: &str,
-    ) -> SnapshotCoverage {
+    async fn snapshot_plugin_at(&self, plugin: &str, dir: &Path, cmd: &str) -> SnapshotCoverage {
         self.snapshot_matching(dir, cmd, |name| name == plugin)
             .await
     }
@@ -203,7 +212,7 @@ impl SnapshotRegistry {
         coverage
     }
 
-    pub async fn check_readiness(&self, coverage: &mut SnapshotCoverage) {
+    async fn check_readiness(&self, coverage: &mut SnapshotCoverage) {
         let deadline = tokio::time::Instant::now() + COMMAND_READINESS_BUDGET;
         let mut attempts = Vec::with_capacity(coverage.records.len());
         for record in &coverage.records {
