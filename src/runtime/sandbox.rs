@@ -1,4 +1,7 @@
+use std::borrow::Cow;
 use std::path::Path;
+
+use aegis_types::{Decision, EXIT_BLOCKED, EXIT_INTERNAL, SandboxStatus};
 
 pub const SANDBOX_WSL1_UNAVAILABLE_CODE: &str = "sandbox_wsl1_unavailable";
 
@@ -106,6 +109,58 @@ pub fn sandbox_status_before_preparation(
     } else {
         aegis_types::SandboxStatus::NotConfigured
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SandboxFailure {
+    RequiredBlocked,
+    RequiredBlockedNested,
+    SetupFailed(String),
+}
+
+impl SandboxFailure {
+    pub fn record<E>(
+        error: &aegis_sandbox::SandboxError,
+        append_audit: impl FnOnce(Decision, SandboxStatus) -> Result<(), E>,
+    ) -> Result<Self, E> {
+        let failure = match error {
+            aegis_sandbox::SandboxError::Required => Self::RequiredBlocked,
+            aegis_sandbox::SandboxError::RequiredNestedUnderOuterSandbox => {
+                Self::RequiredBlockedNested
+            }
+            other => Self::SetupFailed(other.to_string()),
+        };
+        append_audit(Decision::Blocked, failure.audit_status())?;
+        Ok(failure)
+    }
+
+    fn audit_status(&self) -> SandboxStatus {
+        match self {
+            Self::RequiredBlocked | Self::RequiredBlockedNested => SandboxStatus::Unavailable,
+            Self::SetupFailed(_) => SandboxStatus::NotAttempted,
+        }
+    }
+
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            Self::RequiredBlocked | Self::RequiredBlockedNested => EXIT_BLOCKED,
+            Self::SetupFailed(_) => EXIT_INTERNAL,
+        }
+    }
+
+    pub fn message(&self, unavailable: impl FnOnce() -> &'static str) -> Cow<'static, str> {
+        match self {
+            Self::RequiredBlocked => Cow::Borrowed(unavailable()),
+            Self::RequiredBlockedNested => {
+                Cow::Borrowed(SANDBOX_REQUIRED_NESTED_UNAVAILABLE_MESSAGE)
+            }
+            Self::SetupFailed(err) => Cow::Owned(setup_failed_message(err)),
+        }
+    }
+}
+
+pub fn setup_failed_message(err: &impl std::fmt::Display) -> String {
+    format!("Sandbox setup failed; command not executed: {err}")
 }
 
 #[cfg(test)]

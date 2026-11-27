@@ -1,10 +1,9 @@
 use aegis::error::AegisError;
-use aegis::planning::{InterceptionPlan, PreparedPlanner};
-use aegis::runtime::AuditWriteOptions;
-use aegis::runtime::disposition::{
-    DispositionOutput, RecoveryGate, SandboxFailure, decide, persist_allow_rule, recovery_gate,
-    setup_failed_message, snapshot_request,
+use aegis::planning::disposition::{
+    DispositionOutput, RecoveryGate, decide, persist_allow_rule, recovery_gate, snapshot_request,
 };
+use aegis::planning::{InterceptionPlan, PreparedPlanner};
+use aegis::runtime::{AuditWriteOptions, SandboxFailure, setup_failed_message};
 use aegis_snapshot::SnapshotCoverage;
 use aegis_tui::{ExecutionRenderer, PromptDecision, RecoveryPromptDecision, TerminalRenderer};
 use aegis_types::{Decision, RecoveryDegradation, SandboxStatus, SnapshotRecord};
@@ -95,11 +94,7 @@ impl<R: ExecutionRenderer> ShellRun<'_, R> {
 
     fn refuse(&self, decision: Decision, exit_code: i32) -> i32 {
         let status = aegis::runtime::sandbox_status_before_preparation(self.sandbox_config);
-        match self.audit(
-            decision,
-            &[],
-            AuditWriteOptions::for_plan(self.plan, status),
-        ) {
+        match self.audit(decision, &[], self.plan.audit_options(status)) {
             Ok(()) => exit_code,
             Err(err) => {
                 err!("error: failed to write audit log: {err}");
@@ -108,7 +103,7 @@ impl<R: ExecutionRenderer> ShellRun<'_, R> {
         }
     }
 
-    fn execute(&self, verdict: aegis::runtime::disposition::Verdict) -> i32 {
+    fn execute(&self, verdict: aegis::planning::disposition::Verdict) -> i32 {
         let coverage = self.create_snapshots();
         let gate = recovery_gate(
             self.cmd,
@@ -153,7 +148,7 @@ impl<R: ExecutionRenderer> ShellRun<'_, R> {
         let options = AuditWriteOptions {
             snapshot_attempts: &attempts,
             recovery_degradation: degradation,
-            ..AuditWriteOptions::for_plan(self.plan, status)
+            ..self.plan.audit_options(status)
         };
         self.audit(decision, &coverage.records, options)
     }
@@ -182,7 +177,12 @@ impl<R: ExecutionRenderer> ShellRun<'_, R> {
         else {
             return SnapshotCoverage::default();
         };
-        context.create_snapshots_for_plan(request.cwd, request.command, &request.git_targets)
+        context.create_snapshots_for_plan(
+            request.cwd,
+            request.command,
+            request.git_targets.process_cwd,
+            request.git_targets.resolved_paths(),
+        )
     }
 }
 

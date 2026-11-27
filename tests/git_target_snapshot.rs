@@ -99,7 +99,12 @@ fn git_records(
     let SnapshotPlan::Required { git_targets, .. } = plan.snapshot_plan() else {
         panic!("a Danger git command must require a Snapshot");
     };
-    let coverage = context.create_snapshots_for_plan(cwd, command, &git_targets);
+    let coverage = context.create_snapshots_for_plan(
+        cwd,
+        command,
+        git_targets.process_cwd,
+        git_targets.resolved_paths(),
+    );
     coverage
         .records
         .into_iter()

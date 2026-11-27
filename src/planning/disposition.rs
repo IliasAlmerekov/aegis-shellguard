@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::path::Path;
 
 use aegis_config::allowlist::ConfigSourceLayer;
@@ -9,9 +8,9 @@ use aegis_parser::{extract_prefix, split_tokens};
 use aegis_policy::BlockReason;
 use aegis_snapshot::SnapshotCoverage;
 use aegis_tui::{PromptDecision, RecoveryPromptDecision};
-use aegis_types::{Decision, EXIT_BLOCKED, EXIT_INTERNAL, RecoveryDegradation, SandboxStatus};
+use aegis_types::{Decision, RecoveryDegradation};
 
-use super::{allow_rule_persistence_degradation, plan_recovery_degradation};
+use super::recovery::{allow_rule_persistence_degradation, plan_recovery_degradation};
 use crate::planning::{
     CwdState, ExecutionDisposition, GitTargetPlan, InterceptionPlan, SnapshotPlan,
 };
@@ -209,56 +208,4 @@ fn persist_rule(kind: RuleKind, cmd: &str, cwd: &Path) {
             RuleKind::Block => err!("error: failed to append block rule: {err}"),
         },
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SandboxFailure {
-    RequiredBlocked,
-    RequiredBlockedNested,
-    SetupFailed(String),
-}
-
-impl SandboxFailure {
-    pub fn record<E>(
-        error: &aegis_sandbox::SandboxError,
-        append_audit: impl FnOnce(Decision, SandboxStatus) -> Result<(), E>,
-    ) -> Result<Self, E> {
-        let failure = match error {
-            aegis_sandbox::SandboxError::Required => Self::RequiredBlocked,
-            aegis_sandbox::SandboxError::RequiredNestedUnderOuterSandbox => {
-                Self::RequiredBlockedNested
-            }
-            other => Self::SetupFailed(other.to_string()),
-        };
-        append_audit(Decision::Blocked, failure.audit_status())?;
-        Ok(failure)
-    }
-
-    fn audit_status(&self) -> SandboxStatus {
-        match self {
-            Self::RequiredBlocked | Self::RequiredBlockedNested => SandboxStatus::Unavailable,
-            Self::SetupFailed(_) => SandboxStatus::NotAttempted,
-        }
-    }
-
-    pub fn exit_code(&self) -> i32 {
-        match self {
-            Self::RequiredBlocked | Self::RequiredBlockedNested => EXIT_BLOCKED,
-            Self::SetupFailed(_) => EXIT_INTERNAL,
-        }
-    }
-
-    pub fn message(&self, unavailable: impl FnOnce() -> &'static str) -> Cow<'static, str> {
-        match self {
-            Self::RequiredBlocked => Cow::Borrowed(unavailable()),
-            Self::RequiredBlockedNested => {
-                Cow::Borrowed(super::SANDBOX_REQUIRED_NESTED_UNAVAILABLE_MESSAGE)
-            }
-            Self::SetupFailed(err) => Cow::Owned(setup_failed_message(err)),
-        }
-    }
-}
-
-pub fn setup_failed_message(err: &impl std::fmt::Display) -> String {
-    format!("Sandbox setup failed; command not executed: {err}")
 }

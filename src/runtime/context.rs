@@ -8,7 +8,6 @@ use tokio::runtime::{Handle, RuntimeFlavor};
 use crate::error::AegisError;
 use crate::explanation::CommandExplanation;
 use crate::explanation::formatter::{CommandExplanationExt, build_outcome_explanation};
-use crate::planning::InterceptionPlan;
 use aegis_audit::{AuditEntry, AuditError, AuditLogger, AuditSnapshot, SnapshotLedger};
 use aegis_config::{AegisConfig, Allowlist, AllowlistContext, AllowlistMatch, Blocklist};
 use aegis_scanner::Scanner;
@@ -89,20 +88,6 @@ pub struct AuditWriteOptions<'a> {
     pub snapshot_attempts: &'a [SnapshotAttempt],
     pub recovery_degradation: Option<RecoveryDegradation>,
     pub watch: Option<WatchAuditContext>,
-}
-
-impl<'a> AuditWriteOptions<'a> {
-    pub fn for_plan(plan: &'a InterceptionPlan, sandbox_status: SandboxStatus) -> Self {
-        Self {
-            allowlist_match: plan.decision_context().allowlist_match(),
-            allowlist_effective: plan.policy_decision().allowlist_effective,
-            ci_detected: plan.decision_context().ci_detected(),
-            sandbox_status,
-            snapshot_attempts: &[],
-            recovery_degradation: None,
-            watch: None,
-        }
-    }
 }
 
 pub struct WatchAuditContext {
@@ -333,31 +318,28 @@ impl RuntimeContext {
             .await
     }
 
-    pub async fn create_snapshots_for_plan_async(
+    pub async fn create_snapshots_for_plan_async<'a>(
         &self,
         cwd: &Path,
         cmd: &str,
-        git_targets: &crate::planning::GitTargetPlan,
+        process_cwd: bool,
+        git_targets: impl IntoIterator<Item = &'a Path>,
     ) -> SnapshotCoverage {
         let registry = self.snapshot_registry();
         registry
-            .snapshot_for_targets(
-                cwd,
-                cmd,
-                git_targets.process_cwd,
-                git_targets.resolved_paths(),
-            )
+            .snapshot_for_targets(cwd, cmd, process_cwd, git_targets)
             .await
     }
 
-    pub fn create_snapshots_for_plan(
+    pub fn create_snapshots_for_plan<'a>(
         &self,
         cwd: &Path,
         cmd: &str,
-        git_targets: &crate::planning::GitTargetPlan,
+        process_cwd: bool,
+        git_targets: impl IntoIterator<Item = &'a Path>,
     ) -> SnapshotCoverage {
         self.async_handle
-            .block_on(self.create_snapshots_for_plan_async(cwd, cmd, git_targets))
+            .block_on(self.create_snapshots_for_plan_async(cwd, cmd, process_cwd, git_targets))
     }
 
     pub fn git_snapshot_enabled(&self) -> bool {
